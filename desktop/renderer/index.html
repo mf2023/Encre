@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yim</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+  <!-- Unified header bar (sidebar header + topbar merged) -->
+  <header id="header-bar">
+    <div class="header-left">
+      <button id="btn-toggle-sidebar" class="btn-icon btn-sm" title="Toggle sidebar">
+        <i data-lucide="panel-left" class="lucide"></i>
+      </button>
+    </div>
+    <div class="header-right">
+      <button id="btn-dev-mode" class="btn-icon btn-sm" title="Developer Mode">
+        <i data-lucide="terminal" class="lucide"></i>
+      </button>
+      <button id="btn-bell" class="btn-icon btn-sm" title="Notifications">
+        <i data-lucide="bell" class="lucide"></i>
+      </button>
+      <span id="token-count" class="token-count">0</span>
+      <div class="user-avatar" title="User">
+        <i data-lucide="user" class="lucide"></i>
+      </div>
+      <div class="header-window-controls">
+        <button id="btn-minimize" class="window-btn" title="Minimize">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <button id="btn-maximize" class="window-btn" title="Maximize">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><rect x="1.5" y="1.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
+        <button id="btn-close" class="window-btn window-btn-close" title="Close">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="app">
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <div class="sidebar-nav">
+        <button class="nav-item active" data-view="chat">
+          <i data-lucide="pen-line" class="lucide"></i>
+          <span>New task</span>
+        </button>
+        <button class="nav-item" id="btn-sidebar-search">
+          <i data-lucide="search" class="lucide"></i>
+          <span>Search</span>
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-header">
+          <span class="sidebar-section-title">Projects</span>
+          <button class="btn-icon btn-sm section-add-btn"><i data-lucide="plus" class="lucide"></i></button>
+        </div>
+        <div class="sidebar-section-items">
+          <button class="nav-item nav-sub">
+            <i data-lucide="briefcase" class="lucide"></i>
+            <span>Work</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-header">
+          <span class="sidebar-section-title">All tasks</span>
+          <button class="btn-icon btn-sm"><i data-lucide="sliders-horizontal" class="lucide"></i></button>
+        </div>
+        <div id="session-list" class="sidebar-section-items"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="nav-item nav-sub" id="btn-settings-trigger">
+          <i data-lucide="settings" class="lucide"></i>
+          <span>Settings</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main area -->
+    <main id="main-area">
+      <!-- Floating search overlay -->
+      <div id="search-overlay" class="hidden">
+        <div class="search-palette">
+          <div class="search-overlay-inner">
+            <i data-lucide="search" class="lucide search-overlay-icon"></i>
+            <input type="text" id="search-input" placeholder="Search messages, files..." autocomplete="off" spellcheck="false" />
+            <kbd class="search-esc-hint">ESC</kbd>
+          </div>
+          <div id="search-results" class="search-results"></div>
+        </div>
+      </div>
+      <!-- Chat view -->
+      <div id="chat-view">
+        <div id="chat-container">
+          <!-- Welcome screen (shown when no messages) -->
+          <div id="welcome-screen">
+            <h1 class="welcome-title">What can I do for you?</h1>
+          </div>
+
+          <!-- Message list (hidden when welcome shown) -->
+          <div id="message-list" class="hidden"></div>
+        </div>
+      </div>
+
+      <!-- Search view -->
+      <div id="search-view" class="hidden"></div>
+
+      <!-- Agents view -->
+      <div id="agents-view" class="hidden"></div>
+
+      <!-- Plan bar (compact overview, always visible above input) -->
+      <div id="plan-bar" class="hidden">
+        <div class="plan-bar-inner">
+          <div class="plan-bar-left">
+            <i data-lucide="list-checks" class="lucide plan-bar-icon"></i>
+            <span id="plan-bar-label" class="plan-bar-label">Plan</span>
+            <span id="plan-bar-progress" class="plan-bar-progress">0/0</span>
+          </div>
+          <div class="plan-bar-items"></div>
+          <button class="btn-icon btn-sm" id="plan-bar-toggle" title="Expand plan">
+            <i data-lucide="chevron-up" class="lucide"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Plan card (detailed list, managed by Plan class, initially hidden) -->
+      <div class="plan-card hidden">
+        <div class="plan-card-header">
+          <i data-lucide="list-checks" class="lucide plan-card-icon"></i>
+          <span class="plan-card-label">Plan</span>
+          <span class="plan-card-count">0/0</span>
+          <i data-lucide="chevron-down" class="lucide plan-card-chevron"></i>
+        </div>
+        <div class="plan-card-body"></div>
+      </div>
+
+      <!-- Input area -->
+      <div id="input-area">
+        <div class="input-wrapper">
+          <!-- Mention bar -->
+          <div id="mention-bar" class="hidden">
+            <span class="mention-tag"><i data-lucide="at-sign" class="lucide"></i> Yim Agent</span>
+            <button class="mention-close"><i data-lucide="x" class="lucide"></i></button>
+          </div>
+          <!-- Textarea -->
+          <textarea
+            id="prompt-input"
+            placeholder="Give yim a task to work on..."
+            rows="1"
+          ></textarea>
+          <!-- Bottom toolbar -->
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <div class="input-model-selector-wrap" id="input-model-selector-wrap">
+                <button id="input-model-selector" class="input-model-selector-btn" title="Select model">
+                  <span id="input-model-name">Model</span>
+                  <i data-lucide="chevron-down" class="lucide input-model-chevron"></i>
+                </button>
+                <div id="input-model-dropdown" class="input-model-dropdown hidden"></div>
+              </div>
+              <button class="btn-icon input-btn" id="btn-mention" title="Mention">
+                <i data-lucide="at-sign" class="lucide"></i>
+              </button>
+              <button class="btn-icon input-btn" id="btn-attach" title="Attach file">
+                <i data-lucide="paperclip" class="lucide"></i>
+              </button>
+              <button class="btn-icon input-btn" id="btn-file-picker" title="Pick file">
+                <i data-lucide="folder" class="lucide"></i>
+              </button>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn-icon input-btn" id="btn-voice" title="Voice">
+                <i data-lucide="mic" class="lucide"></i>
+              </button>
+              <button class="btn-send" id="btn-send" title="Send">
+                <i data-lucide="arrow-up" class="lucide"></i>
+              </button>
+              <button class="btn-stop" id="btn-stop" title="Stop" style="display:none;">
+                <i data-lucide="square" class="lucide"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <!-- Quick action chips (welcome mode) -->
+        <div id="quick-chips">
+          <button class="quick-chip"><i data-lucide="code-2" class="lucide"></i> Code</button>
+          <button class="quick-chip"><i data-lucide="bar-chart-3" class="lucide"></i> Data Analysis</button>
+          <button class="quick-chip"><i data-lucide="rocket" class="lucide"></i> Develop app</button>
+          <button class="quick-chip"><i data-lucide="palette" class="lucide"></i> Design</button>
+          <button class="quick-chip"><i data-lucide="more-horizontal" class="lucide"></i> More</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tool details panel -->
+    <aside id="detail-panel" class="hidden">
+      <div id="detail-content"></div>
+    </aside>
+  </div>
+
+  <!-- Permission modal -->
+  <div id="permission-overlay" class="hidden">
+    <div id="permission-dialog">
+      <div class="modal-header">
+        <h3>Permission Required</h3>
+        <button class="btn-close-modal" id="btn-permission-close">
+          <i data-lucide="x" class="lucide"></i>
+        </button>
+      </div>
+      <p id="permission-tool-name"></p>
+      <p id="permission-reason"></p>
+      <div id="permission-timer"></div>
+      <div class="permission-buttons">
+        <button id="btn-deny" class="btn-secondary">Deny</button>
+        <button id="btn-allow" class="btn-primary">Allow</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-overlay" class="hidden">
+    <div id="settings-dialog">
+      <div class="settings-header">
+        <h3>Settings</h3>
+        <button class="btn-close-modal" id="btn-settings-close">
+          <i data-lucide="x" class="lucide"></i>
+        </button>
+      </div>
+      <div class="settings-layout">
+        <nav class="settings-nav" id="settings-nav">
+          <button class="settings-nav-item active" data-panel="general">
+            <i data-lucide="settings" class="lucide"></i>
+            <span>通用设置</span>
+          </button>
+          <button class="settings-nav-item" data-panel="model">
+            <i data-lucide="cpu" class="lucide"></i>
+            <span>模型配置</span>
+          </button>
+          <button class="settings-nav-item" data-panel="skills">
+            <i data-lucide="wand-2" class="lucide"></i>
+            <span>Skills</span>
+          </button>
+          <button class="settings-nav-item" data-panel="mcp">
+            <i data-lucide="plug-2" class="lucide"></i>
+            <span>MCP</span>
+          </button>
+          <button class="settings-nav-item" data-panel="agent">
+            <i data-lucide="bot" class="lucide"></i>
+            <span>Agent</span>
+          </button>
+          <button class="settings-nav-item" data-panel="about">
+            <i data-lucide="info" class="lucide"></i>
+            <span>关于</span>
+          </button>
+        </nav>
+        <div class="settings-content">
+          <div class="settings-panel active" id="panel-general"></div>
+          <div class="settings-panel" id="panel-model"></div>
+          <div class="settings-panel" id="panel-model-create"></div>
+          <div class="settings-panel" id="panel-skills"></div>
+          <div class="settings-panel" id="panel-mcp"></div>
+          <div class="settings-panel" id="panel-agent"></div>
+          <div class="settings-panel" id="panel-about"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="bundle.js"></script>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

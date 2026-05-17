@@ -1,0 +1,42 @@
+appId: com.yim.desktop
+productName: Yim
+copyright: "Copyright © 2025-2026 Dunimd Team"
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - renderer/**/*
+  - "!renderer/src/**/*"
+  - "!renderer/tsconfig.json"
+
+extraResources:
+  - from: ../yim
+    to: yim
+    filter:
+      - "**/*.py"
+  - from: ../native.py
+    to: native.py
+  - from: ../__init__.py
+    to: __init__.py
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: assets/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+mac:
+  target: dmg
+  icon: assets/icon.png
+
+linux:
+  target: AppImage
+  icon: assets/icon.png
