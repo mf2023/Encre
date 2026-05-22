@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from yim.logging_config import get_logger
+from yim.crypto import encrypt, decrypt
 
 logger = get_logger("yim.telemetry")
 
@@ -85,8 +86,13 @@ class YmiTelemetry:
             self._ensure_output()
         try:
             _path = os.path.join(self._output_dir, f"{self.session_id}.jsonl")
+            line = json.dumps(record, ensure_ascii=False)
+            try:
+                encrypted_line = encrypt(line)
+            except Exception:
+                encrypted_line = line
             with open(_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                f.write(encrypted_line + "\n")
         except Exception:
             pass  # never crash on telemetry write failure
 

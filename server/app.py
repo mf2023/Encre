@@ -27,6 +27,7 @@ import logging
 from pathlib import Path
 
 from yim.config import YmiConfig
+from yim.crypto import ensure_keyfile
 from yim.server.admin import handle_admin
 from yim.server.session_manager import SessionManager
 from yim.server.ws import YmiWSHandler
@@ -145,6 +146,9 @@ def run_server(
     config_file: str | None = None,
 ) -> None:
     """Convenience function to run the server synchronously."""
+    # Ensure the crypto keyfile exists before anything else
+    ensure_keyfile()
+
     if config_file:
         config = YmiConfig.from_file(config_file)
     elif config is None:

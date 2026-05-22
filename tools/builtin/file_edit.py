@@ -50,6 +50,7 @@ class YmiFileEditTool(YmiTool):
         },
         "required": ["file_path", "old_str", "new_str"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data"]
 
     async def execute(self, **kwargs: Any) -> str:
         file_path = kwargs.get("file_path", "")

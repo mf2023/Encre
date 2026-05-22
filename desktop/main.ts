@@ -129,6 +129,33 @@ ipcMain.handle("getAppPath", () => {
   return getDataDir();
 });
 
+// ── Crypto keyfile access ────────────────────────────────────────────────
+
+ipcMain.handle("readKeyfile", () => {
+  try {
+    const keyfilePath = path.join(
+      process.env.HOME || process.env.USERPROFILE || ".",
+      ".yim",
+      "keyfile"
+    );
+    if (!fs.existsSync(keyfilePath)) return null;
+    const buf = fs.readFileSync(keyfilePath);
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle("readMachineId", () => {
+  try {
+    const mid = fs.readFileSync("/etc/machine-id", "utf-8").trim();
+    if (mid && mid !== "uninitialized") return mid;
+  } catch {
+    /* fall through */
+  }
+  return require("os").hostname();
+});
+
 // Window controls
 ipcMain.handle("window-minimize", () => {
   mainWindow?.minimize();

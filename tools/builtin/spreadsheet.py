@@ -60,6 +60,7 @@ class YmiSpreadsheetTool(YmiTool):
         },
         "required": ["action", "file_path"],
     }
+    intents: ClassVar[list[str]] = ["data", "research"]
 
     async def execute(self, **kwargs: Any) -> str:
         action = kwargs.get("action", "read")

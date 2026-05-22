@@ -56,6 +56,7 @@ class YmiTodoTool(YmiTool):
         },
         "required": ["todos"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data", "research"]
 
     async def execute(self, **kwargs: Any) -> str:
         todos = kwargs.get("todos", [])

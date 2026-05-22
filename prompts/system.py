@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+# Copyright (c) 2025-2026 Wenze Wei. All Rights Reserved.
 #
 # This file is part of Yim.
 # The Yim project belongs to the Dunimd Team.
@@ -34,19 +34,23 @@ class PromptBlock:
     priority: int
     name: str
     content: str
+    condition: list[str] | None = None  # intents that trigger this block; None = always
 
     def with_context(self, ctx: dict[str, str]) -> PromptBlock:
         content = self.content
         for key, val in ctx.items():
             content = content.replace(f"{{{{{key}}}}}", val)
-        return PromptBlock(priority=self.priority, name=self.name, content=content)
+        return PromptBlock(
+            priority=self.priority, name=self.name, content=content,
+            condition=self.condition,
+        )
 
 
 # ── Core presets ────────────────────────────────────────────────────
 
 
 def _identity_block() -> PromptBlock:
-    return PromptBlock(priority=0, name="identity", content="""You are Yim, a helpful, thoughtful, and thorough AI assistant with access to a variety of tools.
+    return PromptBlock(priority=0, name="identity", condition=None, content="""You are Yim, a helpful, thoughtful, and thorough AI assistant with access to a variety of tools.
 
 ## Core Principles
 - Be honest: if you don't know something, say so. Never fabricate information.
@@ -61,21 +65,12 @@ def _identity_block() -> PromptBlock:
 
 
 def _tool_usage_block(tools: list[dict[str, Any]] | None = None) -> PromptBlock:
-    tool_text = ""
-    if tools:
-        lines: list[str] = []
-        for tool in tools:
-            func = tool.get("function", tool)
-            name = func.get("name", "unknown")
-            desc = func.get("description", "")
-            lines.append(f"- `{name}`: {desc}")
-        tool_text = "\n".join(lines)
+    """Tool usage rules block. Tool schemas are sent via the API tools parameter,
+    so we don't redundantly list them inline here."""
+    content = """## Tool Usage
 
-    content = f"""## Available Tools
-
-You have access to these tools. Use them as needed to accomplish the task.
-
-{tool_text}
+You have access to tools. Use them as needed to accomplish the task.
+Tool names and schemas are provided by the system — refer to those definitions.
 
 ### Tool Usage Rules
 - When a tool call is needed, emit exactly one tool call per block.
@@ -85,7 +80,11 @@ You have access to these tools. Use them as needed to accomplish the task.
 - For shell commands, be explicit and avoid interactive prompts (use flags like --yes for npx).
 - Check tool results carefully before proceeding — don't assume success.
 - Always verify your changes: read the file you edited, run the build after changes."""
-    return PromptBlock(priority=10, name="tool_usage", content=content)
+    return PromptBlock(
+        priority=10, name="tool_usage",
+        condition=["general", "coding", "research", "data"],
+        content=content,
+    )
 
 
 def _permission_block(mode: PermissionMode) -> PromptBlock:
@@ -102,7 +101,7 @@ def _permission_block(mode: PermissionMode) -> PromptBlock:
     else:  # default
         guidance = "Ask for permission before executing tools that modify files, run shell commands, or access the network."
 
-    return PromptBlock(priority=20, name="permission", content=f"""## Permission Mode
+    return PromptBlock(priority=20, name="permission", condition=None, content=f"""## Permission Mode
 
 Current mode: **{mode}**
 
@@ -110,7 +109,7 @@ Current mode: **{mode}**
 
 
 def _output_format_block() -> PromptBlock:
-    return PromptBlock(priority=30, name="output_format", content="""## Output Format
+    return PromptBlock(priority=30, name="output_format", condition=["general", "coding", "data"], content="""## Output Format
 
 ### Code Changes
 When making code changes:
@@ -134,7 +133,7 @@ When referencing specific functions or code:
 
 
 def _safety_block() -> PromptBlock:
-    return PromptBlock(priority=5, name="safety", content="""## Safety Rules
+    return PromptBlock(priority=5, name="safety", condition=None, content="""## Safety Rules
 
 - Never generate or guess URLs unless confident they are correct for the user's programming task.
 - Never execute commands that destroy data without explicit confirmation (rm -rf, format, dd, etc.).
@@ -145,7 +144,7 @@ def _safety_block() -> PromptBlock:
 
 
 def _task_management_block() -> PromptBlock:
-    return PromptBlock(priority=15, name="task_management", content="""## Task Management
+    return PromptBlock(priority=15, name="task_management", condition=["coding", "data"], content="""## Task Management
 
 For complex multi-step tasks, use the task tools to:
 1. Break down the work into discrete, trackable steps
@@ -157,7 +156,7 @@ Use the TODO tool to maintain a structured list of in-progress items. Keep todos
 
 
 def _specialty_coding_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", content="""## Software Engineering Mode
+    return PromptBlock(priority=100, name="specialty", condition=["coding"], content="""## Software Engineering Mode
 
 You are operating as an expert software engineer. Follow these additional principles:
 
@@ -187,7 +186,7 @@ You are operating as an expert software engineer. Follow these additional princi
 
 
 def _specialty_research_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", content="""## Research Mode
+    return PromptBlock(priority=100, name="specialty", condition=["research"], content="""## Research Mode
 
 You are operating as a research analyst. Follow these additional principles:
 - Gather information from multiple sources before drawing conclusions
@@ -200,7 +199,7 @@ You are operating as a research analyst. Follow these additional principles:
 
 
 def _specialty_data_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", content="""## Data Analysis Mode
+    return PromptBlock(priority=100, name="specialty", condition=["data"], content="""## Data Analysis Mode
 
 You are operating as a data analyst. Follow these additional principles:
 - Clean and validate data before analysis
@@ -213,7 +212,7 @@ You are operating as a data analyst. Follow these additional principles:
 
 
 def _specialty_general_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", content="""## General Assistant Mode
+    return PromptBlock(priority=100, name="specialty", condition=None, content="""## General Assistant Mode
 
 You are a versatile assistant capable of handling a wide range of tasks.
 - Be helpful, accurate, and thorough.
@@ -246,7 +245,10 @@ class YmiPromptBuilder:
         tools: list[dict[str, Any]] | None = None,
         specialty: str = "general",
         custom_instructions: str = "",
+        intents: list[str] | None = None,
     ) -> str:
+        intents = intents or ["general"]
+
         # Collect blocks
         blocks: dict[str, PromptBlock] = dict(self._blocks)
 
@@ -265,21 +267,36 @@ class YmiPromptBuilder:
 
         # Specialty block (if not overridden)
         if "specialty" not in blocks:
-            specialty_map = {
-                "coding": _specialty_coding_block,
-                "research": _specialty_research_block,
-                "data": _specialty_data_block,
-                "general": _specialty_general_block,
-            }
-            factory = specialty_map.get(specialty, _specialty_general_block)
-            blocks["specialty"] = factory()
+            specialty_map: dict[str, PromptBlock] = {}
+            if "coding" in intents:
+                specialty_map["coding"] = _specialty_coding_block()
+            if "research" in intents:
+                specialty_map["research"] = _specialty_research_block()
+            if "data" in intents:
+                specialty_map["data"] = _specialty_data_block()
+            # specific specialty takes priority, fall back to general
+            if specialty in specialty_map:
+                blocks["specialty"] = specialty_map[specialty]
+            elif specialty_map:
+                blocks["specialty"] = next(iter(specialty_map.values()))
+            else:
+                blocks["specialty"] = _specialty_general_block()
 
         # Custom instructions
         if custom_instructions:
-            blocks["custom"] = PromptBlock(priority=200, name="custom", content=custom_instructions)
+            blocks["custom"] = PromptBlock(
+                priority=200, name="custom", condition=None, content=custom_instructions,
+            )
 
-        # Assemble by priority
-        sorted_blocks = sorted(blocks.values(), key=lambda b: b.priority)
+        # Filter by condition, then sort by priority, then assemble
+        filtered: list[PromptBlock] = []
+        for block in blocks.values():
+            if block.condition is None:
+                filtered.append(block)
+            elif any(i in block.condition for i in intents):
+                filtered.append(block)
+
+        sorted_blocks = sorted(filtered, key=lambda b: b.priority)
         parts: list[str] = []
         for block in sorted_blocks:
             content = block.content.strip()

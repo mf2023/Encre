@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from yim.utils.types import PermissionMode, ThinkingConfig
+from yim.crypto import encrypt, decrypt
 
 
 @dataclass
@@ -45,11 +46,17 @@ class ModelConfig:
     enabled: bool = True
 
     def to_dict(self) -> dict[str, Any]:
+        encrypted_key = ""
+        if self.api_key:
+            try:
+                encrypted_key = encrypt(self.api_key)
+            except Exception:
+                encrypted_key = self.api_key
         return {
             "name": self.name,
             "model_id": self.model_id,
             "backend_type": self.backend_type,
-            "api_key": self.api_key,
+            "api_key": encrypted_key,
             "base_url": self.base_url,
             "max_tokens": self.max_tokens,
             "enabled": self.enabled,
@@ -57,11 +64,18 @@ class ModelConfig:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ModelConfig":
+        raw_key = str(d.get("api_key", ""))
+        decrypted_key = raw_key
+        if raw_key and raw_key != "":
+            try:
+                decrypted_key = decrypt(raw_key)
+            except Exception:
+                decrypted_key = raw_key
         return cls(
             name=str(d.get("name", "")),
             model_id=str(d.get("model_id", "")),
             backend_type=str(d.get("backend_type", "")),
-            api_key=str(d.get("api_key", "")),
+            api_key=decrypted_key,
             base_url=str(d.get("base_url", "")),
             max_tokens=int(d.get("max_tokens", 4096)),
             enabled=bool(d.get("enabled", True)),
@@ -218,6 +232,12 @@ class YmiConfig:
                 bk_key = key.split(".", 1)[1]
                 kwargs.setdefault("backend_kwargs", {})[bk_key] = value
 
+        if "api_key" in kwargs and kwargs["api_key"]:
+            try:
+                kwargs["api_key"] = decrypt(str(kwargs["api_key"]))
+            except Exception:
+                pass  # keep as-is if decryption fails (legacy plaintext)
+
         if "models" in kwargs and isinstance(kwargs["models"], list):
             kwargs["models"] = [
                 ModelConfig.from_dict(m) if isinstance(m, dict) else m
@@ -246,6 +266,15 @@ class YmiConfig:
                 ]
             elif has_models and field_info.name in self._MODEL_FLAT_FIELDS:
                 continue
+            elif field_info.name == "api_key":
+                raw = getattr(self, "api_key")
+                if raw:
+                    try:
+                        result["api_key"] = encrypt(raw)
+                    except Exception:
+                        result["api_key"] = raw
+                else:
+                    result["api_key"] = ""
             else:
                 result[field_info.name] = getattr(self, field_info.name)
         return result

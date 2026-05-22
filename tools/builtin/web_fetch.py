@@ -41,6 +41,7 @@ class YmiWebFetchTool(YmiTool):
         },
         "required": ["url"],
     }
+    intents: ClassVar[list[str]] = ["general", "research"]
 
     async def execute(self, **kwargs: Any) -> str:
         url = kwargs.get("url", "")

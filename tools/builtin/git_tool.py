@@ -49,6 +49,7 @@ class YmiGitTool(YmiTool):
         },
         "required": ["command"],
     }
+    intents: ClassVar[list[str]] = ["coding"]
 
     async def execute(self, **kwargs: Any) -> str:
         command = kwargs.get("command", "status")

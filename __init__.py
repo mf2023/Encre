@@ -38,6 +38,8 @@ from yim.backends.groq import GroqBackend
 from yim.backends.local import LocalBackend
 from yim.backends.bedrock import BedrockBackend
 from yim.backends.openai_compatible import OpenAICompatibleBackend
+from yim.crypto import encrypt, decrypt, encrypt_bytes, decrypt_bytes, ensure_keyfile
+from yim.rollback import YmiRollbackGit, CommitEntry
 from yim.config import YmiConfig, ModelConfig, get_data_dir
 from yim.hooks.system import YmiHookSystem
 from yim.hooks.types import HookStartedEvent, HookProgressEvent, HookResponseEvent
@@ -219,6 +221,13 @@ from yim.utils.types import (
 )
 
 __all__ = [
+    "encrypt",
+    "decrypt",
+    "encrypt_bytes",
+    "decrypt_bytes",
+    "ensure_keyfile",
+    "YmiRollbackGit",
+    "CommitEntry",
     "YmiAgent",
     "YmiGoalRunner",
     "YmiGoalLoop",

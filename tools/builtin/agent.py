@@ -44,6 +44,7 @@ class YmiAgentTool(YmiTool):
         },
         "required": ["prompt"],
     }
+    intents: ClassVar[list[str]] = ["coding", "system"]
 
     _parent_loop: Any = None  # Set by agent during initialization
 

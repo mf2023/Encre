@@ -10,6 +10,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   getAppPath: (): Promise<string> => ipcRenderer.invoke("getAppPath"),
 
+  // Crypto keyfile access for transport encryption
+  readKeyfile: (): Promise<ArrayBuffer | null> =>
+    ipcRenderer.invoke("readKeyfile"),
+
+  readMachineId: (): Promise<string> =>
+    ipcRenderer.invoke("readMachineId"),
+
   // Window controls
   windowMinimize: (): Promise<void> => ipcRenderer.invoke("window-minimize"),
   windowMaximize: (): Promise<void> => ipcRenderer.invoke("window-maximize"),

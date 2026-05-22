@@ -41,6 +41,7 @@ class YmiCronCreateTool(YmiTool):
         },
         "required": ["cron", "prompt"],
     }
+    intents: ClassVar[list[str]] = ["system"]
 
     _scheduler: Any = None  # Set by agent during initialization
 

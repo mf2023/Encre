@@ -98,6 +98,7 @@ class YmiBrowserTool(YmiTool):
         },
         "required": ["action"],
     }
+    intents: ClassVar[list[str]] = ["coding", "system"]
 
     def __init__(self, browser_session: YmiBrowserSession | None = None) -> None:
         self._session = browser_session

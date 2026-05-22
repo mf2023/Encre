@@ -33,11 +33,13 @@ from yim.config import YmiConfig
 from yim.evolution.config import EvolutionConfig
 from yim.logging_config import get_logger
 from yim.prompts.base import YmiPromptTemplate
+from yim.prompts.classifier import classify_intents
 
 logger = get_logger(__name__)
 from yim.recovery import ErrorRecoveryEngine, RetryableExecutor
 from yim.safety import YmiSafetyEngine
 from yim.utils.tokens import count_message_tokens
+from yim.rollback import YmiRollbackGit
 from yim.session import YmiSession
 from yim.telemetry import YmiTelemetry
 from yim.tools.registry import ToolRegistry
@@ -105,6 +107,7 @@ class YmiLoop:
         self.safety = safety or YmiSafetyEngine(config)
         self.compact_engine = YmiCompactEngine()
         self.prompt_builder = YmiPromptTemplate()
+        self.rollback = YmiRollbackGit()
         self._permission_event: asyncio.Event | None = None
         self._permission_decision: bool = False
         self._pending_tool_name: str = ""
@@ -131,23 +134,28 @@ class YmiLoop:
         if self.backend is None:
             yield create_finish("error", error="No backend configured. Send a 'configure' message first.")
             return
+        # Classify user intent for dynamic prompt assembly
+        intents = classify_intents(prompt)
+
         if system_prompt is None:
             tools = None
-            if self.backend.supports_tool_calling():
-                tools = self.tool_registry.get_openai_tools()
+            if self.backend.supports_tool_calling() and "conversation" not in intents:
+                tools = self.tool_registry.get_openai_tools_for_intents(intents)
             system_prompt = self.prompt_builder.build_system_prompt(
                 self.config.permission_mode,
                 tools=tools,
+                intents=intents,
             )
 
-        if not self.session.messages:
-            self.session.add_message("system", system_prompt)
+        # Ensure system message exists (may not if WS handler pre-added user msg)
+        has_system = any(m.get("role") == "system" for m in self.session.messages)
+        if not has_system:
+            self.session.messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Add user prompt if not a duplicate
+        last = self.session.messages[-1]
+        if last.get("role") != "user" or last.get("content") != prompt:
             self.session.add_message("user", prompt)
-        else:
-            # Avoid duplicate if WS handler already added the same user message for early persist
-            last = self.session.messages[-1]
-            if last.get("role") != "user" or last.get("content") != prompt:
-                self.session.add_message("user", prompt)
 
         await self.hook_system.emit_session_start()
         while not self.session.is_max_turns_reached():
@@ -168,8 +176,8 @@ class YmiLoop:
                 await self.hook_system.emit_post_compact(old_count, len(self.session.messages))
 
             tools = None
-            if self.backend.supports_tool_calling():
-                tools = self.tool_registry.get_openai_tools()
+            if self.backend.supports_tool_calling() and "conversation" not in intents:
+                tools = self.tool_registry.get_openai_tools_for_intents(intents)
 
             # Inject evolution guidance (skip first turn)
             if self.session.turn_count > 0:
@@ -576,6 +584,7 @@ class YmiLoop:
             )
 
             await self.hook_system.emit_turn_end(self.session.turn_count)
+            self.rollback.commit(self.session, f"turn_{self.session.turn_count}")
 
         await self.hook_system.emit_session_end()
         yield create_finish("max_tokens")

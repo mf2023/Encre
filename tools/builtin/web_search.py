@@ -45,6 +45,7 @@ class YmiWebSearchTool(YmiTool):
         },
         "required": ["query"],
     }
+    intents: ClassVar[list[str]] = ["general", "research"]
 
     async def execute(self, **kwargs: Any) -> str:
         query = kwargs.get("query", "")

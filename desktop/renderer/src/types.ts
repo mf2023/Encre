@@ -44,7 +44,9 @@ export type ServerEvent =
   | SkillsList
   | McpUpdated
   | AgentUpdated
-  | SearchResults;
+  | SearchResults
+  | RollbackLogEvent
+  | RollbackCheckoutEvent;
 
 export interface SearchResultEntry {
   kind: string;
@@ -175,7 +177,9 @@ export type ClientMessage =
   | ClientUpdateSkills
   | ClientUpdateMCP
   | ClientUpdateAgent
-  | ClientSearch;
+  | ClientSearch
+  | ClientRollbackLog
+  | ClientRollbackCheckout;
 
 export interface ClientRun {
   type: "run";
@@ -265,6 +269,17 @@ export interface ClientSearch {
   query: string;
 }
 
+export interface ClientRollbackLog {
+  type: "rollback_log";
+  session_id?: string;
+}
+
+export interface ClientRollbackCheckout {
+  type: "rollback_checkout";
+  session_id?: string;
+  commit_hash: string;
+}
+
 export interface ModelConfigMeta {
   name: string;
   model_id: string;
@@ -333,6 +348,28 @@ export interface SkillsList {
 export interface McpUpdated {
   type: "mcp_updated";
   mcp_servers: MCPServerConfig[];
+}
+
+export interface RollbackLogEvent {
+  type: "rollback_log";
+  session_id: string;
+  commits: RollbackCommitEntry[];
+}
+
+export interface RollbackCommitEntry {
+  hash: string;
+  parent: string | null;
+  timestamp: number;
+  turn_count: number;
+  message: string;
+}
+
+export interface RollbackCheckoutEvent {
+  type: "rollback_checkout";
+  session_id: string;
+  commit_hash: string;
+  messages: Array<{ role: string; content: string | Array<{ type: string; text: string }>; tool_calls?: any[] }>;
+  turn_count: number;
 }
 
 export interface AgentUpdated {

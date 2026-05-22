@@ -49,6 +49,7 @@ class YmiDatabaseTool(YmiTool):
         },
         "required": ["sql"],
     }
+    intents: ClassVar[list[str]] = ["coding", "data"]
 
     async def execute(self, **kwargs: Any) -> str:
         sql = kwargs.get("sql", "")

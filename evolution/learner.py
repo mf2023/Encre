@@ -28,6 +28,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from yim.crypto import encrypt, decrypt
+
 
 @dataclass
 class SuccessRecord:
@@ -336,16 +338,27 @@ class YmiEvolutionLearner:
             "successes": [r.to_dict() for r in self._successes],
             "errors": [r.to_dict() for r in self._errors],
         }
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        try:
+            payload = encrypt(payload)
+        except Exception:
+            pass
         os.makedirs(os.path.dirname(self._storage_path), exist_ok=True)
         with open(self._storage_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write(payload)
 
     def load(self) -> bool:
         if not os.path.exists(self._storage_path):
             return False
         try:
             with open(self._storage_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                raw = f.read().strip()
+            if raw and not raw.startswith("{"):
+                try:
+                    raw = decrypt(raw)
+                except Exception:
+                    pass
+            data = json.loads(raw)
             self._successes = [SuccessRecord.from_dict(d) for d in data.get("successes", [])]
             self._errors = [ErrorRecord.from_dict(d) for d in data.get("errors", [])]
             self._rebuild_success_index()

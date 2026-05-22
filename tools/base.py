@@ -29,6 +29,7 @@ class YmiTool(ABC):
     name: ClassVar[str]
     description: ClassVar[str]
     input_schema: ClassVar[dict[str, Any]]
+    intents: ClassVar[list[str]] = ["general"]
 
     @abstractmethod
     async def execute(self, **kwargs: Any) -> str:

@@ -20,6 +20,7 @@ class YmiCronListTool(YmiTool):
         "properties": {},
         "required": [],
     }
+    intents: ClassVar[list[str]] = ["system"]
 
     _scheduler: Any = None  # Set by agent during initialization
 

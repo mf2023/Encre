@@ -37,6 +37,8 @@ from yim.server.protocol import (
     ClientListModels,
     ClientListSessions,
     ClientNewSession,
+    ClientRollbackLog,
+    ClientRollbackCheckout,
     ClientSearch,
     ClientSetActiveModel,
     ClientPing,
@@ -59,9 +61,11 @@ from yim.server.protocol import (
     encode_models_updated,
     encode_permission_request,
     encode_pong,
+    encode_rollback_checkout,
+    encode_rollback_log,
+    encode_search_results,
     encode_session_ready,
     encode_sessions_list,
-    encode_search_results,
     encode_skills_list,
     encode_skills_updated,
     encode_telemetry,
@@ -349,6 +353,36 @@ class YmiWSHandler:
                 results = self._do_search(msg.query)
                 await ws.send(encode_search_results(results))
 
+            elif isinstance(msg, ClientRollbackLog):
+                sid = msg.session_id or self._current_session_id
+                if not sid:
+                    await ws.send(encode_error("No active session", "no_session"))
+                    continue
+                from yim.rollback import YmiRollbackGit
+                rb = YmiRollbackGit()
+                commits = rb.tree(sid)
+                await ws.send(encode_rollback_log(sid, commits))
+
+            elif isinstance(msg, ClientRollbackCheckout):
+                sid = msg.session_id or self._current_session_id
+                if not sid or not msg.commit_hash:
+                    await ws.send(encode_error("Missing session_id or commit_hash", "invalid_request"))
+                    continue
+                session = self._manager.load_or_create_session(sid, config=self._default_config)
+                from yim.rollback import YmiRollbackGit
+                rb = YmiRollbackGit()
+                ok = rb.checkout(session.agent.loop.session, msg.commit_hash)
+                if not ok:
+                    await ws.send(encode_error(f"Commit not found: {msg.commit_hash[:8]}...", "not_found"))
+                    continue
+                self._current_session_id = sid
+                self._info = session
+                self._manager._save_session(session)
+                msgs = [m for m in session.agent.loop.session.messages if m.get("role") != "system"]
+                await ws.send(encode_rollback_checkout(
+                    sid, msg.commit_hash, msgs, session.agent.loop.session.turn_count,
+                ))
+
             elif isinstance(msg, ClientResume):
                 if msg.session_id:
                     session = self._manager.load_or_create_session(msg.session_id, config=self._default_config)
@@ -360,37 +394,13 @@ class YmiWSHandler:
                 await ws.send(encode_session_ready(session.session_id, messages=msgs))
 
     def _list_all_sessions(self) -> list[dict[str, Any]]:
+        """List sessions — combines in‑memory sessions with on‑disk index."""
         result = self._manager.list_sessions()
-        sessions_dir = self._manager._get_sessions_dir()
-        try:
-            import os
-            for fname in os.listdir(sessions_dir):
-                if not fname.endswith(".json"):
-                    continue
-                sid = fname[:-5]
-                if any(s["session_id"] == sid for s in result):
-                    continue
-                fpath = os.path.join(sessions_dir, fname)
-                try:
-                    import json
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    meta = data.get("_session_meta", {})
-                    raw_msgs = data.get("messages", [])
-                    user_msgs = [m for m in raw_msgs if m.get("role") != "system"]
-                    result.append({
-                        "session_id": sid,
-                        "created_at": meta.get("created_at", 0),
-                        "last_active": meta.get("last_active", 0),
-                        "is_running": False,
-                        "metadata": meta.get("metadata", {}),
-                        "preview": self._extract_preview(data),
-                        "message_count": len(user_msgs),
-                    })
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        index_entries = self._manager.query_index()
+        active_ids = {s["session_id"] for s in result}
+        for entry in index_entries:
+            if entry["session_id"] not in active_ids:
+                result.append(entry)
         result.sort(key=lambda s: s.get("last_active", s.get("created_at", 0)), reverse=True)
         result = [s for s in result if (s.get("message_count") or 0) > 0]
         return result
@@ -416,43 +426,29 @@ class YmiWSHandler:
         q = query.strip().lower()
         if not q:
             return results
-        import os, json
+        import os
 
         sessions_dir = self._manager._get_sessions_dir()
+        from yim.session import YmiSession
         try:
-            for fname in os.listdir(sessions_dir):
-                if not fname.endswith(".json") or len(results) >= 80:
+            for entry in os.scandir(sessions_dir):
+                if len(results) >= 80:
+                    break
+                if not entry.is_dir() or entry.name.startswith("."):
                     continue
-                fpath = os.path.join(sessions_dir, fname)
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    messages = data.get("messages", [])
-                    for msg in messages:
-                        role = msg.get("role", "")
-                        if role not in ("user", "assistant"):
-                            continue
-                        content = msg.get("content", "")
-                        text = ""
-                        if isinstance(content, str):
-                            text = content
-                        elif isinstance(content, list):
-                            text = " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
-                        if q in text.lower():
-                            idx = text.lower().index(q)
-                            start = max(0, idx - 40)
-                            end = min(len(text), idx + len(q) + 80)
-                            snippet = text[start:end].strip()
-                            results.append({
-                                "kind": "conversation",
-                                "session_id": fname[:-5],
-                                "role": role,
-                                "snippet": snippet[:120],
-                                "preview": self._extract_preview(data),
-                            })
-                            break
-                except Exception:
-                    continue
+                sid = entry.name
+                preview = YmiSession.load_preview(entry.path) or ""
+                turn_matches = YmiSession.search_turns(entry.path, q)
+                for tm in turn_matches:
+                    results.append({
+                        "kind": "conversation",
+                        "session_id": sid,
+                        "role": tm["role"],
+                        "snippet": tm["snippet"],
+                        "preview": preview or "Empty session",
+                    })
+                    if len(results) >= 80:
+                        break
         except Exception:
             pass
 

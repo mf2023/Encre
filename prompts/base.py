@@ -57,12 +57,14 @@ class YmiPromptTemplate(YmiBasePrompt):
         mode: PermissionMode,
         tools: list[dict[str, Any]] | None = None,
         custom_instructions: str = "",
+        intents: list[str] | None = None,
     ) -> str:
         return self._builder.build(
             mode=mode,
             tools=tools,
             specialty=self._specialty,
             custom_instructions=custom_instructions,
+            intents=intents,
         )
 
     def build_tool_instructions(self, tool_names: list[str]) -> str:

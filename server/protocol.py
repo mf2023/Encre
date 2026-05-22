@@ -25,6 +25,47 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Literal, Union
 
+from yim.crypto import encrypt, decrypt
+
+# ── Transport‑layer encryption wrappers ────────────────────────────
+
+def _parse_client_encrypted(raw: str | bytes) -> str | bytes | None:
+    """Decrypt an encrypted client message, returning the raw JSON string.
+
+    If the payload is valid base64 ciphertext, decrypt it.  Otherwise
+    treat the message as legacy plaintext (backwards‑compatible).
+    """
+    if not raw:
+        return raw
+    decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+
+    # A valid base64 ciphertext from AES‑GCM is always at least
+    # 12 (nonce) + 1 (min ciphertext) + 16 (tag) ≈ 30 bytes ≈ 40 base64 chars.
+    # Messages starting with "{" are almost certainly plain JSON.
+    stripped = decoded.strip()
+    if not stripped:
+        return decoded
+    if stripped.startswith("{"):
+        return decoded  # legacy plaintext
+
+    try:
+        return decrypt(stripped)
+    except Exception:
+        # Decryption failed — return the raw payload so the upper
+        # layer can still attempt to parse it as plaintext (or fail gracefully).
+        return decoded
+
+
+def encode_server_encrypted(msg_type: str, **kwargs: Any) -> str:
+    """Encode and encrypt a server‑to‑client message.
+
+    The message is serialized as JSON, encrypted via AES‑256‑GCM, and
+    returned as a base64 ciphertext string.
+    """
+    payload = json.dumps({"type": msg_type, **kwargs}, ensure_ascii=False)
+    return encrypt(payload)
+
+
 # ── Client → Server message types ──────────────────────────────────
 
 ClientMessageType = Literal[
@@ -33,6 +74,7 @@ ClientMessageType = Literal[
     "get_config", "update_models", "set_active_model", "delete_model",
     "update_skills", "update_mcp", "update_agent",
     "search",
+    "rollback_log", "rollback_checkout",
 ]
 
 
@@ -253,6 +295,34 @@ class ClientSearch:
         )
 
 
+@dataclass
+class ClientRollbackLog:
+    type: str = "rollback_log"
+    session_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ClientRollbackLog:
+        return cls(
+            type="rollback_log",
+            session_id=d.get("session_id", ""),
+        )
+
+
+@dataclass
+class ClientRollbackCheckout:
+    type: str = "rollback_checkout"
+    session_id: str = ""
+    commit_hash: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ClientRollbackCheckout:
+        return cls(
+            type="rollback_checkout",
+            session_id=d.get("session_id", ""),
+            commit_hash=d.get("commit_hash", ""),
+        )
+
+
 ClientMessage = Union[
     ClientRun,
     ClientRespondPermission,
@@ -271,14 +341,17 @@ ClientMessage = Union[
     ClientUpdateMCP,
     ClientUpdateAgent,
     ClientSearch,
+    ClientRollbackLog,
+    ClientRollbackCheckout,
 ]
 
 
 def parse_client_message(raw: str | bytes) -> ClientMessage | None:
+    decrypted = _parse_client_encrypted(raw)
     try:
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8")
-        data = json.loads(raw)
+        if isinstance(decrypted, bytes):
+            decrypted = decrypted.decode("utf-8")
+        data = json.loads(decrypted)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None
 
@@ -301,6 +374,8 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "update_mcp": ClientUpdateMCP,
         "update_agent": ClientUpdateAgent,
         "search": ClientSearch,
+        "rollback_log": ClientRollbackLog,
+        "rollback_checkout": ClientRollbackCheckout,
     }
     cls = parsers.get(msg_type)
     if cls is None:
@@ -335,6 +410,8 @@ ServerMessageType = Literal[
     "mcp_updated",
     "agent_updated",
     "search_results",
+    "rollback_log",
+    "rollback_checkout",
 ]
 
 
@@ -348,7 +425,7 @@ def encode_server_message(
     msg_type: ServerMessageType,
     **kwargs: Any,
 ) -> str:
-    return json.dumps(_make_message(msg_type, **kwargs), ensure_ascii=False)
+    return encode_server_encrypted(msg_type, **kwargs)
 
 
 # ── Convenience encoders ────────────────────────────────────────────
@@ -451,3 +528,11 @@ def encode_agent_updated(config: dict[str, Any]) -> str:
 
 def encode_search_results(results: list[dict[str, Any]]) -> str:
     return encode_server_message("search_results", results=results)
+
+
+def encode_rollback_log(session_id: str, commits: list[dict[str, Any]]) -> str:
+    return encode_server_message("rollback_log", session_id=session_id, commits=commits)
+
+
+def encode_rollback_checkout(session_id: str, commit_hash: str, messages: list[dict[str, Any]], turn_count: int) -> str:
+    return encode_server_message("rollback_checkout", session_id=session_id, commit_hash=commit_hash, messages=messages, turn_count=turn_count)

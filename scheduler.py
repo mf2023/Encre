@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 from yim.config import YmiConfig
 from yim.logging_config import get_logger
+from yim.crypto import encrypt, decrypt
 
 logger = get_logger("yim.scheduler")
 
@@ -423,15 +424,26 @@ class YmiScheduler:
             return
         self._durable_path.parent.mkdir(parents=True, exist_ok=True)
         data = [j.to_dict() for j in self._jobs.values()]
+        payload = json.dumps(data, indent=2, ensure_ascii=False)
+        try:
+            payload = encrypt(payload)
+        except Exception:
+            pass
         with open(self._durable_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write(payload)
 
     def _load(self) -> None:
         if not self._durable_path or not self._durable_path.exists():
             return
         try:
             with open(self._durable_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                raw = f.read().strip()
+            if raw and not raw.startswith("["):
+                try:
+                    raw = decrypt(raw)
+                except Exception:
+                    pass
+            data = json.loads(raw)
             for item in data:
                 job = ScheduledJob.from_dict(item)
                 self._jobs[job.id] = job

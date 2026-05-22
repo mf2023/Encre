@@ -45,6 +45,7 @@ class YmiGlobTool(YmiTool):
         },
         "required": ["pattern"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data"]
 
     async def execute(self, **kwargs: Any) -> str:
         pattern = kwargs.get("pattern", "")

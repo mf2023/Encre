@@ -76,6 +76,7 @@ class YmiNotebookTool(YmiTool):
         },
         "required": ["action"],
     }
+    intents: ClassVar[list[str]] = ["data"]
 
     _session: YmiNotebookSession | None = None
 

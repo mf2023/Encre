@@ -25,6 +25,7 @@ import base64
 import copy
 import json
 import os
+import pathlib
 import time
 import uuid
 from collections import OrderedDict
@@ -293,6 +294,17 @@ class YmiSession:
             "metadata": self.metadata,
         }
 
+    def to_meta_dict(self) -> dict[str, Any]:
+        """Session metadata only — lightweight, no messages."""
+        return {
+            "id": self.id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "tool_call_count": self.tool_call_count,
+            "turn_count": self.turn_count,
+            "metadata": self.metadata,
+        }
+
     @classmethod
     def from_dict(cls, data: dict[str, Any], config: YmiConfig) -> YmiSession:
         session = cls(config)
@@ -305,17 +317,255 @@ class YmiSession:
         session.metadata = data.get("metadata", {})
         return session
 
+    # ── legacy single-file I/O (backwards compat) ──────────────────────
+
     def save_to_json(self, filepath: str) -> None:
         import json
+        from yim.crypto import encrypt
+        payload = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+        try:
+            encrypted = encrypt(payload)
+        except Exception:
+            encrypted = payload
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+            f.write(encrypted)
 
     @classmethod
     def load_from_json(cls, filepath: str, config: YmiConfig) -> YmiSession:
         import json
+        from yim.crypto import decrypt
         with open(filepath, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw = f.read().strip()
+        if not raw:
+            raise ValueError("Empty session file")
+        if not raw.startswith("{"):
+            try:
+                raw = decrypt(raw)
+            except Exception:
+                pass
+        data = json.loads(raw)
         return cls.from_dict(data, config)
+
+    # ── directory‑based I/O (one turn = one file) ──────────────────────
+
+    def save_to_dir(self, dirpath: str) -> None:
+        """Write the full session into '{dirpath}/turn_NNNN.json' files.
+
+        Messages are partitioned by turn: turn 0 = system + first user,
+        turnout N = assistant + tool_calls + tool_results + guidance.
+        """
+        import json
+        from yim.crypto import encrypt
+        d = pathlib.Path(dirpath)
+        d.mkdir(parents=True, exist_ok=True)
+
+        # Group messages by turn
+        turns = self._partition_messages_into_turns()
+        for idx, msgs in enumerate(turns):
+            fpath = d / f"turn_{idx:04d}.json"
+            payload = json.dumps(msgs, ensure_ascii=False, separators=(",", ":"))
+            try:
+                payload = encrypt(payload)
+            except Exception:
+                pass
+            fpath.write_text(payload, encoding="utf-8")
+
+        # Write meta
+        self._save_meta_file(d)
+
+    @classmethod
+    def load_from_dir(cls, dirpath: str, config: YmiConfig) -> "YmiSession":
+        """Load a session from a directory of turn files."""
+        import json
+        from yim.crypto import decrypt
+        d = pathlib.Path(dirpath)
+        if not d.is_dir():
+            raise ValueError(f"Session directory not found: {dirpath}")
+
+        # Read meta first
+        meta_path = d / "meta.json"
+        session = cls(config)
+        if meta_path.exists():
+            raw = meta_path.read_text(encoding="utf-8").strip()
+            if raw and not raw.startswith("{"):
+                try:
+                    raw = decrypt(raw)
+                except Exception:
+                    pass
+            try:
+                meta = json.loads(raw)
+                session.id = meta.get("id", session.id)
+                session.created_at = meta.get("created_at", session.created_at)
+                session.updated_at = meta.get("updated_at", session.updated_at)
+                session.tool_call_count = meta.get("tool_call_count", 0)
+                session.turn_count = meta.get("turn_count", 0)
+                session.metadata = meta.get("metadata", {})
+            except json.JSONDecodeError:
+                pass
+
+        # Read turn files in order
+        turn_files = sorted(
+            [p for p in d.iterdir() if p.name.startswith("turn_") and p.suffix == ".json"],
+            key=lambda p: p.name,
+        )
+        messages: list[dict[str, Any]] = []
+        for fpath in turn_files:
+            raw = fpath.read_text(encoding="utf-8").strip()
+            if not raw:
+                continue
+            if not raw.startswith("["):
+                try:
+                    raw = decrypt(raw)
+                except Exception:
+                    pass
+            try:
+                turn_msgs = json.loads(raw)
+                if isinstance(turn_msgs, list):
+                    messages.extend(turn_msgs)
+            except json.JSONDecodeError:
+                continue
+
+        session.messages = messages
+        return session
+
+    @staticmethod
+    def load_preview(dirpath: str) -> str | None:
+        """Read only the first user message for preview (fast)."""
+        import json
+        from yim.crypto import decrypt
+        d = pathlib.Path(dirpath)
+        for fpath in sorted(d.iterdir()):
+            if not fpath.name.startswith("turn_"):
+                continue
+            raw = fpath.read_text(encoding="utf-8").strip()
+            if raw and not raw.startswith("["):
+                try:
+                    raw = decrypt(raw)
+                except Exception:
+                    pass
+            try:
+                msgs = json.loads(raw)
+                if isinstance(msgs, list):
+                    for m in msgs:
+                        if m.get("role") == "user":
+                            c = m.get("content", "")
+                            if isinstance(c, str) and c.strip():
+                                return c.strip()[:80]
+                            elif isinstance(c, list):
+                                for b in c:
+                                    if isinstance(b, dict) and b.get("type") == "text" and b.get("text", "").strip():
+                                        return b["text"].strip()[:80]
+            except json.JSONDecodeError:
+                continue
+        return None
+
+    @staticmethod
+    def search_turns(dirpath: str, query_lower: str) -> list[dict[str, Any]]:
+        """Search all turn files in a session directory for a query string."""
+        import json
+        from yim.crypto import decrypt
+        d = pathlib.Path(dirpath)
+        results: list[dict[str, Any]] = []
+        for fpath in sorted(d.iterdir()):
+            if not fpath.name.startswith("turn_"):
+                continue
+            raw = fpath.read_text(encoding="utf-8").strip()
+            if raw and not raw.startswith("["):
+                try:
+                    raw = decrypt(raw)
+                except Exception:
+                    pass
+            try:
+                msgs = json.loads(raw)
+                if isinstance(msgs, list):
+                    for m in msgs:
+                        role = m.get("role", "")
+                        if role not in ("user", "assistant"):
+                            continue
+                        content = m.get("content", "")
+                        text = ""
+                        if isinstance(content, str):
+                            text = content
+                        elif isinstance(content, list):
+                            text = " ".join(
+                                b.get("text", "") for b in content
+                                if isinstance(b, dict) and b.get("type") == "text"
+                            )
+                        if query_lower in text.lower():
+                            idx = text.lower().index(query_lower)
+                            start = max(0, idx - 40)
+                            end = min(len(text), idx + len(query_lower) + 80)
+                            results.append({
+                                "role": role,
+                                "snippet": text[start:end].strip()[:120],
+                            })
+                            break
+            except json.JSONDecodeError:
+                continue
+        return results
+
+    @staticmethod
+    def read_meta(dirpath: str) -> dict[str, Any] | None:
+        """Read session meta from a turn directory."""
+        import json
+        from yim.crypto import decrypt
+        mp = pathlib.Path(dirpath) / "meta.json"
+        if not mp.exists():
+            return None
+        raw = mp.read_text(encoding="utf-8").strip()
+        if raw and not raw.startswith("{"):
+            try:
+                raw = decrypt(raw)
+            except Exception:
+                pass
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+
+    def _save_meta_file(self, dirpath: pathlib.Path) -> None:
+        import json
+        from yim.crypto import encrypt
+        payload = json.dumps(self.to_meta_dict(), ensure_ascii=False, separators=(",", ":"))
+        try:
+            payload = encrypt(payload)
+        except Exception:
+            pass
+        (dirpath / "meta.json").write_text(payload, encoding="utf-8")
+
+    def _partition_messages_into_turns(self) -> list[list[dict[str, Any]]]:
+        """Split self.messages into per‑turn chunks.
+
+        Turn 0: system + first user message.
+        Turn N: assistant + tool_results + user guidance messages.
+        """
+        if not self.messages:
+            return []
+
+        turns: list[list[dict[str, Any]]] = []
+        current: list[dict[str, Any]] = []
+        saw_user = False
+
+        for msg in self.messages:
+            role = msg.get("role", "")
+            if role == "system" and not saw_user:
+                current.append(msg)
+                continue
+            if role == "user" and not saw_user:
+                current.append(msg)
+                saw_user = True
+                continue
+            if role == "assistant":
+                # New assistant message → start a new turn
+                if current and saw_user:
+                    turns.append(current)
+                    current = []
+            current.append(msg)
+
+        if current:
+            turns.append(current)
+
+        return turns
 
 
 def _guess_image_mime(path: str) -> str:

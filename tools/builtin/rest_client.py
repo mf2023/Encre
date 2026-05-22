@@ -59,6 +59,7 @@ class YmiRESTTool(YmiTool):
         },
         "required": ["method", "url"],
     }
+    intents: ClassVar[list[str]] = ["coding", "system"]
 
     async def execute(self, **kwargs: Any) -> str:
         method = kwargs.get("method", "GET")

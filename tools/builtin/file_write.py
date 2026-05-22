@@ -44,6 +44,7 @@ class YmiFileWriteTool(YmiTool):
         },
         "required": ["file_path", "content"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data"]
 
     async def execute(self, **kwargs: Any) -> str:
         file_path = kwargs.get("file_path", "")

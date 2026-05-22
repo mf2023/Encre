@@ -45,6 +45,7 @@ class YmiTaskCreateTool(YmiTool):
         },
         "required": ["name", "task_type", "prompt"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data", "research"]
 
     async def execute(self, **kwargs: Any) -> str:
         name = kwargs.get("name", "")

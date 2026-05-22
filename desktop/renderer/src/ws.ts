@@ -21,6 +21,7 @@
  */
 
 import { ClientMessage, ServerEvent } from "./types.js";
+import { initCrypto, encrypt, decrypt, isReady } from "./crypto.js";
 
 type EventHandler = (event: ServerEvent) => void;
 
@@ -30,9 +31,16 @@ let ws: WebSocket | null = null;
 let handler: EventHandler | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
+let _cryptoInitDone = false;
 
 export async function connect(onEvent: EventHandler): Promise<void> {
   handler = onEvent;
+
+  // Initialise crypto layer before the first connection
+  if (!_cryptoInitDone) {
+    await initCrypto();
+    _cryptoInitDone = true;
+  }
 
   const url = `ws://localhost:${WS_PORT}/ws`;
 
@@ -44,9 +52,25 @@ export async function connect(onEvent: EventHandler): Promise<void> {
       startPing();
     });
 
-    ws.addEventListener("message", (evt: MessageEvent<string>) => {
+    ws.addEventListener("message", async (evt: MessageEvent<string>) => {
       try {
-        const event = JSON.parse(evt.data) as ServerEvent;
+        let raw = evt.data;
+        let event: ServerEvent;
+
+        if (isReady() && raw && typeof raw === "string" && !raw.startsWith("{")) {
+          // Encrypted ciphertext — decrypt then parse
+          try {
+            const decrypted = await decrypt(raw);
+            event = JSON.parse(decrypted) as ServerEvent;
+          } catch {
+            // Fallback: try plaintext parse
+            event = JSON.parse(raw) as ServerEvent;
+          }
+        } else {
+          // Plaintext (legacy or crypto unavailable)
+          event = JSON.parse(raw) as ServerEvent;
+        }
+
         handler?.(event);
       } catch {
         /* ignore malformed */
@@ -66,9 +90,15 @@ export async function connect(onEvent: EventHandler): Promise<void> {
   }
 }
 
-export function send(msg: ClientMessage): void {
+export async function send(msg: ClientMessage): Promise<void> {
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
+    const payload = JSON.stringify(msg);
+    if (isReady()) {
+      const encrypted = await encrypt(payload);
+      ws.send(encrypted);
+    } else {
+      ws.send(payload);
+    }
   }
 }
 

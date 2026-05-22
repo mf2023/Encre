@@ -24,6 +24,7 @@
 import asyncio
 import json
 import os
+import pathlib
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -31,6 +32,7 @@ from typing import Any
 
 from yim.agent import YmiAgent
 from yim.config import YmiConfig, get_data_dir
+from yim.crypto import encrypt, decrypt
 from yim.session import YmiSession
 from yim.tools.registry import ToolRegistry
 from yim.tools.builtin import (
@@ -112,13 +114,103 @@ class SessionManager:
         self._idle_timeout = idle_timeout
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._sessions_dir: str | None = None
+        self._index: dict[str, dict[str, Any]] = {}
+
+    # ── paths ───────────────────────────────────────────────────────────────
 
     def _get_sessions_dir(self) -> str:
         if self._sessions_dir is None:
             _dir = get_data_dir() / "sessions"
             _dir.mkdir(parents=True, exist_ok=True)
             self._sessions_dir = str(_dir)
+            self._load_index()
         return self._sessions_dir
+
+    def _index_path(self) -> pathlib.Path:
+        return pathlib.Path(self._get_sessions_dir()) / "index.json"
+
+    def _session_dir_path(self, session_id: str) -> pathlib.Path:
+        return pathlib.Path(self._get_sessions_dir()) / session_id
+
+    # ── index ───────────────────────────────────────────────────────────────
+
+    def _load_index(self) -> None:
+        ip = self._index_path()
+        try:
+            if ip.exists():
+                raw = ip.read_text(encoding="utf-8").strip()
+                if raw and not raw.startswith("{"):
+                    try:
+                        raw = decrypt(raw)
+                    except Exception:
+                        pass
+                self._index = json.loads(raw)
+                if not isinstance(self._index, dict):
+                    self._index = {}
+        except Exception:
+            self._index = {}
+
+    def _save_index(self) -> None:
+        ip = self._index_path()
+        try:
+            payload = json.dumps(self._index, ensure_ascii=False, separators=(",", ":"))
+            encrypted = encrypt(payload)
+            ip.write_text(encrypted, encoding="utf-8")
+        except Exception:
+            pass
+
+    def _index_add(self, info: SessionInfo, preview: str = "") -> None:
+        sess = info.agent.session
+        real_msgs = [m for m in sess.messages if m.get("role") != "system"]
+        self._index[info.session_id] = {
+            "session_id": info.session_id,
+            "created_at": info.created_at,
+            "last_active": info.last_active,
+            "preview": preview,
+            "message_count": len([m for m in real_msgs if m.get("role") not in ("tool", )]),
+            "turn_count": sess.turn_count,
+        }
+
+    def _index_remove(self, session_id: str) -> None:
+        self._index.pop(session_id, None)
+
+    def _bootstrap_index_from_disk(self) -> None:
+        """Scan sessions_dir for existing session directories and rebuild index."""
+        try:
+            sessions_dir = self._get_sessions_dir()
+            for entry in os.scandir(sessions_dir):
+                if not entry.is_dir() or entry.name.startswith("."):
+                    continue
+                sid = entry.name
+                if sid in self._index:
+                    continue
+                meta = YmiSession.read_meta(entry.path)
+                if meta is None:
+                    meta_path = os.path.join(entry.path, "meta.json")
+                    mtime = os.path.getmtime(meta_path) if os.path.exists(meta_path) else time.time()
+                    self._index[sid] = {
+                        "session_id": sid,
+                        "created_at": mtime,
+                        "last_active": mtime,
+                        "preview": "",
+                        "message_count": 0,
+                        "turn_count": 0,
+                    }
+                    continue
+                preview = YmiSession.load_preview(entry.path) or ""
+                self._index[sid] = {
+                    "session_id": sid,
+                    "created_at": meta.get("created_at", time.time()),
+                    "last_active": meta.get("updated_at", time.time()),
+                    "preview": preview,
+                    "message_count": meta.get("turn_count", 0),
+                    "turn_count": meta.get("turn_count", 0),
+                }
+            self._save_index()
+        except Exception:
+            pass
+
+    # ── session CRUD ────────────────────────────────────────────────────────
 
     def _save_session(self, info: SessionInfo) -> None:
         import logging
@@ -128,17 +220,13 @@ class SessionManager:
             real_msgs = [m for m in sess.messages if m.get("role") != "system"]
             if not real_msgs:
                 return
-            session_path = os.path.join(self._get_sessions_dir(), f"{info.session_id}.json")
-            data = sess.to_dict()
-            data["messages"] = real_msgs
-            data["_session_meta"] = {
-                "session_id": info.session_id,
-                "created_at": info.created_at,
-                "last_active": info.last_active,
-                "metadata": info.metadata,
-            }
-            with open(session_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+
+            dir_path = self._session_dir_path(info.session_id)
+            sess.save_to_dir(str(dir_path))
+
+            # Update index
+            self._index_add(info)
+            self._save_index()
         except Exception:
             _log.exception("Failed to save session %s", info.session_id)
 
@@ -159,27 +247,28 @@ class SessionManager:
         existing = self._sessions.get(session_id)
         if existing is not None:
             return existing
-        import json, os
-        fpath = os.path.join(self._get_sessions_dir(), f"{session_id}.json")
-        if not os.path.exists(fpath):
-            return self.create_session(config=config)
-        try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            cfg = config or YmiConfig()
-            tool_registry = _create_default_tool_registry()
-            agent = YmiAgent(config=cfg, tool_registry=tool_registry)
-            agent.telemetry.session_id = session_id
-            agent.session = YmiSession.from_dict(data, cfg)
-            agent.loop.session = agent.session
-            info = SessionInfo(session_id=session_id, agent=agent)
-            meta = data.get("_session_meta", {})
-            info.created_at = meta.get("created_at", time.time())
-            info.last_active = meta.get("last_active", time.time())
-            self._sessions[session_id] = info
-            return info
-        except Exception:
-            return self.create_session(config=config)
+
+        dir_path = self._session_dir_path(session_id)
+        if dir_path.is_dir():
+            try:
+                cfg = config or YmiConfig()
+                tool_registry = _create_default_tool_registry()
+                agent = YmiAgent(config=cfg, tool_registry=tool_registry)
+                agent.telemetry.session_id = session_id
+                agent.session = YmiSession.load_from_dir(str(dir_path), cfg)
+                agent.loop.session = agent.session
+                agent.telemetry.session_id = session_id
+                info = SessionInfo(session_id=session_id, agent=agent)
+                meta = YmiSession.read_meta(str(dir_path))
+                if meta:
+                    info.created_at = meta.get("created_at", time.time())
+                    info.last_active = meta.get("updated_at", time.time())
+                self._sessions[session_id] = info
+                return info
+            except Exception:
+                return self.create_session(config=config)
+
+        return self.create_session(config=config)
 
     def remove_session(self, session_id: str) -> None:
         info = self._sessions.pop(session_id, None)
@@ -190,27 +279,16 @@ class SessionManager:
             self._save_session(info)
 
     def try_resume_most_recent(self, config: YmiConfig | None = None) -> SessionInfo | None:
-        sessions_dir = self._get_sessions_dir()
-        import os, json
-        best_sid = None
-        best_time = 0.0
-        try:
-            for fname in os.listdir(sessions_dir):
-                if not fname.endswith(".json"):
-                    continue
-                sid = fname[:-5]
-                fpath = os.path.join(sessions_dir, fname)
-                try:
-                    mtime = os.path.getmtime(fpath)
-                    if mtime > best_time:
-                        best_time = mtime
-                        best_sid = sid
-                except OSError:
-                    continue
-        except Exception:
-            pass
-        if best_sid is None:
+        self._get_sessions_dir()  # ensures index loaded
+        if not self._index:
+            self._bootstrap_index_from_disk()
+        if not self._index:
             return None
+
+        best_sid = max(
+            self._index.keys(),
+            key=lambda sid: self._index[sid].get("last_active", self._index[sid].get("created_at", 0)),
+        )
         return self.load_or_create_session(best_sid, config=config)
 
     def touch(self, session_id: str) -> None:
@@ -253,6 +331,26 @@ class SessionManager:
                 "message_count": msg_count,
             })
         return result
+
+    def query_index(self) -> list[dict[str, Any]]:
+        """Return all sessions known from the on‑disk index."""
+        self._get_sessions_dir()
+        if not self._index:
+            self._bootstrap_index_from_disk()
+        entries: list[dict[str, Any]] = []
+        for sid, entry in self._index.items():
+            entries.append({
+                "session_id": sid,
+                "created_at": entry.get("created_at", 0),
+                "last_active": entry.get("last_active", 0),
+                "is_running": False,
+                "metadata": {},
+                "preview": entry.get("preview", ""),
+                "message_count": entry.get("message_count", 0),
+            })
+        entries.sort(key=lambda e: e.get("last_active", e.get("created_at", 0)), reverse=True)
+        entries = [e for e in entries if (e.get("message_count") or 0) > 0]
+        return entries
 
     async def cleanup_idle(self) -> int:
         now = time.time()

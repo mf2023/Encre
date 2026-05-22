@@ -24,6 +24,7 @@ class YmiTaskStopTool(YmiTool):
         },
         "required": ["task_id"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data"]
 
     async def execute(self, **kwargs: Any) -> str:
         from yim.task.manager import YmiTaskManager

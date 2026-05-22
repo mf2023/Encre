@@ -55,6 +55,7 @@ class YmiBashTool(YmiTool):
         },
         "required": ["command"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data"]
 
     async def execute(self, **kwargs: Any) -> str:
         command = kwargs.get("command", "")

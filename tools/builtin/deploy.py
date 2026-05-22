@@ -55,6 +55,7 @@ class YmiDeployTool(YmiTool):
         },
         "required": ["target", "action"],
     }
+    intents: ClassVar[list[str]] = ["coding"]
 
     async def execute(self, **kwargs: Any) -> str:
         target = kwargs.get("target", "docker")

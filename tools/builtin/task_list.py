@@ -40,6 +40,7 @@ class YmiTaskListTool(YmiTool):
             },
         },
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data", "research"]
 
     async def execute(self, **kwargs: Any) -> str:
         status = kwargs.get("status")

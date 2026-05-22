@@ -52,6 +52,7 @@ class YmiDockerTool(YmiTool):
         },
         "required": ["command"],
     }
+    intents: ClassVar[list[str]] = ["coding", "system"]
 
     async def execute(self, **kwargs: Any) -> str:
         command = kwargs.get("command", "ps")

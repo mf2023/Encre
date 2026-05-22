@@ -43,6 +43,15 @@ class ToolRegistry:
     def get_openai_tools(self) -> list[dict[str, Any]]:
         return [tool.to_openai_format() for tool in self._tools.values()]
 
+    def get_openai_tools_for_intents(self, intents: list[str]) -> list[dict[str, Any]]:
+        """Return tools whose intents intersect with the given intent list."""
+        result = []
+        for tool in self._tools.values():
+            tool_intents = getattr(tool, 'intents', ['general'])
+            if any(i in intents for i in tool_intents):
+                result.append(tool.to_openai_format())
+        return result
+
     def get_anthropic_tools(self) -> list[dict[str, Any]]:
         return [tool.to_anthropic_format() for tool in self._tools.values()]
 

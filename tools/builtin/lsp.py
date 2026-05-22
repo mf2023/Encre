@@ -69,6 +69,7 @@ class YmiLSPTool(YmiTool):
         },
         "required": ["operation"],
     }
+    intents: ClassVar[list[str]] = ["coding"]
 
     _manager: YmiLSPManager | None = None
 

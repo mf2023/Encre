@@ -24,6 +24,7 @@ class YmiCronDeleteTool(YmiTool):
         },
         "required": ["job_id"],
     }
+    intents: ClassVar[list[str]] = ["system"]
 
     _scheduler: Any = None  # Set by agent during initialization
 

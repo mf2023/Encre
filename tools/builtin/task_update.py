@@ -44,6 +44,7 @@ class YmiTaskUpdateTool(YmiTool):
         },
         "required": ["task_id"],
     }
+    intents: ClassVar[list[str]] = ["general", "coding", "data", "research"]
 
     async def execute(self, **kwargs: Any) -> str:
         task_id = kwargs.get("task_id", "")
