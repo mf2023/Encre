@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Encre</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="xterm.css" />
+  <link rel="stylesheet" href="vs/editor/editor.main.css" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="vs/loader.js"></script>
+  <script>require.config({ paths: { vs: './vs' } });</script>
+</head>
+<body>
+  <!-- Unified header bar (sidebar header + topbar merged) -->
+  <header id="header-bar">
+    <div class="header-left">
+      <button id="btn-toggle-sidebar" class="btn-icon btn-sm" data-i18n-title="header.toggleSidebar" title="Toggle sidebar">
+        <i data-lucide="panel-left" class="lucide"></i>
+      </button>
+      <button id="btn-automation-back" class="btn-icon btn-sm hidden" data-i18n-title="automation.backToChat" title="Back to chat">
+        <i data-lucide="arrow-left" class="lucide"></i>
+      </button>
+      <button id="btn-sidebar-search" class="btn-icon btn-sm" data-i18n-title="sidebar.search" title="Search">
+        <i data-lucide="search" class="lucide"></i>
+      </button>
+    </div>
+    <div class="header-right">
+      <button id="btn-bell" class="btn-icon btn-sm" data-i18n-title="header.notifications" title="Notifications">
+        <i data-lucide="bell" class="lucide"></i>
+      </button>
+      <div class="header-window-controls">
+        <button id="btn-minimize" class="window-btn" data-i18n-title="header.minimize" title="Minimize">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <button id="btn-maximize" class="window-btn" data-i18n-title="header.maximize" title="Maximize">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><rect x="1.5" y="1.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
+        <button id="btn-close" class="window-btn window-btn-close" data-i18n-title="header.close" title="Close">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="app">
+    <!-- Sidebar -->
+    <nav id="sidebar">
+
+      <div class="sidebar-content-normal">
+        <div class="sidebar-nav" id="sidebar-main-nav">
+          <div class="nav-item-row">
+            <button class="nav-item nav-item-grow" data-view="chat" data-shortcut="new_session">
+              <i data-lucide="pen-line" class="lucide"></i>
+              <span data-i18n="sidebar.newTask">New task</span>
+            </button>
+            <button class="nav-item-square" id="btn-temp-chat" data-i18n-title="sidebar.tempChat" title="Temporary chat" data-shortcut="new_temp_chat">
+              <i data-lucide="message-square-dashed" class="lucide"></i>
+            </button>
+          </div>
+          <button class="nav-item" id="btn-sidebar-workspace" data-shortcut="workspace_open">
+            <span class="btn-content"><i data-lucide="compass" class="lucide"></i>
+            <span data-i18n="workspace.title">iWork</span></span>
+          </button>
+          <button class="nav-item" id="btn-automation" data-shortcut="automation_open">
+            <span class="btn-content"><i data-lucide="zap" class="lucide"></i>
+            <span data-i18n="automation.title">自动化</span></span>
+          </button>
+        </div>
+
+        <div class="sidebar-section" id="session-section">
+          <div class="sidebar-section-header">
+            <span class="sidebar-section-title" data-i18n="sidebar.allTasks">All tasks</span>
+            <button class="btn-icon btn-sm" id="btn-batch-manage" data-i18n-title="session.manageSessions" title="Manage sessions"><i data-lucide="sliders-horizontal" class="lucide"></i></button>
+            <div id="batch-action-bar" class="hidden">
+              <button id="btn-batch-cancel" class="btn-icon btn-sm" data-i18n-title="dialog.cancel" title="Cancel"><i data-lucide="x" class="lucide"></i></button>
+              <button id="btn-batch-select-all" class="btn-icon btn-sm" data-i18n-title="session.batchSelectAll" title="Select All"><i data-lucide="check-square" class="lucide"></i></button>
+              <button id="btn-batch-export" class="btn-icon btn-sm batch-color-accent" data-i18n-title="session.batchExport" title="Export Selected"><i data-lucide="download" class="lucide"></i></button>
+              <button id="btn-batch-delete" class="btn-icon btn-sm batch-color-danger" data-i18n-title="session.batchDelete" title="Delete Selected"><i data-lucide="trash-2" class="lucide"></i></button>
+            </div>
+          </div>
+          <div id="session-list" class="sidebar-section-items"></div>
+        </div>
+      </div>
+
+      <!-- Settings sidebar nav (visible only in settings mode) -->
+      <div class="sidebar-settings-nav hidden">
+        <div class="sidebar-settings-search">
+          <input type="text" class="sidebar-settings-search-input" data-i18n-placeholder="sidebar.searchPlaceholder" placeholder="Ctrl+F 搜索" />
+        </div>
+        <div class="sidebar-settings-back-wrap">
+          <button class="sidebar-settings-back-btn" id="btn-settings-back">
+            <i data-lucide="arrow-left" class="lucide"></i>
+            <span data-i18n="sidebar.back">Back</span>
+          </button>
+        </div>
+        <div class="sidebar-settings-items">
+          <button class="settings-nav-item active" data-panel="general">
+            <i data-lucide="settings" class="lucide"></i>
+            <span data-i18n="sidebar.general">General</span>
+          </button>
+          <button class="settings-nav-item" data-panel="usage">
+            <i data-lucide="chart-column" class="lucide"></i>
+            <span data-i18n="sidebar.usage">Usage</span>
+          </button>
+          <div class="settings-nav-divider"></div>
+          <button class="settings-nav-item" data-panel="model">
+            <i data-lucide="cpu" class="lucide"></i>
+            <span data-i18n="sidebar.models">Models</span>
+          </button>
+          <button class="settings-nav-item" data-panel="gateway">
+            <i data-lucide="network" class="lucide"></i>
+            <span data-i18n="sidebar.gateway">Gateway</span>
+          </button>
+          <button class="settings-nav-item" data-panel="agent">
+            <i data-lucide="bot" class="lucide"></i>
+            <span data-i18n="sidebar.agent">Agent</span>
+          </button>
+          <button class="settings-nav-item" data-panel="mcp">
+            <i data-lucide="server" class="lucide"></i>
+            <span data-i18n="sidebar.mcp">MCP Server</span>
+          </button>
+          <div class="settings-nav-divider"></div>
+          <button class="settings-nav-item" data-panel="index">
+            <i data-lucide="book" class="lucide"></i>
+            <span data-i18n="sidebar.index">Index &amp; Document</span>
+          </button>
+          <button class="settings-nav-item" data-panel="skills">
+            <i data-lucide="wand-2" class="lucide"></i>
+            <span data-i18n="sidebar.skills">Skills &amp; Commands</span>
+          </button>
+          <button class="settings-nav-item" data-panel="rules">
+            <i data-lucide="file-check" class="lucide"></i>
+            <span data-i18n="sidebar.rules">Rules</span>
+          </button>
+          <button class="settings-nav-item" data-panel="memory">
+            <i data-lucide="brain" class="lucide"></i>
+            <span data-i18n="sidebar.memory">Memory</span>
+          </button>
+          <div class="settings-nav-divider"></div>
+          <button class="settings-nav-item" data-panel="developer" id="settings-nav-developer" style="display:none">
+            <i data-lucide="code" class="lucide"></i>
+            <span data-i18n="sidebar.developer">Developer</span>
+          </button>
+          <button class="settings-nav-item" data-panel="about">
+            <i data-lucide="info" class="lucide"></i>
+            <span data-i18n="sidebar.about">About</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-settings-trigger">
+        <button class="nav-item nav-sub" id="btn-settings-trigger" data-shortcut="open_settings">
+          <i data-lucide="settings" class="lucide"></i>
+          <span data-i18n="sidebar.settings">Settings</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main area -->
+    <main id="main-area">
+      <!-- Session bar — always full width at top -->
+      <div id="session-bar">
+        <div id="session-bar-name" data-i18n="session.newSession">New Session</div>
+        <button id="btn-session-menu" class="btn-icon btn-sm" data-i18n-title="session.toggleSidebar" title="Toggle session sidebar">
+          <i data-lucide="panel-right-close" class="lucide"></i>
+        </button>
+      </div>
+      <div id="main-body" class="sidebar-hidden">
+        <div id="main-content">
+          <!-- Chat view -->
+          <div id="chat-view">
+            <div id="chat-container">
+              <!-- Welcome screen (shown when no messages) -->
+              <div id="welcome-screen">
+                <h1 class="welcome-title" data-i18n="welcome.title">What can I do for you?</h1>
+              </div>
+
+              <!-- Message list (hidden when welcome shown) -->
+              <div id="message-list" class="hidden"></div>
+
+            </div>
+            <!-- Right-side scroll progress indicator (outside chat-container so it doesn't scroll) -->
+            <div id="chat-scroll-indicator" class="chat-scroll-indicator hidden" aria-hidden="true">
+              <div class="chat-scroll-track" id="chat-scroll-track"></div>
+              <div class="chat-scroll-thumb" id="chat-scroll-thumb"></div>
+            </div>
+          </div>
+
+          <!-- Search view -->
+          <div id="search-view" class="hidden"></div>
+
+          <!-- Agents view -->
+          <div id="agents-view" class="hidden"></div>
+
+          <!-- Settings view (visible only in settings mode) -->
+          <div id="settings-view" class="hidden">
+            <div id="settings-content-wrap">
+              <div class="settings-panel active" id="panel-general"></div>
+              <div class="settings-panel" id="panel-usage"></div>
+              <div class="settings-panel" id="panel-model"></div>
+              <div class="settings-panel" id="panel-gateway"></div>
+              <div class="settings-panel" id="panel-index"></div>
+              <div class="settings-panel" id="panel-skills"></div>
+              <div class="settings-panel" id="panel-rules"></div>
+              <div class="settings-panel" id="panel-mcp"></div>
+              <div class="settings-panel" id="panel-agent"></div>
+              <div class="settings-panel" id="panel-about"></div>
+              <div class="settings-panel" id="panel-developer"></div>
+              <div class="settings-panel" id="panel-permissions"></div>
+              <div class="settings-panel" id="panel-memory"></div>
+              <div class="settings-panel" id="panel-memory-detail"></div>
+            </div>
+          </div>
+
+          <!-- Child view (for sub-windows like license viewer) -->
+          <div id="child-view" class="hidden"></div>
+
+          <!-- Input area -->
+          <div id="input-area">
+            <div id="chat-status-bar" class="chat-status-bar hidden"></div>
+            <!-- Queue card: swaps with status bar when queue is active -->
+            <div id="queue-card" class="queue-card hidden">
+              <div id="queue-card-body" class="queue-card-body"></div>
+            </div>
+
+            <div class="input-wrapper">
+              <div class="input-row">
+                <div id="prompt-input" class="prompt-input" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                <div id="prompt-placeholder" class="prompt-placeholder" data-i18n="input.placeholder">Ask Encre anything...</div>
+              </div>
+              <!-- @ dropdown (above input box) -->
+              <div id="mention-dropdown" class="mention-dropdown hidden">
+                <div class="mention-page" data-page="main">
+                  <button class="mention-dropdown-item" data-action="upload-file">
+                    <i data-lucide="upload" class="lucide"></i>
+                    <span data-i18n="mention.uploadFile">Files</span>
+                  </button>
+                  <button class="mention-dropdown-item" data-action="select-folder">
+                    <i data-lucide="folder-open" class="lucide"></i>
+                    <span data-i18n="mention.selectFolder">Folder</span>
+                  </button>
+                  <button class="mention-dropdown-item" data-action="sub-slash">
+                    <i data-lucide="terminal" class="lucide"></i>
+                    <span data-i18n="slashCommands.title">Slash Commands</span>
+                    <i data-lucide="chevron-right" class="lucide" style="margin-left:auto;"></i>
+                  </button>
+                </div>
+                <div class="mention-page hidden" data-page="slash">
+                  <!-- rendered dynamically by app.ts -->
+                </div>
+              </div>
+
+              <div class="input-toolbar">
+                <div class="toolbar-left">
+                  <div class="toolbar-actions">
+                    <button class="btn-icon input-btn" id="btn-voice" data-i18n-title="input.voiceStart" title="Start recording">
+                      <i data-lucide="mic" class="lucide"></i>
+                    </button>
+                    <div class="mention-wrap">
+                      <button class="btn-icon input-btn" id="btn-mention" data-i18n-title="input.attachFiles" title="@ Attach">
+                        <i data-lucide="at-sign" class="lucide"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="toolbar-right">
+                  <div class="settings-dropdown-wrap" id="input-model-selector-wrap">
+                    <button id="input-model-selector" class="settings-dropdown-trigger" data-i18n-title="input.selectModel" title="Select model">
+                      <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+                    </button>
+                    <div id="input-model-dropdown" class="settings-dropdown hidden"></div>
+                  </div>
+                  <button class="btn-send" id="btn-send" data-i18n-title="input.send" title="Send">
+                    <i data-lucide="arrow-up" class="lucide"></i>
+                  </button>
+                  <button class="btn-stop" id="btn-stop" data-i18n-title="input.stop" title="Stop" style="display:none;">
+                    <i data-lucide="octagon" class="lucide"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Search overlay (global, outside main-content) -->
+        <div id="search-overlay" class="hidden">
+          <div class="search-palette">
+            <div class="search-overlay-inner">
+              <i data-lucide="search" class="lucide search-overlay-icon"></i>
+              <input type="text" id="search-input" data-i18n-placeholder="search.placeholder" placeholder="Search messages, files..." autocomplete="off" spellcheck="false" />
+              <kbd class="search-esc-hint">ESC</kbd>
+            </div>
+            <div id="search-results" class="search-results"></div>
+          </div>
+        </div>
+        <!-- Automation view -->
+          <div id="automation-view" class="hidden">
+            <div class="automation-container">
+              <div class="automation-tabs">
+                <button class="automation-tab" data-automation-tab="configured" data-i18n="automation.configured">已配置</button>
+                <button class="automation-tab active" data-automation-tab="history" data-i18n="automation.history">执行历史</button>
+                <div class="automation-create-wrap" id="automation-create-wrap">
+                  <button class="btn-add-model-top" id="automation-create-btn" type="button">
+                    <i data-lucide="plus" class="lucide"></i>
+                    <span data-i18n="automation.create">创建</span>
+                    <i data-lucide="chevron-down" class="lucide"></i>
+                  </button>
+                  <div class="settings-dropdown" id="automation-create-dropdown"></div>
+                </div>
+              </div>
+              <div class="automation-panels">
+                <div class="automation-panel" data-automation-panel="configured">
+                  <div class="configured-list" id="configured-list"></div>
+                </div>
+                <div class="automation-panel active" data-automation-panel="history">
+                  <div class="history-filters" id="history-filters">
+                    <div class="history-filter-dropdown settings-dropdown-wrap" id="history-filter-status-wrap">
+                      <button class="history-filter-btn" id="history-filter-status-trigger" type="button">
+                        <span id="history-filter-status-label" data-i18n="automation.filterAll">全部</span>
+                        <i data-lucide="chevron-down" class="lucide"></i>
+                      </button>
+                      <div class="settings-dropdown" id="history-filter-status-dropdown"></div>
+                    </div>
+                    <div class="history-filter-dropdown settings-dropdown-wrap" id="history-filter-task-wrap">
+                      <button class="history-filter-btn" id="history-filter-task-trigger" type="button">
+                        <span id="history-filter-task-label" data-i18n="automation.filterAllTasks">全部任务</span>
+                        <i data-lucide="chevron-down" class="lucide"></i>
+                      </button>
+                      <div class="settings-dropdown" id="history-filter-task-dropdown"></div>
+                    </div>
+                    <div class="history-date-range">
+                      <input type="date" id="history-date-from" class="history-date-input" aria-label="开始日期" />
+                      <span class="history-date-sep">—</span>
+                      <input type="date" id="history-date-to" class="history-date-input" aria-label="结束日期" />
+                      <button type="button" class="history-date-clear" id="history-date-clear" title="清空时间">
+                        <i data-lucide="x" class="lucide"></i>
+                      </button>
+                    </div>
+                    <button type="button" class="btn-add-model-top history-export-btn" id="history-export-btn" title="导出为 Markdown">
+                      <i data-lucide="download" class="lucide"></i>
+                      <span data-i18n="automation.exportHistory">导出</span>
+                    </button>
+                  </div>
+                  <div class="history-timeline" id="history-timeline"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- /Automation view -->
+
+          <!-- Session inner sidebar -->
+        <div id="session-inner-sidebar" class="hidden">
+          <div class="si-resize-handle"></div>
+          <div class="tab-bar"></div>
+          <div class="tab-body"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tool details panel -->
+    <aside id="detail-panel" class="hidden">
+      <div id="detail-content"></div>
+    </aside>
+  </div>
+
+  <!-- Session context menu (dynamically rendered) -->
+  <div id="session-context-menu" class="hidden context-menu"></div>
+
+  <!-- Rename dialog (dynamically rendered) -->
+  <div id="rename-dialog-overlay" class="hidden"></div>
+
+  <!-- Splash / loading screen -->
+  <div id="splash-screen" class="hidden"></div>
+
+  <script src="bundle.js"></script>
+  <script>lucide.createIcons();</script>
+
+</body>
+</html>

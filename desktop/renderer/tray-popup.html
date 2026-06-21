@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+/* ── Theme tokens (light default) ── */
+:root,[data-theme="light"]{
+  --tp-bg:#ffffff;--tp-color:#1f1f1f;--tp-hover:#f5f5f5;--tp-border:#f0f0f0;
+  --tp-line:#e8e8e8;--tp-scrollbar:#ddd;--tp-sub-color:#999;
+  --tp-name:#1f1f1f;--tp-meta:#888;--tp-empty:#bbb;--tp-badge-bg:#eef2ff;
+  --tp-badge-color:#4f46e5;--tp-dot:#ccc;--tp-sep:#f0f0f0;
+  --tp-seg-bg:#eeeeee;--tp-seg-active:#ffffff;--tp-seg-text:#666;--tp-seg-active-text:#1f1f1f;
+  color-scheme:light;
+}
+[data-theme="dark"]{
+  --tp-bg:#1a1a1a;--tp-color:#e5e5e5;--tp-hover:#262626;--tp-border:#333333;
+  --tp-line:#333333;--tp-scrollbar:#444;--tp-sub-color:#777;
+  --tp-name:#e5e5e5;--tp-meta:#888;--tp-empty:#666;--tp-badge-bg:#1e1b4b;
+  --tp-badge-color:#a5b4fc;--tp-dot:#555;--tp-sep:#2a2a2a;
+  --tp-seg-bg:#2a2a2a;--tp-seg-active:#3a3a3a;--tp-seg-text:#999;--tp-seg-active-text:#f5f5f5;
+  color-scheme:dark;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--tp-bg);color:var(--tp-color);overflow:hidden;-webkit-font-smoothing:antialiased;user-select:none;font-size:13px;display:flex;flex-direction:column}
+#sessions-container{flex:1;overflow-y:auto;overflow-x:hidden}
+#sessions-container::-webkit-scrollbar{width:4px}
+#sessions-container::-webkit-scrollbar-track{background:transparent}
+#sessions-container::-webkit-scrollbar-thumb{background:var(--tp-scrollbar);border-radius:2px}
+/* ── Header row: title + segmented control ── */
+.header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;gap:8px}
+.sub{font-size:11px;font-weight:600;color:var(--tp-sub-color);text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:6px;flex-shrink:0}
+.sub svg.icon{width:12px;height:12px;opacity:.5;flex-shrink:0}
+.seg{display:inline-flex;background:var(--tp-seg-bg);border-radius:7px;padding:2px;gap:0}
+.seg>div{display:flex;align-items:center;gap:4px;padding:4px 9px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;color:var(--tp-seg-text);transition:background .12s,color .12s}
+.seg>div svg{width:11px;height:11px;flex-shrink:0}
+.seg>div.active{background:var(--tp-seg-active);color:var(--tp-seg-active-text)}
+.r{position:relative;display:flex;flex-direction:column;gap:3px;padding:10px 16px 10px 36px;cursor:pointer;transition:background .1s}
+.r:hover{background:var(--tp-hover)}
+.r::before{content:'';position:absolute;left:16px;top:12px;bottom:12px;width:2px;background:var(--tp-line);border-radius:1px}
+.r:hover::before{background:#22c55e}
+.t{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--tp-name);display:flex;align-items:center;gap:6px}
+.n svg.icon{width:14px;height:14px;opacity:.45;flex-shrink:0}
+.m{font-size:11px;color:var(--tp-meta);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.session-channel-badge{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--tp-badge-bg);color:var(--tp-badge-color);font-weight:500;line-height:1.4}
+.d{width:7px;height:7px;border-radius:50%;background:var(--tp-dot);flex-shrink:0}
+.d.on{background:#22c55e}
+.s{height:1px;background:var(--tp-sep);margin:0}
+.e{padding:18px;text-align:center;font-size:12px;color:var(--tp-empty);display:flex;align-items:center;justify-content:center;gap:6px}
+.e svg.icon{width:14px;height:14px;opacity:.4}
+.actions{display:flex;border-top:1px solid var(--tp-border)}
+.actions>div{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:12px 8px;cursor:pointer;font-weight:600;font-size:13px;color:var(--tp-color);transition:background .1s}
+.actions>div:hover{background:var(--tp-hover)}
+.actions>div:first-child{border-right:1px solid var(--tp-border)}
+.actions svg.icon{width:15px;height:15px;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="sub" id="title-sub"></div>
+  <div class="seg" id="mode-seg">
+    <div data-mode="normal" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span id="seg-chats">Chats</span>
+    </div>
+    <div data-mode="iwork">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 12v7"/></svg>
+      <span id="seg-workspaces">Workspaces</span>
+    </div>
+  </div>
+</div>
+<div id="sessions-container"></div>
+<div class="actions">
+  <div id="btn-open">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    <span id="lbl-open">Open Encre</span>
+  </div>
+  <div id="btn-quit">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    <span id="lbl-quit">Quit</span>
+  </div>
+</div>
+<script>
+var LABELS = {
+  en: {
+    openYim: "Open Encre", sessions: "Sessions", chats: "Chats", workspaces: "iWork",
+    noSessions: "No active sessions", noWorkspaces: "No iWork sessions", quit: "Quit", messages: "msgs"
+  },
+  zh: {
+    openYim: "打开 Encre", sessions: "会话", chats: "聊天", workspaces: "iWork",
+    noSessions: "暂无活跃会话", noWorkspaces: "暂无 iWork 会话", quit: "退出", messages: "条消息"
+  }
+};
+var currentLabels = LABELS.en;
+// Selected mode: "normal" or "iwork". Initialized from activeMode on first tray-data.
+var currentMode = null;
+var sessionsNormal = [];
+var sessionsIwork = [];
+
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function truncate(str, max) {
+  return str.length > max ? str.slice(0, max - 1) + "…" : str;
+}
+function channelBadge(channel) {
+  if (!channel || channel === "normal" || channel === "iwork") return "";
+  const labels = { iclaw: "iClaw", qqbot: "QQ", telegram: "Telegram", webhook: "Webhook", discord: "Discord", slack: "Slack" };
+  var label = labels[channel] || channel;
+  return '<span class="session-channel-badge">' + esc(label) + '</span>';
+}
+
+/* ── Inline SVG icons (Lucide-compatible paths) ── */
+var ICONS = {
+  chat: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  briefcase: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 12v7"/></svg>',
+  inbox: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
+};
+
+function renderSessions(sessions, iconKey, emptyKey) {
+  var container = document.getElementById("sessions-container");
+  container.innerHTML = "";
+
+  if (sessions && sessions.length > 0) {
+    for (var i = 0; i < sessions.length; i++) {
+      var s = sessions[i];
+      var name = esc(truncate(s.name || s.preview || (s.session_id || "").slice(0, 8) || "Untitled", 28));
+      var count = s.message_count || 0;
+      var dotClass = s.is_running ? "d on" : "d";
+      var row = document.createElement("div");
+      row.className = "r";
+      row.setAttribute("data-sid", s.session_id || "");
+      row.innerHTML = '<div class="t"><span class="n">' + ICONS[iconKey] + '<span>' + name + '</span></span><span class="' + dotClass + '"></span></div><span class="m">' + count + " " + currentLabels.messages + " " + channelBadge(s.channel) + "</span>";
+      container.appendChild(row);
+      if (i < sessions.length - 1) {
+        var div = document.createElement("div");
+        div.className = "s";
+        container.appendChild(div);
+      }
+    }
+  } else {
+    var empty = document.createElement("div");
+    empty.className = "e";
+    empty.innerHTML = ICONS.inbox + '<span>' + currentLabels[emptyKey] + '</span>';
+    container.appendChild(empty);
+  }
+}
+
+function render() {
+  var labels = currentLabels;
+  document.getElementById("lbl-open").textContent = labels.openYim;
+  document.getElementById("lbl-quit").textContent = labels.quit;
+  document.getElementById("seg-chats").textContent = labels.chats;
+  document.getElementById("seg-workspaces").textContent = labels.workspaces;
+  document.getElementById("title-sub").innerHTML = '<span>' + labels.sessions + '</span>';
+
+  if (currentMode === "iwork") {
+    renderSessions(sessionsIwork, "briefcase", "noWorkspaces");
+  } else {
+    renderSessions(sessionsNormal, "chat", "noSessions");
+  }
+}
+
+function setMode(mode) {
+  if (mode !== "normal" && mode !== "iwork") return;
+  currentMode = mode;
+  var segs = document.querySelectorAll("#mode-seg > div");
+  for (var i = 0; i < segs.length; i++) {
+    if (segs[i].getAttribute("data-mode") === mode) {
+      segs[i].classList.add("active");
+    } else {
+      segs[i].classList.remove("active");
+    }
+  }
+  render();
+}
+
+/* ── Theme application ── */
+function applyTheme(theme) {
+  if (theme === "dark" || theme === "light") {
+    document.documentElement.setAttribute("data-theme", theme);
+  }
+}
+
+document.getElementById("btn-open").addEventListener("click", function() {
+  if (window.electronAPI && window.electronAPI.trayPopupAction) {
+    window.electronAPI.trayPopupAction("open", null);
+  }
+});
+document.getElementById("btn-quit").addEventListener("click", function() {
+  if (window.electronAPI && window.electronAPI.trayPopupAction) {
+    window.electronAPI.trayPopupAction("quit", null);
+  }
+});
+document.getElementById("sessions-container").addEventListener("click", function(e) {
+  var row = e.target.closest ? e.target.closest(".r") : null;
+  if (row) {
+    var sid = row.getAttribute("data-sid");
+    if (sid && window.electronAPI && window.electronAPI.trayPopupAction) {
+      window.electronAPI.trayPopupAction("open", sid);
+    }
+  }
+});
+document.getElementById("mode-seg").addEventListener("click", function(e) {
+  var seg = e.target.closest ? e.target.closest("[data-mode]") : null;
+  if (seg) setMode(seg.getAttribute("data-mode"));
+});
+
+if (window.electronAPI && window.electronAPI.onTrayData) {
+  window.electronAPI.onTrayData(function(data) {
+    currentLabels = LABELS[data.locale] || LABELS.en;
+    if (data.theme) {
+      applyTheme(data.theme);
+    }
+    if (data.sessionsNormal) sessionsNormal = data.sessionsNormal;
+    if (data.sessionsIwork) sessionsIwork = data.sessionsIwork;
+    // Initialize the selected tab from the main window's active mode (first load).
+    if (currentMode === null && data.activeMode) {
+      setMode(data.activeMode === "iwork" ? "iwork" : "normal");
+    } else {
+      render();
+    }
+  });
+}
+
+render([]);
+</script>
+</body>
+</html>

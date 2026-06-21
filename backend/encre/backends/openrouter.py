@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+
+
+"""
+OpenRouter backend -- unified API for 200+ models across providers.
+
+OpenRouter provides a single API endpoint that routes requests to 200+ models
+from providers including OpenAI, Anthropic, Google, Meta, Mistral, and many  # noqa: E402
+more.  It supports OpenAI-compatible chat completions with transparent cost
+tracking and model fallback.
+
+Base URL: https://openrouter.ai/api/v1
+Authentication: OPENROUTER_API_KEY environment variable or explicit api_key.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from encre.backends.openai_sse import OpenAISSEBackend
+
+# Context window sizes for known OpenRouter model families
+_CONTEXT_WINDOW_MAP: dict[str, int] = {
+    "claude-opus-4-7": 1_000_000,
+    "claude-sonnet-4-6": 1_000_000,
+    "claude-opus": 200_000,
+    "claude-sonnet": 200_000,
+    "claude-haiku": 200_000,
+    "gpt-4.1": 1048576,
+    "gpt-5": 1048576,
+    "deepseek-v4": 1048576,
+    "deepseek-chat": 1048576,
+    "deepseek-reasoner": 1048576,
+    "gemini-2.5": 1048576,
+    "gemini-2.0": 1048576,
+    "gemini-3": 1048576,
+    "llama-4": 1048576,
+    "llama-3.3": 131072,
+    "qwen3": 131072,
+    "qwen-max": 131072,
+    "mistral-large": 131072,
+    "mixtral": 131072,
+}
+
+
+def _detect_context_window_openrouter(model: str) -> int:
+    """Guess context window from model name."""
+    model_lower = model.lower()
+    for prefix, size in _CONTEXT_WINDOW_MAP.items():
+        if model_lower.startswith(prefix) or prefix in model_lower:
+            return size
+    return 200000  # OpenRouter default: most models are at least 200k
+
+
+class OpenRouterBackend(OpenAISSEBackend):
+    """OpenRouter backend for unified multi-provider access.
+
+    Routes requests through OpenRouter's API gateway, which supports 200+
+    models from various providers.  Supports reasoning/thinking tokens.
+    """
+
+    DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+
+    def __init__(
+        self,
+        api_key: str = "",
+        base_url: str = "",
+        model: str = "openrouter/auto",
+        context_window: int = 0,
+        **kwargs: Any,
+    ) -> None:
+        if not base_url:
+            base_url = self.DEFAULT_BASE_URL
+        super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
+        self._context_window = context_window
+
+    def _thinking_request_param(self) -> dict[str, Any] | None:
+        """OpenRouter uses the ``reasoning`` envelope.
+
+        OpenRouter's reasoning API supports two equivalent shapes:
+        ``{"reasoning": {"enabled": True}}`` (toggle) and
+        ``{"reasoning": {"effort": "low|medium|high"}}`` (effort level).
+        Per OpenRouter docs the ``reasoning`` map may include
+        ``enabled``, ``effort``, ``max_tokens``, and ``exclude``.
+
+        For models routed via OpenRouter we send ``{"reasoning":
+        {"enabled": True}}`` so that all underlying providers that
+        support thinking (OpenAI o-series / GPT-5, Anthropic Claude,
+        DeepSeek, GLM, etc.) will emit their reasoning tokens.  The
+        response field is ``reasoning`` (single string) or
+        ``reasoning_details`` (array of step objects); both are picked
+        up by :data:`_REASONING_FIELD_NAMES` in
+        :class:`OpenAISSEBackend`.
+        """
+        return {"reasoning": {"enabled": True}}
+
+    def context_window_size(self) -> int:
+        if self._context_window > 0:
+            return self._context_window
+        return _detect_context_window_openrouter(self.model)

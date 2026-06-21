@@ -1,0 +1,778 @@
+/**
+ * Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+ *
+ * This file is part of Encre.
+ * The Encre project belongs to the Dunimd Team.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * 
+ * DISCLAIMER: Users must comply with applicable AI regulations.
+ * Non-compliance may result in service termination or legal liability.
+ */
+
+.btn-icon,
+.section-add-btn,
+.tab-close,
+.tab-add-btn,
+.si-files-btn,
+.si-browser-btn,
+.tab-action-btn,
+.msg-action,
+.btn-index-action-icon,
+.btn-model-action,
+.icon-add {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.btn-icon:hover,
+.section-add-btn:hover,
+.si-tab-close:hover,
+.si-tab-add:hover,
+.si-files-btn:hover,
+.si-browser-btn:hover,
+.tab-action-btn:hover,
+.msg-action:hover,
+.btn-index-action-icon:hover,
+.btn-model-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 特有尺寸覆盖 — 各按钮原始大小 */
+.btn-icon               { width: 28px; height: 28px; }  /* padding:6px + 16px icon */
+.btn-icon.btn-sm        { width: 24px; height: 24px; }  /* padding:4px */
+.btn-icon.input-btn     { color: var(--text-muted); }   /* muted 变体 */
+.btn-icon.input-btn:hover { color: var(--text-secondary); background: transparent; }
+
+.si-tab-close           { width: 18px; height: 18px; }
+.si-tab-add             { width: 28px; height: 28px; }
+.si-files-btn           { width: 20px; height: 20px; opacity: 0.7; }
+.si-files-btn:hover     { opacity: 1; }
+.si-browser-btn         { width: 26px; height: 26px; }
+.tab-action-btn--term,
+.tab-action-btn--term,
+.tab-action-btn--term.danger  { width: 24px; height: 24px; border-radius: 0; }
+/* tab-action-btn 悬停红色 (danger 变体) */
+.tab-action-btn.danger:hover { color: var(--error) !important; }
+
+.msg-action             { padding: 4px; border-radius: 6px; }
+.msg-action svg         { width: 14px; height: 14px; }
+.msg-action:hover       { background: var(--bg-hover); color: var(--text-secondary); }
+
+.btn-model-action       { width: 28px; height: 28px; }
+.btn-model-action:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.btn-index-action-icon  { width: 28px; height: 28px; }
+.btn-index-action-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* 窗口控制按钮 — 特殊处理（40px 贯穿 header 高度） */
+.window-btn {
+  width: 40px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+}
+.window-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+[data-theme="light"] .window-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+.window-btn-close:hover {
+  background: var(--error);
+  color: #fff;
+}
+.window-btn svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+
+/* ── 2. 列表条目（flex 行 + hover/active 状态） ────────────────
+   合并来源: .nav-item (L465) / .session-item (L805)
+   / .ws-tree-node-header (L607) / .settings-nav-item (L4102)
+   / .sidebar-settings-back-btn (L3848)
+   ──────────────────────────────────────────────────────────────── */
+.nav-item,
+.session-item,
+.ws-tree-node-header,
+.settings-nav-item,
+.sidebar-settings-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font-family: inherit;
+  user-select: none;
+}
+
+.nav-item:hover,
+.ws-tree-node-header:hover,
+.settings-nav-item:hover,
+.sidebar-settings-back-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+[data-theme="light"] .nav-item:hover,
+[data-theme="light"] .ws-tree-node-header:hover,
+[data-theme="light"] .settings-nav-item:hover,
+[data-theme="light"] .sidebar-settings-back-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.session-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+[data-theme="light"] .session-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* active 状态 */
+.nav-item.active,
+.session-item.active,
+.ws-tree-node-header.active,
+.settings-nav-item.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* 特有区别 */
+.nav-item            { font-size: 13.5px; font-weight: 500; }
+.session-item         { font-size: 13px; padding: 9px 12px; overflow: hidden; }
+.ws-tree-node-header  { font-size: 13px; gap: 5px; padding: 7px 8px; }
+.settings-nav-item    { font-size: 13px; padding: 7px 10px; }
+.sidebar-settings-back-btn { font-size: 12.5px; font-weight: 500; padding: 6px 12px; }
+
+/* 列表条目中的 lucide 图标统一定宽 */
+.nav-item .lucide,
+.session-item .lucide,
+.ws-tree-node-header .lucide,
+.settings-nav-item .lucide,
+.sidebar-settings-back-btn .lucide {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.sidebar-settings-back-btn .lucide { width: 14px; height: 14px; }
+
+
+/* ── 3. 分区标题 ───────────────────────────────────────────────
+   合并来源: .sidebar-section-title (L526) / .si-section-title (L1243)
+   注意: .settings-section-title 结构不同（13px, 非 uppercase, 带 margin-top）
+   ─────────────────────────────────────────────────────────────── */
+.sidebar-section-title,
+.si-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-section-title { letter-spacing: 0.04em; }
+.si-section-title {
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+
+/* ── 4. 空状态 ─────────────────────────────────────────────────
+   合并来源: .sidebar-section-empty (L550) / .workspace-tree-empty (L593)
+   / .session-empty (L851) / .search-empty (L994)
+   / .si-empty (L1315, L1974) / .si-panel-empty (L1432) / .model-empty (L5422)
+   ──────────────────────────────────────────────────────────────── */
+.sidebar-section-empty,
+.workspace-tree-empty,
+.ws-tree-empty-sessions,
+.session-empty,
+.search-empty,
+.si-empty,
+.si-panel-empty,
+.model-empty {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* 各空状态的特有 padding / font-size */
+.sidebar-section-empty { font-size: 11px; padding: 8px 10px; font-style: italic; }
+.workspace-tree-empty,
+.ws-tree-empty-sessions { font-size: 11.5px; padding: 16px 14px; font-style: italic; }
+.session-empty { font-size: 13px; padding: 16px 12px; }
+.search-empty  { font-size: 13px; padding: 40px 16px; }
+.si-empty      { font-size: 12px; padding: 8px 0; }
+.si-panel-empty { font-size: 12px; padding: 12px 0; line-height: 1.5; }
+.model-empty   { font-size: 13px; padding: 20px; }
+
+
+/* ── 5. 分割线 ─────────────────────────────────────────────────
+   合并来源: .si-divider (L1310) / .si-canvas-divider (L1639)
+   / .context-menu-divider (L3576) / .settings-nav-divider (L3921)
+   / .settings-item-divider (L4614) / .index-card-divider (L4211)
+   ──────────────────────────────────────────────────────────────── */
+.si-divider,
+.si-canvas-divider,
+.context-menu-divider,
+.settings-nav-divider,
+.settings-item-divider,
+.index-card-divider {
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.si-divider          { border-top: 1px dashed var(--border); height: 0; background: transparent; margin: 4px 0; }
+.si-canvas-divider   { margin: 5px 0; }
+.context-menu-divider { margin: 4px 8px; }
+.settings-nav-divider {
+  background: var(--text-muted);
+  opacity: 0.15;
+  margin: 5px 0;
+}
+.settings-item-divider { margin: 0 18px; }
+.index-card-divider    { margin: 0; }
+
+
+/* ── 6. 卡片容器 ───────────────────────────────────────────────
+   合并来源: .si-card (L1264) / .settings-card (L4050) / .model-card (L5105)
+   ─────────────────────────────────────────────────────────────── */
+.si-card,
+.settings-card,
+.model-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.si-card       { padding: 8px 10px; border-radius: 8px; }
+.settings-card { padding: 0; }  /* 内边距由子元素（.settings-item-row）控制 */
+.model-card    { padding: 10px 14px; transition: border-color var(--transition-base); }
+
+
+/* ── 7. 徽章 / 计数标签 ────────────────────────────────────────
+   合并来源: .si-badge (L1254) / .si-status (L1321)
+   / .ws-session-count (L655) / .si-panel-badge (L1389)
+   ──────────────────────────────────────────────────────────────── */
+.si-badge,
+.si-status,
+.ws-session-count,
+.si-panel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.si-status.si-status-active {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+}
+
+.ws-session-count {
+  font-size: 10.5px;
+  background: var(--bg-tertiary);
+}
+
+.si-panel-badge {
+  line-height: 16px;
+}
+
+/* --active 变体（用于 .model-active-tag 等） */
+.model-active-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+
+/* ── 8. 对话框系统 ─────────────────────────────────────────────
+   合并来源: .encre-dialog-overlay (L3672) / .toast-overlay (L4484)
+   / #rename-dialog-overlay (L3583)
+   ──────────────────────────────────────────────────────────────── */
+
+/* 遮罩层 */
+.encre-dialog-overlay,
+.toast-overlay,
+#rename-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.encre-dialog-overlay {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: yimFadeIn var(--duration-base) ease-out;
+}
+.toast-overlay {
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+}
+#rename-dialog-overlay {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 260;
+}
+
+.encre-dialog-overlay.encre-dialog-dismissing {
+  animation: yimFadeOut var(--duration-fast) ease-out forwards;
+}
+
+/* 对话框卡片 */
+.encre-dialog-card,
+.toast-dialog,
+#rename-dialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  min-width: 380px;
+  max-width: 480px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+.encre-dialog-card {   animation: yimSlideUp var(--transition-emphasized); }
+
+.toast-dialog {
+  background: var(--bg-primary);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  min-width: 340px;
+  max-width: 420px;
+}
+#rename-dialog {
+  background: var(--bg-tertiary);
+  width: 380px;
+  max-width: 90vw;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 标题 */
+.encre-dialog-title,
+.toast-title,
+.rename-dialog-header h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.toast-title {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.rename-dialog-header h3 {
+  margin: 0;
+}
+
+/* 主体文字 */
+.encre-dialog-body,
+.dialog-body {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* 输入框 */
+.encre-dialog-input,
+.toast-input,
+#rename-dialog-input,
+.sidebar-settings-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+.encre-dialog-input:focus,
+.toast-input:focus,
+#rename-dialog-input:focus,
+.sidebar-settings-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.15);
+}
+
+.toast-input,
+#rename-dialog-input {
+  background: var(--bg-secondary);
+  font-family: inherit;
+}
+
+.sidebar-settings-search-input {
+  background: var(--bg-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 6px 10px;
+}
+.sidebar-settings-search-input::placeholder { color: var(--text-muted); }
+.sidebar-settings-search-input:focus { box-shadow: none; }
+
+/* 底部按钮行 */
+.encre-dialog-footer,
+.dialog-footer,
+.rename-dialog-actions,
+.toast-actions {
+  display: flex;
+  gap: 9px;
+  justify-content: flex-end;
+}
+
+/* 对话框按钮 */
+.encre-dialog-btn,
+.toast-btn,
+.btn-primary,
+.btn-secondary {
+  padding: 8px 20px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  transition: all var(--transition-base);
+  outline: none;
+  font-family: inherit;
+}
+
+.encre-dialog-btn-primary,
+.toast-btn-ok {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.encre-dialog-btn-primary:hover,
+.toast-btn-ok:hover { filter: brightness(1.12); }
+.encre-dialog-btn-primary:active { filter: brightness(0.92); }
+
+.encre-dialog-btn-secondary,
+.toast-btn-cancel,
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.encre-dialog-btn-secondary:hover,
+.toast-btn-cancel:hover,
+.btn-secondary:hover { background: var(--bg-hover); }
+
+.btn-primary {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+.btn-primary:hover { background: var(--bg-hover); }
+
+.toast-btn-danger {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
+}
+.toast-btn-danger:hover { opacity: 0.9; }
+
+/* ── 8b. Dialog.confirmInstall() — primary / secondary ─────────
+   Reuses the .encre-dialog-* shells; the only addition is a
+   single "hint" line (download size, mirror, etc.) that the
+   caller can append under the body. */
+
+.encre-dialog-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+/* ── 8c. Dialog.progress() — modal progress bar ──────────────── */
+/* Styled to match the canvas context-usage progress bar
+   (.si-canvas-progress-*) for visual consistency. */
+
+.encre-dialog-card--progress {
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.encre-dialog-progress-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  min-height: 18px;
+}
+.encre-dialog-progress-pct {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.encre-dialog-progress-track {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.encre-dialog-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent, #3b82f6);
+  border-radius: 4px;
+  transition: width var(--duration-slow);
+}
+.encre-dialog-progress-track.is-success .encre-dialog-progress-fill {
+  background: var(--success);
+}
+.encre-dialog-progress-track.is-fail .encre-dialog-progress-fill {
+  background: var(--error);
+}
+.encre-dialog-progress-track.is-indeterminate .encre-dialog-progress-fill {
+  width: 35% !important;
+  animation: encreProgressIndet 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes encreProgressIndet {
+  0%   { left: -35%; }
+  100% { left: 100%; }
+}
+.encre-dialog-progress-sub {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 16px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+/* ── 9. 下拉菜单 / 右键菜单 ───────────────────────────────────
+   合并来源: .context-menu (L3548) / .si-tab-add-dropdown (L1680)
+   / .mention-dropdown / .settings-dropdown (L4663)
+   / .input-model-dropdown (L291)
+   ──────────────────────────────────────────────────────────────── */
+
+/* 菜单容器 */
+.context-menu,
+.tab-add-dropdown,
+.mention-dropdown,
+.settings-dropdown,
+.input-model-dropdown {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: 200;
+}
+
+.context-menu {
+  position: fixed;
+  min-width: 180px;
+}
+.si-tab-add-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  min-width: 140px;
+}
+.mention-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  min-width: 200px;
+  margin-bottom: 6px;
+  background: var(--bg-secondary);
+}
+.settings-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  display: none;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.settings-dropdown.open { display: block; animation: dropdownIn var(--duration-fast) ease-out; }
+
+.input-model-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 260px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 菜单项 */
+.context-menu-item,
+.tab-add-item,
+.mention-dropdown-item,
+.settings-dropdown-item,
+.model-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  text-align: left;
+  font-family: inherit;
+}
+
+.context-menu-item:hover,
+.si-tab-add-item:hover,
+.mention-dropdown-item:hover,
+.settings-dropdown-item:hover,
+.model-dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+/* 选中态 */
+.settings-dropdown-item.selected,
+.model-dropdown-item.selected {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.mention-dropdown-item .lucide {
+  width: 14px; height: 14px;
+}
+
+/* 危险项 */
+.context-menu-item-danger {
+  color: var(--error);
+}
+.context-menu-item-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+
+/* ── 10. 文字截断 ──────────────────────────────────────────────
+   合并各处 overflow:hidden + text-overflow:ellipsis + white-space:nowrap
+   ────────────────────────────────────────────────────────────── */
+.session-preview,
+.ws-name,
+.ws-session-name,
+.search-result-snippet,
+#session-bar-name,
+.code-lang,
+.si-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ── 10. Splash / Loading Screen ──────────────────────────── */
+#splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+}
+
+body.splash-mode #header-bar {
+  z-index: 1000;
+  justify-content: flex-end;
+}
+
+body.splash-mode .header-left,
+body.splash-mode #btn-bell {
+  display: none;
+}
+
+/* ── 11. 动画关键帧 ──────────────────────────────────────────── */
+@keyframes yimFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes yimFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes yimSlideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

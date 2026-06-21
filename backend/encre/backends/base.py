@@ -1,0 +1,881 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+
+
+"""
+Abstract base class for all LLM backends.
+
+Defines the :class:`BaseBackend` interface that every provider-specific backend
+must implement. The core contract is the :meth:`chat` method, which accepts a
+conversation history (OpenAI-format message list) and optional tool definitions,
+then yields a stream of :class:`BackendEvent` items.
+
+Lifecycle
+---------
+1. Instantiate the backend with provider-specific credentials and model name.
+2. Call ``chat()`` in an ``async for`` loop to consume the event stream.
+3. Call ``aclose()`` when done to release HTTP clients and GPU memory.
+
+BackendEvent types emitted by chat()
+-------------------------------------
+- :class:`BackendText` -- a text delta (streaming chunk).
+- :class:`BackendThinking` -- reasoning/thinking tokens (Anthropic, DeepSeek, Gemini).
+- :class:`BackendToolCallDelta` -- partial tool call name or arguments.
+- :class:`BackendToolCall` -- a complete tool call ready for execution.
+- :class:`BackendFinish` -- signals the end of the response with a finish reason.
+- :class:`BackendError` -- a non-recoverable error that terminated the stream.
+"""
+
+from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
+from typing import Any
+
+from encre.utils.types import (
+    AudioResult,
+    BackendEvent,
+    BatchListResponse,
+    BatchObject,
+    BatchRequest,
+    EmbeddingResponse,
+    FileContent,
+    FileListResponse,
+    FileObject,
+    FineTuneEvent,
+    FineTuneHyperparameters,
+    FineTuneJob,
+    FineTuneJobList,
+    ImageGenerationResponse,
+    ModerationResponse,
+    RealtimeSession,
+    RealtimeSessionConfig,
+    ResponseObject,
+)
+
+
+class BaseBackend(ABC):
+    """Abstract base class for LLM provider backends.
+
+    Every backend in the ``encre.backends`` package extends this class and
+    implements the abstract methods below.  The class also provides default
+    implementations for optional capabilities (thinking, prompt caching, token
+    counting) that subclasses may override when the provider supports them.
+
+    Provider backends and their 2026 model support:
+
+    +-----------------------+-----------------------------------------------+
+    | Backend               | 2026 models                                   |
+    +-----------------------+-----------------------------------------------+
+    | OpenAIBackend         | GPT-4.1, GPT-4.1 Mini/Nano, GPT-5.x, o3,     |
+    |                       | o4-mini (GPT-4o deprecated)                   |
+    | AnthropicBackend      | Claude Opus 4.6/4.7, Sonnet 4.5/4.6,         |
+    |                       | Haiku 4.5                                      |
+    | GoogleBackend         | Gemini 2.5 Pro, Gemini 2.5 Flash              |
+    | DeepSeekBackend       | DeepSeek V4-Flash, V4-Pro                     |
+    |                       | (deepseek-chat/reasoner deprecated Jul 2026)  |
+    | GroqBackend           | Llama 3.3 70B, Llama 4 Scout, GPT-OSS 120B   |
+    | OllamaBackend         | Any model served by a local Ollama instance    |
+    | LocalBackend          | Any Hugging Face transformers model            |
+    | BedrockBackend        | Claude, Llama, Mistral via AWS Bedrock         |
+    | OpenAICompatibleBackend| vLLM, SGLang, LiteLLM, llama.cpp, etc.       |
+    +-----------------------+-----------------------------------------------+
+    """
+
+    @abstractmethod
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str = "auto",
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        stream: bool = True,
+        enable_caching: bool = False,
+    ) -> AsyncGenerator[BackendEvent, None]:
+        """Send a chat completion request and stream back events.
+
+        This is the central method of every backend.  It accepts an OpenAI-format
+        message list (``[{"role": "user", "content": "..."}, ...]``) and yields
+        :class:`BackendEvent` items as the response is produced.
+
+        Args:
+            messages: Conversation history in OpenAI message format. Each message
+                has ``role`` (``"system"``, ``"user"``, ``"assistant"``, ``"tool"``)
+                and ``content`` (string or list of content blocks).
+            tools: Optional list of tool definitions in OpenAI function-calling
+                format.  When provided, the model may request tool invocations.
+            tool_choice: Controls tool selection behaviour.
+                ``"auto"`` -- model decides; ``"any"`` -- must use a tool;
+                ``"none"`` -- no tool usage; or a specific ``{"type": "function", "function": {"name": "..."}}``.  # noqa: E501
+            temperature: Sampling temperature (0.0 = deterministic, 1.0 = creative).
+            max_tokens: Maximum number of tokens to generate in the response.
+            stream: If True (default), yields text/tool deltas as they arrive.
+                If False, yields the complete response as a single burst.
+            enable_caching: If True, enables prompt caching optimisations
+                (Anthropic, OpenAI, DeepSeek V4 support this).
+
+        Yields:
+            BackendEvent items: :class:`BackendText`, :class:`BackendThinking`,
+            :class:`BackendToolCallDelta`, :class:`BackendToolCall`,
+            :class:`BackendFinish`, or :class:`BackendError`.
+        """
+        ...
+
+    @abstractmethod
+    def supports_tool_calling(self) -> bool:
+        """Return True if the backend/model supports function/tool calling.
+
+        Backends that return False will have tool definitions stripped before
+        the request is sent to the provider.
+        """
+        ...
+
+    @abstractmethod
+    def context_window_size(self) -> int:
+        """Return the maximum context window size in tokens.
+
+        This value is used by the agent loop to decide when context compaction
+        is needed.  The returned value should reflect the model's actual limit,
+        not a provider default.
+
+        2026 reference values:
+        - GPT-4.1 family: 1,048,576 (1M)
+        - GPT-5.x: 128,000-400,000 (varies by variant)
+        - Claude Opus/Sonnet 4.6: 200,000 (1M in beta)
+        - Gemini 2.5 Pro: 1,048,576 (1M)
+        - DeepSeek V4: 1,048,576 (1M)
+        - Groq models: 131,072
+        - Ollama: varies by model (default 8,192-131,072)
+        """
+        ...
+
+    def supports_thinking(self) -> bool:
+        """Return True if the backend can extract reasoning/thinking tokens.
+
+        All 2026 backends support extracting ``reasoning_content`` from
+        response deltas.  Whether the model actually emits thinking tokens
+        is the model's decision -- the backend simply passes them through
+        when present.
+        """
+        return True
+
+    def supports_prompt_caching(self) -> bool:
+        """Return True if the backend can request prompt caching.
+
+        Most 2026 providers support some form of prompt caching.  The
+        backend may inject cache-control headers or prefixes, but the
+        provider decides whether to honor them.
+        """
+        return True
+
+    def count_tokens(self, text: str) -> int:
+        """Estimate the token count for a given text string.
+
+        Returns -1 when the backend cannot provide an accurate count (the
+        default).  Subclasses that have access to a tokenizer should override
+        this to return a precise count.
+        """
+        return -1
+
+    async def list_models(self) -> list[str]:
+        """Return the list of available model IDs from this provider.
+
+        Default implementation returns an empty list. Subclasses that support
+        OpenAI-compatible APIs override this to call ``GET /models``.
+        """
+        return []
+
+    async def aclose(self) -> None:
+        """Release any resources held by this backend.
+
+        This includes closing HTTP client sessions (httpx.AsyncClient),
+        shutting down thread pools (LocalBackend), and releasing GPU memory.
+        Called by the agent loop when the backend is no longer needed.
+        """
+        pass
+
+    # ── Capability flags ────────────────────────────────────────────────
+    # Subclasses override the corresponding ``supports_*`` flag to advertise
+    # multimodal / extended capabilities.  The router and registry inspect
+    # these flags to decide whether a backend can satisfy a request without
+    # having to perform a capability probe at call time.
+
+    def supports_image_generation(self) -> bool:
+        """Return True if the backend can generate or edit images."""
+        return False
+
+    def supports_image_edit(self) -> bool:
+        """Return True if the backend can edit (inpaint) images."""
+        return False
+
+    def supports_image_variation(self) -> bool:
+        """Return True if the backend can produce image variations."""
+        return False
+
+    def supports_text_to_speech(self) -> bool:
+        """Return True if the backend exposes a TTS endpoint."""
+        return False
+
+    def supports_speech_to_text(self) -> bool:
+        """Return True if the backend exposes a transcription endpoint."""
+        return False
+
+    def supports_audio_translation(self) -> bool:
+        """Return True if the backend exposes an audio translation endpoint."""
+        return False
+
+    def supports_embeddings(self) -> bool:
+        """Return True if the backend can produce embedding vectors."""
+        return False
+
+    def supports_moderation(self) -> bool:
+        """Return True if the backend exposes a moderation endpoint."""
+        return False
+
+    def supports_files(self) -> bool:
+        """Return True if the backend exposes a file management endpoint."""
+        return False
+
+    def supports_batch(self) -> bool:
+        """Return True if the backend exposes batch processing endpoints."""
+        return False
+
+    def supports_fine_tuning(self) -> bool:
+        """Return True if the backend exposes fine-tuning endpoints."""
+        return False
+
+    def supports_realtime(self) -> bool:
+        """Return True if the backend exposes a Realtime / WebSocket endpoint."""
+        return False
+
+    def supports_responses_api(self) -> bool:
+        """Return True if the backend implements the OpenAI Responses API."""
+        return False
+
+    def supports_vision_input(self) -> bool:
+        """Return True if the chat() method can accept image inputs."""
+        return True
+
+    # ── Image generation ────────────────────────────────────────────────
+
+    async def generate_image(  # noqa: ARG002
+        self,
+        prompt: str,
+        model: str | None = None,
+        n: int = 1,
+        size: str = "1024x1024",
+        quality: str = "standard",
+        response_format: str = "b64_json",
+        style: str | None = None,
+        user: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> ImageGenerationResponse:
+        """Generate one or more images from a text prompt.
+
+        Args:
+            prompt: The text prompt describing the desired image.
+            model: Optional provider-specific model override.  Defaults to the
+                backend's primary image model.
+            n: Number of images to produce (1-10 depending on provider).
+            size: Image dimensions as ``"WxH"`` (e.g. ``"1024x1024"``).
+            quality: Image quality hint (``"standard"`` or ``"hd"`` /
+                ``"high"`` / ``"medium"`` / ``"low"`` depending on model).
+            response_format: ``"b64_json"`` or ``"url"``.
+            style: Optional style hint (OpenAI ``"vivid"`` / ``"natural"``).
+            user: Optional end-user identifier for abuse tracking.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            An :class:`ImageGenerationResponse` containing one
+            :class:`ImageResult` per generated image.
+
+        Raises:
+            NotImplementedError: If the backend does not advertise
+                ``supports_image_generation()``.
+        """
+        if not self.supports_image_generation():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support image generation"
+            )
+        raise NotImplementedError
+
+    async def edit_image(  # noqa: ARG002
+        self,
+        prompt: str,
+        image_b64: str,
+        mask_b64: str | None = None,
+        model: str | None = None,
+        n: int = 1,
+        size: str = "1024x1024",
+        response_format: str = "b64_json",
+        extra_params: dict[str, Any] | None = None,
+    ) -> ImageGenerationResponse:
+        """Edit an image (inpaint) using a prompt and optional mask.
+
+        Args:
+            prompt: Description of the desired edit.
+            image_b64: Base64-encoded source image (PNG, must be square).
+            mask_b64: Optional base64-encoded mask (transparent areas are
+                edited; opaque areas preserved).
+            model: Optional provider-specific model override.
+            n: Number of edited variants to produce.
+            size: Output image dimensions as ``"WxH"``.
+            response_format: ``"b64_json"`` or ``"url"``.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            An :class:`ImageGenerationResponse` containing the edited images.
+        """
+        if not self.supports_image_edit():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support image editing"
+            )
+        raise NotImplementedError
+
+    async def create_image_variation(  # noqa: ARG002
+        self,
+        image_b64: str,
+        model: str | None = None,
+        n: int = 1,
+        size: str = "1024x1024",
+        response_format: str = "b64_json",
+        extra_params: dict[str, Any] | None = None,
+    ) -> ImageGenerationResponse:
+        """Produce variations of a source image.
+
+        Args:
+            image_b64: Base64-encoded source image (PNG, square).
+            model: Optional provider-specific model override.
+            n: Number of variations to produce.
+            size: Output image dimensions as ``"WxH"``.
+            response_format: ``"b64_json"`` or ``"url"``.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            An :class:`ImageGenerationResponse` containing the variations.
+        """
+        if not self.supports_image_variation():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support image variations"
+            )
+        raise NotImplementedError
+
+    # ── Audio ────────────────────────────────────────────────────────────
+
+    async def text_to_speech(  # noqa: ARG002
+        self,
+        text: str,
+        model: str | None = None,
+        voice: str = "alloy",
+        response_format: str = "mp3",
+        speed: float = 1.0,
+        extra_params: dict[str, Any] | None = None,
+    ) -> AudioResult:
+        """Synthesise speech from text.
+
+        Args:
+            text: Input text to synthesise.
+            model: Optional provider-specific TTS model override.
+            voice: Voice identifier (OpenAI: ``alloy``, ``echo``, ``fable``,
+                ``onyx``, ``nova``, ``shimmer``; Google: ``en-US-Wavenet-A``;
+                Bedrock: ``Joanna`` etc.).
+            response_format: Audio container (``"mp3"``, ``"opus"``,
+                ``"aac"``, ``"flac"``, ``"wav"``, ``"pcm"``).
+            speed: Playback speed multiplier (0.25 - 4.0).
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            An :class:`AudioResult` with the base64-encoded audio.
+        """
+        if not self.supports_text_to_speech():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support text-to-speech"
+            )
+        raise NotImplementedError
+
+    async def transcribe_audio(  # noqa: ARG002
+        self,
+        audio_b64: str,
+        model: str | None = None,
+        language: str | None = None,
+        response_format: str = "json",
+        temperature: float = 0.0,
+        prompt: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> AudioResult:
+        """Transcribe speech from an audio recording.
+
+        Args:
+            audio_b64: Base64-encoded audio bytes.
+            model: Optional provider-specific STT model override.
+            language: ISO-639-1 language code (optional, improves accuracy).
+            response_format: ``"json"``, ``"text"``, ``"srt"``, ``"vtt"`` or
+                ``"verbose_json"``.
+            temperature: Sampling temperature (0.0 = deterministic).
+            prompt: Optional prompt to steer the transcription style.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            An :class:`AudioResult` with ``text`` populated and (optionally)
+            timed ``segments``.
+        """
+        if not self.supports_speech_to_text():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support speech-to-text"
+            )
+        raise NotImplementedError
+
+    async def translate_audio(  # noqa: ARG002
+        self,
+        audio_b64: str,
+        model: str | None = None,
+        response_format: str = "json",
+        temperature: float = 0.0,
+        prompt: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> AudioResult:
+        """Translate non-English audio into English text.
+
+        Args:
+            audio_b64: Base64-encoded audio bytes.
+            model: Optional provider-specific translation model override.
+            response_format: ``"json"``, ``"text"``, ``"srt"`` or ``"vtt"``.
+            temperature: Sampling temperature.
+            prompt: Optional prompt to steer translation style.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            An :class:`AudioResult` with the English ``text``.
+        """
+        if not self.supports_audio_translation():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support audio translation"
+            )
+        raise NotImplementedError
+
+    # ── Embeddings ───────────────────────────────────────────────────────
+
+    async def create_embeddings(  # noqa: ARG002
+        self,
+        input: str | list[str],
+        model: str | None = None,
+        encoding_format: str = "float",
+        dimensions: int | None = None,
+        user: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> EmbeddingResponse:
+        """Generate embedding vectors for the given text input(s).
+
+        Args:
+            input: A single string or a list of strings to embed.
+            model: Optional provider-specific embedding model override.
+            encoding_format: ``"float"`` or ``"base64"``.
+            dimensions: Optional output dimensionality override
+                (text-embedding-3-* models support this).
+            user: Optional end-user identifier.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            An :class:`EmbeddingResponse` with one :class:`EmbeddingResult`
+            per input string.
+        """
+        if not self.supports_embeddings():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support embeddings"
+            )
+        raise NotImplementedError
+
+    # ── Moderation ───────────────────────────────────────────────────────
+
+    async def create_moderation(  # noqa: ARG002
+        self,
+        input: str | list[str],
+        model: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> ModerationResponse:
+        """Classify whether text violates the provider's content policy.
+
+        Args:
+            input: A single string or a list of strings to classify.
+            model: Optional provider-specific moderation model override.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            A :class:`ModerationResponse` containing per-input classification.
+        """
+        if not self.supports_moderation():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support moderation"
+            )
+        raise NotImplementedError
+
+    # ── Files ────────────────────────────────────────────────────────────
+
+    async def upload_file(  # noqa: ARG002
+        self,
+        filename: str,
+        content_b64: str,
+        purpose: str = "assistants",
+        mime_type: str = "application/octet-stream",
+        extra_params: dict[str, Any] | None = None,
+    ) -> FileObject:
+        """Upload a file to the provider's storage.
+
+        Args:
+            filename: Display filename.
+            content_b64: Base64-encoded file content.
+            purpose: Intended purpose (e.g. ``"assistants"``,
+                ``"fine-tune"``, ``"vision"``, ``"batch"``,
+                ``"user_data"``, ``"evals"``).
+            mime_type: MIME type of the content.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            A :class:`FileObject` with the provider-assigned id.
+        """
+        if not self.supports_files():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support file uploads"
+            )
+        raise NotImplementedError
+
+    async def list_files(  # noqa: ARG002
+        self,
+        purpose: str | None = None,
+        limit: int = 100,
+        after: str | None = None,
+        order: str = "desc",
+        extra_params: dict[str, Any] | None = None,
+    ) -> FileListResponse:
+        """List files previously uploaded to the provider.
+
+        Args:
+            purpose: Optional purpose filter.
+            limit: Maximum number of files to return (1-10000).
+            after: Cursor for pagination (``file_id`` after which to list).
+            order: Sort order (``"asc"`` or ``"desc"``).
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            A :class:`FileListResponse` containing matching files.
+        """
+        if not self.supports_files():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support file listing"
+            )
+        raise NotImplementedError
+
+    async def retrieve_file(self, file_id: str) -> FileObject:  # noqa: ARG002
+        """Fetch metadata for a single uploaded file.
+
+        Args:
+            file_id: Provider-assigned file id.
+
+        Returns:
+            The matching :class:`FileObject`.
+        """
+        if not self.supports_files():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support file retrieval"
+            )
+        raise NotImplementedError
+
+    async def delete_file(self, file_id: str) -> bool:  # noqa: ARG002
+        """Delete an uploaded file.
+
+        Args:
+            file_id: Provider-assigned file id.
+
+        Returns:
+            ``True`` if the deletion succeeded.
+        """
+        if not self.supports_files():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support file deletion"
+            )
+        raise NotImplementedError
+
+    async def download_file(self, file_id: str) -> FileContent:  # noqa: ARG002
+        """Download the raw content of an uploaded file.
+
+        Args:
+            file_id: Provider-assigned file id.
+
+        Returns:
+            A :class:`FileContent` with the file bytes base64-encoded.
+        """
+        if not self.supports_files():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support file download"
+            )
+        raise NotImplementedError
+
+    # ── Batch ────────────────────────────────────────────────────────────
+
+    async def create_batch(  # noqa: ARG002
+        self,
+        requests: list[BatchRequest],
+        endpoint: str = "/v1/chat/completions",
+        completion_window: str = "24h",
+        metadata: dict[str, Any] | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> BatchObject:
+        """Create a batch of API requests for asynchronous processing.
+
+        Args:
+            requests: The list of requests to execute.  Providers that
+                require an input file (OpenAI) will stage the requests to
+                an internal file and submit it transparently.
+            endpoint: Provider endpoint that the batch should target
+                (``/v1/chat/completions``, ``/v1/embeddings``,
+                ``/v1/messages``).
+            completion_window: Completion deadline window (``"24h"``).
+            metadata: Optional provider-side metadata.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            The newly-created :class:`BatchObject`.
+        """
+        if not self.supports_batch():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support batch processing"
+            )
+        raise NotImplementedError
+
+    async def retrieve_batch(  # noqa: ARG002
+        self,
+        batch_id: str,
+    ) -> BatchObject:
+        """Fetch the current state of a batch.
+
+        Args:
+            batch_id: Provider-assigned batch id.
+
+        Returns:
+            The current :class:`BatchObject`.
+        """
+        if not self.supports_batch():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support batch processing"
+            )
+        raise NotImplementedError
+
+    async def list_batches(
+        self,
+        limit: int = 20,
+        after: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> BatchListResponse:
+        """List the most recent batches.
+
+        Args:
+            limit: Maximum number of batches to return.
+            after: Cursor for pagination.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            A :class:`BatchListResponse`.
+        """
+        if not self.supports_batch():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support batch processing"
+            )
+        raise NotImplementedError
+
+    async def cancel_batch(self, batch_id: str) -> BatchObject:
+        """Cancel an in-flight batch.
+
+        Args:
+            batch_id: Provider-assigned batch id.
+
+        Returns:
+            The updated :class:`BatchObject` (typically with
+            ``status="cancelling"`` or ``"cancelled"``).
+        """
+        if not self.supports_batch():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support batch processing"
+            )
+        raise NotImplementedError
+
+    # ── Fine-tuning ──────────────────────────────────────────────────────
+
+    async def create_fine_tuning_job(
+        self,
+        training_file: str,
+        model: str,
+        hyperparameters: FineTuneHyperparameters | None = None,
+        validation_file: str | None = None,
+        suffix: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> FineTuneJob:
+        """Create a supervised fine-tuning job.
+
+        Args:
+            training_file: Provider file id of the JSONL training dataset.
+            model: Base model to fine-tune (e.g. ``"gpt-4.1-mini-2026-04-01"``).
+            hyperparameters: Optional training hyperparameters.
+            validation_file: Optional provider file id of the JSONL
+                validation dataset.
+            suffix: Optional suffix appended to the resulting model name.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            The newly-created :class:`FineTuneJob`.
+        """
+        if not self.supports_fine_tuning():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support fine-tuning"
+            )
+        raise NotImplementedError
+
+    async def retrieve_fine_tuning_job(self, job_id: str) -> FineTuneJob:
+        """Fetch a fine-tuning job by id."""
+        if not self.supports_fine_tuning():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support fine-tuning"
+            )
+        raise NotImplementedError
+
+    async def list_fine_tuning_jobs(
+        self,
+        limit: int = 20,
+        after: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> FineTuneJobList:
+        """List the most recent fine-tuning jobs."""
+        if not self.supports_fine_tuning():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support fine-tuning"
+            )
+        raise NotImplementedError
+
+    async def list_fine_tuning_events(
+        self,
+        job_id: str,
+        limit: int = 20,
+        after: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> list[FineTuneEvent]:
+        """List the event log of a fine-tuning job."""
+        if not self.supports_fine_tuning():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support fine-tuning"
+            )
+        raise NotImplementedError
+
+    async def cancel_fine_tuning_job(self, job_id: str) -> FineTuneJob:
+        """Cancel an in-flight fine-tuning job."""
+        if not self.supports_fine_tuning():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support fine-tuning"
+            )
+        raise NotImplementedError
+
+    # ── Realtime ─────────────────────────────────────────────────────────
+
+    async def create_realtime_session(
+        self,
+        config: RealtimeSessionConfig | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> RealtimeSession:
+        """Open a Realtime (WebSocket) session with the provider.
+
+        Args:
+            config: Session configuration (model, voice, modalities, tools).
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            A :class:`RealtimeSession` holding the live ``transport``.
+        """
+        if not self.supports_realtime():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support realtime sessions"
+            )
+        raise NotImplementedError
+
+    async def close_realtime_session(self, session: RealtimeSession) -> None:
+        """Close a previously-opened Realtime session."""
+        if not self.supports_realtime():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support realtime sessions"
+            )
+        raise NotImplementedError
+
+    # ── Responses API ────────────────────────────────────────────────────
+
+    async def create_response(
+        self,
+        input: str | list[dict[str, Any]],
+        model: str | None = None,
+        instructions: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str = "auto",
+        temperature: float = 0.0,
+        max_output_tokens: int | None = None,
+        stream: bool = False,
+        background: bool = False,
+        previous_response_id: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+    ) -> ResponseObject:
+        """Call the OpenAI Responses API (unified chat + tools endpoint).
+
+        Args:
+            input: Either a single user message string or a list of input
+                items in Responses API format.
+            model: Optional model override.
+            instructions: Optional system instructions.
+            tools: Optional tool definitions.
+            tool_choice: Tool selection strategy.
+            temperature: Sampling temperature.
+            max_output_tokens: Optional cap on generated tokens.
+            stream: Whether to stream incremental events.
+            background: Whether to run the request in the background.
+            previous_response_id: Optional id of the prior response in the
+                same logical conversation.
+            extra_params: Additional provider-specific parameters.
+
+        Returns:
+            A :class:`ResponseObject` representing the response.
+        """
+        if not self.supports_responses_api():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not implement the Responses API"
+            )
+        raise NotImplementedError
+
+    async def retrieve_response(self, response_id: str) -> ResponseObject:
+        """Fetch a previously-created response by id."""
+        if not self.supports_responses_api():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not implement the Responses API"
+            )
+        raise NotImplementedError
+
+    async def delete_response(self, response_id: str) -> bool:
+        """Delete a previously-created response by id."""
+        if not self.supports_responses_api():
+            raise NotImplementedError(
+                f"{type(self).__name__} does not implement the Responses API"
+            )
+        raise NotImplementedError

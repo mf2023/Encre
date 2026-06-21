@@ -1,0 +1,45 @@
+appId: com.encre.desktop
+productName: Encre
+copyright: "Copyright © 2025-2026 Dunimd Team"
+
+directories:
+  output: release
+  buildResources: assets
+
+buildDependenciesFromSource: false
+
+files:
+  - dist/**/*
+  - renderer/**/*
+  - "!renderer/src/**/*"
+  - "!renderer/tsconfig.json"
+
+extraResources:
+  - from: ../backend/encre
+    to: encre
+    filter:
+      - "**/*.py"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+mac:
+  target:
+    - target: pkg
+      arch: [x64, arm64]
+
+linux:
+  target:
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  category: Utility
