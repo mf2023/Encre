@@ -81,7 +81,7 @@ def _check_stale_pid() -> None:
         logger.warning("PID file exists but process is owned by another user")
 
 
-def _shutdown(signum: int, frame) -> None:
+def _shutdown(signum: int, _frame) -> None:
     logger.info("Received signal %d, shutting down...", signum)
     _remove_pid()
     # Signal the main event loop to stop by raising KeyboardInterrupt

@@ -39,7 +39,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "github",
         "label": "GitHub",
-        "description": "GitHub API -- manage repositories, issues, pull requests, code search, and Actions",  # noqa: E501
+        "description": "GitHub API -- manage repositories, issues, pull requests, code search, and Actions",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -52,7 +52,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "gitlab",
         "label": "GitLab",
-        "description": "GitLab API -- manage projects, merge requests, issues, pipelines, and registries",  # noqa: E501
+        "description": "GitLab API -- manage projects, merge requests, issues, pipelines, and registries",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -60,7 +60,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
         },
         "env_fields": {
             "GITLAB_TOKEN": {"label": "GitLab Personal Access Token", "secret": True},
-            "GITLAB_URL": {"label": "GitLab Instance URL (default: https://gitlab.com)", "secret": False},  # noqa: E501
+            "GITLAB_URL": {"label": "GitLab Instance URL (default: https://gitlab.com)", "secret": False},
         },
         "docs": "https://github.com/manuelmhtr/mcp-server-gitlab",
     },
@@ -81,13 +81,13 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "stripe",
         "label": "Stripe",
-        "description": "Stripe payment platform -- customers, products, invoices, payment links, balance",  # noqa: E501
+        "description": "Stripe payment platform -- customers, products, invoices, payment links, balance",
         "config": {
             "type": "stdio",
             "command": "npx",
             "args": ["-y", "@stripe/mcp", "--tools=all"],
         },
-        "env_fields": {"STRIPE_SECRET_KEY": {"label": "Stripe Secret Key (sk_...)", "secret": True}},  # noqa: E501
+        "env_fields": {"STRIPE_SECRET_KEY": {"label": "Stripe Secret Key (sk_...)", "secret": True}},
         "docs": "https://github.com/stripe/ai",
     },
     # ── Supabase ────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
             "command": "npx",
             "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only"],
         },
-        "env_fields": {"SUPABASE_ACCESS_TOKEN": {"label": "Supabase Personal Access Token (sbp_...)", "secret": True}},  # noqa: E501
+        "env_fields": {"SUPABASE_ACCESS_TOKEN": {"label": "Supabase Personal Access Token (sbp_...)", "secret": True}},
         "docs": "https://supabase.com/docs/guides/integration/mcp",
     },
     # ── Vercel ──────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "prisma",
         "label": "Prisma",
-        "description": "Prisma ORM -- schema management, migrations, database queries, Prisma Postgres",  # noqa: E501
+        "description": "Prisma ORM -- schema management, migrations, database queries, Prisma Postgres",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -165,7 +165,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
             "command": "npx",
             "args": ["-y", "@notionhq/notion-mcp-server"],
         },
-        "env_fields": {"NOTION_TOKEN": {"label": "Notion Integration Token (ntn_...)", "secret": True}},  # noqa: E501
+        "env_fields": {"NOTION_TOKEN": {"label": "Notion Integration Token (ntn_...)", "secret": True}},
         "docs": "https://www.npmjs.com/package/@notionhq/notion-mcp-server",
     },
     # ── Figma ───────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "filesystem",
         "label": "Filesystem",
-        "description": "Sandboxed filesystem access -- read, write, search, move files in allowed directories",  # noqa: E501
+        "description": "Sandboxed filesystem access -- read, write, search, move files in allowed directories",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -236,7 +236,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
             "command": "npx",
             "args": ["-y", "@anthropic-ai/mcp-postgres-tools"],
         },
-        "env_fields": {"DATABASE_URL": {"label": "PostgreSQL connection string (postgresql://...)", "secret": True}},  # noqa: E501
+        "env_fields": {"DATABASE_URL": {"label": "PostgreSQL connection string (postgresql://...)", "secret": True}},
         "docs": "https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp/postgres",
     },
     # ── SQLite ──────────────────────────────────────────────────────────
@@ -269,7 +269,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "kubernetes",
         "label": "Kubernetes",
-        "description": "Kubernetes cluster management -- pods, deployments, services, logs (uses current kubeconfig)",  # noqa: E501
+        "description": "Kubernetes cluster management -- pods, deployments, services, logs (uses current kubeconfig)",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -282,7 +282,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "aws",
         "label": "AWS",
-        "description": "AWS services -- S3, EC2, Lambda, CloudWatch, IAM (uses AWS credentials from env)",  # noqa: E501
+        "description": "AWS services -- S3, EC2, Lambda, CloudWatch, IAM (uses AWS credentials from env)",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -295,7 +295,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "gcp",
         "label": "Google Cloud",
-        "description": "Google Cloud Platform -- GCS, BigQuery, Cloud Run, GKE (uses gcloud credentials)",  # noqa: E501
+        "description": "Google Cloud Platform -- GCS, BigQuery, Cloud Run, GKE (uses gcloud credentials)",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -316,7 +316,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
         },
         "env_fields": {
             "JIRA_API_TOKEN": {"label": "Jira API Token", "secret": True},
-            "JIRA_URL": {"label": "Jira Instance URL (https://your-domain.atlassian.net)", "secret": False},  # noqa: E501
+            "JIRA_URL": {"label": "Jira Instance URL (https://your-domain.atlassian.net)", "secret": False},
             "JIRA_USER": {"label": "Jira Email", "secret": False},
         },
         "docs": "https://github.com/sooperset/mcp-atlassian",
@@ -351,7 +351,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "tavily",
         "label": "Tavily Search",
-        "description": "Web search API optimized for AI agents -- news, general, and deep research queries",  # noqa: E501
+        "description": "Web search API optimized for AI agents -- news, general, and deep research queries",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -370,20 +370,20 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
             "command": "npx",
             "args": ["-y", "mcp-server-airtable"],
         },
-        "env_fields": {"AIRTABLE_TOKEN": {"label": "Airtable Personal Access Token", "secret": True}},  # noqa: E501
+        "env_fields": {"AIRTABLE_TOKEN": {"label": "Airtable Personal Access Token", "secret": True}},
         "docs": "https://github.com/domdomegg/airtable-mcp-server",
     },
     # ── Redis ───────────────────────────────────────────────────────────
     {
         "id": "redis",
         "label": "Redis",
-        "description": "Redis in-memory store -- get, set, delete keys, list operations (default localhost:6379)",  # noqa: E501
+        "description": "Redis in-memory store -- get, set, delete keys, list operations (default localhost:6379)",
         "config": {
             "type": "stdio",
             "command": "npx",
             "args": ["-y", "mcp-server-redis"],
         },
-        "env_fields": {"REDIS_URL": {"label": "Redis connection string (redis://localhost:6379)", "secret": True}},  # noqa: E501
+        "env_fields": {"REDIS_URL": {"label": "Redis connection string (redis://localhost:6379)", "secret": True}},
         "docs": "https://github.com/prajwalnayak7/mcp-server-redis",
     },
     # ── Elasticsearch ───────────────────────────────────────────────────
@@ -412,7 +412,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
             "command": "npx",
             "args": ["-y", "mcp-server-clickup"],
         },
-        "env_fields": {"CLICKUP_API_KEY": {"label": "ClickUp API Token (pk_...)", "secret": True}},  # noqa: E501
+        "env_fields": {"CLICKUP_API_KEY": {"label": "ClickUp API Token (pk_...)", "secret": True}},
         "docs": "https://github.com/nguyenvanduocit/clickup-mcp-server",
     },
     # ── YouTube ─────────────────────────────────────────────────────────
@@ -432,7 +432,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "hackernews",
         "label": "Hacker News",
-        "description": "Hacker News -- top stories, comments, user profiles, search (no API key needed)",  # noqa: E501
+        "description": "Hacker News -- top stories, comments, user profiles, search (no API key needed)",
         "config": {
             "type": "stdio",
             "command": "npx",
@@ -458,7 +458,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
     {
         "id": "mem0",
         "label": "Mem0 (Memory)",
-        "description": "Persistent memory layer -- store, retrieve, search user preferences and facts across sessions",  # noqa: E501
+        "description": "Persistent memory layer -- store, retrieve, search user preferences and facts across sessions",
         "config": {
             "type": "stdio",
             "command": "npx",

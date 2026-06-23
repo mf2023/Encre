@@ -27,11 +27,62 @@
 
 import asyncio
 
+import httpx
 import pytest
 from encre.backend import create_backend
+from encre.backends.auth import AuthManager
 from encre.backends.base import BaseBackend
 from encre.backends.failover import BackendHealth, FailoverBackend
 from encre.backends.router import CostTracker, Route, RouterBackend, TaskCategory
+from encre.utils.types import BackendFinish
+
+
+# ===========================================================================
+# MockBackend — minimal concrete backend for integration tests
+# ===========================================================================
+
+class MockBackend(BaseBackend):
+    """Minimal backend for testing RouterBackend integration.
+
+    Optionally raises an exception on chat() for testing failure paths.
+    """
+    def __init__(self, name: str = "mock", fail_on_call: bool = False,
+                 fail_error: Exception | None = None) -> None:
+        self.model = name
+        self._fail_on_call = fail_on_call
+        self._fail_error = fail_error or httpx.ConnectError("mock connection error")
+
+    async def chat(
+        self,
+        messages: list | None = None,
+        tools: list | None = None,
+        tool_choice: str = "auto",
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        stream: bool = True,
+        enable_caching: bool = False,
+    ):
+        if self._fail_on_call:
+            raise self._fail_error
+        yield BackendFinish(reason="stop", usage={})
+
+    def supports_tool_calling(self) -> bool:
+        return True
+
+    def context_window_size(self) -> int:
+        return 128000
+
+    def supports_thinking(self) -> bool:
+        return False
+
+    def supports_prompt_caching(self) -> bool:
+        return False
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split())
+
+    async def aclose(self) -> None:
+        pass
 
 # ===========================================================================
 # BackendHealth
@@ -235,6 +286,139 @@ class TestRouterBackend:
         assert isinstance(stats, dict)
         assert "default" in stats
         assert TaskCategory.CODING in stats
+
+
+# ===========================================================================
+# RouterBackend — Connection monitor & Auth integration
+# ===========================================================================
+
+class TestRouterBackendIntegration:
+    """Tests for AuthManager + ConnectionHealthMonitor integration."""
+
+    @pytest.mark.asyncio
+    async def test_get_health_returns_connection_info(self):
+        coding = MockBackend(name="coding")
+        default = MockBackend(name="default")
+        rb = RouterBackend(routes={TaskCategory.CODING: coding}, default=default)
+        health = rb.get_health()
+        assert "connection" in health
+        assert "auth" in health
+        assert health["auth"] is None
+        assert isinstance(health["connection"], dict)
+        assert "last_route" in health
+
+    @pytest.mark.asyncio
+    async def test_auth_manager_accepted_and_visible(self):
+        auth = AuthManager(provider="test", api_key="sk-test")
+        coding = MockBackend(name="coding")
+        default = MockBackend(name="default")
+        rb = RouterBackend(
+            routes={TaskCategory.CODING: coding}, default=default,
+            auth_manager=auth,
+        )
+        health = rb.get_health()
+        assert health["auth"] is not None
+        assert health["auth"]["provider"] == "test"
+        assert health["auth"]["has_primary"] is True
+
+    @pytest.mark.asyncio
+    async def test_connection_failure_recorded(self):
+        coding = MockBackend(name="coding", fail_on_call=True)
+        default = MockBackend(name="default")
+        rb = RouterBackend(routes={TaskCategory.CODING: coding}, default=default)
+
+        with pytest.raises(httpx.ConnectError):
+            async for _ in rb.chat(
+                messages=[{"role": "user", "content": "write a python function"}]
+            ):
+                pass
+
+        # Verify the coding route got a failure recorded.
+        rh = rb._connection_monitor.get_health(TaskCategory.CODING)
+        assert rh is not None
+        assert rh.consecutive_failures >= 1
+        assert rh.total_failures >= 1
+
+    @pytest.mark.asyncio
+    async def test_successful_call_records_success(self):
+        coding = MockBackend(name="coding")
+        default = MockBackend(name="default")
+        rb = RouterBackend(routes={TaskCategory.CODING: coding}, default=default)
+
+        # Pre-record a failure so we can verify success clears it.
+        rb._connection_monitor.record_failure(TaskCategory.CODING, "previous error")
+        assert rb._connection_monitor.get_health(TaskCategory.CODING).consecutive_failures == 1
+
+        # Successful call.
+        async for _ in rb.chat(
+            messages=[{"role": "user", "content": "write a python function"}]
+        ):
+            pass
+
+        rh = rb._connection_monitor.get_health(TaskCategory.CODING)
+        assert rh is not None
+        assert rh.consecutive_failures == 0
+        assert rh.total_requests >= 1
+
+    @pytest.mark.asyncio
+    async def test_degraded_route_falls_back(self):
+        coding = MockBackend(name="coding")
+        default = MockBackend(name="default")
+        rb = RouterBackend(routes={TaskCategory.CODING: coding}, default=default)
+
+        # Degrade the coding route.
+        for _ in range(3):
+            rb._connection_monitor.record_failure(TaskCategory.CODING, "timeout")
+        assert rb._connection_monitor.is_degraded(TaskCategory.CODING)
+
+        # Chat with a coding prompt — should fall back to default.
+        async for _ in rb.chat(
+            messages=[{"role": "user", "content": "write a python function"}]
+        ):
+            pass
+
+        assert rb.last_route == "default"
+
+    @pytest.mark.asyncio
+    async def test_all_routes_degraded_uses_original_selection(self):
+        coding = MockBackend(name="coding", fail_on_call=True)
+        default = MockBackend(name="default", fail_on_call=True)
+        rb = RouterBackend(routes={TaskCategory.CODING: coding}, default=default)
+
+        # Degrade both routes.
+        for _ in range(3):
+            rb._connection_monitor.record_failure(TaskCategory.CODING, "timeout")
+            rb._connection_monitor.record_failure("default", "timeout")
+        assert rb._connection_monitor.is_degraded(TaskCategory.CODING)
+        assert rb._connection_monitor.is_degraded("default")
+
+        # All degraded — should use original selection (coding) despite degradation.
+        with pytest.raises(httpx.ConnectError):
+            async for _ in rb.chat(
+                messages=[{"role": "user", "content": "write a python function"}]
+            ):
+                pass
+
+        assert rb.last_route == TaskCategory.CODING
+
+    @pytest.mark.asyncio
+    async def test_non_connection_error_still_recorded(self):
+        coding = MockBackend(
+            name="coding", fail_on_call=True,
+            fail_error=ValueError("bad request"),
+        )
+        default = MockBackend(name="default")
+        rb = RouterBackend(routes={TaskCategory.CODING: coding}, default=default)
+
+        with pytest.raises(ValueError, match="bad request"):
+            async for _ in rb.chat(
+                messages=[{"role": "user", "content": "write a python function"}]
+            ):
+                pass
+
+        rh = rb._connection_monitor.get_health(TaskCategory.CODING)
+        assert rh is not None
+        assert rh.consecutive_failures >= 1
 
 
 # ===========================================================================

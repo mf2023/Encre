@@ -182,7 +182,7 @@ class HTTPChannel(Channel):
     async def _handle_chat(
         self,
         body: str,
-        headers: dict[str, str],
+        _headers: dict[str, str],
         writer: asyncio.StreamWriter,
     ) -> None:
         router = self._router
@@ -214,7 +214,7 @@ class HTTPChannel(Channel):
                     system_prompt=system_prompt,
                 ):
                     if isinstance(event, TextDelta) and event.text:
-                        line = json.dumps({"type": "delta", "content": event.text}, ensure_ascii=False) + "\n"  # noqa: E501
+                        line = json.dumps({"type": "delta", "content": event.text}, ensure_ascii=False) + "\n"
                         writer.write(line.encode("utf-8"))
                     elif isinstance(event, ToolResult):
                         line = json.dumps({

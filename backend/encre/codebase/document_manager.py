@@ -88,7 +88,7 @@ class EncreDocument:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> EncreDocument:
+    def from_dict(cls, d: dict[str, Any]) -> "EncreDocument":
         return cls(
             id=d.get("id", ""),
             name=d.get("name", ""),

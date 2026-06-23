@@ -297,7 +297,7 @@ class WorkflowAgentExecutor:
     def _skip_remaining(
         self,
         tree: TaskTree,
-        enqueued: set[str],
+        _enqueued: set[str],
         completed: set[str],
         failed_ids: set[str],
         skipped_ids: set[str],

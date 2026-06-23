@@ -31,7 +31,7 @@ from encre.utils.types import PermissionMode
 
 
 class EncreResearchPrompt(EncrePromptTemplate):
-    def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "research") -> None:  # noqa: E501
+    def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "research") -> None:
         super().__init__(builder=builder, specialty=specialty)
 
     def build_system_prompt(

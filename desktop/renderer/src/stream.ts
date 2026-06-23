@@ -86,6 +86,10 @@ let _validationResolve: (() => void) | null = null;
 let _validationReject: ((reason: string) => void) | null = null;
 let _onTranscription: ((text: string) => void) | null = null;
 
+function _hasSessionId(event: { session_id?: string | null }): event is { session_id: string } {
+  return typeof event.session_id === "string" && event.session_id.length > 0;
+}
+
 function _shouldRejectSessionScopedEvent(event: ServerEvent): boolean {
   if (event.type === "session_ready") return false;
   // Session lifecycle notifications must always be handled so the sidebar
@@ -140,6 +144,16 @@ function _isSessionBoundStreamEvent(type: ServerEvent["type"]): boolean {
     type === "plan_resolved" ||
     type === "assistant_boundary" ||
     type === "compact";
+}
+
+function _requiresExplicitSessionId(type: ServerEvent["type"]): boolean {
+  return _isSessionBoundStreamEvent(type) ||
+    type === "messages_updated" ||
+    type === "rollback_checkout" ||
+    type === "telemetry" ||
+    type === "context_usage" ||
+    type === "artifacts_update" ||
+    type === "references_update";
 }
 
 /** Create an assistant message when a queued run starts streaming.
@@ -216,6 +230,9 @@ export function setOnTranscription(cb: (text: string) => void): void {
 }
 
 export function handleEvent(event: ServerEvent): void {
+  if (_requiresExplicitSessionId(event.type) && !_hasSessionId(event as { session_id?: string | null })) {
+    return;
+  }
   // Skip streaming events from background sessions -- they carry a session_id
   // that does not match the currently active session.  session_ready is exempt
   // because it IS the message that sets the current session_id.
@@ -237,6 +254,21 @@ export function handleEvent(event: ServerEvent): void {
     }
     if (_requestedSessionId && eventSid && eventSid !== _requestedSessionId) {
       console.log("[stream] REJECT session_ready eventSid=%s requested=%s", eventSid, _requestedSessionId);
+      return;
+    }
+    // Guard against a WebSocket reconnect (or a stray startup reply) yanking
+    // the user away from the session they are already viewing.  Once we have
+    // an active sessionId, only accept a session_ready that explicitly
+    // matches it (or is a genuine user-initiated resume/new).  Unsolicited
+    // session_ready events for a different session are dropped.
+    const _activeReadySid = state.getState().sessionId;
+    if (
+      _activeReadySid &&
+      eventSid &&
+      eventSid !== _activeReadySid &&
+      !_requestedSessionRequestId
+    ) {
+      console.log("[stream] REJECT session_ready stray sid=%s active=%s", eventSid, _activeReadySid);
       return;
     }
   }
@@ -305,19 +337,31 @@ export function handleEvent(event: ServerEvent): void {
       break;
     }
 
-    case "text_delta":
-      _ensureAssistantMessage(_eventSessionId(event));
-      state.appendTextDelta(event.text, _eventSessionId(event));
+    case "text_delta": {
+      // Defense-in-depth: even though the outer _shouldRejectSessionScopedEvent
+      // already filters mismatched events, also guard inside the handler so a
+      // token from session 1 can never be appended to session 2's snapshot
+      // (e.g. if the outer filter is bypassed by a future code change).
+      const _tdSid = _eventSessionId(event);
+      const _activeTdSid = state.getState().sessionId;
+      if (_tdSid && _activeTdSid && _tdSid !== _activeTdSid) break;
+      _ensureAssistantMessage(_tdSid);
+      state.appendTextDelta(event.text, _tdSid);
       chat?.render();
-      _syncSessionEntry(state.getState().sessionId, state.getState());
+      _syncSessionEntry(_activeTdSid, state.getState());
       break;
+    }
 
-    case "thinking_delta":
-      _ensureAssistantMessage(_eventSessionId(event));
-      state.appendThinkingDelta(event.text, _eventSessionId(event));
+    case "thinking_delta": {
+      const _thSid = _eventSessionId(event);
+      const _activeThSid = state.getState().sessionId;
+      if (_thSid && _activeThSid && _thSid !== _activeThSid) break;
+      _ensureAssistantMessage(_thSid);
+      state.appendThinkingDelta(event.text, _thSid);
       chat?.render();
-      _syncSessionEntry(state.getState().sessionId, state.getState());
+      _syncSessionEntry(_activeThSid, state.getState());
       break;
+    }
 
     case "tool_call_start": {
       // Track which session generation this tool call belongs to
@@ -500,6 +544,7 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "finish": {
+      if (!_hasSessionId(event)) break;
       if (event.reason === "error" || event.error) {
         console.log("[stream] finish with error:", event.reason, event.error);
       }
@@ -514,9 +559,25 @@ export function handleEvent(event: ServerEvent): void {
       state.setRunning(false, _eventSessionId(event));
       // Store server-side message ID before finishing — emit() in
       // finishAssistantMessage will trigger segment cache save with this set.
-      if (event.assistant_message_id) {
-        const lastMsg = state.getLastAssistantMessage(_eventSessionId(event));
-        if (lastMsg) lastMsg.serverId = event.assistant_message_id;
+      const sid = _eventSessionId(event);
+      const lastMsg = state.getLastAssistantMessage(sid);
+      if (lastMsg) {
+        if (event.assistant_message_id) {
+          lastMsg.serverId = event.assistant_message_id;
+        }
+        // Capture turn status card data from finish event
+        if (event.reason === "error" || event.error) {
+          lastMsg.errorMessage = event.error || "";
+          lastMsg.errorCode = event.reason === "error" ? "execution_error" : "unknown";
+        } else if (event.reason === "interrupted" || event.reason === "cancelled") {
+          if (event.reason === "cancelled") {
+            lastMsg.cancelledText = t("chat.abnormalInterruption");
+          } else {
+            lastMsg.interruptedReason = event.error || event.reason;
+          }
+        } else if (event.reason === "complete" || event.reason === "ok" || event.reason === "stop") {
+          lastMsg.turnStatusText = t("chat.taskComplete");
+        }
       }
       if (event.usage) {
         const u = event.usage as Record<string, unknown>;
@@ -527,14 +588,14 @@ export function handleEvent(event: ServerEvent): void {
           input_tokens: input,
           output_tokens: output,
           total_tokens: total,
-        }, _eventSessionId(event));
+        }, sid);
         state.finishAssistantMessage({
           input_tokens: input,
           output_tokens: output,
           total_tokens: total,
-        }, _eventSessionId(event));
+        }, sid);
       } else {
-        state.finishAssistantMessage(undefined, _eventSessionId(event));
+        state.finishAssistantMessage(undefined, sid);
       }
       const btnStop = document.getElementById("btn-stop");
       btnStop?.classList.remove("cancelling");
@@ -556,6 +617,7 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "error":
+      if (!_hasSessionId(event)) break;
       _activeStreamSessionId = "";
       // Background session error — update snapshot without touching active UI.
       if (event.session_id && event.session_id !== state.getState().sessionId) {
@@ -564,9 +626,13 @@ export function handleEvent(event: ServerEvent): void {
       }
       state.setRunning(false, _eventSessionId(event));
       state.clearPendingQueueCount();
-      // Mark last assistant message as errored
+      // Mark last assistant message as errored and capture error data
       const lastMsg = state.getLastAssistantMessage(_eventSessionId(event));
-      if (lastMsg) lastMsg.hasError = true;
+      if (lastMsg) {
+        lastMsg.hasError = true;
+        lastMsg.errorMessage = event.message;
+        lastMsg.errorCode = event.code;
+      }
       state.addNotification({
         id: crypto.randomUUID(),
         type: "error",
@@ -583,10 +649,11 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "telemetry":
+      if (!_hasSessionId(event)) break;
       // Ignore telemetry updates for non-active sessions so background
       // sessions cannot overwrite the canvas panel currently shown.
       if (event.session_id && event.session_id !== state.getState().sessionId) break;
-      state.setTelemetry(event.data, event.session_id || state.getState().sessionId);
+      state.setTelemetry(event.data, event.session_id);
       break;
 
     case "usage_stats":
@@ -605,21 +672,25 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "plan_update":
+      if (!_hasSessionId(event)) break;
       state.setPlanItems(event.plan_items, _eventSessionId(event));
       chat?.render();
       (window as any).__sessionInner?.render?.();
       break;
 
     case "plan_proposal":
+      if (!_hasSessionId(event)) break;
       state.addPlanProposal(event, _eventSessionId(event));
       break;
 
     case "plan_mode_changed":
+      if (!_hasSessionId(event)) break;
       state.setPlanModeActive(event.active, _eventSessionId(event));
       (window as any).__sessionInner?.render?.();
       break;
 
     case "plan_resolved":
+      if (!_hasSessionId(event)) break;
       state.removePlanProposal(event.proposal_id, _eventSessionId(event));
       (window as any).__sessionInner?.render?.();
       break;
@@ -876,6 +947,7 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "compact":
+      if (!_hasSessionId(event as any)) break;
       state.addCompactEvent({
         old_count: (event as any).old_count,
         new_count: (event as any).new_count,
@@ -885,6 +957,7 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "context_usage":
+      if (!_hasSessionId(event as any)) break;
       state.updateContextUsage(
         (event as any).context_tokens,
         (event as any).context_window,
@@ -894,18 +967,21 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "artifacts_update":
+      if (!_hasSessionId(event)) break;
       // Append new artifacts; the server sends one at a time during streaming.
       state.appendArtifacts(event.artifacts, _eventSessionId(event));
       (window as any).__sessionInner?.render?.();
       break;
 
     case "references_update":
+      if (!_hasSessionId(event)) break;
       // Append new references; the server sends one at a time during streaming.
       state.appendReferences(event.references, _eventSessionId(event));
       (window as any).__sessionInner?.render?.();
       break;
 
     case "messages_updated":
+      if (!_hasSessionId(event)) break;
       if (_shouldRejectSessionScopedEvent(event)) break;
       // If the user already started a new run (submit() raced ahead of this
       // response), do NOT override the running state or replace messages.
@@ -937,6 +1013,7 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "rollback_checkout":
+      if (!_hasSessionId(event)) break;
       if (_shouldRejectSessionScopedEvent(event)) break;
       // Server has truncated the session to the chosen commit and persisted it.
       // Mirror that on the client so the UI actually reflects the rollback.
@@ -1266,7 +1343,10 @@ function _syncSubAgentView(toolCallId: string): void {
  *  Called from streaming event handlers so the sidebar stays live during a run.
  *  IMPORTANT: always read from the target session's own snapshot, never from
  *  the currently active session, otherwise background sessions overwrite the
- *  wrong sidebar entry when the user switches sessions while one is running. */
+ *  wrong sidebar entry when the user switches sessions while one is running.
+ *  Also: derive `last_active` and `created_at` from message timestamps so
+ *  the displayed time reflects the real last conversation (matching the
+ *  backend's `sess.last_message_at` semantics), NOT wall-clock `Date.now()`. */
 function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getState>): void {
   if (!sessionId) return;
   if (st.tempChat) return;
@@ -1279,19 +1359,36 @@ function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getSta
   const firstUser = snapMsgs.find(m => m.role === "user");
   const preview = firstUser?.content?.slice(0, 100) || "";
   const isRunning = snapshot.running ?? false;
+  // Derive sidebar ordering timestamps from the real message stream so the
+  // user sees when the conversation actually happened, not when this sync
+  // function happened to be called. Message.timestamp is in milliseconds
+  // (see Message interface); SessionEntryData.* uses Unix seconds.
+  const nowSec = Date.now() / 1000;
+  const lastMsgMs = snapMsgs.length > 0 ? snapMsgs[snapMsgs.length - 1].timestamp : 0;
+  const firstMsgMs = snapMsgs.length > 0 ? snapMsgs[0].timestamp : 0;
+  const derivedLastActive = lastMsgMs > 0 ? Math.floor(lastMsgMs / 1000) : nowSec;
+  const derivedCreatedAt = firstMsgMs > 0 ? Math.floor(firstMsgMs / 1000) : nowSec;
   const found = st.sessionsList.some(e => e.session_id === sessionId);
   const updated = found
     ? st.sessionsList.map(e =>
         e.session_id === sessionId
-          ? { ...e, message_count: snapMsgs.length, preview, is_running: isRunning }
+          ? {
+              ...e,
+              // Refresh last_active so the sidebar re-orders when this session
+              // receives a new message. We clamp to never go backwards.
+              last_active: Math.max(e.last_active ?? 0, derivedLastActive),
+              message_count: snapMsgs.length,
+              preview,
+              is_running: isRunning,
+            }
           : e
       )
     : [...st.sessionsList, {
         session_id: sessionId,
         message_count: snapMsgs.length,
         preview,
-        created_at: Date.now() / 1000,
-        last_active: Date.now() / 1000,
+        created_at: derivedCreatedAt,
+        last_active: derivedLastActive,
         is_running: isRunning,
         channel: st.workspaceMode === "iwork" ? "iwork" : "normal",
       }];

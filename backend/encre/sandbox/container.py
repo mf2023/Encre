@@ -58,22 +58,15 @@ import subprocess
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from encre.sandbox.types import (
-    EnvConfig,
-    FileProtectionConfig,
-    NetworkConfig,
     NetworkPolicy,
-    ResourceConfig,
     SandboxConfig,
-    SandboxMode,
     SandboxResult,
-    SeccompConfig,
     SeccompProfile,
 )
-
 
 # ── Constants ──────────────────────────────────────────────────────
 
@@ -735,7 +728,7 @@ class EncreContainerSandbox:
 
     # ── Command security checks ──────────────────────────────────
 
-    def _check_command(self, command: str, in_container: bool = False) -> str:
+    def _check_command(self, command: str, _in_container: bool = False) -> str:
         """Check *command* against the security policy.
 
         Returns an empty string if safe, or an error description if
@@ -803,13 +796,11 @@ class EncreContainerSandbox:
         ]
 
         for hc in harden_cmds:
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     ["docker", "exec", self._container_id, "sh", "-c", hc],
                     capture_output=True, timeout=10,
                 )
-            except Exception:
-                pass
 
     def _audit(self, entry: SecurityAuditEntry) -> None:
         """Record a security audit entry."""
@@ -821,10 +812,8 @@ class EncreContainerSandbox:
     def _cleanup_tempfiles(self) -> None:
         """Remove temporary files created during execution."""
         if self._temp_seccomp and os.path.exists(self._temp_seccomp):
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(self._temp_seccomp)
-            except OSError:
-                pass
             self._temp_seccomp = None
 
     # ── Context manager support ──────────────────────────────────
@@ -863,7 +852,7 @@ def _wrap_command(command: str, config: SandboxConfig) -> str:
 
     # Drop dangerous env vars from inherited config
     if not config.env.inherit_env:
-        parts.append("unset $(env | grep -o '^[^=]*' | grep -E '^(AWS|AZURE|GCP|GOOGLE|SECRET|TOKEN|KEY|PASS)') 2>/dev/null || true")  # noqa: E501
+        parts.append("unset $(env | grep -o '^[^=]*' | grep -E '^(AWS|AZURE|GCP|GOOGLE|SECRET|TOKEN|KEY|PASS)') 2>/dev/null || true")
 
     # Extra env vars from config
     for k, v in config.env.env_vars.items():

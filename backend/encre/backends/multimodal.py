@@ -91,7 +91,6 @@ from encre.utils.types import (
     ResponseObject,
 )
 
-
 _LOG = logging.getLogger("encre.backend.multimodal")
 
 
@@ -179,10 +178,10 @@ class MultimodalMixin:
 
     def _post_json(
         self,
-        path: str,
-        payload: dict[str, Any],
+        _path: str,
+        _payload: dict[str, Any],
         *,
-        timeout: float | None = None,
+        _timeout: float | None = None,
     ) -> dict[str, Any]:
         """Synchronous wrapper used internally for non-streaming JSON POSTs.
 
@@ -292,7 +291,7 @@ class MultimodalMixin:
 
     # ── Image generation ────────────────────────────────────────────────
 
-    async def generate_image(  # noqa: ARG002
+    async def generate_image(
         self,
         prompt: str,
         model: str | None = None,
@@ -327,7 +326,7 @@ class MultimodalMixin:
         data = await self._post_json_async("/images/generations", payload)
         return _parse_image_response(data, provider=self.provider_name())
 
-    async def edit_image(  # noqa: ARG002
+    async def edit_image(
         self,
         prompt: str,
         image_b64: str,
@@ -362,7 +361,7 @@ class MultimodalMixin:
         data = await self._post_multipart_async("/images/edits", form, files)
         return _parse_image_response(data, provider=self.provider_name())
 
-    async def create_image_variation(  # noqa: ARG002
+    async def create_image_variation(
         self,
         image_b64: str,
         model: str | None = None,
@@ -395,7 +394,7 @@ class MultimodalMixin:
 
     # ── Audio ────────────────────────────────────────────────────────────
 
-    async def text_to_speech(  # noqa: ARG002
+    async def text_to_speech(
         self,
         text: str,
         model: str | None = None,
@@ -429,7 +428,7 @@ class MultimodalMixin:
             provider=self.provider_name(),
         )
 
-    async def _transcribe_or_translate(  # noqa: ARG002
+    async def _transcribe_or_translate(
         self,
         path: str,
         audio_b64: str,
@@ -482,7 +481,7 @@ class MultimodalMixin:
             provider=self.provider_name(),
         )
 
-    async def transcribe_audio(  # noqa: ARG002
+    async def transcribe_audio(
         self,
         audio_b64: str,
         model: str | None = None,
@@ -511,7 +510,7 @@ class MultimodalMixin:
             result.language = language
         return result
 
-    async def translate_audio(  # noqa: ARG002
+    async def translate_audio(
         self,
         audio_b64: str,
         model: str | None = None,
@@ -538,7 +537,7 @@ class MultimodalMixin:
 
     # ── Embeddings ───────────────────────────────────────────────────────
 
-    async def create_embeddings(  # noqa: ARG002
+    async def create_embeddings(
         self,
         input: str | list[str],
         model: str | None = None,
@@ -592,7 +591,7 @@ class MultimodalMixin:
 
     # ── Moderation ───────────────────────────────────────────────────────
 
-    async def create_moderation(  # noqa: ARG002
+    async def create_moderation(
         self,
         input: str | list[str],
         model: str | None = None,
@@ -620,7 +619,7 @@ class MultimodalMixin:
                             score=float(scores.get(name, 0.0)),
                             flagged=bool(cats.get(name, False)),
                         )
-                        for name in cats.keys()
+                        for name in cats
                     ],
                     category_scores={
                         str(name): float(value)
@@ -638,7 +637,7 @@ class MultimodalMixin:
 
     # ── Files ────────────────────────────────────────────────────────────
 
-    async def upload_file(  # noqa: ARG002
+    async def upload_file(
         self,
         filename: str,
         content_b64: str,
@@ -657,7 +656,7 @@ class MultimodalMixin:
         data = await self._post_multipart_async("/files", form, files)
         return _parse_file_object(data, provider=self.provider_name())
 
-    async def list_files(  # noqa: ARG002
+    async def list_files(
         self,
         purpose: str | None = None,
         limit: int = 100,
@@ -681,7 +680,7 @@ class MultimodalMixin:
             has_more=bool(data.get("has_more", False)) if isinstance(data, dict) else False,
         )
 
-    async def retrieve_file(  # noqa: ARG002
+    async def retrieve_file(
         self,
         file_id: str,
     ) -> FileObject:
@@ -689,7 +688,7 @@ class MultimodalMixin:
         data = await self._get_json_async(f"/files/{file_id}")
         return _parse_file_object(data, provider=self.provider_name())
 
-    async def delete_file(  # noqa: ARG002
+    async def delete_file(
         self,
         file_id: str,
     ) -> bool:
@@ -703,7 +702,7 @@ class MultimodalMixin:
             return True
         return bool(payload.get("deleted", True)) if isinstance(payload, dict) else True
 
-    async def download_file(  # noqa: ARG002
+    async def download_file(
         self,
         file_id: str,
     ) -> FileContent:
@@ -754,7 +753,7 @@ class MultimodalMixin:
         )
         return file_obj.id
 
-    async def create_batch(  # noqa: ARG002
+    async def create_batch(
         self,
         requests: list[BatchRequest],
         endpoint: str = "/v1/chat/completions",
@@ -785,7 +784,7 @@ class MultimodalMixin:
         data = await self._post_json_async("/batches", payload)
         return _parse_batch_object(data, provider=self.provider_name())
 
-    async def retrieve_batch(  # noqa: ARG002
+    async def retrieve_batch(
         self,
         batch_id: str,
     ) -> BatchObject:
@@ -793,7 +792,7 @@ class MultimodalMixin:
         data = await self._get_json_async(f"/batches/{batch_id}")
         return _parse_batch_object(data, provider=self.provider_name())
 
-    async def list_batches(  # noqa: ARG002
+    async def list_batches(
         self,
         limit: int = 20,
         after: str | None = None,
@@ -813,7 +812,7 @@ class MultimodalMixin:
             has_more=bool(data.get("has_more", False)) if isinstance(data, dict) else False,
         )
 
-    async def cancel_batch(  # noqa: ARG002
+    async def cancel_batch(
         self,
         batch_id: str,
     ) -> BatchObject:
@@ -828,7 +827,7 @@ class MultimodalMixin:
 
     # ── Fine-tuning ──────────────────────────────────────────────────────
 
-    async def create_fine_tuning_job(  # noqa: ARG002
+    async def create_fine_tuning_job(
         self,
         training_file: str,
         model: str,
@@ -862,7 +861,7 @@ class MultimodalMixin:
         data = await self._post_json_async("/fine_tuning/jobs", payload)
         return _parse_fine_tune_job(data, provider=self.provider_name())
 
-    async def retrieve_fine_tuning_job(  # noqa: ARG002
+    async def retrieve_fine_tuning_job(
         self,
         job_id: str,
     ) -> FineTuneJob:
@@ -870,7 +869,7 @@ class MultimodalMixin:
         data = await self._get_json_async(f"/fine_tuning/jobs/{job_id}")
         return _parse_fine_tune_job(data, provider=self.provider_name())
 
-    async def list_fine_tuning_jobs(  # noqa: ARG002
+    async def list_fine_tuning_jobs(
         self,
         limit: int = 20,
         after: str | None = None,
@@ -890,7 +889,7 @@ class MultimodalMixin:
             has_more=bool(data.get("has_more", False)) if isinstance(data, dict) else False,
         )
 
-    async def list_fine_tuning_events(  # noqa: ARG002
+    async def list_fine_tuning_events(
         self,
         job_id: str,
         limit: int = 20,
@@ -921,7 +920,7 @@ class MultimodalMixin:
             )
         return events
 
-    async def cancel_fine_tuning_job(  # noqa: ARG002
+    async def cancel_fine_tuning_job(
         self,
         job_id: str,
     ) -> FineTuneJob:
@@ -936,7 +935,7 @@ class MultimodalMixin:
 
     # ── Responses API ────────────────────────────────────────────────────
 
-    async def create_response(  # noqa: ARG002
+    async def create_response(
         self,
         input: str | list[dict[str, Any]],
         model: str | None = None,
@@ -987,7 +986,7 @@ class MultimodalMixin:
         data = await self._post_json_async("/responses", payload)
         return _parse_response_object(data, provider=self.provider_name())
 
-    async def retrieve_response(  # noqa: ARG002
+    async def retrieve_response(
         self,
         response_id: str,
     ) -> ResponseObject:
@@ -995,7 +994,7 @@ class MultimodalMixin:
         data = await self._get_json_async(f"/responses/{response_id}")
         return _parse_response_object(data, provider=self.provider_name())
 
-    async def delete_response(  # noqa: ARG002
+    async def delete_response(
         self,
         response_id: str,
     ) -> bool:
@@ -1011,7 +1010,7 @@ class MultimodalMixin:
 
     # ── Realtime ─────────────────────────────────────────────────────────
 
-    async def create_realtime_session(  # noqa: ARG002
+    async def create_realtime_session(
         self,
         config: RealtimeSessionConfig | None = None,
         extra_params: dict[str, Any] | None = None,
@@ -1061,7 +1060,7 @@ class MultimodalMixin:
 
     async def _open_realtime_transport(
         self,
-        session_id: str,
+        _session_id: str,
         cfg: RealtimeSessionConfig,
     ) -> Any:
         """Best-effort open of a WebSocket transport for Realtime.
@@ -1086,7 +1085,7 @@ class MultimodalMixin:
             _LOG.warning("Failed to open realtime websocket: %s", exc)
             return None
 
-    async def close_realtime_session(  # noqa: ARG002
+    async def close_realtime_session(
         self,
         session: RealtimeSession,
     ) -> None:
@@ -1179,7 +1178,7 @@ def _parse_batch_object(data: Any, provider: str) -> BatchObject:
         expires_at=int(data.get("expires_at", 0)),
         completed_at=int(data["completed_at"]) if isinstance(data.get("completed_at"), int) else None,
         failed_at=int(data["failed_at"]) if isinstance(data.get("failed_at"), int) else None,
-        request_counts={str(k): int(v) for k, v in request_counts.items() if isinstance(v, (int, float))},
+        request_counts={str(k): int(v) for k, v in request_counts.items() if isinstance(v, int | float)},
         output_file_id=str(data.get("output_file_id", "")),
         error_file_id=str(data.get("error_file_id", "")),
         provider=provider,

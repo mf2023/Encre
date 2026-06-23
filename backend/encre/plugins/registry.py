@@ -130,7 +130,7 @@ class PluginRegistry:
                     continue
                 plugin.manifest.source = PluginSource.INSTALLED
                 self.register(plugin)
-                logger.info(f"Discovered plugin '{plugin.manifest.name}' via entry point '{ep.name}'")  # noqa: E501
+                logger.info(f"Discovered plugin '{plugin.manifest.name}' via entry point '{ep.name}'")
             except Exception as e:
                 logger.warning(f"Failed to load plugin from entry point '{ep.name}': {e}")
                 self._failed[ep.name] = str(e)
@@ -307,10 +307,10 @@ class PluginRegistry:
 
 
 def _source_priority(source: PluginSource) -> int:
-    _ORDER = {
+    _order = {
         PluginSource.BUNDLED: 0,
         PluginSource.INSTALLED: 1,
         PluginSource.PROJECT: 2,
         PluginSource.USER: 3,
     }
-    return _ORDER.get(source, 1)
+    return _order.get(source, 1)

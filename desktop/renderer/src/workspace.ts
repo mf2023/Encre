@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { getState, subscribe, setActiveWorkspace, setSessionId, clearMessages, setWorkspaceMode, getTraySessions } from "./state.js";
+import { getState, subscribe, setActiveWorkspace, setSessionId, clearMessages, setWorkspaceMode } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
 import { t, onLocaleChange } from "./i18n.js";
@@ -36,7 +36,6 @@ export class Workspace {
   private batchMode = false;
   private selectedPaths: Set<string> = new Set();
   private _exiting = false;
-  private _navIWorkBtn: HTMLElement | null = null;
   private _sessionSectionEl: HTMLElement | null = null;
   private _lastWsTreeJson: string = "";
   private _lastSid: string = "";
@@ -56,7 +55,6 @@ export class Workspace {
     // Persist expanded state so re-entering workspace mode restores it
     this._saveExpandedState();
     this.expandedWsPaths.clear();
-    this.doRestoreIWorkButton();
     // Restore sidebar visual state: hide tree, show session section
     if (this.treeSectionEl) {
       this.treeSectionEl.classList.remove("active");
@@ -85,10 +83,9 @@ export class Workspace {
   }
 
   constructor() {
-    this._navIWorkBtn = document.getElementById("btn-sidebar-workspace");
     this._sessionSectionEl = document.getElementById("session-section");
-
-    this._navIWorkBtn?.addEventListener("click", () => this.toggleWorkspaceMode());
+    // The top-bar #mode-seg switch (wired in app.ts) is now the single
+    // mode entry point. The sidebar iWork button has been removed.
 
     document.getElementById("btn-open-workspace")?.addEventListener("click", () => this.openFolder());
     document.getElementById("btn-ws-manage")?.addEventListener("click", () => this.toggleBatchMode());
@@ -102,7 +99,6 @@ export class Workspace {
       send({ type: "list_workspaces" });
     }
     this.syncFirstNavActive();
-    this._syncRunningIndicator();
   }
 
   private toggleWorkspaceMode(): void {
@@ -117,6 +113,14 @@ export class Workspace {
   enter(): void {
     if (!this.isInWorkspaceMode && !this._transitioning) {
       this.enterWorkspaceMode();
+    }
+  }
+
+  /** Public exit — used by the header mode switch to leave workspace mode
+   *  with the same animation pipeline as the internal toggle button. */
+  exit(): void {
+    if (this.isInWorkspaceMode && !this._transitioning) {
+      this.exitWorkspaceMode();
     }
   }
 
@@ -142,7 +146,6 @@ export class Workspace {
   }
 
   private onStateChange(): void {
-    this._syncRunningIndicator();
     if (this._exiting || this._transitioning) return;
     if (!this.isInWorkspaceMode) return;
     const st = getState();
@@ -174,7 +177,6 @@ export class Workspace {
       exit: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
       enter: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
       setup: () => {
-        this.doTransformIWorkButtonToBack();
         if (this.treeSectionEl) {
           this.treeSectionEl.classList.add("active");
           this.treeSectionEl.style.maxHeight = "1000px";
@@ -221,7 +223,6 @@ export class Workspace {
       exit: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
       enter: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
       setup: () => {
-        this.doRestoreIWorkButton();
         if (this.treeSectionEl) {
           this.treeSectionEl.classList.remove("active");
         }
@@ -255,79 +256,6 @@ export class Workspace {
     if (tempBtn) tempBtn.classList.remove("hidden");
 
     setTimeout(() => { this._exiting = false; }, 100);
-  }
-
-  /** Synchronous button transform — move to first, swap icon to arrow-left, set label to Back */
-  private doTransformIWorkButtonToBack(): void {
-    const btn = this._navIWorkBtn;
-    if (!btn) return;
-
-    const nav = btn.parentElement;
-    if (nav && nav.firstChild !== btn) {
-      nav.insertBefore(btn, nav.firstChild);
-    }
-    const existing = btn.querySelector("[data-lucide]");
-    if (existing) {
-      const newIcon = document.createElement("i");
-      newIcon.setAttribute("data-lucide", "arrow-left");
-      newIcon.className = "lucide";
-      existing.replaceWith(newIcon);
-    }
-    const label = btn.querySelector(".btn-content > span");
-    if (label) label.textContent = t("workspace.back");
-    this._syncRunningIndicator();
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: btn });
-    }
-  }
-
-  /** Synchronous button restore — move back after new-task row, swap icon to compass, set label to iWork */
-  private doRestoreIWorkButton(): void {
-    const btn = this._navIWorkBtn;
-    if (!btn) return;
-
-    const nav = btn.parentElement;
-    if (nav) {
-      // Find the new-task row and insert iWork button after it to restore original position
-      const taskRow = nav.querySelector(".nav-item-row");
-      if (taskRow && nav.contains(btn)) {
-        const nextSibling = taskRow.nextElementSibling;
-        if (nextSibling !== btn) {
-          nav.insertBefore(btn, nextSibling);
-        }
-      }
-    }
-
-    const existing = btn.querySelector("[data-lucide]");
-    if (existing) {
-      const newIcon = document.createElement("i");
-      newIcon.setAttribute("data-lucide", "compass");
-      newIcon.className = "lucide";
-      existing.replaceWith(newIcon);
-    }
-    const label = btn.querySelector(".btn-content > span");
-    if (label) label.textContent = t("workspace.title");
-    this._syncRunningIndicator();
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: btn });
-    }
-  }
-
-  /** Show/hide a green dot on the workspace/back button when the other mode has running sessions. */
-  private _syncRunningIndicator(): void {
-    const btn = this._navIWorkBtn;
-    if (!btn) return;
-    const tray = getTraySessions();
-    const otherChannel = this.isInWorkspaceMode ? tray.normal : tray.iwork;
-    const hasRunning = otherChannel.some((s: any) => s.is_running);
-    let dot = btn.querySelector(".workspace-running-dot") as HTMLElement | null;
-    if (!dot) {
-      dot = document.createElement("span");
-      dot.className = "workspace-running-dot hidden";
-      const content = btn.querySelector(".btn-content");
-      if (content) content.appendChild(dot);
-    }
-    dot.classList.toggle("hidden", !hasRunning);
   }
 
   private syncFirstNavActive(): void {
@@ -456,12 +384,14 @@ export class Workspace {
       const date = new Date(ts);
       const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
+      // Full timestamp for the hover tooltip; empty when invalid.
+      const fullTs = ts > 0 ? date.toLocaleString() : "";
       const displayName = sess.name || sess.preview || t("general.emptySessionName");
       const msgCount = sess.message_count ?? 0;
       const runningBadge = sess.is_running ? '<span class="session-running"></span>' : "";
       const badge = this.channelBadge(sess.channel);
 
-      html += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}">
+      html += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}" title="${this.esc(fullTs)}">
         <div class="session-item-top">
           ${this.batchMode ? `<input type="checkbox" class="session-checkbox" data-sid="${sess.session_id}" ${this.selectedPaths.has(sess.session_id) ? "checked" : ""} />` : ""}
           <span class="session-preview">${this.esc(displayName)}</span>

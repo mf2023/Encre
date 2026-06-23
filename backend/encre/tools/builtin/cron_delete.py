@@ -42,7 +42,7 @@ async def _cron_delete_execute(**kwargs: Any) -> str:
         return "Error: job_id is required."
 
     if _scheduler is None:
-        return f"Job '{job_id}' cancellation noted. (Scheduler not available -- no active jobs to cancel.)"  # noqa: E501
+        return f"Job '{job_id}' cancellation noted. (Scheduler not available -- no active jobs to cancel.)"
 
     cancelled = _scheduler.cancel(job_id)
     if cancelled:

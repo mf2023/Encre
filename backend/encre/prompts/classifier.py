@@ -80,7 +80,7 @@ def _is_conversational(query: str) -> bool:
     # Single punctuation, greetings, short questions with no domain keywords
     is_short_greeting = (
         len(query_stripped) <= 3
-        or query_stripped.lower() in ("hi", "hey", "hello", "yo", "sup", "ok", "thanks", "ty", "help")  # noqa: E501
+        or query_stripped.lower() in ("hi", "hey", "hello", "yo", "sup", "ok", "thanks", "ty", "help")
         or query_stripped in ("?", "??", "!?", "!")
     )
 

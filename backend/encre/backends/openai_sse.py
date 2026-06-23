@@ -67,7 +67,12 @@ from typing import Any
 
 import httpx
 
+from encre.backends.auth import AuthManager
 from encre.backends.base import BaseBackend
+from encre.backends.connection import (
+    ConnectionHealthMonitor,
+    format_connection_error,
+)
 from encre.backends.multimodal import MultimodalMixin
 from encre.backends.retry import DEFAULT_RETRY_CONFIG, RetryConfig, retry_with_backoff
 from encre.utils.types import (
@@ -178,7 +183,10 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
         model: str = "",
         retry_config: RetryConfig = DEFAULT_RETRY_CONFIG,
         http_timeout: float = 120.0,
-        **kwargs: Any,
+        auth_manager: AuthManager | None = None,
+        connection_monitor: ConnectionHealthMonitor | None = None,
+        fallback_keys: list[str] | None = None,
+        **_kwargs: Any,
     ) -> None:
         """Initialise the SSE backend.
 
@@ -191,15 +199,45 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
             retry_config: :class:`RetryConfig` for transient error retries.
             http_timeout: HTTP request timeout in seconds.  Default 120s
                 (covers long-thinking models like o3 and Claude Opus).
+            auth_manager: Pre-configured :class:`AuthManager` for key rotation.
+                If not provided but ``fallback_keys`` is given, one is created
+                automatically.
+            connection_monitor: Pre-configured :class:`ConnectionHealthMonitor`.
+                If not provided, a default one is created.
+            fallback_keys: Additional API keys for automatic rotation on
+                401/403 errors.  Ignored when ``auth_manager`` is given.
             **kwargs: Additional provider-specific parameters.
         """
         self.api_key = api_key
         self.api_base_url = base_url.rstrip("/").removesuffix("/chat/completions")
         self.model = model
-        self.retry_config = retry_config
         self.http_timeout = http_timeout
         self._client: httpx.AsyncClient | None = None
         self._tool_call_buffers: dict[int, dict[str, Any]] = {}
+
+        # -- Auth management --
+        if auth_manager is not None:
+            self.auth_manager = auth_manager
+        elif fallback_keys:
+            self.auth_manager = AuthManager(
+                provider=self.api_base_url or "openai",
+                api_key=api_key,
+                fallback_keys=fallback_keys,
+            )
+        else:
+            self.auth_manager = None
+
+        if self.auth_manager is not None and retry_config.on_auth_required is None:
+            from dataclasses import replace
+            self.retry_config: RetryConfig = replace(
+                retry_config,
+                on_auth_required=self.auth_manager.refresh,
+            )
+        else:
+            self.retry_config = retry_config
+
+        # -- Connection health monitor --
+        self.connection_monitor = connection_monitor or ConnectionHealthMonitor()
 
     def _get_client(self) -> httpx.AsyncClient:
         """Return (or create) the shared HTTP client.
@@ -286,12 +324,19 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
 
         Includes the ``Authorization`` header when ``self.api_key`` is set,
         and always includes ``Content-Type: application/json``.
+        When an :class:`AuthManager` is configured, the current active key
+        is used (allowing key rotation to take effect).
         """
         headers: dict[str, str] = {
             "Content-Type": "application/json",
         }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        current_key = (
+            self.auth_manager.api_key
+            if self.auth_manager is not None
+            else self.api_key
+        )
+        if current_key:
+            headers["Authorization"] = f"Bearer {current_key}"
         return headers
 
     def _build_request_data(
@@ -475,7 +520,7 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
         client: httpx.AsyncClient,
         headers: dict[str, str],
         data: dict[str, Any],
-        extra_kwargs: dict[str, Any],
+        _extra_kwargs: dict[str, Any],
     ) -> AsyncGenerator[BackendEvent, None]:
         """Consume an SSE stream and yield parsed events.
 
@@ -496,7 +541,7 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
             _log = logging.getLogger("encre.backend")
             _msg_count = len(data.get("messages", []))
             _sys_len = len(str([m for m in data.get("messages", []) if m.get("role") == "system"]))
-            _log.info("[http] POST %s/chat/completions model=%s msgs=%d sys_chars=%d thinking=%s timeout=%.0fs",  # noqa: E501
+            _log.info("[http] POST %s/chat/completions model=%s msgs=%d sys_chars=%d thinking=%s timeout=%.0fs",
                        self.api_base_url, data.get("model", "?"), _msg_count, _sys_len,
                        data.get("thinking", {}).get("type", "disabled"), self.http_timeout)
             _log.info("[http] calling client.stream()...")
@@ -506,18 +551,37 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
                                          headers=headers, json=data),
                     stream=True,
                 )
+                if self.connection_monitor:
+                    self.connection_monitor.record_success(self.api_base_url)
+                if self.auth_manager and response.status_code not in (401, 403):
+                    self.auth_manager.record_auth_success()
             except Exception as exc:
+                if self.connection_monitor:
+                    self.connection_monitor.record_failure(
+                        self.api_base_url, format_connection_error(exc),
+                    )
                 _log.error("[http] client.send() raised %s: %s", type(exc).__name__, exc)
                 raise
             _log.info("[http] client.send() done status=%d elapsed=%.2fs",
                        response.status_code, time.time() - _t_req)
             try:
                 if response.status_code >= 400:
+                    if self.auth_manager and response.status_code in (401, 403):
+                        self.auth_manager.record_auth_failure()
                     body = await response.aread()
+                    body_text = body.decode("utf-8", errors="replace")
                     _log.error(
                         "HTTP %s response body: %s",
                         response.status_code,
-                        body.decode("utf-8", errors="replace")[:2000],
+                        body_text[:2000],
+                    )
+                    # Raise with body text embedded in message so it survives
+                    # even if the response object's body becomes unavailable
+                    # after response.aclose() in the finally block.
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code}: {body_text}",
+                        request=response.request,
+                        response=response,
                     )
                 response.raise_for_status()
                 self._tool_call_buffers.clear()
@@ -658,12 +722,25 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
         """
         @retry_with_backoff(config=self.retry_config)
         async def _do_non_stream() -> AsyncGenerator[BackendEvent, None]:
-            response = await client.post(
-                f"{self.api_base_url}/chat/completions",
-                headers=headers,
-                json=data,
-                **extra_kwargs,
-            )
+            try:
+                response = await client.post(
+                    f"{self.api_base_url}/chat/completions",
+                    headers=headers,
+                    json=data,
+                    **extra_kwargs,
+                )
+                if self.connection_monitor:
+                    self.connection_monitor.record_success(self.api_base_url)
+                if self.auth_manager and response.status_code not in (401, 403):
+                    self.auth_manager.record_auth_success()
+            except Exception as exc:
+                if self.connection_monitor:
+                    self.connection_monitor.record_failure(
+                        self.api_base_url, format_connection_error(exc),
+                    )
+                raise
+            if self.auth_manager and response.status_code in (401, 403):
+                self.auth_manager.record_auth_failure()
             response.raise_for_status()
             result = response.json()
 

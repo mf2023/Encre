@@ -84,7 +84,7 @@ class EncreReflexLoop:
             c = self._consecutive_failures[tool_name]
             if c >= 3:
                 issues.append(f"Tool [{tool_name}] has failed {c} consecutive times")
-                suggestions.append(f"Consider a completely different approach -- [{tool_name}] is not working")  # noqa: E501
+                suggestions.append(f"Consider a completely different approach -- [{tool_name}] is not working")
 
         for r in successes:
             tool_name = r.get("tool_name", "")

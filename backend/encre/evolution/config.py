@@ -39,7 +39,7 @@ class EvolutionConfig:
     meta_enabled: bool = True
 
     @classmethod
-    def create_default(cls) -> EvolutionConfig:
+    def create_default(cls) -> "EvolutionConfig":
         from encre.config import get_data_dir
         from encre.evolution.learner import EncreEvolutionLearner
         from encre.evolution.meta import EncreMetaCognition
@@ -47,14 +47,14 @@ class EvolutionConfig:
         from encre.evolution.reflex import EncreReflexLoop
 
         return cls(
-            learner=EncreEvolutionLearner(storage_path=str(get_data_dir() / "evolution" / "state.json")),  # noqa: E501
+            learner=EncreEvolutionLearner(storage_path=str(get_data_dir() / "evolution" / "state.json")),
             optimizer=EncreStrategyOptimizer(),
             reflex=EncreReflexLoop(enabled=True),
             meta=EncreMetaCognition(),
         )
 
     @classmethod
-    def create_disabled(cls) -> EvolutionConfig:
+    def create_disabled(cls) -> "EvolutionConfig":
         from encre.config import get_data_dir
         from encre.evolution.learner import EncreEvolutionLearner
         from encre.evolution.meta import EncreMetaCognition
@@ -62,7 +62,7 @@ class EvolutionConfig:
         from encre.evolution.reflex import EncreReflexLoop
 
         return cls(
-            learner=EncreEvolutionLearner(storage_path=str(get_data_dir() / "evolution" / "state.json")),  # noqa: E501
+            learner=EncreEvolutionLearner(storage_path=str(get_data_dir() / "evolution" / "state.json")),
             optimizer=EncreStrategyOptimizer(),
             reflex=EncreReflexLoop(enabled=False),
             meta=EncreMetaCognition(),

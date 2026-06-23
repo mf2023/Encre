@@ -25,10 +25,10 @@
 
 def __getattr__(name: str):
     if name == "EncreServer":
-        from encre.server.app import EncreServer as _cls
-        return _cls
+        from encre.server.app import EncreServer
+        return EncreServer
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-from encre.server.protocol import (  # noqa: E402
+from encre.server.protocol import (
     ClientMessage,
     encode_server_message,
     parse_client_message,

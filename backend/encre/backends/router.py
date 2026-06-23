@@ -24,13 +24,22 @@
 
 
 import contextlib
+import logging
 import re
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
 
+from encre.backends.auth import AuthManager
 from encre.backends.base import BaseBackend
-from encre.utils.types import BackendEvent, BackendFinish
+from encre.backends.connection import (
+    ConnectionHealthMonitor,
+    format_connection_error,
+)
+from encre.backends.retry import ErrorClass, classify_error
+from encre.utils.types import BackendError, BackendEvent, BackendFinish
+
+logger = logging.getLogger("encre.backends.router")
 
 
 class TaskCategory:
@@ -158,6 +167,8 @@ class RouterBackend(BaseBackend):
         routes: dict[str, BaseBackend],
         default: BaseBackend,
         track_costs: bool = True,
+        auth_manager: AuthManager | None = None,
+        connection_monitor: ConnectionHealthMonitor | None = None,
     ) -> None:
         self._routes: dict[str, Route] = {}
         for category, backend in routes.items():
@@ -169,6 +180,8 @@ class RouterBackend(BaseBackend):
             self._route_counts[category] = 0
         self._route_counts["default"] = 0
         self._cost_tracker = CostTracker() if track_costs else None
+        self._auth_manager = auth_manager
+        self._connection_monitor = connection_monitor or ConnectionHealthMonitor()
 
     async def chat(
         self,
@@ -193,22 +206,50 @@ class RouterBackend(BaseBackend):
                             prompt += block.get("text", "")
                 break
 
+        # Determine which backend to use, skipping degraded routes.
         backend, route_name = self._select_backend(prompt)
+        candidates: list[tuple[BaseBackend, str]] = []
+        if self._connection_monitor.is_degraded(route_name):
+            logger.warning("Route %s connection degraded, seeking fallback", route_name)
+            candidates = self._ranked_candidates(prompt)
+            for alt_backend, alt_name in candidates:
+                if not self._connection_monitor.is_degraded(alt_name):
+                    backend, route_name = alt_backend, alt_name
+                    break
+            else:
+                logger.warning("All routes degraded, using original selection %s", route_name)
+
         self._last_used = route_name
         self._route_counts[route_name] = self._route_counts.get(route_name, 0) + 1
 
-        async for event in backend.chat(
-            messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=stream,
-            enable_caching=enable_caching,
-        ):
-            if isinstance(event, BackendFinish) and self._cost_tracker is not None:
-                self._record_usage(backend, event)
-            yield event
+        try:
+            async for event in backend.chat(
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=stream,
+                enable_caching=enable_caching,
+            ):
+                if isinstance(event, BackendFinish) and self._cost_tracker is not None:
+                    self._record_usage(backend, event)
+                yield event
+        except Exception as exc:
+            error_class = classify_error(exc)
+            if error_class in (
+                ErrorClass.TIMEOUT,
+                ErrorClass.CONNECTION_ERROR,
+                ErrorClass.STALE_CONNECTION,
+            ):
+                self._connection_monitor.record_failure(
+                    route_name, format_connection_error(exc),
+                )
+            else:
+                self._connection_monitor.record_failure(route_name, str(exc))
+            raise
+        else:
+            self._connection_monitor.record_success(route_name)
 
     def _select_backend(self, prompt: str) -> tuple[BaseBackend, str]:
         if not prompt:
@@ -226,6 +267,16 @@ class RouterBackend(BaseBackend):
             return best[0].backend, best[0].category
 
         return self._default, "default"
+
+    def _ranked_candidates(self, prompt: str) -> list[tuple[BaseBackend, str]]:
+        """Return all matching routes sorted by confidence descending."""
+        scored: list[tuple[float, BaseBackend, str]] = []
+        for route in self._routes.values():
+            confidence = route.matches(prompt)
+            if confidence > route.min_confidence:
+                scored.append((confidence, route.backend, route.category))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [(b, n) for _, b, n in scored] + [(self._default, "default")]
 
     def _record_usage(self, backend: BaseBackend, finish: BackendFinish) -> None:
         """Record token usage and cost from a BackendFinish event.
@@ -293,6 +344,14 @@ class RouterBackend(BaseBackend):
         was created.
         """
         return dict(self._route_counts)
+
+    def get_health(self) -> dict[str, Any]:
+        """Return connection health for all routes."""
+        return {
+            "connection": self._connection_monitor.get_all_health(),
+            "auth": self._auth_manager.get_health() if self._auth_manager else None,
+            "last_route": self._last_used,
+        }
 
     async def aclose(self) -> None:
         for route in self._routes.values():

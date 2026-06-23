@@ -761,7 +761,7 @@ def _infer_provider(model_name: str) -> str:
         return "glm"
     if name_lower.startswith("kimi-") or name_lower.startswith("moonshot-"):
         return "kimi"
-    if name_lower.startswith("qwen") or name_lower.startswith("qwq-") or name_lower.startswith("qwen-"):  # noqa: E501
+    if name_lower.startswith("qwen") or name_lower.startswith("qwq-") or name_lower.startswith("qwen-"):
         return "alibaba"
     if name_lower.startswith("minimax-"):
         return "minimax"
@@ -775,7 +775,7 @@ def _infer_provider(model_name: str) -> str:
         return "novita"
     if name_lower.startswith("arcee"):
         return "arcee"
-    if name_lower.startswith("gmi-") or name_lower.startswith("deepseek-ai/") or name_lower.startswith("zai-org/"):  # noqa: E501
+    if name_lower.startswith("gmi-") or name_lower.startswith("deepseek-ai/") or name_lower.startswith("zai-org/"):
         return "gmi"
     if name_lower.startswith("kilocode") or name_lower.startswith("kilo-"):
         return "kilocode"

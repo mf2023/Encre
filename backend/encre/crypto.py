@@ -57,6 +57,7 @@ import pathlib
 import platform
 import secrets
 import stat
+import typing as _t
 
 __all__ = ["decrypt", "decrypt_bytes", "encrypt", "encrypt_bytes", "ensure_keyfile"]
 
@@ -215,6 +216,10 @@ def ensure_keyfile() -> bytes:
 # ---------------------------------------------------------------------------
 # AES-256-GCM encrypt / decrypt (user-facing API)
 # ---------------------------------------------------------------------------
+
+if _t.TYPE_CHECKING:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 
 def _get_aesgcm() -> AESGCM:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM

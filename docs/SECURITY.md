@@ -1,344 +1,360 @@
-The encre project takes security seriously. This document outlines our security policy, including supported versions, how to report vulnerabilities, and our disclosure process.
+# Security Policy
+
+The Encre project takes security seriously — both the security of users running the Agent on their machines, and the security of contributors working on the codebase. This document covers:
+
+1. **Supported versions** — which versions get security fixes
+2. **How to report a vulnerability** — and what to expect
+3. **Built-in security architecture** — the layers already protecting you
+4. **Hardening checklist** — what *you* should configure before running in production
+5. **Threat model** — what Encre defends against and what it does not
+6. **For contributors** — how to write code that doesn't introduce security regressions
+
+If you find a vulnerability, **do not file a public issue**. Email the maintainers at the address in [Reporting a Vulnerability](#reporting-a-vulnerability).
+
+---
 
 ## Supported Versions
 
-The following versions of encre are currently supported with security updates:
+The following table lists which Encre release lines currently receive security updates. Encre uses [semantic versioning](https://semver.org/); the current version is reflected in [`pyproject.toml`](../pyproject.toml) (Python) and [`desktop/package.json`](../desktop/package.json) (Electron). The two are kept in lockstep.
 
-| Version | Supported          | Status                |
-| ------- | ------------------ | --------------------- |
-| 0.1.x   | :white_check_mark: | Current stable series |
-| < 0.1.0 | :x:                | No longer supported   |
+| Release line | Status | Security fixes | End-of-life |
+|---|---|---|---|
+| `0.5.x` (current pre-release) | 🟡 Pre-release | Yes — best-effort, fast turnaround | Until `0.6.0` ships |
+| `0.4.x` | ❌ End-of-life | No | Please upgrade |
+| `< 0.4.0` | ❌ End-of-life | No | Please upgrade |
 
-We provide security updates for the latest minor version in each major version series. Users are encouraged to upgrade to the latest version to receive security patches.
+Users are encouraged to track `master` or the latest tagged release. Because Encre is distributed primarily as a single repo (cloned and `pip install -e .`-ed) rather than as a PyPI package, "upgrade" means:
+
+```bash
+cd encre
+git pull
+pip install -e .
+```
+
+For the desktop app, follow the auto-update prompt or reinstall from the latest GitHub / Gitee release artifact.
+
+---
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in encre, please report it to us as soon as possible. We appreciate your efforts to responsibly disclose your findings.
+### Contact
 
-### How to Report
+🌐 **security.dunimd.com** *(pending activation)* — monitored by at least two maintainers
 
-**Please do not report security vulnerabilities through public GitHub issues or Gitee issues.**
+🔑 **GPG:** `54B6 1520 0435 612E E91C F180 24AD F10D D207 AA1F` ([verify](https://keys.openpgp.org/search?q=24ADF10DD207AA1F))
 
-Instead, please report security vulnerabilities via:
+```bash
+gpg --keyserver hkps://keys.openpgp.org --recv-keys 24ADF10DD207AA1F
+gpg --output report.gpg --encrypt --sign --recipient dunimd@outlook.com report.txt
+```
 
-📧 **Email**: dunimd@outlook.com
+For **non-sensitive** security questions (e.g. "is this configuration safe?"), you may also open a [GitHub Discussion](https://github.com/mf2023/Encre/discussions) tagged `security-question`. When in doubt, prefer email — disclosure timing matters.
 
-For general questions and non-security issues, please use:
-- **Gitee Issues** (Primary): https://gitee.com/dunimd/encre/issues
-- **GitHub Issues** (Mirror): https://github.com/mf2023/Encre/issues
+For **Code of Conduct violations**, use `conduct.dunimd.com` *(pending activation)* instead. The two addresses are read by overlapping but distinct maintainer groups.
 
-Please include the following information in your report:
+### What to Include
 
-- **Description**: A clear and concise description of the vulnerability
-- **Impact**: What kind of vulnerability is it and what impact could it have
-- **Affected Versions**: Which versions of encre are affected
-- **Steps to Reproduce**: Detailed steps to reproduce the vulnerability
-- **Proof of Concept**: If possible, include a proof-of-concept or exploit code (especially for tool injection, prompt injection, or sandbox escape)
-- **Suggested Fix**: If you have suggestions for how to fix the vulnerability
-- **Your Contact Information**: How we can reach you for clarifications (optional)
+A useful report contains:
+
+- **Description** — what the vulnerability is, in one paragraph
+- **Impact** — what an attacker can achieve (RCE, data exfiltration, sandbox escape, prompt-injection-mediated action, …)
+- **Affected versions** — which Encre release lines are vulnerable
+- **Affected layer** — Python framework / Rust core / Desktop app / Documentation
+- **Steps to reproduce** — numbered, copy-paste runnable
+- **Proof of concept** — script, payload, screenshot, or recording. Especially valuable for: tool injection, prompt injection, sandbox escape, SSRF bypass, credential leakage
+- **Suggested fix** — if you have one (a patch is a bonus, not a requirement)
+- **Your contact info** — for follow-up questions (optional but recommended)
+- **Disclosure preference** — do you want to be credited in the advisory? Coordinated disclosure timeline you'd prefer?
+
+**Template:**
+
+```markdown
+**Title:** `<one-line summary>`
+
+**Layer:** Python / Rust / Desktop / Docs
+**Affected versions:** 0.5.0-pre.1 (commit <hash>)
+**Severity (your estimate):** Critical / High / Medium / Low
+
+**Description:**
+<paragraph>
+
+**Impact:**
+<what an attacker achieves>
+
+**Steps to reproduce:**
+1. `pip install -e .`
+2. `python ...`
+3. Observe ...
+
+**Suggested fix:**
+<optional>
+
+**Disclosure preference:**
+<e.g. "credit me as <name>" / "keep me anonymous" / "I plan to publish on YYYY-MM-DD">
+```
 
 ### What to Expect
 
-When you submit a security report, you can expect the following:
+When you submit a security report, our process is:
 
-1. **Acknowledgment**: We will acknowledge receipt of your report within 48 hours
-2. **Initial Assessment**: We will provide an initial assessment within 5 business days
-3. **Investigation**: We will investigate the vulnerability and determine its impact
-4. **Fix Development**: If confirmed, we will work on a fix and may reach out for additional information
-5. **Disclosure**: We will coordinate with you on the disclosure timeline
+| Stage | Timeline | What happens |
+|---|---|---|
+| **Acknowledgment** | within **48 hours** | A maintainer confirms receipt, assigns a tracking ID (e.g. `SEC-2026-014`), and confirms the affected versions. |
+| **Initial assessment** | within **5 business days** | We confirm or refute the report, assign a severity (Critical / High / Medium / Low), and decide whether to issue a CVE. |
+| **Investigation** | 1–14 days | We dig in, write a reproducer internally, and design a fix. We may reach out for clarification. |
+| **Fix development** | depends on severity | See [Response Time SLAs](#response-time-slas). |
+| **Disclosure coordination** | before public release | We agree a disclosure date with you (default: when the fix ships). |
+| **Public advisory** | at disclosure | GitHub Security Advisory + CHANGELOG entry + CVE record if applicable. |
 
-### Response Time
+### Response Time SLAs
 
-Our target response times are:
+| Severity | Initial response | Fix timeline | Examples |
+|---|---|---|---|
+| **Critical** | 24 hours | 7 days | Remote code execution, sandbox escape, unauthenticated RCE via a chat adapter |
+| **High** | 48 hours | 14 days | SSRF bypass, prompt injection leading to data exfiltration, credential leakage to logs |
+| **Medium** | 5 business days | 30 days | Privilege escalation between permission modes, DoS via crafted input, info disclosure |
+| **Low** | 10 business days | 60 days | Defense-in-depth weaknesses, hardening opportunities, minor info leaks |
 
-| Severity | Initial Response | Fix Timeline |
-|----------|-----------------|--------------|
-| Critical | 24 hours | 7 days |
-| High | 48 hours | 14 days |
-| Medium | 5 business days | 30 days |
-| Low | 10 business days | 60 days |
+These are targets, not promises. We will tell you early if we need more time, and why.
 
-## Security Considerations
+### Our Commitments to You
 
-### Tool Execution Safety
+- We will **acknowledge** your report within 48 hours
+- We will **keep you informed** of progress, at minimum at the milestone stages above
+- We will **credit you** in the public advisory, unless you ask to remain anonymous
+- We will **not take legal action** against researchers who follow this policy in good faith
+- We will **coordinate disclosure** so users have a fix before the issue becomes public
+- We will **not share your report** outside the maintainer group without your consent, except as required by law
 
-encre provides 35 built-in tools that can execute code and access the filesystem. Security measures include:
+---
 
-#### Permission Modes (6 levels)
-- **bypass**: No permission checks (development only)
-- **dont_ask**: Automatically allow all tool calls
-- **accept_edits**: Auto-allow file edits, ask for other actions
-- **plan**: Require approval for all disruptive operations
-- **auto**: Heuristic-based permission decisions via safety classifier
-- **default**: Always ask for user confirmation before executing tools
+## Built-in Security Architecture
 
-#### Dangerous Command Detection
-- Shell command pattern analysis detects potentially harmful operations
-- Commands like `rm -rf /`, `dd if=/dev/zero`, `:(){ :\|:& };:` are blocked by default
-- Configurable allow/block lists for command patterns
+Encre ships with several layers of defense, **on by default** unless you turn them off. Understanding what is already in place helps you avoid disabling protections you didn't mean to.
 
-#### Sandboxed Execution (Docker)
-- Optional Docker container sandbox with seccomp profiles
-- Restricts system calls available to executed commands
-- Isolates file system access within the container
+### Layer 1: Six-Level Permission System
 
-### SSRF Protection
+`EncreConfig.permission_mode` controls how aggressively the Agent acts on its own:
 
-- DNS resolution validation before connection establishment
-- CIDR blocklist for private/internal IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, etc.)
-- Prevents Server-Side Request Forgery via web fetch and web search tools
+| Mode | Behavior | Use when |
+|---|---|---|
+| `bypass` | No checks. The Agent does whatever its tools allow. | Local experiments where you trust the prompt. **Never** for shared systems. |
+| `dont_ask` | Auto-allow all tool calls. | Sandboxed CI / batch jobs. |
+| `accept_edits` | Auto-allow file edits, ask for other actions. | Heavy code work where you want to skim diffs but not be prompted for each `cat`. |
+| `plan` | Require approval for all disruptive operations. | Research / exploration of unfamiliar code. |
+| `auto` | Heuristic decisions via `EncreAutoSafetyClassifier`. | Power users who want speed with sensible defaults. |
+| `default` | Always ask for user confirmation before executing tools. | **Recommended** for first use and for any prompt you didn't write yourself. |
 
-### API Key and Credential Security
+The default is configurable per-tool via `EncreConfig.permission_settings` (e.g. `{"bash": "ask", "file_write": "allow", "network": "deny"}`).
 
-- API keys stored in environment variables or encrypted configuration
-- AES-256-GCM encryption for sensitive data at rest
-- The `crypto.py` module provides secure encryption/decryption
-- Credentials are never logged or exposed in tool outputs by default
+### Layer 2: Dangerous-Command Detection
 
-### Prompt Injection Defense
+The Bash tool runs every command through `encre.safety.analyze_bash_command` against patterns from [`dangerous_commands.txt`](../backend/encre/dangerous_commands.txt). Patterns detected by default include `rm -rf /`, raw `dd` against devices, fork-bombs, reverse shells, and known destructive package commands. You can extend the list via `EncreConfig.dangerous_command_patterns`.
 
-- encre uses a multi-layered system prompt architecture
-- Safety classifiers can detect injection attempts
-- Tool input validation sanitizes parameters
-- The auto classifier uses the LLM itself to evaluate permission requests
+### Layer 3: Sandboxed Execution
 
-### Memory & Data Privacy
+Two complementary mechanisms:
 
-- Persistent memory stored as local `.md` files in memdir
-- No default telemetry or data collection
-- All data remains local unless explicitly sent to an LLM API
-- Memory aging/pruning prevents unbounded data accumulation
-- Encryption available for sensitive memory data
+- **Docker container sandbox** ([`encre/sandbox/container.py`](../backend/encre/sandbox/container.py)) — runs shell tools inside a container with seccomp-style syscall filtering and configurable memory/CPU limits. Enable with `EncreConfig(sandbox_enabled=True)`.
+- **Linux Landlock** ([`native/crates/encre-core/src/landlock.rs`](../native/crates/encre-core/src/landlock.rs)) — kernel-level filesystem and network restrictions on Linux. No Docker required. Used by `shell.rs` when available.
 
-### Desktop Application Security
+Both are layered: even if one is bypassed, the other still applies.
 
-- Context isolation enabled in Electron (`contextIsolation: true`)
-- Preload script provides minimal, audited API surface
-- Node.js integration disabled in renderer process
-- Content Security Policy headers enforced
-- Encrypted cookie store for browser automation (AES-256-GCM)
+### Layer 4: SSRF Protection
 
-### LSP Client Security
+`EncreSSRFGuard` ([`encre/ssrf.py`](../backend/encre/ssrf.py)) validates URLs before any HTTP fetch:
 
-- LSP client communicates only with locally started language servers
-- No remote LSP server connections
-- Language server processes are managed and terminated by encre
+- Resolves the hostname via DNS
+- Compares the resolved IP against a CIDR blocklist of private, loopback, link-local, multicast, and reserved ranges
+- Blocks redirects to blocked ranges
+- Applied to `web_fetch`, `web_search`, MCP HTTP transports, and adapter callbacks
 
-### Codebase Indexer
+### Layer 5: Encrypted Credential Storage
 
-- All indexing is local (no remote code analysis)
-- File access limited to the workspace directory
-- Sensitive file patterns (.env, \*.key, etc.) excluded from indexing
+`encre/crypto.py` provides AES-256-GCM helpers. The desktop app uses them to encrypt browser cookies at rest; the server stores API keys encrypted at rest when configured to. Key files live in the user's data directory (`get_data_dir()`) and are never written to logs.
 
-## Security Best Practices
+### Layer 6: Multi-Agent Isolation
 
-When using encre in your applications:
+When multiple Agents run in a Swarm, each gets its own session, memory namespace, and tool-policy context (`current_tool_policy` in `EncreConfig`). Cross-agent writes go through the `EncreBlackboard` API, which is logged.
 
-### 1. Keep Dependencies Updated
+### Layer 7: Hook System for Custom Policy
 
-Regularly update encre and its dependencies to receive security patches:
-
-```bash
-# Update Python dependencies
-pip install --upgrade encre
-pip list --outdated
-
-# Update Rust dependencies
-cargo update
-cargo audit  # Use cargo-audit to check for known vulnerabilities
-
-# Update desktop dependencies
-cd desktop
-npm audit
-npm update
-```
-
-### 2. Use Appropriate Permission Mode
-
-Choose the appropriate tool permission mode for your use case:
+You can attach a handler to any hook event (e.g. `pre_tool_exec`) and have it block, modify, or log the call. This is the right place to enforce organization-specific policy without forking Encre.
 
 ```python
-# Maximum security - always ask
-agent = EncreAgent(..., tool_permission_mode="default")
+from encre.config import EncreConfig, EncreAgent
+from encre.hooks.system import EncreHookSystem
+from encre.hooks.types import HookEventType
 
-# Automated with heuristic checks
-agent = EncreAgent(..., tool_permission_mode="auto")
-
-# Development only - no checks
-agent = EncreAgent(..., tool_permission_mode="bypass")
-```
-
-### 3. Enable Sandbox for Untrusted Code
-
-```python
-from encre import EncreAgent
-
-agent = EncreAgent(
-    ...,
-    sandbox_enabled=True,
-    sandbox_image="encre-sandbox:latest",
-)
-```
-
-### 4. Securely Manage API Keys
-
-```bash
-# Use environment variables (recommended)
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Or use encrypted config
-python -c "from encre import encrypt_config; encrypt_config('config.yaml')"
-```
-
-### 5. Validate Tool Output
-
-Tool outputs are validated before being sent back to the LLM. Custom output validation can be added via hooks:
-
-```python
-from encre.hooks import EncreHookSystem
-
+config = EncreConfig(backend_type="openai", api_key="...", permission_mode="default")
 hooks = EncreHookSystem()
-@hooks.on_post_tool
-async def validate_output(event):
-    if "sensitive_data" in event.result:
-        return {"block": True, "reason": "Output contains sensitive data"}
-```
 
-### 6. Monitor and Log
+def block_writes_outside_workspace(event):
+    target = event.tool_input.get("path", "")
+    if not target.startswith(config.workspace):
+        return {"block": True, "reason": f"writes outside {config.workspace} are blocked"}
+    return None
 
-Enable audit logging for security events:
-
-```python
-from encre import EncreAgent
-
-agent = EncreAgent(
-    ...,
-    log_level="INFO",
-    audit_log="audit.log",
+hooks.register_handler(
+    HookEventType.PRE_TOOL_EXEC,
+    block_writes_outside_workspace,
+    handler_id="workspace-guard",
+    metadata={"source": "user-config"},
 )
+
+agent = EncreAgent(config=config, hook_system=hooks)
 ```
 
-### 7. Secure Deployment
+See [`encre/hooks/`](../backend/encre/hooks/) for the full event catalog.
 
-- Run encre with least privilege (non-root user)
-- Use container security best practices when using Docker sandbox
-- Implement network segmentation for multi-agent deployments
-- Regular security audits of tool configurations
+---
 
-## Known Security Limitations
+## Hardening Checklist for Production Use
 
-### Current Limitations
+Before you point Encre at anything that isn't your own laptop, run through this list.
 
-1. **Prompt Injection**: Like all LLM applications, encre is susceptible to prompt injection attacks. The safety classifier provides mitigation but cannot guarantee complete protection.
+### Pre-deployment
 
-2. **Tool Output to LLM**: Tool execution results are sent to the LLM provider. Avoid including sensitive information in tool outputs when using external LLM APIs.
+- [ ] **Pin a version.** Use a specific tag, not `master`.
+- [ ] **Set `permission_mode="default"`** for any prompt you didn't author yourself.
+- [ ] **Enable sandboxing:** `EncreConfig(sandbox_enabled=True)` plus, on Linux, Landlock.
+- [ ] **Lock `permission_settings`** with explicit per-tool overrides, especially `bash`, `file_write`, and any tool that touches the network.
+- [ ] **Set API keys via environment variables**, never in config files committed to the repo.
+- [ ] **Encrypt the config file** if you must store API keys in it; do not log `EncreConfig` instances at `DEBUG` level.
+- [ ] **Review the workspace path.** Encre will, by default, only operate on the configured `workspace` directory. Verify this is what you intend.
+- [ ] **Audit the tool registry.** Run `agent.tool_registry.list_tools()` and confirm you recognize every tool that is enabled.
+- [ ] **Disable telemetry** if your compliance posture forbids outbound calls: `EncreConfig(telemetry_enabled=False)`.
+- [ ] **Disable tracing** unless you intentionally want OpenTelemetry export: `EncreConfig(tracing_enabled=False)`.
 
-3. **Browser Automation**: The browser automation tool (Playwright) runs in the local environment. Ensure proper access controls are in place.
+### Runtime
 
-4. **Rust Native Extension**: The `encre._native` module provides fast file I/O and shell execution. The sandbox should be enabled when running untrusted commands.
+- [ ] Run as a **non-root user**. The desktop app and the Agent process should never have root.
+- [ ] Put the host behind a **firewall** that blocks outbound traffic to LLM providers you don't use.
+- [ ] **Log at `INFO`** (not `DEBUG`/`TRACE`) — debug logs include full prompts and tool inputs.
+- [ ] **Monitor** `pre_tool_exec` and `tool_exec_failed` events for unusual patterns.
+- [ ] **Rotate API keys** on the same cadence as any other credential in your stack.
+- [ ] **Update dependencies** regularly:
+  ```bash
+  # Python: pin and review
+  pip install --upgrade pip
+  pip-audit                       # if you have it installed
 
-### Security Considerations for Production
+  # Rust: native extension
+  cd native
+  cargo install --locked cargo-audit
+  cargo audit
 
-- Review the configurable tool allow/block lists in your deployment
-- Implement proper network security (firewalls, VPCs) for multi-agent setups
-- Use secrets management systems for API keys (e.g., HashiCorp Vault)
-- Enable audit logging for all tool executions
-- Consider running the desktop application in a restricted environment
+  # Desktop
+  cd desktop
+  npm audit
+  npm audit fix
+  ```
 
-## Security Updates
+### For multi-agent / server deployments
 
-Security updates will be announced through:
+- [ ] Isolate each Agent's `workspace` directory on its own filesystem mount (or container).
+- [ ] Front the WebSocket server (`encre.channels.websocket.WebSocketServer`) with TLS and an authentication layer — Encre does not implement auth by default.
+- [ ] Bind admin HTTP APIs (`encre.channels.http_api`) to `127.0.0.1` unless you have a reverse proxy with auth in front.
+- [ ] For Swarm setups, ensure the `EncreMailbox` and `EncreBlackboard` storage is on encrypted, access-controlled storage.
 
-- GitHub Security Advisories
-- GitHub Releases (with security fix notes)
-- CHANGELOG.md (with security-related changes marked)
+---
 
-## Vulnerability Disclosure Policy
+## Threat Model
 
-### Our Commitment
+Encre is designed for **single-user, locally-trusted execution**, optionally extended with chat-platform integration. The threat model below tells you where the line is.
 
-- We will acknowledge receipt of vulnerability reports within 48 hours
-- We will provide regular updates on our progress
-- We will credit researchers who responsibly disclose vulnerabilities (unless they prefer to remain anonymous)
-- We will not take legal action against researchers who follow this policy
+### In scope (we defend against)
 
-### Disclosure Timeline
+- **Accidental damage** by a competent user running a model they wrote a prompt for — typos in `rm -rf`, accidental writes outside the workspace, etc.
+- **Tool-injection in retrieved content** — a web page or document contains a prompt-injection payload that tries to make the Agent call a tool with attacker-controlled args. Mitigated by permission modes + output validation + SSRF guard.
+- **SSRF via `web_fetch` / `web_search`** — attacker tricks the Agent into hitting an internal endpoint. Mitigated by the SSRF guard.
+- **Credential leakage to logs** — Mitigated by the logging redaction in `logging_config.py` and the recommendation to log at `INFO`.
+- **Sandbox escape from the Docker container** — Mitigated by seccomp + Landlock + non-root user.
+- **Cross-agent data leakage in Swarm** — Mitigated by per-agent session/memory namespaces.
 
-1. **Day 0**: Vulnerability reported
-2. **Day 1-2**: Acknowledgment and initial assessment
-3. **Day 3-14**: Investigation and fix development
-4. **Day 15-30**: Testing and validation
-5. **Day 30+**: Coordinated disclosure
+### Out of scope (we do **not** defend against)
 
-We aim to disclose vulnerabilities within 90 days of the initial report, or sooner if a fix is available.
+- **A user who runs Encre as root and approves every tool call** — they have explicitly opted out of protection.
+- **A user who puts their API key in a public GitHub repo** — Encre cannot undo social engineering.
+- **A user who turns off all permission modes and gives the Agent a hostile prompt** — you have configured the system to be unsafe; the threat model does not apply.
+- **Supply-chain attacks on transitive dependencies** — we monitor via `cargo audit` and `npm audit` and patch promptly, but we cannot guarantee every dependency is clean at every moment.
+- **LLM-provider compromise or prompt-logging by the provider** — outside our trust boundary. Choose providers whose data-handling policy you have read.
+- **A determined attacker with local code execution on the same machine** — once they can run code as your user, Encre's protections are bypassed; protect the host.
 
-### Public Disclosure
+If you need guarantees beyond this threat model, run Encre inside a hardened VM or air-gapped environment — and remember that even there, an LLM with tool access is only as trustworthy as the prompt and the audit trail.
 
-We will publicly disclose vulnerabilities after:
+---
 
-- A fix has been developed and tested
-- Affected users have had reasonable time to update
-- The vulnerability has been assigned a CVE identifier (if applicable)
+## For Contributors: Writing Code That Doesn't Introduce Security Regressions
 
-## Security-Related Configuration
+If you're contributing to Encre itself, this section is for you.
 
-### Environment Variables
+### Don't
 
-| Variable | Description | Security Impact |
-|----------|-------------|-----------------|
-| `ENCRE_LOG_LEVEL` | Logging level | May expose sensitive data if set to `DEBUG` or `TRACE` |
-| `ENCRE_TOOL_PERMISSION_MODE` | Default permission mode | Affects tool execution security (see above) |
-| `ENCRE_SANDBOX_ENABLED` | Enable Docker sandbox | Disabling reduces security for shell execution |
-| `OPENAI_API_KEY` | OpenAI API key | Protect this credential |
-| `ANTHROPIC_API_KEY` | Anthropic API key | Protect this credential |
+- **Don't add a tool** that reads arbitrary URLs without going through `EncreSSRFGuard`. The pattern is:
+  ```python
+  from encre.ssrf import EncreSSRFGuard
+  guard = EncreSSRFGuard()
+  if not guard.validate(url):
+      raise PermissionError(f"URL blocked by SSRF policy: {url}")
+  ```
+- **Don't log tool inputs or outputs at `DEBUG`/`TRACE` without explicit redaction**. Tool inputs frequently contain credentials, paths to sensitive files, and full prompt text.
+- **Don't accept new dependencies** under GPL-family licenses — Apache 2.0 is incompatible. The accepted list lives in [CONTRIBUTING.md → License](../CONTRIBUTING.md#license).
+- **Don't disable security checks** to make a test pass. Add a test that exercises the check and call it from the test.
+- **Don't shell out via `subprocess.run(shell=True)`** with user-controlled input. Use `shell=False` and a list of arguments.
+- **Don't extend the dangerous-command list** to *allow* something by default — additions should only ever make the list stricter.
 
-### Configuration Options
+### Do
 
-Review security-related configuration options in:
+- **Do add tests** for any new code path that handles untrusted input. The threat model above is the spec; the test is the proof.
+- **Do run `pip-audit` and `cargo audit`** before opening a PR that touches dependencies.
+- **Do add a CHANGELOG entry** under a "Security" heading when your change is security-relevant.
+- **Do mention security implications** in the PR description, even if your change isn't primarily security work. Reviewers will appreciate it.
+- **Do add a hook event** for new kinds of tool execution, so users can write policy handlers.
+- **Do fuzz new parsers** before merging. There are example fuzz harnesses in [`backend/tests/fuzz/`](../backend/tests/fuzz/) — extend rather than fork.
 
-- `EncreSafetyEngine` - Permission mode and dangerous command patterns
-- `EncreSandbox` - Docker sandbox configuration (seccomp, memory limits)
-- `EncreSSRFValidator` - SSRF protection settings
-- `EncreCrypto` - Encryption configuration
+### Reviewer checklist (security section)
 
-## Third-Party Security Audits
+When reviewing a PR, explicitly check:
 
-We welcome third-party security audits. If you are conducting a security audit of encre:
+- [ ] No new dependencies with restrictive licenses (GPL, AGPL, LGPL, SSPL, BUSL)
+- [ ] No new subprocess calls with `shell=True` and user input
+- [ ] No new network calls bypassing `EncreSSRFGuard`
+- [ ] No new logging at `DEBUG`/`TRACE` of full prompts or tool inputs
+- [ ] New tools have permission-mode handling that respects `EncreConfig.permission_mode`
+- [ ] Dangerous-command patterns extended in the *restrictive* direction
+- [ ] If the PR changes a public API, [CONTRIBUTING.md → API change](../CONTRIBUTING.md) review process has been followed
 
-1. Please follow responsible disclosure practices
-2. Contact us in advance if you plan to publish findings
-3. We appreciate receiving a copy of the audit report
+---
+
+## Known Limitations
+
+We document these so you can make informed decisions about where to deploy Encre. None of these is a bug; they are design constraints of the architecture.
+
+1. **LLM outputs are non-deterministic.** Even with the same prompt and seed, a model may produce different tool calls. Do not assume idempotency for destructive operations.
+2. **Prompt injection is an unsolved problem.** `EncreAutoSafetyClassifier` mitigates but cannot eliminate it. Treat retrieved content as untrusted; validate tool inputs at the boundary.
+3. **Tool outputs leave the local machine.** When you use a cloud LLM, tool results are sent to the provider. Choose providers whose data-handling policy you have read, or run a local model via the `ollama` / `local` backends.
+4. **The desktop app uses Chromium** (via Electron). It inherits Chromium's CVE cadence. Run `npm audit` regularly.
+5. **Landlock is Linux-only.** On macOS and Windows, the Docker sandbox is the primary isolation mechanism.
+
+---
 
 ## Security Resources
 
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
-- [OWASP LLM Top 10](https://genai.owasp.org/)
+- [OWASP Top 10 for LLM Applications](https://genai.owasp.org/)
 - [Rust Security Guidelines](https://doc.rust-lang.org/nomicon/)
-- [Cargo Audit](https://github.com/RustSec/cargo-audit)
-- [Python Security Best Practices](https://cheatsheetseries.owasp.org/cheatsheets/Python_Security_Cheat_Sheet.html)
-
-## Contact
-
-For security-related inquiries:
-
-- **Email**: dunimd@outlook.com
-- **GPG Key**: [Available upon request]
-
-For general questions and non-security issues, please use:
-
-- **Gitee Issues** (Primary): https://gitee.com/dunimd/encre/issues
-- **GitHub Issues** (Mirror): https://github.com/mf2023/Encre/issues
-- **GitHub Discussions**: https://github.com/mf2023/Encre/discussions
+- [cargo-audit](https://github.com/RustSec/cargo-audit)
+- [Python Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Python_Security_Cheat_Sheet.html)
+- [Electron Security Checklist](https://www.electronjs.org/docs/latest/tutorial/security)
 
 ## Acknowledgments
 
-We thank the following security researchers who have responsibly disclosed vulnerabilities:
+We thank the following researchers who have responsibly disclosed vulnerabilities. (This list is updated as advisories are published.)
 
-*This list will be updated as vulnerabilities are reported and fixed.*
+*— no public advisories yet —*
 
 ---
 
-**Last Updated**: 2026-05-31
-
-**Version**: 1.0
+**Last Updated:** 2026-06-21
+**Version:** 1.1

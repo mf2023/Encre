@@ -30,8 +30,9 @@ import unicodedata
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
+from encre.autosafety import EncreAutoSafetyClassifier
 from encre.config import EncreConfig
 from encre.sandbox.container import EncreContainerSandbox
 from encre.sandbox.types import (
@@ -102,7 +103,7 @@ _RE_MKFS = re.compile(r'\bmkfs\.?\w*\s', re.IGNORECASE)
 _RE_DD_WRITE = re.compile(r'\bdd\s+if=.*\s+of=', re.IGNORECASE)
 _RE_REDIRECT_DEV = re.compile(r'>\s*/dev/(?:sd[a-z]+|nvme\d+n\d+|mmcblk\d+)', re.IGNORECASE)
 _RE_REDIRECT_DISK = re.compile(r'>\s*/dev/(?:disk|block|mapper)/', re.IGNORECASE)
-_RE_REDIRECT_ETC = re.compile(r'>\s*/etc/(?:passwd|shadow|sudoers|hosts|resolv\.conf)', re.IGNORECASE)  # noqa: E501
+_RE_REDIRECT_ETC = re.compile(r'>\s*/etc/(?:passwd|shadow|sudoers|hosts|resolv\.conf)', re.IGNORECASE)
 _RE_REDIRECT_SYSTEM = re.compile(r'>\s*/(?:etc|boot|sys|proc|dev)/', re.IGNORECASE)
 
 # Privilege escalation
@@ -384,7 +385,7 @@ class EncreSafetyEngine:
         sandbox_enabled: bool = False,
         sandbox_config: SandboxConfig | None = None,
         workspace: str = "",
-        auto_classifier: "EncreAutoSafetyClassifier | None" = None,
+        auto_classifier: EncreAutoSafetyClassifier | None = None,
     ) -> None:
         self.config = config
 
@@ -400,7 +401,7 @@ class EncreSafetyEngine:
                 config.dangerous_command_patterns = loaded
 
         self._sensitive_patterns: list[re.Pattern[str]] = [
-            re.compile(r"(?:api[_-]?key|apikey|secret|password|token|credential|AUTH_TOKEN|PRIVATE_KEY|AWS_SECRET|GITHUB_TOKEN)", re.IGNORECASE),  # noqa: E501
+            re.compile(r"(?:api[_-]?key|apikey|secret|password|token|credential|AUTH_TOKEN|PRIVATE_KEY|AWS_SECRET|GITHUB_TOKEN)", re.IGNORECASE),
         ]
 
         self.sandbox_enabled = sandbox_enabled
@@ -475,7 +476,7 @@ class EncreSafetyEngine:
             return False, "Unicode homoglyph/zero-width characters detected"
         return True, ""
 
-    async def check_tool_permission(self, tool_name: str, tool_input: dict[str, Any]) -> PermissionDecision:  # noqa: E501
+    async def check_tool_permission(self, tool_name: str, tool_input: dict[str, Any]) -> PermissionDecision:
         # The Rust permission engine is the single source of truth for
         # authorization.  We forward the tool name and the JSON-serialized
         # arguments so the dangerous-command regex table can inspect the
@@ -577,7 +578,7 @@ class EncreSafetyEngine:
                 tools[key] = value
         self.set_policies(tools, capabilities)
 
-    async def _check_auto_mode(self, tool_name: str, tool_input: dict[str, Any]) -> PermissionDecision:  # noqa: E501
+    async def _check_auto_mode(self, tool_name: str, tool_input: dict[str, Any]) -> PermissionDecision:
         """Auto mode: use classifier when available, fall back to pattern checks.
 
         Kept for compatibility with callers that still expect it; the
@@ -604,7 +605,7 @@ class EncreSafetyEngine:
             return self._ssrf_guard.validate_url(url)
         return False
 
-    _DANGEROUS_PATTERNS: list[re.Pattern[str]] = [
+    _DANGEROUS_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"rm\s+-rf\s+/", re.IGNORECASE),
         re.compile(r"mkfs\s", re.IGNORECASE),
         re.compile(r"dd\s+if=.*\s+of=", re.IGNORECASE),
@@ -613,7 +614,7 @@ class EncreSafetyEngine:
         re.compile(r">\s*/dev/sda", re.IGNORECASE),
     ]
 
-    _DANGEROUS_SUBSTRINGS: list[str] = [
+    _DANGEROUS_SUBSTRINGS: ClassVar[list[str]] = [
         "rm -rf /", "mkfs", "dd if=", "chmod 777 /", "sudo ", ":(){ :|:& };:",
     ]
 
@@ -636,7 +637,7 @@ class EncreSafetyEngine:
         input_str = str(tool_input)
         return any(pattern.search(input_str) for pattern in self._sensitive_patterns)
 
-    def validate_tool_output(self, tool_name: str, output: str) -> str:
+    def validate_tool_output(self, _tool_name: str, output: str) -> str:
         if len(output) > self.config.tool_result_max_chars:
             output = output[: self.config.tool_result_max_chars] + "\n... (truncated)"
         return output

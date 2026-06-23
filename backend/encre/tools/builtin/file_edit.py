@@ -185,7 +185,7 @@ async def _file_edit_execute(**kwargs: Any) -> str:
         edits = []
         for i, e in enumerate(edits_param):
             if not isinstance(e, dict) or "old_str" not in e or "new_str" not in e:
-                return f"Error: edits[{i}] 必须包含 'old_str' 和 'new_str' (must have 'old_str' and 'new_str')"  # noqa: E501
+                return f"Error: edits[{i}] 必须包含 'old_str' 和 'new_str' (must have 'old_str' and 'new_str')"
             edits.append(
                 (
                     str(e["old_str"]),
@@ -197,7 +197,7 @@ async def _file_edit_execute(**kwargs: Any) -> str:
         old_str = kwargs.get("old_str")
         new_str = kwargs.get("new_str")
         if old_str is None or new_str is None:
-            return "Error: 请提供 'edits' 或同时提供 'old_str' 和 'new_str' (provide either 'edits' or both 'old_str' and 'new_str')"  # noqa: E501
+            return "Error: 请提供 'edits' 或同时提供 'old_str' 和 'new_str' (provide either 'edits' or both 'old_str' and 'new_str')"
         edits = [(str(old_str), str(new_str), bool(kwargs.get("replace_all", False)))]
 
     try:
@@ -277,7 +277,7 @@ EncreFileEditTool = build_tool(
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Path to the file to edit (filename, relative path, or absolute path within the workspace)",  # noqa: E501
+                "description": "Path to the file to edit (filename, relative path, or absolute path within the workspace)",
             },
             "old_str": {
                 "type": "string",

@@ -61,11 +61,14 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import pathlib
 import time
 from typing import Any
 
 from encre.crypto import decrypt, encrypt
+
+_log = logging.getLogger("encre.rollback")
 
 __all__ = ["CommitEntry", "EncreRollbackGit"]
 
@@ -153,7 +156,7 @@ class EncreRollbackGit:
 
     def _save_index(self) -> None:
         _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _INDEX_FILE.write_text(json.dumps(self._session_index, ensure_ascii=False), encoding="utf-8")  # noqa: E501
+        _INDEX_FILE.write_text(json.dumps(self._session_index, ensure_ascii=False), encoding="utf-8")
 
     # ── object I/O ──────────────────────────────────────────────────────
 

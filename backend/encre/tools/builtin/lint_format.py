@@ -144,7 +144,7 @@ def _detect_toolchain(workspace: str, hint: str | None) -> str:
         }
         if "eslint" in deps or "prettier" in deps:
             return "eslint"
-    if (ws / "pyproject.toml").exists() or (ws / "setup.cfg").exists() or (ws / "requirements.txt").exists():  # noqa: E501
+    if (ws / "pyproject.toml").exists() or (ws / "setup.cfg").exists() or (ws / "requirements.txt").exists():
         return "ruff"
     # Fallback based on file extensions
     py_files = list(ws.rglob("*.py"))
@@ -230,7 +230,7 @@ async def _run_ruff(workspace: str, paths: list[str], mode: str, timeout: float)
                         line=int(loc.get("row") or 0),
                         column=int(loc.get("column") or 0),
                         code=str(entry.get("code") or ""),
-                        severity=("error" if (entry.get("code") or "").startswith("E") else "warning"),  # noqa: E501
+                        severity=("error" if (entry.get("code") or "").startswith("E") else "warning"),
                         message=str(entry.get("message") or "").strip(),
                         fixed=bool(entry.get("fix")),
                     )
@@ -384,7 +384,7 @@ async def _run_cargo(workspace: str, paths: list[str], mode: str, timeout: float
                 LintDiagnostic(
                     file="<workspace>",
                     severity="warning",
-                    message="cargo fmt --check found formatting differences (run with mode='fix' to apply)",  # noqa: E501
+                    message="cargo fmt --check found formatting differences (run with mode='fix' to apply)",
                 )
             )
     if mode in ("fix", "format"):
@@ -429,7 +429,7 @@ async def _run_cargo(workspace: str, paths: list[str], mode: str, timeout: float
                     file=str(file_name),
                     line=int(primary.get("line_start") or 0),
                     column=int(primary.get("column_start") or 0),
-                    code=str(message.get("code") or {}).get("code", "") if isinstance(message.get("code"), dict) else "",  # noqa: E501
+                    code=str(message.get("code") or {}).get("code", "") if isinstance(message.get("code"), dict) else "",
                     severity=severity_kind,
                     message=str(message.get("message") or "").strip(),
                     fixed=False,

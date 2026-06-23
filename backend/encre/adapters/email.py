@@ -141,13 +141,13 @@ class EmailAdapter(BaseAdapter):
         if not self._smtp_host:
             logger.warning("[email] No SMTP host configured, skipping SMTP connection")
         else:
-            logger.info("[email] Connecting to SMTP server %s:%d...", self._smtp_host, self._smtp_port)  # noqa: E501
+            logger.info("[email] Connecting to SMTP server %s:%d...", self._smtp_host, self._smtp_port)
             await self._connect_smtp()
 
         if not self._imap_host:
             logger.warning("[email] No IMAP host configured, skipping IMAP connection")
         else:
-            logger.info("[email] Connecting to IMAP server %s:%d...", self._imap_host, self._imap_port)  # noqa: E501
+            logger.info("[email] Connecting to IMAP server %s:%d...", self._imap_host, self._imap_port)
             await self._connect_imap()
 
         logger.info("[email] Marking connected state...")
@@ -259,7 +259,7 @@ class EmailAdapter(BaseAdapter):
             msg["From"] = self._from_addr
             msg["To"] = chat_id
             msg["Subject"] = self._build_subject(content, metadata)
-            msg["Message-ID"] = email.utils.make_msgid(domain=self._from_addr.split("@")[-1] if "@" in self._from_addr else None)  # noqa: E501
+            msg["Message-ID"] = email.utils.make_msgid(domain=self._from_addr.split("@")[-1] if "@" in self._from_addr else None)
             msg["Date"] = email.utils.formatdate(localtime=True)
 
             if reply_to is not None:
@@ -289,7 +289,7 @@ class EmailAdapter(BaseAdapter):
             msg["From"] = self._from_addr
             msg["To"] = chat_id
             msg["Subject"] = caption or "Image"
-            msg["Message-ID"] = email.utils.make_msgid(domain=self._from_addr.split("@")[-1] if "@" in self._from_addr else None)  # noqa: E501
+            msg["Message-ID"] = email.utils.make_msgid(domain=self._from_addr.split("@")[-1] if "@" in self._from_addr else None)
             msg["Date"] = email.utils.formatdate(localtime=True)
 
             if caption:
@@ -330,7 +330,7 @@ class EmailAdapter(BaseAdapter):
             msg["From"] = self._from_addr
             msg["To"] = chat_id
             msg["Subject"] = caption or "Document"
-            msg["Message-ID"] = email.utils.make_msgid(domain=self._from_addr.split("@")[-1] if "@" in self._from_addr else None)  # noqa: E501
+            msg["Message-ID"] = email.utils.make_msgid(domain=self._from_addr.split("@")[-1] if "@" in self._from_addr else None)
             msg["Date"] = email.utils.formatdate(localtime=True)
 
             if caption:
@@ -421,7 +421,7 @@ class EmailAdapter(BaseAdapter):
 
         raw_email = data[0]
         if isinstance(raw_email, tuple):
-            raw_bytes = raw_email[1] if len(raw_email) > 1 and isinstance(raw_email[1], bytes) else raw_email[0]  # noqa: E501
+            raw_bytes = raw_email[1] if len(raw_email) > 1 and isinstance(raw_email[1], bytes) else raw_email[0]
         elif isinstance(raw_email, bytes):
             raw_bytes = raw_email
         else:
@@ -437,7 +437,7 @@ class EmailAdapter(BaseAdapter):
 
         self.dispatch_message(event)
 
-        task = asyncio.create_task(self._process_chat(chat_id=event.chat_id or "", content=event.text))  # noqa: E501
+        task = asyncio.create_task(self._process_chat(chat_id=event.chat_id or "", content=event.text))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
@@ -556,7 +556,7 @@ class EmailAdapter(BaseAdapter):
         return " ".join(result)
 
     @staticmethod
-    def _guess_mime(file_path: str, default: tuple[str, str] = ("application", "octet-stream")) -> tuple[str, str]:  # noqa: E501
+    def _guess_mime(file_path: str, default: tuple[str, str] = ("application", "octet-stream")) -> tuple[str, str]:
         """Guess MIME type from file extension."""
         mime_type, _ = mimetypes.guess_type(file_path)
         if mime_type:

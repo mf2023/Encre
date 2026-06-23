@@ -1,256 +1,311 @@
-# 内容安全与用户行为规范
+# Content Safety and User Conduct Guidelines
 
-**最后更新：2026年6月7日**
+**Last updated: 2026-06-21**
+**Scope:** Global — applies to all users of Dunimd Services.
 
----
+These guidelines describe the content and conduct rules that apply when you use Dunimd Services. They supplement the [Terms of Service](TERMS.md), the [Privacy Policy](PRIVACY.md), and the [User Agreement](USER_AGREEMENT.md).
 
-## 1. 总则
-
-### 1.1 目的
-
-为营造清朗的网络空间，规范用户使用 Dunimd 软件（"本软件"）的行为，保障用户合法权益，根据《中华人民共和国网络安全法》《中华人民共和国数据安全法》《中华人民共和国个人信息保护法》《生成式人工智能服务管理暂行办法》等法律法规，制定本规范。
-
-### 1.2 适用范围
-
-本规范适用于所有使用本软件的个人和组织（统称"用户"）。用户使用本软件即表示同意遵守本规范。
-
-### 1.3 基本原则
-
-- **合法合规原则**：遵守中国法律法规，不得从事违法活动。
-- **诚实守信原则**：如实提供信息，不得伪造、篡改信息。
-- **文明使用原则**：文明交流，不得传播违法和不良信息。
-- **尊重权利原则**：尊重他人合法权益，不得侵害他人权益。
+If you are in the **People's Republic of China**, the PRC-specific counterpart at [`CONTENT_GUIDELINES_CN.md`](CONTENT_GUIDELINES_CN.md) supplements this document and controls on PRC-law matters.
 
 ---
 
-## 2. 禁止行为
+## Table of Contents
 
-### 2.1 法律法规禁止的内容
-
-用户不得利用本软件生成、传播以下内容：
-
-1. **危害国家安全的内容**：
-   - 反对宪法所确定的基本原则的；
-   - 危害国家安全，泄露国家秘密，颠覆国家政权，破坏国家统一的；
-   - 损害国家荣誉和利益的；
-   - 煽动分裂国家，破坏国家统一的。
-
-2. **损害公共利益的内容**：
-   - 损害国家荣誉和利益的；
-   - 损害公共利益的；
-   - 扰乱社会秩序，破坏社会稳定的。
-
-3. **民族宗教相关内容**：
-   - 煽动民族仇恨、民族歧视，破坏民族团结的；
-   - 破坏国家宗教政策，宣扬邪教和封建迷信的。
-
-4. **侵害他人权益的内容**：
-   - 侮辱或者诽谤他人，侵害他人名誉权、隐私权、肖像权、知识产权等合法权益的；
-   - 侵犯他人个人信息安全的。
-
-5. **违法不良信息**：
-   - 散布谣言，扰乱社会秩序的；
-   - 散布淫秽、色情、赌博、暴力、凶杀、恐怖或者教唆犯罪的；
-   - 含有法律、行政法规禁止的其他内容的。
-
-6. **违反社会主义核心价值观的内容**：
-   - 违背社会公序良俗的；
-   - 宣扬拜金主义、享乐主义、极端个人主义的；
-   - 其他违背社会主义核心价值观的。
-
-### 2.2 AI 生成内容禁止事项
-
-用户不得利用本软件生成以下内容：
-
-1. **违法代码和工具**：
-   - 恶意代码、病毒、木马等计算机程序；
-   - 用于入侵计算机系统、网络的安全工具；
-   - 用于网络攻击、数据窃取的技术手段。
-
-2. **欺诈和犯罪内容**：
-   - 诈骗信息、钓鱼网站内容；
-   - 用于实施犯罪的计划和指导；
-   - 伪造证件、印章、签名等。
-
-3. **侵犯知识产权的内容**：
-   - 复制、传播他人享有著作权的作品；
-   - 侵犯他人商标权、专利权的内容；
-   - 侵犯商业秘密的内容。
-
-4. **深度伪造内容**：
-   - 伪造他人身份、声音、肖像的内容；
-   - 用于误导公众的伪造音视频；
-   - 未标明"AI 生成"的合成内容。
-
-### 2.3 使用行为禁止事项
-
-用户不得有以下行为：
-
-1. **规避管理措施**：
-   - 试图绕过本软件的安全措施或访问控制；
-   - 试图干扰或破坏本软件的正常运行；
-   - 利用技术手段恶意攻击本软件或其服务器。
-
-2. **滥用服务资源**：
-   - 利用本软件进行大规模自动化操作；
-   - 利用本软件进行挖矿等消耗资源的活动；
-   - 利用多个账户恶意占用服务资源。
-
-3. **违反平台规则**：
-   - 利用本软件从事违反第三方平台规则的活动；
-   - 利用本软件向第三方平台发送垃圾信息；
-   - 利用本软件进行刷量、刷评等不当行为。
-
-4. **高风险应用**：
-   - 将本软件用于医疗诊断、法律建议等专业领域；
-   - 将本软件用于可能危及人身安全的决策；
-   - 将本软件用于金融投资等高风险决策。
+1. [Purpose and Scope](#1-purpose-and-scope)
+2. [Universal Prohibited Content](#2-universal-prohibited-content)
+3. [AI-Generated Content Prohibitions](#3-ai-generated-content-prohibitions)
+4. [Prohibited Conduct](#4-prohibited-conduct)
+5. [Jurisdiction-Specific Overlays](#5-jurisdiction-specific-overlays)
+6. [User Obligations](#6-user-obligations)
+7. [Our Rights and Enforcement](#7-our-rights-and-enforcement)
+8. [Violation Tiers and Responses](#8-violation-tiers-and-responses)
+9. [Reporting Misuse](#9-reporting-misuse)
+10. [AI Content Labeling](#10-ai-content-labeling)
+11. [Updates](#11-updates)
+12. [Contact](#12-contact)
 
 ---
 
-## 3. 用户义务
+## 1. Purpose and Scope
 
-### 3.1 实名认证
+Dunimd Services span AI Agent, large language models, operating-system products, enterprise tools, and developer tools. Content and conduct rules apply wherever a Dunimd Service is used.
 
-用户应当按照法律法规要求完成实名认证。用户对其提供的实名信息的真实性、准确性、完整性负责。
+These guidelines apply to:
 
-### 3.2 内容审核
+- All User Content you submit, generate, or transmit through a Dunimd Service.
+- All conduct when using a Dunimd Service (including prompts, tool calls, automation scripts, and chat-platform adapters).
+- Conduct in Dunimd community spaces (issues, discussions, support tickets).
 
-用户应当对其通过本软件生成、传播的内容负责。我们有权对用户内容进行审核，如发现违法不良信息，我们将：
-
-- 立即停止传输该信息；
-- 采取删除、屏蔽、断开链接等措施；
-- 保存有关记录，并向主管部门报告。
-
-### 3.3 配合调查
-
-用户应当配合主管部门依法进行的调查，包括但不限于：
-
-- 提供与使用本软件相关的信息；
-- 提供用户注册信息、使用记录等；
-- 提供生成内容的原始数据。
-
-### 3.4 安全维护
-
-用户应当妥善保管其账户信息，包括但不限于：
-
-- 妥善保管 API 密钥等认证信息；
-- 定期更换密码；
-- 发现账户异常时立即通知我们要。
+By using a Dunimd Service, you agree to these guidelines.
 
 ---
 
-## 4. 我们的权利
+## 2. Universal Prohibited Content
 
-### 4.1 内容管理权
+The following content categories are prohibited everywhere Dunimd Services operate. They reflect both universal norms and overlapping major-jurisdiction statutes.
 
-我们有权对以下内容进行处理：
+### 2.1 Child Exploitation
 
-- 对违法不良信息进行删除、屏蔽；
-- 对违规用户采取警告、限制功能、暂停使用、永久封禁等措施；
-- 保存和公布典型案例，进行警示教育。
+- Child sexual abuse material (CSAM) in any form.
+- Sexualization of minors, including AI-generated depictions.
+- Grooming, solicitation, or facilitation of contact with minors for sexual purposes.
+- Promotion of child exploitation.
 
-### 4.2 信息披露权
+### 2.2 Violence and Terrorism
 
-在以下情况下，我们有权披露用户信息：
+- Incitement to commit violent or terrorist acts.
+- Detailed instructions facilitating the planning or execution of violence.
+- Content praising or supporting designated terrorist organizations.
+- Bomb-making, weapons-of-mass-destruction, or chemical/biological/radiological weapon instructions.
 
-- 根据法律法规的要求；
-- 基于主管部门的合法要求；
-- 为保护我们或用户的合法权益；
-- 为应对紧急突发事件。
+### 2.3 Hate and Harassment
 
-### 4.3 规则解释权
+- Hate speech targeting people on the basis of race, ethnicity, national origin, religion, sex, gender identity, sexual orientation, disability, or age.
+- Targeted harassment, doxing, or threats.
+- Encouragement of self-harm.
 
-我们有权对本规范进行解释和修订。修订后的规范将自发布之日起生效。
+### 2.4 Fraud and Deception
+
+- Phishing content.
+- Impersonation of persons, entities, or officials.
+- Advance-fee fraud and pyramid schemes.
+- Forged documents, signatures, seals, or credentials.
+
+### 2.5 Illegal Goods and Activities
+
+- Narcotics, controlled substances, or instructions to produce them.
+- Firearms where prohibited by your jurisdiction.
+- Counterfeit goods, pirated content, stolen data.
+- Stolen credentials, leaked private keys, or unauthorized access tools.
+
+### 2.6 Intellectual Property Infringement
+
+- Unauthorized reproduction of copyrighted works (text, images, audio, video, software).
+- Trademark counterfeiting.
+- Trade-secret misappropriation.
+
+### 2.7 Privacy Violations
+
+- Non-consensual intimate imagery.
+- Disclosure of others' private information without consent (where unlawful).
+- Unauthorized surveillance instructions.
+
+### 2.8 Public Safety and Health
+
+- Misinformation that endangers public health (e.g. anti-vaccination content during public-health emergencies).
+- Detailed instructions for suicide, self-harm, or eating disorders.
 
 ---
 
-## 5. 违规处理
+## 3. AI-Generated Content Prohibitions
 
-### 5.1 违规处理措施
+### 3.1 Prohibited Outputs
 
-根据违规行为的严重程度，我们可能采取以下一项或多项处理措施：
+You may not use generative Services (Encre with a generative backend, PiscesLx, and any other generative Service) to produce:
 
-| 违规等级 | 处理措施 |
+- Content matching any [§2](#2-universal-prohibited-content) category above.
+- Bulk-generated spam, astroturfing content, or fake reviews.
+- Deceptive synthetic media (deepfakes) intended to mislead without disclosure (see [§10](#10-ai-content-labeling)).
+- Academic dishonesty (papers, exams, take-home assignments).
+- Bulk-targeted political persuasion without disclosure.
+
+### 3.2 Cybersecurity Disallowed Use
+
+You may not use generative Services to:
+
+- Generate malware, ransomware, exploit code, or instructions facilitating cyberattacks.
+- Generate phishing content, social-engineering scripts, or spam infrastructure.
+- Generate instructions for bypassing security controls (jailbreaks, prompt-injection payloads intended for use against systems without authorization).
+- Generate credential-stuffing or brute-force tooling.
+
+### 3.3 High-Stakes Decisions
+
+You may not rely on AI output as the sole basis for decisions in safety-critical, medical, legal, financial, or other high-stakes domains without human professional review. The Services do not provide professional advice.
+
+---
+
+## 4. Prohibited Conduct
+
+In addition to content restrictions, the following conduct is prohibited:
+
+### 4.1 Authentication and Account Integrity
+
+- Impersonating any person or entity.
+- Sharing, selling, or transferring account credentials.
+- Using another person's account without authorization.
+
+### 4.2 Security Evasion
+
+- Reverse-engineering or bypassing safety mechanisms, rate limits, or access controls.
+- Probing, scanning, or attacking the Services or their infrastructure.
+- Introducing malware, worms, or other harmful code through any Service input.
+
+### 4.3 Resource Abuse
+
+- Reselling or redistributing Service access without authorization.
+- Operating the Services in a way that imposes a disproportionate load.
+- Running unauthorized mining, training, or extraction workloads.
+
+### 4.4 Competitive Misuse
+
+- Using the Services to build a directly competing product, except as permitted by Apache 2.0 or a separate written agreement.
+- Reverse-engineering Service internals to clone them in a competing product.
+
+### 4.5 Bribery and Corruption
+
+- Offering or accepting bribes or kickbacks in connection with the Services.
+- Using the Services to facilitate money laundering or sanctions evasion.
+
+---
+
+## 5. Jurisdiction-Specific Overlays
+
+Where the [universal list](#2-universal-prohibited-content) overlaps with local law, both apply. Below are overlays for major jurisdictions. **The list is not exhaustive** — when in doubt, follow your local law.
+
+### 5.1 Mainland China
+
+If you use Dunimd Services in the PRC, additional PRC rules apply, including:
+
+- 《生成式人工智能服务管理暂行办法》 — prohibits content that endangers national security, undermines national unity, harms public interest, or violates socialist core values.
+- 《互联网信息服务深度合成管理规定》 — labeling requirements for synthetic content.
+- 《互联网信息服务算法推荐管理规定》 — algorithmic recommendation transparency.
+- 《网络安全法》, 《数据安全法》, 《个人信息保护法》 — data and privacy obligations.
+
+See [`CONTENT_GUIDELINES_CN.md`](CONTENT_GUIDELINES_CN.md) for the full PRC-specific rules.
+
+### 5.2 European Union
+
+- **Digital Services Act (DSA)**: notice-and-action mechanisms, transparency for recommender systems, prohibition on dark patterns.
+- **EU AI Act**: risk-based obligations including prohibited practices, high-risk requirements, and general-purpose AI transparency.
+- **GDPR Art. 22**: protection against solely-automated decisions with significant effects.
+
+### 5.3 United Kingdom
+
+- **Online Safety Act 2023**: illegal content and harmful content categories, including content illegal for adults but accessible to children.
+- ICO guidance on AI and data protection.
+
+### 5.4 United States
+
+- **Section 230 (CDA)**: Dunimd is not the publisher of User Content and is not liable for user statements in most cases, but reserves the right to remove content.
+- **COPPA**: children under 13.
+- **DMCA**: see [User Agreement §7](USER_AGREEMENT.md#7-infringement-complaints) for the takedown procedure.
+- State-level deepfake laws (e.g. California AB 730, Texas, New York).
+- Sector-specific rules (HIPAA, GLBA) where applicable.
+
+### 5.5 Other Jurisdictions
+
+Other jurisdictions have analogous rules. Where local law conflicts with this document, follow local law.
+
+---
+
+## 6. User Obligations
+
+### 6.1 Compliance
+
+You must comply with these guidelines and with all applicable laws in your jurisdiction. Where local law is stricter than these guidelines, follow local law.
+
+### 6.2 Cooperation with Law Enforcement
+
+You must not interfere with lawful investigations by competent authorities. If a competent authority contacts Dunimd about your conduct, Dunimd may disclose relevant information as required by law or by valid legal process.
+
+### 6.3 Notification of Issues
+
+You must promptly notify us if you become aware of:
+
+- A security incident affecting your account or credentials.
+- Use of your account by an unauthorized person.
+- Any content or conduct that violates these guidelines.
+
+### 6.4 No Real-Name Requirement (Open-Source Local Use)
+
+If you use Encre locally without registering an account with a hosted Service, no real-name verification applies. For hosted Services that require registration in the PRC, real-name verification may be required by applicable law — see [`CONTENT_GUIDELINES_CN.md`](CONTENT_GUIDELINES_CN.md).
+
+### 6.5 Account Hygiene
+
+You must safeguard your credentials, API keys, and tokens; use unique strong passwords; rotate compromised credentials immediately.
+
+---
+
+## 7. Our Rights and Enforcement
+
+We reserve the right to:
+
+- Remove, restrict, or filter User Content that violates these guidelines.
+- Suspend or terminate your access to a Service, in whole or in part.
+- Retain content for evidence and law-enforcement response.
+- Publish anonymized statistics about enforcement.
+
+We will notify you of enforcement actions where practicable and lawful. We may withhold notice when notification would prejudice an investigation or harm other users.
+
+---
+
+## 8. Violation Tiers and Responses
+
+| Severity | Examples | Response |
+|---|---|---|
+| **Minor** | Off-topic prompt, mild rule curiosity | Warning; guidance; rate-limit notice |
+| **Moderate** | First-time harassment, low-volume prohibited content | Feature restriction; temporary suspension (7-30 days) |
+| **Severe** | Repeated harassment, prohibited AI content, security evasion | Account suspension (30-90 days) or permanent ban |
+| **Critical** | CSAM, terrorism facilitation, doxxing, large-scale fraud | Immediate permanent ban; report to law enforcement |
+
+These tiers are guidance, not a contract. We may escalate or de-escalate based on context (intent, frequency, impact).
+
+---
+
+## 9. Reporting Misuse
+
+If you encounter content or conduct that violates these guidelines:
+
+- **Email**: [dunimd@outlook.com](mailto:dunimd@outlook.com)
+- **Web form**: [conduct.dunimd.com](https://conduct.dunimd.com) *(pending activation)*
+- **GitHub Issues**: [github.com/mf2023/Encre/issues](https://github.com/mf2023/Encre/issues)
+
+### 9.1 What to Include
+
+- Your contact information (kept confidential unless you ask otherwise).
+- Description of the violation with links or screenshots where possible.
+- Identity of the offending user or content (if known).
+
+### 9.2 Confidentiality and Anti-Retaliation
+
+We keep reporter identity confidential. We do not retaliate against good-faith reports. If you experience retaliation for reporting, contact us — we will treat it as a separate violation.
+
+### 9.3 Response Time
+
+We aim to acknowledge reports within **5 business days** and to provide a substantive response within **15 business days**.
+
+---
+
+## 10. AI Content Labeling
+
+Where local law requires AI-generated content to be labeled as such, **you** are responsible for labeling before redistribution. Dunimd's responsibilities depend on the Service:
+
+- **Hosted generative Services where Dunimd is the service provider** (e.g. PiscesLx hosted inference): Dunimd implements technical measures (metadata tagging, watermarking where feasible) in line with applicable law (e.g. PRC 《深度合成管理规定》 Art. 16-17, EU AI Act Art. 50).
+- **Encre + third-party AI backend you configure**: the third-party provider bears the labeling obligation; Dunimd acts only as a tool provider. You must comply with the backend's labeling requirements.
+- **Local-first Services**: no labeling is applied automatically because no content leaves your device.
+
+You may not remove, obscure, or alter AI-content labels applied by us or by a third-party Service.
+
+---
+
+## 11. Updates
+
+We may update these guidelines. Material changes are communicated through the Services or by other appropriate means with reasonable prior notice (typically **30 days**). Continued use after the effective date constitutes acceptance.
+
+If you do not agree to a material change, you may stop using the Services and close your account.
+
+---
+
+## 12. Contact
+
+| Channel | Address |
 |---|---|
-| 轻微违规 | 警告、限期整改 |
-| 一般违规 | 限制部分功能、暂停使用 7-30 天 |
-| 严重违规 | 暂停使用 30-90 天、永久封禁 |
-| 涉嫌犯罪 | 停止提供服务，向主管部门报告 |
-
-### 5.2 申诉渠道
-
-用户如对违规处理决定有异议，可通过以下方式申诉：
-
-- **电子邮件**：dunimd@outlook.com
-- **GitHub**：[github.com/dunimd-team/dunimd](https://github.com/dunimd-team/dunimd)
-
-我们将在收到申诉后的 15 个工作日内进行复核并回复。
+| Email | [dunimd@outlook.com](mailto:dunimd@outlook.com) |
+| Website | [dunimd.com](https://dunimd.com) |
+| Conduct form | [conduct.dunimd.com](https://conduct.dunimd.com) *(pending activation)* |
+| GitHub | [github.com/mf2023/Encre](https://github.com/mf2023/Encre) |
+| Gitee mirror | [gitee.com/dunimd/encre](https://gitee.com/dunimd/encre) |
 
 ---
 
-## 6. AI 生成内容标识
-
-### 6.1 标识义务
-
-我们采取技术措施对 AI 生成的内容进行标识，包括但不限于：
-
-- 在生成内容中添加标识或水印；
-- 向用户明确提示内容为 AI 生成；
-- 提供内容来源的说明。
-
-### 6.2 用户义务
-
-用户在使用 AI 生成内容时，应当：
-
-- 不擅自去除 AI 生成内容的标识；
-- 明确告知接收方内容系 AI 生成；
-- 不将 AI 生成内容冒充为人类创作。
-
----
-
-## 7. 举报机制
-
-### 7.1 举报渠道
-
-如发现用户违反本规范的行为，可以通过以下方式举报：
-
-- **电子邮件**：dunimd@outlook.com
-- **GitHub Issues**：[github.com/dunimd-team/dunimd](https://github.com/dunimd-team/dunimd)
-
-### 7.2 举报处理
-
-我们将在收到举报后的 5 个工作日内进行处理，并及时反馈处理结果。
-
-### 7.3 举报保护
-
-我们将对举报人的信息严格保密，不得泄露举报人的身份。对打击报复举报人的，我们将依法追究其责任。
-
----
-
-## 8. 附则
-
-### 8.1 规则更新
-
-我们有权根据实际情况和法律法规变化对本规范进行修订。修订后的规范将通过软件内提示或公告方式发布。
-
-### 8.2 争议解决
-
-因本规范引起的或与本规范有关的任何争议，双方应友好协商解决。协商不成的，任何一方均可向项目维护者住所地的有管辖权的人民法院提起诉讼。
-
-### 8.3 生效日期
-
-本规范自发布之日起生效。
-
----
-
-## 9. 联系我们
-
-如对内容安全与用户行为规范有任何疑问，请通过以下方式联系我们：
-
-- **电子邮件**：dunimd@outlook.com
-- **GitHub**：[github.com/dunimd-team/dunimd](https://github.com/dunimd-team/dunimd)
-
----
-
-*本规范仅供参考，不构成法律意见。建议您咨询专业法律顾问以确保符合所有适用的法律法规要求。*
+*These guidelines are provided for informational purposes and do not constitute legal advice. Consult qualified counsel in your jurisdiction to ensure your use of the Services complies with all applicable laws and regulations.*

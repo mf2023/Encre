@@ -86,7 +86,7 @@ def _read_pdf_text(path: str, max_pages: int | None) -> str:
         import pypdf  # type: ignore
     except ImportError:
         try:
-            import PyPDF2 as pypdf  # type: ignore
+            import PyPDF2 as pypdf  # type: ignore  # noqa: N813
         except ImportError as exc:
             raise RuntimeError(
                 "PDF reading requires 'pypdf' (preferred) or 'PyPDF2'. "

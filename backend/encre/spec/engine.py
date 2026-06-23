@@ -132,7 +132,7 @@ class EncreSpecEngine:
                         title=current_title,
                         content="\n".join(current_lines).strip(),
                     ))
-                current_title = line.strip("## #").strip()
+                current_title = line.strip("## #").strip()  # noqa: B005
                 current_lines = []
             else:
                 current_lines.append(line)

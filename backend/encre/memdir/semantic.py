@@ -6,7 +6,7 @@ import re
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 
 def _tokenize(text: str) -> list[str]:
@@ -125,7 +125,7 @@ class SemanticMemorySearch:
                 for entry in entries:
                     if not entry.is_file(follow_symlinks=False):
                         continue
-                    if entry.name == "MEMORY.md" or entry.name.startswith(".") or not entry.name.endswith(".md"):  # noqa: E501
+                    if entry.name == "MEMORY.md" or entry.name.startswith(".") or not entry.name.endswith(".md"):
                         continue
                     try:
                         with open(entry.path, encoding="utf-8") as f:
@@ -246,7 +246,7 @@ class ConsolidationAction:
 
 class MemoryConsolidator:
     SIMILARITY_THRESHOLD = 0.75
-    CONFLICT_PATTERNS = [
+    CONFLICT_PATTERNS: ClassVar[list[tuple[str, str]]] = [
         (r"\b(?:do not|don't|never|should not|must not|avoid|forbidden|prohibited)\b",
          r"\b(?:do|always|should|must|use|prefer|recommended|allowed)\b"),
         (r"\b(?:remove|delete|drop|discard|abandon)\b",
@@ -290,7 +290,7 @@ class MemoryConsolidator:
                     ))
         return actions
 
-    def find_stale(self, files: dict[str, str], age_days: dict[str, int], stale_threshold_days: int = 30) -> list[ConsolidationAction]:  # noqa: E501
+    def find_stale(self, files: dict[str, str], age_days: dict[str, int], stale_threshold_days: int = 30) -> list[ConsolidationAction]:
         actions: list[ConsolidationAction] = []
         for name, text in files.items():
             days = age_days.get(name, 0)
@@ -310,7 +310,7 @@ class MemoryConsolidator:
                 ))
         return actions
 
-    def consolidate(self, files: dict[str, str], age_days: dict[str, int] | None = None) -> list[ConsolidationAction]:  # noqa: E501
+    def consolidate(self, files: dict[str, str], age_days: dict[str, int] | None = None) -> list[ConsolidationAction]:
         actions = self.find_duplicates(files) + self.find_conflicts(files)
         if age_days:
             actions.extend(self.find_stale(files, age_days))
@@ -323,7 +323,7 @@ class MemoryConsolidator:
         primary = text_a if len(text_a) >= len(text_b) else text_b
         secondary = text_b if primary == text_a else text_a
         pri_lines = set(primary.strip().split("\n"))
-        unique = [l for l in secondary.strip().split("\n") if l not in pri_lines and len(l.strip()) > 10]  # noqa: E501
+        unique = [line for line in secondary.strip().split("\n") if line not in pri_lines and len(line.strip()) > 10]
         if unique:
             primary += "\n\n## Merged from duplicate\n" + "\n".join(unique[:20])
         return primary

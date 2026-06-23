@@ -1372,10 +1372,8 @@ class EncreComputerUseSession:
                     except Exception:
                         text = ""
                 url = ""
-                try:
+                with contextlib.suppress(Exception):
                     url = await s.get_url()
-                except Exception:
-                    pass
                 payload = f"{url}\n{text}".encode("utf-8", errors="ignore")
             else:
                 s = self._ensure_desktop()

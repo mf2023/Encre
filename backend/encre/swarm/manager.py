@@ -23,6 +23,8 @@
 
 
 
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -49,14 +51,14 @@ class EncreSwarmManager:
         self._teammates: dict[str, EncreTeammate] = {}
         self._handles: dict[str, TeammateHandle] = {}
 
-    async def spawn(self, teammate: "EncreTeammate") -> "TeammateHandle":
+    async def spawn(self, teammate: EncreTeammate) -> TeammateHandle:
         self._teammates[teammate.teammate_id] = teammate
         async with self._semaphore:
             handle = await teammate.run()
             self._handles[teammate.teammate_id] = handle
             return handle
 
-    async def spawn_many(self, teammates: "list[EncreTeammate]") -> "list[TeammateHandle]":
+    async def spawn_many(self, teammates: list[EncreTeammate]) -> list[TeammateHandle]:
         coros = [self.spawn(t) for t in teammates]
         results = await asyncio.gather(*coros, return_exceptions=True)
         handles: list[TeammateHandle] = []
@@ -75,7 +77,7 @@ class EncreSwarmManager:
                 handles.append(r)
         return handles
 
-    async def await_all(self, timeout: float | None = None) -> "list[TeammateHandle]":
+    async def await_all(self, timeout: float | None = None) -> list[TeammateHandle]:
         tasks = []
         for h in self._handles.values():
             if h._task is not None:
@@ -89,7 +91,7 @@ class EncreSwarmManager:
             await asyncio.gather(*tasks, return_exceptions=True)
         return list(self._handles.values())
 
-    async def await_any(self) -> "TeammateHandle | None":
+    async def await_any(self) -> TeammateHandle | None:
         tasks = [h._task for h in self._handles.values() if h._task is not None]
         if not tasks:
             return None
@@ -123,5 +125,5 @@ class EncreSwarmManager:
             progress.details[h.teammate_id] = h.status
         return progress
 
-    def get_handle(self, teammate_id: str) -> "TeammateHandle | None":
+    def get_handle(self, teammate_id: str) -> TeammateHandle | None:
         return self._handles.get(teammate_id)

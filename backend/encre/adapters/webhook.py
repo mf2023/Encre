@@ -216,7 +216,7 @@ class WebhookAdapter(BaseAdapter):
 
     # ── HTTP Handlers ──────────────────────────────────────────────────────
 
-    async def _handle_health(self, request: web.Request) -> web.Response:
+    async def _handle_health(self, _request: web.Request) -> web.Response:
         """GET /health -- simple health check."""
         return web.json_response({"status": "ok", "adapter": "webhook"})
 
@@ -274,7 +274,7 @@ class WebhookAdapter(BaseAdapter):
         )
 
         # Build message text from the payload
-        text = payload.get("text", "") or payload.get("message", "") or json.dumps(payload, indent=2)  # noqa: E501
+        text = payload.get("text", "") or payload.get("message", "") or json.dumps(payload, indent=2)
 
         # Use reply_url as chat_id so send() knows where to POST responses
         chat_id = reply_url

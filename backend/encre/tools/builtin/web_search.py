@@ -131,7 +131,7 @@ EncreWebSearchTool = build_tool(
             },
             "categories": {
                 "type": "string",
-                "description": "Search category (ignored in builtin mode, used with external SearXNG): general, news",  # noqa: E501
+                "description": "Search category (ignored in builtin mode, used with external SearXNG): general, news",
             },
         },
         "required": ["query"],

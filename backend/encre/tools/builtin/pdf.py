@@ -36,7 +36,7 @@ async def _pdf_execute(**kwargs: Any) -> str:
 
     try:
         pdfplumber = None
-        PdfReader = None
+        PdfReader = None  # noqa: N806
         with contextlib.suppress(ImportError):
             import pdfplumber
 

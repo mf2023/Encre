@@ -151,10 +151,7 @@ class WorkflowTask:
     def from_dict(cls, data: dict[str, Any]) -> WorkflowTask:
         """Deserialise a task from a dict (``execute`` remains ``None``)."""
         status_str = data.get("status", "PENDING")
-        if isinstance(status_str, str):
-            status = WorkflowTaskStatus[status_str]
-        else:
-            status = WorkflowTaskStatus.PENDING
+        status = WorkflowTaskStatus[status_str] if isinstance(status_str, str) else WorkflowTaskStatus.PENDING
         return cls(
             id=data["id"],
             name=data.get("name", data["id"]),

@@ -82,6 +82,7 @@ class GatewayServer:
         self._running = False
         self._adapters: dict[str, _AdapterConnection] = {}
         self._seq = 0
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def adapter_count(self) -> int:
@@ -133,7 +134,7 @@ class GatewayServer:
             "adapters": self.adapters,
         }
 
-    async def _handle_connection(self, ws: Any, path: str | None = None) -> None:
+    async def _handle_connection(self, ws: Any, _path: str | None = None) -> None:
         if len(self._adapters) >= self._max_connections:
             await ws.close(4001, "Server at capacity")
             return
@@ -156,7 +157,7 @@ class GatewayServer:
                     conn.name = adapter_name
                     conn.capabilities = msg.data.get("capabilities", [])
                     self._adapters[adapter_name] = conn
-                    logger.info("Adapter '%s' connected (%d total)", adapter_name, self.adapter_count)  # noqa: E501
+                    logger.info("Adapter '%s' connected (%d total)", adapter_name, self.adapter_count)
                     await self._send(ws, GatewayMessage.hello(adapter_name))
                     self._sync_adapter_list()
 
@@ -165,10 +166,12 @@ class GatewayServer:
                     await self._send(ws, GatewayMessage.heartbeat_ack())
 
                 elif msg.op == GatewayOp.SUBMIT:
-                    asyncio.ensure_future(self._handle_submit(ws, conn, msg))
+                    _t = asyncio.ensure_future(self._handle_submit(ws, conn, msg))
+                    self._background_tasks.add(_t)
 
                 elif msg.op == GatewayOp.SUBMIT_STREAM:
-                    asyncio.ensure_future(self._handle_submit_stream(ws, conn, msg))
+                    _t2 = asyncio.ensure_future(self._handle_submit_stream(ws, conn, msg))
+                    self._background_tasks.add(_t2)
 
                 elif msg.op == GatewayOp.CANCEL:
                     session_id = msg.data.get("session_id", "")
@@ -188,7 +191,7 @@ class GatewayServer:
         finally:
             if adapter_name in self._adapters:
                 del self._adapters[adapter_name]
-            logger.info("Adapter '%s' disconnected (%d remaining)", adapter_name, self.adapter_count)  # noqa: E501
+            logger.info("Adapter '%s' disconnected (%d remaining)", adapter_name, self.adapter_count)
             self._sync_adapter_list()
 
     async def _handle_submit(self, ws: Any, conn: _AdapterConnection, msg: GatewayMessage) -> None:
@@ -199,7 +202,7 @@ class GatewayServer:
             return
         session_id = msg.data.get("session_id")
         system_prompt = msg.data.get("system_prompt")
-        logger.info("[gateway] %s submit prompt=%.60s session=%s", conn.name, prompt, session_id or "(new)")  # noqa: E501
+        logger.info("[gateway] %s submit prompt=%.60s session=%s", conn.name, prompt, session_id or "(new)")
         router = getattr(self._engine, "_router", None)
         if router is None:
             logger.warning("[gateway] %s submit failed -- engine not ready", conn.name)
@@ -215,7 +218,7 @@ class GatewayServer:
                     system_prompt=system_prompt,
                 )
                 if isinstance(result, str) and result:
-                    logger.info("[gateway] %s submit response len=%d session=%s", conn.name, len(result), session_id or "?")  # noqa: E501
+                    logger.info("[gateway] %s submit response len=%d session=%s", conn.name, len(result), session_id or "?")
                     await self._send(ws, GatewayMessage(session_id or "", data={"text": result}))
                 else:
                     logger.info("[gateway] %s submit empty response", conn.name)
@@ -223,7 +226,7 @@ class GatewayServer:
             logger.error("[gateway] %s submit error: %s %s", conn.name, type(e).__name__, e)
             await self._send(ws, GatewayMessage.error(str(e)))
 
-    async def _handle_submit_stream(self, ws: Any, conn: _AdapterConnection, msg: GatewayMessage) -> None:  # noqa: E501
+    async def _handle_submit_stream(self, ws: Any, conn: _AdapterConnection, msg: GatewayMessage) -> None:
         prompt = msg.data.get("prompt", "")
         if not prompt.strip():
             logger.warning("[gateway] %s submit_stream empty prompt", conn.name)
@@ -231,7 +234,7 @@ class GatewayServer:
             return
         session_id = msg.data.get("session_id")
         system_prompt = msg.data.get("system_prompt")
-        logger.info("[gateway] %s submit_stream prompt=%.60s session=%s", conn.name, prompt, session_id or "(new)")  # noqa: E501
+        logger.info("[gateway] %s submit_stream prompt=%.60s session=%s", conn.name, prompt, session_id or "(new)")
         router = getattr(self._engine, "_router", None)
         if router is None:
             logger.warning("[gateway] %s submit_stream failed -- engine not ready", conn.name)
@@ -259,10 +262,10 @@ class GatewayServer:
                         if event.usage:
                             usage = dict(event.usage) if hasattr(event.usage, "items") else {}
                         if event.error:
-                            logger.warning("[gateway] %s finish with error: %s (text_len=%d)", conn.name, event.error, text_len)  # noqa: E501
+                            logger.warning("[gateway] %s finish with error: %s (text_len=%d)", conn.name, event.error, text_len)
                         else:
-                            logger.info("[gateway] %s finish reason=%s text_len=%d", conn.name, event.reason, text_len)  # noqa: E501
-                        await self._send(ws, GatewayMessage.finish(event.reason, usage, event.error or ""))  # noqa: E501
+                            logger.info("[gateway] %s finish reason=%s text_len=%d", conn.name, event.reason, text_len)
+                        await self._send(ws, GatewayMessage.finish(event.reason, usage, event.error or ""))
         except Exception as e:
             logger.error("[gateway] %s submit_stream error: %s %s", conn.name, type(e).__name__, e)
             await self._send(ws, GatewayMessage.error(str(e)))
@@ -282,9 +285,9 @@ class GatewayServer:
             if msg.op in (GatewayOp.TEXT_DELTA, GatewayOp.HEARTBEAT_ACK, GatewayOp.HEARTBEAT):
                 pass  # too noisy
             elif msg.op == GatewayOp.ERROR:
-                logger.warning("[gateway] send ERROR seq=%d: %s", msg.seq, msg.data.get("message", ""))  # noqa: E501
+                logger.warning("[gateway] send ERROR seq=%d: %s", msg.seq, msg.data.get("message", ""))
             elif msg.op == GatewayOp.FINISH:
-                logger.info("[gateway] send FINISH seq=%d reason=%s", msg.seq, msg.data.get("reason", ""))  # noqa: E501
+                logger.info("[gateway] send FINISH seq=%d reason=%s", msg.seq, msg.data.get("reason", ""))
             else:
                 logger.info("[gateway] send %s seq=%d", msg.op.name, msg.seq)
         except Exception as e:

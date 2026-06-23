@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Rust-backed workspace code index wrapper."""
 
@@ -8,6 +7,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 from encre.native import build_code_context as native_build_code_context
 from encre.native import build_code_index as native_build_code_index
@@ -32,7 +32,7 @@ class ModuleInfo:
 class EncreCodeIndex:
     """Compatibility wrapper around the native Rust code index."""
 
-    _KNOWN_EXTS: set[str] = {
+    _KNOWN_EXTS: ClassVar[set[str]] = {
         ".py", ".pyi", ".pyx",
         ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
         ".rs", ".go",

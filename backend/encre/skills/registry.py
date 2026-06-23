@@ -107,10 +107,9 @@ class EncreSkillRegistry:
                 continue
             ext = match.group(0).lower()
             for skill in self._skills.values():
-                if skill.when_to_use and ext in skill.when_to_use.lower():
-                    if skill.name not in seen:
-                        seen.add(skill.name)
-                        prompts.append(skill.name)
+                if skill.when_to_use and ext in skill.when_to_use.lower() and skill.name not in seen:
+                    seen.add(skill.name)
+                    prompts.append(skill.name)
         return prompts
 
     def load_from_dir(
@@ -127,7 +126,7 @@ class EncreSkillRegistry:
                     filepath = os.path.join(root, filename)
                     self._load_skill_md(filepath, source)
             for filename in files:
-                if not filename.endswith(".md") or filename.upper() == "SKILL.MD" or filename == "MEMORY.md":  # noqa: E501
+                if not filename.endswith(".md") or filename.upper() == "SKILL.MD" or filename == "MEMORY.md":
                     continue
                 filepath = os.path.join(root, filename)
                 try:
@@ -164,7 +163,7 @@ class EncreSkillRegistry:
         disable_model = _parse_bool(str(metadata.get("disable_model_invocation", "false")))
         user_invocable = _parse_bool(str(metadata.get("user_invocable", "true")))
         context_raw = str(metadata.get("context", "inline")).strip().lower()
-        context_enum = SkillContext(context_raw) if context_raw in ("inline", "fork") else SkillContext.INLINE  # noqa: E501
+        context_enum = SkillContext(context_raw) if context_raw in ("inline", "fork") else SkillContext.INLINE
 
         # metadata map -- extract any unrecognized keys as extra metadata
         extra_meta: dict[str, str] = {}
@@ -181,7 +180,7 @@ class EncreSkillRegistry:
                 extra_meta[str(k)] = str(v)
 
         # allowed-tools -- support both standard (space-delimited) and legacy (comma)
-        allowed_tools_raw = str(metadata.get("allowed-tools") or metadata.get("allowed_tools") or "")  # noqa: E501
+        allowed_tools_raw = str(metadata.get("allowed-tools") or metadata.get("allowed_tools") or "")
         allowed_tools: list[str] | None = None
         if allowed_tools_raw.strip():
             # Split by spaces, handle entries like "Bash(git:*)" from spec

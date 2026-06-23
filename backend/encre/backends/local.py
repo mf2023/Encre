@@ -257,7 +257,7 @@ class LocalBackend(BaseBackend):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         stream: bool = True,
-        _enable_caching: bool = False,
+        enable_caching: bool = False,
     ) -> AsyncGenerator[BackendEvent, None]:
         """Send a chat completion request and stream back events.
 

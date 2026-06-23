@@ -288,8 +288,8 @@ class EncreTelemetry:
         if not token_usage:
             return
         cu = self._load_cumulative()
-        cu["total_input_tokens"] += token_usage.get("input_tokens", token_usage.get("prompt_tokens", 0))  # noqa: E501
-        cu["total_output_tokens"] += token_usage.get("output_tokens", token_usage.get("completion_tokens", 0))  # noqa: E501
+        cu["total_input_tokens"] += token_usage.get("input_tokens", token_usage.get("prompt_tokens", 0))
+        cu["total_output_tokens"] += token_usage.get("output_tokens", token_usage.get("completion_tokens", 0))
         self._save_cumulative(cu)
 
     def _update_cumulative_from_tool_call(self, tool_name: str) -> None:
@@ -369,7 +369,7 @@ class EncreTelemetry:
                         model = data.get("model", "") or ""
                         session_model = model
                         if model:
-                            md = model_breakdown.setdefault(model, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "turns": 0})  # noqa: E501
+                            md = model_breakdown.setdefault(model, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "turns": 0})
                             md["input_tokens"] += inp
                             md["output_tokens"] += out
                             md["total_tokens"] += total

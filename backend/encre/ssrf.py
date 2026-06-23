@@ -25,11 +25,12 @@
 
 import ipaddress
 import socket
+from typing import ClassVar
 from urllib.parse import urlparse
 
 
 class EncreSSRFGuard:
-    BLOCKED_V4: list[str] = [
+    BLOCKED_V4: ClassVar[list[str]] = [
         "10.0.0.0/8",
         "172.16.0.0/12",
         "192.168.0.0/16",
@@ -41,7 +42,7 @@ class EncreSSRFGuard:
         "198.18.0.0/15",
         "127.0.0.0/8",
     ]
-    BLOCKED_V6: list[str] = [
+    BLOCKED_V6: ClassVar[list[str]] = [
         "fc00::/7",
         "fe80::/10",
         "::1",
@@ -49,18 +50,18 @@ class EncreSSRFGuard:
         "2001:db8::/32",
         "ff00::/8",
     ]
-    WHITELIST_V4: list[str] = []
-    WHITELIST_V6: list[str] = []
+    WHITELIST_V4: ClassVar[list[str]] = []
+    WHITELIST_V6: ClassVar[list[str]] = []
 
     def __init__(self) -> None:
-        self._blocked_v4: list[ipaddress.IPv4Network] = [ipaddress.IPv4Network(n) for n in self.BLOCKED_V4]  # noqa: E501
-        self._blocked_v6: list[ipaddress.IPv6Network] = [ipaddress.IPv6Network(n) for n in self.BLOCKED_V6]  # noqa: E501
-        self._whitelist_v4: list[ipaddress.IPv4Network] = [ipaddress.IPv4Network(n) for n in self.WHITELIST_V4]  # noqa: E501
-        self._whitelist_v6: list[ipaddress.IPv6Network] = [ipaddress.IPv6Network(n) for n in self.WHITELIST_V6]  # noqa: E501
+        self._blocked_v4: list[ipaddress.IPv4Network] = [ipaddress.IPv4Network(n) for n in self.BLOCKED_V4]
+        self._blocked_v6: list[ipaddress.IPv6Network] = [ipaddress.IPv6Network(n) for n in self.BLOCKED_V6]
+        self._whitelist_v4: list[ipaddress.IPv4Network] = [ipaddress.IPv4Network(n) for n in self.WHITELIST_V4]
+        self._whitelist_v6: list[ipaddress.IPv6Network] = [ipaddress.IPv6Network(n) for n in self.WHITELIST_V6]
         self._dns_cache: dict[str, list[ipaddress.IPv4Address | ipaddress.IPv6Address]] = {}
         self._dns_cache_ttl: float = 300.0
 
-    def _resolve_hostname(self, hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:  # noqa: E501
+    def _resolve_hostname(self, hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
         import time
         now = time.time()
         if hostname in self._dns_cache:

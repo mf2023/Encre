@@ -25,14 +25,14 @@
 
 import time
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 
 from encre.task.types import EncreTask
 from encre.utils.types import TaskStatus, TaskType
 
 
 class EncreTaskManager:
-    _tasks: dict[str, EncreTask] = {}
+    _tasks: ClassVar[dict[str, EncreTask]] = {}
 
     @classmethod
     def create_task(

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -56,7 +57,7 @@ class PromptBlock:
 
 
 def _identity_block() -> PromptBlock:
-    return PromptBlock(priority=0, name="identity", condition=None, content=_loader.load("identity"))  # noqa: E501
+    return PromptBlock(priority=0, name="identity", condition=None, content=_loader.load("identity"))
 
 
 def _tool_usage_block(_tools: list[dict[str, Any]] | None = None) -> PromptBlock:
@@ -69,19 +70,19 @@ def _tool_usage_block(_tools: list[dict[str, Any]] | None = None) -> PromptBlock
 
 def _permission_block(mode: PermissionMode) -> PromptBlock:
     if mode == "bypass":
-        guidance = "You have full autonomy to execute any tool without asking for permission. Use this responsibly."  # noqa: E501
+        guidance = "You have full autonomy to execute any tool without asking for permission. Use this responsibly."
     elif mode == "dont_ask":
-        guidance = "Execute tasks directly without asking for confirmation. Only pause if an operation appears destructive and irreversible."  # noqa: E501
+        guidance = "Execute tasks directly without asking for confirmation. Only pause if an operation appears destructive and irreversible."
     elif mode == "accept_edits":
-        guidance = "You may read, write, and edit files freely. Shell commands and web requests may require confirmation."  # noqa: E501
+        guidance = "You may read, write, and edit files freely. Shell commands and web requests may require confirmation."
     elif mode == "plan":
-        guidance = "First create a clear plan. Present it to the user for approval before executing any changes."  # noqa: E501
+        guidance = "First create a clear plan. Present it to the user for approval before executing any changes."
     elif mode == "spec":
-        guidance = "First produce a complete specification. Present it to the user for review and approval before writing any code or making changes."  # noqa: E501
+        guidance = "First produce a complete specification. Present it to the user for review and approval before writing any code or making changes."
     elif mode == "auto":
-        guidance = "Most operations are auto-approved. Dangerous operations (rm -rf, chmod 777, etc.) require confirmation."  # noqa: E501
+        guidance = "Most operations are auto-approved. Dangerous operations (rm -rf, chmod 777, etc.) require confirmation."
     else:
-        guidance = "Ask for permission before executing tools that modify files, run shell commands, or access the network."  # noqa: E501
+        guidance = "Ask for permission before executing tools that modify files, run shell commands, or access the network."
 
     return PromptBlock(
         priority=20, name="permission", condition=None,
@@ -92,16 +93,16 @@ def _permission_block(mode: PermissionMode) -> PromptBlock:
 def _language_block(lang_pref: str, app_lang: str) -> PromptBlock | None:
     resolved = lang_pref if lang_pref != "auto" else app_lang
     if resolved == "zh":
-        instruction = "IMPORTANT: You must always respond in Chinese (中文) throughout the entire conversation. Even if the user writes in another language, you must reply in Chinese. Do not switch to other languages under any circumstances."  # noqa: E501
+        instruction = "IMPORTANT: You must always respond in Chinese (中文) throughout the entire conversation. Even if the user writes in another language, you must reply in Chinese. Do not switch to other languages under any circumstances."
     elif resolved == "en":
-        instruction = "IMPORTANT: You must always respond in English throughout the entire conversation. Even if the user writes in another language, you must reply in English. Do not switch to other languages under any circumstances."  # noqa: E501
+        instruction = "IMPORTANT: You must always respond in English throughout the entire conversation. Even if the user writes in another language, you must reply in English. Do not switch to other languages under any circumstances."
     else:
         return None
     return PromptBlock(priority=25, name="language", condition=None, content=instruction)
 
 
 def _output_format_block() -> PromptBlock:
-    return PromptBlock(priority=30, name="output_format", condition=["general", "coding", "data"], content=_loader.load("output_format"))  # noqa: E501
+    return PromptBlock(priority=30, name="output_format", condition=["general", "coding", "data"], content=_loader.load("output_format"))
 
 
 def _safety_block() -> PromptBlock:
@@ -109,26 +110,26 @@ def _safety_block() -> PromptBlock:
 
 
 def _task_management_block() -> PromptBlock:
-    return PromptBlock(priority=15, name="task_management", condition=["coding", "data"], content=_loader.load("task_management"))  # noqa: E501
+    return PromptBlock(priority=15, name="task_management", condition=["coding", "data"], content=_loader.load("task_management"))
 
 
 def _specialty_coding_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", condition=["coding"], content=_loader.load("specialty_coding"))  # noqa: E501
+    return PromptBlock(priority=100, name="specialty", condition=["coding"], content=_loader.load("specialty_coding"))
 
 
 def _specialty_research_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", condition=["research"], content=_loader.load("specialty_research"))  # noqa: E501
+    return PromptBlock(priority=100, name="specialty", condition=["research"], content=_loader.load("specialty_research"))
 
 
 def _specialty_data_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", condition=["data"], content=_loader.load("specialty_data"))  # noqa: E501
+    return PromptBlock(priority=100, name="specialty", condition=["data"], content=_loader.load("specialty_data"))
 
 
 def _specialty_general_block() -> PromptBlock:
-    return PromptBlock(priority=100, name="specialty", condition=None, content=_loader.load("specialty_general"))  # noqa: E501
+    return PromptBlock(priority=100, name="specialty", condition=None, content=_loader.load("specialty_general"))
 
 
-def _iwork_block(workspace_root: str, workspace_name: str, project_summary: str = "") -> PromptBlock:  # noqa: E501
+def _iwork_block(workspace_root: str, workspace_name: str, project_summary: str = "") -> PromptBlock:
     ctx = dict(workspace_name=workspace_name, workspace_root=workspace_root)
     content = _loader.load_with_context("workspace_mode", **ctx)
     if project_summary:
@@ -305,7 +306,7 @@ class EncrePromptBuilder:
 
         # Mode header -- iWork takes priority over normal
         if workspace_root:
-            mode_block = _iwork_block(workspace_root, workspace_name or workspace_root, project_summary)  # noqa: E501
+            mode_block = _iwork_block(workspace_root, workspace_name or workspace_root, project_summary)
         else:
             mode_block = _normal_mode_block(session_id)
         blocks[mode_block.name] = mode_block

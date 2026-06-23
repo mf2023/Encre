@@ -435,11 +435,11 @@ EncreDesktopTool = build_tool(
             },
             "control_type": {
                 "type": "string",
-                "description": "find_element_by_name: filter by UIA control type (e.g. ButtonControl)",  # noqa: E501
+                "description": "find_element_by_name: filter by UIA control type (e.g. ButtonControl)",
             },
             "min_text_length": {
                 "type": "integer",
-                "description": "get_elements: ignore text shorter than this (default 2, filter noise)",  # noqa: E501
+                "description": "get_elements: ignore text shorter than this (default 2, filter noise)",
             },
             "ms": {
                 "type": "integer",

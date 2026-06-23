@@ -53,7 +53,7 @@ system, and agent loop.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 # ── Defaults for optional fields ──────────────────────────────────────
 
@@ -80,17 +80,17 @@ class EncreTool:
 
     name: str = ""
     description: str = ""
-    input_schema: dict[str, Any] = {}
-    intents: list[str] = ["general"]
+    input_schema: ClassVar[dict[str, Any]] = {}
+    intents: ClassVar[list[str]] = ["general"]
     category: str = "general"
-    triggers: list[str] = []
+    triggers: ClassVar[list[str]] = []
     always_available: bool = False
     max_result_size_chars: int = 100_000
 
     async def execute(self, **kwargs: Any) -> str:
         raise NotImplementedError
 
-    def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
+    def is_concurrency_safe(self, _input_data: dict[str, Any]) -> bool:
         return False
 
     def to_openai_format(self) -> dict[str, Any]:
@@ -179,15 +179,15 @@ def build_tool(
         "intents": intents if intents is not None else _TOOL_DEFAULTS["intents"],
         "category": category if category is not None else _TOOL_DEFAULTS["category"],
         "triggers": triggers if triggers is not None else _TOOL_DEFAULTS["triggers"],
-        "always_available": always_available if always_available is not None else _TOOL_DEFAULTS["always_available"],  # noqa: E501
-        "max_result_size_chars": max_result_size_chars if max_result_size_chars is not None else _TOOL_DEFAULTS["max_result_size_chars"],  # noqa: E501
+        "always_available": always_available if always_available is not None else _TOOL_DEFAULTS["always_available"],
+        "max_result_size_chars": max_result_size_chars if max_result_size_chars is not None else _TOOL_DEFAULTS["max_result_size_chars"],
         "_concurrency_check": is_concurrency_safe or (lambda _: False),
         "_execute_fn": execute,
         "execute": _make_execute(execute),
         "is_concurrency_safe": _make_concurrency_check(is_concurrency_safe),
         "to_openai_format": _make_to_openai_format(name, description, input_schema),
         "to_anthropic_format": _make_to_anthropic_format(name, description, input_schema),
-        "discovery_card": _make_discovery_card(name, category or "general", description, input_schema),  # noqa: E501
+        "discovery_card": _make_discovery_card(name, category or "general", description, input_schema),
         "__call__": lambda self: self,
     }
     tool_cls = type(name.title().replace("_", "") + "Tool", (EncreTool,), attrs)
@@ -234,15 +234,17 @@ def _minify_schema(schema: dict[str, Any]) -> dict[str, Any]:
 # ── Factory helpers (closures to avoid lambda pitfalls) ───────────────
 
 def _make_execute(fn: Callable[..., Any]) -> Callable[..., Any]:
-    async def _execute(self, **kwargs: Any) -> str:
+    async def _execute(_, **kwargs: Any) -> str:
         return await fn(**kwargs)
     return _execute
 
 
 def _make_concurrency_check(fn: Callable[[dict[str, Any]], bool] | None) -> Callable[..., bool]:
     if fn is None:
-        return lambda self, input_data: False
-    def _check(self, input_data: dict[str, Any]) -> bool:
+        def _noop(_self: Any, _input_data: dict[str, Any]) -> bool:
+            return False
+        return _noop
+    def _check(_, input_data: dict[str, Any]) -> bool:
         return fn(input_data)
     return _check
 
@@ -261,7 +263,7 @@ def _make_to_openai_format(name: str, description: str, input_schema: dict) -> C
     return _fmt
 
 
-def _make_to_anthropic_format(name: str, description: str, input_schema: dict) -> Callable[..., dict]:  # noqa: E501
+def _make_to_anthropic_format(name: str, description: str, input_schema: dict) -> Callable[..., dict]:
     minified = _minify_schema(input_schema)
     def _fmt(self) -> dict[str, Any]:
         return {
@@ -272,8 +274,8 @@ def _make_to_anthropic_format(name: str, description: str, input_schema: dict) -
     return _fmt
 
 
-def _make_discovery_card(name: str, category: str, description: str, input_schema: dict) -> Callable[..., dict]:  # noqa: E501
-    def _card(self) -> dict[str, Any]:
+def _make_discovery_card(name: str, category: str, description: str, input_schema: dict) -> Callable[..., dict]:
+    def _card() -> dict[str, Any]:
         return {
             "name": name,
             "category": category,

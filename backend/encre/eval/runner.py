@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """End-to-end evaluation framework for Encre agent.
 
@@ -32,12 +31,11 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 from encre.agent import EncreAgent
 from encre.config import EncreConfig
 from encre.logging_config import get_logger
-from encre.utils.types import TextDelta, ToolResult, Finish
+from encre.utils.types import Finish, TextDelta, ToolResult
 
 logger = get_logger("encre.eval")
 

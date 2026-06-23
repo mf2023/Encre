@@ -204,7 +204,7 @@ class BlueBubblesAdapter(BaseAdapter):
         content: str,
         *,
         reply_to: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a text message via the BlueBubbles REST API.
 
@@ -480,7 +480,7 @@ class BlueBubblesAdapter(BaseAdapter):
     # ── Internal helpers ──────────────────────────────────────────────────
 
     @staticmethod
-    def _is_own_message(sender_guid: str) -> bool:
+    def _is_own_message(_sender_guid: str) -> bool:
         """Check if the message was sent by the local user.
 
         Override this in a subclass to implement custom logic for detecting

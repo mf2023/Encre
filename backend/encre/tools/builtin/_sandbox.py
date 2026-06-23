@@ -55,10 +55,7 @@ def get_session_files_dir(session_id: str = "") -> Path:
     """
     from encre.config import get_data_dir
     root = get_data_dir() / "sessions"
-    if session_id:
-        root = root / session_id / "files"
-    else:
-        root = root / "files"
+    root = root / session_id / "files" if session_id else root / "files"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -240,7 +237,7 @@ def _resolve_session_files_path(
 
 class PathViolation:
     """Describes a detected path security violation."""
-    __slots__ = ("reason", "raw_path", "sanitized")
+    __slots__ = ("raw_path", "reason", "sanitized")
 
     def __init__(self, reason: str, raw_path: str, sanitized: str = "") -> None:
         self.reason = reason
@@ -308,9 +305,8 @@ def filter_allowed_env(
     result: dict[str, str] = {}
     for name, value in env_vars.items():
         # Deny takes priority
-        if deny_patterns:
-            if any(fnmatch.fnmatch(name, pat) for pat in deny_patterns):
-                continue
+        if deny_patterns and any(fnmatch.fnmatch(name, pat) for pat in deny_patterns):
+            continue
         if allow_patterns:
             if any(fnmatch.fnmatch(name, pat) for pat in allow_patterns):
                 result[name] = value

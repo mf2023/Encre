@@ -25,7 +25,7 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 from encre.crypto import decrypt, encrypt
 
@@ -84,7 +84,7 @@ ClientMessageType = Literal[
     "list_models", "list_sessions", "new_session",
     "get_config", "update_models", "set_active_model", "delete_model",
     "fetch_models",
-    "update_skills", "install_skill", "uninstall_skill", "update_skill", "update_mcp", "update_agent",  # noqa: E501
+    "update_skills", "install_skill", "uninstall_skill", "update_skill", "update_mcp", "update_agent",
     "search",
     "rollback_log", "rollback_checkout",
     "validate_model",
@@ -134,7 +134,7 @@ class ClientRun:
     temp_chat: bool = False  # True = ephemeral, never persist to disk
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRun:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRun":
         return cls(
             type="run",
             prompt=d.get("prompt", ""),
@@ -156,7 +156,7 @@ class ClientRespondPermission:
     decision: bool = False
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRespondPermission:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRespondPermission":
         return cls(
             type="respond_permission",
             tool_name=d.get("tool_name", ""),
@@ -171,7 +171,7 @@ class ClientRespondPlan:
     approved: bool = False
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRespondPlan:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRespondPlan":
         return cls(
             type="respond_plan",
             proposal_id=str(d.get("proposal_id", "")),
@@ -186,7 +186,7 @@ class ClientSetPlanMode:
     reason: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientSetPlanMode:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientSetPlanMode":
         return cls(
             type="set_plan_mode",
             active=bool(d.get("active", False)),
@@ -201,7 +201,7 @@ class ClientRespondQuestion:
     answers: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRespondQuestion:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRespondQuestion":
         return cls(
             type="respond_question",
             tool_call_id=str(d.get("tool_call_id", "")),
@@ -216,7 +216,7 @@ class ClientEngineInstallResponse:
     choice: str = "cancelled"
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientEngineInstallResponse:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientEngineInstallResponse":
         return cls(
             type="engine_install_response",
             request_id=d.get("request_id", ""),
@@ -230,7 +230,7 @@ class ClientCancel:
     session_id: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientCancel:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientCancel":
         return cls(
             type="cancel",
             session_id=d.get("session_id", ""),
@@ -244,7 +244,7 @@ class ClientResume:
     request_id: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientResume:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientResume":
         return cls(
             type="resume",
             session_id=d.get("session_id", ""),
@@ -258,7 +258,7 @@ class ClientConfigure:
     config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientConfigure:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientConfigure":
         return cls(
             type="configure",
             config=d.get("config", {}),
@@ -272,7 +272,7 @@ class ClientTestAdapter:
     config: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientTestAdapter:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientTestAdapter":
         return cls(
             type="test_adapter",
             adapter_id=d.get("adapter_id", ""),
@@ -285,7 +285,7 @@ class ClientPing:
     type: str = "ping"
 
     @classmethod
-    def from_dict(cls, _d: dict[str, Any]) -> ClientPing:
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientPing":
         return cls(type="ping")
 
 
@@ -294,7 +294,7 @@ class ClientListModels:
     type: str = "list_models"
 
     @classmethod
-    def from_dict(cls, _d: dict[str, Any]) -> ClientListModels:
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientListModels":
         return cls(type="list_models")
 
 
@@ -303,7 +303,7 @@ class ClientListSessions:
     type: str = "list_sessions"
 
     @classmethod
-    def from_dict(cls, _d: dict[str, Any]) -> ClientListSessions:
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientListSessions":
         return cls(type="list_sessions")
 
 
@@ -318,7 +318,7 @@ class ClientListAllSessions:
     type: str = "list_all_sessions"
 
     @classmethod
-    def from_dict(cls, _d: dict[str, Any]) -> ClientListAllSessions:
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientListAllSessions":
         return cls(type="list_all_sessions")
 
 
@@ -509,7 +509,7 @@ class ClientRollbackLog:
     session_id: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRollbackLog:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRollbackLog":
         return cls(
             type="rollback_log",
             session_id=d.get("session_id", ""),
@@ -523,7 +523,7 @@ class ClientRollbackCheckout:
     commit_hash: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRollbackCheckout:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRollbackCheckout":
         return cls(
             type="rollback_checkout",
             session_id=d.get("session_id", ""),
@@ -856,7 +856,7 @@ class ClientListGlobalRules:
     type: str = "list_global_rules"
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ClientListGlobalRules":
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientListGlobalRules":
         return cls(type="list_global_rules")
 
 
@@ -865,7 +865,7 @@ class ClientListProjectRules:
     type: str = "list_project_rules"
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ClientListProjectRules":
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientListProjectRules":
         return cls(type="list_project_rules")
 
 
@@ -874,7 +874,7 @@ class ClientListProjectHooks:
     type: str = "list_project_hooks"
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ClientListProjectHooks":
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientListProjectHooks":
         return cls(type="list_project_hooks")
 
 
@@ -954,7 +954,7 @@ class ClientTerminalResize:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ClientTerminalResize":
-        return cls(type="terminal_resize", id=d.get("id", 0), cols=d.get("cols", 80), rows=d.get("rows", 24))  # noqa: E501
+        return cls(type="terminal_resize", id=d.get("id", 0), cols=d.get("cols", 80), rows=d.get("rows", 24))
 
 
 @dataclass
@@ -972,7 +972,7 @@ class ClientTerminalListShells:
     type: str = "terminal_list_shells"
 
     @classmethod
-    def from_dict(cls, _d: dict[str, Any]) -> ClientTerminalListShells:
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientTerminalListShells":
         return cls(type="terminal_list_shells")
 
 
@@ -984,7 +984,7 @@ class ClientRetry:
     mode: str = "normal"
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRetry:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRetry":
         return cls(
             type="retry",
             user_message_index=d.get("user_message_index", 0),
@@ -1000,7 +1000,7 @@ class ClientSwitchBranch:
     session_id: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientSwitchBranch:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientSwitchBranch":
         return cls(
             type="switch_branch",
             branch_id=d.get("branch_id", ""),
@@ -1016,7 +1016,7 @@ class ClientRollbackBranch:
     session_id: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> ClientRollbackBranch:
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRollbackBranch":
         return cls(
             type="rollback",
             branch_id=d.get("branch_id", ""),
@@ -1154,80 +1154,80 @@ class ClientAutomationDeleteJob:
         )
 
 
-ClientMessage = Union[
-    ClientRun,
-    ClientRespondPermission,
-    ClientCancel,
-    ClientResume,
-    ClientConfigure,
-    ClientPing,
-    ClientListModels,
-    ClientListSessions,
-    ClientListAllSessions,
-    ClientNewSession,
-    ClientGetConfig,
-    ClientUpdateModels,
-    ClientSetActiveModel,
-    ClientDeleteModel,
-    ClientFetchModels,
-    ClientUpdateSkills,
-    ClientInstallSkill,
-    ClientUninstallSkill,
-    ClientUpdateSkill,
-    ClientUpdateMCP,
-    ClientUpdateAgent,
-    ClientSearch,
-    ClientRollbackLog,
-    ClientRollbackCheckout,
-    ClientValidateModel,
-    ClientEditMessage,
-    ClientDeleteMessage,
-    ClientDeleteSession,
-    ClientExportSession,
-    ClientRenameSession,
-    ClientAgentCreate,
-    ClientAgentDelete,
-    ClientAgentUpdate,
-    ClientAgentList,
-    ClientAgentSetActive,
-    ClientUpdateSubAgents,
-    ClientOpenWorkspace,
-    ClientListWorkspaces,
-    ClientRemoveWorkspace,
-    ClientCloseWorkspace,
-    ClientReindexWorkspace,
-    ClientGetGitignore,
-    ClientDeleteIndex,
-    ClientSetGitignore,
-    ClientGetMemoryList,
-    ClientGetMemoryDetail,
-    ClientListGlobalRules,
-    ClientListProjectRules,
-    ClientListProjectHooks,
-    ClientSaveGlobalRule,
-    ClientDeleteGlobalRule,
-    ClientGetGlobalRuleContent,
-    ClientGetProfile,
-    ClientTerminalSpawn,
-    ClientTerminalWrite,
-    ClientTerminalResize,
-    ClientTerminalKill,
-    ClientTerminalListShells,
-    ClientRetry,
-    ClientSwitchBranch,
-    ClientRollbackBranch,
-    ClientTranscribeAudio,
-    ClientGetUsageStats,
-    ClientTestAdapter,
-    ClientIclawResume,
-    ClientAutomationListJobs,
-    ClientAutomationCreateJob,
-    ClientAutomationCancelJob,
-    ClientAutomationGetHistory,
-    ClientAutomationToggleJob,
-    ClientAutomationUpdateJob,
-    ClientAutomationDeleteJob,
-]
+ClientMessage = (
+    ClientRun
+    | ClientRespondPermission
+    | ClientCancel
+    | ClientResume
+    | ClientConfigure
+    | ClientPing
+    | ClientListModels
+    | ClientListSessions
+    | ClientListAllSessions
+    | ClientNewSession
+    | ClientGetConfig
+    | ClientUpdateModels
+    | ClientSetActiveModel
+    | ClientDeleteModel
+    | ClientFetchModels
+    | ClientUpdateSkills
+    | ClientInstallSkill
+    | ClientUninstallSkill
+    | ClientUpdateSkill
+    | ClientUpdateMCP
+    | ClientUpdateAgent
+    | ClientSearch
+    | ClientRollbackLog
+    | ClientRollbackCheckout
+    | ClientValidateModel
+    | ClientEditMessage
+    | ClientDeleteMessage
+    | ClientDeleteSession
+    | ClientExportSession
+    | ClientRenameSession
+    | ClientAgentCreate
+    | ClientAgentDelete
+    | ClientAgentUpdate
+    | ClientAgentList
+    | ClientAgentSetActive
+    | ClientUpdateSubAgents
+    | ClientOpenWorkspace
+    | ClientListWorkspaces
+    | ClientRemoveWorkspace
+    | ClientCloseWorkspace
+    | ClientReindexWorkspace
+    | ClientGetGitignore
+    | ClientDeleteIndex
+    | ClientSetGitignore
+    | ClientGetMemoryList
+    | ClientGetMemoryDetail
+    | ClientListGlobalRules
+    | ClientListProjectRules
+    | ClientListProjectHooks
+    | ClientSaveGlobalRule
+    | ClientDeleteGlobalRule
+    | ClientGetGlobalRuleContent
+    | ClientGetProfile
+    | ClientTerminalSpawn
+    | ClientTerminalWrite
+    | ClientTerminalResize
+    | ClientTerminalKill
+    | ClientTerminalListShells
+    | ClientRetry
+    | ClientSwitchBranch
+    | ClientRollbackBranch
+    | ClientTranscribeAudio
+    | ClientGetUsageStats
+    | ClientTestAdapter
+    | ClientIclawResume
+    | ClientAutomationListJobs
+    | ClientAutomationCreateJob
+    | ClientAutomationCancelJob
+    | ClientAutomationGetHistory
+    | ClientAutomationToggleJob
+    | ClientAutomationUpdateJob
+    | ClientAutomationDeleteJob
+)
 
 
 def parse_client_message(raw: str | bytes) -> ClientMessage | None:
@@ -1469,7 +1469,7 @@ def encode_permission_request(tool_name: str, reason: str) -> str:
     return encode_server_message("permission_request", tool_name=tool_name, reason=reason)
 
 
-def encode_finish(reason: str, usage: dict[str, Any] | None = None, error: str | None = None) -> str:  # noqa: E501
+def encode_finish(reason: str, usage: dict[str, Any] | None = None, error: str | None = None) -> str:
     return encode_server_message("finish", reason=reason, usage=usage, error=error)
 
 
@@ -1548,7 +1548,7 @@ def encode_config_data(config: dict[str, Any]) -> str:
 
 
 def encode_models_updated(models: list[dict[str, Any]], active_model_index: int) -> str:
-    return encode_server_message("models_updated", models=models, active_model_index=active_model_index)  # noqa: E501
+    return encode_server_message("models_updated", models=models, active_model_index=active_model_index)
 
 
 def encode_models_fetched(models: list[str]) -> str:
@@ -1556,7 +1556,7 @@ def encode_models_fetched(models: list[str]) -> str:
 
 
 def encode_skills_updated(enabled_skills: list[str], available_skills: list[dict[str, Any]]) -> str:
-    return encode_server_message("skills_updated", enabled_skills=enabled_skills, available_skills=available_skills)  # noqa: E501
+    return encode_server_message("skills_updated", enabled_skills=enabled_skills, available_skills=available_skills)
 
 
 def encode_skills_list(skills: list[dict[str, Any]]) -> str:
@@ -1591,12 +1591,12 @@ def encode_rollback_log(session_id: str, commits: list[dict[str, Any]]) -> str:
     return encode_server_message("rollback_log", session_id=session_id, commits=commits)
 
 
-def encode_rollback_checkout(session_id: str, commit_hash: str, messages: list[dict[str, Any]], turn_count: int, plan_items: list[dict[str, Any]] | None = None, artifacts: list[dict[str, Any]] | None = None) -> str:  # noqa: E501
-    return encode_server_message("rollback_checkout", session_id=session_id, commit_hash=commit_hash, messages=messages, turn_count=turn_count, plan_items=plan_items or [], artifacts=artifacts or [])  # noqa: E501
+def encode_rollback_checkout(session_id: str, commit_hash: str, messages: list[dict[str, Any]], turn_count: int, plan_items: list[dict[str, Any]] | None = None, artifacts: list[dict[str, Any]] | None = None) -> str:
+    return encode_server_message("rollback_checkout", session_id=session_id, commit_hash=commit_hash, messages=messages, turn_count=turn_count, plan_items=plan_items or [], artifacts=artifacts or [])
 
 
-def encode_messages_updated(messages: list[dict[str, Any]], session_id: str, commit_hash: str = "") -> str:  # noqa: E501
-    return encode_server_message("messages_updated", messages=messages, session_id=session_id, commit_hash=commit_hash)  # noqa: E501
+def encode_messages_updated(messages: list[dict[str, Any]], session_id: str, commit_hash: str = "") -> str:
+    return encode_server_message("messages_updated", messages=messages, session_id=session_id, commit_hash=commit_hash)
 
 
 def encode_session_deleted(session_id: str) -> str:
@@ -1604,7 +1604,7 @@ def encode_session_deleted(session_id: str) -> str:
 
 
 def encode_session_exported(session_id: str, markdown: str, filename: str) -> str:
-    return encode_server_message("session_exported", session_id=session_id, markdown=markdown, filename=filename)  # noqa: E501
+    return encode_server_message("session_exported", session_id=session_id, markdown=markdown, filename=filename)
 
 
 def encode_session_renamed(session_id: str, new_name: str) -> str:

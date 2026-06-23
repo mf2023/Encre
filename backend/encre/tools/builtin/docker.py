@@ -56,7 +56,7 @@ async def _docker_execute(**kwargs: Any) -> str:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=300
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
             return "Error: Docker command timed out after 300 seconds"
@@ -85,7 +85,7 @@ EncreDockerTool = build_tool(
         "properties": {
             "command": {
                 "type": "string",
-                "enum": ["ps", "run", "stop", "logs", "build", "pull", "push", "rm", "rmi", "compose"],  # noqa: E501
+                "enum": ["ps", "run", "stop", "logs", "build", "pull", "push", "rm", "rmi", "compose"],
                 "description": "Docker command to execute",
             },
             "image_or_container": {

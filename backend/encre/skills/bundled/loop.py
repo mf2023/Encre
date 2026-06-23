@@ -32,7 +32,7 @@ _loader = PromptLoader()
 _LOOP_PATTERN = re.compile(r"^\s*\[(\d+(?:\.\d+)?)\]\s*(.+)", re.DOTALL)
 
 
-async def _loop_prompt(args: str | None, ctx: dict[str, Any]) -> str:
+async def _loop_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
     if args is None:
         args = ""
     match = _LOOP_PATTERN.match(args)

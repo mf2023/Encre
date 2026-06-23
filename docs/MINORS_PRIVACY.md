@@ -1,202 +1,280 @@
-# 未成年人个人信息保护规则
+# Minors' Privacy and Personal Information Protection
 
-**最后更新：2026年6月7日**
+**Last updated: 2026-06-21**
+**Scope:** Global — applies to all users of Dunimd Services, with specific protections for minors.
 
----
+This document describes how Dunimd protects the personal information of children and minors. It supplements the [Privacy Policy](PRIVACY.md), the [User Agreement](USER_AGREEMENT.md), and the [Content Guidelines](CONTENT_GUIDELINES.md).
 
-## 1. 总则
-
-### 1.1 目的
-
-为保护未成年人的个人信息安全，规范未成年人个人信息的处理活动，根据《中华人民共和国个人信息保护法》《中华人民共和国未成年人保护法》《未成年人网络保护条例》等法律法规，制定本规则。
-
-### 1.2 适用范围
-
-本规则适用于 Dunimd 软件（"我们"或"我们的"）在提供服务过程中收集、使用、存储和共享未满 14 周岁未成年人（"未成年人"）个人信息的所有活动。
-
-### 1.3 重要提示
-
-**如果您是未满 14 周岁的未成年人，请在您的监护人（父母或其他法定监护人）指导下使用本软件，并在提供个人信息前征得监护人的同意。**
-
-**如果您是未成年人的监护人，请您仔细阅读并充分理解本规则。一旦您同意本规则，即表示您同意我们按照本规则处理您未成年子女的个人信息。**
+If you are in the **People's Republic of China**, the PRC-specific counterpart at [`MINORS_PRIVACY_CN.md`](MINORS_PRIVACY_CN.md) supplements this one for the Chinese statutory framework.
 
 ---
 
-## 2. 我们如何收集和使用未成年人个人信息
+## Table of Contents
 
-### 2.1 收集的个人信息类型
-
-我们仅会出于合法、正当、必要之目的收集未成年人的个人信息，包括：
-
-- **账户配置信息**：后端服务地址、API 密钥、模型偏好设置等（由监护人提供或经监护人同意后提供）。
-- **用户内容**：未成年人通过软件提交给 AI 模型处理的对话内容、提示词、文件及其他内容。
-- **设备信息**：操作系统类型和版本、应用程序版本、设备标识符等（仅为软件正常运行所必需）。
-- **使用数据**：功能使用情况、会话持续时间等聚合统计数据（已做匿名化处理）。
-
-### 2.2 收集和使用目的
-
-我们收集和使用未成年人个人信息的目的包括：
-
-- 提供 AI 对话和任务执行服务；
-- 保障软件的安全稳定运行；
-- 改进软件功能和用户体验；
-- 履行法律法规规定的义务。
-
-### 2.3 敏感个人信息
-
-未成年人的个人信息属于敏感个人信息。我们仅在具有特定的目的和充分的必要性，并采取严格保护措施的情形下处理未成年人个人信息。
+1. [Why This Document Exists](#1-why-this-document-exists)
+2. [Who Counts as a Minor](#2-who-counts-as-a-minor)
+3. [What We Collect](#3-what-we-collect)
+4. [Lawful Basis and Parental Consent](#4-lawful-basis-and-parental-consent)
+5. [Where Data Is Stored](#5-where-data-is-stored)
+6. [Security](#6-security)
+7. [Sharing and Disclosure](#7-sharing-and-disclosure)
+8. [Rights of Parents and Guardians](#8-rights-of-parents-and-guardians)
+9. [Age-Appropriate Design](#9-age-appropriate-design)
+10. [Breach Notification](#10-breach-notification)
+11. [Updates](#11-updates)
+12. [Contact](#12-contact)
+13. [Definitions](#13-definitions)
 
 ---
 
-## 3. 监护人同意机制
+## 1. Why This Document Exists
 
-### 3. 同意方式
+Minors are entitled to special protection under most privacy and data-protection regimes worldwide. This document explains what Dunimd does to meet that obligation.
 
-我们通过以下方式获取监护人的同意：
+It covers:
 
-- **事前同意**：在收集未成年人个人信息前，我们通过明确提示方式征求监护人的同意。
-- **单独同意**：对于处理敏感个人信息、向第三方提供个人信息、跨境传输等情形，我们取得监护人的单独同意。
-- **书面同意**：对于法律法规要求采取书面形式的，我们要求监护人提供书面同意。
+- The age threshold that triggers these protections.
+- The categories of personal information Dunimd collects from minors.
+- How Dunimd obtains verifiable parental consent where required.
+- The enhanced rights parents and guardians hold over minor children's data.
+- The additional safeguards applied to minor children's data.
 
-### 3.2 监护人权利的告知
-
-我们将在本规则及隐私政策中明确告知监护人的以下权利：
-
-- 查阅、复制未成年人个人信息；
-- 更正、补充未成年人个人信息；
-- 删除未成年人个人信息；
-- 撤回对未成年人个人信息处理的同意；
-- 解释说明是我们处理未成年人个人信息的行为。
-
-### 3.3 监护人行使权利的方式
-
-监护人可以通过以下方式行使上述权利：
-
-- **电子邮件**：dunimd@outlook.com
-- **GitHub**：[github.com/dunimd-team/dunimd](https://github.com/dunimd-team/dunimd)
-
-我们将在收到请求后的 15 个工作日内回复。
+Where Dunimd Services are not directed to minors, this document also explains what we do if we learn that a minor is using a Service without appropriate consent.
 
 ---
 
-## 4. 未成年人个人信息存储与保护
+## 2. Who Counts as a Minor
 
-### 4.1 存储地点
+The age threshold varies by jurisdiction. Dunimd applies the **highest applicable threshold** for each user:
 
-- 未成年人的个人信息将存储在中国境内的服务器上。
-- 如确需向境外提供，我们将按照国家网信部门的规定进行安全评估，并取得监护人的单独同意。
+| Jurisdiction | Age of digital consent |
+|---|---|
+| **PRC** | 14 (《个人信息保护法》 Art. 31) |
+| **EU/EEA** (GDPR Art. 8) | 16 by default, member states may lower to 13 |
+| **UK** | 13 (UK GDPR) |
+| **United States — COPPA** | 13 |
+| **United States — state laws** | 13–18 depending on state |
+| **Canada (PIPEDA)** | 13 in most provinces |
+| **Australia (Privacy Act)** | 15 (under the Online Safety standards) |
+| **Japan (APPI)** | 18 (with consent rules for minors 13-17) |
+| **South Korea (PIPA)** | 14 |
+| **India (DPDPA)** | 18 |
+| **Brazil (LGPD)** | 18 (with 13+ requiring parental consent for digital services) |
+| **Other** | The applicable age of digital consent under local law |
 
-### 4.2 存储期限
-
-我们仅在达成本规则所述目的所需的期限内保留未成年人的个人信息。期限届满后，我们将删除或匿名化处理相关信息。
-
-### 4.3 安全措施
-
-我们采取以下措施保护未成年人的个人信息安全：
-
-- **加密传输**：所有数据在传输过程中使用 TLS 1.2 或更高版本加密。
-- **加密存储**：敏感数据使用 AES-256 加密算法存储。
-- **访问控制**：严格限制对未成年人个人信息的访问权限，遵循最小必要原则。
-- **安全审计**：定期进行安全评估和安全审计。
-- **员工培训**：对接触未成年人个人信息的员工进行隐私保护培训。
-
----
-
-## 5. 未成年人个人信息共享和公开披露
-
-### 5.1 共享
-
-未经监护人明确同意，我们不会向任何第三方共享未成年人的个人信息，以下情况除外：
-
-- 为提供服务所必需，且共享方已签署严格的保密协议；
-- 根据法律法规的规定或政府主管部门的强制性要求。
-
-### 5.2 第三方 SDK
-
-我们嵌入了第三方 SDK 以提供特定功能。我们要求这些第三方按照法律法规和我们的要求保护未成年人的个人信息。具体信息如下：
-
-| SDK 名称 | 提供方 | 收集信息类型 | 用途 | 隐私政策 |
-|---|---|---|---|---|
-| 第三方 AI 模型提供商 | 各提供商 | 用户提交的内容 | AI 模型处理 | 各提供商官网 |
-| 崩溃报告服务 | 各服务商 | 设备信息、错误日志 | 故障诊断 | 各服务商官网 |
-
-### 5.3 公开披露
-
-我们仅会在以下情况下公开披露未成年人的个人信息：
-
-- 获得监护人的明确同意后；
-- 基于法律法规、法律诉讼的正当理由。
+When Dunimd cannot determine a user's age with reasonable certainty, we treat the user as a minor for protective purposes.
 
 ---
 
-## 6. 监护人的权利
+## 3. What We Collect
 
-### 6.1 访问和更正权
+### 3.1 Information Dunimd Collects Directly
 
-监护人有权访问和更正未成年人的个人信息。您可以通过本规则第 3.3 条提供的方式提出请求。
+| Category | Examples | Why |
+|---|---|---|
+| **Account / Configuration** | Username, role, language | To operate the Service |
+| **Customer Content** | Prompts, files, conversation history | To deliver the Service to the user |
+| **Authentication** | API keys, tokens | To connect to configured AI backends |
+| **Device / environment** | OS, app version, locale | Compatibility, security, support |
+| **Usage** | Feature usage, session duration | Service improvement, billing |
 
-### 6.2 删除权
+### 3.2 What Dunimd Does NOT Collect
 
-在以下情况下，监护人有权要求我们删除未成年人的个人信息：
+By default, Dunimd does not knowingly collect from minors:
 
-- 我们处理未成年人个人信息的行为违反法律法规的；
-- 我们收集、使用未成年人个人信息，未征得监护人同意的；
-- 我们处理未成年人个人信息的行为违反约定的；
-- 监护人撤回同意的；
-- 法律法规规定的其他情形。
+- Real name, home address, school name, or contact information unless required for a specific Service (e.g. Enterprise).
+- Biometric data.
+- Precise geolocation.
+- Browsing history outside Dunimd Services.
+- Contacts, calendar, microphone, or camera content — unless a specific feature requires it and obtains separate consent.
 
-### 6.3 撤回同意权
+### 3.3 Local-First Services
 
-监护人可以随时撤回对未成年人个人信息处理的同意。撤回同意不影响此前基于同意已进行的个人信息处理。
+Most Encre features are **local-first**: prompts, files, and outputs stay on the user's device. Where this is true, Dunimd does not receive the minor's data at all. The protections in this document apply primarily to hosted features (Dunimd Cloud, hosted PiscesLx inference, etc.).
 
-### 6.4 注销权
+### 3.4 Sensitive Personal Information
 
-监护人可以要求注销未成年人的账户。账户注销后，我们将删除或匿名化处理未成年人的个人信息。
-
-### 6.5 自动化决策解释权
-
-如我们使用自动化决策（包括算法推荐），监护人有权要求我们作出说明，并有权拒绝仅通过自动化决策方式作出的决定。
-
----
-
-## 7. 安全事件响应
-
-### 7.1 安全事件
-
-如发生或可能发生未成年人个人信息安全事件，我们将立即启动应急预案，采取补救措施，并按照以下要求通知监护人和报告主管部门：
-
-- **通知内容**：安全事件的基本情况和可能影响、我们已采取或将要采取的处置措施、监护人可自主防范和降低风险的建议、对监护人的补救措施等。
-- **通知方式**：软件内通知、电子邮件、短信等。
-- **报告要求**：按照法律法规要求向主管部门报告。
+Minor's personal information is treated as sensitive under most jurisdictions. Dunimd only processes it where there is a specific lawful purpose, with appropriate safeguards and (where required) parental consent.
 
 ---
 
-## 8. 本规则的更新
+## 4. Lawful Basis and Parental Consent
 
-我们可能会适时对本规则进行修订。任何修订将在更新版本发布前通过软件内提示或公告方式告知监护人。
+### 4.1 Lawful Basis
 
-如本规则的更新涉及监护人权利的实质性变化，我们将通过合理方式（包括但不限于软件弹窗、电子邮件等）再次征求监护人的同意。
+Where Dunimd processes minor's personal information, the lawful basis is one of:
+
+- **Verifiable parental consent** (US COPPA, EU GDPR Art. 8, PRC PIPL Art. 31, etc.).
+- **Vital interests** — protection of the minor's safety in an emergency.
+- **Legal obligation** — compliance with applicable law.
+- **Performance of a contract** requested by the parent/guardian.
+
+For Services that are local-first or where Dunimd does not collect personal information from the minor, no parental consent is needed for the absent processing.
+
+### 4.2 Verifiable Parental Consent Methods
+
+Where parental consent is required, Dunimd uses at least one of the following methods to verify it:
+
+- **Signed consent form** returned by the parent/guardian (electronic or physical).
+- **Payment verification** — using a credit card or other payment method that reliably identifies the parent.
+- **Government-ID verification** — only where strictly necessary and proportionate.
+- **Video verification** — a recorded consent session.
+- **Knowledge-based authentication** — answering questions that a parent would know.
+- **Other method** that meets the FTC COPPA "verifiable parental consent" standard or equivalent in other jurisdictions.
+
+For Services where the risk profile is low (e.g. local-only use, no personal data collection), Dunimd may rely on **notice-and-consent** rather than full verification.
+
+### 4.3 Consent Withdrawal
+
+Parents and guardians may withdraw consent at any time. Withdrawal is prospective — it does not undo processing already lawfully performed. After withdrawal, Dunimd will:
+
+- Stop the minor's use of the hosted Service.
+- Delete or anonymize the minor's personal information within the timeframes in [Privacy Policy §7](PRIVACY.md#7-data-retention).
+
+### 4.4 Without Parental Consent
+
+Where Dunimd cannot obtain parental consent (or the user is in a jurisdiction where the age threshold is below Dunimd's protected threshold):
+
+- Dunimd will not knowingly collect personal information from the minor.
+- If such data was collected inadvertently, Dunimd will delete it on discovery.
 
 ---
 
-## 9. 联系我们
+## 5. Where Data Is Stored
 
-如果您对未成年人个人信息保护有任何疑问、意见或建议，或需要行使未成年人的个人信息权利，请通过以下方式联系我们：
+### 5.1 Local-First
 
-- **电子邮件**：dunimd@outlook.com
-- **GitHub**：[github.com/dunimd-team/dunimd](https://github.com/dunimd-team/dunimd)
+For Encre used locally, the minor's data stays on the device. Dunimd does not receive it.
 
-一般情况下，我们将在 15 个工作日内回复。如对我们的处理行为不满意，您可以向网信、公安、市场监管等部门投诉举报。
+### 5.2 Hosted Services
+
+For Dunimd Cloud, PiscesLx hosted inference, and Enterprise deployments, data is stored in the region selected at provisioning. Dunimd provides regions in major jurisdictions to support local-storage requirements.
+
+### 5.3 Cross-Border Transfers
+
+Where cross-border transfer is necessary for hosted Services, Dunimd applies the safeguards in [Privacy Policy §9](PRIVACY.md#9-international-data-transfers), including:
+
+- EU SCCs, UK IDTA, Swiss-equivalent clauses.
+- PRC CAC security assessment or standard contract, where applicable.
+- APEC Cross-Border Privacy Rules where certified.
 
 ---
 
-## 10. 定义
+## 6. Security
 
-- **未成年人**：指未满 14 周岁的自然人。
-- **监护人**：指未成年人的父母或其他法定监护人。
-- **未成年人个人信息**：以电子或者其他方式记录的能够单独或者与其他信息结合识别未成年人身份，或者反映未成年人活动情况的各种信息。
-- **敏感个人信息**：一旦泄露或者非法使用，容易导致自然人的人格尊严受到侵害或者人身、财产安全受到危害的个人信息，包括未成年人个人信息。
+Minor's personal information receives enhanced safeguards:
+
+- **Encryption in transit**: TLS 1.2+ enforced.
+- **Encryption at rest**: AES-256-GCM.
+- **Access controls**: least-privilege principle; no engineer accesses minor's content without a documented support ticket and approval.
+- **Logging**: all access to minor's data is logged and reviewable.
+- **Retention**: shorter than general retention where possible; defaults to delete-on-account-closure.
+- **Vendor vetting**: sub-processors that handle minor's data are vetted for COPPA / GDPR Art. 8 / PRC PIPL Art. 31 compliance.
 
 ---
 
-*本规则仅供参考，不构成法律意见。建议您咨询专业法律顾问以确保符合所有适用的法律法规要求。*
+## 7. Sharing and Disclosure
+
+### 7.1 With Parents / Guardians
+
+Dunimd shares the minor's personal information with their parents or guardians on verified request, in line with the rights in [§8](#8-rights-of-parents-and-guardians).
+
+### 7.2 With Service Providers
+
+Sub-processors may process minor's data only on documented instructions and only as needed to operate the Service. Each sub-processor is bound by data-processing terms equivalent to Dunimd's.
+
+### 7.3 With Schools or Organizations
+
+Where a minor uses Dunimd Services through an educational or organizational account, the organization may have rights over the data per its own policies and applicable law.
+
+### 7.4 With Third Parties for Marketing or Advertising
+
+**Never**. Dunimd does not sell, rent, or share minor's personal information for marketing or advertising purposes.
+
+### 7.5 With Law Enforcement
+
+Dunimd discloses minor's personal information to competent authorities only on valid legal process, in line with [Privacy Policy §6.2](PRIVACY.md#62-legal-requirements), and notifies the parent/guardian where lawful.
+
+---
+
+## 8. Rights of Parents and Guardians
+
+Parents and guardians of a minor have enhanced rights over the minor's personal information:
+
+- **Right to know** what data Dunimd has collected about the minor.
+- **Right to access** the data in a portable format.
+- **Right to correct** inaccurate data.
+- **Right to delete** the data and the minor's account.
+- **Right to limit** further processing.
+- **Right to refuse** disclosure to third parties.
+- **Right to withdraw consent** (prospective).
+- **Right to review** any third-party sharing arrangements.
+- **Right to be informed** of any breach affecting the minor's data.
+
+These rights are exercised through the same channels as the general rights in [Privacy Policy §10](PRIVACY.md#10-your-rights-and-choices). Where a parent/guardian is acting on behalf of a minor, Dunimd verifies parental authority before fulfilling the request.
+
+### 8.1 Response Time
+
+We respond to parent/guardian requests within the shorter of:
+
+- **15 business days** (PRC PIPL default), or
+- The statutory response period in the parent's/guardian's jurisdiction.
+
+### 8.2 Identity Verification
+
+To protect the minor, Dunimd may require proof of parental authority. Acceptable proofs include birth certificate, court order, or government-issued ID matching the minor's record.
+
+---
+
+## 9. Age-Appropriate Design
+
+Dunimd Services implement age-appropriate design principles:
+
+- **No manipulative design**: no dark patterns designed to manipulate minors.
+- **Transparent language**: privacy notices are written in plain language appropriate to the user's age.
+- **Default privacy**: telemetry, AI training, and non-essential data collection are **off by default** for users we identify as minors.
+- **No profiling for ads**: we do not build advertising profiles of minors.
+- **No geolocation defaults**: precise geolocation is off by default.
+- **No third-party tracking in products designed for minors**.
+
+---
+
+## 10. Breach Notification
+
+If Dunimd becomes aware of a breach of security leading to accidental or unlawful destruction, loss, alteration, unauthorized disclosure of, or access to minor's personal information:
+
+- Dunimd notifies the parent/guardian **without undue delay** and at the latest within the statutory window (e.g. **72 hours** under GDPR for breaches posing risk to individuals; same standard for minor's data).
+- The notification describes the nature of the breach, likely consequences, measures taken, and recommended steps for the parent/guardian.
+- Dunimd coordinates with competent authorities as required by law.
+
+---
+
+## 11. Updates
+
+We may update this document. Material changes are communicated through the Services or by other appropriate means with reasonable prior notice (typically **30 days**). Where the change is material to the protection of minors, Dunimd will seek renewed parental consent where required.
+
+---
+
+## 12. Contact
+
+| Channel | Address |
+|---|---|
+| Email | [dunimd@outlook.com](mailto:dunimd@outlook.com) |
+| Website | [dunimd.com](https://dunimd.com) |
+| Parental consent form | [minors.dunimd.com](https://minors.dunimd.com) *(pending activation)* |
+| GitHub | [github.com/mf2023/Encre](https://github.com/mf2023/Encre) |
+| Gitee mirror | [gitee.com/dunimd/encre](https://gitee.com/dunimd/encre) |
+
+---
+
+## 13. Definitions
+
+- **Minor** — a natural person below the age of digital consent in their jurisdiction, as enumerated in [§2](#2-who-counts-as-a-minor).
+- **Parent / Guardian** — a person with parental responsibility for the minor, including biological parents, adoptive parents, and court-appointed guardians.
+- **Verifiable Parental Consent (VPC)** — a method, enumerated in [§4.2](#42-verifiable-parental-consent-methods), that meets the standard set by the FTC COPPA Rule, GDPR Art. 8(2), PRC PIPL Art. 31, or equivalent.
+- **Minor's Personal Information** — any information relating to an identified or identifiable minor.
+- **Age-Appropriate Design** — the principles enumerated in [§9](#9-age-appropriate-design).
+
+---
+
+*This document is provided for informational purposes and does not constitute legal advice. Consult qualified counsel in your jurisdiction to ensure your use of Dunimd Services and your treatment of minors' personal information complies with all applicable laws and regulations.*

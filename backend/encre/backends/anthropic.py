@@ -61,7 +61,12 @@ from typing import Any
 
 import httpx
 
+from encre.backends.auth import AuthManager
 from encre.backends.base import BaseBackend
+from encre.backends.connection import (
+    ConnectionHealthMonitor,
+    format_connection_error,
+)
 from encre.backends.retry import (
     DEFAULT_RETRY_CONFIG,
     RetryConfig,
@@ -107,6 +112,9 @@ class AnthropicBackend(BaseBackend):
         model: str = "claude-sonnet-4-6-20250514",
         thinking_budget_tokens: int = 16000,
         thinking_mode: str = "enabled",
+        auth_manager: AuthManager | None = None,
+        connection_monitor: ConnectionHealthMonitor | None = None,
+        fallback_keys: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialise the Anthropic backend.
@@ -127,6 +135,13 @@ class AnthropicBackend(BaseBackend):
                 decides how much to think), or ``"disabled"``.  Haiku 4.5
                 does not support extended thinking and the parameter is
                 skipped regardless of ``thinking_mode``.
+            auth_manager: Pre-configured :class:`AuthManager` for key rotation.
+                If not provided but ``fallback_keys`` is given, one is created
+                automatically.
+            connection_monitor: Pre-configured :class:`ConnectionHealthMonitor`.
+                If not provided, a default one is created.
+            fallback_keys: Additional API keys for automatic rotation on
+                401/403 errors.  Ignored when ``auth_manager`` is given.
             **kwargs: Additional arguments.  Supports ``retry_config`` for
                 custom :class:`RetryConfig`.
         """
@@ -135,10 +150,33 @@ class AnthropicBackend(BaseBackend):
         self.thinking_budget_tokens = thinking_budget_tokens
         self.thinking_mode = thinking_mode
         self.retry_config: RetryConfig = kwargs.pop("retry_config", DEFAULT_RETRY_CONFIG)
+
+        # -- Auth management --
+        if auth_manager is not None:
+            self.auth_manager = auth_manager
+        elif fallback_keys:
+            self.auth_manager = AuthManager(
+                provider="anthropic", api_key=api_key, fallback_keys=fallback_keys,
+            )
+        else:
+            self.auth_manager = None
+
+        if self.auth_manager is not None and self.retry_config.on_auth_required is None:
+            from dataclasses import replace
+            self.retry_config = replace(
+                self.retry_config,
+                on_auth_required=self.auth_manager.refresh,
+            )
+
+        # -- Connection health monitor --
+        self.connection_monitor = connection_monitor or ConnectionHealthMonitor()
+
+        # HTTP client (x-api-key in defaults for non-chat calls; overridden
+        # per-request in chat() when auth_manager is active for key rotation)
         self._client = httpx.AsyncClient(
             base_url="https://api.anthropic.com/v1",
             headers={
-                "x-api-key": self.api_key,
+                "x-api-key": self.auth_manager.api_key if self.auth_manager else self.api_key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
@@ -208,10 +246,31 @@ class AnthropicBackend(BaseBackend):
         try:
 
             async def _make_request() -> httpx.Response:
-                return await self._client.send(
-                    self._client.build_request("POST", "/messages", json=body),
-                    stream=True,
-                )
+                _req_headers: dict[str, str] = {}
+                if self.auth_manager is not None:
+                    _req_headers["x-api-key"] = self.auth_manager.api_key
+                elif self.api_key:
+                    _req_headers["x-api-key"] = self.api_key
+
+                _url = str(self._client.base_url)
+                try:
+                    resp = await self._client.send(
+                        self._client.build_request(
+                            "POST", "/messages", json=body, headers=_req_headers,
+                        ),
+                        stream=True,
+                    )
+                    if self.connection_monitor:
+                        self.connection_monitor.record_success(_url)
+                    if self.auth_manager and resp.status_code not in (401, 403):
+                        self.auth_manager.record_auth_success()
+                    return resp
+                except Exception as exc:
+                    if self.connection_monitor:
+                        self.connection_monitor.record_failure(
+                            _url, format_connection_error(exc),
+                        )
+                    raise
 
             _retry_decorator = retry_with_backoff(config=self.retry_config)
             _retried_request = _retry_decorator(_make_request)
@@ -219,6 +278,8 @@ class AnthropicBackend(BaseBackend):
 
             async with resp:
                 if resp.status_code != 200:
+                    if self.auth_manager and resp.status_code in (401, 403):
+                        self.auth_manager.record_auth_failure()
                     error_body = await resp.aread()
                     error_text = error_body.decode(errors="replace")
                     msg = f"Anthropic API error {resp.status_code}: {error_text}"
@@ -517,7 +578,7 @@ class AnthropicBackend(BaseBackend):
 
     # ── Files ────────────────────────────────────────────────────────────
 
-    async def upload_file(  # noqa: ARG002
+    async def upload_file(
         self,
         filename: str,
         content_b64: str,
@@ -533,6 +594,7 @@ class AnthropicBackend(BaseBackend):
         too large to inline as base64.
         """
         import base64
+
         from encre.utils.types import FileObject
         content = base64.b64decode(content_b64)
         files = {"file": (filename, content, mime_type)}
@@ -559,9 +621,9 @@ class AnthropicBackend(BaseBackend):
             }},
         )
 
-    async def list_files(  # noqa: ARG002
+    async def list_files(
         self,
-        purpose: str | None = None,
+        _purpose: str | None = None,
         limit: int = 100,
         after: str | None = None,
         order: str = "desc",
@@ -601,7 +663,7 @@ class AnthropicBackend(BaseBackend):
             has_more=has_more,
         )
 
-    async def retrieve_file(  # noqa: ARG002
+    async def retrieve_file(
         self,
         file_id: str,
     ):
@@ -623,22 +685,21 @@ class AnthropicBackend(BaseBackend):
             }},
         )
 
-    async def delete_file(  # noqa: ARG002
+    async def delete_file(
         self,
         file_id: str,
     ) -> bool:
         """Delete an Anthropic file by id."""
         response = await self._client.delete(f"/files/{file_id}")
-        if response.status_code >= 400:
-            return False
-        return True
+        return not response.status_code >= 400
 
-    async def download_file(  # noqa: ARG002
+    async def download_file(
         self,
         file_id: str,
     ):
         """Download the raw content of an Anthropic file."""
         import base64
+
         from encre.utils.types import FileContent
         response = await self._client.get(f"/files/{file_id}/content")
         response.raise_for_status()
@@ -653,11 +714,11 @@ class AnthropicBackend(BaseBackend):
 
     # ── Messages Batches ─────────────────────────────────────────────────
 
-    async def create_batch(  # noqa: ARG002
+    async def create_batch(
         self,
         requests,
-        endpoint: str = "/v1/messages",
-        completion_window: str = "24h",
+        _endpoint: str = "/v1/messages",
+        _completion_window: str = "24h",
         metadata: dict[str, Any] | None = None,
         extra_params: dict[str, Any] | None = None,
     ):
@@ -669,7 +730,7 @@ class AnthropicBackend(BaseBackend):
         """
         import base64
         import json as _json
-        from encre.utils.types import BatchObject
+
         if not requests:
             raise ValueError("create_batch requires at least one request")
 
@@ -705,7 +766,7 @@ class AnthropicBackend(BaseBackend):
         data = response.json() if response.content else {}
         return _parse_anthropic_batch(data, provider="anthropic")
 
-    async def retrieve_batch(  # noqa: ARG002
+    async def retrieve_batch(
         self,
         batch_id: str,
     ):
@@ -713,10 +774,9 @@ class AnthropicBackend(BaseBackend):
         response = await self._client.get(f"/messages/batches/{batch_id}")
         response.raise_for_status()
         data = response.json() if response.content else {}
-        from encre.utils.types import BatchObject
         return _parse_anthropic_batch(data, provider="anthropic")
 
-    async def list_batches(  # noqa: ARG002
+    async def list_batches(
         self,
         limit: int = 20,
         after: str | None = None,
@@ -740,7 +800,7 @@ class AnthropicBackend(BaseBackend):
             has_more=bool(data.get("has_more", data.get("last_id"))),
         )
 
-    async def cancel_batch(  # noqa: ARG002
+    async def cancel_batch(
         self,
         batch_id: str,
     ):
@@ -750,7 +810,6 @@ class AnthropicBackend(BaseBackend):
         )
         response.raise_for_status()
         data = response.json() if response.content else {}
-        from encre.utils.types import BatchObject
         return _parse_anthropic_batch(data, provider="anthropic")
 
 
@@ -773,7 +832,7 @@ def _parse_anthropic_batch(data: dict[str, Any], provider: str):
         completed_at=None,
         failed_at=None,
         request_counts={
-            str(k): int(v) for k, v in counts.items() if isinstance(v, (int, float))
+            str(k): int(v) for k, v in counts.items() if isinstance(v, int | float)
         },
         completion_window="24h",
         provider=provider,

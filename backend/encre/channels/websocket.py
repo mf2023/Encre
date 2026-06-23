@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import traceback
@@ -36,10 +37,9 @@ from websockets.server import WebSocketServerProtocol
 
 ServerConnection = WebSocketServerProtocol
 
-import contextlib  # noqa: E402
-
 from encre.channels.base import Channel, EventRouter  # noqa: E402
 from encre.utils.types import (  # noqa: E402
+    BackendError,
     EngineInstallProgress,
     EngineInstallRequest,
     Finish,
@@ -127,7 +127,7 @@ class WebSocketChannel(Channel):
 
             async for raw in ws:
                 try:
-                    data = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode("utf-8"))  # noqa: E501
+                    data = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode("utf-8"))
                 except json.JSONDecodeError:
                     await self._send_error(ws, "Invalid JSON")
                     continue
@@ -193,7 +193,7 @@ class WebSocketChannel(Channel):
             # directly to the renderer.
             async def _emit_engine(evt: Any) -> None:
                 try:
-                    await self._send_event(ws, evt)
+                    await self._send_event(ws, evt, session_id)
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.warning("engine emit failed: %s", exc)
             try:
@@ -206,13 +206,13 @@ class WebSocketChannel(Channel):
                     prompt=prompt,
                     system_prompt=system_prompt,
                 ):
-                    await self._send_event(ws, event)
+                    await self._send_event(ws, event, session_id)
             except asyncio.CancelledError:
-                await ws.send(json.dumps({"type": "finish", "reason": "cancelled"}, ensure_ascii=False))  # noqa: E501
+                await ws.send(json.dumps({"type": "finish", "reason": "cancelled", "session_id": session_id}, ensure_ascii=False))
             except Exception as e:
                 logger.error("Agent run error: %s\n%s", e, traceback.format_exc())
                 await self._send_error(ws, str(e))
-                await ws.send(json.dumps({"type": "finish", "reason": "error"}, ensure_ascii=False))
+                await ws.send(json.dumps({"type": "finish", "reason": "error", "session_id": session_id}, ensure_ascii=False))
             finally:
                 info.is_running = False
                 router.session_manager.release_slot()
@@ -220,7 +220,7 @@ class WebSocketChannel(Channel):
 
         elif action == "cancel":
             router.cancel_session(session_id)
-            await ws.send(json.dumps({"type": "finish", "reason": "cancelled"}, ensure_ascii=False))
+            await ws.send(json.dumps({"type": "finish", "reason": "cancelled", "session_id": session_id}, ensure_ascii=False))
 
         elif action == "engine_install_response":
             # Frontend reply to a pending EngineInstallRequest.
@@ -246,7 +246,7 @@ class WebSocketChannel(Channel):
 
         elif action == "list_sessions":
             sessions = router.session_manager.query_index()
-            await ws.send(json.dumps({"type": "sessions_list", "sessions": sessions}, ensure_ascii=False))  # noqa: E501
+            await ws.send(json.dumps({"type": "sessions_list", "sessions": sessions}, ensure_ascii=False))
 
         elif action == "new_session":
             # Cancel current session's agent if running
@@ -285,7 +285,7 @@ class WebSocketChannel(Channel):
         else:
             await self._send_error(ws, f"Unknown action: {action}")
 
-    async def _send_event(self, ws: ServerConnection, event: Any) -> None:
+    async def _send_event(self, ws: ServerConnection, event: Any, session_id: str | None = None) -> None:
         """Serialize an AgentEvent to JSON and send over WebSocket."""
         if isinstance(event, TextDelta) and event.text:
             await ws.send(json.dumps({
@@ -400,11 +400,21 @@ class WebSocketChannel(Channel):
                 "type": "finish",
                 "reason": event.reason,
             }
+            if session_id:
+                payload["session_id"] = session_id
             if event.usage:
                 payload["usage"] = event.usage
             if event.error:
                 payload["error"] = event.error
             await ws.send(json.dumps(payload, ensure_ascii=False))
+
+        elif isinstance(event, BackendError):
+            await ws.send(json.dumps({
+                "type": "error",
+                "message": event.error,
+                "code": "backend_error",
+                "session_id": session_id or "",
+            }, ensure_ascii=False))
 
     async def _send_error(self, ws: ServerConnection, message: str) -> None:
         await ws.send(json.dumps({

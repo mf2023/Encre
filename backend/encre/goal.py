@@ -330,14 +330,14 @@ class EncreGoalRunner:
             json_end = full_response.rfind("}") + 1
             if json_start >= 0 and json_end > json_start:
                 return json.loads(full_response[json_start:json_end])
-            return {"met": False, "confidence": 0.0, "reasoning": "Could not parse evaluator response", "feedback": full_response[:500]}  # noqa: E501
+            return {"met": False, "confidence": 0.0, "reasoning": "Could not parse evaluator response", "feedback": full_response[:500]}
 
         except json.JSONDecodeError as e:
-            logger.warning(f"Could not parse evaluator JSON response (first 200 chars): {full_response[:200]}")  # noqa: E501
-            return {"met": False, "confidence": 0.0, "reasoning": f"Evaluator JSON parse error: {e}", "feedback": "Continue."}  # noqa: E501
+            logger.warning(f"Could not parse evaluator JSON response (first 200 chars): {full_response[:200]}")
+            return {"met": False, "confidence": 0.0, "reasoning": f"Evaluator JSON parse error: {e}", "feedback": "Continue."}
         except Exception as e:
             logger.error(f"Evaluator request failed: {e}", exc_info=True)
-            return {"met": False, "confidence": 0.0, "reasoning": f"Evaluator error: {e}", "feedback": "Continue."}  # noqa: E501
+            return {"met": False, "confidence": 0.0, "reasoning": f"Evaluator error: {e}", "feedback": "Continue."}
 
 
 class EncreGoalLoop:

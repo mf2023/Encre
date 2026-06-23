@@ -102,7 +102,7 @@ def _get_loguru_serializer(json_format: bool = False):
     def _serialize(record: Any) -> str:
         """Format a loguru record as a single JSON line."""
         subset: dict[str, Any] = {
-            "timestamp": record["time"].strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z" if record["time"] else "",  # noqa: E501
+            "timestamp": record["time"].strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z" if record["time"] else "",
             "level": record["level"].name,
             "logger": record["name"],
             "function": record["function"],

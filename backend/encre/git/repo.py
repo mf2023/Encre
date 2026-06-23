@@ -114,7 +114,7 @@ class EncreGitRepo:
             return False
         assert self._git_dir is not None
         import os
-        transient_dirs = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START", "rebase-merge", "rebase-apply"]  # noqa: E501
+        transient_dirs = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START", "rebase-merge", "rebase-apply"]
         return any(os.path.exists(os.path.join(self._git_dir, name)) for name in transient_dirs)
 
     def has_unpushed_commits(self) -> bool:

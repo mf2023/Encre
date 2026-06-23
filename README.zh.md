@@ -1,6 +1,6 @@
 <div align="center">
 
-# Encre
+<img src="desktop/renderer/assets/EAb.svg" alt="Encre" width="160"/>
 
 [English](README.md) | 简体中文
 
@@ -30,524 +30,221 @@
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"/>
 </a>
 
-**Encre** — AI Agent 项目，以一个仓库统一发布 Python Agent 框架、Rust 原生核心以及 Encre Desktop 三部分。后端无关、多提供商支持，具备流式工具调用、安全/权限引擎、持久化记忆、多智能体编排、桌面 UI、CLI 运行器、WebSocket 服务器，以及 18 个外部聊天平台适配器。
+**Encre** — 强大的 AI Agent 平台，支持 31 个主流 LLM 提供商、36 个内置工具以及 18 个聊天平台集成。无论是编程开发、桌面自动化、跨平台消息，还是多智能体协作，Encre 都能胜任。
 
 </div>
 
-<h2 align="center">🏗️ 核心架构</h2>
+<h2 align="center">🤖 什么是 Encre Agent？</h2>
 
-### 多语言架构
-Encre 采用多语言架构，包含三个主要组件，使每一层都能使用最适合其领域的语言：
+### 一句话简介
+
+Encre 是一个 AI Agent 平台 —— 告诉它你想做什么，它会自动分析、调用工具、执行任务并将结果交付给你。
+
+### 核心能力
 
 <div align="center">
 
-| 语言 | 组件 | 用途 |
-|:---------|:----------|:--------|
-| **Python** | `backend/encre/` | AI Agent 框架核心 — Agent 循环、31 个 LLM 后端、36 个内置工具、18 个平台适配器、安全引擎、记忆、技能、Swarm、钩子、LSP、MCP |
-| **Rust** | `native/crates/encre-core` | 原生高性能库 — 文件 I/O、正则搜索、glob、diff、沙箱、分词器、BM25 索引器、Landlock、SIMD 搜索、LSP 协议、语义相似度 |
-| **Rust** | `native/crates/encre-py` | PyO3 绑定，将 Rust 核心暴露给 Python 作为 `encre._native` |
-| **TypeScript** | `desktop/` | Encre Desktop — 基于 Electron 的桌面应用，React UI、Monaco Editor、xterm.js 终端、与 Python 后端的 IPC 桥接 |
+| 能力 | 说明 |
+|:------|:------|
+| 🧠 **31 个 AI 模型** | 支持 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、Qwen、GLM 以及本地模型等，自由切换 |
+| 🛠️ **36 个内置工具** | 文件操作、Shell 执行、浏览器自动化、代码编辑、网页搜索、数据库、调度，开箱即用 |
+| 💬 **18 个聊天平台** | 接入 Telegram、Discord、Slack、飞书、钉钉、微信、WhatsApp、邮件，随时随地与 Agent 对话 |
+| 🖥️ **桌面自动化** | 控制桌面应用、操作浏览器、读取屏幕截图，模拟人工操作 |
+| 🤝 **多智能体协作** | 多个 Agent 同时运行，分工协作完成复杂项目 |
+| 💾 **持久化记忆** | Agent 会记住你的偏好、习惯与项目信息，越用越聪明 |
+| 🛡️ **安全与控制** | 6 种权限模式，精确控制 Agent 的能力边界 |
 
 </div>
 
-Encre 以单一仓库形式发布，三个组件共用同一条发版线。它不是独立库，也不是可单独分发的包 —— 请克隆整个仓库以使用 Encre。
+### 应用场景
 
-### 仓库结构
+- **代码开发助手** — 自动读取代码、修复 Bug、重构、生成文档、运行测试
+- **桌面自动化** — 批量文件处理、自动填表、截图归档
+- **跨平台聊天机器人** — 将 AI 接入 Telegram、Slack、飞书等平台
+- **研究与分析** — 网页搜索、数据整理、PDF / Excel 分析
+- **长期任务调度** — 定时任务、系统监控、周期报表
+- **多智能体协作** — 部署不同 Agent 担任程序员、研究员、审阅者协同工作
 
-```
-d:\encre/
-├── pyproject.toml             # Python 构建与依赖（构建 backend/encre/）
-├── build.py                   # 一键构建脚本（Rust + Python + Desktop）
-├── gen.py                     # 图标/资源生成器
-├── package-lock.json          # 根 node 锁文件（与 desktop 同步）
-├── LICENSE                    # Apache 2.0 许可证
-├── README.md / README.zh.md   # 本文档
-│
-├── backend/                   # Python Agent 框架
-│   ├── encre/                 #   `encre` Python 包
-│   │   ├── __init__.py        #   公开 API 表面
-│   │   ├── agent.py           #   EncreAgent — 公开 Agent 类
-│   │   ├── loop.py            #   EncreLoop — 执行循环
-│   │   ├── session.py         #   EncreSession — 对话状态
-│   │   ├── safety.py          #   EncreSafetyEngine — 6 种权限模式
-│   │   ├── autosafety.py      #   EncreAutoSafetyClassifier
-│   │   ├── config.py          #   配置管理
-│   │   ├── crypto.py          #   AES-GCM 加密辅助函数
-│   │   ├── ssrf.py            #   EncreSSRFGuard（DNS + CIDR 黑名单）
-│   │   ├── ratelimit.py       #   EncreRateLimiter
-│   │   ├── rollback.py        #   基于 Git 的回滚（EncreRollbackGit）
-│   │   ├── recovery.py        #   错误恢复引擎
-│   │   ├── scheduler.py       #   EncreScheduler（cron 风格任务）
-│   │   ├── goal.py            #   Goal 运行器与评估循环
-│   │   ├── telemetry.py       #   EncreTelemetry（turn / tool / retry）
-│   │   ├── native.py          #   Python 包装 encre._native
-│   │   ├── _native.pyi        #   Rust 扩展的类型存根
-│   │   ├── backend.py         #   create_backend() 工厂
-│   │   ├── dangerous_commands.txt  # Bash 安全模式
-│   │   ├── backends/          #   31 个 LLM 提供商适配器
-│   │   ├── adapters/          #   18 个平台适配器（聊天平台）
-│   │   ├── agents/            #   内置子 Agent 定义
-│   │   ├── channels/          #   传输层：websocket、terminal、HTTP、slash
-│   │   ├── tools/             #   36 个内置工具 + 工具注册表 + MCP
-│   │   ├── hooks/             #   EncreHookSystem
-│   │   ├── memdir/            #   持久化记忆系统（frontmatter）
-│   │   ├── skills/            #   技能注册表 + 11 个内置技能
-│   │   ├── swarm/             #   多智能体系统（teammate/mailbox/...）
-│   │   ├── task/              #   任务管理器与执行器
-│   │   ├── server/            #   WebSocket 服务器 + 管理 HTTP API
-│   │   ├── gateway/           #   Gateway 客户端/服务器协议
-│   │   ├── compact/           #   上下文压缩（9 种策略）
-│   │   ├── lsp/               #   LSP 客户端 + 多语言服务器管理
-│   │   ├── codebase/          #   代码索引器（BM25 + 依赖图）
-│   │   ├── computer/          #   桌面与浏览器自动化
-│   │   ├── evolution/         #   元认知、反射、策略优化
-│   │   ├── feedback/          #   错误修正学习器
-│   │   ├── notebook/          #   交互式 Python 内核会话
-│   │   ├── plugins/           #   插件注册表与清单类型
-│   │   ├── profile/           #   用户画像推断
-│   │   ├── soul/              #   灵魂系统文件（人格/记忆）
-│   │   ├── spec/              #   规范文档引擎
-│   │   ├── prompts/           #   提示词块、技能、安全、目标
-│   │   ├── sandbox/           #   Docker 容器沙箱
-│   │   ├── search/            #   基于 MCP 的 Web 搜索
-│   │   ├── learning/          #   技能生成与整合
-│   │   ├── rules/             #   规则加载器
-│   │   ├── thinking/          #   思考配置解析
-│   │   ├── iclaw/             #   iClaw CLI（自动化运行器）
-│   │   ├── git/               #   Git 仓库与 diff 工具
-│   │   └── utils/             #   ID 生成、Token 计数、类型
-│   └── tests/                 # Pytest 测试套件（由 pyproject.toml 配置）
-│       ├── conftest.py
-│       ├── test_agent.py
-│       ├── test_backends.py
-│       ├── test_backend_*.py
-│       ├── test_safety.py
-│       ├── test_session.py
-│       ├── test_loop.py
-│       ├── test_native.py
-│       └── ...                #   40+ 个测试模块
-│
-├── native/                    # Rust 工作区
-│   ├── Cargo.toml             #   工作区根
-│   └── crates/
-│       ├── encre-core/        #   原生核心（包名：`encre`）
-│       │   ├── Cargo.toml
-│       │   └── src/
-│       │       ├── lib.rs
-│       │       ├── fs.rs          # 原生读/写
-│       │       ├── search.rs      # 正则搜索、glob
-│       │       ├── simd_search.rs # SIMD 加速模式匹配
-│       │       ├── diff.rs        # Unified diff + apply
-│       │       ├── shell.rs       # 沙箱化 Shell 执行
-│       │       ├── sandbox.rs     # 沙箱结果类型
-│       │       ├── landlock.rs    # Linux Landlock 强制
-│       │       ├── tokenizer.rs   # 启发式 Token 计数器
-│       │       ├── embedding.rs   # Cosine / Jaccard 相似度
-│       │       ├── indexer.rs     # BM25 代码搜索索引
-│       │       └── lsp_proto.rs   # LSP JSON-RPC 解析/构造
-│       └── encre-py/          # PyO3 绑定 → `encre._native`
-│           ├── Cargo.toml
-│           └── src/lib.rs
-│
-├── desktop/                   # Electron 桌面应用
-│   ├── main.ts                #   Electron 主进程
-│   ├── preload.ts             #   上下文桥接（IPC）
-│   ├── build.js               #   esbuild 配置
-│   ├── package.json           #   Node.js 依赖与脚本
-│   ├── electron-builder.yml   #   NSIS / pkg / deb 打包
-│   ├── tsconfig.json          #   TypeScript 配置（主进程）
-│   ├── fetch_icons.js         #   图标获取脚本
-│   └── renderer/              #   前端（React 19）
-│       ├── index.html
-│       ├── styles.css
-│       ├── design-system.css
-│       ├── xterm.css
-│       ├── bundle.js          #   esbuild 产物
-│       ├── tsconfig.json
-│       ├── assets/            #   Logo 与图标
-│       ├── src/               #   TypeScript 源码
-│       │   ├── app.ts
-│       │   ├── chat.ts
-│       │   ├── session.ts
-│       │   ├── session_inner.ts
-│       │   ├── settings.ts
-│       │   ├── state.ts
-│       │   ├── stream.ts
-│       │   ├── ws.ts
-│       │   ├── search.ts
-│       │   ├── i18n.ts
-│       │   ├── iclaw.ts
-│       │   ├── agents.ts
-│       │   ├── automation.ts
-│       │   ├── tools.ts
-│       │   ├── files.ts
-│       │   ├── workspace.ts
-│       │   ├── viewmanager.ts
-│       │   ├── permissions.ts
-│       │   ├── dialog.ts
-│       │   ├── notifications.ts
-│       │   ├── slash_commands.ts
-│       │   ├── icons.ts
-│       │   ├── crypto.ts       #   渲染端 AES 辅助
-│       │   ├── easter-egg.ts
-│       │   ├── transition-helper.ts
-│       │   ├── types.ts
-│       │   ├── global.d.ts
-│       │   └── locales/        #   en.ts / zh.ts
-│       └── vs/                 #   Monaco Editor（已打包）
-│
-├── docs/                      # 项目文档
-│   ├── CHANGELOG.md
-│   ├── CODE_OF_CONDUCT.md
-│   ├── CONTENT_GUIDELINES.md
-│   ├── CONTRIBUTING.md
-│   ├── DATA_PROCESSING_RULES.md
-│   ├── MINORS_PRIVACY.md
-│   ├── PLAN.md
-│   ├── PRIVACY.md
-│   ├── PRIVACY_CN.md
-│   ├── SECURITY.md
-│   ├── TERMS.md
-│   ├── TERMS_CN.md
-│   ├── THANKS.md
-│   ├── THANKS_CN.md
-│   └── USER_AGREEMENT.md
-│
-└── .github/
-    └── workflows/
-        └── build-binary.yml   # CI：构建发布二进制
-```
+<h2 align="center">⭐ 核心特性</h2>
 
-<h2 align="center">🚀 关键特性</h2>
+#### 🧠 31 个 AI 后端，自由切换
 
-#### 🧠 多提供商 LLM 后端（31 个）
-- **第一方**：OpenAI、Anthropic Claude、DeepSeek、Google Gemini、Groq、Ollama、Local（HuggingFace transformers）
-- **中文与区域**：阿里（Qwen / DashScope）、腾讯、小米 MiMo、Kimi（Moonshot）、GLM（智谱 / Z.ai）、Minimax
-- **聚合/路由**：OpenRouter、AI Gateway、OpenCode、Kilocode、Arcee、Novita
-- **云与企业**：AWS Bedrock、GitHub Copilot
-- **自托管与兼容**：LM Studio、OpenAI Compatible、OpenAI SSE
-- **元后端**：Failover（多后端健康切换）、Router（按成本/任务路由）、Retry（透明重试）
-- **目录**：MCP Catalog、静态模型目录（`encre.backends.catalog`）
-- 统一流式接口、自动思考块解析、OpenAI 兼容的 Chat Completions
+支持 **31 个主流 AI 模型**，包括 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里 Qwen、腾讯混元、小米 MiMo、月之暗面 Kimi、智谱 GLM、MiniMax 等。
 
-#### 🤖 内置子 Agent（9 个）
+- **全球领先**：OpenAI、Anthropic、Google、Groq、AWS Bedrock、GitHub Copilot
+- **中文与区域**：阿里 Qwen、腾讯、小米 MiMo、月之暗面、智谱、MiniMax
+- **自托管**：Ollama、LM Studio、HuggingFace Transformers
+- **聚合服务**：OpenRouter、AI Gateway、Kilocode、OpenCode
+- **高级特性**：自动故障转移、按成本路由、透明重试
+
+#### 🤖 9 个内置 Agent 角色
+
+Encre 内置了专用角色，每个角色都配有专属的提示词与能力：
+
 - **通用模式**：`coder`、`researcher`、`critic`
 - **工作区模式**：`architect`、`planner`
-- **计划/规范模式**：`spec-writer`
-- **iClaw（自动）模式**：`monitor`、`executor`、`scheduler`
-- 每个子 Agent 由 `encre/agents/builtin.py` 中的 `SubAgentConfig` 定义，提示词模板位于 `encre/prompts/skills/`。
+- **计划 / 规范模式**：`spec-writer`
+- **自动化模式**：`monitor`、`executor`、`scheduler`
 
-#### 🛠️ 内置工具（36 个）
-- **文件**：`file_read`、`file_write`、`file_edit`、`apply_patch`、`find_tool`、`glob`、`grep`、`pdf`、`spreadsheet`
-- **Shell 与执行**：`bash`、`bash_io`（后台、输出、停止、列表）、`docker`、`deploy`、`agent`（派生子 Agent）
-- **Web**：`web_fetch`、`web_search`（基于 MCP）、`browser`（Playwright 自动化）
-- **开发**：`lsp`（LSP 诊断/Hover）、`notebook`（IPython 内核）、`database`
-- **任务系统**：`task_create`、`task_get`、`task_list`、`task_update`、`task_output`、`task_stop`
-- **调度与记忆**：`cron_create`、`cron_delete`、`cron_list`、`todo`、`memory`
-- **桌面与媒体**：`desktop`（pyautogui / mss / uiautomation）、`image`（Pillow / OCR）
-- **集成**：`git`、`rest_client`
-- **外部协议**：MCP 客户端（`encre.tools.mcp` + `MCPManager`），支持 Model Context Protocol 服务器
+#### 🛠️ 36 个开箱即用的工具
 
-#### 🌐 平台适配器（18 个）
-聊天平台适配器将外部消息（Telegram、Discord、Slack …）归一化为统一通道。具体包括：
-- Discord、Slack、Telegram、**钉钉**、Email（IMAP+SMTP）、**飞书 / Lark**
-- **企业微信**（WeCom）、**微信**（Weixin）、WhatsApp、Signal、SMS
-- **Matrix**、**MS Graph**（Microsoft 365）、**Home Assistant**、**QQ Bot**、**BlueBubbles**（iMessage）
-- **腾讯元宝**（Yuanbao）、**Webhook**（通用入站 Webhook）
-- 所有适配器均实现 `BaseAdapter`，并通过 `encre.adapters.manager` 注册。
+| 类别 | 工具 |
+|:------|:------|
+| **文件** | 读取、写入、编辑、补丁、搜索、PDF / Excel 处理 |
+| **终端** | Shell 命令、后台任务、Docker、部署 |
+| **网络** | 网页抓取、网页搜索（基于 MCP）、浏览器自动化（Playwright） |
+| **开发辅助** | LSP 诊断、IPython Notebook、数据库查询 |
+| **任务** | 创建 / 获取 / 列出 / 更新 / 停止任务，含 bash / agent / workflow 执行器 |
+| **调度与记忆** | 定时任务、待办清单、记忆管理 |
+| **桌面** | 桌面控制（pyautogui）、图像识别（OCR）、浏览器自动化 |
+| **集成** | Git、REST API、MCP 外部协议 |
 
-#### 🔒 安全与权限引擎
-- **6 种权限模式**：`bypass`（无检查）、`dont_ask`（自动允许）、`accept_edits`（自动允许编辑）、`plan`（先规划）、`auto`（启发式）、`default`（请求确认）
-- **Bash 命令分析器**（`encre.safety.analyze_bash_command`、`dangerous_commands.txt`）含危险模式检测
-- **SSRF 防护**（`encre.ssrf.EncreSSRFGuard`）结合 DNS 解析与 CIDR 黑名单
-- **Docker 容器沙箱**（`encre.sandbox.container.EncreContainerSandbox`），带 seccomp 风格的隔离
-- **Rust 级沙箱**（`encre-core/sandbox.rs`）结合 Linux **Landlock** 强制（`landlock.rs`）
-- **自动安全分类器**（`encre.autosafety.EncreAutoSafetyClassifier`）— 基于 AI 的权限决策
-- **限流器**（`encre.ratelimit.EncreRateLimiter`）用于后端与工具调用
+#### 💬 18 个聊天平台集成
 
-#### 💾 持久化记忆（`encre.memdir`）
-- 以 frontmatter 解析的 Markdown 文件存储于 `memdir/` 目录
-- `MEMORY.md` 入口索引，带 **老化/新鲜度追踪**（`memdir/age.py`、`memdir/manifest.py`）
-- 基于 NumPy 相似度的 **语义搜索**（`memdir/semantic.py`）
-- Working memory 与整合动作
-- 目标/记忆提示词模板位于 `prompts/memdir/`
+将 Encre Agent 接入你常用的消息平台：
 
-#### 🎯 技能系统（11 个内置）
-- `debug`、`loop`、`batch`、`verify`、`stuck`、`code_review`、`refactor`、`gen_test`、`web_research`、`data_viz`、`write_docs`
-- **基于优先级的覆盖**：managed > user > project > bundled
-- **动态系统提示词生成**（`encre.prompts.system.EncrePromptBuilder`）
-- 技能生成器与整合器（`encre.learning`）支持运行时创建技能
+**国际**：Discord、Slack、Telegram、WhatsApp、Signal、Matrix、Microsoft 365、Home Assistant
 
-#### 🤝 多智能体编排
-- **Swarm**：`EncreTeammate`、`EncreSwarmManager`（并发受限）、`EncreMailbox`（异步邮箱）
-- **Orchestrator**：`EncreOrchestrator`、`EncreBlackboard`（共享状态）、`EncreConsensus`（提案/投票）、`AgentRole` / `RoleRegistry`
-- **任务规划器**：`EncreTaskPlanner` 生成 `TaskTree` / `TaskNode`
-- **任务系统**：`encre.task` 提供类型化 CRUD 与 bash / agent / workflow 执行器
+**中国**：飞书（Lark）、钉钉、企业微信、微信、腾讯元宝、QQ Bot、iMessage
 
-#### 🧱 Rust 原生核心（`native/crates/encre-core`）
-- **快速文件 I/O**（`fs.rs`）— 支持 offset/limit 的原生读/写
-- **正则搜索与 glob**（`search.rs`）
-- **SIMD 加速模式匹配**（`simd_search.rs`）— `simd_contains`、`simd_find_all`、`simd_memmem`
-- **Unified diff**（`diff.rs`）— `compute_diff` / `apply_diff`
-- **沙箱化 Shell 执行**（`shell.rs` + `sandbox.rs`），结合 Landlock
-- **Linux Landlock**（`landlock.rs`）— 只读文件系统、禁止网络、完整沙箱
-- **启发式 Token 计数器**（`tokenizer.rs`）— 英文 / CJK / 数字 / 代码 启发式
-- **语义相似度**（`embedding.rs`）— Cosine 与 Jaccard 文本相似度
-- **BM25 索引器**（`indexer.rs`）— `Bm25Index` 暴露给 Python
-- **LSP 协议**（`lsp_proto.rs`）— JSON-RPC 2.0 解析器、诊断、Content-Length 辅助
-- 可选 feature：`embedding`（Candle + tokenizers）、`simd`（`wide`）、`landlock`（仅 Linux）
+**通用**：邮件（IMAP + SMTP）、Webhook
 
-#### 🖥️ Encre Desktop（Electron + React 19）
-- 全功能 AI 聊天 UI，Markdown 渲染（`markdown-it`）、代码高亮（`highlight.js`）、文件附件
-- **多会话**聊天，支持分支与搜索
-- **设置**：模型配置、网关、Agent、MCP 服务器、技能、规则、记忆、代码索引、Agent
-- **iClaw 模式** — 自动化运行器，支持批量操作
-- **内嵌终端**（`xterm.js` + `node-pty`），带工作目录浏览
-- **代码编辑器** — Monaco Editor，内置 16+ 种语言的 worker（TS、JS、Python、Rust、Go、Java、C/C++/C#、PHP、Ruby、Swift、Kotlin、SQL 等）
-- **i18n** — `en.ts` / `zh.ts` 语言包，运行时切换
-- **系统托盘** + 通知 + 语音输入
-- **加密浏览器 Cookie 存储** — AES-256-GCM（密钥文件位于用户数据目录）
-- **Git 集成** — 状态 / diff，5 秒缓存 + 进行中 diff 跟踪
-- **多目标打包**：NSIS（Windows x64）、`pkg`（macOS x64 + arm64）、`deb` / `rpm`（Linux x64）
+每个平台都有专属的适配器，在消息送达 Agent 前进行归一化处理。
 
-#### 🛠️ 开发者工具链
-- **上下文压缩**（`encre.compact`）— 9 种策略：Always、Auto、TokenBudget、BudgetReduction、Semantic、Snip、MicroCompact、ContextCollapse、MultiStagePipeline
-- **语义压缩** — `SemanticToolOutputCompactor`、`ContextPartitioner` 与分层 Context
-- **LSP 客户端** — 16+ 种语言服务器在 `PATH` 上自动发现（Python、TypeScript、JavaScript、Rust、Go、Java、C#、C++、PHP、Ruby、Swift、Kotlin、CSS、HTML、JSON、YAML …）
-- **代码库索引器** — BM25 搜索 + 依赖图（`encre.codebase`）
-- **进化** — 元认知、反射循环、策略优化、错误/学习器
-- **反馈学习器** — 基于 Jaccard 相似度的错误修正
-- **交互式 Notebook** — IPython 内核会话
-- **插件系统** — `EncrePlugin` / `PluginManifest` / `PluginRegistry`
-- **画像推断** + **灵魂系统** 用于用户人格
-- **规范引擎** — `SpecDocument` / `SpecSection` / `EncreSpecEngine`
-- **目标系统** + **调度器** + **遥测**
-- **WebSocket 服务器** + 管理 HTTP API + 会话管理器
-- **CLI 运行器** — `python -m encre.iclaw`（iClaw 模式）
-- **Gateway 协议** — `GatewayServer` / `GatewayClient`
+#### 🛡️ 6 级安全控制
 
-<h2 align="center">🔧 开发环境搭建</h2>
+| 模式 | 说明 |
+|:------|:------|
+| `bypass` | 无检查（完全开放） |
+| `dont_ask` | 自动允许（无需确认） |
+| `accept_edits` | 自动允许文件编辑 |
+| `plan` | 先规划再执行 |
+| `auto` | AI 智能判断 |
+| `default` | **推荐** —— 每次操作前询问 |
 
-### 前置条件
-- **Python**：3.11+（`encre` 包要求 `>=3.11`）
-- **Node.js**：18+（Electron 42，桌面应用推荐 20+）
-- **Rust**：1.65+（stable，可选 — 仅在需要重新编译原生扩展时使用）
-- **平台**：Linux（x64、arm64）、macOS（x64、arm64）、Windows（x64）
+额外保护：
 
-### 克隆与安装
+- **SSRF 防护**：DNS 解析 + CIDR 黑名单
+- **沙箱隔离**：Docker 容器沙箱 + Linux Landlock 内核级限制
+- **AI 安全分类器**：Agent 自主评估操作风险等级
+- **限流**：防止 API 调用失控
+
+#### 💾 持久化 Agent 记忆
+
+Encre Agent 拥有独立的记忆系统 —— 随着使用愈加了解你：
+
+- 记忆以 Markdown 文件存储，附带元数据（创建时间、更新时间、重要性）
+- **智能老化**：过时的记忆自动降低权重，重要信息长期保留
+- **语义搜索**：通过语义理解快速定位相关记忆
+- **工作记忆 + 长期记忆**：短期任务记忆与长期项目记忆分层管理
+
+#### 🎯 11 个专业技能
+
+Agent 提供 11 个可调用的技能：
+
+`debug`、`loop`、`batch`、`verify`、`stuck-recovery`、`code-review`、`refactor`、`gen-test`、`web-research`、`data-viz`、`write-docs`
+
+**优先级覆盖**：管理员 > 用户定义 > 项目级 > 内置 —— 满足你的个性化需求。
+
+#### 🤝 多智能体协作
+
+- **Swarm 系统**：多个 Agent 并发执行，互不干扰
+- **共享黑板**：所有 Agent 共享状态，完全透明
+- **共识协议**：多个 Agent 对提案投票，选出最佳方案
+- **任务规划器**：自动将复杂任务拆解为子任务树
+- **9 个内置角色**：每个角色都有专属的提示词与能力
+
+#### 🧱 Rust 原生核心
+
+性能关键模块由 Rust 实现，带来极致速度与内存安全：
+
+- 极速文件 I/O，支持 offset / limit
+- 正则搜索与 Glob 快速定位内容
+- SIMD 加速文本匹配（硬件级）
+- Unified Diff 精确计算代码差异
+- 在安全环境中沙箱化执行 Shell
+- 通过 Linux Landlock 进行内核级文件系统限制
+- 智能 Token 计数（英文 / 中文 / 数字 / 代码）
+- 文本语义相似度比较
+- BM25 代码搜索引擎
+- LSP 协议解析（JSON-RPC 2.0）
+
+#### 🖥️ Encre 桌面应用
+
+基于 Electron + React 19 构建的全功能 AI 聊天桌面应用：
+
+- **聊天界面**：Markdown 渲染、代码高亮、文件附件
+- **多会话**：并发聊天，支持分支与模糊搜索
+- **设置面板**：模型配置、网关、Agent、MCP 服务器、技能、规则、记忆、代码索引
+- **iClaw 模式**：自动化运行器，支持批量操作
+- **内嵌终端**：xterm.js + node-pty，带工作目录浏览
+- **代码编辑器**：Monaco Editor，支持 16+ 种语言（TypeScript、JavaScript、Python、Rust、Go、Java、C/C++、PHP、Ruby、Swift、Kotlin、SQL 等）
+- **双语支持**：英文与中文本地化，运行时切换
+- **Git 集成**：状态与 diff，带缓存
+- **系统托盘**：通知 + 语音输入支持
+- **加密存储**：AES-256-GCM 加密的浏览器 Cookie
+- **跨平台**：Windows（NSIS）、macOS（.pkg）、Linux（.deb / .rpm）
+
+#### ⚙️ 开发者工具链
+
+- **上下文压缩**：9 种策略，智能管理对话上下文
+- **LSP 客户端**：16+ 种语言服务器自动发现，提供实时代码诊断
+- **代码库索引器**：BM25 搜索 + 依赖图，全局理解项目
+- **进化系统**：元认知、反射循环、策略优化
+- **反馈学习器**：基于 Jaccard 相似度的错误修正
+- **交互式 Notebook**：IPython 内核，支持实时执行代码
+- **插件系统**：可扩展架构与插件注册表
+- **用户画像**：人格推断与灵魂系统
+- **规范引擎**：结构化规范文档管理
+- **WebSocket 服务器**：实时通信 + 管理 HTTP API
+
+<h2 align="center">🚀 快速开始</h2>
+
+### 3 步开始使用
+
+**步骤 1：克隆仓库**
 
 ```bash
-# 1. 克隆仓库
 git clone https://github.com/mf2023/Encre.git
 cd encre
+```
 
-# 2. （推荐）一键构建 — Rust 扩展 + Python wheel + Desktop 打包
+**步骤 2：一键构建**
+
+```bash
 python build.py
-
-# 3. --- Python Agent 框架 ---
-
-# 以可编辑模式安装核心依赖（使用 pyproject.toml）
-pip install -e .
-
-# 安装开发依赖（pytest、ruff、mypy、pre-commit）
-pip install -e ".[dev]"
-
-# 按需安装可选后端/适配器
-pip install -e ".[anthropic]"       # Anthropic Claude 后端
-pip install -e ".[ollama]"          # Ollama 本地后端
-pip install -e ".[discord]"         # Discord 适配器
-pip install -e ".[slack]"           # Slack 适配器
-pip install -e ".[telegram]"        # Telegram 适配器
-pip install -e ".[dingtalk]"        # 钉钉适配器
-pip install -e ".[email]"           # 邮件适配器（IMAP + SMTP）
-pip install -e ".[local]"           # 本地模型后端（PyTorch + transformers）
-pip install -e ".[aws]"             # AWS Bedrock 后端（boto3）
-pip install -e ".[aiohttp]"         # aiohttp HTTP 工具
-pip install -e ".[native]"          # 预编译的原生扩展（encre-native）
-
-# 一键安装所有 extras（anthropic, ollama, native, aiohttp, discord, slack,
-# telegram, dingtalk, email, local, aws）
-pip install -e ".[all]"
-
-# 4. --- 桌面应用 ---
-
-cd desktop
-npm install
-cd ..
-
-# Playwright 浏览器（用于 `browser` 工具）
-playwright install
 ```
 
-### 构建命令
+一条命令即可构建 Rust 扩展、安装 Python 包并打包桌面应用。
+
+**步骤 3：启动**
 
 ```bash
-# 一键：构建 Rust 扩展、把 _native 复制到 backend/encre/、
-#       安装 Python 包、并打包桌面渲染器
-python build.py
+# 桌面应用
+cd desktop && npm start
 
-# 或手动构建各组件：
-
-# Python：构建 wheel
-pip install build
-python -m build
-
-# Rust：构建原生扩展（release）
-cd native
-cargo build --release -p encre-py
-# 编译产物 _native.pyd / _native.so 会被复制到 backend/encre/
-# （build.py 脚本会自动完成此步骤）
-
-# 桌面：打包 TypeScript 并启动 Electron
-cd desktop
-npm run build         # esbuild → dist/main.js, dist/preload.js, renderer/bundle.js
-npm start             # build + 启动 Electron
-npm run dist          # build + electron-builder（NSIS / pkg / deb / rpm）
-cd ..
-```
-
-### 运行测试与代码质量
-
-```bash
-# Python 测试（pytest 在 pyproject.toml 中配置：testpaths = ["backend/tests"]）
-pytest -v
-pytest backend/tests/test_agent.py -v
-pytest backend/tests/test_backends.py -v
-
-# Lint 与类型检查
-ruff check .
-mypy backend/encre
-
-# 桌面类型检查（主进程 + 渲染端）
-cd desktop
-npm run typecheck
-```
-
-<h2 align="center">⚡ 快速开始</h2>
-
-### 基础 Agent（Python API）
-
-```python
-import asyncio
-from encre import EncreAgent
-
-async def main():
-    agent = EncreAgent(
-        backend="openai",
-        model="gpt-4o",
-        api_key="...",
-    )
-
-    async for event in agent.run("写一个 Python 脚本，递归列出所有 .py 文件"):
-        if event.type == "text":
-            print(event.content, end="")
-        elif event.type == "tool_result":
-            print(f"\n[工具: {event.tool_name}] → {event.result[:100]}...")
-        elif event.type == "finish":
-            print(f"\n\n完成。原因: {event.reason}")
-
-asyncio.run(main())
-```
-
-### 带工具权限/安全
-
-```python
-from encre import EncreAgent
-
-agent = EncreAgent(
-    backend="anthropic",
-    model="claude-sonnet-4-20250514",
-    api_key="...",
-    tool_permission_mode="auto",   # 可选: bypass / dont_ask / accept_edits / plan / auto / default
-)
-```
-
-### 多后端切换
-
-```python
-from encre import EncreAgent
-
-for provider, model, key in [
-    ("openai", "gpt-4o", OPENAI_KEY),
-    ("anthropic", "claude-sonnet-4-20250514", ANTHROPIC_KEY),
-    ("google", "gemini-2.5-pro", GOOGLE_KEY),
-]:
-    agent = EncreAgent(backend=provider, model=model, api_key=key)
-    async for event in agent.run("用一句话解释 Rust 的所有权"):
-        if event.type == "text":
-            print(event.content, end="")
-    print("\n" + "=" * 40)
-```
-
-### CLI：iClaw 模式
-
-```bash
-# iClaw 是一个长生命周期自动化运行器（encre/iclaw/__main__.py）
+# 或使用 CLI（iClaw 自动化模式）
 python -m encre.iclaw --help
 ```
 
-### MCP 服务器
+### 基础用法
 
-```python
-from encre.tools.mcp_manager import MCPManager, bootstrap_mcp_servers
+通过桌面应用开始与 Agent 对话，或将其接入你常用的聊天平台。配置好 AI 模型提供商和权限模式，即可立即使用。
 
-# 从用户默认配置路径引导 MCP 服务器
-manager = MCPManager()
-await bootstrap_mcp_servers(manager)
-```
+### 配置
 
-<h2 align="center">🖥️ 桌面应用</h2>
-
-Encre Desktop 是一个基于 Electron + React 19 的 AI 聊天应用：
-
-- **聊天**：Markdown 渲染（`markdown-it`）、代码高亮（`highlight.js`）、文件附件
-- **会话**：多并发会话、分支、模糊搜索（`fuse.js`）
-- **设置**：模型配置、网关、Agent、MCP 服务器、技能、规则、记忆、代码索引、Agent
-- **iClaw 模式**：自动化运行器，支持批量操作
-- **终端**：内嵌终端（`xterm.js` + `node-pty`）
-- **编辑器**：Monaco Editor，16+ 种语言 worker（TypeScript、JavaScript、Python、Rust、Go、Java、C/C++/C#、PHP、Ruby、Swift、Kotlin、SQL …）
-- **i18n**：英文（`en.ts`）与中文（`zh.ts`）本地化，运行时切换
-- **Git 集成**：状态 / diff，5 秒缓存 + 进行中 diff 跟踪
-- **系统托盘 + 通知**
-- **加密浏览器 Cookie 存储**（AES-256-GCM，密钥位于用户数据目录）
-
-**启动：**
-
-```bash
-cd desktop
-npm start
-```
-
-**打包分发：**
-
-```bash
-cd desktop
-npm run dist
-# → Windows: NSIS 安装包（x64）
-# → macOS:   .pkg（x64 + arm64）
-# → Linux:   .deb 与 .rpm（x64）
-```
-
-<h2 align="center">🔧 配置</h2>
-
-### 配置文件示例
+编辑 `config.yaml` 进行自定义：
 
 ```yaml
-# config.yaml
 backend: "openai"
 model: "gpt-4o"
 api_key: "${OPENAI_API_KEY}"
 
 safety:
-  tool_permission_mode: "auto"   # bypass / dont_ask / accept_edits / plan / auto / default
+  tool_permission_mode: "default"   # 推荐：每次操作前询问
 
 memory:
   enabled: true
-  max_tokens: 4096
-
-compact:
-  strategy: "auto"               # encre.compact 9 种策略之一
-  threshold_tokens: 32000
 
 tools:
   enabled:
@@ -555,53 +252,48 @@ tools:
     - file_write
     - bash
     - web_fetch
-    - web_search
-  disabled:
-    - browser
-    - notebook
 ```
 
-### 配置来源（优先级从低到高）
+配置来源（优先级从低到高）：
 
-1. 内置默认值（`encre.config.EncreConfig`）
+1. 内置默认值
 2. 配置文件（YAML、TOML）
 3. 环境变量（前缀 `ENCRE_`）
-4. 创建 Agent 时的程序化配置（传入 `EncreAgent(...)`）
+4. 运行时参数
 
 <h2 align="center">❓ 常见问题</h2>
 
-**问：Encre 支持多少个 LLM 后端？**
-答：**31** 个后端：OpenAI、Anthropic、DeepSeek、Google Gemini、Groq、Ollama、Local（HuggingFace）、阿里（Qwen / DashScope）、腾讯、小米、Kimi、GLM、Minimax、Arcee、Novita、OpenRouter、AWS Bedrock、GitHub Copilot、LM Studio、OpenAI Compatible、OpenAI SSE、AI Gateway、Kilocode、OpenCode，以及元后端 Failover、Router、Retry，外加 MCP Catalog 与静态模型目录 `encre.backends.catalog`。
+**问：Encre 支持哪些 AI 模型？**
 
-**问：Encre 内置多少个工具？**
-答：**36** 个内置工具，位于 `encre/tools/builtin/`，并配以可插拔的工具注册表与 MCP 客户端，可接入外部工具。
+答：**31 个提供商**，包括 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里 Qwen、腾讯、小米、月之暗面 Kimi、智谱 GLM、MiniMax、Ollama、LM Studio、AWS Bedrock 等。完整列表见 backends 目录。
 
-**问：如何添加自定义工具？**
-答：继承 `EncreTool`（`encre/tools/base.py`），实现 `execute(**kwargs) -> str` 与格式化方法，然后使用 `ToolRegistry` 注册（或通过 `encre/tools/discovery.py` 的发现机制）。
+**问：Encre Agent 能做什么？**
 
-**问：安全/权限模式有哪些？**
-答：**6** 种模式：`bypass`（无检查）、`dont_ask`（自动允许）、`accept_edits`（自动允许编辑）、`plan`（先规划）、`auto`（启发式）、`default`（请求确认），定义于 `encre.utils.types.PermissionMode`。
+答：熟练助手能做的一切 —— 读写编辑代码、运行 shell 命令、浏览网页、自动化桌面、管理文件、调度任务、与其他 Agent 协作，等等。它内置 **36 个工具**，几乎可以处理任何任务。
 
-**问：这是一个可以通过 `pip install` 安装的 PyPI 库吗？**
-答：不是。Encre 以单一仓库形式发布，包含 Python、Rust 和 Electron/TypeScript 代码；三个组件共用同一条发版线。如需使用，请克隆仓库并按照开发环境搭建指南操作，然后通过 `pip install -e .` 从源码安装 Python 包。
+**问：能否在喜欢的聊天平台上使用 Encre？**
 
-**问：记忆系统如何工作？**
-答：记忆以 frontmatter 解析的 `.md` 文件存储在 `memdir/` 目录中，由 `MEMORY.md` 索引（`encre.memdir`）。系统追踪新鲜度/老化程度，自动修剪过期条目，并提供基于 NumPy 相似度的语义搜索。
+答：可以！Encre 支持 **18 个聊天平台**，包括 Telegram、Discord、Slack、飞书、钉钉、企业微信、微信、WhatsApp、邮件等。每个平台都有专属的适配器。
 
-**问：Encre 是否支持多 Agent 工作流？**
-答：支持。**Swarm** 系统（`encre.swarm`）提供队友、并发受限的 Swarm 管理器、异步邮箱、Orchestrator、Blackboard 与共识协议。**Task** 系统（`encre.task`）提供类型化 CRUD 与 bash / agent / workflow 执行器。`encre/agents/builtin.py` 中还定义了 **9 个内置子 Agent**（coder、researcher、critic、architect、planner、spec-writer、monitor、executor、scheduler）。
+**问：Encre 使用起来安全吗？**
 
-**问：Rust 在 Encre 中扮演什么角色？**
-答：性能关键的操作 — 文件 I/O、正则搜索、glob、unified diff、SIMD 模式匹配、BM25 索引、沙箱 / Landlock、Token 计数、语义相似度、LSP JSON-RPC 解析 — 都由 Rust 实现（`native/crates/encre-core`），并通过 PyO3 暴露给 Python（`encre._native`）。通过 `python build.py` 或 `cargo build --release -p encre-py` 即可构建。
+答：安全是头等大事。Encre 提供 **6 种权限模式**，从完全开放到每次操作都需要确认。额外保护还包括 SSRF 防护、Docker 沙箱、Landlock 内核限制以及 AI 风险分类。
 
-**问：如何构建桌面应用进行分发？**
-答：在 `desktop/` 目录中运行 `npm run dist`。electron-builder 会生成 NSIS 安装包（Windows x64）、`.pkg`（macOS x64 + arm64）、`.deb` 与 `.rpm`（Linux x64）。产物输出至 `desktop/release/`。
+**问：Encre 会在会话之间记忆信息吗？**
 
-**问：聊天平台适配器位于哪里？**
-答：位于 `encre/adapters/`，共 18 个适配器，均实现 `BaseAdapter`，包括 Discord、Slack、Telegram、钉钉、飞书、企业微信、微信、WhatsApp、Signal、SMS、Email、Matrix、MS Graph、Home Assistant、QQ Bot、BlueBubbles、腾讯元宝以及通用 Webhook 适配器。
+答：是的。Encre 拥有 **持久化记忆系统**，可存储重要信息、学习你的偏好，并在对话间保持上下文。随着时间推移，它会变得更聪明、更个性化。
 
-**问：如何将 Encre 作为服务器运行？**
-答：`encre.server` 暴露了 WebSocket 服务器与管理 HTTP API。可使用 `EncreServer` / `run_server`（`encre.server.app`，由 `encre/__init__.py` 惰性加载）以及 `encre.server.session_manager` 中的 `SessionManager`。
+**问：多个 Agent 能否协同工作？**
+
+答：当然。Encre 通过 Swarm 系统支持 **多智能体协作**。你可以派生出多个不同角色的 Agent（coder、researcher、critic 等），它们共享信息并协同完成复杂任务。
+
+**问：有桌面应用吗？**
+
+答：有！**Encre Desktop** 是一个全功能的 Electron + React 应用，包含聊天界面、代码编辑器（Monaco）、内嵌终端、文件浏览器、设置面板等。支持 Windows、macOS 和 Linux。
+
+**问：能使用自己的 AI 模型吗？**
+
+答：可以。你可以使用任何 OpenAI 兼容的 API，通过 Ollama / LM Studio 自托管模型，或接入自定义后端。Encre 设计为后端无关。
 
 <h2 align="center">🌏 社区与许可</h2>
 
@@ -614,7 +306,7 @@ tools:
 
 ## 📄 许可证与开源协议
 
-### 🏛️ 项目许可证
+### 项目许可证
 
 <p align="center">
   <a href="LICENSE">
@@ -622,15 +314,15 @@ tools:
   </a>
 </p>
 
-本项目采用 **Apache License 2.0**。详见 [LICENSE](LICENSE) 文件。
+本项目采用 **Apache License 2.0**。完整文本请参见 [LICENSE](LICENSE) 文件。
 
-### 📋 依赖许可协议
+### 依赖许可协议
 
-下表汇总了 **Python 框架**、**Rust 核心** 与 **Electron 桌面应用** 实际使用的依赖包。版本号与精确的许可文本不在此处固定，请以各上游项目为准。
+下表汇总了 **Python 框架**、**Rust 核心** 与 **Electron 桌面应用** 所使用的依赖包。版本号与精确的许可文本不在此处固定，请以各上游项目为准。
 
 <div align="center">
 
-| 📦 包名 | 📜 协议 | 📦 包名 | 📜 协议 |
+| 包名 | 协议 | 包名 | 协议 |
 |:-----------|:-----------|:-----------|:-----------|
 | httpx | BSD-3-Clause | pydantic | MIT |
 | beautifulsoup4 | MIT | markdownify | MIT |

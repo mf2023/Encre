@@ -109,12 +109,29 @@ class OpenAICompatibleBackend(OpenAISSEBackend):
     ) -> None:
         # Normalise the base URL: many providers use /v1, but users may omit it.
         base_url = (base_url or "").rstrip("/")
-        if base_url and not base_url.endswith("/v1"):
-            # Check if it already has a versioned path like /api/v1 or /inference/v1
-            if not re.search(r"/v\d+$", base_url):
-                base_url = base_url + "/v1"
+        if base_url and not base_url.endswith("/v1") and not re.search(r"/v\d+$", base_url):
+            base_url = base_url + "/v1"
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
         self._context_window = context_window
+
+    def _thinking_request_param(self) -> dict[str, Any] | None:
+        """Generic OpenAI-compatible endpoints should NOT send ``thinking``.
+
+        The base :meth:`OpenAISSEBackend._thinking_request_param` defaults to
+        the DeepSeek-style envelope (``{"thinking": {"type": "enabled"}}``),
+        which only a handful of providers accept.  Unknown third-party
+        routers (e.g. ``api.tokenrouter.com``) often reject ``"enabled"``
+        with HTTP 400 -- many of them only accept ``"adaptive"`` /
+        ``"disabled"`` (the Anthropic vocabulary) or no parameter at all.
+
+        Because :class:`OpenAICompatibleBackend` is the catch-all for "looks
+        like OpenAI but isn't a known provider", the safe default is to omit
+        the thinking envelope.  Providers that want it (DeepSeek, GLM, Kimi,
+        Alibaba, Tencent, OpenRouter, OpenAI native, Xiaomi) each have their
+        own backend subclass that overrides this method, so they are
+        unaffected.
+        """
+        return None
 
     # ── Context window ──────────────────────────────────────────────────
 

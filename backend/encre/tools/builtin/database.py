@@ -49,13 +49,7 @@ async def _database_execute(**kwargs: Any) -> str:
             await asyncio.wait_for(
                 loop.run_in_executor(None, _execute_sql), timeout=30
             )
-        except asyncio.TimeoutError:
-            conn.close()
-            return "Error: Database query timed out after 30 seconds"
-
-        try:
-            await asyncio.wait_for(_execute(), timeout=30)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             conn.close()
             return "Error: Database query timed out after 30 seconds"
 

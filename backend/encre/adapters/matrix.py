@@ -26,7 +26,7 @@ import logging
 import mimetypes
 import uuid
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 try:
@@ -211,7 +211,7 @@ class MatrixAdapter(BaseAdapter):
         content: str,
         *,
         reply_to: str | None = None,
-        metadata: dict[str, Any] | None = None,  # noqa: ARG002
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a text message to a Matrix room."""
         if not self._http_client or not self._access_token:
@@ -451,9 +451,9 @@ class MatrixAdapter(BaseAdapter):
                     reply_to_message_id = in_reply_to.get("event_id")
 
             timestamp = (
-                datetime.fromtimestamp(ts / 1000, tz=timezone.utc)  # noqa: UP017
+                datetime.fromtimestamp(ts / 1000, tz=UTC)
                 if ts
-                else datetime.now(timezone.utc)  # noqa: UP017
+                else datetime.now(UTC)
             )
 
             msg_event = MessageEvent(

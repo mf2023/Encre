@@ -285,9 +285,8 @@ class EncreEvolutionLearner:
         indices = self._tool_success_index.get(tool_name, [])
         for idx in indices:
             rec = self._successes[idx]
-            if _token_similarity(rec.intent_signature, sig) > 0.7:
-                if _token_similarity(rec.param_pattern, params) > 0.5:
-                    return idx
+            if _token_similarity(rec.intent_signature, sig) > 0.7 and _token_similarity(rec.param_pattern, params) > 0.5:
+                return idx
         return -1
 
     def _find_similar_error(self, tool_name: str, error_type: str, context: str) -> int:

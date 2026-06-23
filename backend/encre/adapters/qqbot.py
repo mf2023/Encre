@@ -157,7 +157,8 @@ class QQBotAdapter(BaseAdapter):
 
         # Start GatewayClient so process_with_stream can reach the server
         self._gateway_started = True
-        asyncio.ensure_future(self._client.connect())
+        _t = asyncio.ensure_future(self._client.connect())
+        self._background_tasks.add(_t)
         # Wait up to 15s for the gateway connection to establish
         for _i in range(30):
             if self._client.is_connected:
@@ -294,9 +295,9 @@ class QQBotAdapter(BaseAdapter):
                     resp.raise_for_status()
                     data = await resp.json()
             except TimeoutError:
-                raise RuntimeError("Timed out connecting to bots.qq.com (30s)")
+                raise RuntimeError("Timed out connecting to bots.qq.com (30s)") from None
             except aiohttp.ClientResponseError as exc:
-                raise RuntimeError(f"Token API returned HTTP {exc.status}: {exc.message}")
+                raise RuntimeError(f"Token API returned HTTP {exc.status}: {exc.message}") from exc
             except Exception as exc:
                 raise RuntimeError(f"Failed to get QQ Bot access token: {exc}") from exc
 
@@ -331,9 +332,9 @@ class QQBotAdapter(BaseAdapter):
                     )
                 data = await resp.json()
         except TimeoutError:
-            raise RuntimeError("Timed out fetching gateway URL from api.sgroup.qq.com (30s)")
+            raise RuntimeError("Timed out fetching gateway URL from api.sgroup.qq.com (30s)") from None
         except aiohttp.ClientResponseError as exc:
-            raise RuntimeError(f"Gateway URL API returned HTTP {exc.status}: {exc.message}")
+            raise RuntimeError(f"Gateway URL API returned HTTP {exc.status}: {exc.message}") from exc
         except Exception as exc:
             raise RuntimeError(f"Failed to get QQ Bot gateway URL: {exc}") from exc
 
@@ -360,11 +361,11 @@ class QQBotAdapter(BaseAdapter):
         # Honor proxy env vars -- critical for users behind corporate proxies
         ws_proxy = (
             os.getenv("WSS_PROXY")
-            or os.getenv("wss_proxy")
+            or os.getenv("WSS_PROXY")
             or os.getenv("HTTPS_PROXY")
             or os.getenv("https_proxy")
             or os.getenv("ALL_PROXY")
-            or os.getenv("all_proxy")
+            or os.getenv("ALL_PROXY")
         )
         logger.info("[qqbot] WebSocket proxy: %s", ws_proxy or "(none)")
 

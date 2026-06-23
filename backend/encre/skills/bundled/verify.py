@@ -30,6 +30,6 @@ from encre.prompts.loader import PromptLoader
 _loader = PromptLoader()
 
 
-async def _verify_prompt(args: str | None, ctx: dict[str, Any]) -> str:
+async def _verify_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
     scope = args or "all modified files in the current workspace"
     return _loader.load_with_context("verify", category="skills", scope=scope)

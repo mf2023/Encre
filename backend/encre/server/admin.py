@@ -33,13 +33,13 @@ from encre.server.session_manager import SessionManager
 _start_time = time.time()
 
 
-def _json_response(data: dict[str, Any], status: int = 200) -> tuple[int, str, list[tuple[str, str]]]:  # noqa: E501
+def _json_response(data: dict[str, Any], status: int = 200) -> tuple[int, str, list[tuple[str, str]]]:
     body = json.dumps(data, ensure_ascii=False, indent=2)
     headers = [("Content-Type", "application/json"), ("Access-Control-Allow-Origin", "*")]
     return status, body, headers
 
 
-def handle_admin(path: str, manager: SessionManager) -> tuple[int, str, list[tuple[str, str]]] | None:  # noqa: E501
+def handle_admin(path: str, manager: SessionManager) -> tuple[int, str, list[tuple[str, str]]] | None:
     if path == "/health" or path == "/":
         uptime = time.time() - _start_time
         return _json_response({

@@ -160,7 +160,7 @@ class WhatsAppAdapter(BaseAdapter):
         content: str,
         *,
         reply_to: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a text message to a WhatsApp chat.
 
@@ -250,7 +250,7 @@ class WhatsAppAdapter(BaseAdapter):
     async def handle_webhook(
         self,
         body: Any,
-        headers: dict[str, str],
+        _headers: dict[str, str],
         verify_token: str | None = None,
     ) -> dict[str, Any]:
         """Handle an incoming WhatsApp webhook callback.
@@ -288,7 +288,7 @@ class WhatsAppAdapter(BaseAdapter):
                 logger.info("[whatsapp] Webhook verified")
                 return {"challenge": int(challenge) if challenge.isdigit() else challenge}
 
-        if isinstance(body, (bytes, str)):
+        if isinstance(body, bytes | str):
             try:
                 payload = json.loads(body)
             except json.JSONDecodeError:

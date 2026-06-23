@@ -422,7 +422,7 @@ class _ManagedClientProxy:
                 parts.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(parts)
 
-    def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
+    def is_concurrency_safe(self, _input_data: dict[str, Any]) -> bool:
         return isinstance(self._transport, HttpTransport)
 
 

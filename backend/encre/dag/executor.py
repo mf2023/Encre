@@ -47,7 +47,7 @@ logger = logging.getLogger("encre.dag.executor")
 NodeRunner = Callable[[TaskNode, dict[str, Any]], str | None]
 
 
-class SkipNode(Exception):
+class SkipNodeError(Exception):
     """Raise inside a node runner to skip this node (no error logged)."""
 
 
@@ -155,7 +155,7 @@ class DagExecutor:
             while not self._queue.empty():
                 try:
                     nid = self._queue.get_nowait()
-                    if nid not in enqueued or nid in self._completed or nid in self._failed or nid in self._skipped:  # noqa: E501
+                    if nid not in enqueued or nid in self._completed or nid in self._failed or nid in self._skipped:
                         continue
                     ready_nodes.append(nid)
                 except asyncio.QueueEmpty:
@@ -209,7 +209,7 @@ class DagExecutor:
 
             # Enqueue newly ready nodes (all dependencies satisfied)
             for nid, node in tree.nodes.items():
-                if nid in enqueued or nid in self._completed or nid in self._failed or nid in self._skipped:  # noqa: E501
+                if nid in enqueued or nid in self._completed or nid in self._failed or nid in self._skipped:
                     continue
                 if self._deps_met(node):
                     # Check if any dependency failed -- if so, skip this node
@@ -259,7 +259,7 @@ class DagExecutor:
                     finished_at=time.monotonic(),
                     attempts=attempt,
                 )
-            except SkipNode:
+            except SkipNodeError:
                 node.status = "skipped"
                 return NodeResult(
                     node_id=nid,

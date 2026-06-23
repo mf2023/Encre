@@ -22,6 +22,7 @@
 # Non-compliance may result in service termination or legal liability.
 
 import base64
+import importlib
 import io
 import logging
 import os
@@ -114,25 +115,13 @@ class EncreDesktopSession:
         self._dpi_y: float | None = None
 
     def _check_mss(self) -> bool:
-        try:
-            import mss  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("mss") is not None
 
     def _check_pyautogui(self) -> bool:
-        try:
-            import pyautogui  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("pyautogui") is not None
 
     def _check_pillow(self) -> bool:
-        try:
-            import PIL  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("PIL") is not None
 
     def screenshot(self) -> DesktopScreenState:
         if not self._check_mss():
@@ -959,9 +948,7 @@ class EncreDesktopSession:
 
     @staticmethod
     def _ensure_pillow() -> None:
-        try:
-            import PIL  # noqa: F401
-        except ImportError:
+        if importlib.util.find_spec("PIL") is None:
             raise RuntimeError(
                 "Pillow not installed. Run: pip install pillow"
-            ) from None
+            )

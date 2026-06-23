@@ -124,7 +124,7 @@ class DingTalkAdapter(BaseAdapter):
 
         try:
             logger.info("[dingtalk] Step 1/4: Initializing HTTP client...")
-            self._http_client = httpx.AsyncClient(timeout=30.0, follow_redirects=True, proxy=BaseAdapter.resolve_proxy_url())  # noqa: E501
+            self._http_client = httpx.AsyncClient(timeout=30.0, follow_redirects=True, proxy=BaseAdapter.resolve_proxy_url())
             logger.info("[dingtalk] Step 1/4: HTTP client ready")
 
             logger.info("[dingtalk] Step 2/4: Creating DingTalk stream client...")

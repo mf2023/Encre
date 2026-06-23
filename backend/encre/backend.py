@@ -50,15 +50,94 @@ from encre.backends.openai import OpenAIBackend
 from encre.backends.openai_compatible import OpenAICompatibleBackend
 from encre.backends.opencode import OpenCodeGoBackend, OpenCodeZenBackend
 from encre.backends.openrouter import OpenRouterBackend
+from encre.backends.retry import DEFAULT_RETRY_CONFIG, RetryConfig
 from encre.backends.router import RouterBackend
 from encre.backends.tencent import TencentBackend
 from encre.backends.volcengine import VolcengineArkBackend
 from encre.backends.xiaomi import XiaomiBackend
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def _build_failover_backends(
+    models: list[Any],
+    default_api_key: str = "",
+    default_base_url: str = "",
+    default_model: str = "",
+) -> list[tuple[str, BaseBackend]]:
+    """Convert a list of model configs into ``(name, backend)`` pairs."""
+    result: list[tuple[str, BaseBackend]] = []
+    for m in models:
+        if hasattr(m, "enabled") and not m.enabled:
+            continue
+        if hasattr(m, "name"):  # ModelConfig dataclass
+            name = m.name or m.model_id or "unknown"
+            bt = m.backend_type or "openai"
+            ak = m.api_key or default_api_key
+            bu = m.base_url or default_base_url
+            md = m.model_id or default_model
+        elif isinstance(m, dict):  # Raw dict
+            name = m.get("name") or m.get("model_id", "unknown")
+            bt = m.get("backend_type", "openai")
+            ak = m.get("api_key", default_api_key)
+            bu = m.get("base_url", default_base_url)
+            md = m.get("model_id", default_model)
+        else:
+            continue
+        be = create_backend(bt, api_key=ak, base_url=bu, model=md)
+        if be is not None:
+            result.append((name, be))
+    return result
+
+
+_FAILOVER_ACCEPTED = frozenset({"retry_config", "connection_monitor"})
+
+
+def _create_failover(**kwargs: Any) -> FailoverBackend:
+    """Construct a ``FailoverBackend`` from factory kwargs."""
+    # Pre-instantiated backends (programmatic use).
+    backends = kwargs.pop("backends", None)
+    if backends is not None:
+        return FailoverBackend(backends=backends, **{
+            k: v for k, v in kwargs.items() if k in _FAILOVER_ACCEPTED
+        })
+
+    # Model config list (from EncreConfig.models).
+    models = kwargs.pop("models", None)
+    if models:
+        built = _build_failover_backends(
+            models,
+            default_api_key=kwargs.get("api_key", ""),
+            default_base_url=kwargs.get("base_url", ""),
+            default_model=kwargs.get("model", ""),
+        )
+        if built:
+            return FailoverBackend(backends=built, **{
+                k: v for k, v in kwargs.items() if k in _FAILOVER_ACCEPTED
+            })
+
+    raise ValueError(
+        "FailoverBackend requires either 'backends' (list of tuple) "
+        "or 'models' (list of ModelConfig / dict) parameter"
+    )
+
+
+# ── Factory ──────────────────────────────────────────────────────────────
+
+
 def create_backend(type: str, **kwargs: Any) -> BaseBackend | None:
     if not type:
         return None
+
+    # Failover requires special handling — it needs pre-built children.
+    if type == "failover":
+        return _create_failover(**kwargs)
+
+    # For non-failover types, strip meta-params that the individual
+    # backend constructors do not expect.
+    kwargs.pop("models", None)
+
     backend_map: dict[str, type[BaseBackend]] = {
         "openai": OpenAIBackend,
         "anthropic": AnthropicBackend,

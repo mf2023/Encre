@@ -47,7 +47,6 @@ import asyncio
 import contextvars
 import functools
 import json
-import os
 import sys
 from typing import Any
 
@@ -95,7 +94,7 @@ def _decode_for_model(value: Any) -> tuple[str, dict[str, Any]]:
         return "", {"encoding": "utf-8", "binary": False, "output_bytes": 0}
     if isinstance(value, str):
         raw_bytes = value.encode("utf-8", errors="replace")
-    elif isinstance(value, (bytes, bytearray, memoryview)):
+    elif isinstance(value, bytes | bytearray | memoryview):
         raw_bytes = bytes(value)
     else:
         return str(value), {"encoding": "utf-8", "binary": False, "output_bytes": 0}

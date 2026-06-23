@@ -37,7 +37,7 @@ class CapabilityProfile:
     success_count: int = 0
     last_assessed: float = 0.0
 
-    def update(self, success: bool, difficulty: float = 0.5) -> None:
+    def update(self, success: bool, _difficulty: float = 0.5) -> None:
         self.sample_count += 1
         if success:
             self.success_count += 1
@@ -139,7 +139,7 @@ class EncreMetaCognition:
         for w in weak[:
             5]:
             lines.append(f"  - {w['domain']}: score={w['score']:.2f} (n={w['samples']})")
-        lines.append("Proceed carefully in these domains: gather more context, use the appropriate tools, or ask the user for help.")  # noqa: E501
+        lines.append("Proceed carefully in these domains: gather more context, use the appropriate tools, or ask the user for help.")
         return "\n".join(lines)
 
     def record_delegation(self, task: str, delegate: str, success: bool) -> None:

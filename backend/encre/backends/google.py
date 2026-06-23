@@ -363,7 +363,7 @@ class GoogleBackend(BaseBackend):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         stream: bool = True,
-        _enable_caching: bool = False,
+        enable_caching: bool = False,
     ) -> AsyncGenerator[BackendEvent, None]:
         """Send a chat completion request and stream back events.
 
@@ -432,10 +432,7 @@ class GoogleBackend(BaseBackend):
                 return
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code not in {429, 502, 503, 504}:
-                    yield create_backend_error(
-                        f"Gemini API error {exc.response.status_code}"
-                    )
-                    return
+                    raise
                 if exc.response.status_code == 429 and attempt >= rate_limit_retries:
                     yield create_backend_error("Gemini rate limit exhausted")
                     return
@@ -467,10 +464,7 @@ class GoogleBackend(BaseBackend):
                 return
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code not in {429, 502, 503, 504}:
-                    yield create_backend_error(
-                        f"Gemini API error {exc.response.status_code}"
-                    )
-                    return
+                    raise
                 if exc.response.status_code == 429 and attempt >= rate_limit_retries:
                     yield create_backend_error("Gemini rate limit exhausted")
                     return
@@ -493,11 +487,13 @@ class GoogleBackend(BaseBackend):
         async with self._client.stream("POST", url, json=body) as resp:
             if resp.status_code != 200:
                 error_body = await resp.aread()
-                resp.raise_for_status()
-                yield create_backend_error(
-                    f"Gemini API error {resp.status_code}: {error_body.decode()}"
+                error_text = error_body.decode(errors="replace")
+                logger.error("Gemini API error %s: %s", resp.status_code, error_text)
+                raise httpx.HTTPStatusError(
+                    f"Gemini API error {resp.status_code}: {error_text}",
+                    request=resp.request,
+                    response=resp,
                 )
-                return
 
             tool_call_buffers: dict[int, dict[str, Any]] = {}
             current_idx = 0
@@ -766,18 +762,16 @@ class GoogleBackend(BaseBackend):
 
     # ── Embeddings ───────────────────────────────────────────────────────
 
-    async def create_embeddings(  # noqa: ARG002
+    async def create_embeddings(
         self,
         input: str | list[str],
         model: str | None = None,
-        encoding_format: str = "float",
+        _encoding_format: str = "float",
         dimensions: int | None = None,
-        user: str | None = None,
+        _user: str | None = None,
         extra_params: dict[str, Any] | None = None,
     ):
         """Generate embedding vectors via ``models/{model}:batchEmbedContents``."""
-        import base64
-        import struct
         from encre.utils.types import EmbeddingResponse, EmbeddingResult
         if isinstance(input, str):
             inputs = [{"content": {"parts": [{"text": input}]}}]
@@ -825,7 +819,7 @@ class GoogleBackend(BaseBackend):
 
     # ── Files ────────────────────────────────────────────────────────────
 
-    async def upload_file(  # noqa: ARG002
+    async def upload_file(
         self,
         filename: str,
         content_b64: str,
@@ -835,6 +829,7 @@ class GoogleBackend(BaseBackend):
     ):
         """Upload a file via the Gemini Files API (resumable upload)."""
         import base64
+
         from encre.utils.types import FileObject
         content = base64.b64decode(content_b64)
         num_bytes = len(content)
@@ -894,12 +889,12 @@ class GoogleBackend(BaseBackend):
             } if isinstance(file_obj, dict) else {},
         )
 
-    async def list_files(  # noqa: ARG002
+    async def list_files(
         self,
-        purpose: str | None = None,
+        _purpose: str | None = None,
         limit: int = 100,
-        after: str | None = None,
-        order: str = "desc",
+        _after: str | None = None,
+        _order: str = "desc",
         extra_params: dict[str, Any] | None = None,
     ):
         """List files via the Gemini Files API."""
@@ -934,7 +929,7 @@ class GoogleBackend(BaseBackend):
             )
         return FileListResponse(object="list", data=files, has_more=False)
 
-    async def retrieve_file(  # noqa: ARG002
+    async def retrieve_file(
         self,
         file_id: str,
     ):
@@ -959,20 +954,18 @@ class GoogleBackend(BaseBackend):
             } if isinstance(data, dict) else {},
         )
 
-    async def delete_file(  # noqa: ARG002
+    async def delete_file(
         self,
         file_id: str,
     ) -> bool:
         """Delete an uploaded file by id."""
         url = f"{self.base_url}/{file_id}"
         response = await self._client.delete(url, params={"key": self.api_key})
-        if response.status_code >= 400:
-            return False
-        return True
+        return not response.status_code >= 400
 
     # ── Batch ────────────────────────────────────────────────────────────
 
-    async def create_batch(  # noqa: ARG002
+    async def create_batch(
         self,
         requests,
         endpoint: str = "/v1/models/{model}:generateContent",
@@ -981,7 +974,6 @@ class GoogleBackend(BaseBackend):
         extra_params: dict[str, Any] | None = None,
     ):
         """Create a Gemini batch via ``batches`` endpoint."""
-        import json as _json
         from encre.utils.types import BatchObject
 
         batch_requests: list[dict[str, Any]] = []
@@ -1038,7 +1030,7 @@ class GoogleBackend(BaseBackend):
 
     # ── Fine-tuning (tuning) ─────────────────────────────────────────────
 
-    async def create_fine_tuning_job(  # noqa: ARG002
+    async def create_fine_tuning_job(
         self,
         training_file: str,
         model: str,
@@ -1099,7 +1091,7 @@ class GoogleBackend(BaseBackend):
 
     # ── Realtime (Gemini Live) ───────────────────────────────────────────
 
-    async def create_realtime_session(  # noqa: ARG002
+    async def create_realtime_session(
         self,
         config=None,
         extra_params: dict[str, Any] | None = None,
@@ -1128,7 +1120,7 @@ class GoogleBackend(BaseBackend):
             provider="google",
         )
 
-    async def _open_gemini_live_transport(self, model_name, cfg, extra_params):  # noqa: ARG002
+    async def _open_gemini_live_transport(self, _model_name, _cfg, _extra_params):
         ws_url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
         try:
             from httpx_ws import aconnect_ws  # type: ignore[import-not-found]
@@ -1143,7 +1135,7 @@ class GoogleBackend(BaseBackend):
         except Exception:
             return None
 
-    async def close_realtime_session(  # noqa: ARG002
+    async def close_realtime_session(
         self,
         session,
     ) -> None:

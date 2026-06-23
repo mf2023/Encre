@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -77,7 +78,7 @@ def _clone_tool_registry() -> ToolRegistry:
 
 
 class SessionManager:
-    def __init__(self, max_concurrent: int = 20, idle_timeout: float = 3600.0, sessions_dir: str | None = None) -> None:  # noqa: E501
+    def __init__(self, max_concurrent: int = 20, idle_timeout: float = 3600.0, sessions_dir: str | None = None) -> None:
         self._sessions: dict[str, SessionInfo] = {}
         self._max_concurrent = max_concurrent
         self._idle_timeout = idle_timeout
@@ -158,10 +159,7 @@ class SessionManager:
 
     async def set_workspace(self, ws_id: str | None) -> None:
         """Switch session storage to the given workspace (or global if None)."""
-        if ws_id:
-            _dir = get_data_dir() / "iwork" / ws_id / "sessions"
-        else:
-            _dir = get_data_dir() / "sessions"
+        _dir = get_data_dir() / "iwork" / ws_id / "sessions" if ws_id else get_data_dir() / "sessions"
         await self._switch_sessions_dir(_dir)
 
     async def set_iclaw(self, active: bool) -> None:
@@ -310,7 +308,7 @@ class SessionManager:
                         channel = ch
                 if meta is None:
                     meta_path = os.path.join(entry.path, "meta.json")
-                    mtime = os.path.getmtime(meta_path) if os.path.exists(meta_path) else time.time()  # noqa: E501
+                    mtime = os.path.getmtime(meta_path) if os.path.exists(meta_path) else time.time()
                     self._index[sid] = {
                         "session_id": sid,
                         "created_at": mtime,
@@ -398,7 +396,7 @@ class SessionManager:
             return False
         return info.is_running or (info.agent_task is not None and not info.agent_task.done())
 
-    def load_or_create_session(self, session_id: str, config: EncreConfig | None = None) -> SessionInfo:  # noqa: E501
+    def load_or_create_session(self, session_id: str, config: EncreConfig | None = None) -> SessionInfo:
         # First search the active pool so we hand back the live in-memory
         # instance (which preserves the running agent's session object).
         existing = self._sessions.get(session_id)
@@ -434,7 +432,7 @@ class SessionManager:
                     info.created_at = meta.get("created_at", time.time())
                     info.last_active = meta.get("updated_at", time.time())
                     # Restore workspace context from session metadata
-                    ws_path = (meta.get("metadata", {}) or {}).get("workspace") or meta.get("workspace") or ""  # noqa: E501
+                    ws_path = (meta.get("metadata", {}) or {}).get("workspace") or meta.get("workspace") or ""
                     if ws_path and os.path.isdir(ws_path):
                         cfg.workspace = ws_path
                         info.metadata["workspace"] = ws_path
@@ -548,7 +546,7 @@ class SessionManager:
 
         best_sid = max(
             self._index.keys(),
-            key=lambda sid: self._index[sid].get("last_active", self._index[sid].get("created_at", 0)),  # noqa: E501
+            key=lambda sid: self._index[sid].get("last_active", self._index[sid].get("created_at", 0)),
         )
         return self.load_or_create_session(best_sid, config=config)
 
@@ -571,12 +569,12 @@ class SessionManager:
             result.append({
                 "session_id": info.session_id,
                 "created_at": info.created_at,
-                "last_active": getattr(info.agent.session, "last_message_at", info.agent.session.updated_at) if hasattr(info.agent, "session") and info.agent.session else info.last_active,  # noqa: E501
+                "last_active": getattr(info.agent.session, "last_message_at", info.agent.session.updated_at) if hasattr(info.agent, "session") and info.agent.session else info.last_active,
                 "is_running": info.is_running,
                 "metadata": info.metadata,
                 "preview": preview,
-                "name": info.metadata.get("name", self._index.get(info.session_id, {}).get("name", "")),  # noqa: E501
-                "channel": (info.agent.session.metadata.get("channel") if hasattr(info.agent, "session") and info.agent.session and info.agent.session.metadata  # noqa: E501
+                "name": info.metadata.get("name", self._index.get(info.session_id, {}).get("name", "")),
+                "channel": (info.agent.session.metadata.get("channel") if hasattr(info.agent, "session") and info.agent.session and info.agent.session.metadata
                             else info.metadata.get("channel", "normal")),
                 "message_count": msg_count,
             })

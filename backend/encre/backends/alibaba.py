@@ -80,8 +80,8 @@ class AlibabaBackend(OpenAISSEBackend):
         """
         if self.model and (
             "qwq" in self.model.lower()
-            or "qwen3" in self.model.lower()
-            and "think" in self.model.lower()
+            or ("qwen3" in self.model.lower()
+            and "think" in self.model.lower())
         ):
             return {"enable_thinking": True}
         return None

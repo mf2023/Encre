@@ -172,7 +172,7 @@ class EncreOrchestrator:
             # Give them a moment to react to cancellation.
             if running:
                 await asyncio.wait(running.values(), timeout=5.0)
-            for nid, node in nodes.items():
+            for _nid, node in nodes.items():
                 if node.status == "running":
                     node.status = "cancelled"
                     node.error = "Cancelled by orchestrator"
@@ -240,14 +240,14 @@ class EncreOrchestrator:
         review_prompt = (
             f"Review the output of task '{coder_node.name}'. "
             f"Output:\n```\n{result[:5000]}\n```\n"
-            "Does this look correct and production-ready? Reply ONLY with 'APPROVED' or 'REJECTED: <reason>'."  # noqa: E501
+            "Does this look correct and production-ready? Reply ONLY with 'APPROVED' or 'REJECTED: <reason>'."
         )
         try:
             reviewer_result = await asyncio.wait_for(
                 self._run_simple_agent(reviewer_role, review_prompt),
                 timeout=120.0,
             )
-            return "APPROVED" in reviewer_result.upper() and "REJECTED" not in reviewer_result.upper()  # noqa: E501
+            return "APPROVED" in reviewer_result.upper() and "REJECTED" not in reviewer_result.upper()
         except TimeoutError:
             return True  # Timeout: approve by default
 

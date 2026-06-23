@@ -151,7 +151,8 @@ class SlackAdapter(BaseAdapter):
                 app=self._app,
                 app_token=self._app_token,
             )
-            asyncio.ensure_future(self._handler.start_async())
+            _t = asyncio.ensure_future(self._handler.start_async())
+            self._background_tasks.add(_t)
             logger.info("[slack] Step 4: SocketModeHandler start scheduled")
         except Exception as e:
             logger.error("[slack] Step 4 failed: start SocketModeHandler: %s", e)
@@ -228,7 +229,7 @@ class SlackAdapter(BaseAdapter):
             logger.error("[slack] Send error: %s", e)
             return SendResult(success=False, error=str(e), retryable=True)
 
-    async def send_typing(self, chat_id: str) -> None:
+    async def send_typing(self, _chat_id: str) -> None:
         """Send a typing indicator using Slack's assistant_threads.setStatus."""
         client = self._web_client
         if client is None:

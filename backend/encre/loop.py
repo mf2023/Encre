@@ -22,6 +22,8 @@
 # Non-compliance may result in service termination or legal liability.
 
 import asyncio
+import builtins
+import contextlib
 import json
 import os
 import re
@@ -31,44 +33,39 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from encre.backend import create_backend
-from encre.backends.base import BaseBackend
+from encre.backends.base import BaseBackend, format_backend_error
+from encre.codebase.document_manager import EncreDocumentManager
+from encre.codebase.indexer import EncreCodeIndex
 from encre.compact.engine import CompactEngine
 from encre.config import EncreConfig
 from encre.evolution.config import EvolutionConfig
+from encre.feedback.learner import EncreFeedbackLearner
+from encre.git.repo import EncreGitRepo
+from encre.hooks.system import EncreHookSystem
 from encre.logging_config import get_logger
+from encre.memdir.system import EncreMemorySystem
+from encre.profile.system import EncreProfileSystem
 from encre.prompts.base import EncrePromptTemplate
 from encre.prompts.classifier import classify_intents
-
-logger = get_logger(__name__)
-import builtins  # noqa: E402
-import contextlib  # noqa: E402
-
-from encre.codebase.document_manager import EncreDocumentManager  # noqa: E402
-from encre.codebase.indexer import EncreCodeIndex  # noqa: E402
-from encre.feedback.learner import EncreFeedbackLearner  # noqa: E402
-from encre.git.repo import EncreGitRepo  # noqa: E402
-from encre.hooks.system import EncreHookSystem  # noqa: E402
-from encre.memdir.system import EncreMemorySystem  # noqa: E402
-from encre.profile.system import EncreProfileSystem  # noqa: E402
-from encre.recovery import ErrorRecoveryEngine, RetryableExecutor  # noqa: E402
-from encre.rollback import EncreRollbackGit  # noqa: E402
-from encre.rules.loader import RulesLoader  # noqa: E402
-from encre.safety import EncreSafetyEngine  # noqa: E402
-from encre.session import EncreSession  # noqa: E402
-from encre.skills.registry import EncreSkillRegistry  # noqa: E402
-from encre.soul.system import EncreSoulSystem  # noqa: E402
-from encre.telemetry import EncreTelemetry  # noqa: E402
-from encre.thinking.config import resolve_thinking_config  # noqa: E402
-from encre.tools.discovery import ToolDiscovery  # noqa: E402
-from encre.tools.registry import ToolRegistry  # noqa: E402
-from encre.tracing import (  # noqa: E402  # noqa: E501
+from encre.recovery import ErrorRecoveryEngine, RetryableExecutor
+from encre.rollback import EncreRollbackGit
+from encre.rules.loader import RulesLoader
+from encre.safety import EncreSafetyEngine
+from encre.session import EncreSession
+from encre.skills.registry import EncreSkillRegistry
+from encre.soul.system import EncreSoulSystem
+from encre.telemetry import EncreTelemetry
+from encre.thinking.config import resolve_thinking_config
+from encre.tools.discovery import ToolDiscovery
+from encre.tools.registry import ToolRegistry
+from encre.tracing import (
     maybe_get_tracer,
     setup_tracing,
     trace_llm_call,
     trace_tool_call,
 )
-from encre.utils.tokens import count_message_tokens  # noqa: E402
-from encre.utils.types import (  # noqa: E402
+from encre.utils.tokens import count_message_tokens
+from encre.utils.types import (
     AgentEvent,
     Artifact,
     BackendError,
@@ -109,8 +106,20 @@ from encre.utils.types import (  # noqa: E402
     create_tool_result,
 )
 
+logger = get_logger(__name__)
+
 _WRITE_TOOL_NAMES = {"file_write", "file_edit", "write_file", "writeFile", "apply_patch"}
 _PROMPT_CACHE_TTL_SECONDS = 30.0
+
+# ── Context overflow detection (reactive compact) ──────────────
+_CONTEXT_OVERFLOW_PATTERN = re.compile(
+    r"(?:context|overflow|too\s+large|too\s+long|prompt|input\s+length|max_tokens)", re.IGNORECASE
+)
+
+def _is_context_overflow(exc: Exception) -> bool:
+    """Detect whether *exc* is a context-overflow / prompt-too-long error (413)."""
+    msg = str(exc)
+    return bool(_CONTEXT_OVERFLOW_PATTERN.search(msg)) and "413" in msg
 
 
 def _apply_result_budget(
@@ -152,7 +161,7 @@ def _extract_file_path(tool_name: str, result: str) -> str | None:
 
     for pattern in [
         r"Successfully wrote \d+ characters to (.+)",
-        r"Applied \d+ edit\(s\) to (.+?)\.\s*\n",  # file_edit -- \n forces lazy match past file extension periods  # noqa: E501
+        r"Applied \d+ edit\(s\) to (.+?)\.\s*\n",  # file_edit -- \n forces lazy match past file extension periods
         r"Wrote .+ to (.+)",
     ]:
         m = re.search(pattern, result, re.IGNORECASE)
@@ -163,7 +172,7 @@ def _extract_file_path(tool_name: str, result: str) -> str | None:
     return None
 
 
-def _extract_diff_text(tool_name: str, result: str) -> str:
+def _extract_diff_text(_tool_name: str, result: str) -> str:
     """Extract the unified diff block from a tool result string."""
     m = re.search(r"```diff\n(.+?)\n```", result, re.DOTALL)
     if m:
@@ -262,10 +271,7 @@ def _extract_ref_summary(tool_name: str, args: dict[str, Any], result: str) -> s
 
     if name == "git":
         cmd_args = args.get("args", [])
-        if isinstance(cmd_args, list):
-            cmd_str = " ".join(str(a) for a in cmd_args)
-        else:
-            cmd_str = str(cmd_args)
+        cmd_str = " ".join(str(a) for a in cmd_args) if isinstance(cmd_args, list) else str(cmd_args)
         return f"Git: {cmd_str[:80]}" if cmd_str else "Git"
 
     if name == "browser":
@@ -286,10 +292,7 @@ def _extract_ref_summary(tool_name: str, args: dict[str, Any], result: str) -> s
 
     if name == "docker":
         cmd_args = args.get("args", [])
-        if isinstance(cmd_args, list):
-            cmd_str = " ".join(str(a) for a in cmd_args)[:80]
-        else:
-            cmd_str = str(cmd_args)[:80]
+        cmd_str = " ".join(str(a) for a in cmd_args)[:80] if isinstance(cmd_args, list) else str(cmd_args)[:80]
         return f"Docker: {cmd_str}" if cmd_str else "Docker"
 
     # Fallback: extract from result first line
@@ -386,6 +389,7 @@ class EncreLoop:
             api_key=config.api_key,
             base_url=config.base_url,
             model=config.model,
+            models=config.models,
             **config.backend_kwargs,
         )
         self.safety = safety or EncreSafetyEngine(config)
@@ -432,9 +436,57 @@ class EncreLoop:
         self._compact_task: asyncio.Task[None] | None = None
         # Pending compact notification to yield at next turn start
         self._compact_notification: CompactNotification | None = None
+        # Streaming tool execution cache: maps client_id → precomputed execution result.
+        # Populated in background during streaming when
+        # ``enable_streaming_tool_execution`` is True.
+        self._streaming_tool_results: dict[str, dict[str, Any]] = {}
+        # Read-before-write tracking: maps resolved file_path -> {mtime, read_time}.
+        # Populated by file_read results; checked before file_write/file_edit.
+        self._read_file_state: dict[str, dict[str, float]] = {}
 
     def _cache_fresh(self, built_at: float, ttl: float = _PROMPT_CACHE_TTL_SECONDS) -> bool:
         return (time.time() - built_at) < ttl
+
+    def _record_file_read(self, file_path: str) -> None:
+        if not file_path:
+            return
+        try:
+            st = os.stat(file_path)
+            self._read_file_state[os.path.abspath(file_path)] = {
+                "mtime": st.st_mtime_ns,
+                "read_time": time.time(),
+            }
+        except (OSError, ValueError):
+            pass
+
+    def _check_file_write_precondition(self, tool_name: str, args: dict[str, Any]) -> str | None:
+        fp = args.get("file_path", "")
+        if not fp and tool_name == "apply_patch":
+            return None
+        if not fp:
+            return None
+        resolved = os.path.abspath(fp)
+        entry = self._read_file_state.get(resolved)
+
+        if entry is None:
+            return (
+                f"Error: The file `{fp}` has not been read in this session. "
+                f"Please read it first with `file_read` before making changes."
+            )
+
+        try:
+            current_mtime = os.stat(resolved).st_mtime_ns
+        except OSError:
+            return None
+
+        if current_mtime != entry["mtime"]:
+            return (
+                f"Error: The file `{fp}` has been modified since it was last read "
+                f"(mtime changed). Please re-read it with `file_read` to get the "
+                f"current content before making changes."
+            )
+
+        return None
 
     async def aclose(self) -> None:
         """Release backend resources (httpx clients, model memory, etc.)."""
@@ -442,7 +494,7 @@ class EncreLoop:
             try:
                 await self.backend.aclose()
             except Exception as e:
-                logger.warning(f"Error closing backend: {e}", extra={"backend": type(self.backend).__name__})  # noqa: E501
+                logger.warning(f"Error closing backend: {e}", extra={"backend": type(self.backend).__name__})
 
     def resolve_permission(self, decision: bool) -> None:
         """Called by the agent owner to approve or deny a pending permission request."""
@@ -456,7 +508,7 @@ class EncreLoop:
                     self._pending_tool_name, decision
                 )
             except Exception as _e:
-                logger.debug("record_permission_decision failed: %s", _e)
+                logger.debug("record_permission_decision failed: {_e}")
         if self._permission_event is not None:
             self._permission_event.set()
 
@@ -564,8 +616,8 @@ class EncreLoop:
                     original = ""
                 if file_path or proposed:
                     diff_text = _native_diff(original or "", proposed or "")
-                    added = sum(1 for ln in diff_text.splitlines() if ln.startswith("+") and not ln.startswith("+++"))  # noqa: E501
-                    removed = sum(1 for ln in diff_text.splitlines() if ln.startswith("-") and not ln.startswith("---"))  # noqa: E501
+                    added = sum(1 for ln in diff_text.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
+                    removed = sum(1 for ln in diff_text.splitlines() if ln.startswith("-") and not ln.startswith("---"))
             except Exception:
                 diff_text = ""
             preview = (
@@ -597,12 +649,12 @@ class EncreLoop:
                     old_s = str(tool_args.get("old_str", "") or "")
                     new_s = str(tool_args.get("new_str", "") or "")
                     proposed = (
-                        original.replace(old_s, new_s, 1) if old_s and old_s in original else original  # noqa: E501
+                        original.replace(old_s, new_s, 1) if old_s and old_s in original else original
                     )
                 if file_path or original or proposed:
                     diff_text = _native_diff(original or "", proposed or "")
-                    added = sum(1 for ln in diff_text.splitlines() if ln.startswith("+") and not ln.startswith("+++"))  # noqa: E501
-                    removed = sum(1 for ln in diff_text.splitlines() if ln.startswith("-") and not ln.startswith("---"))  # noqa: E501
+                    added = sum(1 for ln in diff_text.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
+                    removed = sum(1 for ln in diff_text.splitlines() if ln.startswith("-") and not ln.startswith("---"))
             except Exception:
                 diff_text = ""
             preview = (
@@ -619,8 +671,8 @@ class EncreLoop:
                         file_hints.append(p.lstrip("b/"))
             file_path = ", ".join(file_hints[:3])
             diff_text = patch[:4000]
-            added = sum(1 for ln in patch.splitlines() if ln.startswith("+") and not ln.startswith("+++"))  # noqa: E501
-            removed = sum(1 for ln in patch.splitlines() if ln.startswith("-") and not ln.startswith("---"))  # noqa: E501
+            added = sum(1 for ln in patch.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
+            removed = sum(1 for ln in patch.splitlines() if ln.startswith("-") and not ln.startswith("---"))
             preview = (
                 f"Apply patch to {file_path or '(multi-file)'} "
                 f"(+{added} -{removed})"
@@ -674,7 +726,7 @@ class EncreLoop:
             await asyncio.wait_for(self._plan_event.wait(), timeout=timeout)
         except TimeoutError:
             logger.warning(
-                f"Plan proposal '{proposal.proposal_id}' timed out after {timeout}s -- auto-rejecting",  # noqa: E501
+                f"Plan proposal '{proposal.proposal_id}' timed out after {timeout}s -- auto-rejecting",
             )
             self._plan_decision = False
         self._plan_event = None
@@ -687,7 +739,7 @@ class EncreLoop:
         tool_name: str,
         tool_args: dict[str, Any],
         tool_call_id: str,
-        client_id: str,
+        _client_id: str,
     ) -> AsyncGenerator[AgentEvent, None]:
         """If plan mode is on, intercept the call and yield a proposal.
 
@@ -727,7 +779,7 @@ class EncreLoop:
                 except StopAsyncIteration:
                     return
         except TimeoutError:
-            logger.error("[run] backend.chat() timed out after %.0fs -- check API key / network", timeout)  # noqa: E501
+            logger.error("[run] backend.chat() timed out after {timeout:.0f}s -- check API key / network", timeout=timeout)
             yield BackendError(f"API request timed out after {timeout}s")
         except Exception:
             raise
@@ -926,7 +978,7 @@ class EncreLoop:
         )
         return header
 
-    def _build_codebase_context_sync(self, ws_path: str, idx: Any) -> str:
+    def _build_codebase_context_sync(self, _ws_path: str, idx: Any) -> str:
         """Synchronous version of ``_build_codebase_context()`` for use in
         ``inject_code_index()`` where we're already holding a ready index."""
         try:
@@ -984,8 +1036,8 @@ class EncreLoop:
                                 ws_path,
                             )
                         break
-        logger.info("[codebase] injected ready index workspace=%s",
-                    getattr(idx, "workspace", "?"))
+        logger.info("[codebase] injected ready index workspace={idx_workspace}",
+                    idx_workspace=getattr(idx, "workspace", "?"))
 
     async def _build_codebase_context(self) -> str:
         """Build codebase context from the workspace index when available.
@@ -1012,7 +1064,7 @@ class EncreLoop:
                     logger.info("[codebase] index not ready yet for workspace=%s", ws_path)
                     # Return directory tree immediately without waiting for full index
                     return self._build_directory_tree(ws_path)
-                logger.info("[codebase] cache=hit workspace=%s (%.2fs)", ws_path, time.time() - _t0)
+                logger.info("[codebase] cache=hit workspace={ws_path} ({elapsed:.2f}s)", ws_path=ws_path, elapsed=time.time() - _t0)
             except Exception:
                 # Fallback: directory tree even if index load fails
                 return self._build_directory_tree(ws_path)
@@ -1043,7 +1095,7 @@ class EncreLoop:
         lines: list[str] = []
         lines.append("## Codebase Index")
         lines.append(f"Indexed {total} source files in the workspace.")
-        lines.append("Use `codebase_search` to find relevant code, or `codebase_context` to view a specific file's details.")  # noqa: E501
+        lines.append("Use `codebase_search` to find relevant code, or `codebase_context` to view a specific file's details.")
 
         # Quick top-level summary: count by language
         if lang_summary_items:
@@ -1182,6 +1234,58 @@ class EncreLoop:
         self._rules_prompt_cache = (cache_key, time.time(), prompt)
         return prompt
 
+    async def _pre_execute_in_background(
+        self,
+        client_id: str,
+        tool_name: str,
+        args_raw: str | dict[str, Any],
+    ) -> None:
+        """Pre-execute a tool in background during streaming tool execution.
+
+        Called when ``enable_streaming_tool_execution`` is True and a
+        ``BackendToolCall`` event arrives.  Only tools with auto-allow
+        permission are pre-executed -- ``ask``/``deny`` tools and
+        interactive tools (``question``, ``agent``) are handled by the
+        normal post-streaming flow.
+
+        Stores the raw execution result in ``self._streaming_tool_results``
+        so the post-streaming execution phase can skip re-execution.
+        """
+        try:
+            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        permission = await self.safety.check_tool_permission(tool_name, args)
+        if permission.behavior != "allow":
+            return
+
+        tool = self.tool_registry.get(tool_name)
+        if tool is None:
+            return
+
+        try:
+            executor = RetryableExecutor(self.recovery_engine)
+            state = await executor.execute(
+                tool_name=tool_name,
+                tool_args=args,
+                execute_fn=lambda a: tool.execute(**a),
+            )
+            result = state.final_result
+            if isinstance(result, dict):
+                result = str(result.get("content", ""))
+            result = self.safety.validate_tool_output(tool_name, result)
+
+            self._streaming_tool_results[client_id] = {
+                "result": result,
+                "is_error": not state.succeeded,
+                "latency_ms": getattr(state, "latency_ms", 0.0),
+                "recovery_history": list(getattr(state, "recovery_history", [])),
+                "tool": tool,
+            }
+        except Exception:
+            pass
+
     async def run(
         self,
         prompt: str,
@@ -1192,7 +1296,7 @@ class EncreLoop:
     ) -> AsyncGenerator[AgentEvent, None]:
         if self.backend is None:
             logger.warning("Agent run requested but no backend configured")
-            yield create_finish("error", error="No backend configured. Send a 'configure' message first.")  # noqa: E501
+            yield create_finish("error", error="No backend configured. Send a 'configure' message first.")
             return
 
         # Mark this loop as the active loop so context-aware tools (find_tool,
@@ -1235,9 +1339,9 @@ class EncreLoop:
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         # Log effective max_turns so we can diagnose unexpected session stops
-        logger.info("[run] _run_impl start turn=%d max_turns=%d backend=%s model=%s",
-                     self.session.turn_count, self.config.max_turns,
-                     self.config.backend_type, self.config.model)
+        logger.info("[run] _run_impl start turn={turn} max_turns={max_turns} backend={backend_type} model={model}",
+                     turn=self.session.turn_count, max_turns=self.config.max_turns,
+                     backend_type=self.config.backend_type, model=self.config.model)
         # Main session: force unlimited turns so no config/workspace override
         # can cap it.  Sub-agents (depth > 0) keep their own max_turns so they
         # can still terminate naturally via text-only response.
@@ -1432,17 +1536,17 @@ class EncreLoop:
 
         # Update system message on every run so prompt blocks match current intents
         has_system = any(
-            m.get("role") == "system" and m.get("branch_id", self.session.active_branch_id) == self.session.active_branch_id  # noqa: E501
+            m.get("role") == "system" and m.get("branch_id", self.session.active_branch_id) == self.session.active_branch_id
             for m in self.session.messages
         )
         if has_system:
             for i, m in enumerate(self.session.messages):
-                if m.get("role") == "system" and m.get("branch_id", self.session.active_branch_id) == self.session.active_branch_id:  # noqa: E501
-                    self.session.messages[i] = {"role": "system", "content": system_prompt, "branch_id": self.session.active_branch_id}  # noqa: E501
+                if m.get("role") == "system" and m.get("branch_id", self.session.active_branch_id) == self.session.active_branch_id:
+                    self.session.messages[i] = {"role": "system", "content": system_prompt, "branch_id": self.session.active_branch_id}
                     self.session.mark_messages_dirty()
                     break
         else:
-            self.session.messages.insert(0, {"role": "system", "content": system_prompt, "branch_id": self.session.active_branch_id})  # noqa: E501
+            self.session.messages.insert(0, {"role": "system", "content": system_prompt, "branch_id": self.session.active_branch_id})
             self.session.mark_messages_dirty()
 
         # Add user prompt if not a duplicate of the last user message
@@ -1460,15 +1564,15 @@ class EncreLoop:
                 # Keep the original message content so the user sees what they typed.
                 pass
             else:
-                logger.info("[sub_agent] adding user message to session | prompt_len=%d | last_ctx_user_exists=%s",  # noqa: E501
-                            len(prompt), last_ctx_user is not None)
+                logger.info("[sub_agent] adding user message to session | prompt_len={plen} | last_ctx_user_exists={exists}",
+                            plen=len(prompt), exists=last_ctx_user is not None)
                 self.session.add_message("user", prompt)
 
         if time.time() - _t0 > 0.1:
-            logger.info("[perf] prompt build %.1fs", time.time() - _t0)
+            logger.info("[perf] prompt build {elapsed:.1f}s", elapsed=time.time() - _t0)
         _t_hook = time.time()
         await self.hook_system.emit_session_start()
-        logger.info("[run] emit_session_start done (%.2fs)", time.time() - _t_hook)
+        logger.info("[run] emit_session_start done ({elapsed:.2f}s)", elapsed=time.time() - _t_hook)
         _last_backend_usage: dict[str, Any] | None = None
 
         # Sanitize session messages on every run -- old sessions loaded from disk
@@ -1476,20 +1580,21 @@ class EncreLoop:
         # Only sanitize active branch context; other branches remain untouched.
         active_branch_id = self.session.active_branch_id
         if active_branch_id not in self._sanitized_branches:
-            self.session.replace_branch_messages(active_branch_id, self.compact_engine.sanitize(ctx_msgs))  # noqa: E501
+            self.session.replace_branch_messages(active_branch_id, self.compact_engine.sanitize(ctx_msgs))
             self._sanitized_branches.add(active_branch_id)
             ctx_msgs = self.session.get_context_messages()
 
         while not self.session.is_max_turns_reached() and not self._cancelled():
             turn_start = time.time()
             turn_events = 0
+            self._streaming_tool_results.clear()
             _t_ts = time.time()
             await self.hook_system.emit_turn_start(self.session.turn_count)
-            logger.info("[run] emit_turn_start done turn=%d (%.2fs)", self.session.turn_count, time.time() - _t_ts)  # noqa: E501
+            logger.info("[run] emit_turn_start done turn={turn} ({elapsed:.2f}s)", turn=self.session.turn_count, elapsed=time.time() - _t_ts)
             _t_ck = time.time()
             self.session.checkpoint(f"turn_{self.session.turn_count}")
             await self.hook_system.emit_checkpoint(f"turn_{self.session.turn_count}")
-            logger.info("[run] emit_checkpoint done turn=%d (%.2fs)", self.session.turn_count, time.time() - _t_ck)  # noqa: E501
+            logger.info("[run] emit_checkpoint done turn={turn} ({elapsed:.2f}s)", turn=self.session.turn_count, elapsed=time.time() - _t_ck)
             # Emit compact notification if a background compact completed
             if self._compact_notification is not None:
                 yield self._compact_notification
@@ -1511,10 +1616,10 @@ class EncreLoop:
             window = self.backend.context_window_size()
             est_tokens = count_message_tokens(context_msgs)
             logger.info(
-                "[run] turn=%d msgs=%d tokens=%dk/%dk (%.0f%%)",
-                self.session.turn_count, len(context_msgs),
-                est_tokens // 1000, window // 1000,
-                100 * est_tokens / window if window else 0,
+                "[run] turn={turn} msgs={msgs} tokens={est_k}dk/{window_k}dk ({pct:.0f}%)",
+                turn=self.session.turn_count, msgs=len(context_msgs),
+                est_k=est_tokens // 1000, window_k=window // 1000,
+                pct=100 * est_tokens / window if window else 0,
             )
 
             # Step 1: microcompact -- cheap cleanup of old tool results
@@ -1541,7 +1646,7 @@ class EncreLoop:
                     self.session.turn_count, est_tokens // 1000, window // 1000,
                 )
 
-                async def _do_compact():
+                async def _do_compact(context_msgs=context_msgs, est_tokens=est_tokens):
                     try:
                         self.session.set_compact_archive(context_msgs)
                         await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
@@ -1587,12 +1692,19 @@ class EncreLoop:
             _extra_buffers: dict[int, dict[str, Any]] = {}
             _tool_seen = False
             _in_extra = False
+            # Inline thinking-tag extraction state
+            _think_buf = ''
+            _in_think = False
+
+            # Patterns for community-standard thinking / CoT tags
+            _THINK_OPEN = re.compile(r'<(think|thought|thinking|reasoning|analysis)>|\[internal\]')
+            _THINK_CLOSE = re.compile(r'</(think|thought|thinking|reasoning|analysis)>|\[/internal\]')
 
             _t_pm = time.time()
             pre_model = await self.hook_system.emit_pre_model_request(
                 self.session.messages, tools
             )
-            logger.info("[run] emit_pre_model_request done turn=%d (%.2fs)", self.session.turn_count, time.time() - _t_pm)  # noqa: E501
+            logger.info("[run] emit_pre_model_request done turn={turn} ({elapsed:.2f}s)", turn=self.session.turn_count, elapsed=time.time() - _t_pm)
 
             backend_messages = list(ctx_msgs)
             backend_tools = tools
@@ -1644,9 +1756,9 @@ class EncreLoop:
             _backend_usage: dict[str, Any] | None = None
             _t_chat = time.time()
 
-            logger.info("[run] calling backend.chat() turn=%d msgs=%d tools=%s",
-                        self.session.turn_count, len(backend_messages),
-                        bool(backend_tools))
+            logger.info("[run] calling backend.chat() turn={turn} msgs={msgs} tools={has_tools}",
+                        turn=self.session.turn_count, msgs=len(backend_messages),
+                        has_tools=bool(backend_tools))
             _chat_first_event = True
             _llm_span = trace_llm_call(
                 self._tracer,
@@ -1654,6 +1766,7 @@ class EncreLoop:
                 str(backend_messages[0])[:200] if backend_messages else "",
             )
             _llm_span.set_attribute("llm.turn", self.session.turn_count)
+            _reactive_compacted = False
             try:
                 # Wrap the chat generator with a 120s timeout on the first event,
                 # so a hanging API call (wrong key, no network, etc.) surfaces an
@@ -1662,25 +1775,79 @@ class EncreLoop:
                     messages=backend_messages,
                     tools=backend_tools,
                     max_tokens=self.config.max_tokens,
-                    enable_caching=self.config.enable_prompt_caching and self.backend.supports_prompt_caching(),  # noqa: E501
+                    enable_caching=self.config.enable_prompt_caching and self.backend.supports_prompt_caching(),
                 )
                 async for event in self._chat_with_timeout(_chat_gen, timeout=120.0):
                     if _chat_first_event:
-                        logger.info("[run] backend.chat() first event after %.1fs turn=%d",
-                                    time.time() - _t_chat, self.session.turn_count)
+                        logger.info("[run] backend.chat() first event after {elapsed:.1f}s turn={turn}",
+                                    elapsed=time.time() - _t_chat, turn=self.session.turn_count)
                         _chat_first_event = False
                     if isinstance(event, BackendText):
-                        if _in_extra:
-                            _extra_text.append(event.text)
-                            yield create_text_delta(event.text)
-                        elif _tool_seen:
-                            _in_extra = True
-                            yield create_assistant_boundary()
-                            _extra_text.append(event.text)
-                            yield create_text_delta(event.text)
-                        else:
-                            text_parts.append(event.text)
-                            yield create_text_delta(event.text)
+                        text = event.text
+                        # Inline community thinking-tag extraction.
+                        # Splits text into text_delta (outside tags) and
+                        # thinking_delta (inside tags), handling cross-event
+                        # tags via _think_buf / _in_think state.
+
+                        if _in_think:
+                            cm = _THINK_CLOSE.search(text)
+                            if cm:
+                                _think_buf += text[:cm.start()]
+                                if _think_buf:
+                                    if _tool_seen:
+                                        _extra_thinking.append(_think_buf)
+                                    else:
+                                        thinking_parts.append(_think_buf)
+                                    yield create_thinking_delta(_think_buf)
+                                _think_buf = ''
+                                _in_think = False
+                                text = text[cm.end():]
+                            else:
+                                _think_buf += text
+                                text = ''
+                        while text:
+                            om = _THINK_OPEN.search(text)
+                            if om:
+                                before = text[:om.start()]
+                                if before:
+                                    if _tool_seen:
+                                        if not _in_extra:
+                                            _in_extra = True
+                                            yield create_assistant_boundary()
+                                        _extra_text.append(before)
+                                        yield create_text_delta(before)
+                                    else:
+                                        text_parts.append(before)
+                                        yield create_text_delta(before)
+                                _in_think = True
+                                _think_buf = ''
+                                text = text[om.end():]
+                                cm = _THINK_CLOSE.search(text)
+                                if cm:
+                                    think = text[:cm.start()]
+                                    if think:
+                                        if _tool_seen:
+                                            _extra_thinking.append(think)
+                                        else:
+                                            thinking_parts.append(think)
+                                        yield create_thinking_delta(think)
+                                    _in_think = False
+                                    text = text[cm.end():]
+                                else:
+                                    _think_buf = text
+                                    text = ''
+                            else:
+                                if text:
+                                    if _tool_seen:
+                                        if not _in_extra:
+                                            _in_extra = True
+                                            yield create_assistant_boundary()
+                                        _extra_text.append(text)
+                                        yield create_text_delta(text)
+                                    else:
+                                        text_parts.append(text)
+                                        yield create_text_delta(text)
+                                text = ''
                         turn_events += 1
 
                     elif isinstance(event, BackendThinking):
@@ -1741,7 +1908,7 @@ class EncreLoop:
                             # in-place to avoid duplicates.
                             found = False
                             for _existing_idx, buf in tool_call_buffers.items():
-                                if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):  # noqa: E501
+                                if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
                                     buf["id"] = event.id or buf["id"]
                                     buf["name"] = event.name
                                     buf["arguments"] = event.arguments
@@ -1749,7 +1916,7 @@ class EncreLoop:
                                     break
                             if not found:
                                 for _existing_idx, buf in _extra_buffers.items():
-                                    if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):  # noqa: E501
+                                    if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
                                         buf["id"] = event.id or buf["id"]
                                         buf["name"] = event.name
                                         buf["arguments"] = event.arguments
@@ -1766,20 +1933,35 @@ class EncreLoop:
                             # Update existing buffer entry (from deltas) if present;
                             # otherwise create a new one.
                             found = False
+                            _streaming_call_idx = -1
                             for _existing_idx, buf in tool_call_buffers.items():
-                                if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):  # noqa: E501
+                                if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
                                     buf["id"] = event.id or buf["id"]
                                     buf["name"] = event.name
                                     buf["arguments"] = event.arguments
                                     found = True
+                                    _streaming_call_idx = _existing_idx
                                     break
                             if not found:
-                                idx = len(tool_call_buffers)
-                                tool_call_buffers[idx] = {
+                                _streaming_call_idx = len(tool_call_buffers)
+                                tool_call_buffers[_streaming_call_idx] = {
                                     "id": event.id,
                                     "name": event.name,
                                     "arguments": event.arguments,
                                 }
+                            # Streaming tool execution: pre-execute allowed tools in
+                            # background while the model continues generating output.
+                            if (self.config.enable_streaming_tool_execution
+                                and not self.plan_mode_active
+                                and event.name not in ("question", "agent", "workflow")
+                                and event.name not in _WRITE_TOOL_NAMES):
+                                _sc_client = f"call_{self.session.turn_count}_{_streaming_call_idx}"
+                                if _sc_client not in self._streaming_tool_results:
+                                    asyncio.create_task(
+                                        self._pre_execute_in_background(
+                                            _sc_client, event.name, event.arguments,
+                                        )
+                                    )
 
                     elif isinstance(event, BackendFinish):
                         # Capture token usage from the backend
@@ -1797,24 +1979,66 @@ class EncreLoop:
                         )
                         # Raise so the generic except handler below catches this
                         # and continues the session instead of killing it.
-                        raise RuntimeError(f"Backend error: {event.error}")
+                        raise RuntimeError(event.error)
 
             except Exception as exc:
-                logger.error("[run] backend.chat() raised exception after %.1fs turn=%d: %s",
-                            time.time() - _t_chat, self.session.turn_count, exc)
+                # Reactive compact: on context overflow (413), compact the session
+                # synchronously so the next turn has room and retries naturally
+                # instead of showing the user an error card.
+                if not _reactive_compacted and _is_context_overflow(exc):
+                    try:
+                        context_msgs = self.session.get_context_messages()
+                        est = count_message_tokens(context_msgs)
+                        self.session.set_compact_archive(context_msgs)
+                        compacted = await self.compact_engine.compact(
+                            context_msgs, backend=self.backend,
+                            turn_count=self.session.turn_count,
+                            system_prompt=system_prompt or "",
+                            session_id=self.session.id or "",
+                        )
+                        if compacted is not None:
+                            self.session.replace_branch_messages(self.session.active_branch_id, compacted)
+                            logger.info("[reactive] compact succeeded turn=%d, continuing without error",
+                                        self.session.turn_count)
+                            _reactive_compacted = True
+                            _llm_span.set_attribute("llm.reactive_compact", "succeeded")
+                            _llm_span.end()
+                            # Don't yield error -- next turn picks up compacted messages
+                            continue
+                    except Exception as _ce:
+                        logger.warning("[reactive] compact failed turn=%d: %s",
+                                       self.session.turn_count, _ce)
+
+                logger.error("[run] backend.chat() raised exception after {elapsed:.1f}s turn={turn}: {exc}",
+                            elapsed=time.time() - _t_chat, turn=self.session.turn_count, exc=exc)
                 _llm_span.set_attribute("llm.error", str(exc))
                 _llm_span.end()
                 await self.hook_system.emit_error(exc, "backend_chat_exception")
-                await self.hook_system.emit_backend_error(str(exc), type(self.backend).__name__ if self.backend else "unknown")  # noqa: E501
-                # Don't end the session -- add the error to context so the model
-                # sees it next turn and can retry or respond gracefully.
-                err_msg = f"[Backend API Error]\n{type(exc).__name__}: {exc}"
-                self.session.add_message("user", err_msg)
-                logger.info("[run] added backend error to session on turn %d, continuing", self.session.turn_count)
+                await self.hook_system.emit_backend_error(str(exc), type(self.backend).__name__ if self.backend else "unknown")
+                # Notify the frontend with a finish(error) event so the red error
+                # card renders in the conversation, rather than silently swallowing
+                # the error as a plain user message.
+                err_msg = format_backend_error(exc)
+                yield create_finish("error", error=err_msg)
+                # Store the error on the last assistant message so it persists
+                # across session reloads.  The frontend picks up these fields
+                # and renders the red error card.
+                for _i in range(len(self.session.messages) - 1, -1, -1):
+                    _m = self.session.messages[_i]
+                    if _m.get("role") == "assistant":
+                        _m["errorMessage"] = err_msg
+                        _m["errorCode"] = "execution_error"
+                        # Also append the error text to the assistant's content
+                        # for the model to see in the next turn.
+                        _c = _m.get("content", "")
+                        if isinstance(_c, str):
+                            _m["content"] = _c + f"\n\n[Backend API Error]\n{err_msg}"
+                        break
+                logger.info("[run] stored backend error on assistant msg turn={turn}, continuing", turn=self.session.turn_count)
                 continue
             else:
-                logger.info("[run] backend.chat() completed in %.1fs turn=%d events=%d",
-                            time.time() - _t_chat, self.session.turn_count, turn_events)
+                logger.info("[run] backend.chat() completed in {elapsed:.1f}s turn={turn} events={events}",
+                            elapsed=time.time() - _t_chat, turn=self.session.turn_count, events=turn_events)
                 # Record token usage on the LLM span when the backend provided it
                 if _backend_usage:
                     _llm_span.set_attribute("llm.token_count.prompt",
@@ -1879,7 +2103,7 @@ class EncreLoop:
                     self.session.add_message("assistant", full_text, **txt_kwargs)
 
                 await self.hook_system.emit_session_end()
-                logger.debug("Agent finished (text-only response, %d chars)", len(full_text))
+                logger.debug("Agent finished (text-only response, {chars} chars)", chars=len(full_text))
                 yield create_finish("stop", usage=_backend_usage)
                 # Main session: text-only ends this run. User sends next message.
                 # Sub-agent: text-only completes the sub-agent task.
@@ -1961,7 +2185,7 @@ class EncreLoop:
                         self.session.add_tool_result(tc["id"], err_msg, is_error=True)
                         turn_events += 1
                         self.telemetry.record_tool_call(
-                            tool_name=tc["name"], latency_ms=0, success=False, error_message=err_msg,  # noqa: E501
+                            tool_name=tc["name"], latency_ms=0, success=False, error_message=err_msg,
                         )
                         yield create_tool_call_end(id=client_id)
                         turn_events += 1
@@ -1996,13 +2220,20 @@ class EncreLoop:
                     "args_summary": _args_summary(args),
                 })
 
+            # Tag tools that were pre-executed during streaming so the permission
+            # and execution phases can skip re-execution.
+            if self._streaming_tool_results:
+                for _pre_p in prepared:
+                    if _pre_p["client_id"] in self._streaming_tool_results:
+                        _pre_p["pre_executed"] = True
+
             # ── Permission & hooks for all tools (sequential -- these may need user input) ──
             if self._cancelled():
                 break
             for p in prepared:
                 if self._cancelled():
                     break
-                if p["skip"]:
+                if p.get("skip") or p.get("pre_executed"):
                     continue
                 permission = await self.safety.check_tool_permission(p["name"], p["args"])
                 if permission.behavior == "deny":
@@ -2088,7 +2319,7 @@ class EncreLoop:
                 pre_hook = await self.hook_system.emit_pre_tool(p["name"], p["args"])
                 if pre_hook and pre_hook.get("block"):
                     block_reason = pre_hook.get("block_reason") or f"Blocked by hook: {p['name']}"
-                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="blocked")  # noqa: E501
+                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="blocked")
                     yield create_tool_result(id=p["client_id"], content=block_reason, is_error=True)
                     self.session.add_tool_result(p["id"], block_reason, is_error=True, client_id=p["client_id"])
                     turn_events += 1
@@ -2118,7 +2349,7 @@ class EncreLoop:
                         # error result back to the model so it can
                         # adjust its plan without leaving the tool call
                         # hanging in the conversation.
-                        plan_err = "Plan rejected by user. Adjust your plan and try a different approach."  # noqa: E501
+                        plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
                         yield create_tool_result(
                             id=p["client_id"],
                             content=plan_err,
@@ -2142,7 +2373,8 @@ class EncreLoop:
                     questions_list: list[dict[str, Any]] = []
                     questions_raw = args.get("questions")
                     if isinstance(questions_raw, str):
-                        with contextlib.suppress(builtins.BaseException): questions_raw = json.loads(questions_raw)  # noqa: E501
+                        with contextlib.suppress(builtins.BaseException):
+                            questions_raw = json.loads(questions_raw)
                     if questions_raw and isinstance(questions_raw, list):
                         for q in questions_raw:
                             if isinstance(q, dict):
@@ -2165,7 +2397,7 @@ class EncreLoop:
                     yield create_question_request(
                         tool_call_id=p["client_id"], questions=questions_list,
                     )
-                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")  # noqa: E501
+                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
                     self._question_event = asyncio.Event()
                     self._question_answers = ""
                     try:
@@ -2185,6 +2417,44 @@ class EncreLoop:
                     p["skip"] = True
                     p["result"] = result
                     continue
+
+            # ── Yield results for pre-executed (streaming) tools ─────────
+            for p in list(prepared):
+                if not p.get("pre_executed"):
+                    continue
+                pr = self._streaming_tool_results[p["client_id"]]
+                _pre_result = _apply_result_budget(pr["result"], p["tool"])
+                yield create_tool_result(
+                    id=p["client_id"], content=_pre_result, is_error=pr["is_error"],
+                )
+                self.session.add_tool_result(
+                    p["id"], _pre_result, is_error=pr["is_error"], client_id=p["client_id"],
+                )
+                turn_events += 1
+                self.telemetry.record_tool_call(
+                    tool_name=p["name"], latency_ms=pr["latency_ms"],
+                    success=not pr["is_error"],
+                )
+                if pr["is_error"]:
+                    self._error_tool_names.add(p["name"])
+                else:
+                    self._error_tool_names.discard(p["name"])
+                yield create_tool_call_end(id=p["client_id"])
+                turn_events += 1
+                if not pr["is_error"]:
+                    _fp = _extract_file_path(p["name"], _pre_result)
+                    if _fp:
+                        _dt = _extract_diff_text(p["name"], _pre_result)
+                        _entry = self.session.add_artifact(_fp, p["name"], diff_text=_dt)
+                        yield Artifact(artifact=_entry)
+                    elif _is_reference_tool(p["name"]):
+                        _summary = _extract_ref_summary(p["name"], p.get("args", {}), _pre_result)
+                        _entry = self.session.add_reference(p["name"], _summary)
+                        yield Reference(reference=_entry)
+                    _plan_items = _ensure_plan_items(p["name"], p["args"])
+                    if _plan_items:
+                        yield PlanUpdate(plan_items=_plan_items)
+                prepared.remove(p)
 
             # ── Split into safe (concurrent) and unsafe (sequential) groups ──
             safe_tools = [p for p in prepared if not p.get("skip") and p.get("safe")]
@@ -2217,10 +2487,22 @@ class EncreLoop:
             if safe_tools:
                 # Emit progress for all safe tools upfront
                 for p in safe_tools:
-                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")  # noqa: E501
+                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
 
                 async def _execute_safe(p: dict[str, Any]) -> dict[str, Any]:
                     tool_start = time.time()
+                    # Read-before-write + staleness check for write tools
+                    staleness_error = self._check_file_write_precondition(p["name"], p["args"])
+                    if staleness_error:
+                        _span = trace_tool_call(self._tracer, p["name"], p["args"])
+                        _span.end()
+                        p["result"] = staleness_error
+                        p["sub_agent_messages"] = None
+                        p["sub_agent_references"] = []
+                        p["is_error"] = True
+                        p["recovery_history"] = []
+                        p["latency_ms"] = (time.time() - tool_start) * 1000
+                        return p
                     tool_error = False
                     _span = trace_tool_call(self._tracer, p["name"], p["args"])
                     try:
@@ -2228,7 +2510,7 @@ class EncreLoop:
                         state = await executor.execute(
                             tool_name=p["name"],
                             tool_args=p["args"],
-                            execute_fn=lambda args: p["tool"].execute(**args),
+                            execute_fn=lambda a, p=p: p["tool"].execute(**a),
                         )
                         if state.succeeded:
                             result = state.final_result
@@ -2288,6 +2570,9 @@ class EncreLoop:
                         continue
                     p = item
                     p["result"] = _apply_result_budget(p["result"], p["tool"])
+                    # Track file reads for read-before-write enforcement
+                    if not p["is_error"] and p["name"] == "file_read":
+                        self._record_file_read(p["args"].get("file_path", ""))
                     # Auto-verify: append verification reminder for write tools
                     if not p["is_error"] and p["name"] in _WRITE_TOOL_NAMES:
                         fp = _extract_file_path(p["name"], p["result"])
@@ -2328,7 +2613,7 @@ class EncreLoop:
                             outcome=p["result"][:500], latency_ms=p["latency_ms"],
                         )
                         if p.get("recovery_history"):
-                            correction = ErrorRecoveryEngine.infer_correction_from_history(p["recovery_history"], p["name"])  # noqa: E501
+                            correction = ErrorRecoveryEngine.infer_correction_from_history(p["recovery_history"], p["name"])
                             self.learner.record_correction(
                                 tool_name=p["name"],
                                 error_context=p["args_summary"],
@@ -2345,18 +2630,18 @@ class EncreLoop:
                         if fp:
                             if p["name"] == "apply_patch":
                                 for ap_path in _extract_apply_patch_paths(p["result"]):
-                                    entry = self.session.add_artifact(ap_path, p["name"], diff_text="")  # noqa: E501
+                                    entry = self.session.add_artifact(ap_path, p["name"], diff_text="")
                                     yield Artifact(artifact=entry)
                             else:
                                 diff_text = _extract_diff_text(p["name"], p["result"])
-                                entry = self.session.add_artifact(fp, p["name"], diff_text=diff_text)  # noqa: E501
+                                entry = self.session.add_artifact(fp, p["name"], diff_text=diff_text)
                                 yield Artifact(artifact=entry)
                         else:
                             # Non-file tool -> record as reference
                             if _is_reference_tool(p["name"]):
-                                summary = _extract_ref_summary(p["name"], p.get("args", {}), p["result"])  # noqa: E501
+                                summary = _extract_ref_summary(p["name"], p.get("args", {}), p["result"])
                                 ref_icon = ""
-                                entry = self.session.add_reference(p["name"], summary, icon=ref_icon)  # noqa: E501
+                                entry = self.session.add_reference(p["name"], summary, icon=ref_icon)
                                 yield Reference(reference=entry)
                             # Forward references from sub-agents (agent / workflow tools)
                             for sub_ref in (p.get("sub_agent_references") or []):
@@ -2375,6 +2660,21 @@ class EncreLoop:
             # ── Execute unsafe tools sequentially ──
             for p in unsafe_tools:
                 tool_start = time.time()
+                # Read-before-write + staleness check for write tools
+                staleness_error = self._check_file_write_precondition(p["name"], p["args"])
+                if staleness_error:
+                    yield create_tool_result(id=p["client_id"], content=staleness_error, is_error=True)
+                    self.session.add_tool_result(p["id"], staleness_error, is_error=True, client_id=p["client_id"])
+                    turn_events += 1
+                    self.telemetry.record_tool_call(
+                        tool_name=p["name"], latency_ms=0.0,
+                        success=False, error_message=staleness_error,
+                    )
+                    self._error_tool_names.add(p["name"])
+                    yield create_tool_call_end(id=p["client_id"])
+                    turn_events += 1
+                    continue
+
                 yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
 
                 tool_error = False
@@ -2385,7 +2685,7 @@ class EncreLoop:
                     if p["name"] == "agent":
                         progress_queue: asyncio.Queue[list[dict[str, Any]] | None] = asyncio.Queue()
 
-                        async def _sub_agent_progress(messages: list[dict[str, Any]]) -> None:
+                        async def _sub_agent_progress(messages: list[dict[str, Any]], progress_queue=progress_queue) -> None:
                             nonlocal sub_agent_messages
                             sub_agent_messages = messages
                             await progress_queue.put(messages)
@@ -2393,7 +2693,7 @@ class EncreLoop:
                         agent_args = dict(p["args"])
                         agent_args["progress_callback"] = _sub_agent_progress
 
-                        async def _run_agent_tool() -> Any:
+                        async def _run_agent_tool(p=p, agent_args=agent_args, progress_queue=progress_queue) -> Any:
                             try:
                                 return await p["tool"].execute(**agent_args)
                             finally:
@@ -2429,13 +2729,13 @@ class EncreLoop:
                     elif p["name"] == "workflow":
                         progress_queue: asyncio.Queue[list[dict[str, Any]] | None] = asyncio.Queue()
 
-                        async def _wf_progress(messages: list[dict[str, Any]]) -> None:
+                        async def _wf_progress(messages: list[dict[str, Any]], progress_queue=progress_queue) -> None:
                             await progress_queue.put(messages)
 
                         wf_args = dict(p["args"])
                         wf_args["progress_callback"] = _wf_progress
 
-                        async def _run_wf_tool() -> Any:
+                        async def _run_wf_tool(p=p, wf_args=wf_args, progress_queue=progress_queue) -> Any:
                             try:
                                 return await p["tool"].execute(**wf_args)
                             finally:
@@ -2474,7 +2774,7 @@ class EncreLoop:
                                             total_duration=msg.get("total_duration", 0.0),
                                         )
                                 else:
-                                    sub_agent_messages = [live_messages] if not isinstance(live_messages, list) else live_messages  # noqa: E501
+                                    sub_agent_messages = [live_messages] if not isinstance(live_messages, list) else live_messages
                                     yield create_tool_progress(
                                         id=p["client_id"],
                                         tool_name=p["name"],
@@ -2494,7 +2794,7 @@ class EncreLoop:
                         state = await executor.execute(
                             tool_name=p["name"],
                             tool_args=p["args"],
-                            execute_fn=lambda args: p["tool"].execute(**args),
+                            execute_fn=lambda args, p=p: p["tool"].execute(**args),
                         )
                         if state.succeeded:
                             result = state.final_result
@@ -2635,7 +2935,7 @@ class EncreLoop:
                         # Preserve segment ordering for intra-turn extra content
                         extra_segs = []
                         if _extra_thinking:
-                            extra_segs.append({"kind": "thinking", "text": "".join(_extra_thinking)})  # noqa: E501
+                            extra_segs.append({"kind": "thinking", "text": "".join(_extra_thinking)})
                         if _extra_text:
                             extra_segs.append({"kind": "text", "text": "".join(_extra_text)})
                         for etc in (extra_tc if _extra_buffers else []):
@@ -2701,7 +3001,7 @@ class EncreLoop:
                                 or _permission_reason(p["name"])
                                 or "Permission denied by policy."
                             )
-                            yield create_tool_result(id=p["client_id"], content=deny_reason, is_error=True)  # noqa: E501
+                            yield create_tool_result(id=p["client_id"], content=deny_reason, is_error=True)
                             self.session.add_tool_result(p["id"], deny_reason, is_error=True, client_id=p["client_id"])
                             turn_events += 1
                             self.telemetry.record_tool_call(
@@ -2754,7 +3054,7 @@ class EncreLoop:
                             )
                             if not self._permission_decision:
                                 err_msg = "Permission denied by user."
-                                yield create_tool_result(id=p["client_id"], content=err_msg, is_error=True)  # noqa: E501
+                                yield create_tool_result(id=p["client_id"], content=err_msg, is_error=True)
                                 self.session.add_tool_result(p["id"], err_msg, is_error=True, client_id=p["client_id"])
                                 turn_events += 1
                                 self.telemetry.record_tool_call(
@@ -2767,8 +3067,8 @@ class EncreLoop:
 
                         pre_hook = await self.hook_system.emit_pre_tool(p["name"], p["args"])
                         if pre_hook and pre_hook.get("block"):
-                            block_reason = pre_hook.get("block_reason") or f"Blocked by hook: {p['name']}"  # noqa: E501
-                            yield create_tool_result(id=p["client_id"], content=block_reason, is_error=True)  # noqa: E501
+                            block_reason = pre_hook.get("block_reason") or f"Blocked by hook: {p['name']}"
+                            yield create_tool_result(id=p["client_id"], content=block_reason, is_error=True)
                             self.session.add_tool_result(p["id"], block_reason, is_error=True, client_id=p["client_id"])
                             turn_events += 1
                             self.telemetry.record_tool_call(
@@ -2791,7 +3091,7 @@ class EncreLoop:
                                 yield _event
                                 turn_events += 1
                             if sec_proposal_emitted and not self._plan_decision:
-                                plan_err = "Plan rejected by user. Adjust your plan and try a different approach."  # noqa: E501
+                                plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
                                 yield create_tool_result(
                                     id=p["client_id"],
                                     content=plan_err,
@@ -2809,7 +3109,7 @@ class EncreLoop:
 
                 # Execute secondary tools sequentially
                 for p in extra_prepared:
-                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")  # noqa: E501
+                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
                     tool_start = time.time()
                     tool_error = False
                     try:
@@ -2817,7 +3117,7 @@ class EncreLoop:
                         state = await executor.execute(
                             tool_name=p["name"],
                             tool_args=p["args"],
-                            execute_fn=lambda args: p["tool"].execute(**args),
+                            execute_fn=lambda args, p=p: p["tool"].execute(**args),
                         )
                         if state.succeeded:
                             result = state.final_result
@@ -2876,11 +3176,11 @@ class EncreLoop:
                         if fp:
                             if p["name"] == "apply_patch":
                                 for ap_path in _extract_apply_patch_paths(result):
-                                    entry = self.session.add_artifact(ap_path, p["name"], diff_text="")  # noqa: E501
+                                    entry = self.session.add_artifact(ap_path, p["name"], diff_text="")
                                     yield Artifact(artifact=entry)
                             else:
                                 diff_text = _extract_diff_text(p["name"], result)
-                                entry = self.session.add_artifact(fp, p["name"], diff_text=diff_text)  # noqa: E501
+                                entry = self.session.add_artifact(fp, p["name"], diff_text=diff_text)
                                 yield Artifact(artifact=entry)
                         plan_items = _ensure_plan_items(p["name"], p["args"])
                         if plan_items:
@@ -2947,8 +3247,8 @@ class EncreLoop:
             self.rollback.commit(self.session, f"turn_{self.session.turn_count}")
 
         reason = "cancelled" if self._cancelled() else "max_tokens"
-        logger.warning("[run] session ending turn=%d max_turns=%s reason=%s",
-                       self.session.turn_count, self.config.max_turns, reason)
+        logger.warning("[run] session ending turn={turn} max_turns={max_turns} reason={reason}",
+                       turn=self.session.turn_count, max_turns=self.config.max_turns, reason=reason)
         await self.hook_system.emit_session_end()
         yield create_finish(
             reason,
@@ -2996,17 +3296,19 @@ class EncreLoop:
         if system_prompt is None:
             system_prompt = ""
 
-        logger.info("[sub_agent] _run_sub_agent | prompt_len=%d | sys_prompt_len=%d | tool_policy=%s",  # noqa: E501
-                    len(prompt), len(system_prompt), tool_policy)
-        logger.info("[sub_agent] prompt_text=%.300s", prompt)
+        logger.info("[sub_agent] _run_sub_agent | prompt_len={plen} | sys_prompt_len={splen} | tool_policy={tp}",
+                    plen=len(prompt), splen=len(system_prompt), tp=tool_policy)
+        logger.info("[sub_agent] prompt_text={p:.300s}", p=prompt)
 
         # Create a full EncreAgent (same as SessionManager.create_session / normal user flow).
         # Lazy-import to avoid circular dependency (agent.py imports EncreLoop from this module).
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
         from encre.tools.builtin.agent import (
-            _enforce_tool_policy as _agent_enforce_policy,
             MAX_SUB_AGENT_DEPTH,
+        )
+        from encre.tools.builtin.agent import (
+            _enforce_tool_policy as _agent_enforce_policy,
         )
         from encre.tools.registry import ToolRegistry
 
@@ -3043,8 +3345,8 @@ class EncreLoop:
         if self.sub_agent_depth >= MAX_SUB_AGENT_DEPTH and "agent" in tool_registry._tools:
             try:
                 del tool_registry._tools["agent"]
-                logger.info("[sub_agent] depth=%d reached MAX=%d, removed 'agent' tool from sub-agent registry",
-                            self.sub_agent_depth + 1, MAX_SUB_AGENT_DEPTH)
+                logger.info("[sub_agent] depth={depth} reached MAX={maxd}, removed 'agent' tool from sub-agent registry",
+                            depth=self.sub_agent_depth + 1, maxd=MAX_SUB_AGENT_DEPTH)
             except Exception:
                 pass
         # Propagate the role-template's tool_policy onto the sub-agent's
@@ -3056,7 +3358,7 @@ class EncreLoop:
         sub_agent.config.current_tool_policy = tool_policy
 
         if tool_policy in ("readonly", "no_writes"):
-            def _policy_hook(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any] | None:  # noqa: ARG001  # noqa: E501
+            def _policy_hook(tool_name: str, _tool_input: dict[str, Any]) -> dict[str, Any] | None:
                 # ``tool_input`` is part of the pre-tool hook signature
                 # for future context-aware policies; current policy
                 # decisions only depend on ``tool_name``.
@@ -3068,7 +3370,7 @@ class EncreLoop:
             # Wrap the sub-agent loop's pre-tool hook to apply the policy.
             original_emit_pre_tool = sub_agent.loop.hook_system.emit_pre_tool
 
-            async def _emit_pre_tool_with_policy(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any] | None:  # noqa: E501
+            async def _emit_pre_tool_with_policy(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any] | None:
                 result = _policy_hook(tool_name, tool_input)
                 if result is not None:
                     return result
@@ -3242,14 +3544,12 @@ class EncreLoop:
                 await _emit_live()
             elif isinstance(event, ToolProgress):
                 _flush_text_buffer()
-                result_parts.append(f"### Tool Progress\n- id: `{event.id}`\n- name: `{event.tool_name}`\n- status: `{event.status}`\n")  # noqa: E501
+                result_parts.append(f"### Tool Progress\n- id: `{event.id}`\n- name: `{event.tool_name}`\n- status: `{event.status}`\n")
                 # Forward nested sub-agent messages so the frontend sees
                 # live progress from sub-sub-agents all the way up.
                 if progress_callback is not None and event.sub_agent_messages:
-                    try:
+                    with contextlib.suppress(Exception):
                         await progress_callback(event.sub_agent_messages)
-                    except Exception:
-                        pass
                 else:
                     await _emit_live()
             elif isinstance(event, ToolCallEnd):
@@ -3262,7 +3562,7 @@ class EncreLoop:
                 if len(content) > 2000:
                     content = f"{content[:2000]}\n... (truncated)"
                 result_parts.append(
-                    f"### Tool Result\n- id: `{event.id}`\n- error: `{'yes' if event.is_error else 'no'}`\n\n```text\n{content}\n```\n"  # noqa: E501
+                    f"### Tool Result\n- id: `{event.id}`\n- error: `{'yes' if event.is_error else 'no'}`\n\n```text\n{content}\n```\n"
                 )
                 # Tool results are already persisted into sub_agent.session.messages
                 # by the sub-agent's own loop. The snapshot builder picks them up
@@ -3310,9 +3610,9 @@ class EncreLoop:
                     names = [tc.get("function", {}).get("name", "?") for tc in tcs]
                     final_text = f"[Tool calls executed: {', '.join(names)}]"
                     break
-            logger.info("[sub_agent] done session_id=%s final_len=%d msgs=%d",
-                         saved_session_id, len(final_text), len(sub_agent.session.messages))
-            logger.info("[sub_agent] final_text=%.200s", final_text)
+            logger.info("[sub_agent] done session_id={sid} final_len={flen} msgs={mcount}",
+                          sid=saved_session_id, flen=len(final_text), mcount=len(sub_agent.session.messages))
+            logger.info("[sub_agent] final_text={t:.200s}", t=final_text)
             return {
                 "content": final_text or "No output from sub-agent",
                 "messages": sub_agent.session.messages,

@@ -27,9 +27,12 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from encre.swarm.mailbox import EncreMailbox
+
+if TYPE_CHECKING:
+    from encre.swarm.teammate import EncreTeammate
 
 
 @dataclass
@@ -116,7 +119,7 @@ class EncreConsensus:
                 counts[v.choice] += 1
 
         total = sum(counts.values())
-        winner = max(counts, key=counts.get) if counts else (proposal.options[0] if proposal.options else "")  # noqa: E501
+        winner = max(counts, key=counts.get) if counts else (proposal.options[0] if proposal.options else "")
         winner_count = counts.get(winner, 0)
         is_consensus = total > 0 and (winner_count / total) >= 0.67
 
@@ -335,7 +338,7 @@ class EncreConsensus:
         transcript.append("\n--- OPENING STATEMENTS ---")
         for i, debater in enumerate(debaters):
             label = labels[i]
-            opponent_labels = [l for l in labels if l != label]
+            opponent_labels = [lb for lb in labels if lb != label]
             prompt = (
                 f"You are debating: {topic}\n"
                 f"Your label: {label}\n"
@@ -366,7 +369,7 @@ class EncreConsensus:
                 for j, other in enumerate(debaters):
                     if other.teammate_id == debater.teammate_id:
                         continue
-                    prev = round_statements.get(other.teammate_id) or opening_statements.get(other.teammate_id, "")  # noqa: E501
+                    prev = round_statements.get(other.teammate_id) or opening_statements.get(other.teammate_id, "")
                     opponent_args_parts.append(
                         f"{labels[j]} ({other.name}): {prev[:2000]}"
                     )

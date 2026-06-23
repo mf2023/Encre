@@ -27,7 +27,15 @@ from encre.evolution.config import EvolutionConfig
 from encre.evolution.learner import EncreEvolutionLearner, ErrorRecord, SuccessRecord
 from encre.evolution.meta import CapabilityProfile, EncreMetaCognition
 from encre.evolution.optimizer import EncreStrategyOptimizer, ToolStrategy
-from encre.evolution.plan_do_review import PlanDoReviewEngine, RuntimePlan, StepNode, StepStatus, ReviewGrade, should_plan, decompose_task
+from encre.evolution.plan_do_review import (
+    PlanDoReviewEngine,
+    ReviewGrade,
+    RuntimePlan,
+    StepNode,
+    StepStatus,
+    decompose_task,
+    should_plan,
+)
 from encre.evolution.reflex import EncreReflexLoop, ReflexResult
 
 __all__ = [

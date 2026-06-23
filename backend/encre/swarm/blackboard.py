@@ -96,7 +96,7 @@ class EncreBlackboard:
             if namespace.startswith("__"):
                 continue
             for key, entry in entries.items():
-                val_str = json.dumps(entry.value, ensure_ascii=False) if not isinstance(entry.value, str) else entry.value  # noqa: E501
+                val_str = json.dumps(entry.value, ensure_ascii=False) if not isinstance(entry.value, str) else entry.value
                 lines.append(f"[{namespace}/{key}] {val_str[:500]}")
         return "\n".join(lines)
 
@@ -104,7 +104,7 @@ class EncreBlackboard:
         ns = self._store.get(namespace, {})
         return ns.pop(key, None) is not None
 
-    def compare_and_swap(self, namespace: str, key: str, expected_version: int, new_value: Any) -> bool:  # noqa: E501
+    def compare_and_swap(self, namespace: str, key: str, expected_version: int, new_value: Any) -> bool:
         ns = self._store.get(namespace, {})
         entry = ns.get(key)
         if entry is None or entry.version != expected_version:
@@ -112,7 +112,7 @@ class EncreBlackboard:
         self.put(namespace, key, new_value)
         return True
 
-    async def watch(self, namespace: str, key: str, timeout: float = 300.0) -> BlackboardEntry | None:  # noqa: E501
+    async def watch(self, namespace: str, key: str, timeout: float = 300.0) -> BlackboardEntry | None:
         queue: asyncio.Queue[BlackboardEntry] = asyncio.Queue(maxsize=1)
         ns_watchers = self._watchers.setdefault(namespace, {})
         key_watchers = ns_watchers.setdefault(key, [])

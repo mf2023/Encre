@@ -140,7 +140,7 @@ class CronSchedule:
             if hour >= 24:
                 hour = 0
                 day += 1
-            days_in_month = [31, 29 if (year % 400 == 0 or (year % 4 == 0 and year % 100 != 0)) else 28,  # noqa: E501
+            days_in_month = [31, 29 if (year % 400 == 0 or (year % 4 == 0 and year % 100 != 0)) else 28,
                              31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
             if day > days_in_month[month - 1]:
                 day = 1
@@ -322,7 +322,7 @@ class EncreScheduler:
         self._task: asyncio.Task[Any] | None = None
         self._agent_factory: Callable[[dict[str, Any] | None], Any] | None = None
         self._on_complete: Callable[[ScheduledJob], None] | None = None
-        self._on_progress: Callable[[ScheduledJob, str, dict[str, Any]], Awaitable[None]] | None = None  # noqa: E501
+        self._on_progress: Callable[[ScheduledJob, str, dict[str, Any]], Awaitable[None]] | None = None
 
         self._load()
 
@@ -446,7 +446,7 @@ class EncreScheduler:
             self._save()
         return not job.suspended
 
-    def update_job(self, job_id: str, *, name: str, prompt: str, cron: str, tag: str, model_index: int = -1, agent_config: dict[str, Any] | None = None, push_gateways: list[str] | None = None) -> bool:  # noqa: E501
+    def update_job(self, job_id: str, *, name: str, prompt: str, cron: str, tag: str, model_index: int = -1, agent_config: dict[str, Any] | None = None, push_gateways: list[str] | None = None) -> bool:
         """Update a job's properties. Returns True on success."""
         job = self._jobs.get(job_id)
         if job is None:
@@ -533,7 +533,7 @@ class EncreScheduler:
         """Register a callback for job completion."""
         self._on_complete = callback
 
-    def on_job_progress(self, callback: Callable[[ScheduledJob, str, dict[str, Any]], Awaitable[None]]) -> None:  # noqa: E501
+    def on_job_progress(self, callback: Callable[[ScheduledJob, str, dict[str, Any]], Awaitable[None]]) -> None:
         """Register an async callback for real-time job execution progress.
 
         Called for each streaming event during ``agent.run()`` with
@@ -577,7 +577,7 @@ class EncreScheduler:
                     if job.fire_at and now >= job.fire_at:
                         due_jobs.append(job)
                 elif job.schedule_type == ScheduleType.RECURRING and job.cron:
-                    if job.last_fired is None:
+                    if job.last_fired is None:  # noqa: SIM108
                         # First time the scheduler sees this recurring job after
                         # creation or restart: only consider future fire times so
                         # the job does not execute immediately on application
@@ -646,7 +646,7 @@ class EncreScheduler:
                     "session_id": None,
                 })
             except Exception:
-                logger.warning("[scheduler] progress callback failed for 'start' event", exc_info=True)  # noqa: E501
+                logger.warning("[scheduler] progress callback failed for 'start' event", exc_info=True)
 
         # Build an event translator that turns raw AgentEvents into the
         # existing automation_stream_event wire format. This is the only
@@ -704,7 +704,7 @@ class EncreScheduler:
                 try:
                     await self._on_progress(job, event_name, event_data)
                 except Exception:
-                    logger.warning("[scheduler] progress callback failed for '%s'", event_name, exc_info=True)  # noqa: E501
+                    logger.warning("[scheduler] progress callback failed for '%s'", event_name, exc_info=True)
 
         try:
             if job.dag_definition:
@@ -766,7 +766,7 @@ class EncreScheduler:
                     "result": (job.last_result or "")[:2000],
                 })
             except Exception:
-                logger.warning("[scheduler] progress callback failed for 'finish' event", exc_info=True)  # noqa: E501
+                logger.warning("[scheduler] progress callback failed for 'finish' event", exc_info=True)
 
         if self._on_complete:
             self._on_complete(job)
@@ -884,7 +884,7 @@ class EncreScheduler:
         """
         result = await parent_agent.loop._run_sub_agent(
             prompt=prompt,
-            system_prompt=f"You are executing a single step of a scheduled workflow. Step: {node_name}",  # noqa: E501
+            system_prompt=f"You are executing a single step of a scheduled workflow. Step: {node_name}",
             tool_policy="all",
             progress_callback=None,
             event_callback=event_callback,
@@ -922,4 +922,4 @@ class EncreScheduler:
         except KeyError as e:
             logger.warning(f"Missing key in durable job store entry: {e}")
         except Exception as e:
-            logger.error(f"Failed to load durable job store {self._durable_path}: {e}", exc_info=True)  # noqa: E501
+            logger.error(f"Failed to load durable job store {self._durable_path}: {e}", exc_info=True)

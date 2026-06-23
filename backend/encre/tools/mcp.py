@@ -352,7 +352,7 @@ class StdioTransport(MCPTransport):
         self._process.stdin.write(header + body)
         await self._process.stdin.drain()
 
-        logger.debug("Sent MCP request: id=%s method=%s", message.get("id", "<none>"), message.get("method"))  # noqa: E501
+        logger.debug("Sent MCP request: id=%s method=%s", message.get("id", "<none>"), message.get("method"))
 
     # ------------------------------------------------------------------
     # Internal: read
@@ -402,7 +402,7 @@ class StdioTransport(MCPTransport):
                 if self._process.stderr:
                     with contextlib.suppress(Exception):
                         stderr_data = await self._process.stderr.read()
-                stderr_text = stderr_data.decode("utf-8", errors="replace")[:500] if stderr_data else ""  # noqa: E501
+                stderr_text = stderr_data.decode("utf-8", errors="replace")[:500] if stderr_data else ""
                 raise MCPTransportError(
                     f"MCP server exited with code {self._process.returncode}. "
                     f"Stderr: {stderr_text}"
@@ -852,7 +852,7 @@ class MCPClient:
             await self.list_tools()
         return self._tools_cache.get(name) if self._tools_cache else None
 
-    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> list[dict[str, Any]]:  # noqa: E501
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Call a tool on the MCP server.
 
         Args:
@@ -935,7 +935,7 @@ class MCPClient:
         response = await self._send_request("prompts/list")
         return response.get("result", {}).get("prompts", [])
 
-    async def get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:  # noqa: E501
+    async def get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         """Retrieve a prompt from the MCP server.
 
         Args:
@@ -957,7 +957,7 @@ class MCPClient:
     # Generic request helpers
     # ------------------------------------------------------------------
 
-    async def _send_request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:  # noqa: E501
+    async def _send_request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Send a JSON-RPC request and return the parsed response.
 
         Raises:
@@ -981,7 +981,7 @@ class MCPClient:
         """Raise if the client has not been initialized."""
         if not self._initialized:
             raise MCPError(
-                "MCP client not initialized. Call initialize() first or use as async context manager."  # noqa: E501
+                "MCP client not initialized. Call initialize() first or use as async context manager."
             )
 
     # ------------------------------------------------------------------
@@ -1063,7 +1063,7 @@ class EncreMCPTool(EncreTool):
                  cwd: str | None = None,
                  http_timeout: float = 60.0,
                  auto_connect: bool = True,
-                 **kwargs: Any) -> None:
+                 **_kwargs: Any) -> None:
         """Initialize the MCP tool.
 
         Args:
@@ -1272,7 +1272,7 @@ class EncreMCPTool(EncreTool):
         assert self._client is not None
         return await self._client.list_prompts()
 
-    async def get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:  # noqa: E501
+    async def get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         """Retrieve a prompt from the MCP server."""
         if self._client is None:
             await self._connect()
@@ -1302,7 +1302,7 @@ class EncreMCPTool(EncreTool):
                 parts.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(parts)
 
-    def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
+    def is_concurrency_safe(self, _input_data: dict[str, Any]) -> bool:
         """Stdio transport is not concurrency-safe; HTTP is.
 
         Returns True only for HTTP transport, since subprocess stdin/stdout
@@ -1343,7 +1343,7 @@ class EncreMCPTool(EncreTool):
             registry.register(wrapper)
             registered.append(registered_name)
 
-        logger.info("Registered %d MCP tools into registry with prefix '%s'", len(registered), prefix)  # noqa: E501
+        logger.info("Registered %d MCP tools into registry with prefix '%s'", len(registered), prefix)
         return registered
 
 

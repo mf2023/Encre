@@ -54,7 +54,7 @@ class CorrectionRecord:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> CorrectionRecord:
+    def from_dict(cls, d: dict) -> "CorrectionRecord":
         return cls(
             tool_name=d["tool_name"],
             error_type=d["error_type"],

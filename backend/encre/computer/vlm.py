@@ -93,7 +93,7 @@ class VLMDecision:
     effect.
     """
 
-    action: str  # "click" | "double_click" | "right_click" | "type" | "press" | "scroll" | "wait" | "done"  # noqa: E501
+    action: str  # "click" | "double_click" | "right_click" | "type" | "press" | "scroll" | "wait" | "done"
     x: int = 0
     y: int = 0
     text: str = ""

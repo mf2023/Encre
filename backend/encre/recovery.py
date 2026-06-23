@@ -27,7 +27,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
+from typing import Any, ClassVar
 
 
 class ErrorCategory(Enum):
@@ -88,7 +88,7 @@ class RecoveryConfig:
     BACKOFF_MULTIPLIER = 2.0
 
     # Fallback chains: if tool X fails, try tool Y
-    FALLBACK_CHAINS: dict[str, list[str]] = {
+    FALLBACK_CHAINS: ClassVar[dict[str, list[str]]] = {
         "file_read": ["bash"],   # Use cat/head if read fails
         "grep": ["bash"],        # Use grep command directly
         "glob": ["bash"],        # Use ls/find
@@ -99,7 +99,7 @@ class RecoveryConfig:
     }
 
     # Error classification patterns
-    ERROR_PATTERNS: dict[str, ErrorCategory] = {
+    ERROR_PATTERNS: ClassVar[dict[str, ErrorCategory]] = {
         "timed out": ErrorCategory.TRANSIENT,
         "timeout": ErrorCategory.TRANSIENT,
         "connection refused": ErrorCategory.TRANSIENT,
@@ -172,7 +172,7 @@ class ErrorRecoveryEngine:
     def decide(
         self,
         tool_name: str,
-        tool_args: dict[str, Any],
+        _tool_args: dict[str, Any],
         error_message: str,
         attempt: int,
         fallback_depth: int = 0,
@@ -288,7 +288,7 @@ class ErrorRecoveryEngine:
         self._session_errors = 0
         self._last_errors.clear()
 
-    def _is_stuck(self, error: str) -> bool:
+    def _is_stuck(self, _error: str) -> bool:
         if len(self._last_errors) < 3:
             return False
         # Check if last 3 errors are essentially the same
@@ -304,7 +304,7 @@ class ErrorRecoveryEngine:
         return ErrorRecoveryEngine._infer_from_decisions(state.recovery_history, state.tool_name)
 
     @staticmethod
-    def infer_correction_from_history(recovery_history: list[RecoveryDecision], tool_name: str = "") -> str:  # noqa: E501
+    def infer_correction_from_history(recovery_history: list[RecoveryDecision], tool_name: str = "") -> str:
         """Derive a human-readable correction from a list of recovery decisions."""
         if not recovery_history:
             return ""

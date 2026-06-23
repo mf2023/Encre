@@ -247,7 +247,7 @@ def _apply_hunks(original: str, hunks: list[_Hunk]) -> tuple[str, list[str]]:
         pos = _locate(src_lines, pre, target, src_cursor)
         if pos is None:
             raise RuntimeError(
-                f"hunk #{h_idx + 1} could not be applied (context not found near line {h.old_start})"  # noqa: E501
+                f"hunk #{h_idx + 1} could not be applied (context not found near line {h.old_start})"
             )
 
         if pos < src_cursor:
@@ -403,7 +403,7 @@ async def _apply_patch_execute(**kwargs: Any) -> str:
                         os.makedirs(os.path.dirname(dst_path) or ".", exist_ok=True)
                         with open(dst_path, "w", encoding="utf-8", newline="") as fh:
                             fh.write(new_text)
-                        if os.path.exists(src_path) and os.path.abspath(src_path) != os.path.abspath(dst_path):  # noqa: E501
+                        if os.path.exists(src_path) and os.path.abspath(src_path) != os.path.abspath(dst_path):
                             os.remove(src_path)
                     else:
                         with open(dst_path, "w", encoding="utf-8", newline="") as fh:

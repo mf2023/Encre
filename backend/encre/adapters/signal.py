@@ -157,8 +157,8 @@ class SignalAdapter(BaseAdapter):
         chat_id: str,
         content: str,
         *,
-        reply_to: str | None = None,
-        metadata: dict[str, Any] | None = None,  # noqa: ARG002
+        _reply_to: str | None = None,
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a text message via signal-cli JSON-RPC."""
         if not self._http_client:

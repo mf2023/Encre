@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -133,7 +134,7 @@ class RulesLoader:
                     content = self._read_file(str(entry))
                     if content:
                         name = entry.stem
-                        rules.append(RuleFile(source=f"global:{name}", content=content, priority=50))  # noqa: E501
+                        rules.append(RuleFile(source=f"global:{name}", content=content, priority=50))
         except Exception:
             pass
 
@@ -163,7 +164,7 @@ class RulesLoader:
             rules.append(RuleFile(source=label, content=content, priority=_CODEX_RULE_PRIORITY))
         return rules
 
-    def build_rules_prompt(self, workspace_path: str, enable_project: bool = True, enable_global: bool = True) -> str:  # noqa: E501
+    def build_rules_prompt(self, workspace_path: str, enable_project: bool = True, enable_global: bool = True) -> str:
         blocks: list[str] = []
 
         if enable_global:

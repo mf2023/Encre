@@ -37,7 +37,7 @@ def set_scheduler(scheduler: Any) -> None:
     _scheduler = scheduler
 
 
-async def _cron_list_execute(**kwargs: Any) -> str:
+async def _cron_list_execute(**_kwargs: Any) -> str:
     if _scheduler is None:
         return json.dumps({"jobs": [], "message": "Scheduler not available."}, ensure_ascii=False)
 

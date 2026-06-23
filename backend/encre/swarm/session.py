@@ -26,7 +26,7 @@
 import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from encre.logging_config import get_logger
 from encre.swarm.blackboard import EncreBlackboard
@@ -48,7 +48,7 @@ logger = get_logger("encre.swarm")
 @dataclass
 class SwarmEvent:
     """Events emitted during swarm execution."""
-    type: str  # planning | task_started | task_completed | task_failed | consensus | team_finished | error  # noqa: E501
+    type: str  # planning | task_started | task_completed | task_failed | consensus | team_finished | error
     task_id: str = ""
     task_name: str = ""
     role: str = ""
@@ -83,7 +83,7 @@ class EncreSwarmSession:
         result = await session.execute()
     """
 
-    DEFAULT_ROLES = [
+    DEFAULT_ROLES: ClassVar[list] = [
         ROLE_ARCHITECT,
         ROLE_CODER,
         ROLE_REVIEWER,

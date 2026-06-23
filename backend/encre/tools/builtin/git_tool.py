@@ -53,7 +53,7 @@ async def _git_execute(**kwargs: Any) -> str:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=120
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
             return "Error: Git command timed out after 120 seconds"
@@ -79,7 +79,7 @@ EncreGitTool = build_tool(
         "properties": {
             "command": {
                 "type": "string",
-                "enum": ["status", "diff", "log", "branch", "commit", "add", "push", "pull", "stash", "checkout", "clone"],  # noqa: E501
+                "enum": ["status", "diff", "log", "branch", "commit", "add", "push", "pull", "stash", "checkout", "clone"],
                 "description": "Git subcommand to execute",
             },
             "repo_path": {

@@ -164,13 +164,16 @@ export class Session {
       const date = new Date(ts);
       const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
+      // Full timestamp for the hover tooltip (localized, e.g. "2026-06-22 14:30:45").
+      // Falls back to an empty string when the timestamp is invalid.
+      const fullTs = ts > 0 ? date.toLocaleString() : "";
       const preview = s.preview || t("general.emptySessionName");
       const displayName = s.name || preview;
       const msgCount = s.message_count ?? 0;
       const runningBadge = s.is_running ? '<span class="session-running"></span>' : "";
       const badge = this.channelBadge(s.channel);
       if (this.batchMode) {
-        html += `<div class="ws-tree-session-item" data-sid="${s.session_id}">
+        html += `<div class="ws-tree-session-item" data-sid="${s.session_id}" title="${this.esc(fullTs)}">
           <div class="session-item-top">
             <input type="checkbox" class="session-checkbox" data-sid="${s.session_id}" ${this.selectedIds.has(s.session_id) ? "checked" : ""} />
             <span class="session-preview">${this.esc(displayName)}</span>
@@ -179,7 +182,7 @@ export class Session {
           <span class="session-meta">${dateStr} ${timeStr} · ${msgCount} ${t("session.messages")} ${badge}</span>
         </div>`;
       } else {
-        html += `<div class="ws-tree-session-item${active}" data-sid="${s.session_id}">
+        html += `<div class="ws-tree-session-item${active}" data-sid="${s.session_id}" title="${this.esc(fullTs)}">
           <div class="session-item-top">
             <span class="session-preview">${this.esc(displayName)}</span>
             ${runningBadge}
@@ -204,6 +207,19 @@ export class Session {
         if (this.batchMode) return;
         const sid = (item as HTMLElement).dataset.sid;
         if (sid && sid !== getState().sessionId) {
+          // Wipe the entire content area BEFORE flipping the session id so
+          // every residual widget from the previous session is gone.  The
+          // (window as any).__appCleanupContentArea() bridge is set by app.ts
+          // at construction time; it nukes sub-agent view, tool detail
+          // panel, mention dropdown, queue card, mode chip, attachments,
+          // session-inner sidebar (and its terminal/editor tabs),
+          // automation view, child view, and forces the welcome screen
+          // back to its initial state.
+          const cleanup = (window as any).__appCleanupContentArea as
+            | ((opts?: { keepAutomationFlag?: boolean }) => void)
+            | undefined;
+          cleanup?.({ keepAutomationFlag: false });
+
           // Clear any active sub-agent view overlay (including automation
           // sub-agent views) when explicitly switching to a different session.
           setSubAgentView(null);

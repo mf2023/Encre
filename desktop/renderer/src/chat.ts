@@ -667,6 +667,10 @@ type TimelineItem =
   | { kind: "thinking"; id: string; text: string; elapsed?: number; messageId?: string }
   | { kind: "tool"; id: string; tc: ToolCallState; messageId?: string }
   | { kind: "assistant_text"; id: string; content: string; isStreaming: boolean; hasError?: boolean; messageId?: string; showActions?: boolean; showBranchSwitcher?: boolean }
+  | { kind: "error_card"; id: string; messageId: string; errorMessage: string; errorCode: string }
+  | { kind: "warning_card"; id: string; messageId: string; interruptedReason: string }
+  | { kind: "inline_success"; id: string; messageId: string; turnStatusText: string }
+  | { kind: "inline_cancelled"; id: string; messageId: string; text: string }
   | { kind: "compact"; id: string }
   | { kind: "workflow"; id: string };
 
@@ -793,8 +797,22 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
                 showActions: !msg.isStreaming && isLast && !st.running,
                 showBranchSwitcher: i === firstAssistantAfterForkIdx && isLast,
               });
+              // Insert status cards after the last text segment of each assistant message
+              if (isLast) {
+                if (msg.errorMessage) {
+                  items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
+                } else if (msg.interruptedReason) {
+                  items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
+                }
+                if (msg.turnStatusText) {
+                  items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
+                }
+                if (msg.cancelledText) {
+                  items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
+                }
+              }
+              textSegIndex++;
             }
-            textSegIndex++;
           } else if (seg.kind === "tool") {
             const tc = seg.toolId ? msg.toolCalls.find(t => t.id === seg.toolId) : undefined;
             if (tc) {
@@ -812,6 +830,18 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
         }
         if (msg.content.trim().length > 0 || msg.isStreaming) {
           items.push({ kind: "assistant_text", id: `a-${msg.id}`, content: msg.content, isStreaming: msg.isStreaming, hasError: msg.hasError, messageId: msg.id });
+        }
+        // Insert status cards for legacy messages
+        if (msg.errorMessage) {
+          items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
+        } else if (msg.interruptedReason) {
+          items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
+        }
+        if (msg.turnStatusText) {
+          items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
+        }
+        if (msg.cancelledText) {
+          items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
         }
       }
     }
@@ -860,6 +890,9 @@ function buildRenderKey(timeline: TimelineItem[]): string {
       // streaming class toggles). Content stays incremental.
       return { k: "a", id: i.id, st: i.isStreaming ? 1 : 0, sa: i.showActions ? 1 : 0, sb: i.showBranchSwitcher ? 1 : 0 };
     }
+    if (i.kind === "error_card") return { k: "ec", id: i.id };
+    if (i.kind === "warning_card") return { k: "wc", id: i.id };
+    if (i.kind === "inline_success") return { k: "is", id: i.id };
     // All TimelineItem kinds handled above — this fallback keeps TS happy.
     return { k: "" };
   }));
@@ -1034,6 +1067,10 @@ export class Chat {
     w.__hoverOff = (el: HTMLElement) => {
       const wrap = el.querySelector(".icon-wrap");
       if (wrap) wrap.classList.remove("hover");
+    };
+    w.__toggleStatusCard = (id: string) => {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle("expanded");
     };
     w.__viewChanges = (el: HTMLElement) => {
       const card = el.closest(".file-card") as HTMLElement | null;
@@ -1230,6 +1267,8 @@ export class Chat {
     let turnActions = false;
     let turnRetry = false;
     let turnBranchSwitcher = false;
+    let turnInlineSuccess = ""; // collected from inline_success items
+    let turnCancelledText = ""; // collected from inline_cancelled items
 
     const _this = this;
 
@@ -1237,10 +1276,17 @@ export class Chat {
       if (!turnMid) return;
       html += `<div class="turn">${turnMid}`;
       if (turnActions) {
-        html += `<div class="assistant-actions turn-actions">
-          <button class="btn-icon btn-icon--msg assistant-copy-btn" title="${t("chat.copy")}">
-            <i data-lucide="copy" class="lucide lucide-sm"></i>
-          </button>`;
+        html += `<div class="assistant-actions turn-actions">`;
+        // Inline success status — green text, first in container, from backend
+        if (turnInlineSuccess) {
+          html += `<span class="turn-status-inline"><i data-lucide="check-circle" class="inline-icon"></i><span>${escapeHtml(turnInlineSuccess)}</span></span>`;
+        }
+        if (turnCancelledText) {
+          html += `<span class="turn-status-inline turn-status-cancelled"><i data-lucide="circle-slash" class="inline-icon"></i><span>${escapeHtml(turnCancelledText)}</span></span>`;
+        }
+        html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" title="${t("chat.copy")}">
+          <i data-lucide="copy" class="lucide lucide-sm"></i>
+        </button>`;
         if (turnRetry) {
           html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" title="${t("chat.retry")}">
             <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
@@ -1256,10 +1302,24 @@ export class Chat {
       turnActions = false;
       turnRetry = false;
       turnBranchSwitcher = false;
+      turnInlineSuccess = "";
+      turnCancelledText = "";
     }
 
     for (let i = 0; i < timeline.length; i++) {
       const item = timeline[i];
+
+      // inline_success: collect text for closeTurn, don't render standalone
+      if (item.kind === "inline_success") {
+        turnInlineSuccess = item.turnStatusText;
+        continue;
+      }
+
+      // inline_cancelled: collect text for closeTurn, don't render standalone
+      if (item.kind === "inline_cancelled") {
+        turnCancelledText = item.text;
+        continue;
+      }
 
       if (item.kind === "compact" || item.kind === "workflow" || (item.kind === "user" && !getState().subAgentView && !(window as any).__parentSessionId)) {
         closeTurn.call(_this);
@@ -1330,7 +1390,13 @@ export class Chat {
   }
 
   private incrementalTextUpdate(timeline: TimelineItem[]): void {
-    // Find the last assistant message block in timeline
+    // Find the last assistant message block in timeline.  This anchor is
+    // only needed for the assistant-text delta updates below; the thinking,
+    // tool, and workflow updates must still run during the pre-text thinking
+    // phase (i.e. when only `thinking_delta` events have arrived so far) so
+    // the user sees the reasoning stream in real time instead of having the
+    // card freeze on the first delta and then jump to the full text when
+    // the first text_delta triggers a fullRender.
     let lastAssistantIndex = -1;
     for (let i = timeline.length - 1; i >= 0; i--) {
       if (timeline[i].kind === "assistant_text") {
@@ -1338,17 +1404,20 @@ export class Chat {
         break;
       }
     }
-    if (lastAssistantIndex < 0) return;
 
-    const assistantItem = timeline[lastAssistantIndex] as Extract<TimelineItem, { kind: "assistant_text" }>;
+    if (lastAssistantIndex >= 0) {
+      const assistantItem = timeline[lastAssistantIndex] as Extract<TimelineItem, { kind: "assistant_text" }>;
 
-    // Detect new assistant message round — reset userCollapsedItems
-    const currentAssistantMsgId = assistantItem.id;
-    if (currentAssistantMsgId !== this.lastAssistantMsgId) {
-      this.lastAssistantMsgId = currentAssistantMsgId;
+      // Detect new assistant message round — reset userCollapsedItems
+      const currentAssistantMsgId = assistantItem.id;
+      if (currentAssistantMsgId !== this.lastAssistantMsgId) {
+        this.lastAssistantMsgId = currentAssistantMsgId;
+      }
     }
 
-    // Update thinking text if present
+    // Update thinking text if present.  This runs on every render frame
+    // (including frames where only a thinking_delta arrived) so the thought
+    // card streams in real time just like the assistant text card.
     for (let i = 0; i < timeline.length; i++) {
       const item = timeline[i];
       if (item.kind === "thinking") {
@@ -1487,17 +1556,20 @@ export class Chat {
     // During streaming we use textContent (instant, no parsing) to avoid
     // O(n^2) markdown re-parsing on every delta. Full markdown rendering
     // happens once when the stream ends.
-    if (assistantItem.content.trim().length > 0) {
-      const el = this.ml.querySelector(`[data-id="${assistantItem.id}"]`) as HTMLElement | null;
-      if (el) {
-        const contentEl = el.querySelector(".msg-text") as HTMLElement | null;
-        if (contentEl) {
-          const rawText = contentEl.textContent || "";
-          const newText = assistantItem.content;
-          if (rawText !== newText) {
-            const newHtml = renderMarkdown(newText);
-            if (contentEl.innerHTML !== newHtml) {
-              contentEl.innerHTML = newHtml;
+    if (lastAssistantIndex >= 0) {
+      const assistantItem = timeline[lastAssistantIndex] as Extract<TimelineItem, { kind: "assistant_text" }>;
+      if (assistantItem.content.trim().length > 0) {
+        const el = this.ml.querySelector(`[data-id="${assistantItem.id}"]`) as HTMLElement | null;
+        if (el) {
+          const contentEl = el.querySelector(".msg-text") as HTMLElement | null;
+          if (contentEl) {
+            const rawText = contentEl.textContent || "";
+            const newText = assistantItem.content;
+            if (rawText !== newText) {
+              const newHtml = renderMarkdown(newText);
+              if (contentEl.innerHTML !== newHtml) {
+                contentEl.innerHTML = newHtml;
+              }
             }
           }
         }
@@ -1516,6 +1588,8 @@ export class Chat {
       case "thinking": return this.renderThinkingStrip(item);
       case "tool": return this.renderToolCall(item);
       case "assistant_text": return this.renderAssistantText(item);
+      case "error_card": return this.renderErrorCard(item);
+      case "warning_card": return this.renderWarningCard(item);
       case "compact": return this.renderCompactCard(item);
       case "workflow": return this.renderWorkflowCard(item);
     }
@@ -1819,6 +1893,29 @@ export class Chat {
     const msgId = item.messageId || item.id.replace("a-", "").replace(/-seg-\d+$/, "");
     return `<div class="assistant-text${errorClass}" data-id="${item.id}" data-message-id="${msgId}">
       <div class="msg-text">${renderMarkdown(item.content)}</div>
+    </div>`;
+  }
+
+  private renderErrorCard(item: Extract<TimelineItem, { kind: "error_card" }>): string {
+    const id = `ec-${item.messageId}`;
+    return `<div class="turn-status-card status-error" id="${id}">
+      <div class="status-header" onclick="window.__toggleStatusCard('${id}')">
+        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span class="status-label">${t("chat.abortedError")}</span>
+        <svg class="status-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="status-body">
+        ${item.errorCode ? `<div class="status-code">${escapeHtml(item.errorCode)}</div>` : ""}
+        <div class="status-message">${escapeHtml(item.errorMessage)}</div>
+      </div>
+    </div>`;
+  }
+
+  private renderWarningCard(item: Extract<TimelineItem, { kind: "warning_card" }>): string {
+    return `<div class="turn-status-card status-warning">
+      <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span class="status-label">${t("chat.interrupted")}</span>
+      <span class="status-detail">${escapeHtml(item.interruptedReason)}</span>
     </div>`;
   }
 

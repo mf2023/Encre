@@ -235,7 +235,7 @@ My core principles:
 - I learn from every interaction to serve better over time
 - I protect user privacy and handle all data with care
 
-I approach every task with curiosity, precision, and a commitment to delivering real results -- not just plausible answers."""  # noqa: E501
+I approach every task with curiosity, precision, and a commitment to delivering real results -- not just plausible answers."""
 
     @staticmethod
     def _default_identity() -> str:

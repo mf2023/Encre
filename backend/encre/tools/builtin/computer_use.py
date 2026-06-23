@@ -556,9 +556,7 @@ def _looks_like_text(value: str) -> bool:
     if "\n" in sample or "  " in sample:
         return True
     text_like = alnum + slash_eq
-    if text_like / max(1, len(sample)) > 0.98 and slash_eq < 2:
-        return False
-    return True
+    return not (text_like / max(1, len(sample)) > 0.98 and slash_eq < 2)
 
 
 def _make_summary(result: dict[str, Any], action: str) -> str:
@@ -601,10 +599,7 @@ def _summarize_for_model(
     # Default: do NOT include any base64 screenshot in the model envelope.
     include_b64 = bool(kwargs.get("include_screenshot_b64", False))
     include_full = bool(kwargs.get("include_full_result", False))
-    if isinstance(kwargs.get("max_text_chars"), int):
-        max_chars = max(0, int(kwargs["max_text_chars"]))
-    else:
-        max_chars = MAX_TEXT_CHARS
+    max_chars = max(0, int(kwargs["max_text_chars"])) if isinstance(kwargs.get("max_text_chars"), int) else MAX_TEXT_CHARS
 
     if not isinstance(result, dict):
         # Non-dict result (shouldn't happen, but be defensive).

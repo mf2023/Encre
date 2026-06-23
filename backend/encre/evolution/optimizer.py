@@ -84,7 +84,7 @@ class EncreStrategyOptimizer:
         st.total_latency_ms += latency_ms
         st.last_used = time.time()
 
-    def suggest_strategy(self, tool_name: str, context: str) -> dict[str, Any] | None:
+    def suggest_strategy(self, tool_name: str, _context: str) -> dict[str, Any] | None:
         strategies = self._strategies.get(tool_name, {})
         if not strategies:
             return None
@@ -95,7 +95,7 @@ class EncreStrategyOptimizer:
             return None
         if best.success_rate < 0.5:
             return None
-        return {"_strategy_hint": f"prefer pattern: {best.param_signature}", "_confidence": best.success_rate}  # noqa: E501
+        return {"_strategy_hint": f"prefer pattern: {best.param_signature}", "_confidence": best.success_rate}
 
     def get_fallback(self, tool_name: str, current_params: dict[str, Any]) -> dict[str, Any] | None:
         strategies = self._strategies.get(tool_name, {})
@@ -105,7 +105,7 @@ class EncreStrategyOptimizer:
             if st.param_signature != current_sig and st.success_rate > 0.6:
                 total = st.success_count + st.fail_count
                 if total >= self.MIN_SAMPLES_FOR_RECOMMENDATION:
-                    return {"_fallback_hint": f"try alternative pattern: {st.param_signature}", "_confidence": st.success_rate}  # noqa: E501
+                    return {"_fallback_hint": f"try alternative pattern: {st.param_signature}", "_confidence": st.success_rate}
         return None
 
     def get_statistics(self) -> dict[str, Any]:
@@ -144,7 +144,7 @@ def _param_signature(params: dict[str, Any]) -> str:
                 types.append(f"{k}:{v}")
             else:
                 types.append(f"{k}:str")
-        elif isinstance(v, (int, float)):
+        elif isinstance(v, int | float):
             types.append(f"{k}:num")
         elif isinstance(v, list):
             types.append(f"{k}:list({len(v)})")

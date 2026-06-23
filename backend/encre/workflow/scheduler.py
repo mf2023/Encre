@@ -160,6 +160,7 @@ class WorkflowScheduler:
         self._workflows: dict[str, WorkflowRecord] = {}
         self._graphs: dict[str, DAGGraph] = {}
         self._on_workflow_complete: Callable[[WorkflowRecord], None] | None = None
+        self._background_tasks: set = set()
 
         # Wire up cron scheduler to notify us when a workflow job fires
         self._cron_scheduler.on_job_complete(self._on_cron_job_complete)
@@ -233,7 +234,7 @@ class WorkflowScheduler:
         if record.state == WorkflowState.RUNNING:
             # Cancel the engine
             import asyncio
-            _cancel_task = asyncio.create_task(self._engine.cancel())  # noqa: RUF006
+            self._background_tasks.add(asyncio.create_task(self._engine.cancel()))
 
         # Cancel the underlying cron job
         if record.job_id:
@@ -390,7 +391,7 @@ class WorkflowScheduler:
         wf_id = job.metadata.get("workflow_id") if hasattr(job, "metadata") else None
         if wf_id and wf_id in self._workflows:
             import asyncio
-            _exec_task = asyncio.create_task(self.execute_workflow(wf_id))  # noqa: RUF006
+            self._background_tasks.add(asyncio.create_task(self.execute_workflow(wf_id)))
 
     def _make_agent_factory(self) -> Callable[[dict[str, Any] | None], Any]:
         """Return a dummy agent factory for the cron scheduler.
@@ -410,11 +411,11 @@ class WorkflowScheduler:
             def add_message(self, role: str, content: str) -> None:
                 pass
 
-            async def run(self, prompt: str) -> Any:  # noqa: ARG002
+            async def run(self, _prompt: str) -> Any:
                 return
                 yield  # make this a generator for compatibility
 
-        def _factory(config: dict[str, Any] | None = None) -> _WorkflowAgent:  # noqa: ARG001
+        def _factory(_config: dict[str, Any] | None = None) -> _WorkflowAgent:
             return _WorkflowAgent()
 
         return _factory

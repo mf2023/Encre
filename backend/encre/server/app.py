@@ -72,6 +72,7 @@ class EncreServer:
             scheduler=self._scheduler,
         )
         self._cleanup_task: asyncio.Task[None] | None = None
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     async def _handle_connection(self, ws) -> None:
         try:
@@ -79,7 +80,7 @@ class EncreServer:
         except Exception:
             logger.exception("Unhandled error in WebSocket handler")
 
-    async def _handle_http(self, path: str, request_headers) -> tuple[int, str, dict[str, str]] | None:  # noqa: E501
+    async def _handle_http(self, path: str, _request_headers) -> tuple[int, str, dict[str, str]] | None:
         result = handle_admin(path, self._manager)
         if result is None:
             return None
@@ -94,11 +95,11 @@ class EncreServer:
             raise ImportError(
                 "websockets library is required to run the server. "
                 "Install it with: pip install websockets"
-            )
+            ) from None
 
         logger.info(f"Starting encre server on {self.host}:{self.port}")
 
-        async def process_request(path, request_headers):
+        async def process_request(path, _request_headers):
             if path and path.startswith("/ws"):
                 return None  # Let websockets handle it
             # Handle HTTP admin endpoints
@@ -148,12 +149,13 @@ class EncreServer:
                             adapter_cfgs.setdefault(parts[1], {})[parts[2]] = v
                 if adapter_cfgs:
                     self.config.adapter_configs.update(adapter_cfgs)
-                    logger.info("Loaded adapter configs from saved settings: %s", list(adapter_cfgs.keys()))  # noqa: E501
+                    logger.info("Loaded adapter configs from saved settings: %s", list(adapter_cfgs.keys()))
         except Exception as e:
             logger.warning("Failed to load adapter configs from settings: %s", e)
 
         # Start adapter connections in background (network I/O may be slow)
-        asyncio.ensure_future(self._start_adapters())
+        _t = asyncio.ensure_future(self._start_adapters())
+        self._background_tasks.add(_t)
 
         # Start the embedded scheduler for automation tasks
         try:
@@ -163,7 +165,7 @@ class EncreServer:
                 lambda job: self._ws_handler.broadcast_automation_update(job)
             )
             self._scheduler.on_job_progress(
-                lambda job, event_type, event_data: self._ws_handler.broadcast_automation_progress(job, event_type, event_data)  # noqa: E501
+                lambda job, event_type, event_data: self._ws_handler.broadcast_automation_progress(job, event_type, event_data)
             )
             logger.info("Automation scheduler started (poll_interval=30s)")
         except Exception as e:
@@ -203,7 +205,7 @@ class EncreServer:
             agent = EncreAgent(config=self.config)
             agent.config.permission_mode = "bypass"
             if job_config:
-                agent.config.backend_type = job_config.get("backend_type", agent.config.backend_type)  # noqa: E501
+                agent.config.backend_type = job_config.get("backend_type", agent.config.backend_type)
                 agent.config.api_key = job_config.get("api_key", agent.config.api_key)
                 agent.config.base_url = job_config.get("base_url", agent.config.base_url)
                 agent.config.model = job_config.get("model_id", agent.config.model)
@@ -301,9 +303,9 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="localhost", help="Host to bind to")
     parser.add_argument("--port", type=int, default=7110, help="Port to bind to")
     parser.add_argument("--config", help="Path to config file (yaml/toml)")
-    parser.add_argument("--max-concurrent", type=int, default=20, help="Max concurrent agent sessions")  # noqa: E501
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])  # noqa: E501
-    parser.add_argument("--service", action="store_true", help="Run as background service (daemon mode)")  # noqa: E501
+    parser.add_argument("--max-concurrent", type=int, default=20, help="Max concurrent agent sessions")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument("--service", action="store_true", help="Run as background service (daemon mode)")
 
     args = parser.parse_args()
 

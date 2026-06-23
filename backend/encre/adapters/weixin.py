@@ -29,6 +29,8 @@ import uuid
 from contextlib import suppress
 from typing import Any
 
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+
 try:
     import httpx
 
@@ -37,15 +39,11 @@ except ImportError:
     HTTPX_AVAILABLE = False
     httpx = None
 
-try:
-    from cryptography.hazmat.backends import default_backend
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+import importlib
 
-    CRYPTO_AVAILABLE = True
-except ImportError:
-    CRYPTO_AVAILABLE = False
+CRYPTO_AVAILABLE = importlib.util.find_spec("cryptography") is not None
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+
 
 logger = logging.getLogger("encre.adapters.weixin")
 
@@ -257,9 +255,8 @@ class WeixinAdapter(BaseAdapter):
         update_id = update.get("update_id")
         if update_id is not None:
             now = time.time()
-            if update_id in self._seen_updates:
-                if now - self._seen_updates[update_id] < _MESSAGE_DEDUP_TTL_SECONDS:
-                    return
+            if update_id in self._seen_updates and now - self._seen_updates[update_id] < _MESSAGE_DEDUP_TTL_SECONDS:
+                return
             self._seen_updates[update_id] = now
             if len(self._seen_updates) > 5000:
                 cutoff = now - _MESSAGE_DEDUP_TTL_SECONDS
@@ -390,7 +387,7 @@ class WeixinAdapter(BaseAdapter):
             if resp.status_code < 300 and body.get("ok", True):
                 return SendResult(
                     success=True,
-                    message_id=str(body.get("message_id", body.get("MessageId", uuid.uuid4().hex[:16]))),  # noqa: E501
+                    message_id=str(body.get("message_id", body.get("MessageId", uuid.uuid4().hex[:16]))),
                     raw=body,
                 )
             logger.warning(

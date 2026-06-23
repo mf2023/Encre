@@ -66,7 +66,7 @@ EncreTodoTool = build_tool(
                     "type": "object",
                     "properties": {
                         "content": {"type": "string"},
-                        "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},  # noqa: E501
+                        "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
                         "priority": {"type": "string", "enum": ["high", "medium", "low"]},
                     },
                     "required": ["content", "status", "priority"],

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Encre
+<img src="desktop/renderer/assets/EAb.svg" alt="Encre" width="160"/>
 
 English | [简体中文](README.zh.md)
 
@@ -30,524 +30,220 @@ English | [简体中文](README.zh.md)
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"/>
 </a>
 
-**Encre** — A Python agent framework, a Rust native core, and an Electron desktop app, all developed together in one repository. Backend-agnostic and multi-provider, with streaming tool calls, a permission/safety engine, persistent memory, multi-agent orchestration, a desktop UI, a CLI runner, a WebSocket server, and 18 platform adapters.
+**Encre** — A powerful AI Agent platform that supports 31 mainstream LLM providers, 36 built-in tools, and 18 chat platform integrations. Whether it's coding, desktop automation, cross-platform messaging, or multi-agent collaboration, Encre gets the job done.
 
 </div>
 
-<h2 align="center">🏗️ Core Architecture</h2>
+<h2 align="center">🤖 What is Encre Agent?</h2>
 
-### Multi-Language Architecture
-Encre uses a multi-language architecture with three major components, letting each layer use the most appropriate language for its domain:
+### One-Liner
+
+Encre is an AI Agent platform — tell it what you want to do, and it will automatically analyze, use tools, execute tasks, and deliver results to you.
+
+### Core Capabilities
 
 <div align="center">
 
-| Language | Component | Purpose |
-|:---------|:----------|:--------|
-| **Python** | `backend/encre/` | AI Agent framework core — agent loop, 31 LLM backends, 36 built-in tools, 18 adapters, safety engine, memory, skills, swarm, hooks, LSP, MCP |
-| **Rust** | `native/crates/encre-core` | Native high-performance library — file I/O, regex search, glob, diff, sandbox, tokenizer, BM25 indexer, Landlock, SIMD search, LSP protocol, semantic embeddings |
-| **Rust** | `native/crates/encre-py` | PyO3 bindings exposing the Rust core to Python as `encre._native` |
-| **TypeScript** | `desktop/` | Encre Desktop — Electron-based desktop app with React UI, Monaco Editor, xterm.js terminal, IPC bridge to the Python backend |
+| Capability | Description |
+|:------|:------|
+| 🧠 **31 AI Models** | Supports OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Qwen, GLM, local models, and more — switch freely |
+| 🛠️ **36 Built-in Tools** | File operations, shell execution, browser automation, code editing, web search, databases, scheduling — ready to use |
+| 💬 **18 Chat Platforms** | Integrate with Telegram, Discord, Slack, Feishu, DingTalk, WeChat, WhatsApp, email — chat with Agent wherever you are |
+| 🖥️ **Desktop Automation** | Control desktop apps, operate browsers, read screenshots — simulates human operations |
+| 🤝 **Multi-Agent Collaboration** | Multiple Agents work simultaneously, dividing tasks and cooperating on complex projects |
+| 💾 **Persistent Memory** | Agent remembers your preferences, habits, and project info — gets smarter with use |
+| 🛡️ **Safety & Control** | 6 permission modes to precisely control what Agent can and cannot do |
 
 </div>
 
-Encre is shipped as a single repository with three components that share the same release cycle. There is no standalone library or separately installable package — clone the whole repository to use Encre.
+### Use Cases
 
-### Repository Structure
+- **Code Development Assistant** — Automatically reads code, fixes bugs, refactors, generates docs, runs tests
+- **Desktop Automation** — Batch file processing, auto-form filling, screenshot archiving
+- **Cross-Platform Chat Bot** — Connect AI to Telegram, Slack, Feishu, and other platforms
+- **Research & Analysis** — Web search, data organization, PDF/Excel analysis
+- **Long-term Task Scheduling** — Scheduled jobs, system monitoring, periodic reports
+- **Multi-Agent Collaboration** — Deploy different Agents as programmer, researcher, reviewer to work together
 
-```
-d:\encre/
-├── pyproject.toml             # Python build & dependencies (builds backend/encre/)
-├── build.py                   # One-shot build script (Rust + Python + Desktop)
-├── gen.py                     # Icon / asset generator
-├── package-lock.json          # Root node lockfile (mirrors desktop)
-├── LICENSE                    # Apache 2.0 license
-├── README.md / README.zh.md   # This document
-│
-├── backend/                   # Python agent framework
-│   ├── encre/                 #   The `encre` Python package
-│   │   ├── __init__.py        #   Public API surface
-│   │   ├── agent.py           #   EncreAgent — public Agent class
-│   │   ├── loop.py            #   EncreLoop — execution loop
-│   │   ├── session.py         #   EncreSession — conversation state
-│   │   ├── safety.py          #   EncreSafetyEngine — 6 permission modes
-│   │   ├── autosafety.py      #   EncreAutoSafetyClassifier
-│   │   ├── config.py          #   Configuration management
-│   │   ├── crypto.py          #   AES-GCM encryption helpers
-│   │   ├── ssrf.py            #   EncreSSRFGuard (DNS + CIDR blocklists)
-│   │   ├── ratelimit.py       #   EncreRateLimiter
-│   │   ├── rollback.py        #   Git-based rollback (EncreRollbackGit)
-│   │   ├── recovery.py        #   Error recovery engine
-│   │   ├── scheduler.py       #   EncreScheduler (cron-style jobs)
-│   │   ├── goal.py            #   Goal runner + evaluator loop
-│   │   ├── telemetry.py       #   EncreTelemetry (turns, tools, retries)
-│   │   ├── native.py          #   Python wrapper over encre._native
-│   │   ├── _native.pyi        #   Type stubs for the Rust extension
-│   │   ├── backend.py         #   create_backend() factory
-│   │   ├── dangerous_commands.txt  # Bash safety patterns
-│   │   ├── backends/          #   31 LLM provider adapters
-│   │   ├── adapters/          #   18 platform adapters (chat platforms)
-│   │   ├── agents/            #   Built-in sub-agent definitions
-│   │   ├── channels/          #   Transport: websocket, terminal, HTTP, slash
-│   │   ├── tools/             #   36 built-in tools + tool registry + MCP
-│   │   ├── hooks/             #   EncreHookSystem
-│   │   ├── memdir/            #   Persistent memory system (frontmatter)
-│   │   ├── skills/            #   Skill registry + 11 bundled skills
-│   │   ├── swarm/             #   Multi-agent system (teammate/mailbox/...)
-│   │   ├── task/              #   Task manager & executor
-│   │   ├── server/            #   WebSocket server + admin HTTP API
-│   │   ├── gateway/           #   Gateway client/server protocol
-│   │   ├── compact/           #   Context compaction (9 strategies)
-│   │   ├── lsp/               #   LSP client + multi-server manager
-│   │   ├── codebase/          #   Code indexer (BM25 + dependency graph)
-│   │   ├── computer/          #   Desktop & browser automation
-│   │   ├── evolution/         #   Meta-cognition, reflex, strategy optimizer
-│   │   ├── feedback/          #   Error-correction learner
-│   │   ├── notebook/          #   Interactive Python kernel session
-│   │   ├── plugins/           #   Plugin registry & manifest types
-│   │   ├── profile/           #   User profile inference
-│   │   ├── soul/              #   Soul system files (persona/memory)
-│   │   ├── spec/              #   Spec document engine
-│   │   ├── prompts/           #   Prompt blocks, skills, safety, goals
-│   │   ├── sandbox/           #   Docker container sandbox
-│   │   ├── search/            #   MCP-backed web search
-│   │   ├── learning/          #   Skill generation + consolidation
-│   │   ├── rules/             #   Rules loader
-│   │   ├── thinking/          #   Thinking config resolution
-│   │   ├── iclaw/             #   iClaw CLI (automation runner)
-│   │   ├── git/               #   Git repository & diff utilities
-│   │   └── utils/             #   ID generation, token counting, types
-│   └── tests/                 # Pytest suite (configured via pyproject.toml)
-│       ├── conftest.py
-│       ├── test_agent.py
-│       ├── test_backends.py
-│       ├── test_backend_*.py
-│       ├── test_safety.py
-│       ├── test_session.py
-│       ├── test_loop.py
-│       ├── test_native.py
-│       └── ...                #   40+ test modules
-│
-├── native/                    # Rust workspace
-│   ├── Cargo.toml             #   Workspace root
-│   └── crates/
-│       ├── encre-core/        #   Native core (package name: `encre`)
-│       │   ├── Cargo.toml
-│       │   └── src/
-│       │       ├── lib.rs
-│       │       ├── fs.rs          # Native read/write
-│       │       ├── search.rs      # Regex search, glob
-│       │       ├── simd_search.rs # SIMD-accelerated matching
-│       │       ├── diff.rs        # Unified diff + apply
-│       │       ├── shell.rs       # Sandboxed shell execution
-│       │       ├── sandbox.rs     # Sandbox result types
-│       │       ├── landlock.rs    # Linux Landlock enforcement
-│       │       ├── tokenizer.rs   # Heuristic token counter
-│       │       ├── embedding.rs   # Cosine / Jaccard similarity
-│       │       ├── indexer.rs     # BM25 code search index
-│       │       └── lsp_proto.rs   # LSP JSON-RPC parser/builder
-│       └── encre-py/          # PyO3 bindings → `encre._native`
-│           ├── Cargo.toml
-│           └── src/lib.rs
-│
-├── desktop/                   # Electron desktop application
-│   ├── main.ts                #   Electron main process
-│   ├── preload.ts             #   Context bridge (IPC)
-│   ├── build.js               #   esbuild configuration
-│   ├── package.json           #   Node.js dependencies & scripts
-│   ├── electron-builder.yml   #   NSIS / pkg / deb packaging
-│   ├── tsconfig.json          #   TypeScript config (main process)
-│   ├── fetch_icons.js         #   Icon fetcher
-│   └── renderer/              #   Frontend (React 19)
-│       ├── index.html
-│       ├── styles.css
-│       ├── design-system.css
-│       ├── xterm.css
-│       ├── bundle.js          #   esbuild output
-│       ├── tsconfig.json
-│       ├── assets/            #   Logos & icons
-│       ├── src/               #   TypeScript sources
-│       │   ├── app.ts
-│       │   ├── chat.ts
-│       │   ├── session.ts
-│       │   ├── session_inner.ts
-│       │   ├── settings.ts
-│       │   ├── state.ts
-│       │   ├── stream.ts
-│       │   ├── ws.ts
-│       │   ├── search.ts
-│       │   ├── i18n.ts
-│       │   ├── iclaw.ts
-│       │   ├── agents.ts
-│       │   ├── automation.ts
-│       │   ├── tools.ts
-│       │   ├── files.ts
-│       │   ├── workspace.ts
-│       │   ├── viewmanager.ts
-│       │   ├── permissions.ts
-│       │   ├── dialog.ts
-│       │   ├── notifications.ts
-│       │   ├── slash_commands.ts
-│       │   ├── icons.ts
-│       │   ├── crypto.ts       #   Renderer-side AES helpers
-│       │   ├── easter-egg.ts
-│       │   ├── transition-helper.ts
-│       │   ├── types.ts
-│       │   ├── global.d.ts
-│       │   └── locales/        #   en.ts / zh.ts
-│       └── vs/                 #   Monaco Editor (bundled)
-│
-├── docs/                      # Project documentation
-│   ├── CHANGELOG.md
-│   ├── CODE_OF_CONDUCT.md
-│   ├── CONTENT_GUIDELINES.md
-│   ├── CONTRIBUTING.md
-│   ├── DATA_PROCESSING_RULES.md
-│   ├── MINORS_PRIVACY.md
-│   ├── PLAN.md
-│   ├── PRIVACY.md
-│   ├── PRIVACY_CN.md
-│   ├── SECURITY.md
-│   ├── TERMS.md
-│   ├── TERMS_CN.md
-│   ├── THANKS.md
-│   ├── THANKS_CN.md
-│   └── USER_AGREEMENT.md
-│
-└── .github/
-    └── workflows/
-        └── build-binary.yml   # CI: builds release binaries
-```
+<h2 align="center">⭐ Key Features</h2>
 
-<h2 align="center">🚀 Key Features</h2>
+#### 🧠 31 AI Backends, Choose Freely
 
-#### 🧠 Multi-Provider LLM Backends (31)
-- **First-party**: OpenAI, Anthropic Claude, DeepSeek, Google Gemini, Groq, Ollama, Local (HuggingFace transformers)
-- **Chinese & regional**: Alibaba (Qwen / DashScope), Tencent, Xiaomi MiMo, Kimi (Moonshot), GLM (Zhipu / Z.ai), MiniMax
-- **Aggregators / routers**: OpenRouter, AI Gateway, OpenCode, Kilocode, Arcee, Novita
-- **Cloud & enterprise**: AWS Bedrock, GitHub Copilot
-- **Self-hosted & compatible**: LM Studio, OpenAI Compatible, OpenAI SSE
-- **Meta-backends**: Failover (multi-backend health failover), Router (cost / task routing), Retry (transparent retry)
-- **Catalog**: MCP Catalog, native model catalog (`encre.backends.catalog`)
-- Unified streaming interface, automatic thinking-block resolution, OpenAI-compatible chat completions
+Supports **31 mainstream AI models** including OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Qwen, Tencent Hunyuan, Xiaomi MiMo, Moonshot Kimi, Zhipu GLM, MiniMax, and more.
 
-#### 🤖 Built-in Sub-Agents (9)
-- **General mode**: `coder`, `researcher`, `critic`
-- **Workspace mode**: `architect`, `planner`
-- **Plan / Spec mode**: `spec-writer`
-- **iClaw (auto) mode**: `monitor`, `executor`, `scheduler`
-- Each sub-agent is defined as a `SubAgentConfig` and loaded from `encre/agents/builtin.py` with prompt templates under `encre/prompts/skills/`.
+- **Global Leaders**: OpenAI, Anthropic, Google, Groq, AWS Bedrock, GitHub Copilot
+- **Chinese Providers**: Alibaba Qwen, Tencent, Xiaomi MiMo, Moonshot, Zhipu, MiniMax
+- **Self-hosted**: Ollama, LM Studio, HuggingFace Transformers
+- **Aggregation Services**: OpenRouter, AI Gateway, Kilocode, OpenCode
+- **Advanced Features**: Automatic failover, cost-based routing, transparent retry
 
-#### 🛠️ Built-in Tools (36)
-- **File**: `file_read`, `file_write`, `file_edit`, `apply_patch`, `find_tool`, `glob`, `grep`, `pdf`, `spreadsheet`
-- **Shell & execution**: `bash`, `bash_io` (background, output, kill, list), `docker`, `deploy`, `agent` (spawn a sub-agent)
-- **Web**: `web_fetch`, `web_search` (MCP-backed), `browser` (Playwright automation)
-- **Development**: `lsp` (LSP diagnostics/hover), `notebook` (IPython kernel), `database`
-- **Task system**: `task_create`, `task_get`, `task_list`, `task_update`, `task_output`, `task_stop`
-- **Scheduling & memory**: `cron_create`, `cron_delete`, `cron_list`, `todo`, `memory`
-- **Desktop & media**: `desktop` (pyautogui / mss / uiautomation), `image` (Pillow / OCR)
-- **Integrations**: `git`, `rest_client`
-- **External protocol**: MCP client (`encre.tools.mcp` + `MCPManager`) for Model Context Protocol servers
+#### 🤖 9 Built-in Agent Roles
 
-#### 🌐 Platform Adapters (18)
-Chat-platform adapters turn external messages (Telegram, Discord, Slack, …) into a normalized channel. Concretely:
-- Discord, Slack, Telegram, **DingTalk**, Email (IMAP+SMTP), **Feishu / Lark**
-- **WeCom** (企业微信), **Weixin** (微信), **WhatsApp**, **Signal**, **SMS**
-- **Matrix**, **MS Graph** (Microsoft 365), **Home Assistant**, **QQ Bot**, **BlueBubbles** (iMessage)
-- **Yuanbao** (腾讯元宝), **Webhook** (generic incoming webhook)
-- Each adapter implements `BaseAdapter` and is registered through `encre.adapters.manager`.
+Encre comes with specialized roles, each with dedicated prompts and capabilities:
 
-#### 🔒 Safety & Permission Engine
-- **6 permission modes**: `bypass` (no checks), `dont_ask` (auto-allow), `accept_edits` (auto-allow edits), `plan` (plan first), `auto` (heuristic), `default` (ask for confirmation)
-- **Bash command analyzer** with dangerous-pattern detection (`encre.safety.analyze_bash_command`, `dangerous_commands.txt`)
-- **SSRF guard** combining DNS resolution with CIDR blocklists (`encre.ssrf.EncreSSRFGuard`)
-- **Docker container sandbox** (`encre.sandbox.container.EncreContainerSandbox`) with seccomp-style isolation
-- **Rust-level sandbox** (`encre-core/sandbox.rs`) with Linux **Landlock** enforcement (`landlock.rs`)
-- **Auto safety classifier** (`encre.autosafety.EncreAutoSafetyClassifier`) — AI-based permission decisions
-- **Rate limiter** (`encre.ratelimit.EncreRateLimiter`) for backends and tool calls
+- **General Mode**: `coder`, `researcher`, `critic`
+- **Workspace Mode**: `architect`, `planner`
+- **Plan/Spec Mode**: `spec-writer`
+- **Automation Mode**: `monitor`, `executor`, `scheduler`
 
-#### 💾 Persistent Memory (`encre.memdir`)
-- Frontmatter-parsed Markdown files stored in a `memdir/` directory
-- `MEMORY.md` entrypoint index with **aging / freshness tracking** (`memdir/age.py`, `memdir/manifest.py`)
-- **Semantic search** powered by NumPy similarity (`memdir/semantic.py`)
-- Working memory + consolidation actions
-- Goal/memory prompt templates under `prompts/memdir/`
+#### 🛠️ 36 Ready-to-use Tools
 
-#### 🎯 Skill System (11 bundled)
-- `debug`, `loop`, `batch`, `verify`, `stuck`, `code_review`, `refactor`, `gen_test`, `web_research`, `data_viz`, `write_docs`
-- **Priority-based override**: managed > user > project > bundled
-- **Dynamic system-prompt generation** via `encre.prompts.system.EncrePromptBuilder`
-- Skill generator + consolidator (`encre.learning`) for runtime skill creation
+| Category | Tools |
+|:------|:------|
+| **Files** | Read, write, edit, patch, search, PDF/Excel processing |
+| **Terminal** | Shell commands, background tasks, Docker, deployment |
+| **Web** | Page fetching, web search (MCP-powered), browser automation (Playwright) |
+| **Dev Aid** | LSP diagnostics, IPython notebook, database queries |
+| **Tasks** | Create/get/list/update/stop tasks with bash/agent/workflow executors |
+| **Schedule & Memory** | Cron jobs, todo list, memory management |
+| **Desktop** | Desktop control (pyautogui), image recognition (OCR), browser automation |
+| **Integration** | Git, REST API, MCP external protocols |
 
-#### 🤝 Multi-Agent Orchestration
-- **Swarm**: `EncreTeammate`, `EncreSwarmManager` (concurrency-limited), `EncreMailbox` (async mailbox)
-- **Orchestrator**: `EncreOrchestrator`, `EncreBlackboard` (shared state), `EncreConsensus` (proposal/vote), `AgentRole` / `RoleRegistry`
-- **Task planner**: `EncreTaskPlanner` produces a `TaskTree` of `TaskNode`s
-- **Task system**: typed CRUD with bash / agent / workflow executors (`encre.task`)
+#### 💬 18 Chat Platform Integrations
 
-#### 🧱 Native Rust Core (`native/crates/encre-core`)
-- **Fast file I/O** (`fs.rs`) — native read/write with offset/limit
-- **Regex search & glob** (`search.rs`)
-- **SIMD-accelerated matching** (`simd_search.rs`) — `simd_contains`, `simd_find_all`, `simd_memmem`
-- **Unified diff** (`diff.rs`) — `compute_diff` / `apply_diff`
-- **Sandboxed shell execution** (`shell.rs` + `sandbox.rs`) with Landlock
-- **Linux Landlock** (`landlock.rs`) — read-only filesystem, no-network, full sandbox
-- **Heuristic token counter** (`tokenizer.rs`) — English / CJK / digit / code heuristics
-- **Semantic similarity** (`embedding.rs`) — cosine and Jaccard text similarity
-- **BM25 indexer** (`indexer.rs`) — `Bm25Index` exposed to Python
-- **LSP protocol** (`lsp_proto.rs`) — JSON-RPC 2.0 parser, diagnostics, content-length helpers
-- Optional features: `embedding` (Candle + tokenizers), `simd` (`wide`), `landlock` (Linux only)
+Connect Encre Agent to your favorite messaging platforms:
 
-#### 🖥️ Encre Desktop (Electron + React 19)
-- Full-featured AI chat UI with Markdown rendering (`markdown-it`), code highlighting (`highlight.js`), and file attachments
-- **Multi-session** chat with branching and search
-- **Settings**: model config, gateway, agent, MCP servers, skills, rules, memory, code index, agents
-- **iClaw mode** — automation runner with batch operations
-- **Embedded terminal** (`xterm.js` + `node-pty`) with a working directory browser
-- **Code editor** — Monaco Editor (16+ language workers bundled, including TS, JS, Python, Rust, Go, Java, C/C++/C#, PHP, Ruby, Swift, Kotlin, SQL, etc.)
-- **i18n** — `en.ts` / `zh.ts` locales, runtime language switching
-- **System tray** + notifications + voice input support
-- **Encrypted browser cookie store** — AES-256-GCM (key file in user data dir)
-- **Git integration** — status / diff with 5-second cache and in-flight diff tracking
-- **Multi-target packaging**: NSIS (Windows x64), `pkg` (macOS x64 + arm64), `deb` / `rpm` (Linux x64)
+**International**: Discord, Slack, Telegram, WhatsApp, Signal, Matrix, Microsoft 365, Home Assistant
 
-#### 🛠️ Developer Toolchain
-- **Context compaction** (`encre.compact`) — 9 strategies: Always, Auto, TokenBudget, BudgetReduction, Semantic, Snip, MicroCompact, ContextCollapse, MultiStagePipeline
-- **Semantic compact** — `SemanticToolOutputCompactor`, `ContextPartitioner` with tiered context
-- **LSP client** — 16+ language servers auto-discovered on `PATH` (Python, TypeScript, JavaScript, Rust, Go, Java, C#, C++, PHP, Ruby, Swift, Kotlin, CSS, HTML, JSON, YAML, …)
-- **Codebase indexer** — BM25 search + dependency graph (`encre.codebase`)
-- **Evolution** — meta-cognition, reflex loop, strategy optimizer, error/learner
-- **Feedback learner** — Jaccard similarity-based error correction
-- **Interactive notebook** — IPython kernel session
-- **Plugin system** — `EncrePlugin` / `PluginManifest` / `PluginRegistry`
-- **Profile inference** + **Soul system** for user persona
-- **Spec engine** — `SpecDocument` / `SpecSection` / `EncreSpecEngine`
-- **Goal system** + **Scheduler** + **Telemetry**
-- **WebSocket server** + admin HTTP API + session manager
-- **CLI runner** — `python -m encre.iclaw` (iClaw mode)
-- **Gateway protocol** — `GatewayServer` / `GatewayClient`
+**China**: Feishu (Lark), DingTalk, WeCom, WeChat, Tencent Yuanbao, QQ Bot, iMessage
 
-<h2 align="center">🔧 Development Setup</h2>
+**Universal**: Email (IMAP+SMTP), Webhook
 
-### Prerequisites
-- **Python**: 3.11+ (the `encre` package requires `>=3.11`)
-- **Node.js**: 18+ (Electron 42, recommended 20+ for the desktop app)
-- **Rust**: 1.65+ (stable, optional — only needed if you want to rebuild the native extension)
-- **Platforms**: Linux (x64, arm64), macOS (x64, arm64), Windows (x64)
+Each platform has a dedicated adapter that normalizes messages before sending them to the Agent.
 
-### Clone & Setup
+#### 🛡️ 6-Level Safety Control
+
+| Mode | Description |
+|:------|:------|
+| `bypass` | No checks (fully open) |
+| `dont_ask` | Auto-allow (no confirmation needed) |
+| `accept_edits` | Auto-allow file edits |
+| `plan` | Plan before executing |
+| `auto` | AI smart judgment |
+| `default` | **Recommended** — asks you every time |
+
+Additional protections:
+- **SSRF Guard**: DNS resolution + CIDR blocklist
+- **Sandbox Isolation**: Docker container sandbox + Linux Landlock kernel-level restrictions
+- **AI Safety Classifier**: Agent autonomously assesses operation risk level
+- **Rate Limiting**: Prevents runaway API calls
+
+#### 💾 Persistent Agent Memory
+
+Encre Agent has its own memory system — it gets to know you better over time:
+
+- Memories stored as Markdown files with metadata (creation time, update time, importance)
+- **Smart Aging**: Outdated memories automatically lose weight, important info retained long-term
+- **Semantic Search**: Quickly find relevant memories through semantic understanding
+- **Working + Long-term Memory**: Short-term task memory and long-term project memory layered management
+
+#### 🎯 11 Professional Skills
+
+Agent has 11 callable skills:
+
+`debug`, `loop`, `batch`, `verify`, `stuck-recovery`, `code-review`, `refactor`, `gen-test`, `web-research`, `data-viz`, `write-docs`
+
+**Priority Override**: Admin > User-defined > Project-level > Bundled — meets your personalization needs.
+
+#### 🤝 Multi-Agent Collaboration
+
+- **Swarm System**: Multiple Agents work concurrently without interference
+- **Shared Blackboard**: All Agents share state with full transparency
+- **Consensus Protocol**: Multiple Agents vote on proposals to select the best solution
+- **Task Planner**: Automatically decomposes complex tasks into sub-task trees
+- **9 Built-in Roles**: Each role has dedicated prompts and capabilities
+
+#### 🧱 Rust Native Core
+
+Performance-critical modules written in Rust for blazing speed and memory safety:
+
+- Blazing fast file I/O with offset/limit support
+- Regex search & Glob for quick content finding
+- SIMD-accelerated text matching (hardware-level)
+- Unified Diff for precise code difference calculation
+- Sandboxed shell execution in secure environments
+- Kernel-level filesystem restrictions via Linux Landlock
+- Smart Token counting (English/Chinese/numbers/code)
+- Semantic similarity for text comparison
+- BM25 code search engine
+- LSP protocol parsing (JSON-RPC 2.0)
+
+#### 🖥️ Encre Desktop App
+
+A full-featured AI chat desktop application built with Electron + React 19:
+
+- **Chat Interface**: Markdown rendering, syntax highlighting, file attachments
+- **Multi-session**: Concurrent chats with branching and fuzzy search
+- **Settings Panel**: Model config, gateway, agent, MCP servers, skills, rules, memory, code index
+- **iClaw Mode**: Automation runner with batch operations
+- **Embedded Terminal**: xterm.js + node-pty with working directory browser
+- **Code Editor**: Monaco Editor with 16+ language support (TypeScript, JavaScript, Python, Rust, Go, Java, C/C++, PHP, Ruby, Swift, Kotlin, SQL, etc.)
+- **Bilingual**: English and Chinese localization with runtime switching
+- **Git Integration**: Status and diff with caching
+- **System Tray**: Notifications + voice input support
+- **Encrypted Storage**: AES-256-GCM encrypted browser cookies
+- **Cross-platform**: Windows (NSIS), macOS (.pkg), Linux (.deb/.rpm)
+
+#### ⚙️ Developer Toolchain
+
+- **Context Compaction**: 9 strategies to intelligently manage conversation context
+- **LSP Client**: 16+ language servers auto-discovered for real-time code diagnostics
+- **Codebase Indexer**: BM25 search + dependency graph for project-wide understanding
+- **Evolution System**: Meta-cognition, reflex loop, strategy optimizer
+- **Feedback Learner**: Jaccard similarity-based error correction
+- **Interactive Notebook**: IPython kernel for live code execution
+- **Plugin System**: Extensible architecture with plugin registry
+- **User Profile**: Persona inference and soul system
+- **Spec Engine**: Structured specification document management
+- **WebSocket Server**: Real-time communication + admin HTTP API
+
+<h2 align="center">🚀 Quick Start</h2>
+
+### Get Started in 3 Steps
+
+**Step 1: Clone the repository**
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/mf2023/Encre.git
 cd encre
+```
 
-# 2. (Recommended) one-shot build — Rust extension + Python wheel + Desktop bundle
+**Step 2: Build everything**
+
+```bash
 python build.py
-
-# 3. --- Python Agent Framework ---
-
-# Install core dependencies in editable mode (uses pyproject.toml)
-pip install -e .
-
-# Install with development dependencies (pytest, ruff, mypy, pre-commit)
-pip install -e ".[dev]"
-
-# Install optional backends / adapters as needed
-pip install -e ".[anthropic]"       # Anthropic Claude backend
-pip install -e ".[ollama]"          # Ollama local backend
-pip install -e ".[discord]"         # Discord adapter
-pip install -e ".[slack]"           # Slack adapter
-pip install -e ".[telegram]"        # Telegram adapter
-pip install -e ".[dingtalk]"        # DingTalk adapter
-pip install -e ".[email]"           # Email adapter (IMAP + SMTP)
-pip install -e ".[local]"           # Local model backend (PyTorch + transformers)
-pip install -e ".[aws]"             # AWS Bedrock backend (boto3)
-pip install -e ".[aiohttp]"         # aiohttp HTTP utilities
-pip install -e ".[native]"          # Pre-built native extension (encre-native)
-
-# Install every extra (anthropic, ollama, native, aiohttp, discord, slack,
-# telegram, dingtalk, email, local, aws) in one go
-pip install -e ".[all]"
-
-# 4. --- Desktop Application ---
-
-cd desktop
-npm install
-cd ..
-
-# Playwright browsers (for the `browser` tool)
-playwright install
 ```
 
-### Build Commands
+This builds the Rust extension, installs the Python package, and bundles the desktop app — all in one command.
+
+**Step 3: Launch**
 
 ```bash
-# One-shot: builds the Rust extension, copies _native into backend/encre/,
-#            installs the Python package, and bundles the desktop renderer.
-python build.py
+# Desktop app
+cd desktop && npm start
 
-# Or build each component by hand:
-
-# Python: build a wheel
-pip install build
-python -m build
-
-# Rust: build the native extension (release)
-cd native
-cargo build --release -p encre-py
-# The compiled _native.pyd / _native.so is then copied into backend/encre/
-# (the build.py script does this automatically)
-
-# Desktop: bundle TypeScript and launch Electron
-cd desktop
-npm run build         # esbuild → dist/main.js, dist/preload.js, renderer/bundle.js
-npm start             # build + launch Electron
-npm run dist          # build + electron-builder (NSIS / pkg / deb / rpm)
-cd ..
-```
-
-### Run Tests & Quality
-
-```bash
-# Python tests (pytest is configured via pyproject.toml: testpaths = ["backend/tests"])
-pytest -v
-pytest backend/tests/test_agent.py -v
-pytest backend/tests/test_backends.py -v
-
-# Lint & type check
-ruff check .
-mypy backend/encre
-
-# Desktop type check (main process + renderer)
-cd desktop
-npm run typecheck
-```
-
-<h2 align="center">⚡ Quick Start</h2>
-
-### Basic Agent (Python API)
-
-```python
-import asyncio
-from encre import EncreAgent
-
-async def main():
-    agent = EncreAgent(
-        backend="openai",
-        model="gpt-4o",
-        api_key="...",
-    )
-
-    async for event in agent.run("Write a Python script that recursively lists all .py files"):
-        if event.type == "text":
-            print(event.content, end="")
-        elif event.type == "tool_result":
-            print(f"\n[Tool: {event.tool_name}] → {event.result[:100]}...")
-        elif event.type == "finish":
-            print(f"\n\nDone. Reason: {event.reason}")
-
-asyncio.run(main())
-```
-
-### With Tool Permission / Safety
-
-```python
-from encre import EncreAgent
-
-agent = EncreAgent(
-    backend="anthropic",
-    model="claude-sonnet-4-20250514",
-    api_key="...",
-    tool_permission_mode="auto",   # one of: bypass / dont_ask / accept_edits / plan / auto / default
-)
-```
-
-### Multi-Provider Switch
-
-```python
-from encre import EncreAgent
-
-for provider, model, key in [
-    ("openai", "gpt-4o", OPENAI_KEY),
-    ("anthropic", "claude-sonnet-4-20250514", ANTHROPIC_KEY),
-    ("google", "gemini-2.5-pro", GOOGLE_KEY),
-]:
-    agent = EncreAgent(backend=provider, model=model, api_key=key)
-    async for event in agent.run("Explain Rust ownership in one sentence"):
-        if event.type == "text":
-            print(event.content, end="")
-    print("\n" + "=" * 40)
-```
-
-### CLI: iClaw Mode
-
-```bash
-# iClaw is a long-running automation runner (encre/iclaw/__main__.py)
+# Or use the CLI (iClaw automation mode)
 python -m encre.iclaw --help
 ```
 
-### MCP Servers
+### Basic Usage
 
-```python
-from encre.tools.mcp_manager import MCPManager, bootstrap_mcp_servers
+Start chatting with your Agent through the desktop app, or connect it to your preferred chat platform. Configure your AI model provider, set the permission mode, and you're ready to go.
 
-# Bootstrap MCP servers from the user's default config path
-manager = MCPManager()
-await bootstrap_mcp_servers(manager)
-```
+### Configuration
 
-<h2 align="center">🖥️ Desktop Application</h2>
-
-Encre Desktop is an Electron + React 19 AI chat application:
-
-- **Chat**: Markdown rendering (`markdown-it`), syntax highlighting (`highlight.js`), file attachments
-- **Sessions**: Multiple concurrent sessions, branching, fuzzy search (`fuse.js`)
-- **Settings**: Model config, gateway, agent, MCP servers, skills, rules, memory, code index, agents
-- **iClaw Mode**: Automation runner with batch operations
-- **Terminal**: Embedded terminal (`xterm.js` + `node-pty`)
-- **Editor**: Monaco Editor with 16+ language workers (TypeScript, JavaScript, Python, Rust, Go, Java, C/C++/C#, PHP, Ruby, Swift, Kotlin, SQL, …)
-- **i18n**: English (`en.ts`) and Chinese (`zh.ts`) localization, runtime switching
-- **Git integration**: status / diff with 5-second cache, in-flight diff tracking
-- **System tray + notifications**
-- **Encrypted browser cookie store** (AES-256-GCM, key in user data dir)
-
-**Launch:**
-
-```bash
-cd desktop
-npm start
-```
-
-**Package for distribution:**
-
-```bash
-cd desktop
-npm run dist
-# → Windows: NSIS installer (x64)
-# → macOS:   .pkg (x64 + arm64)
-# → Linux:   .deb and .rpm (x64)
-```
-
-<h2 align="center">🔧 Configuration</h2>
-
-### Configuration Example
+Edit `config.yaml` to customize:
 
 ```yaml
-# config.yaml
 backend: "openai"
 model: "gpt-4o"
 api_key: "${OPENAI_API_KEY}"
 
 safety:
-  tool_permission_mode: "auto"   # bypass / dont_ask / accept_edits / plan / auto / default
+  tool_permission_mode: "default"   # Recommended: ask before each action
 
 memory:
   enabled: true
-  max_tokens: 4096
-
-compact:
-  strategy: "auto"               # one of the 9 encre.compact strategies
-  threshold_tokens: 32000
 
 tools:
   enabled:
@@ -555,53 +251,47 @@ tools:
     - file_write
     - bash
     - web_fetch
-    - web_search
-  disabled:
-    - browser
-    - notebook
 ```
 
-### Configuration Sources (priority low → high)
-
-1. Built-in defaults (`encre.config.EncreConfig`)
+Configuration sources (lowest to highest priority):
+1. Built-in defaults
 2. Configuration files (YAML, TOML)
 3. Environment variables (prefixed with `ENCRE_`)
-4. Programmatic configuration passed to `EncreAgent(...)`
+4. Runtime parameters
 
 <h2 align="center">❓ Frequently Asked Questions</h2>
 
-**Q: How many LLM backends does Encre support?**
-A: **31** backends: OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Ollama, Local (HuggingFace), Alibaba (Qwen / DashScope), Tencent, Xiaomi, Kimi, GLM, MiniMax, Arcee, Novita, OpenRouter, AWS Bedrock, GitHub Copilot, LM Studio, OpenAI Compatible, OpenAI SSE, AI Gateway, Kilocode, OpenCode, plus the meta-backends Failover, Router, Retry, and the MCP Catalog and the static `encre.backends.catalog` provider catalog.
+**Q: Which AI models does Encre support?**
 
-**Q: How many built-in tools ship with Encre?**
-A: **36** built-in tools under `encre/tools/builtin/`, plus a fully pluggable tool registry and an MCP client for external tools.
+A: **31 providers** including OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Qwen, Tencent, Xiaomi, Moonshot Kimi, Zhipu GLM, MiniMax, Ollama, LM Studio, AWS Bedrock, and more. See the full list in the backends directory.
 
-**Q: How do I add a custom tool?**
-A: Subclass `EncreTool` (defined in `encre/tools/base.py`), implement `execute(**kwargs) -> str` and the formatting methods, then register the tool with the `ToolRegistry` (or use the discovery mechanism in `encre/tools/discovery.py`).
+**Q: What can Encre Agent do?**
 
-**Q: What are the permission / safety modes?**
-A: **6** modes: `bypass` (no checks), `dont_ask` (auto-allow), `accept_edits` (auto-allow edits), `plan` (plan first), `auto` (heuristic), `default` (ask for confirmation). They are surfaced through `encre.utils.types.PermissionMode`.
+A: Everything a skilled assistant can do — read/write/edit code, run shell commands, browse the web, automate your desktop, manage files, schedule tasks, collaborate with other Agents, and much more. It has **36 built-in tools** to handle almost any task.
 
-**Q: Is this a PyPI library I can `pip install`?**
-A: No. Encre is shipped as a single repository containing Python, Rust, and Electron/TypeScript code; the three components share a single release cycle. To use it, clone the repository and follow the Development Setup guide. The Python package can then be installed from source via `pip install -e .`.
+**Q: Can I use Encre with my favorite chat platform?**
 
-**Q: How does the memory system work?**
-A: Memory is stored as frontmatter-parsed `.md` files in a `memdir/` directory with a `MEMORY.md` index (`encre.memdir`). The system tracks freshness/age, automatically prunes aged entries, and exposes semantic search backed by NumPy similarity.
+A: Yes! Encre supports **18 chat platforms** including Telegram, Discord, Slack, Feishu, DingTalk, WeCom, WeChat, WhatsApp, Email, and more. Each platform has a dedicated adapter.
 
-**Q: Does Encre support multi-agent workflows?**
-A: Yes. The **Swarm** system (`encre.swarm`) provides teammates, a concurrency-limited swarm manager, an async mailbox, an orchestrator, a blackboard, and a consensus protocol. The **Task** system (`encre.task`) provides typed CRUD with bash / agent / workflow executors. There are also **9 built-in sub-agents** defined in `encre/agents/builtin.py` (coder, researcher, critic, architect, planner, spec-writer, monitor, executor, scheduler).
+**Q: Is Encre safe to use?**
 
-**Q: How does Encre use Rust?**
-A: Performance-critical operations — file I/O, regex search, glob, unified diff, SIMD pattern matching, BM25 indexing, sandbox / Landlock, token counting, semantic similarity, and the LSP JSON-RPC parser — are implemented in Rust (`native/crates/encre-core`) and exposed to Python through PyO3 (`encre._native`). The extension is built with `python build.py` or `cargo build --release -p encre-py`.
+A: Safety is a top priority. Encre offers **6 permission modes** ranging from fully open to asking for confirmation on every action. Additional protections include SSRF guards, Docker sandboxing, Landlock kernel restrictions, and AI-powered risk classification.
 
-**Q: How do I build the desktop app for distribution?**
-A: Run `npm run dist` in the `desktop/` directory. `electron-builder` produces NSIS installers (Windows x64), `.pkg` packages (macOS x64 + arm64), and `.deb` / `.rpm` packages (Linux x64). Output goes to `desktop/release/`.
+**Q: Does Encre remember things between sessions?**
 
-**Q: Where do the chat-platform adapters live?**
-A: Under `encre/adapters/` — 18 adapters implementing `BaseAdapter`, including Discord, Slack, Telegram, DingTalk, Feishu, WeCom, Weixin, WhatsApp, Signal, SMS, Email, Matrix, MS Graph, Home Assistant, QQ Bot, BlueBubbles, Yuanbao, and a generic Webhook adapter.
+A: Yes. Encre has a **persistent memory system** that stores important information, learns your preferences, and maintains context across conversations. Over time, it gets smarter and more personalized.
 
-**Q: How do I run Encre as a server?**
-A: `encre.server` exposes a WebSocket server and an admin HTTP API. Use `EncreServer` / `run_server` from `encre.server.app` (lazy-loaded from `encre/__init__.py`) and the `SessionManager` from `encre.server.session_manager`.
+**Q: Can multiple Agents work together?**
+
+A: Absolutely. Encre supports **multi-agent collaboration** through its Swarm system. You can spawn multiple Agents with different roles (coder, researcher, critic, etc.) that share information and cooperate on complex tasks.
+
+**Q: Is there a desktop app?**
+
+A: Yes! **Encre Desktop** is a full-featured Electron + React application with chat interface, code editor (Monaco), embedded terminal, file browser, settings panel, and more. Available for Windows, macOS, and Linux.
+
+**Q: Can I use my own AI models?**
+
+A: Yes. You can use any OpenAI-compatible API, self-host models via Ollama/LM Studio, or integrate custom backends. Encre is designed to be backend-agnostic.
 
 <h2 align="center">🌏 Community & License</h2>
 
@@ -614,7 +304,7 @@ A: `encre.server` exposes a WebSocket server and an admin HTTP API. Use `EncreSe
 
 ## 📄 License & Open Source Agreements
 
-### 🏛️ Project License
+### Project License
 
 <p align="center">
   <a href="LICENSE">
@@ -624,13 +314,13 @@ A: `encre.server` exposes a WebSocket server and an admin HTTP API. Use `EncreSe
 
 This project uses **Apache License 2.0**. See [LICENSE](LICENSE) for the full text.
 
-### 📋 Dependency Licenses
+### Dependency Licenses
 
 The dependency license list below reflects the packages used by the **Python framework**, the **Rust core**, and the **Electron desktop app**. Versions and exact license texts are not pinned here; consult each upstream project for the authoritative license.
 
 <div align="center">
 
-| 📦 Package | 📜 License | 📦 Package | 📜 License |
+| Package | License | Package | License |
 |:-----------|:-----------|:-----------|:-----------|
 | httpx | BSD-3-Clause | pydantic | MIT |
 | beautifulsoup4 | MIT | markdownify | MIT |

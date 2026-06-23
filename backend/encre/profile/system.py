@@ -171,7 +171,7 @@ class UserProfile:
         query_words = self._keywords(query) - self._STOPWORDS
 
         details: list[str] = []
-        for field, label, value in [
+        for fname, label, value in [
             ("expertise_level", "Expertise", self.expertise_level),
             ("domain", "Domain", self.domain),
             ("language_preference", "Language", self.language_preference),
@@ -185,23 +185,23 @@ class UserProfile:
             ("os", "OS", self.os),
             ("editor", "Editor", self.editor),
         ]:
-            conf = self.confidence.get(field, 0.0)
-            if value and conf >= threshold and self._field_relevant(field, value, query_words):
+            conf = self.confidence.get(fname, 0.0)
+            if value and conf >= threshold and self._field_relevant(fname, value, query_words):
                 pct = round(conf * 100)
                 details.append(f"{label}: {value} ({pct}%)")
 
-        for field, label, values in [
+        for fname, label, values in [
             ("preferred_languages", "Languages", self.preferred_languages),
             ("preferred_frameworks", "Frameworks", self.preferred_frameworks),
             ("common_goals", "Common goals", self.common_goals),
         ]:
-            if values and self._field_relevant(field, values, query_words):
-                conf = self.confidence.get(field, 0.0)
+            if values and self._field_relevant(fname, values, query_words):
+                conf = self.confidence.get(fname, 0.0)
                 if conf >= threshold:
                     pct = round(conf * 100)
                     details.append(f"{label}: {', '.join(values)} ({pct}%)")
 
-        if self.skill_levels and self._field_relevant("skill_levels", list(self.skill_levels.keys()), query_words):  # noqa: E501
+        if self.skill_levels and self._field_relevant("skill_levels", list(self.skill_levels.keys()), query_words):
             conf = self.confidence.get("skill_levels", 0.0)
             if conf >= threshold:
                 pct = round(conf * 100)
@@ -351,11 +351,11 @@ class EncreProfileSystem:
         self.save()
 
     def merge_inferred(self, inferred: dict[str, Any], confidences: dict[str, float]) -> None:
-        for field, value in inferred.items():
+        for fname, value in inferred.items():
             if value is None or value == "" or value == [] or value == {}:
                 continue
-            conf = confidences.get(field, 0.5)
-            self.update_field(field, value, confidence=conf)
+            conf = confidences.get(fname, 0.5)
+            self.update_field(fname, value, confidence=conf)
 
     def update_raw(self, data: dict[str, Any]) -> None:
         profile_dict = self._profile.to_dict()

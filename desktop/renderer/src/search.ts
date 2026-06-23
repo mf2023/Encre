@@ -334,8 +334,11 @@ export class Search {
         break;
       }
       case "iwork_mode": {
-        const btn = document.getElementById("btn-sidebar-workspace") as HTMLElement;
-        btn?.click();
+        // The top-bar .seg switch is now the single mode entry point.
+        // Clicking its iwork segment goes through the same code path as a
+        // user click, so animation, IPC and state stay in one place.
+        const segItem = document.querySelector<HTMLElement>('#mode-seg .seg-item[data-mode="iwork"]');
+        segItem?.click();
         break;
       }
       case "tools_panel": {
@@ -345,8 +348,8 @@ export class Search {
       }
       case "normal_mode":
       default: {
-        const wsBtn = document.getElementById("btn-sidebar-workspace") as HTMLElement;
-        if (wsBtn?.classList.contains("active")) wsBtn.click();
+        const segItem = document.querySelector<HTMLElement>('#mode-seg .seg-item[data-mode="normal"]');
+        if (segItem?.classList.contains("active")) segItem.click();
         break;
       }
     }

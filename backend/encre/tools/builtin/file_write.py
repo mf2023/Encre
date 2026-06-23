@@ -72,7 +72,7 @@ EncreFileWriteTool = build_tool(
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Path to the file (filename, relative path, or absolute path within the workspace)",  # noqa: E501
+                "description": "Path to the file (filename, relative path, or absolute path within the workspace)",
             },
             "content": {
                 "type": "string",

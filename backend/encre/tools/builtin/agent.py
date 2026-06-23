@@ -222,7 +222,7 @@ async def _agent_execute(**kwargs: Any) -> Any:
     tasks = kwargs.get("tasks")
     if tasks:
         if not isinstance(tasks, list):
-            return {"content": "Error: 'tasks' must be an array of {prompt, agent_name} objects.", "messages": []}  # noqa: E501
+            return {"content": "Error: 'tasks' must be an array of {prompt, agent_name} objects.", "messages": []}
         # Build coroutines for each task
         async def _runner(t: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(t, dict):
@@ -239,7 +239,7 @@ async def _agent_execute(**kwargs: Any) -> Any:
         out: list[dict[str, Any]] = []
         for idx, r in enumerate(results):
             if isinstance(r, BaseException):
-                out.append({"content": f"Sub-agent {idx} failed: {type(r).__name__}: {r}", "messages": []})  # noqa: E501
+                out.append({"content": f"Sub-agent {idx} failed: {type(r).__name__}: {r}", "messages": []})
             else:
                 out.append(r)
         # Format the aggregated result so the parent can read each

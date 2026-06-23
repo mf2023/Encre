@@ -30,6 +30,6 @@ from encre.prompts.loader import PromptLoader
 _loader = PromptLoader()
 
 
-async def _debug_prompt(args: str | None, ctx: dict[str, Any]) -> str:
+async def _debug_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
     target = args or "the current project"
     return _loader.load_with_context("debug", category="skills", target=target)

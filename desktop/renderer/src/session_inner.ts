@@ -233,6 +233,47 @@ export class SessionInner {
     return this.activeTab;
   }
 
+  /**
+   * Tear down every dynamic tab/panel/terminal in the sidebar and restore
+   * the default "info" tab.  Called from app.ts on session switch and
+   * mode switch so terminals and editors from a previous session do not
+   * leak into the next.
+   */
+  public async resetToDefaultTabs(): Promise<void> {
+    // Dispose all open terminal PTYs and the xterm instances bound to
+    // them.  Skipping this leaks WebGL contexts and zombie rAF loops.
+    const api = (window as any).electronAPI;
+    for (const [, terms] of this.panelTerminals) {
+      for (const t of terms) {
+        try { t.cleanup(); } catch { /* noop */ }
+        try { t.resizeObs.disconnect(); } catch { /* noop */ }
+        try { t.term.dispose(); } catch { /* noop */ }
+        try { api?.terminalKill?.(t.ptyId); } catch { /* noop */ }
+      }
+    }
+    this.panelTerminals.clear();
+    this.panelActiveTermIdx.clear();
+    this.panelShellPath.clear();
+    this.panelShellArgs.clear();
+
+    // Remove the per-panel shell dropdown that setupTerminalPanel()
+    // appended to document.body — it is not a child of #session-inner-sidebar
+    // so querySelector'ing inside that container would not find it.
+    document.querySelectorAll(".si-term-shell-dropdown").forEach((el) => el.remove());
+
+    // Remove the per-tab "new tab" dropdown from document.body.
+    document.querySelectorAll(".tab-add-dropdown").forEach((el) => el.remove());
+
+    // Remove every panel DOM node; renderTabs() will recreate the default
+    // "info" tab from scratch on the next render cycle.
+    this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
+
+    // Reset the in-memory tab list to the default.
+    this.tabs = [{ id: "info", closable: false }];
+    this.activeTab = "info";
+    await this.renderTabs();
+  }
+
   public async createTab(id: string): Promise<void> {
     if (!this.tabs.some((tab) => tab.id === id)) {
       this.tabs.push({ id, closable: true });

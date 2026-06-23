@@ -71,7 +71,7 @@ def get_builtin_sub_agents() -> list[SubAgentConfig]:
         # ── Auto agent (lobster) mode ─────────────────────────
         SubAgentConfig(
             name="automation",
-            description="Autonomous workflow orchestrator for monitoring, execution, and scheduling",  # noqa: E501
+            description="Autonomous workflow orchestrator for monitoring, execution, and scheduling",
             system_prompt=_loader.load("automation", category="skills"),
             hidden=True,
         ),

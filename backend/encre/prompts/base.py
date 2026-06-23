@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -58,7 +59,7 @@ class EncreBasePrompt(ABC):
 class EncrePromptTemplate(EncreBasePrompt):
     """General-purpose prompt template using the layered builder."""
 
-    def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "general") -> None:  # noqa: E501
+    def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "general") -> None:
         self._builder = builder or EncrePromptBuilder()
         self._specialty = specialty
 
@@ -97,7 +98,7 @@ class EncrePromptTemplate(EncreBasePrompt):
         if not tool_names:
             return "You do not have access to any tools."
         tools_list = "\n".join(f"- {name}" for name in tool_names)
-        return f"You have access to the following tools:\n{tools_list}\n\nUse them as needed to accomplish the task."  # noqa: E501
+        return f"You have access to the following tools:\n{tools_list}\n\nUse them as needed to accomplish the task."
 
     @property
     def builder(self) -> EncrePromptBuilder:

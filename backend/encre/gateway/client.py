@@ -67,6 +67,7 @@ class GatewayClient:
         self._listeners: dict[str, list[Any]] = {}
         # Message queue: _read_loop pushes, submit/submit_stream consume
         self._msg_queue: asyncio.Queue[GatewayMessage | None] = asyncio.Queue()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def is_connected(self) -> bool:
@@ -103,8 +104,10 @@ class GatewayClient:
                     logger.info("%s connected to gateway at %s", self._name, self._url)
                     self._emit("connected")
                     # Background tasks: heartbeat sender + message reader
-                    asyncio.ensure_future(self._heartbeat_loop())
-                    asyncio.ensure_future(self._read_loop())
+                    _t1 = asyncio.ensure_future(self._heartbeat_loop())
+                    _t2 = asyncio.ensure_future(self._read_loop())
+                    self._background_tasks.add(_t1)
+                    self._background_tasks.add(_t2)
                     # connect() returns -- reads happen via _msg_queue
                     return
                 else:
@@ -116,7 +119,7 @@ class GatewayClient:
                 if self._running:
                     attempt += 1
                     delay = min(RECONNECT_BASE * (2 ** (attempt - 1)), RECONNECT_MAX)
-                    logger.warning("%s gateway reconnect in %.1fs (attempt %d): %s", self._name, delay, attempt, e)  # noqa: E501
+                    logger.warning("%s gateway reconnect in %.1fs (attempt %d): %s", self._name, delay, attempt, e)
                     self._connected = False
                     self._emit("disconnected")
                     await asyncio.sleep(delay)
@@ -132,10 +135,10 @@ class GatewayClient:
         await self._msg_queue.put(None)
         logger.info("%s disconnected from gateway", self._name)
 
-    async def submit(self, prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> str:  # noqa: E501
-        logger.info("[gateway-client] %s submit prompt=%.60s session=%s", self._name, prompt, session_id or "(new)")  # noqa: E501
+    async def submit(self, prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> str:
+        logger.info("[gateway-client] %s submit prompt=%.60s session=%s", self._name, prompt, session_id or "(new)")
         if not self._connected:
-            logger.error("[gateway-client] %s cannot submit -- not connected to gateway", self._name)  # noqa: E501
+            logger.error("[gateway-client] %s cannot submit -- not connected to gateway", self._name)
             return ""
         msg = GatewayMessage.submit(prompt, session_id, system_prompt)
         await self._send(msg)
@@ -146,7 +149,7 @@ class GatewayClient:
             try:
                 response = await asyncio.wait_for(self._msg_queue.get(), timeout=30.0)
                 if response is None:
-                    logger.warning("[gateway-client] %s submit disconnected during response", self._name)  # noqa: E501
+                    logger.warning("[gateway-client] %s submit disconnected during response", self._name)
                     break  # disconnected
                 if response.op == GatewayOp.TEXT_DELTA:
                     parts.append(response.data.get("text", ""))
@@ -155,14 +158,14 @@ class GatewayClient:
                                 self._name, response.data.get("reason", "?"), len("".join(parts)))
                     break
                 elif response.op == GatewayOp.ERROR:
-                    logger.warning("[gateway-client] %s submit error: %s", self._name, response.data.get("message", ""))  # noqa: E501
+                    logger.warning("[gateway-client] %s submit error: %s", self._name, response.data.get("message", ""))
                     break
             except TimeoutError:
                 timeout_count += 1
                 if timeout_count >= max_timeouts:
-                    logger.error("[gateway-client] %s submit timed out %d times, giving up", self._name, max_timeouts)  # noqa: E501
+                    logger.error("[gateway-client] %s submit timed out %d times, giving up", self._name, max_timeouts)
                     break
-                logger.warning("[gateway-client] %s submit timeout #%d, retrying...", self._name, timeout_count)  # noqa: E501
+                logger.warning("[gateway-client] %s submit timeout #%d, retrying...", self._name, timeout_count)
                 continue
             except Exception as e:
                 logger.warning("[gateway-client] %s submit exception: %s", self._name, e)
@@ -177,9 +180,9 @@ class GatewayClient:
         session_id: str | None = None,
         system_prompt: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
-        logger.info("[gateway-client] %s submit_stream prompt=%.60s session=%s", self._name, prompt, session_id or "(new)")  # noqa: E501
+        logger.info("[gateway-client] %s submit_stream prompt=%.60s session=%s", self._name, prompt, session_id or "(new)")
         if not self._connected:
-            logger.error("[gateway-client] %s cannot submit_stream -- not connected (ws=%s running=%s)",  # noqa: E501
+            logger.error("[gateway-client] %s cannot submit_stream -- not connected (ws=%s running=%s)",
                          self._name, self._ws is not None, self._running)
             yield Finish(reason="error", error="Gateway not connected")
             return
@@ -201,26 +204,26 @@ class GatewayClient:
                     yield TextDelta(text=t)
                 elif response.op == GatewayOp.TOOL_RESULT:
                     d = response.data
-                    yield ToolResult(id=d.get("id", ""), content=d.get("content", ""), is_error=d.get("is_error", False))  # noqa: E501
+                    yield ToolResult(id=d.get("id", ""), content=d.get("content", ""), is_error=d.get("is_error", False))
                 elif response.op == GatewayOp.FINISH:
                     err = response.data.get("error", "")
                     if err:
-                        logger.warning("[gateway-client] %s finish with error: %s (text_len=%d)", self._name, err, text_len)  # noqa: E501
+                        logger.warning("[gateway-client] %s finish with error: %s (text_len=%d)", self._name, err, text_len)
                     else:
-                        logger.info("[gateway-client] %s finish reason=%s text_len=%d", self._name, response.data.get("reason", "?"), text_len)  # noqa: E501
-                    yield Finish(reason=response.data.get("reason", "done"), error=err, usage=response.data.get("usage"))  # noqa: E501
+                        logger.info("[gateway-client] %s finish reason=%s text_len=%d", self._name, response.data.get("reason", "?"), text_len)
+                    yield Finish(reason=response.data.get("reason", "done"), error=err, usage=response.data.get("usage"))
                     return
                 elif response.op == GatewayOp.ERROR:
-                    logger.warning("[gateway-client] %s error: %s", self._name, response.data.get("message", ""))  # noqa: E501
+                    logger.warning("[gateway-client] %s error: %s", self._name, response.data.get("message", ""))
                     yield Finish(reason="error", error=response.data.get("message", ""))
                     return
             except TimeoutError:
                 timeout_count += 1
                 if timeout_count >= max_timeouts:
-                    logger.error("[gateway-client] %s submit_stream timed out %d times, giving up", self._name, max_timeouts)  # noqa: E501
+                    logger.error("[gateway-client] %s submit_stream timed out %d times, giving up", self._name, max_timeouts)
                     yield Finish(reason="error", error="Server did not respond")
                     return
-                logger.warning("[gateway-client] %s submit_stream timeout #%d, retrying...", self._name, timeout_count)  # noqa: E501
+                logger.warning("[gateway-client] %s submit_stream timeout #%d, retrying...", self._name, timeout_count)
                 continue
             except Exception as e:
                 logger.warning("[gateway-client] %s submit_stream exception: %s", self._name, e)
@@ -231,7 +234,7 @@ class GatewayClient:
         self._seq += 1
         msg.seq = self._seq
         if not self._ws:
-            logger.warning("[gateway-client] %s cannot send -- WebSocket not connected (op=%s seq=%d)",  # noqa: E501
+            logger.warning("[gateway-client] %s cannot send -- WebSocket not connected (op=%s seq=%d)",
                            self._name, msg.op.name if msg.op else "?", self._seq)
             return
         try:
@@ -242,7 +245,7 @@ class GatewayClient:
             elif msg.op == GatewayOp.HEARTBEAT or msg.op == GatewayOp.HEARTBEAT_ACK:
                 pass  # too noisy
             else:
-                logger.info("[gateway-client] %s sent op=%s seq=%d", self._name, msg.op.name, msg.seq)  # noqa: E501
+                logger.info("[gateway-client] %s sent op=%s seq=%d", self._name, msg.op.name, msg.seq)
         except Exception as e:
             logger.warning("[gateway-client] %s send error: %s", self._name, e)
 
@@ -277,13 +280,13 @@ class GatewayClient:
                 elif msg.op == GatewayOp.FINISH:
                     reason = msg.data.get("reason", "")
                     err = msg.data.get("error", "")
-                    logger.info("[gateway-client] %s recv finish reason=%s error=%s", self._name, reason, err or "none")  # noqa: E501
+                    logger.info("[gateway-client] %s recv finish reason=%s error=%s", self._name, reason, err or "none")
                 elif msg.op == GatewayOp.ERROR:
-                    logger.warning("[gateway-client] %s recv error: %s", self._name, msg.data.get("message", ""))  # noqa: E501
+                    logger.warning("[gateway-client] %s recv error: %s", self._name, msg.data.get("message", ""))
                 # Forward everything to the shared queue
                 await self._msg_queue.put(msg)
         except Exception as e:
-            logger.warning("[gateway-client] %s read_loop ended: %s %s", self._name, type(e).__name__, e)  # noqa: E501
+            logger.warning("[gateway-client] %s read_loop ended: %s %s", self._name, type(e).__name__, e)
         finally:
             self._connected = False
             self._emit("disconnected")

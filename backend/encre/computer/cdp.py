@@ -30,16 +30,16 @@ browsers (Chrome, Edge, etc.) and Firefox (via Remote Protocol).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import platform
 import shutil
 import subprocess
-import sys
 import tempfile
-from pathlib import Path
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import websockets
 
@@ -80,10 +80,8 @@ class CDPTransport:
         """Close the WebSocket connection."""
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._reader_task
-            except (asyncio.CancelledError, Exception):
-                pass
             self._reader_task = None
         if self._ws and self._connected:
             await self._ws.close()
@@ -182,8 +180,8 @@ class CDPTransport:
         self.on(method, handler)
         try:
             return await asyncio.wait_for(fut, timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError(f"Timed out waiting for CDP event: {method}")
+        except TimeoutError:
+            raise TimeoutError(f"Timed out waiting for CDP event: {method}") from None
         finally:
             self.off(method, handler)
 
@@ -241,7 +239,6 @@ class CDPSession:
         """Send a CDP command scoped to this session (tab)."""
         if not self._attached:
             raise RuntimeError("No target attached")
-        payload = {"sessionId": self._session_id}
         # Flattened mode: commands that target a specific session use
         # ``Target.sendMessageToTarget`` under the hood, but with
         # ``flatten=True`` we can send commands scoped by ``sessionId``
@@ -361,7 +358,7 @@ async def _discover_or_launch_browser(port: int = 9222) -> tuple[str, subprocess
     proc = await _launch_browser(browser_path, port=port)
 
     # Wait for the browser to start responding
-    for attempt in range(30):
+    for _attempt in range(30):
         await asyncio.sleep(1)
         try:
             req = urllib.request.Request(f"http://localhost:{port}/json/version")

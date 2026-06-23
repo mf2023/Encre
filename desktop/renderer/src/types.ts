@@ -282,6 +282,9 @@ export interface TelemetryData {
 export interface UsageStatsSessionEntry {
   session_id: string;
   model: string;
+  /** "active" = currently configured, "deleted" = no longer in config,
+   *  "unknown" = session had no recorded model. */
+  model_status?: "active" | "deleted" | "unknown";
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
@@ -1273,6 +1276,12 @@ export interface Message {
   segments: TimelineSegment[];
   timestamp: number;
   hasError?: boolean;
+  /** Turn status card data — populated from backend events. */
+  errorMessage?: string;
+  errorCode?: string;
+  interruptedReason?: string;
+  turnStatusText?: string;  // e.g. "任务完成" from backend
+  cancelledText?: string;   // set when user presses stop button (reason="cancelled")
   mode?: string;  // "plan" | "spec" | "terminal" for mode-based messages
   fileRefs?: { name: string; size: number; icon: string; path?: string; mime_type?: string }[];
   tokenUsage?: { input_tokens: number; output_tokens: number; total_tokens: number };

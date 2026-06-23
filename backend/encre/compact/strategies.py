@@ -40,7 +40,7 @@ class EncreCompactStrategy(ABC):
     async def compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
         ...
 
@@ -48,7 +48,7 @@ class EncreCompactStrategy(ABC):
     async def should_compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> bool:
         ...
 
@@ -57,7 +57,7 @@ class EncreAlwaysCompactStrategy(EncreCompactStrategy):
     async def compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
         if len(messages) <= 2:
             return messages
@@ -71,7 +71,7 @@ class EncreAlwaysCompactStrategy(EncreCompactStrategy):
     async def should_compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> bool:
         return len(messages) > 10
 
@@ -83,9 +83,9 @@ class EncreTokenBudgetStrategy(EncreCompactStrategy):
     async def compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
-        budget = int(max_tokens * self._budget_ratio)
+        budget = int(_max_tokens * self._budget_ratio)
         system_messages = [m for m in messages if m.get("role") == "system"]
         non_system = [m for m in messages if m.get("role") != "system"]
 
@@ -115,10 +115,10 @@ class EncreTokenBudgetStrategy(EncreCompactStrategy):
     async def should_compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> bool:
         total = sum(self._estimate_tokens(m) for m in messages)
-        return total > max_tokens * self._budget_ratio
+        return total > _max_tokens * self._budget_ratio
 
     @staticmethod
     def _estimate_tokens(message: dict[str, Any]) -> int:
@@ -133,7 +133,7 @@ class EncreBudgetReductionStrategy(EncreCompactStrategy):
     async def compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for msg in messages:
@@ -163,7 +163,7 @@ class EncreBudgetReductionStrategy(EncreCompactStrategy):
     async def should_compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> bool:
         for msg in messages:
             content = msg.get("content", "")
@@ -223,7 +223,7 @@ class EncreMicroCompactStrategy(EncreCompactStrategy):
     async def compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for msg in messages:
@@ -252,7 +252,7 @@ class EncreMicroCompactStrategy(EncreCompactStrategy):
     async def should_compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> bool:
         # Check if any message has large content
         for msg in messages:
@@ -272,7 +272,7 @@ class EncreContextCollapseStrategy(EncreCompactStrategy):
     async def compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
         if len(messages) <= self._collapse_before * 2:
             return messages
@@ -309,12 +309,12 @@ class EncreContextCollapseStrategy(EncreCompactStrategy):
     async def should_compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> bool:
         if len(messages) <= self._collapse_before * 3:
             return False
         total = sum(_estimate_message_tokens(m) for m in messages)
-        return total > max_tokens * 0.6
+        return total > _max_tokens * 0.6
 
 
 class EncreSemanticCompactStrategy(EncreCompactStrategy):
@@ -338,7 +338,7 @@ class EncreSemanticCompactStrategy(EncreCompactStrategy):
     async def compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for msg in messages:
@@ -359,7 +359,7 @@ class EncreSemanticCompactStrategy(EncreCompactStrategy):
     async def should_compact(
         self,
         messages: list[dict[str, Any]],
-        max_tokens: int = 128000,
+        _max_tokens: int = 128000,
     ) -> bool:
         for msg in messages:
             if msg.get("role") in ("tool",):
@@ -447,7 +447,7 @@ class EncreAutoCompactStrategy(EncreCompactStrategy):
             return ""
 
         summary_msgs = [
-            {"role": "user", "content": f"{self.SUMMARIZE_PROMPT}\n\nConversation:\n{full_text[:8000]}"},  # noqa: E501
+            {"role": "user", "content": f"{self.SUMMARIZE_PROMPT}\n\nConversation:\n{full_text[:8000]}"},
         ]
 
         try:

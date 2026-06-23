@@ -76,7 +76,7 @@ class PromptLoader:
             raise FileNotFoundError(
                 f"Prompt file not found: {path}. "
                 f"Ensure the file exists under prompts/{category}/."
-            )
+            ) from None
 
         _CACHE[cache_key] = content
         return content

@@ -220,11 +220,11 @@ class PostRunPipeline:
                 self._evolution_learner.record_success(tc["name"], summary.prompt[:200])
                 stage["records"] = stage.get("records", 0) + 1
             else:
-                self._evolution_learner.record_error(tc["name"], tc.get("error", "") or "unknown error")  # noqa: E501
+                self._evolution_learner.record_error(tc["name"], tc.get("error", "") or "unknown error")
                 stage.setdefault("errors", []).append({"tool": tc["name"]})
         return stage
 
-    async def _stage_learning(self, summary: RunSummary, enrichments: dict[str, Any]) -> dict[str, Any]:  # noqa: E501
+    async def _stage_learning(self, summary: RunSummary, _enrichments: dict[str, Any]) -> dict[str, Any]:
         if self._learning_engine is None:
             return {"enabled": False}
         tool_names = [tc["name"] for tc in summary.tool_calls]
@@ -235,7 +235,7 @@ class PostRunPipeline:
             "skills_generated": 0,
         }
 
-    async def _stage_memory(self, summary: RunSummary, enrichments: dict[str, Any]) -> dict[str, Any]:  # noqa: E501
+    async def _stage_memory(self, summary: RunSummary, enrichments: dict[str, Any]) -> dict[str, Any]:
         memory_system = getattr(self._agent, "memory_system", None)
         if memory_system is None:
             return {"enabled": False}
@@ -254,7 +254,7 @@ class PostRunPipeline:
             logger.warning("Memory stage failed: %s", e)
             return {"enabled": True, "error": str(e)}
 
-    async def _stage_soul(self, summary: RunSummary, enrichments: dict[str, Any]) -> dict[str, Any]:
+    async def _stage_soul(self, _summary: RunSummary, enrichments: dict[str, Any]) -> dict[str, Any]:
         if self._soul_system is None:
             return {"enabled": False}
         user_notes = enrichments.get("user_preferences", [])
@@ -316,9 +316,9 @@ class PostRunOrchestrator:
             1 for e in events if isinstance(e, ToolResult)
         )
         if tool_call_count < self._min_tool_calls:
-            return {"skipped": True, "reason": f"too few tool calls ({tool_call_count} < {self._min_tool_calls})"}  # noqa: E501
+            return {"skipped": True, "reason": f"too few tool calls ({tool_call_count} < {self._min_tool_calls})"}
         if duration_seconds < self._min_duration:
-            return {"skipped": True, "reason": f"too short ({duration_seconds}s < {self._min_duration}s)"}  # noqa: E501
+            return {"skipped": True, "reason": f"too short ({duration_seconds}s < {self._min_duration}s)"}
         return await self._pipeline.process(prompt, events, duration_seconds=duration_seconds)
 
     @property

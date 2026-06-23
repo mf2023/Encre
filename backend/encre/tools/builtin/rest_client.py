@@ -60,7 +60,7 @@ async def _rest_client_execute(**kwargs: Any) -> str:
             if "application/json" in content_type or response_body.strip().startswith(("{", "[")):
                 try:
                     parsed = json.loads(response_body)
-                    return json.dumps({"status": status, "headers": dict(resp.headers), "body": parsed}, indent=2, default=str)  # noqa: E501
+                    return json.dumps({"status": status, "headers": dict(resp.headers), "body": parsed}, indent=2, default=str)
                 except (json.JSONDecodeError, ValueError):
                     pass
 

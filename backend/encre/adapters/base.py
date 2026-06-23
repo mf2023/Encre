@@ -284,6 +284,7 @@ class BaseAdapter(ABC):
         # Gateway connection lifecycle state
         self._gateway_started = False
         self._reconnecting = False
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         # Most recent inbound chat_id for push notifications.  Updated by
         # dispatch_message() whenever a non-internal message arrives.
         self._last_push_chat_id: str | None = None
@@ -309,7 +310,8 @@ class BaseAdapter(ABC):
         if not self._gateway_started:
             # First-time lazy initialization
             self._gateway_started = True
-            asyncio.ensure_future(self._client.connect())
+            _t = asyncio.ensure_future(self._client.connect())
+            self._background_tasks.add(_t)
             logger.info("[%s] GatewayClient lazy-started, waiting for connection...", self.name)
         elif self._client.is_connected:
             # Already connected, nothing to do
@@ -320,11 +322,12 @@ class BaseAdapter(ABC):
             # _connected is False (the initial connect() returns after handshake
             # and does NOT reconnect on later disconnection).
             if self._reconnecting:
-                logger.info("[%s] GatewayClient reconnect already in progress, waiting...", self.name)  # noqa: E501
+                logger.info("[%s] GatewayClient reconnect already in progress, waiting...", self.name)
             else:
                 self._reconnecting = True
                 logger.warning("[%s] GatewayClient disconnected, reconnecting...", self.name)
-                asyncio.ensure_future(self._client.connect())
+                _t = asyncio.ensure_future(self._client.connect())
+                self._background_tasks.add(_t)
 
         # Poll until connected or timeout (30 iterations * 0.5s = 15s max)
         for i in range(30):
@@ -335,7 +338,7 @@ class BaseAdapter(ABC):
             await asyncio.sleep(0.5)
         # Timeout reached -- proceed anyway to allow the caller to handle the error
         self._reconnecting = False
-        logger.warning("[%s] GatewayClient not connected after 15s (ws=%s running=%s), proceeding anyway",  # noqa: E501
+        logger.warning("[%s] GatewayClient not connected after 15s (ws=%s running=%s), proceeding anyway",
                        self.name, self._client._ws is not None, self._client._running)
 
     @property
@@ -570,16 +573,16 @@ class BaseAdapter(ABC):
                 await self.on_text_delta(chat_id, event.text)
             elif isinstance(event, Finish):
                 if event.error:
-                    logger.error("[%s] finish with error for chat=%s: %s", self.name, chat_id, event.error)  # noqa: E501
+                    logger.error("[%s] finish with error for chat=%s: %s", self.name, chat_id, event.error)
                     await self.send(
                         chat_id,
                         f"Error: {event.error}",
                     )
                 else:
-                    logger.info("[%s] finish reason=%s for chat=%s", self.name, event.reason, chat_id)  # noqa: E501
+                    logger.info("[%s] finish reason=%s for chat=%s", self.name, event.reason, chat_id)
         response_text = "".join(full_response)
         if response_text:
-            logger.info("[%s] sending response len=%d to chat=%s", self.name, len(response_text), chat_id)  # noqa: E501
+            logger.info("[%s] sending response len=%d to chat=%s", self.name, len(response_text), chat_id)
             await self.send(chat_id, response_text)
         else:
             logger.warning("[%s] empty response for chat=%s", self.name, chat_id)
@@ -604,7 +607,8 @@ class BaseAdapter(ABC):
         """
         self._running = True
         self._gateway_started = True
-        asyncio.ensure_future(self._client.connect())
+        _t = asyncio.ensure_future(self._client.connect())
+        self._background_tasks.add(_t)
         logger.info("[%s] Connecting to gateway...", self.name)
         await asyncio.sleep(0.5)
         await self._on_connected()
@@ -672,11 +676,11 @@ class BaseAdapter(ABC):
 
     async def edit_message(
         self,
-        chat_id: str,
-        message_id: str,
-        content: str,
+        _chat_id: str,
+        _message_id: str,
+        _content: str,
         *,
-        finalize: bool = False,
+        _finalize: bool = False,
     ) -> SendResult:
         """Edit an existing message in the platform.
 
@@ -695,7 +699,7 @@ class BaseAdapter(ABC):
         """
         return SendResult(success=False, error="Not supported")
 
-    async def delete_message(self, chat_id: str, message_id: str) -> bool:
+    async def delete_message(self, _chat_id: str, _message_id: str) -> bool:
         """Delete a message from the platform.
 
         Base implementation returns False. Platform adapters should override
@@ -710,7 +714,7 @@ class BaseAdapter(ABC):
         """
         return False
 
-    async def send_typing(self, chat_id: str) -> None:
+    async def send_typing(self, chat_id: str) -> None:  # noqa: B027
         """Send a typing indicator to the platform.
 
         Informs the user that the bot is generating a response. Base implementation
@@ -724,10 +728,10 @@ class BaseAdapter(ABC):
 
     async def send_image(
         self,
-        chat_id: str,
-        file_path: str,
+        _chat_id: str,
+        _file_path: str,
         *,
-        caption: str | None = None,
+        _caption: str | None = None,
     ) -> SendResult:
         """Send an image file to the platform.
 
@@ -746,10 +750,10 @@ class BaseAdapter(ABC):
 
     async def send_document(
         self,
-        chat_id: str,
-        file_path: str,
+        _chat_id: str,
+        _file_path: str,
         *,
-        caption: str | None = None,
+        _caption: str | None = None,
     ) -> SendResult:
         """Send a document file to the platform.
 
@@ -768,7 +772,7 @@ class BaseAdapter(ABC):
 
     # ── Hooks ──────────────────────────────────────────────────────────────
 
-    async def _on_connected(self) -> None:
+    async def _on_connected(self) -> None:  # noqa: B027
         """Platform-specific hook called after successful connection.
 
         Called by connect() after the platform connection is established.
@@ -779,7 +783,7 @@ class BaseAdapter(ABC):
         """
         pass
 
-    async def _on_disconnected(self) -> None:
+    async def _on_disconnected(self) -> None:  # noqa: B027
         """Platform-specific hook called before disconnection.
 
         Called by disconnect() before tearing down the platform connection.
@@ -790,7 +794,7 @@ class BaseAdapter(ABC):
         """
         pass
 
-    async def on_text_delta(self, chat_id: str, delta: str) -> None:
+    async def on_text_delta(self, chat_id: str, delta: str) -> None:  # noqa: B027
         """Hook called for each incremental text chunk in the AI response.
 
         Called by process_with_stream() as TextDelta events arrive from the
@@ -860,13 +864,13 @@ class BaseAdapter(ABC):
             os.environ.get("HTTPS_PROXY")
             or os.environ.get("https_proxy")
             or os.environ.get("ALL_PROXY")
-            or os.environ.get("all_proxy")
+            or os.environ.get("ALL_PROXY")
             or os.environ.get("HTTP_PROXY")
             or os.environ.get("http_proxy")
         )
 
     @classmethod
-    async def validate_config(cls, config: dict[str, Any]) -> tuple[bool, str]:
+    async def validate_config(cls, _config: dict[str, Any]) -> tuple[bool, str]:
         """Validate that the adapter configuration is complete and correct.
 
         Base implementation always returns success. Platform adapters should

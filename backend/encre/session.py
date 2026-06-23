@@ -32,8 +32,6 @@ import os
 import pathlib
 import time
 import uuid
-
-logger = logging.getLogger("encre.session")
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
@@ -41,6 +39,8 @@ from typing import Any
 from encre.config import EncreConfig
 from encre.utils.idgen import BranchIDGenerator
 from encre.utils.tokens import count_message_tokens, estimate_tokens
+
+logger = logging.getLogger("encre.session")
 
 
 def _tool_to_icon(tool_name: str) -> str:
@@ -138,7 +138,7 @@ class EncreSession:
         self.active_branch_id: str = f"br_{1:04d}"
         self._branch_counter: int = 1
         self.branches: dict[str, BranchMeta] = {}
-        self.branches[self.active_branch_id] = BranchMeta(id=self.active_branch_id, created_at=time.time())  # noqa: E501
+        self.branches[self.active_branch_id] = BranchMeta(id=self.active_branch_id, created_at=time.time())
         self._branch_last_seq: dict[str, int] = {self.active_branch_id: -1}
         self._branch_last_message_id: dict[str, str | None] = {self.active_branch_id: None}
         self._context_cache: dict[str, list[dict[str, Any]]] = {}
@@ -153,7 +153,7 @@ class EncreSession:
         self._summary_cache = None
 
     def add_message(self, role: str, content: str | list[dict[str, Any]], **kwargs: Any) -> None:
-        message: dict[str, Any] = {"role": role, "content": content, "created_at": int(time.time() * 1000)}  # noqa: E501
+        message: dict[str, Any] = {"role": role, "content": content, "created_at": int(time.time() * 1000)}
         message["branch_id"] = self.active_branch_id
         seq = self._get_next_seq(self.active_branch_id)
         message["seq_in_branch"] = seq
@@ -211,7 +211,7 @@ class EncreSession:
         self,
         tool_call_id: str,
         content: str,
-        is_error: bool = False,
+        _is_error: bool = False,
         sub_agent_messages: list[dict[str, Any]] | None = None,
         sub_agent_session_id: str | None = None,
         client_id: str | None = None,
@@ -244,7 +244,7 @@ class EncreSession:
         self.tool_call_count += 1
         self.updated_at = time.time()
 
-    def add_artifact(self, file_path: str, tool_name: str = "file_write", diff_text: str = "") -> dict[str, Any]:  # noqa: E501
+    def add_artifact(self, file_path: str, tool_name: str = "file_write", diff_text: str = "") -> dict[str, Any]:
         import os
         name = os.path.basename(file_path)
         ext = os.path.splitext(file_path)[1].lower().lstrip(".")
@@ -338,7 +338,7 @@ class EncreSession:
         per-branch artifacts.  Called after loading session from disk so that
         artifacts are always authoritative regardless of streaming bugs.
         """
-        _FILE_TOOL_NAMES = {"file_write", "file_edit", "write_file", "writeFile", "apply_patch"}
+        _file_tool_names = {"file_write", "file_edit", "write_file", "writeFile", "apply_patch"}
         import re as _re
 
         # Build tool_call_id -> result lookup
@@ -364,7 +364,7 @@ class EncreSession:
             for tc in tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "")
-                if name not in _FILE_TOOL_NAMES:
+                if name not in _file_tool_names:
                     continue
 
                 # Parse arguments to get file_path
@@ -438,7 +438,7 @@ class EncreSession:
         current = self.branches.get(branch_id)
         while current:
             lineage.insert(0, current.id)
-            current = self.branches.get(current.parent_branch_id) if current.parent_branch_id else None  # noqa: E501
+            current = self.branches.get(current.parent_branch_id) if current.parent_branch_id else None
 
         if not lineage and branch_id == f"br_{1:04d}":
             lineage = [branch_id]
@@ -614,7 +614,7 @@ class EncreSession:
         removed: list[str] = []
         remaining: list[dict[str, Any]] = []
         for m in self.messages:
-            if m.get("branch_id") == branch_id and isinstance(m.get("seq_in_branch"), int) and m["seq_in_branch"] > target_seq:  # noqa: E501
+            if m.get("branch_id") == branch_id and isinstance(m.get("seq_in_branch"), int) and m["seq_in_branch"] > target_seq:
                 removed.append(m.get("id", ""))
             else:
                 remaining.append(m)
@@ -633,10 +633,9 @@ class EncreSession:
         while changed:
             changed = False
             for bid, bmeta in list(self.branches.items()):
-                if bmeta.parent_branch_id in descendant_ids:
-                    if bid not in descendant_ids:
-                        descendant_ids.add(bid)
-                        changed = True
+                if bmeta.parent_branch_id in descendant_ids and bid not in descendant_ids:
+                    descendant_ids.add(bid)
+                    changed = True
         for bid in descendant_ids:
             if bid != branch_id:
                 self.branches.pop(bid, None)
@@ -785,7 +784,7 @@ class EncreSession:
                 continue
             if isinstance(c, list):
                 for b in c:
-                    if isinstance(b, dict) and b.get("type") == "text" and b.get("text", "").strip():  # noqa: E501
+                    if isinstance(b, dict) and b.get("type") == "text" and b.get("text", "").strip():
                         preview = b["text"].strip()[:80]
                         break
 
@@ -816,8 +815,8 @@ class EncreSession:
         for m in self.messages:
             branch_id = m.get("branch_id", self.active_branch_id)
             seq = m.get("seq_in_branch", -1)
-            if branch_id not in self._branch_last_seq or (isinstance(seq, int) and seq >= self._branch_last_seq[branch_id]):  # noqa: E501
-                self._branch_last_seq[branch_id] = seq if isinstance(seq, int) else self._branch_last_seq.get(branch_id, -1)  # noqa: E501
+            if branch_id not in self._branch_last_seq or (isinstance(seq, int) and seq >= self._branch_last_seq[branch_id]):
+                self._branch_last_seq[branch_id] = seq if isinstance(seq, int) else self._branch_last_seq.get(branch_id, -1)
                 self._branch_last_message_id[branch_id] = m.get("id")
         self._branch_last_seq.setdefault(self.active_branch_id, -1)
         self._branch_last_message_id.setdefault(self.active_branch_id, None)
@@ -828,7 +827,7 @@ class EncreSession:
         self.turn_count = 0
         self.active_branch_id = f"br_{1:04d}"
         self._branch_counter = 1
-        self.branches = {self.active_branch_id: BranchMeta(id=self.active_branch_id, created_at=time.time())}  # noqa: E501
+        self.branches = {self.active_branch_id: BranchMeta(id=self.active_branch_id, created_at=time.time())}
         self._branch_last_seq = {self.active_branch_id: -1}
         self._branch_last_message_id = {self.active_branch_id: None}
         self.mark_messages_dirty()
@@ -902,7 +901,7 @@ class EncreSession:
                     msg = messages[j]
                     role = msg.get("role")
                     content = msg.get("content", "")
-                    if (role == "assistant" and isinstance(content, str) and content) or (role == "assistant" and msg.get("tool_calls")):  # noqa: E501
+                    if (role == "assistant" and isinstance(content, str) and content) or (role == "assistant" and msg.get("tool_calls")):
                         preserved_pairs.extend([j, i])
                         found_pair = True
                         break
@@ -977,7 +976,7 @@ class EncreSession:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], config: EncreConfig) -> EncreSession:
+    def from_dict(cls, data: dict[str, Any], config: EncreConfig) -> "EncreSession":
         session = cls(config)
         session.id = data.get("id", session.id)
         session.messages = data.get("messages", [])
@@ -1001,7 +1000,7 @@ class EncreSession:
             elif isinstance(v, dict):
                 session.branches[k] = BranchMeta(**v)
         if not session.branches:
-            session.branches[session.active_branch_id] = BranchMeta(id=session.active_branch_id, created_at=session.created_at)  # noqa: E501
+            session.branches[session.active_branch_id] = BranchMeta(id=session.active_branch_id, created_at=session.created_at)
         session.rebuild_artifacts_from_messages()
         session.rebuild_runtime_caches()
         return session
@@ -1021,7 +1020,7 @@ class EncreSession:
             f.write(encrypted)
 
     @classmethod
-    def load_from_json(cls, filepath: str, config: EncreConfig) -> EncreSession:
+    def load_from_json(cls, filepath: str, config: EncreConfig) -> "EncreSession":
         import json
 
         from encre.crypto import decrypt
@@ -1100,7 +1099,7 @@ class EncreSession:
                 # field -- otherwise reloading would reset the displayed time
                 # to "now" on every click.
                 stored_last_msg = meta.get("last_message_at")
-                if isinstance(stored_last_msg, (int, float)):
+                if isinstance(stored_last_msg, int | float):
                     session.last_message_at = float(stored_last_msg)
                 else:
                     session.last_message_at = meta.get("updated_at", session.created_at)
@@ -1119,7 +1118,7 @@ class EncreSession:
                     elif isinstance(v, dict):
                         session.branches[k] = BranchMeta(**v)
                 if not session.branches:
-                    session.branches[session.active_branch_id] = BranchMeta(id=session.active_branch_id, created_at=session.created_at)  # noqa: E501
+                    session.branches[session.active_branch_id] = BranchMeta(id=session.active_branch_id, created_at=session.created_at)
             except json.JSONDecodeError:
                 pass
 
@@ -1174,7 +1173,7 @@ class EncreSession:
                                 return c.strip()[:80]
                             elif isinstance(c, list):
                                 for b in c:
-                                    if isinstance(b, dict) and b.get("type") == "text" and b.get("text", "").strip():  # noqa: E501
+                                    if isinstance(b, dict) and b.get("type") == "text" and b.get("text", "").strip():
                                         return b["text"].strip()[:80]
             except json.JSONDecodeError:
                 continue
@@ -1207,10 +1206,10 @@ class EncreSession:
             if not isinstance(meta, dict):
                 return fallback
             value = meta.get("last_message_at")
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return float(value)
             value = meta.get("updated_at")
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 return float(value)
             return fallback
         except Exception:
@@ -1342,12 +1341,12 @@ class EncreSession:
                             tc_args = func.get("arguments", "{}")
                             lines.append(f"#### 🔧 Tool: `{tc_name}`\n")
                             try:
-                                args_parsed = json.loads(tc_args) if isinstance(tc_args, str) else tc_args  # noqa: E501
-                                lines.append("```json\n" + json.dumps(args_parsed, indent=2, ensure_ascii=False) + "\n```\n")  # noqa: E501
+                                args_parsed = json.loads(tc_args) if isinstance(tc_args, str) else tc_args
+                                lines.append("```json\n" + json.dumps(args_parsed, indent=2, ensure_ascii=False) + "\n```\n")
                             except Exception:
                                 lines.append(f"```\n{tc_args}\n```\n")
                 elif role == "tool":
-                    lines.append(f"#### 📋 Tool Result\n\n```\n{EncreSession._extract_text(content)}\n```\n")  # noqa: E501
+                    lines.append(f"#### 📋 Tool Result\n\n```\n{EncreSession._extract_text(content)}\n```\n")
 
         return "".join(lines)
 
@@ -1399,7 +1398,7 @@ class EncreSession:
         Turn 0: system + first user message.
         Turn N: assistant + tool_results + user guidance messages.
         """
-        if self._turn_partition_cache is not None and self._turn_partition_cache[0] == self._messages_version:  # noqa: E501
+        if self._turn_partition_cache is not None and self._turn_partition_cache[0] == self._messages_version:
             return self._turn_partition_cache[1]
         if not self.messages:
             return []
@@ -1417,11 +1416,9 @@ class EncreSession:
                 current.append(msg)
                 saw_user = True
                 continue
-            if role == "assistant":
-                # New assistant message -> start a new turn
-                if current and saw_user:
-                    turns.append(current)
-                    current = []
+            if role == "assistant" and current and saw_user:
+                turns.append(current)
+                current = []
             current.append(msg)
 
         if current:

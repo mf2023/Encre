@@ -340,7 +340,7 @@ class EncreAutoSafetyClassifier:
         if user_pattern:
             total = user_pattern["total"]
             rate = user_pattern["approval_rate"]
-            user_pattern_str = f"User history: approved {rate:.0%} of {total} similar {tool_name} calls."  # noqa: E501
+            user_pattern_str = f"User history: approved {rate:.0%} of {total} similar {tool_name} calls."
         return _loader.load_with_context(
             "safety_eval", category="autosafety",
             tool_name=tool_name,
@@ -370,7 +370,7 @@ class EncreAutoSafetyClassifier:
             elif risk == "high":
                 decision = AutoDecision.HIGH_RISK
             elif risk == "medium":
-                decision = AutoDecision.ASK_USER if confidence < self._confidence_threshold else AutoDecision.LOW_RISK  # noqa: E501
+                decision = AutoDecision.ASK_USER if confidence < self._confidence_threshold else AutoDecision.LOW_RISK
             elif risk == "low":
                 decision = AutoDecision.LOW_RISK
             else:

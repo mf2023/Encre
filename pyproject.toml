@@ -97,14 +97,14 @@ markers = ["asyncio: mark a test as an async test"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 140
 exclude = ["crates", "_native.pyi"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "ARG", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = ["F401", "E402"]
 "tests/*" = ["SIM", "ARG", "RUF"]
 
 [tool.mypy]

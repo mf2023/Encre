@@ -118,7 +118,8 @@ class DiscordAdapter(BaseAdapter):
             return False
 
         try:
-            asyncio.ensure_future(self._client.start(self._token))
+            _t = asyncio.ensure_future(self._client.start(self._token))
+            self._background_tasks.add(_t)
             logger.info("[discord] Step 2: Client start scheduled")
         except Exception as e:
             logger.error("[discord] Step 2 failed: schedule client start: %s", e)
@@ -155,7 +156,7 @@ class DiscordAdapter(BaseAdapter):
         content: str,
         *,
         reply_to: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a text message to a Discord channel.
 

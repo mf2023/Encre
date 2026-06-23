@@ -299,9 +299,9 @@ class TestCreateBackend:
 class TestRetryConfig:
     def test_default_config(self):
         rc = RetryConfig()
-        assert rc.max_retries == 5
-        assert rc.base_delay == 1.0
-        assert rc.max_delay == 60.0
+        assert rc.max_retries == 8
+        assert rc.base_delay == 2.0
+        assert rc.max_delay == 120.0
         assert 429 in rc.retryable_status_codes
         assert 502 in rc.retryable_status_codes
         assert 503 in rc.retryable_status_codes

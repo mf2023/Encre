@@ -105,7 +105,7 @@ class EncreNotebookSession:
             text=False,
             **popen_kwargs,
         )
-        ready_line = self._process.stdout.readline().decode("utf-8", errors="replace").strip() if self._process.stdout else ""  # noqa: E501
+        ready_line = self._process.stdout.readline().decode("utf-8", errors="replace").strip() if self._process.stdout else ""
         if ready_line != "READY":
             self._started = False
             raise RuntimeError("Kernel failed to start")
@@ -138,7 +138,7 @@ class EncreNotebookSession:
             if proc is None or proc.stdin is None or proc.stdout is None:
                 cell.status = "error"
                 cell.error = "Kernel process not available"
-                return {"output": "", "error": "Kernel process not available", "execution_time": 0.0}  # noqa: E501
+                return {"output": "", "error": "Kernel process not available", "execution_time": 0.0}
             proc.stdin.write(request.encode("utf-8"))
             proc.stdin.flush()
             loop = asyncio.get_running_loop()
@@ -168,7 +168,7 @@ class EncreNotebookSession:
     async def execute_all(self, timeout: int = 300) -> list[dict[str, str | float]]:
         results: list[dict[str, str | float]] = []
         for cell_id in self._cell_order:
-            result = await self.execute_cell(cell_id, timeout=max(timeout // max(len(self._cell_order), 1), 10))  # noqa: E501
+            result = await self.execute_cell(cell_id, timeout=max(timeout // max(len(self._cell_order), 1), 10))
             results.append({"cell_id": cell_id, **result})
         return results
 

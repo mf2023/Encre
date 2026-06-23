@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -45,11 +46,7 @@ except ImportError:
 _TIKTOKEN_AVAILABLE: bool = False
 _ENCODING_CACHE: dict[str, Any] = {}
 
-try:
-    import tiktoken  # noqa: F401
-    _TIKTOKEN_AVAILABLE = True
-except ImportError:
-    pass
+_TIKTOKEN_AVAILABLE = importlib.util.find_spec("tiktoken") is not None
 
 
 # ---------------------------------------------------------------------------

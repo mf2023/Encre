@@ -238,10 +238,8 @@ def _map_search_args(
         prop_def.get("type", "string")
         pdesc = (prop_def.get("description", "") + " " + prop_name).lower()
 
-        if "query" in pdesc or "search" in pdesc or "keyword" in pdesc:
-            # This is likely the search query parameter
-            if prop_name in required:
-                args[prop_name] = query
+        if ("query" in pdesc or "search" in pdesc or "keyword" in pdesc) and prop_name in required:
+            args[prop_name] = query
 
     # If no schema match found, fall back to our standard parameter
     if not args:
@@ -254,9 +252,8 @@ def _map_search_args(
             args[pname] = num
         if ("language" in low or "locale" in low or "region" in low) and language:
             args[pname] = language
-        if "category" in low or "source" in low or "engine" in low:
-            if categories != "general":
-                args[pname] = categories
+        if ("category" in low or "source" in low or "engine" in low) and categories != "general":
+            args[pname] = categories
 
     return args
 

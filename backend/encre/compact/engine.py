@@ -200,7 +200,7 @@ class CompactEngine:
     async def microcompact(
         self,
         messages: list[dict[str, Any]],
-        context_window: int,
+        _context_window: int,
         keep_recent_turns: int = MICROCOMPACT_KEEP_RECENT_TURNS,
     ) -> list[dict[str, Any]]:
         """Clear old tool results to free cache-able space.
@@ -339,7 +339,7 @@ class CompactEngine:
 
 def _prepare_compact_input(
     messages: list[dict[str, Any]],
-    system_prompt: str = "",
+    _system_prompt: str = "",
 ) -> list[dict[str, Any]]:
     """Strip images/documents from messages, add compact prompt.
 
@@ -434,7 +434,7 @@ def _build_compacted(
     messages: list[dict[str, Any]],
     summary: str,
     workspace_context: str = "",
-    system_prompt: str = "",
+    _system_prompt: str = "",
     session_id: str = "",
 ) -> list[dict[str, Any]]:
     """Build the compacted message list.
@@ -573,7 +573,7 @@ def _sanitize_tool_groups(
 
 def _budget_fallback(
     messages: list[dict[str, Any]],
-    context_window: int,
+    _context_window: int,
     keep_recent: int = 4,
 ) -> list[dict[str, Any]] | None:
     """Last-resort budget-based truncation when the model call fails.

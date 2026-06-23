@@ -58,7 +58,7 @@ class GatewayMessage:
         }
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> GatewayMessage:
+    def from_dict(cls, raw: dict[str, Any]) -> "GatewayMessage":
         return cls(
             op=GatewayOp(raw.get("op", "")),
             data=raw.get("d", {}),
@@ -66,19 +66,19 @@ class GatewayMessage:
         )
 
     @staticmethod
-    def hello(adapter_name: str) -> GatewayMessage:
+    def hello(adapter_name: str) -> "GatewayMessage":
         return GatewayMessage(op=GatewayOp.HELLO, data={"name": adapter_name})
 
     @staticmethod
-    def heartbeat() -> GatewayMessage:
+    def heartbeat() -> "GatewayMessage":
         return GatewayMessage(op=GatewayOp.HEARTBEAT)
 
     @staticmethod
-    def heartbeat_ack() -> GatewayMessage:
+    def heartbeat_ack() -> "GatewayMessage":
         return GatewayMessage(op=GatewayOp.HEARTBEAT_ACK)
 
     @staticmethod
-    def submit(prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> GatewayMessage:  # noqa: E501
+    def submit(prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> "GatewayMessage":
         d: dict[str, Any] = {"prompt": prompt}
         if session_id:
             d["session_id"] = session_id
@@ -87,7 +87,7 @@ class GatewayMessage:
         return GatewayMessage(op=GatewayOp.SUBMIT, data=d)
 
     @staticmethod
-    def submit_stream(prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> GatewayMessage:  # noqa: E501
+    def submit_stream(prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> "GatewayMessage":
         d: dict[str, Any] = {"prompt": prompt}
         if session_id:
             d["session_id"] = session_id
@@ -96,15 +96,15 @@ class GatewayMessage:
         return GatewayMessage(op=GatewayOp.SUBMIT_STREAM, data=d)
 
     @staticmethod
-    def text_delta(text: str, msg_id: str = "") -> GatewayMessage:
+    def text_delta(text: str, msg_id: str = "") -> "GatewayMessage":
         return GatewayMessage(op=GatewayOp.TEXT_DELTA, data={"text": text, "id": msg_id})
 
     @staticmethod
-    def tool_result(tool_id: str, content: str, is_error: bool = False) -> GatewayMessage:
-        return GatewayMessage(op=GatewayOp.TOOL_RESULT, data={"id": tool_id, "content": content, "is_error": is_error})  # noqa: E501
+    def tool_result(tool_id: str, content: str, is_error: bool = False) -> "GatewayMessage":
+        return GatewayMessage(op=GatewayOp.TOOL_RESULT, data={"id": tool_id, "content": content, "is_error": is_error})
 
     @staticmethod
-    def finish(reason: str = "done", usage: dict[str, Any] | None = None, error: str = "") -> GatewayMessage:  # noqa: E501
+    def finish(reason: str = "done", usage: dict[str, Any] | None = None, error: str = "") -> "GatewayMessage":
         d: dict[str, Any] = {"reason": reason}
         if usage:
             d["usage"] = usage
@@ -113,16 +113,16 @@ class GatewayMessage:
         return GatewayMessage(op=GatewayOp.FINISH, data=d)
 
     @staticmethod
-    def error(message: str) -> GatewayMessage:
+    def error(message: str) -> "GatewayMessage":
         return GatewayMessage(op=GatewayOp.ERROR, data={"message": message})
 
     @staticmethod
-    def adapter_info(name: str, status: str, capabilities: list[str] | None = None) -> GatewayMessage:  # noqa: E501
+    def adapter_info(name: str, status: str, capabilities: list[str] | None = None) -> "GatewayMessage":
         d: dict[str, Any] = {"name": name, "status": status}
         if capabilities:
             d["capabilities"] = capabilities
         return GatewayMessage(op=GatewayOp.ADAPTER_INFO, data=d)
 
     @staticmethod
-    def cancel(session_id: str) -> GatewayMessage:
+    def cancel(session_id: str) -> "GatewayMessage":
         return GatewayMessage(op=GatewayOp.CANCEL, data={"session_id": session_id})

@@ -48,6 +48,7 @@ import {
   removeLastMessage,
   setTempChat,
   setSubAgentView,
+  clearSubAgentBreadcrumb,
   restoreMessages,
   getTraySessions,
   removeBranchMessages,
@@ -141,6 +142,13 @@ class App {
     this.tokenCountEl = document.getElementById("token-count")!;
     this.welcomeScreen = document.getElementById("welcome-screen")!;
     this.messageList = document.getElementById("message-list")!;
+
+    // Expose the cleanup function on window so other modules (settings,
+    // search, etc.) can request a content-area reset without needing a
+    // direct import.  Use a getter that re-binds to ``this`` so callers
+    // always invoke the bound method even after hot-reloads.
+    (window as any).__appCleanupContentArea = (opts?: { keepAutomationFlag?: boolean }) =>
+      this.cleanupContentArea(opts);
 
     this.splash = new SplashScreen();
     this.chat = new Chat();
@@ -323,6 +331,10 @@ class App {
       // snapshot stays intact in the session store so the user can switch
       // back without losing context.
       this.closeSessionInnerSidebar();
+      // Nuke EVERY content-area artifact so widgets from the previous mode
+      // do not bleed into the new one (sub-agent view, tool detail panel,
+      // mention dropdown, search overlay, automation flags, etc.).
+      this.cleanupContentArea({ keepAutomationFlag: false });
       this.chat.render();
       // 在 updatePlaceholder 之前标记动画进行中，防止 updateWelcomeTitle 预置文字
       this._welcomeTitleAnimating = true;
@@ -463,6 +475,7 @@ class App {
           const orig = this.workspace.onModeChange;
           this.workspace.onModeChange = () => {
             this.closeSessionInnerSidebar();
+            this.cleanupContentArea({ keepAutomationFlag: false });
             this.chat.render();
             this.workspace.onModeChange = orig;
           };
@@ -472,6 +485,11 @@ class App {
           if (wsPath) this.workspace.ensureExpanded(wsPath);
         } else if (!isIworkSession && st.workspaceMode === "iwork") {
           this.workspace.forceExit();
+        } else {
+          // Same mode: clear residual widgets from the previous session
+          // (sub-agent view, tool detail panel, mention dropdown, etc.) so
+          // the user does not see stale content flash as the new session loads.
+          this.cleanupContentArea({ keepAutomationFlag: false });
         }
         setRequestedSessionId(sessionId, requestId);
         if (wsPath && wsPath !== st.activeWorkspace) {
@@ -558,9 +576,15 @@ class App {
         app.classList.add("sidebar-collapsed");
         this.sessionInner.renderForce();
       } else {
+        // Closing: hide the panel AND tear down the dynamic tabs so the
+        // next open starts from the default "info" tab.  Without this,
+        // re-opening the sidebar would resurrect terminals/editors from
+        // the previous session — they keep running in the background
+        // burning CPU and the user sees stale output.
         this.sessionInner.saveWidth();
         panel.classList.add("hidden");
         mainBody.classList.add("sidebar-hidden");
+        this.sessionInner.resetToDefaultTabs();
       }
     });
 
@@ -1388,6 +1412,7 @@ class App {
     commandActions["new-session"] = () => {
       this.automationPanel.hide();
       this.exitTempChat();
+      this.cleanupContentArea({ keepAutomationFlag: false });
       resetChat();
       const requestId = crypto.randomUUID();
       setRequestedSessionId("", requestId);
@@ -1429,6 +1454,41 @@ class App {
       document.getElementById("app")?.classList.toggle("sidebar-collapsed");
     });
 
+    // ── Header mode switch (shared .seg component with the tray popup) ──
+    // The switch lives in the top tab bar; clicking it toggles between the
+    // normal (chats) and iwork (workspace) modes by reusing the existing
+    // workspace enter / exit flows so all animation, persistence and IPC
+    // behavior stays in one place.
+    const modeSeg = document.getElementById("mode-seg");
+    if (modeSeg) {
+      const items = modeSeg.querySelectorAll<HTMLElement>(".seg-item");
+      items.forEach((item) => {
+        item.addEventListener("click", () => {
+          const mode = item.getAttribute("data-mode");
+          if (mode === "iwork") {
+            this.workspace?.enter();
+          } else if (mode === "normal") {
+            this.workspace?.exit();
+          }
+        });
+      });
+      // Keep the seg in sync with the canonical workspaceMode state. This
+      // handles the case where the mode is changed by another path (e.g. a
+      // workspace session being auto-resumed) or by the tray popup.
+      const syncSegFromState = () => {
+        const active = getState().workspaceMode === "iwork" ? "iwork" : "normal";
+        items.forEach((el) => {
+          const isActive = el.getAttribute("data-mode") === active;
+          el.classList.toggle("active", isActive);
+          el.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+      };
+      syncSegFromState();
+      // Re-sync whenever the workspace mode changes from anywhere in the
+      // app (workspace enter/exit, IPC, tray popup, etc.).
+      subscribe(syncSegFromState);
+    }
+
     const newTaskBtn = document.querySelector('.nav-item[data-view="chat"]');
     newTaskBtn?.addEventListener("click", () => {
       // Hide automation view if active
@@ -1436,6 +1496,7 @@ class App {
         this.automationPanel.toggleAutomationView();
       }
       this.exitTempChat();
+      this.cleanupContentArea({ keepAutomationFlag: false });
       resetChat();
       const requestId = crypto.randomUUID();
       setRequestedSessionId("", requestId);
@@ -1445,7 +1506,9 @@ class App {
     const tempChatBtn = document.getElementById("btn-temp-chat");
     tempChatBtn?.addEventListener("click", () => {
       if (getState().tempChat) return;
+      this.automationPanel.hide();
       this.exitTempChat();
+      this.cleanupContentArea({ keepAutomationFlag: false });
       resetChat();
       setTempChat(true);
       tempChatBtn?.classList.add("active");
@@ -1640,6 +1703,7 @@ class App {
       case "clear-session":
         this.automationPanel.hide();
         this.exitTempChat();
+        this.cleanupContentArea({ keepAutomationFlag: false });
         resetChat();
         {
           const requestId = crypto.randomUUID();
@@ -1835,6 +1899,322 @@ class App {
     }
   }
 
+  /**
+   * Re-initialize the main content area to its default "fresh chat" state.
+   * Called AFTER cleanupContentArea() on session/mode switches so the user
+   * sees a clean welcome screen with empty input, no sub-agent header, no
+   * queue card, no status bar, and no leftover dropdowns — exactly like
+   * the app's first launch.
+   */
+  private enterChatMode(): void {
+    // Show welcome screen, hide message list (chat.render() will
+    // override this once state.messages lands).
+    if (this.welcomeScreen) {
+      this.welcomeScreen.classList.remove("hidden");
+    }
+    if (this.messageList) {
+      this.messageList.classList.add("hidden");
+      this.messageList.innerHTML = "";
+    }
+    // Reset welcome title to default.  animateWelcomeTitle() will replace
+    // this with the right "iWork" / "default" text in a moment.
+    const title = document.querySelector(".welcome-title") as HTMLElement | null;
+    if (title) {
+      title.textContent = t("welcome.title");
+      title.style.transition = "";
+      title.style.transform = "";
+      title.style.opacity = "";
+    }
+    // Show placeholder, hide mode chip.
+    const placeholder = document.getElementById("prompt-placeholder");
+    if (placeholder) placeholder.classList.remove("hidden");
+    // Force chat.render() to redraw the message list with the new state.
+    // It will set welcome vs message-list visibility based on state.messages
+    // and re-bind handlers on the freshly-built DOM.
+    this.chat.renderForce?.();
+    this.chat.render();
+    // Re-bind the input model selector in case the model selector's
+    // event listener was lost during a heavy innerHTML replacement.
+    this.bindInputModelSelector();
+    // Re-apply shortcut hints (e.g. when the input area was just rebuilt).
+    this.applyShortcutHints();
+    // Update placeholder text + welcome title for the new mode.
+    this.updatePlaceholder();
+    this.updateSessionBarName();
+  }
+
+  /**
+   * Tear down all transient UI artifacts from the content area so the next
+   * render starts from a clean slate.  Called BEFORE enterChatMode() on
+   * session/mode switches.
+   * @param opts - Optional flags controlling cleanup behaviour.
+   */
+  private cleanupContentArea(opts?: { keepAutomationFlag?: boolean }): void {
+    // ── 1. Sub-agent view + breadcrumb ──────────────────────────────
+    // These gate the inline "sub-agent" overlay in #message-list and the
+    // breadcrumb chips in the session bar.  Without clearing them, switching
+    // sessions leaves a phantom sub-agent header and a stale "X / Y / Z" trail
+    // pointing at the previous session's nested agent.
+    setSubAgentView(null);
+    clearSubAgentBreadcrumb();
+    (window as any).__closeSubAgentView = undefined;
+    (window as any).__openSubAgentView = undefined;
+    (window as any).__navigateToBreadcrumb = undefined;
+
+    // ── 2. Automation panel state ──────────────────────────────────
+    if (!opts?.keepAutomationFlag) {
+      (window as any).__isAutomationView = false;
+      (window as any).__activeAutomationJobId = "";
+      // Restore automation sub-agent close-handler to the no-op default.
+      (window as any).__closeSubAgentView = undefined;
+    }
+
+    // ── 3. Tool detail panel (right-side aside) ─────────────────────
+    // The aside is a sibling of #main-content; it is hidden when no active
+    // tool id is set, but the id itself sticks around.  Wipe both.
+    setActiveToolId(null);
+    const detailPanel = document.getElementById("detail-panel");
+    if (detailPanel) {
+      detailPanel.classList.add("hidden");
+      const detailContent = document.getElementById("detail-content");
+      if (detailContent) detailContent.innerHTML = "";
+    }
+
+    // ── 4. Mention / @ dropdown (above the prompt input) ───────────
+    const mentionDropdown = document.getElementById("mention-dropdown");
+    if (mentionDropdown) {
+      mentionDropdown.classList.add("hidden");
+      // Also reset to the main page so the next open shows Files/Folder,
+      // not a stale "back" state from the slash-commands sub-page.
+      const mainPage = mentionDropdown.querySelector('[data-page="main"]');
+      const slashPage = mentionDropdown.querySelector('[data-page="slash"]');
+      if (mainPage) mainPage.classList.remove("hidden");
+      if (slashPage) slashPage.classList.add("hidden");
+    }
+    const btnMention = document.getElementById("btn-mention");
+    if (btnMention) btnMention.classList.remove("active");
+    this._slashActive = false;
+
+    // ── 5. Model selector dropdown (in input toolbar) ──────────────
+    const modelDropdown = document.getElementById("input-model-dropdown");
+    if (modelDropdown) modelDropdown.classList.add("hidden");
+
+    // ── 6. Chat status bar + queue card ────────────────────────────
+    const statusBar = document.getElementById("chat-status-bar");
+    if (statusBar) {
+      statusBar.classList.add("hidden");
+      statusBar.innerHTML = "";
+      statusBar.style.maxWidth = "";
+    }
+    const queueCard = document.getElementById("queue-card");
+    if (queueCard) {
+      queueCard.classList.add("hidden");
+      const qBody = document.getElementById("queue-card-body");
+      if (qBody) qBody.innerHTML = "";
+    }
+
+    // ── 7. Input area — clear leftover text/chip/attachments ───────
+    if (this.input) {
+      this.input.innerHTML = "";
+      this.input.style.height = "56px";
+    }
+    this._currentChipMode = "";
+    setInputMode("");
+    clearAttachments();
+    clearQueuedPrompts();
+    setPendingQueueCount(0);
+
+    // ── 8. Mode-chip CSS hook + restore input area visibility ─────
+    const inputArea = document.getElementById("input-area");
+    if (inputArea) {
+      inputArea.removeAttribute("data-input-mode");
+      // Always restore input-area visibility — sub-agent view hides it via
+      // updateSessionBarName(); we want to undo that on cleanup.
+      inputArea.style.display = "";
+    }
+    const sessionMenuBtn = document.getElementById("btn-session-menu");
+    if (sessionMenuBtn) sessionMenuBtn.style.display = "";
+    const mainContent = document.getElementById("main-content");
+    if (mainContent) mainContent.classList.remove("sub-agent-active");
+
+    // ── 9. Search overlay (Ctrl/Cmd+K) ─────────────────────────────
+    if (this.search) this.search.close();
+
+    // ── 10. Floating dropdowns that may be left open ───────────────
+    // The settings-search overlay, the input-area "model" dropdown, any
+    // inline tab-add dropdowns in #session-inner-sidebar, etc.  Anything
+    // with `.open` or `.visible` is a transient popup — close it.
+    document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
+    document.querySelectorAll(".tab-add-dropdown:not(.hidden)").forEach((dd) => dd.classList.add("hidden"));
+    document.querySelectorAll(".context-menu:not(.hidden)").forEach((m) => m.classList.add("hidden"));
+    document.querySelectorAll(".tooltip:not(.hidden), [data-tooltip-visible]").forEach((t) => {
+      t.classList.add("hidden");
+      t.removeAttribute("data-tooltip-visible");
+    });
+
+    // ── 11. Rename dialog ──────────────────────────────────────────
+    const renameOverlay = document.getElementById("rename-dialog-overlay");
+    if (renameOverlay) {
+      renameOverlay.classList.add("hidden");
+      renameOverlay.innerHTML = "";
+    }
+
+    // ── 12. Session inner sidebar — hide the container AND drop tabs ─
+    // The user might have opened the right-side #session-inner-sidebar
+    // in the previous view (e.g. opened a terminal tab in normal mode and
+    // then switched to iWork).  If we only tear down the dynamic tabs and
+    // leave the container visible, the user sees an empty blank panel
+    // sitting on top of the workspace tree — which is wrong.  Force-hide
+    // the container here so the content area is fully reset, regardless
+    // of whatever state the previous view left it in.
+    const sessionInnerSidebar = document.getElementById("session-inner-sidebar");
+    if (sessionInnerSidebar) {
+      // Persist the (probably user-set) width before we hide it so we can
+      // restore it when the user re-opens the sidebar.
+      this.sessionInner?.saveWidth?.();
+      sessionInnerSidebar.classList.add("hidden");
+    }
+    if (this.sessionInner) this.sessionInner.resetToDefaultTabs();
+    const mainBody = document.getElementById("main-body");
+    if (mainBody) mainBody.classList.add("sidebar-hidden");
+
+    // ── 13. Welcome screen transition guard ────────────────────────
+    // Force-reset the animation latch so the next mode switch re-animates
+    // the title.  Without this the second switch can land on a stale
+    // ``_welcomeTitleAnimating=true`` and the title text never updates.
+    this._welcomeTitleAnimating = false;
+
+    // ── 14. Force-reset #message-list + welcome screen ─────────────
+    // chat.render() will repaint #message-list, but it does not always
+    // run synchronously with this cleanup.  Clear it eagerly so we never
+    // show a stale message bubble for one frame after switching modes.
+    if (this.messageList) {
+      this.messageList.innerHTML = "";
+      this.messageList.classList.add("hidden");
+    }
+    if (this.welcomeScreen) {
+      this.welcomeScreen.classList.remove("hidden");
+      // Reset the welcome title text so animateWelcomeTitle() can drive
+      // it from scratch on the next paint.  Without this the second
+      // mode-switch can land on a stale (already-animated) string and
+      // the slide-in transition is skipped.
+      const title = this.welcomeScreen.querySelector(".welcome-title") as HTMLElement | null;
+      if (title) {
+        title.textContent = t("welcome.title");
+        title.style.transition = "";
+        title.style.transform = "";
+        title.style.opacity = "";
+      }
+    }
+
+    // ── 15. Force-reset #placeholder visibility ────────────────────
+    // The placeholder is hidden while the user types or has a chip; the
+    // chat render pipeline restores it.  Show it eagerly so the next
+    // frame does not flash a blank input.
+    const placeholder = document.getElementById("prompt-placeholder");
+    if (placeholder) placeholder.classList.remove("hidden");
+
+    // ── 16. Force-hide #automation-view + clear its children ───────
+    // AutomationPanel.hide() also does this, but doing it here makes
+    // the cleanup robust to races where the user's mode change happens
+    // before the panel has time to slide away.
+    const automationView = document.getElementById("automation-view");
+    if (automationView) {
+      automationView.classList.add("hidden");
+      // Clear any inline-positioning styles set by TransitionHelper.slide.
+      automationView.style.position = "";
+      automationView.style.width = "";
+      automationView.style.height = "";
+      automationView.style.top = "";
+      automationView.style.left = "";
+    }
+    const automationBack = document.getElementById("btn-automation-back");
+    if (automationBack) automationBack.classList.add("hidden");
+    const sidebarToggle = document.getElementById("btn-toggle-sidebar");
+    if (sidebarToggle) sidebarToggle.classList.remove("hidden");
+
+    // ── 17. Clear #child-view content ──────────────────────────────
+    // The child view hosts sub-windows (license, easter-egg, logs, etc.).
+    // Switching modes or sessions must not leave those webviews/canvases
+    // running in the background — that wastes GPU and is a security smell.
+    const childView = document.getElementById("child-view");
+    if (childView) {
+      childView.classList.add("hidden");
+      childView.innerHTML = "";
+    }
+
+    // ── 18. Reset session-bar text + btn-session-menu state ───────
+    // When sub-agent view is active the session-bar shows a breadcrumb
+    // trail; after cleanup we want the plain "New Session" label back.
+    const sessionBarName = document.getElementById("session-bar-name");
+    if (sessionBarName) {
+      sessionBarName.textContent = t("session.newSession");
+      sessionBarName.removeAttribute("title");
+    }
+
+    // ── 19. Reset #session-bar visibility ─────────────────────────
+    // Automation hides #session-bar; if the user was in automation and
+    // switched modes, the bar must come back.
+    const sessionBar = document.getElementById("session-bar");
+    if (sessionBar) {
+      sessionBar.classList.remove("hidden");
+      sessionBar.style.display = "";
+    }
+
+    // ── 20. Reset main-area inline styles set by TransitionHelper ─
+    // The slide transitions on automation / workspace swap can leave
+    // absolute-positioning styles behind if the animation is interrupted
+    // (e.g. the user clicks again mid-transition).  Clear them here.
+    if (mainBody) {
+      mainBody.style.position = "";
+    }
+    if (mainContent) {
+      mainContent.style.position = "";
+      mainContent.style.width = "";
+      mainContent.style.height = "";
+      mainContent.style.top = "";
+      mainContent.style.left = "";
+    }
+
+    // ── 21. Scroll position reset for chat-container ───────────────
+    // The chat container keeps its scrollTop across renders.  If the user
+    // was scrolled deep in a long previous session, switching to a new
+    // short session keeps the scroll position at a "blank" area.  Reset
+    // to the bottom so the welcome screen / first message is visible.
+    const chatContainer = document.getElementById("chat-container");
+    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+
+    // ── 22. Scroll-track / scroll-thumb reset ─────────────────────
+    // The right-side scroll progress indicator is built by ChatScrollIndicator.
+    // Reset its DOM so it does not show a stale position for one frame.
+    const scrollTrack = document.getElementById("chat-scroll-track");
+    if (scrollTrack) scrollTrack.innerHTML = "";
+    const scrollThumb = document.getElementById("chat-scroll-thumb");
+    if (scrollThumb) {
+      scrollThumb.classList.add("hidden");
+      scrollThumb.style.top = "";
+    }
+    const scrollIndicator = document.getElementById("chat-scroll-indicator");
+    if (scrollIndicator) scrollIndicator.classList.add("hidden");
+
+    // ── 23. Reset temp-chat button + clear any temp flags ─────────
+    const tempBtn = document.getElementById("btn-temp-chat");
+    if (tempBtn) tempBtn.classList.remove("active");
+    const btnNewTask = document.querySelector('.nav-item[data-view="chat"]');
+    if (btnNewTask) btnNewTask.classList.add("active");
+
+    // ── 24. Clear pending rollout animation classes on #app ────────
+    // The body sometimes gets a "sidebar-collapsed" class from the
+    // responsive collapse code; if the previous view left it stale
+    // and we are NOT in a small viewport, the layout breaks.  Let the
+    // responsive observer re-evaluate, but force-clear transient mode
+    // classes here.
+    const appEl = document.getElementById("app");
+    if (appEl) {
+      appEl.classList.remove("sub-agent-active");
+    }
+  }
+
   /** Exit temp chat: delete the temporary session from server. */
   private exitTempChat(): void {
     if (!getState().tempChat) return;
@@ -1942,42 +2322,71 @@ class App {
 
   private bindResponsiveSidebar(): void {
     const app = document.getElementById("app");
-    const mainArea = document.getElementById("main-area");
     if (!app) return;
     // Hysteresis: collapse below COLLAPSE_BP, expand above EXPAND_BP.
     // Inside the dead band, keep current state to avoid flicker.
-    // Breakpoints chosen so the sidebar only auto-hides on small windows;
-    // anything wider than ~1100px keeps the sidebar visible.
-    const COLLAPSE_BP = 900;
+    // COLLAPSE_BP matches the CSS `@media (max-width: 920px)` breakpoint so
+    // the sidebar auto-collapses at the EXACT width where it would otherwise
+    // flip into absolute/overlay mode — no gray zone where the sidebar covers
+    // the main area but refuses to hide.
+    const COLLAPSE_BP = 920;
     const EXPAND_BP = 1280;
 
     const collapsed = () => app.classList.contains("sidebar-collapsed");
 
     const check = () => {
+      // When the window grows well past EXPAND_BP, clear the user-toggle
+      // latch so future shrinks can auto-collapse again. Without this, a
+      // single explicit click could permanently freeze the sidebar state.
+      if (this.userToggledSidebar && window.innerWidth >= EXPAND_BP) {
+        this.userToggledSidebar = false;
+      }
       if (this.userToggledSidebar) return; // respect explicit user choice
       const w = window.innerWidth;
-      if (w < COLLAPSE_BP && !collapsed()) {
+      // Use <= so the auto-collapse fires at the exact pixel where the CSS
+      // overlay breakpoint kicks in (max-width: 920px). w < COLLAPSE_BP would
+      // leave a 1px gray zone where the sidebar flips to absolute but is
+      // still considered "expanded".
+      if (w <= COLLAPSE_BP && !collapsed()) {
         app.classList.add("sidebar-collapsed");
       } else if (w >= EXPAND_BP && collapsed()) {
         app.classList.remove("sidebar-collapsed");
       }
-      // Inside the dead band, keep whatever the current state is.
+      // Inside the dead band (COLLAPSE_BP, EXPAND_BP), keep current state.
     };
 
+    // Triple-redundant trigger so the auto-collapse / auto-expand can never
+    // silently miss a viewport change:
+    //   1. matchMedia change listeners — fire EXACTLY when the viewport
+    //      crosses the breakpoint; this is the most reliable signal.
+    //   2. window resize event — fires on every viewport tick during drag.
+    //   3. ResizeObserver on the documentElement — kept as belt-and-braces;
+    //      known to be flaky for the root element but costs nothing.
+    const collapseMql = window.matchMedia(`(max-width: ${COLLAPSE_BP}px)`);
+    const expandMql = window.matchMedia(`(min-width: ${EXPAND_BP}px)`);
+    const onCollapseMq = (ev: MediaQueryListEvent) => { if (ev.matches) check(); };
+    const onExpandMq = (ev: MediaQueryListEvent) => { if (ev.matches) check(); };
+    if (typeof collapseMql.addEventListener === "function") {
+      collapseMql.addEventListener("change", onCollapseMq);
+      expandMql.addEventListener("change", onExpandMq);
+    } else {
+      // Safari < 14 fallback (Electron's Chromium supports the new API).
+      collapseMql.addListener(onCollapseMq);
+      expandMql.addListener(onExpandMq);
+    }
+    window.addEventListener("resize", check, { passive: true });
     new ResizeObserver(check).observe(document.documentElement);
+
     // Initial state: align with viewport size, override persisted state.
-    if (window.innerWidth < COLLAPSE_BP) {
+    if (window.innerWidth <= COLLAPSE_BP) {
       app.classList.add("sidebar-collapsed");
     } else if (window.innerWidth >= EXPAND_BP) {
       app.classList.remove("sidebar-collapsed");
     }
     check();
-
-    mainArea?.addEventListener("click", () => {
-      if (window.innerWidth < COLLAPSE_BP && !app.classList.contains("sidebar-collapsed")) {
-        app.classList.add("sidebar-collapsed");
-      }
-    });
+    // Intentionally NO click handler on main-area: clicking the content
+    // must not collapse the sidebar. Users can dismiss it via the toggle
+    // button or by resizing past EXPAND_BP.
   }
 
   private submit(): void {
@@ -2209,6 +2618,11 @@ class App {
     a["new_session"] = () => {
       this.automationPanel.hide();
       this.exitTempChat();
+      // Clear all residual content-area widgets (sub-agent view, tool
+      // detail panel, queue card, model dropdown, …) before requesting
+      // a brand-new session.  resetChat() below wipes the state slice
+      // but does not touch the DOM directly.
+      this.cleanupContentArea({ keepAutomationFlag: false });
       resetChat();
       const requestId = crypto.randomUUID();
       setRequestedSessionId("", requestId);
@@ -2216,7 +2630,9 @@ class App {
     };
     a["new_temp_chat"] = () => {
       if (getState().tempChat) return;
+      this.automationPanel.hide();
       this.exitTempChat();
+      this.cleanupContentArea({ keepAutomationFlag: false });
       resetChat();
       setTempChat(true);
       document.getElementById("btn-temp-chat")?.classList.add("active");

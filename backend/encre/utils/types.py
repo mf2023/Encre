@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Union
 
 FinishReason = Literal["stop", "tool_calls", "error", "max_tokens", "cancelled"]
-PermissionMode = Literal["default", "accept_edits", "bypass", "dont_ask", "plan", "spec", "auto", "blacklist"]  # noqa: E501
+PermissionMode = Literal["default", "accept_edits", "bypass", "dont_ask", "plan", "spec", "auto", "blacklist"]
 PermissionBehavior = Literal["allow", "deny", "ask"]
 TaskType = Literal["bash", "agent", "workflow"]
 TaskStatus = Literal["pending", "running", "completed", "failed", "killed"]
@@ -324,7 +324,7 @@ class WorkflowCompletedEvent:
     total_duration: float = 0.0
 
 
-AgentEvent = Union[TextDelta, ThinkingDelta, ToolCallStart, ToolCallDelta, ToolCallEnd, ToolProgress, ToolResult, PermissionRequest, QuestionRequest, Finish, Artifact, PlanUpdate, CompactNotification, EditProposal, AssistantBoundary, WorkflowStartedEvent, WorkflowTaskEvent, WorkflowCompletedEvent]  # noqa: E501
+AgentEvent = TextDelta | ThinkingDelta | ToolCallStart | ToolCallDelta | ToolCallEnd | ToolProgress | ToolResult | PermissionRequest | QuestionRequest | Finish | Artifact | PlanUpdate | CompactNotification | EditProposal | AssistantBoundary | WorkflowStartedEvent | WorkflowTaskEvent | WorkflowCompletedEvent
 
 
 # ── Multimodal Content Blocks ──────────────────────────────────────
@@ -368,7 +368,7 @@ class ToolResultContent:
     is_error: bool = False
 
 
-ContentBlock = Union[TextContent, ImageContent, FileContent, ToolUseContent, ToolResultContent]
+ContentBlock = TextContent | ImageContent | FileContent | ToolUseContent | ToolResultContent
 
 
 @dataclass
@@ -407,7 +407,7 @@ class BackendError:
     error: str
 
 
-BackendEvent = Union[BackendText, BackendThinking, BackendToolCall, BackendToolCallDelta, BackendFinish, BackendError]  # noqa: E501
+BackendEvent = BackendText | BackendThinking | BackendToolCall | BackendToolCallDelta | BackendFinish | BackendError
 
 
 @dataclass
@@ -429,7 +429,7 @@ class PermissionAsk:
     rule: str = ""
 
 
-PermissionDecision = Union[PermissionAllow, PermissionDeny, PermissionAsk]
+PermissionDecision = PermissionAllow | PermissionDeny | PermissionAsk
 
 
 @dataclass
@@ -451,7 +451,7 @@ class DisabledThinking:
     enabled: bool = False
 
 
-ThinkingConfig = Union[AdaptiveThinking, EnabledThinking, DisabledThinking]
+ThinkingConfig = AdaptiveThinking | EnabledThinking | DisabledThinking
 
 
 def create_text_delta(text: str) -> TextDelta:
@@ -512,7 +512,7 @@ def create_question_request(tool_call_id: str, questions: list[dict[str, Any]]) 
     return QuestionRequest(tool_call_id=tool_call_id, questions=questions)
 
 
-def create_finish(reason: FinishReason, usage: dict[str, Any] | None = None, error: str | None = None) -> Finish:  # noqa: E501
+def create_finish(reason: FinishReason, usage: dict[str, Any] | None = None, error: str | None = None) -> Finish:
     return Finish(reason=reason, usage=usage, error=error)
 
 
@@ -620,7 +620,7 @@ class BranchRolledBack:
     removed_message_ids: list[str]
 
 
-BranchEvent = Union[BranchUpdated, BranchSwitched, BranchRolledBack]
+BranchEvent = BranchUpdated | BranchSwitched | BranchRolledBack
 
 
 # ── Multimodal Capability Result Types ────────────────────────────────
@@ -915,19 +915,19 @@ class ResponseObject:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
-BackendMultimodalResult = Union[
-    ImageGenerationResponse,
-    AudioResult,
-    EmbeddingResponse,
-    ModerationResponse,
-    FileObject,
-    FileListResponse,
-    FileContent,
-    BatchObject,
-    BatchListResponse,
-    FineTuneJob,
-    FineTuneEvent,
-    FineTuneJobList,
-    RealtimeSession,
-    ResponseObject,
-]
+BackendMultimodalResult = (
+    ImageGenerationResponse
+    | AudioResult
+    | EmbeddingResponse
+    | ModerationResponse
+    | FileObject
+    | FileListResponse
+    | FileContent
+    | BatchObject
+    | BatchListResponse
+    | FineTuneJob
+    | FineTuneEvent
+    | FineTuneJobList
+    | RealtimeSession
+    | ResponseObject
+)

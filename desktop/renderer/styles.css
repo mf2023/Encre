@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
  *
  * This file is part of Encre.
@@ -55,6 +55,14 @@
   --blur-bg: blur(20px) saturate(180%);
   --header-height: 40px;
 
+  /* Segmented mode switch (shared with tray popup) — same numeric values
+     as the tray so the two surfaces are visually identical. */
+  --seg-bg: #2a2a2a;
+  --seg-active-bg: #3a3a3a;
+  --seg-text: #999;
+  --seg-text-hover: #f5f5f5;
+  --seg-active-text: #f5f5f5;
+
   /* Editor panel (VSCode Dark+) */
   --editor-bg: #252526;
   --editor-text: #d4d4d4;
@@ -101,6 +109,13 @@
   --warning: #f59e0b;
   --border: #e5e7eb;
   --border-light: #e5e7eb;
+  /* Light-theme seg overrides — same numeric values as the tray's light
+     palette so the two surfaces look pixel-identical. */
+  --seg-bg: #eeeeee;
+  --seg-active-bg: #ffffff;
+  --seg-text: #666;
+  --seg-text-hover: #1f1f1f;
+  --seg-active-text: #1f1f1f;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
   --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
@@ -471,8 +486,14 @@ body.sidebar-collapsed #header-bar::after {
   user-select: none;
   flex-shrink: 0;
   z-index: 5;
-  transition: transform var(--transition-slow);
+  /* Sidebar ALWAYS lives in flex flow — never overlays main-area. Collapse
+     happens by shrinking the sidebar's actual width so main-area is pushed
+     right, not covered. */
+  transition: width var(--transition-slow),
+              min-width var(--transition-slow),
+              border-color var(--transition-slow);
   border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 
 [data-theme="dark"] #sidebar {
@@ -618,36 +639,6 @@ body.sidebar-collapsed #header-bar::after {
   width: 16px;
   height: 16px;
   stroke-width: 1.8;
-}
-
-#btn-sidebar-workspace {
-  position: relative;
-}
-
-#btn-sidebar-workspace .lucide {
-  color: var(--accent);
-}
-
-#btn-sidebar-workspace.active .lucide {
-  color: var(--text-primary);
-}
-
-#btn-sidebar-workspace .btn-content {
-  flex: 1;
-  min-width: 0;
-}
-
-#btn-sidebar-workspace .workspace-running-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #22c55e;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-#btn-sidebar-workspace .workspace-running-dot.hidden {
-  display: none;
 }
 
 .badge-beta {
@@ -1281,8 +1272,7 @@ body.sidebar-collapsed #header-bar::after {
   border-left: 0 solid transparent;
   border-top-left-radius: var(--radius-md);
   margin-top: -4px;
-  transition: margin-left var(--transition-slow),
-              border-left-width var(--transition-slow),
+  transition: border-left-width var(--transition-slow),
               border-left-color var(--transition-slow);
 }
 
@@ -1299,7 +1289,9 @@ body.sidebar-collapsed #header-bar::after {
 }
 
 #app.sidebar-collapsed #main-area {
-  margin-left: -240px;
+  /* No margin-left shift needed — the sidebar collapses via width: 0 so
+     main-area naturally expands via flex: 1. We only need to restore the
+     left border that the sidebar's right border used to provide. */
   border-left: 1px solid var(--border);
 }
 
@@ -2666,6 +2658,146 @@ body.sidebar-collapsed #header-bar::after {
 
 .turn:hover .assistant-actions {
   opacity: 1;
+}
+
+/* ── Turn Status Card: Error (red, expandable) ── */
+.turn-status-card.status-error {
+  margin: 6px 0;
+  border: 1px solid var(--error-opaque, rgba(239, 68, 68, 0.25));
+  border-radius: var(--radius-sm);
+  background: var(--error-bg, rgba(239, 68, 68, 0.08));
+  overflow: hidden;
+  transition: border-color 120ms;
+}
+.turn-status-card.status-error:hover {
+  border-color: var(--error);
+}
+.turn-status-card.status-error .status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--error);
+  transition: background 120ms;
+}
+.turn-status-card.status-error .status-header:hover {
+  background: rgba(239, 68, 68, 0.06);
+}
+.turn-status-card.status-error .status-header .status-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.turn-status-card.status-error .status-header .status-label {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.turn-status-card.status-error .status-header .status-toggle {
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  transition: transform 120ms;
+}
+.turn-status-card.status-error.expanded .status-header .status-toggle {
+  transform: rotate(180deg);
+}
+.turn-status-card.status-error .status-body {
+  display: none;
+  padding: 0 12px 10px 12px;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  border-top: 1px solid var(--error-opaque, rgba(239, 68, 68, 0.25));
+  background: rgba(0, 0, 0, 0.15);
+  line-height: 1.5;
+}
+.turn-status-card.status-error.expanded .status-body {
+  display: block;
+}
+.turn-status-card.status-error .status-code {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.15);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.turn-status-card.status-error .status-message {
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ── Turn Status Card: Warning (yellow, flat, no expand) ── */
+.turn-status-card.status-warning {
+  margin: 6px 0;
+  border: 1px solid var(--warning-opaque, rgba(245, 158, 11, 0.25));
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg, rgba(245, 158, 11, 0.08));
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--warning);
+  transition: border-color 120ms;
+}
+.turn-status-card.status-warning:hover {
+  border-color: var(--warning);
+}
+.turn-status-card.status-warning .status-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.turn-status-card.status-warning .status-label {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.turn-status-card.status-warning .status-detail {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+
+/* ── Turn Status Inline (success, inside assistant-actions) ── */
+.turn-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--success);
+  cursor: default;
+  white-space: nowrap;
+}
+.turn-status-inline .inline-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.turn-status-cancelled {
+  color: var(--text-tertiary, #888);
 }
 
 .retry-popup {
@@ -4668,15 +4800,6 @@ body.sidebar-collapsed #header-bar::after {
   border-right-color: rgba(0, 0, 0, 0.08);
 }
 
-#app.settings-mode #main-area {
-  margin-left: 0 !important;
-}
-
-/* Allow sidebar collapse to still shift content in settings mode */
-#app.settings-mode.sidebar-collapsed #main-area {
-  margin-left: -240px !important;
-}
-
 /* ── Logger View (ESD: Logs) ─────────────────────────────────────── */
 .logger-scroll {
   max-height: calc(100vh - 220px);
@@ -6070,29 +6193,10 @@ body.child-mode #header-bar::after {
 
 /* ── Responsive Layout ──────────────────────────────────────────── */
 @media (max-width: 920px) {
-  #sidebar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 100;
-    box-shadow: none;
-    border-right: none;
-  }
-
-  #app.sidebar-collapsed #sidebar {
-    transform: translateX(-100%);
-    box-shadow: none;
-  }
-
-  #app:not(.sidebar-collapsed) #sidebar {
-    transform: translateX(0);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
-  }
-
-  #main-area {
-    margin-left: 0 !important;
-  }
+  /* The sidebar stays in flex flow at all widths — no position: absolute,
+     no transform: translateX. Main-area is always pushed right by the
+     sidebar's actual width (or freed up when collapsed). Only typography
+     and padding tweaks live in this breakpoint. */
 
   #message-list {
     max-width: 100%;
@@ -6169,19 +6273,16 @@ body.child-mode #header-bar::after {
 
 /* ── Responsive sidebar collapse ─────────────────────────────────── */
 #app.sidebar-collapsed #sidebar {
-  transform: translateX(-100%);
+  /* Collapse via width rather than transform so the sidebar stays in flex
+     flow and main-area is always pushed right (never overlaid). */
+  width: 0;
+  min-width: 0;
+  border-right-color: transparent;
 }
 
 @media (max-width: 768px) {
-  #sidebar {
-    position: fixed;
-    left: 0;
-    top: var(--header-height);
-    bottom: 0;
-    z-index: 100;
-    box-shadow: var(--shadow-lg);
-    border-right: none;
-  }
+  /* Sidebar stays in flex flow at all widths — it always pushes main-area
+     right rather than overlaying it. */
 
   #message-list {
     padding: 14px 18px;
@@ -9135,16 +9236,27 @@ body.child-mode #header-bar::after {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 16px;
-  margin-bottom: 16px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.usage-chart-box--compact {
+  padding: 10px;
+  margin-bottom: 10px;
 }
 .usage-chart-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacers-spacer-8, 8px);
+  font-size: var(--heading-3xs-font-size, 11px);
+  font-weight: var(--font-weight-strong, 600);
+  color: var(--text-text-default, #d1d3db);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-bottom: var(--spacers-spacer-12, 12px);
+  font-family: var(--font-family-default);
+}
+.usage-chart-title .lucide {
+  color: var(--text-text-secondary, #9599a6);
 }
 .usage-chart-row {
   display: flex;
@@ -9153,6 +9265,163 @@ body.child-mode #header-bar::after {
 .usage-chart-box-half {
   flex: 1;
   min-width: 0;
+}
+
+/* Unified bar chart legend — uses design-system surface, border and
+ * radius tokens. */
+.usage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacers-spacer-8, 8px);
+  margin-top: var(--spacers-spacer-12, 12px);
+  padding-top: var(--spacers-spacer-12, 12px);
+  border-top: 1px solid var(--border-border-neutral-l1, rgba(224, 226, 242, 0.1));
+  font-size: var(--body-md-font-size, 12px);
+  line-height: var(--body-md-line-height, 18px);
+  color: var(--text-text-default, #d1d3db);
+  font-family: var(--font-family-default);
+}
+.usage-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacers-spacer-6, 6px);
+  padding: var(--spacers-spacer-4, 4px) var(--spacers-spacer-8, 8px);
+  border-radius: var(--radius-radius-6, 6px);
+  background: var(--bg-bg-overlay-l1, rgba(224, 226, 242, 0.04));
+  border: 1px solid var(--border-border-neutral-l1, rgba(224, 226, 242, 0.1));
+  max-width: 100%;
+}
+.usage-model-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-radius-circle, 50%);
+  flex-shrink: 0;
+}
+.usage-legend-name {
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.usage-legend-tokens {
+  color: var(--text-text-tertiary, #666b75);
+  font-variant-numeric: tabular-nums;
+  margin-left: var(--spacers-spacer-4, 4px);
+}
+.usage-model-tag {
+  font-size: var(--heading-3xs-font-size, 10px);
+  font-weight: var(--font-weight-strong, 600);
+  padding: 1px 6px;
+  border-radius: var(--radius-radius-4, 4px);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.usage-model-tag--deleted {
+  background: var(--status-error-surface-l1, rgba(246, 70, 70, 0.18));
+  color: var(--status-error-default, #f65a5a);
+  border: 1px solid var(--status-error-surface-l2, rgba(246, 70, 70, 0.28));
+}
+.usage-model-tag--unknown {
+  background: var(--bg-bg-overlay-l2, rgba(224, 226, 242, 0.06));
+  color: var(--text-text-tertiary, #666b75);
+  border: 1px solid var(--border-border-neutral-l2, rgba(224, 226, 242, 0.16));
+}
+
+/* Heatmap ramp — used inside the activity heatmap.  Each level is
+ * exposed as a CSS variable so light/dark themes can override without
+ * touching TS code.  The TS code also uses color-mix(in srgb, var(--bg-bg-brand) N%, ...)
+ * so the brand green theme is the source of truth; these are fallbacks. */
+:root {
+  /* Light theme: empty cell = off-white, more activity = brand green. */
+  --usage-hm-base: #ffffff;
+  --usage-hm-empty: #f3f4f6;
+  --usage-hm-border: rgba(15, 23, 42, 0.08);
+}
+[data-theme="dark"], :root:not([data-theme="light"]) {
+  /* Dark theme: empty cell = mid-gray, more activity = brand green. */
+  --usage-hm-base: #1f2227;
+  --usage-hm-empty: #2a2d31;
+  --usage-hm-border: rgba(224, 226, 242, 0.18);
+}
+
+/* Activity heatmap container + stats row.  These follow the same
+ * panel / card pattern as the bar chart: surface = --bg-bg-base-secondary,
+ * divider = --border-border-neutral-l1. */
+.usage-heatmap-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 2px;
+  margin-bottom: var(--spacers-spacer-8, 8px);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-text-tertiary, #666b75);
+  font-family: var(--font-family-default);
+}
+.usage-heatmap-stats--compact {
+  margin-bottom: var(--spacers-spacer-4, 4px);
+  font-size: 10px;
+}
+.usage-heatmap-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 0 var(--spacers-spacer-4, 4px);
+}
+.usage-heatmap-num {
+  font-size: 11px;
+  font-weight: var(--font-weight-strong, 600);
+  color: var(--text-text-default, #d1d3db);
+  font-variant-numeric: tabular-nums;
+}
+.usage-heatmap-stat-divider {
+  width: 1px;
+  height: 10px;
+  background: var(--border-border-neutral-l1, rgba(224, 226, 242, 0.1));
+  align-self: center;
+}
+
+.usage-heatmap-scroll {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: var(--spacers-spacer-4, 4px);
+}
+
+/* Chart.js canvas wrapper: parent must be position:relative with an
+   explicit height when maintainAspectRatio is false. */
+.usage-chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 220px;
+}
+
+.usage-heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacers-spacer-6, 6px);
+  margin-top: var(--spacers-spacer-6, 6px);
+  font-size: 10px;
+  color: var(--text-text-tertiary, #666b75);
+  font-family: var(--font-family-default);
+}
+.usage-heatmap-legend--compact {
+  margin-top: var(--spacers-spacer-4, 4px);
+}
+.usage-heatmap-legend svg {
+  display: block;
+}
+
+/* Cell hover — a subtle ring + brightening to make the cell feel
+ * "alive" without the size changing (so the grid stays rigid). */
+.usage-hm-cell {
+  transition: filter 0.12s ease;
+  cursor: pointer;
+}
+.usage-hm-cell:hover {
+  filter: brightness(1.15) drop-shadow(0 0 2px var(--bg-bg-brand, #32f08c));
 }
 
 /* Donut chart */

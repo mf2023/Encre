@@ -40,17 +40,17 @@ def _build_command(target: str, action: str, config_file: str, project_name: str
                 cmd.extend(["-t", project_name, "."])
             return cmd
         elif action == "deploy":
-            return ["docker", "push", project_name] if project_name else ["docker", "stack", "deploy"]  # noqa: E501
+            return ["docker", "push", project_name] if project_name else ["docker", "stack", "deploy"]
         elif action == "rollback":
-            return ["docker", "service", "rollback", project_name] if project_name else ["docker", "rollback"]  # noqa: E501
+            return ["docker", "service", "rollback", project_name] if project_name else ["docker", "rollback"]
         elif action == "status":
             return ["docker", "ps"]
 
     elif target == "kubernetes":
         if action == "build" or action == "deploy":
-            return ["kubectl", "apply", "-f", config_file] if config_file else ["kubectl", "apply", "-f", "."]  # noqa: E501
+            return ["kubectl", "apply", "-f", config_file] if config_file else ["kubectl", "apply", "-f", "."]
         elif action == "rollback":
-            return ["kubectl", "rollout", "undo", f"deployment/{project_name}"] if project_name else ["kubectl", "rollout", "undo", "deployment/"]  # noqa: E501
+            return ["kubectl", "rollout", "undo", f"deployment/{project_name}"] if project_name else ["kubectl", "rollout", "undo", "deployment/"]
         elif action == "status":
             base = ["kubectl", "get", "pods"]
             if project_name:

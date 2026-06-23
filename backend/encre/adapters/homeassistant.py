@@ -397,11 +397,11 @@ class HomeAssistantAdapter(BaseAdapter):
 
     async def send(
         self,
-        chat_id: str,  # noqa: ARG002
+        _chat_id: str,
         content: str,
         *,
-        reply_to: str | None = None,  # noqa: ARG002
-        metadata: dict[str, Any] | None = None,  # noqa: ARG002
+        _reply_to: str | None = None,
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a notification via HA REST API (persistent_notification.create).
 

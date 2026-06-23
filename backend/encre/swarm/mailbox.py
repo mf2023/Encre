@@ -45,7 +45,7 @@ class EncreMailbox:
         self._queue: asyncio.Queue[MailboxMessage] = asyncio.Queue()
         self._received: list[MailboxMessage] = []
 
-    async def send(self, recipient_mailbox: "EncreMailbox", content: str, metadata: dict | None = None) -> None:  # noqa: E501
+    async def send(self, recipient_mailbox: "EncreMailbox", content: str, metadata: dict | None = None) -> None:
         msg = MailboxMessage(
             sender=self.owner_id,
             content=content,

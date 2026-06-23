@@ -150,7 +150,7 @@ class SmsAdapter(BaseAdapter):
             logger.error("[sms] from_number is required")
             return False
 
-        logger.info("[sms] Starting webhook server on %s:%d...", self._webhook_host, self._webhook_port)  # noqa: E501
+        logger.info("[sms] Starting webhook server on %s:%d...", self._webhook_host, self._webhook_port)
         app = web.Application()
         app.router.add_post("/webhooks/twilio", self._handle_webhook)
         app.router.add_get("/health", lambda _: web.Response(text="ok"))
@@ -203,8 +203,8 @@ class SmsAdapter(BaseAdapter):
         chat_id: str,
         content: str,
         *,
-        reply_to: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        _reply_to: str | None = None,
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send an SMS via the Twilio REST API.
 

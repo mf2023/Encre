@@ -30,6 +30,8 @@ import { t, initLocale, setLocale, getLocale, clearLocaleCache, onLocaleChange, 
 import { applyServerCommands } from "./slash_commands.js";
 import { renderMarkdown } from "./chat.js";
 import { PLATFORM_ICONS } from "./icons.js";
+import { Chart, registerables } from "chart.js";
+Chart.register(...registerables);
 
 initLocale();
 
@@ -78,6 +80,11 @@ export class Settings {
   private searchInput: HTMLInputElement;
   private searchTimer: number = 0;
   private _versions: { desktop: string; agent: string } | null = null;
+  private _usageBarChart: Chart | null = null;
+  private _usageBarChartData: {
+    labels: string[];
+    datasets: any[];
+  } | null = null;
 
   constructor() {
     this.nav = document.querySelector(".sidebar-settings-items")!;
@@ -717,6 +724,49 @@ export class Settings {
 
   close(): void {
     document.getElementById("app")?.classList.remove("settings-mode");
+    // After settings close, the chat-view is shown again.  Any widgets
+    // the user opened in the settings panels (e.g. confirm overlays,
+    // dropdowns, document-name dialogs) may still be sitting on top of
+    // the document tree.  Clear those and force a chat re-render so
+    // any visible state corruption is wiped.
+    this._cleanupTransientOverlays();
+    if (typeof (window as any).__appCleanupContentArea === "function") {
+      (window as any).__appCleanupContentArea();
+    }
+  }
+
+  /**
+   * Best-effort teardown of every transient overlay a settings panel may
+   * have created.  We only target overlays that are unconditionally safe
+   * to remove (the settings view is already hidden at this point).
+   */
+  private _cleanupTransientOverlays(): void {
+    // Floating dialogs/overlays created by settings panels:
+    //   - skill-detail overlay
+    //   - command-create overlay
+    //   - doc-name / doc-url dialog
+    //   - rule-edit overlay
+    //   - agent-edit overlay
+    //   - memory-edit overlay
+    // Each is appended to document.body with a unique class.
+    const transientClasses = [
+      "skill-detail-overlay",
+      "command-create-overlay",
+      "doc-name-dialog",
+      "doc-url-dialog",
+      "rule-edit-overlay",
+      "agent-edit-overlay",
+      "memory-edit-overlay",
+    ];
+    for (const cls of transientClasses) {
+      document.querySelectorAll(`.${cls}`).forEach((el) => el.remove());
+    }
+    // Close any still-open dropdown menus so they don't pop up the
+    // moment the user moves the mouse.
+    document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
+    // Drop inline form nodes that were inserted into #settings-content-wrap
+    // by a settings panel's edit-mode flow (rare but possible).
+    document.querySelectorAll("#settings-content-wrap .inline-form, #settings-content-wrap .edit-form").forEach((el) => el.remove());
   }
 
   focusSearch(): void {
@@ -1892,6 +1942,18 @@ private _bindModelSelect(): void {
       const firstModelId = providerForBackend && providerForBackend.models.length > 0 ? providerForBackend.models[0].id : null;
       const defaultVal = firstModelId || "__custom__";
 
+      // Switching providers is an explicit user action -- always reset the
+      // base URL to the new provider's default, and clear the manual-edit
+      // flag so the user can still type their own URL afterwards.  Without
+      // this, switching to a provider that has no curated models (or
+      // picking "Custom") would leave the previous provider's URL in the
+      // field, which is wrong.
+      const urlInput2 = document.getElementById("new-model-url") as HTMLInputElement;
+      if (urlInput2) {
+        urlInput2.value = providerForBackend?.base_url || "";
+        delete urlInput2.dataset.userModified;
+      }
+
       if (newOpts.length === 0) {
         selectRow.innerHTML = `
           <label class="model-form-label" for="new-model-select">
@@ -1902,7 +1964,6 @@ private _bindModelSelect(): void {
         if (modelIdRow2) modelIdRow2.style.display = "";
         const modelIdInput = document.getElementById("new-model-id") as HTMLInputElement;
         if (modelIdInput) { modelIdInput.value = ""; modelIdInput.dataset.userModified = "true"; }
-        const urlInput2 = document.getElementById("new-model-url") as HTMLInputElement;
         if (urlInput2) urlInput2.readOnly = false;
         const tokensInput2 = document.getElementById("new-model-tokens") as HTMLInputElement;
         if (tokensInput2) tokensInput2.readOnly = false;
@@ -1918,7 +1979,6 @@ private _bindModelSelect(): void {
         this._bindModelSelect();
         const modelIdRow2 = document.getElementById("model-id-row");
         const mid = document.getElementById("new-model-id") as HTMLInputElement;
-        const urlInput2 = document.getElementById("new-model-url") as HTMLInputElement;
         const tokensInput2 = document.getElementById("new-model-tokens") as HTMLInputElement;
         if (isCustom) {
           if (modelIdRow2) modelIdRow2.style.display = "";
@@ -1929,7 +1989,7 @@ private _bindModelSelect(): void {
           if (modelIdRow2) modelIdRow2.style.display = "none";
           const model = providerForBackend?.models.find((m) => m.id === defaultVal);
           if (mid) mid.value = model?.id || defaultVal;
-          if (urlInput2 && providerForBackend) { urlInput2.value = providerForBackend.base_url; urlInput2.readOnly = true; }
+          if (urlInput2 && providerForBackend) { urlInput2.readOnly = true; }
           if (tokensInput2 && model) { tokensInput2.value = String(this._maxTokensDefault(v, model.context)); tokensInput2.readOnly = true; }
         }
         const nameInput2 = document.getElementById("new-model-name") as HTMLInputElement;
@@ -2193,7 +2253,10 @@ private _bindModelSelect(): void {
 
     const close = () => overlay.remove();
     overlay.querySelector("#dialog-form-cancel")?.addEventListener("click", close);
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+    // No "click outside to dismiss" -- the form has unsaved edits and the
+    // user has to deliberately press Cancel to discard them.  Also avoids
+    // accidental dismissal when the user clicks on dropdown menus that
+    // temporarily extend beyond the dialog bounds.
 
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: overlay });
@@ -3100,30 +3163,55 @@ private _bindModelSelect(): void {
       return;
     }
 
-    // ── Group sessions by model ─────────────────────────────
+    // ── Group sessions by (day, model) for a unified chart ──
     const sessions = stats.sessions || [];
-    const byModel: Record<string, UsageStatsSessionEntry[]> = {};
+    // Collect every day that has any session, sorted ascending.
+    const daySet = new Set<string>();
     for (const s of sessions) {
-      const m = s.model || "unknown";
-      if (!byModel[m]) byModel[m] = [];
-      byModel[m].push(s);
+      const dk = this._formatDayKey(s.first_active);
+      if (dk) daySet.add(dk);
     }
-    // Sort each model's sessions by first_active (oldest first)
-    for (const m of Object.keys(byModel)) {
-      byModel[m].sort((a, b) => (a.first_active || 0) - (b.first_active || 0));
-    }
-    // Sort models by total tokens descending
-    const modelOrder = Object.keys(byModel).sort(
-      (a, b) => byModel[b].reduce((s, x) => s + x.total_tokens, 0) - byModel[a].reduce((s, x) => s + x.total_tokens, 0)
-    );
+    const allDays = Array.from(daySet).sort();
+    // Cap the bar chart to the most recent 60 days so bars stay readable
+    // with many models.  Older days are still counted in metrics and
+    // shown in the heatmap; we just don't draw them in the daily chart.
+    const BAR_CHART_DAY_LIMIT = 60;
+    const days = allDays.slice(-BAR_CHART_DAY_LIMIT);
 
-    // ── Per-model bar chart SVGs ────────────────────────────
-    const modelCharts = modelOrder.map((modelName, mi) => {
-      const sessList = byModel[modelName];
-      if (sessList.length === 0) return "";
-      const color = Settings.CHART_COLORS[mi % Settings.CHART_COLORS.length];
-      return this._renderModelBarChart(modelName, sessList, color, muted);
-    }).join("");
+    // Collect every model that appears, sort by total tokens descending so
+    // the legend reads largest-first.
+    const modelTotals: Record<string, { tokens: number; status?: string }> = {};
+    for (const s of sessions) {
+      const m = s.model || "(unknown model)";
+      if (!modelTotals[m]) modelTotals[m] = { tokens: 0, status: s.model_status };
+      modelTotals[m].tokens += s.total_tokens || 0;
+    }
+    const modelOrder = Object.keys(modelTotals).sort(
+      (a, b) => (modelTotals[b].tokens - modelTotals[a].tokens) || a.localeCompare(b)
+    );
+    const modelColor: Record<string, string> = {};
+    modelOrder.forEach((m, i) => {
+      modelColor[m] = Settings.CHART_COLORS[i % Settings.CHART_COLORS.length];
+    });
+
+    // Build (day, model) → { tokens, count, turns, tools } matrix.
+    const cellMap: Record<string, Record<string, { tokens: number; count: number; turns: number; tools: number }>> = {};
+    for (const s of sessions) {
+      const dk = this._formatDayKey(s.first_active);
+      if (!dk) continue;
+      const m = s.model || "(unknown model)";
+      if (!cellMap[dk]) cellMap[dk] = {};
+      if (!cellMap[dk][m]) cellMap[dk][m] = { tokens: 0, count: 0, turns: 0, tools: 0 };
+      const cell = cellMap[dk][m];
+      cell.tokens += s.total_tokens || 0;
+      cell.count += 1;
+      cell.turns += s.turns || 0;
+      cell.tools += s.tool_calls || 0;
+    }
+
+    const truncated = allDays.length > days.length;
+    const unifiedChart = this._renderUnifiedDailyBarChart(days, modelOrder, cellMap, modelColor, muted, modelTotals, truncated);
+    const heatmap = this._renderUsageHeatmap(sessions, muted);
 
     el.innerHTML = `
       <div class="settings-section-title">
@@ -3162,8 +3250,68 @@ private _bindModelSelect(): void {
         </div>
       </div>
 
-      <!-- Per-model granular bar charts -->
-      ${modelCharts}`;
+      <!-- Activity heatmap (per-hour, all models combined) -->
+      ${heatmap}
+
+      <!-- Unified daily bar chart, grouped by model with legend -->
+      ${unifiedChart}`;
+
+    // Build / refresh the Chart.js instance on the canvas.  We stash the
+    // data on the instance in _renderUnifiedDailyBarChart so we can
+    // attach the Chart after innerHTML has placed the canvas in the DOM.
+    if (this._usageBarChart) {
+      this._usageBarChart.destroy();
+      this._usageBarChart = null;
+    }
+    const canvas = el.querySelector("#usage-bar-chart") as HTMLCanvasElement | null;
+    if (canvas && this._usageBarChartData) {
+      const data = this._usageBarChartData;
+      this._usageBarChart = new Chart(canvas, {
+        type: "bar",
+        data: { labels: data.labels, datasets: data.datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          animation: { duration: 250 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "rgba(20,20,28,0.95)",
+              titleColor: "#fff",
+              bodyColor: "#d1d3db",
+              borderColor: "rgba(255,255,255,0.1)",
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                label: (ctx: any) => `${ctx.dataset.label}: ${this._formatNumber(ctx.parsed.y || 0)}`,
+                footer: (items: any[]) => {
+                  const total = items.reduce((s, it) => s + (it.parsed.y || 0), 0);
+                  return `Total: ${this._formatNumber(total)}`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              stacked: true,
+              grid: { color: "rgba(224,226,242,0.08)" },
+              ticks: { color: muted, font: { size: 10 } },
+            },
+            y: {
+              stacked: true,
+              beginAtZero: true,
+              grid: { color: "rgba(224,226,242,0.08)" },
+              ticks: {
+                color: muted,
+                font: { size: 10 },
+                callback: (v: any) => this._formatNumber(Number(v)),
+              },
+            },
+          },
+        },
+      });
+    }
 
     document.getElementById("btn-refresh-usage")?.addEventListener("click", () => {
       send({ type: "get_usage_stats" });
@@ -3175,90 +3323,339 @@ private _bindModelSelect(): void {
   }
 
   /** Render a granular bar chart for one model: X = time (daily), Y = tokens per day. */
-  private _renderModelBarChart(modelName: string, sessions: UsageStatsSessionEntry[], color: string, muted: string): string {
-    // Group sessions by day (YYYY-MM-DD)
-    const dayMap: Record<string, { tokens: number; turns: number; tools: number; count: number }> = {};
-    for (const s of sessions) {
-      const dayKey = this._formatSessionDate(s.first_active); // e.g. "2026-06-19"
-      if (!dayMap[dayKey]) dayMap[dayKey] = { tokens: 0, turns: 0, tools: 0, count: 0 };
-      dayMap[dayKey].tokens += s.total_tokens;
-      dayMap[dayKey].turns += s.turns;
-      dayMap[dayKey].tools += s.tool_calls;
-      dayMap[dayKey].count += 1;
-    }
-    // Sort by date
-    const days = Object.keys(dayMap).sort();
-    const values = days.map(d => dayMap[d].tokens);
-    const n = days.length;
-    if (n === 0) return "";
+  /** YYYY-MM-DD key for grouping sessions by calendar day (local time). */
+  private _formatDayKey(timestamp: number): string {
+    if (!timestamp || timestamp <= 0) return "";
+    const d = new Date(timestamp * 1000);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
 
-    const W = 600, H = 140;
-    const PT = 20, PR = 16, PB = 36, PL = 48;
-    const cw = W - PL - PR, ch = H - PT - PB;
-    const maxVal = Math.max(...values, 1);
+  /**
+   * Render one unified bar chart covering all models.  X axis = days,
+   * Y axis = tokens per day.  Each day's bar is a single stacked column
+   * where every model contributes one colored segment (fixed color from
+   * :data:`Settings.CHART_COLORS`).  Stacked layout means all models
+   * share the same bar per day, distinguished only by color.  A legend
+   * below the chart maps every model name to its color and shows a
+   * "(deleted)" / "(unknown)" tag for historical-only models.
+   */
+  private _renderUnifiedDailyBarChart(
+    days: string[],
+    modelOrder: string[],
+    cellMap: Record<string, Record<string, { tokens: number; count: number; turns: number; tools: number }>>,
+    modelColor: Record<string, string>,
+    muted: string,
+    modelTotals: Record<string, { tokens: number; status?: string }>,
+    truncated: boolean = false,
+  ): string {
+    if (days.length === 0 || modelOrder.length === 0) return "";
 
-    // Bar sizing — one bar per day
-    const barGap = n === 1 ? 0 : Math.min(4, (cw / (n + 1)) * 0.3);
-    const barW = Math.max(8, Math.min(48, (cw - barGap * (n - 1)) / n));
-    const totalW = n * barW + (n - 1) * barGap;
-    const startX = PL + (cw - totalW) / 2;
+    // Build Chart.js datasets: one stacked bar per model, all sharing
+    // the same x-axis (one stack per day).  The renderer attaches the
+    // actual Chart instance to the canvas after innerHTML runs.
+    const datasets = modelOrder.map((m) => ({
+      label: m,
+      data: days.map((d) => cellMap[d]?.[m]?.tokens || 0),
+      backgroundColor: modelColor[m],
+      borderColor: modelColor[m],
+      borderWidth: 0,
+      borderRadius: 2,
+      maxBarThickness: 28,
+      stack: "usage",
+    }));
+    const labels = days.map((d) => this._shortDay(d));
+    this._usageBarChartData = { labels, datasets };
 
-    // Y grid
-    const yTicks = 3;
-    let gridLines = "";
-    for (let i = 0; i <= yTicks; i++) {
-      const y = PT + ch - (i / yTicks) * ch;
-      const label = this._formatNumber(Math.round(maxVal * (i / yTicks)));
-      gridLines += `
-        <line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="var(--border-light, #222)" stroke-width="1"/>
-        <text x="${PL - 6}" y="${y + 4}" text-anchor="end" fill="${muted}" font-size="10">${label}</text>`;
-    }
-
-    // Bars — one per day
-    const bars = days.map((day, i) => {
-      const d = dayMap[day];
-      const x = startX + i * (barW + barGap);
-      const barH = (d.tokens / maxVal) * ch;
-      const y = PT + ch - barH;
-      const tooltip = `Date: ${day}  |  Tokens: ${d.tokens.toLocaleString()}  |  Sessions: ${d.count}  |  Turns: ${d.turns}  |  Tools: ${d.tools}`;
+    // Legend: every model gets a swatch + name + total.  Wraps via
+    // flex-wrap so a long model list doesn't overflow horizontally.
+    const legendItems = modelOrder.map((m) => {
+      const color = modelColor[m];
+      const total = modelTotals[m]?.tokens || 0;
+      const status = modelTotals[m]?.status;
+      const tag = status === "deleted" ? `<span class="usage-model-tag usage-model-tag--deleted">${t("settings.deletedModel") || "deleted"}</span>`
+                 : status === "unknown" ? `<span class="usage-model-tag usage-model-tag--unknown">${t("settings.unknownModel") || "unknown"}</span>`
+                 : "";
+      const display = m.length > 32 ? this.esc(m.slice(0, 32) + "...") : this.esc(m);
       return `
-        <g>
-          <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(barH, 1).toFixed(1)}" rx="3" fill="${color}" opacity="0.8">
-            <title>${this.esc(tooltip)}</title>
-          </rect>
-          <rect x="${(x - 2).toFixed(1)}" y="${(y - 2).toFixed(1)}" width="${(barW + 4).toFixed(1)}" height="${(Math.max(barH, 1) + 4).toFixed(1)}" rx="5" fill="transparent" stroke="transparent" stroke-width="6" style="cursor:pointer">
-            <title>${this.esc(tooltip)}</title>
-          </rect>
-        </g>`;
+        <div class="usage-legend-item" title="${this.esc(m)}">
+          <span class="usage-model-dot" style="background:${color}"></span>
+          <span class="usage-legend-name">${display}</span>
+          ${tag}
+          <span class="usage-legend-tokens">${this._formatNumber(total)}</span>
+        </div>`;
     }).join("");
 
-    // X-axis date labels (at most 10 evenly spaced)
-    const xLabelCount = Math.min(n, 10);
-    const xLabelStep = Math.max(1, Math.floor((n - 1) / (xLabelCount - 1)));
-    const xLabels: string[] = [];
-    for (let i = 0; i < n; i += xLabelStep) {
-      const x = startX + i * (barW + barGap) + barW / 2;
-      xLabels.push(`<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="${muted}" font-size="9">${this.esc(days[i])}</text>`);
-    }
-    if (n > 1) {
-      const lastIdx = n - 1;
-      const lastX = startX + lastIdx * (barW + barGap) + barW / 2;
-      xLabels.push(`<text x="${lastX.toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="${muted}" font-size="9">${this.esc(days[lastIdx])}</text>`);
-    }
-
-    const displayName = modelName === "unknown" ? "Unknown Model" : modelName;
     return `
       <div class="usage-chart-box">
         <div class="usage-chart-title">
-          <span class="usage-model-dot" style="background:${color};display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px"></span>
-          ${this.esc(displayName)}
-          <span style="font-weight:400;font-size:12px;color:${muted};margin-left:8px">${n} days · ${this._formatNumber(values.reduce((a, b) => a + b, 0))} tokens</span>
+          <i data-lucide="bar-chart-3" class="lucide"></i>
+          ${t("settings.dailyUsageByModel") || "Daily token usage by model"}
         </div>
-        <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">
-          ${gridLines}
-          ${bars}
-          ${xLabels.join("")}
-        </svg>
+        <div class="usage-heatmap-stats">
+          ${truncated ? `<div class="usage-heatmap-stat"><span>${t("settings.olderDaysHidden") || "older days hidden"}</span></div>` : ""}
+        </div>
+        <div class="usage-chart-canvas-wrap">
+          <canvas id="usage-bar-chart"></canvas>
+        </div>
+        <div class="usage-legend">${legendItems}</div>
+      </div>`;
+  }
+
+  /** "2026-06-22" -> "Jun 22" for compact X-axis labels. */
+  private _shortDay(iso: string): string {
+    if (!iso) return "";
+    const parts = iso.split("-");
+    if (parts.length !== 3) return iso;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  /**
+   * Render a 24-hour activity heatmap.  24 rows (one per hour of day,
+   * 0:00 at the top, 23:00 at the bottom) × N day columns (one per
+   * calendar day, newest on the right).  Cell color encodes total
+   * tokens consumed during that hour of that day, summed across every
+   * model.
+   *
+   * Color scale: empty = light/neutral, more activity = deeper brand
+   * green.  The user wanted "less = white, more = green", which means
+   * an empty cell is NOT a dark block -- it's the panel background
+   * with just a thin border, so the chart reads as mostly white with
+   * green dots marking activity.
+   *
+   * Layout is intentionally compact: small cells, small fonts, and
+   * the SVG total width grows with the day count so the container
+   * scrolls horizontally for long histories.
+   */
+  private _renderUsageHeatmap(sessions: UsageStatsSessionEntry[], muted: string): string {
+    if (!sessions || sessions.length === 0) return "";
+
+    // Aggregate sessions by (day, hour) -- 24 buckets per day.
+    const cellTokens: Record<string, number> = {};
+    for (const s of sessions) {
+      if (!s.first_active) continue;
+      const d = new Date(s.first_active * 1000);
+      if (isNaN(d.getTime())) continue;
+      const dayKey = this._formatDayKey(s.first_active);
+      if (!dayKey) continue;
+      const hour = d.getHours();
+      cellTokens[`${dayKey}|${hour}`] = (cellTokens[`${dayKey}|${hour}`] || 0) + (s.total_tokens || 0);
+    }
+
+    // Determine the date range.  Always show at least MIN_DAYS of
+    // calendar so a user with one session doesn't see a single bar.
+    const MIN_DAYS = 30;    // minimum visible days (~1 month)
+    const MAX_DAYS = 90;    // cap so a 3-year history doesn't make a thin strip
+    const latestMs = Math.max(...sessions.filter(s => s.first_active).map(s => s.first_active * 1000));
+    const earliestMs = Math.min(...sessions.filter(s => s.first_active).map(s => s.first_active * 1000));
+    const latestDate = new Date(latestMs);
+    const earliestDate = new Date(earliestMs);
+    let startDate = new Date(earliestDate);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(latestDate);
+    endDate.setHours(0, 0, 0, 0);
+    const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+    let numDays = totalDays;
+    if (numDays < MIN_DAYS) {
+      // Pad backwards so we always show at least MIN_DAYS columns.
+      const newStart = new Date(endDate);
+      newStart.setDate(newStart.getDate() - (MIN_DAYS - 1));
+      startDate = newStart;
+      numDays = MIN_DAYS;
+    } else if (numDays > MAX_DAYS) {
+      // Crop to the most recent MAX_DAYS so the chart stays readable.
+      const newStart = new Date(endDate);
+      newStart.setDate(newStart.getDate() - (MAX_DAYS - 1));
+      startDate = newStart;
+      numDays = MAX_DAYS;
+    }
+
+    // Max value for color scaling.
+    let maxCell = 0;
+    for (const k of Object.keys(cellTokens)) {
+      if (cellTokens[k] > maxCell) maxCell = cellTokens[k];
+    }
+    if (maxCell <= 0) {
+      // No usage at all -- still render the grid so the user sees the shape.
+      maxCell = 1;
+    }
+
+    // Layout -- intentionally small.  Cell = 9px square, gap = 1px so
+    // the grid is dense but cells stay individually clickable.  Hour
+    // labels are 9px font; day labels are 9px font.  A 90-day chart is
+    // about 90 * 10 = 900px wide, 24 * 10 = 240px tall.
+    const cellW = 9, cellH = 9, cellGap = 1;
+    const cellRadius = 1.5;
+    const PL = 36, PR = 6, PT = 18, PB = 18;
+    // Stretch the chart to fill the container when the day count is
+    // small -- otherwise 7 days of activity looks like a 100px-tall
+    // strip in a 700px panel.  Each day gets a minimum stride of
+    // MIN_DAY_STRIDE so the chart always looks substantial.
+    const MIN_DAY_STRIDE = 16; // min px per day column
+    const TARGET_TOTAL_W = 720; // preferred full width
+    const naturalStride = cellW + cellGap;
+    // Use the larger of MIN_DAY_STRIDE and (TARGET_TOTAL_W / numDays)
+    // capped at 2x natural.  This keeps long histories dense and
+    // short histories reasonably wide.
+    const idealStride = Math.max(MIN_DAY_STRIDE, Math.min(naturalStride * 2, TARGET_TOTAL_W / numDays));
+    const stride = Math.max(MIN_DAY_STRIDE, Math.min(naturalStride * 2, idealStride));
+    const W = PL + numDays * stride - cellGap + PR;
+    const H = PT + 24 * (cellH + cellGap) - cellGap + PB;
+
+    // Today marker -- highlight the column for today.
+    const todayKey = this._formatDayKey(Math.floor(Date.now() / 1000));
+
+    // Color ramp: 5 stops.  Empty cell is the panel background
+    // (almost transparent over the chart box), so empty reads as
+    // "white" / "no color".  Activity is brand green at increasing
+    // alpha over a near-white base, so the chart visually inverts to
+    // "less = white, more = green" as the user asked.
+    //
+    // The brand color is var(--bg-bg-brand, #32f08c); the base is
+    // var(--bg-bg-base-secondary, #222427) for dark and #ffffff for
+    // light.  We pick the base from the active theme.
+    const baseBg = "var(--usage-hm-base, #ffffff)";
+    const emptyColor = "var(--usage-hm-empty, #f3f4f6)";
+    const ramp = [
+      emptyColor,
+      `color-mix(in srgb, var(--bg-bg-brand, #32f08c) 22%, ${baseBg})`,
+      `color-mix(in srgb, var(--bg-bg-brand, #32f08c) 45%, ${baseBg})`,
+      `color-mix(in srgb, var(--bg-bg-brand, #32f08c) 70%, ${baseBg})`,
+      `color-mix(in srgb, var(--bg-bg-brand, #32f08c) 92%, ${baseBg})`,
+    ];
+    const pickColor = (v: number): string => {
+      if (v <= 0) return ramp[0];
+      const t = v / maxCell;
+      let idx = 1;
+      if (t > 0.75) idx = 4;
+      else if (t > 0.5) idx = 3;
+      else if (t > 0.25) idx = 2;
+      return ramp[idx];
+    };
+
+    // Hour labels on the left: 0 / 6 / 12 / 18 / 24 -- only every 6th
+    // row to keep noise down.  Font 9px to match the new compactness.
+    const hourLabels: string[] = [];
+    for (let h = 0; h < 24; h += 6) {
+      const y = PT + h * (cellH + cellGap) + cellH / 2 + 3;
+      hourLabels.push(
+        `<text x="${PL - 6}" y="${y.toFixed(1)}" text-anchor="end" ` +
+        `fill="var(--text-text-tertiary, #666b75)" ` +
+        `style="font-size:9px;font-family:var(--font-family-default);">` +
+        `${String(h).padStart(2, "0")}:00</text>`
+      );
+    }
+
+    // Day labels along the bottom: show a tick every ~7 days and on
+    // every month boundary.  9px font.
+    const dayLabels: string[] = [];
+    let lastMonth = -1;
+    for (let d = 0; d < numDays; d++) {
+      const colDate = new Date(startDate);
+      colDate.setDate(colDate.getDate() + d);
+      const m = colDate.getMonth();
+      const isMonthStart = m !== lastMonth;
+      // Show tick at month-start OR every 7 days (whichever is rarer).
+      const isWeek = d % 7 === 0;
+      if (isMonthStart || (d > 0 && isWeek && d % 14 === 0)) {
+        const x = PL + d * stride + cellW / 2;
+        const label = isMonthStart
+          ? colDate.toLocaleDateString(undefined, { month: "short" })
+          : String(colDate.getDate());
+        dayLabels.push(
+          `<text x="${x.toFixed(1)}" y="${(PT + 24 * (cellH + cellGap) + 10).toFixed(1)}" ` +
+          `text-anchor="middle" ` +
+          `fill="${isMonthStart ? "var(--text-text-secondary, #9599a6)" : "var(--text-text-tertiary, #666b75)"}" ` +
+          `style="font-size:9px;${isMonthStart ? "font-weight:var(--font-weight-medium,500);" : ""}font-family:var(--font-family-default);">` +
+          `${label}</text>`
+        );
+        if (isMonthStart) lastMonth = m;
+      }
+    }
+
+    // Cells: one per (day, hour).  Only render cells inside the data
+    // range; padding cells stay empty (drawn with the empty color).
+    const cells: string[] = [];
+    for (let d = 0; d < numDays; d++) {
+      const colDate = new Date(startDate);
+      colDate.setDate(colDate.getDate() + d);
+      const dayKey = this._formatDayKey(Math.floor(colDate.getTime() / 1000));
+      const isToday = dayKey === todayKey;
+      for (let h = 0; h < 24; h++) {
+        const v = cellTokens[`${dayKey}|${h}`] || 0;
+        const x = PL + d * stride;
+        const y = PT + h * (cellH + cellGap);
+        const fill = pickColor(v);
+        const tooltip = v > 0
+          ? `${dayKey} ${String(h).padStart(2, "0")}:00\n${this._formatNumber(v)} tokens`
+          : `${dayKey} ${String(h).padStart(2, "0")}:00\nNo activity`;
+        // Empty cells get a hairline border so the grid is visible
+        // even on a fully-empty day.  Today's column gets a slightly
+        // thicker green ring on the topmost cell (h=0) to anchor the
+        // eye.
+        const stroke = isToday && h === 0
+          ? "var(--bg-bg-brand, #32f08c)"
+          : "var(--border-border-neutral-l1, rgba(224,226,242,0.18))";
+        const strokeW = isToday && h === 0 ? 1 : 0.4;
+        cells.push(
+          `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cellW}" height="${cellH}" ` +
+          `rx="${cellRadius}" ry="${cellRadius}" fill="${fill}" ` +
+          `stroke="${stroke}" stroke-width="${strokeW}" class="usage-hm-cell" ` +
+          `data-day="${this.esc(dayKey)}" data-hour="${h}">` +
+          `<title>${this.esc(tooltip)}</title></rect>`
+        );
+      }
+    }
+
+    // Legend row at the bottom -- "Less" ... ramp swatches ... "More".
+    const legendCellSize = 9;
+    const legendGap = 1;
+    const legendW = ramp.length * legendCellSize + (ramp.length - 1) * legendGap;
+    const legendRects = ramp.map((c, i) =>
+      `<rect x="${i * (legendCellSize + legendGap)}" y="0" width="${legendCellSize}" height="${legendCellSize}" rx="1" ry="1" ` +
+      `fill="${c}" stroke="var(--border-border-neutral-l1, rgba(224,226,242,0.18))" stroke-width="0.4"/>`
+    ).join("");
+
+    // Aggregate stats for the caption row.
+    const daySet = new Set<string>();
+    for (const s of sessions) {
+      if (!s.first_active) continue;
+      const k = this._formatDayKey(s.first_active);
+      if (k) daySet.add(k);
+    }
+    const activeDays = daySet.size;
+    const captionParts = [
+      `<span class="usage-heatmap-num">${activeDays}</span> <span>${t("settings.activeDays") || "active days"}</span>`,
+      `<span class="usage-heatmap-num">${numDays}</span> <span>${t("settings.days") || "days"}</span>`,
+      `<span class="usage-heatmap-num">24</span> <span>${t("settings.hoursPerDay") || "hours"}</span>`,
+    ];
+    const captionHtml = captionParts
+      .map(p => `<div class="usage-heatmap-stat">${p}</div>`)
+      .join('<div class="usage-heatmap-stat-divider"></div>');
+
+    return `
+      <div class="usage-chart-box usage-chart-box--compact">
+        <div class="usage-chart-title">
+          <i data-lucide="calendar-heatmap" class="lucide"></i>
+          ${t("settings.activityHeatmap") || "Activity heatmap"}
+        </div>
+        <div class="usage-heatmap-stats usage-heatmap-stats--compact">${captionHtml}</div>
+        <div class="usage-heatmap-scroll">
+          <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMid meet" style="width:100%;height:auto;display:block">
+            ${hourLabels.join("")}
+            ${cells.join("")}
+            ${dayLabels.join("")}
+          </svg>
+        </div>
+        <div class="usage-heatmap-legend usage-heatmap-legend--compact">
+          <span class="usage-heatmap-legend-label">${t("settings.less") || "Less"}</span>
+          <svg width="${legendW}" height="${legendCellSize}" viewBox="0 0 ${legendW} ${legendCellSize}" xmlns="http://www.w3.org/2000/svg">${legendRects}</svg>
+          <span class="usage-heatmap-legend-label">${t("settings.more") || "More"}</span>
+        </div>
       </div>`;
   }
 

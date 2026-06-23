@@ -150,7 +150,7 @@ async def _run_rg(
         stdout, stderr = await asyncio.wait_for(
             proc.communicate(), timeout=30
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         return "Error: grep timed out after 30 seconds"
@@ -297,10 +297,7 @@ def _py_count(
         text = _read_text(f)
         if text is None:
             continue
-        if multiline:
-            count = len(regex.findall(text))
-        else:
-            count = sum(1 for line in text.splitlines() if regex.search(line))
+        count = len(regex.findall(text)) if multiline else sum(1 for line in text.splitlines() if regex.search(line))
         if count:
             rows.append(f"{f}:{count}")
         if head_limit is not None and len(rows) >= head_limit:
@@ -358,7 +355,7 @@ def _py_content(
     if not out_lines:
         return "(no matches)"
     if head_limit is not None and len(out_lines) > head_limit:
-        out_lines = [*out_lines[:head_limit], f"... ({len(out_lines) - head_limit} more line(s) truncated)"]  # noqa: E501
+        out_lines = [*out_lines[:head_limit], f"... ({len(out_lines) - head_limit} more line(s) truncated)"]
     return "\n".join(out_lines)
 
 

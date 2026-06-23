@@ -297,7 +297,7 @@ class BedrockBackend(BaseBackend):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         stream: bool = True,
-        _enable_caching: bool = False,
+        enable_caching: bool = False,
     ) -> AsyncGenerator[BackendEvent, None]:
         """Send a chat completion request and stream back events.
 
@@ -552,16 +552,16 @@ class BedrockBackend(BaseBackend):
 
     # ── Image generation ────────────────────────────────────────────────
 
-    async def generate_image(  # noqa: ARG002
+    async def generate_image(
         self,
         prompt: str,
         model: str | None = None,
         n: int = 1,
         size: str = "1024x1024",
         quality: str = "standard",
-        response_format: str = "b64_json",
-        style: str | None = None,
-        user: str | None = None,
+        _response_format: str = "b64_json",
+        _style: str | None = None,
+        _user: str | None = None,
         extra_params: dict[str, Any] | None = None,
     ):
         """Generate an image via Bedrock (Stability or Titan Image Generator).
@@ -570,8 +570,8 @@ class BedrockBackend(BaseBackend):
         and falls back to Titan Image Generator (``amazon.titan-image-generator-v2``)
         for environments where Stability is not available.
         """
+
         from encre.utils.types import ImageGenerationResponse, ImageResult
-        import base64
 
         width, height = self._parse_size(size)
         model_id = model or "stability.stable-image-core-v1:1"
@@ -664,21 +664,18 @@ class BedrockBackend(BaseBackend):
 
     # ── Embeddings ───────────────────────────────────────────────────────
 
-    async def create_embeddings(  # noqa: ARG002
+    async def create_embeddings(
         self,
         input: str | list[str],
         model: str | None = None,
-        encoding_format: str = "float",
+        _encoding_format: str = "float",
         dimensions: int | None = None,
-        user: str | None = None,
+        _user: str | None = None,
         extra_params: dict[str, Any] | None = None,
     ):
         """Generate embeddings via Amazon Titan Embeddings or Cohere Embed."""
         from encre.utils.types import EmbeddingResponse, EmbeddingResult
-        if isinstance(input, str):
-            texts = [input]
-        else:
-            texts = list(input)
+        texts = [input] if isinstance(input, str) else list(input)
 
         model_id = model or "amazon.titan-embed-text-v2:0"
         embeddings: list[EmbeddingResult] = []

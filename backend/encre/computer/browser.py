@@ -31,14 +31,11 @@ Edge, and other Chromium-based browsers.
 from __future__ import annotations
 
 import asyncio
-import base64
+import contextlib
 import json
 import logging
-import math
 import time
-import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from encre.computer.cdp import (
@@ -141,6 +138,7 @@ class EncreBrowserSession:
         self._page_targets: list[dict[str, Any]] = []
         self._current_target_index: int = -1
         self._connected: bool = False
+        self._tasks: set[asyncio.Task[Any]] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -190,22 +188,14 @@ class EncreBrowserSession:
 
     async def _enable_domains(self) -> None:
         """Enable CDP domains needed for various operations."""
-        try:
+        with contextlib.suppress(Exception):
             await self._transport.send("Page.enable")
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             await self._transport.send("Network.enable")
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             await self._transport.send("DOM.enable")
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             await self._transport.send("Runtime.enable")
-        except Exception:
-            pass
 
     async def _apply_viewport(self) -> None:
         """Set the viewport dimensions via CDP."""
@@ -357,10 +347,8 @@ class EncreBrowserSession:
         if "errorText" in result:
             raise RuntimeError(f"Navigation failed: {result['errorText']}")
         # Wait for DOM to be ready
-        try:
+        with contextlib.suppress(TimeoutError):
             await self._transport.wait_for_event("Page.frameStoppedLoading", timeout=30)
-        except TimeoutError:
-            pass
         self._tick()
         return await self.get_state()
 
@@ -495,10 +483,7 @@ class EncreBrowserSession:
     async def get_text(self, selector: str | None = None) -> str:
         """Return visible text for *selector* or the whole page."""
         await self._ensure_browser()
-        if selector:
-            js = _build_js_find_element(_build_css_selector(selector)) + ".innerText"
-        else:
-            js = "document.body?.innerText || ''"
+        js = (_build_js_find_element(_build_css_selector(selector)) + ".innerText" if selector else "document.body?.innerText || ''")
         result = await self._transport.send("Runtime.evaluate", {
             "expression": js,
             "returnByValue": True,
@@ -544,15 +529,11 @@ class EncreBrowserSession:
             pass
         # html and text are expensive; only fetch if empty
         if not self._state.html:
-            try:
+            with contextlib.suppress(Exception):
                 self._state.html = await self.get_html()
-            except Exception:
-                pass
         if not self._state.text:
-            try:
+            with contextlib.suppress(Exception):
                 self._state.text = await self.get_text()
-            except Exception:
-                pass
         return self._state
 
     # ------------------------------------------------------------------
@@ -566,10 +547,6 @@ class EncreBrowserSession:
             "x": x,
             "y": y,
         })
-        click_types = {
-            "click": ("mousePressed", "mouseReleased"),
-            "double": ("mousePressed", "mouseReleased", "mousePressed", "mouseReleased"),
-        }
         if action == "double":
             for _ in range(2):
                 await self._transport.send("Input.dispatchMouseEvent", {
@@ -1023,19 +1000,18 @@ class EncreBrowserSession:
         async def _respond() -> None:
             try:
                 await asyncio.wait_for(fut, timeout=30)
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 return
             finally:
                 self._transport.off("Page.javascriptDialogOpening", handler)
-            try:
+            with contextlib.suppress(Exception):
                 await self._transport.send("Page.handleJavaScriptDialog", {
                     "accept": accept,
                     "promptText": prompt_text,
                 })
-            except Exception:
-                pass
 
-        asyncio.create_task(_respond())
+        _t = asyncio.create_task(_respond())
+        self._tasks.add(_t)
 
     async def set_file_chooser_handler(self, paths: list[str]) -> None:
         """Intercept file chooser dialog and provide files."""
@@ -1051,20 +1027,18 @@ class EncreBrowserSession:
         async def _respond() -> None:
             try:
                 evt = await asyncio.wait_for(fut, timeout=30)
-            except (asyncio.TimeoutError, Exception):
+            except (TimeoutError, Exception):
                 return
             finally:
                 self._transport.off("Page.fileChooserOpened", handler)
-            try:
-                # Use DOM.setFileInputFiles
+            with contextlib.suppress(Exception):
                 await self._transport.send("DOM.setFileInputFiles", {
                     "objectId": evt.get("backendNodeId", ""),
                     "files": paths,
                 })
-            except Exception:
-                pass
 
-        asyncio.create_task(_respond())
+        _t = asyncio.create_task(_respond())
+        self._tasks.add(_t)
 
     # ------------------------------------------------------------------
     # Text-based interaction
@@ -1092,12 +1066,10 @@ class EncreBrowserSession:
 
         # Try to scroll into view
         if val.get("targetId"):
-            try:
+            with contextlib.suppress(Exception):
                 await self._transport.send("Runtime.evaluate", {
                     "expression": f"document.querySelector('[data-encre-tid={val['targetId']}]')?.scrollIntoView({{block:'center'}})",
                 })
-            except Exception:
-                pass
 
         return val
 
@@ -1144,8 +1116,8 @@ class EncreBrowserSession:
 
     async def a11y_snapshot(
         self,
-        interesting_only: bool = True,
-        root_selector: str | None = None,
+        _interesting_only: bool = True,
+        _root_selector: str | None = None,
     ) -> dict[str, Any]:
         """Build an accessibility tree via CDP."""
         await self._ensure_browser()
@@ -1252,20 +1224,16 @@ class EncreBrowserSession:
         global _module_launched_process
 
         if self._transport:
-            try:
+            with contextlib.suppress(Exception):
                 await self._transport.disconnect()
-            except Exception:
-                pass
             self._transport = None
         self._connected = False
         self._session = None
         self._page_ws_url = None
 
         if self._proc:
-            try:
+            with contextlib.suppress(Exception):
                 self._proc.kill()
-            except Exception:
-                pass
             self._proc = None
             _module_launched_process = None
 

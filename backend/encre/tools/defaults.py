@@ -25,7 +25,6 @@
 
 from encre.tools.builtin import (
     EncreAgentTool,
-    EncreExpandTool,
     EncreApplyPatchTool,
     EncreBashKillTool,
     EncreBashListTool,
@@ -41,6 +40,7 @@ from encre.tools.builtin import (
     EncreDeployTool,
     EncreDesktopTool,
     EncreDockerTool,
+    EncreExpandTool,
     EncreFileEditTool,
     EncreFileReadTool,
     EncreFileWriteTool,

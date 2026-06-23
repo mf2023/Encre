@@ -244,7 +244,7 @@ class EngineRequester:
                 logger.warning("engine emit hook raised: %s", exc)
         try:
             choice = await asyncio.wait_for(fut, timeout=self._timeout_s)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.info(
                 "engine install request %s timed out after %.0fs",
                 request_id, self._timeout_s,

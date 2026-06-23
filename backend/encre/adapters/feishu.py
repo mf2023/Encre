@@ -248,7 +248,7 @@ class FeishuAdapter(BaseAdapter):
         chat_id: str,
         file_path: str,
         *,
-        caption: str | None = None,
+        _caption: str | None = None,
     ) -> SendResult:
         """Upload an image and send it to a Feishu chat.
 
@@ -486,9 +486,8 @@ class FeishuAdapter(BaseAdapter):
         except json.JSONDecodeError:
             return {"error": "invalid json"}
 
-        if self._verify_token:
-            if not self._verify_webhook_signature(body, headers, payload):
-                return {"error": "invalid signature"}
+        if self._verify_token and not self._verify_webhook_signature(body, headers, payload):
+            return {"error": "invalid signature"}
 
         challenge = payload.get("challenge")
         if challenge is not None:
@@ -630,7 +629,7 @@ class FeishuAdapter(BaseAdapter):
             return self._http
         try:
             import httpx
-            self._http = httpx.AsyncClient(timeout=30.0, follow_redirects=True, verify=False, proxy=BaseAdapter.resolve_proxy_url())  # noqa: E501
+            self._http = httpx.AsyncClient(timeout=30.0, follow_redirects=True, verify=False, proxy=BaseAdapter.resolve_proxy_url())
             return self._http
         except ImportError:
             logger.error(

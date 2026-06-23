@@ -186,7 +186,7 @@ class TelegramAdapter(BaseAdapter):
         content: str,
         *,
         reply_to: str | None = None,
-        metadata: dict[str, Any] | None = None,  # noqa: ARG002
+        _metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a text message to a Telegram chat."""
         bot = self._app.bot if self._app else None

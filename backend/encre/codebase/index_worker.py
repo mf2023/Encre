@@ -74,7 +74,7 @@ def main() -> None:
     progress_file = _progress_path(args.data_dir, args.ws_id)
     meta_file = _metadata_path(args.data_dir, args.ws_id)
 
-    def progress_cb(rel_path: str, total: int, estimated_total: int = 0) -> None:
+    def progress_cb(_rel_path: str, total: int, estimated_total: int = 0) -> None:
         # Map file index to percentage using the pre-counted total
         pct = 0
         if estimated_total > 0:

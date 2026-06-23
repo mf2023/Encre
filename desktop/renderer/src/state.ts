@@ -113,6 +113,9 @@ export function setSessionId(id: string): void {
 }
 
 export function addMessage(msg: Message, sessionId = state.sessionId): void {
+  // Defense-in-depth: refuse to write into a different session's snapshot
+  // than the one currently active.
+  if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.messages.push(msg);
   syncSessionState(sessionId);
@@ -337,6 +340,11 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
       serverId: (raw as any).id,
       mode: msgMode,
       fileRefs: rawFileRefs,
+      errorMessage: (raw as any).errorMessage,
+      errorCode: (raw as any).errorCode,
+      interruptedReason: (raw as any).interruptedReason,
+      turnStatusText: (raw as any).turnStatusText,
+      cancelledText: (raw as any).cancelledText,
     });
   }
   const snapshot = getOrCreateSessionSnapshot(sessionId);
@@ -522,6 +530,10 @@ export function appendContent(content: string): void {
  */
 export function appendTextDelta(text: string, sessionId = state.sessionId): void {
   if (!text) return;
+  // Defense-in-depth: never write a token to a different session's snapshot
+  // than the one the event claims to belong to.  Prevents cross-session
+  // contamination if the outer stream filter is bypassed.
+  if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
   finishThinking();
   const msg = getLastAssistantMessage(sessionId);
   if (!msg) return;
@@ -542,6 +554,7 @@ export function appendTextDelta(text: string, sessionId = state.sessionId): void
  */
 export function appendThinkingDelta(text: string, sessionId = state.sessionId): void {
   if (!text) return;
+  if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
   const msg = getLastAssistantMessage(sessionId);
   if (!msg) return;
   if (!msg.thinking) {
@@ -595,6 +608,7 @@ export function finishAssistantMessage(tokenUsage?: { input_tokens: number; outp
 }
 
 export function addToolCall(tc: ToolCallState, sessionId = state.sessionId): void {
+  if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
   const msg = getLastAssistantMessage(sessionId);
   if (msg) {
     msg.toolCalls.push(tc);
@@ -608,6 +622,7 @@ export function updateToolCall(
   patch: Partial<ToolCallState>,
   sessionId = state.sessionId
 ): void {
+  if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   for (const msg of snapshot.messages) {
     const tc = msg.toolCalls.find((t) => t.id === id);

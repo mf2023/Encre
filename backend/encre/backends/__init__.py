@@ -72,6 +72,7 @@ from encre.backends.aigateway import AIGatewayBackend
 from encre.backends.alibaba import AlibabaBackend
 from encre.backends.anthropic import AnthropicBackend
 from encre.backends.arcee import ArceeBackend
+from encre.backends.auth import AuthManager
 from encre.backends.base import BaseBackend
 from encre.backends.bedrock import BedrockBackend
 from encre.backends.catalog import (
@@ -81,6 +82,13 @@ from encre.backends.catalog import (
     default_output_tokens,
     get_model,
     get_provider,
+)
+from encre.backends.connection import (
+    ConnectionErrorCategory,
+    ConnectionErrorInfo,
+    ConnectionHealthMonitor,
+    HeartbeatSession,
+    format_connection_error,
 )
 from encre.backends.deepseek import DeepSeekBackend
 from encre.backends.failover import BackendHealth, FailoverBackend
@@ -102,7 +110,14 @@ from encre.backends.openai_compatible import OpenAICompatibleBackend
 from encre.backends.openai_sse import OpenAISSEBackend
 from encre.backends.opencode import OpenCodeGoBackend, OpenCodeZenBackend
 from encre.backends.openrouter import OpenRouterBackend
-from encre.backends.retry import DEFAULT_RETRY_CONFIG, RetryConfig, retry_with_backoff
+from encre.backends.retry import (
+    DEFAULT_RETRY_CONFIG,
+    ErrorClass,
+    RetryConfig,
+    RetryEvent,
+    classify_error,
+    retry_with_backoff,
+)
 from encre.backends.router import CostTracker, RouterBackend, TaskCategory
 from encre.backends.tencent import TencentBackend
 from encre.backends.volcengine import VolcengineArkBackend
@@ -111,11 +126,13 @@ from encre.backends.xiaomi import XiaomiBackend
 __all__ = [
     "DEFAULT_MAX_OUTPUT_TOKENS",
     "DEFAULT_RETRY_CONFIG",
+    "ErrorClass",
     "PROVIDERS",
     "AIGatewayBackend",
     "AlibabaBackend",
     "AnthropicBackend",
     "ArceeBackend",
+    "AuthManager",
     "BackendHealth",
     "BaseBackend",
     "BedrockBackend",
@@ -127,6 +144,7 @@ __all__ = [
     "GitHubCopilotBackend",
     "GoogleBackend",
     "GroqBackend",
+    "HeartbeatSession",
     "HuggingFaceBackend",
     "KiloCodeBackend",
     "KimiBackend",
@@ -142,12 +160,18 @@ __all__ = [
     "OpenCodeZenBackend",
     "OpenRouterBackend",
     "RetryConfig",
+    "RetryEvent",
     "RouterBackend",
     "TaskCategory",
     "TencentBackend",
     "XiaomiBackend",
     "catalog_payload",
+    "classify_error",
+    "ConnectionErrorCategory",
+    "ConnectionErrorInfo",
+    "ConnectionHealthMonitor",
     "default_output_tokens",
+    "format_connection_error",
     "get_model",
     "get_provider",
     "retry_with_backoff",

@@ -103,7 +103,7 @@ class SkillGenerator:
     def _build_description(self, prompt: str, top_tools: list[tuple[str, int]]) -> str:
         tools_str = ", ".join(f"{name}" for name, _ in top_tools[:3])
         prompt_preview = prompt[:80].replace("\n", " ")
-        return f"Automatically generated skill for task involving {tools_str}. Prompt: {prompt_preview}"  # noqa: E501
+        return f"Automatically generated skill for task involving {tools_str}. Prompt: {prompt_preview}"
 
     def _build_when_to_use(self, top_tools: list[tuple[str, int]]) -> str:
         patterns = []

@@ -124,7 +124,7 @@ class YuanbaoProtocol:
     def parse_message(data: dict[str, Any]) -> dict[str, Any] | None:
         op = data.get("op", "")
         if op == YuanbaoProtocol.OP_AUTH_RESP:
-            return {"type": "auth", "success": data.get("data", {}).get("success", False), "raw": data}  # noqa: E501
+            return {"type": "auth", "success": data.get("data", {}).get("success", False), "raw": data}
         if op == YuanbaoProtocol.OP_HEARTBEAT_RESP:
             return {"type": "heartbeat", "raw": data}
         if op == YuanbaoProtocol.OP_MESSAGE:
@@ -145,14 +145,14 @@ class YuanbaoProtocol:
                 "raw": data,
             }
         if op == YuanbaoProtocol.OP_ERROR:
-            return {"type": "error", "code": data.get("code", ""), "message": data.get("message", ""), "raw": data}  # noqa: E501
+            return {"type": "error", "code": data.get("code", ""), "message": data.get("message", ""), "raw": data}
         if op == YuanbaoProtocol.OP_TYPING_RESP:
             return {"type": "typing_ack", "raw": data}
         return None
 
     @staticmethod
     def build_rest_signature(
-        app_key: str, app_secret: str, method: str, path: str, body: str, timestamp: str
+        _app_key: str, app_secret: str, method: str, path: str, body: str, timestamp: str
     ) -> str:
         raw = f"{method}\n{path}\n{timestamp}\n{body}"
         return hmac.new(
@@ -240,7 +240,7 @@ class YuanbaoAdapter(BaseAdapter):
             self._ws_task = asyncio.create_task(self._run_websocket())
 
             try:
-                logger.info("[yuanbao] Waiting for WebSocket connection (timeout=%ds)", CONNECT_TIMEOUT)  # noqa: E501
+                logger.info("[yuanbao] Waiting for WebSocket connection (timeout=%ds)", CONNECT_TIMEOUT)
                 await asyncio.wait_for(self._connected_event.wait(), timeout=CONNECT_TIMEOUT)
             except TimeoutError:
                 logger.error("[yuanbao] Connection timed out after %ds", CONNECT_TIMEOUT)
@@ -328,7 +328,7 @@ class YuanbaoAdapter(BaseAdapter):
                 break
 
             delay = self._get_reconnect_delay()
-            logger.info("[yuanbao] Reconnecting in %.1fs... (attempt %d)", delay, self._reconnect_count)  # noqa: E501
+            logger.info("[yuanbao] Reconnecting in %.1fs... (attempt %d)", delay, self._reconnect_count)
             self._reconnect_count += 1
             await asyncio.sleep(delay)
 
@@ -392,10 +392,9 @@ class YuanbaoAdapter(BaseAdapter):
         msg_id = parsed.get("msg_id", "") or uuid.uuid4().hex
         now = time.time()
 
-        if msg_id in self._seen_messages:
-            if now - self._seen_messages[msg_id] < MESSAGE_DEDUP_TTL:
-                logger.debug("[yuanbao] Duplicate message %s, skipping", msg_id)
-                return
+        if msg_id in self._seen_messages and now - self._seen_messages[msg_id] < MESSAGE_DEDUP_TTL:
+            logger.debug("[yuanbao] Duplicate message %s, skipping", msg_id)
+            return
         self._seen_messages[msg_id] = now
         if len(self._seen_messages) > 2000:
             cutoff = now - MESSAGE_DEDUP_TTL
@@ -407,10 +406,7 @@ class YuanbaoAdapter(BaseAdapter):
         from_group = parsed.get("from_group", "")
         chat_type = parsed.get("chat_type", "c2c")
 
-        if chat_type == "group" and from_group:
-            chat_id = f"group:{from_group}"
-        else:
-            chat_id = f"direct:{from_account}"
+        chat_id = f"group:{from_group}" if chat_type == "group" and from_group else f"direct:{from_account}"
 
         media_url = parsed.get("media_url", "")
         media_name = parsed.get("media_name", "")
@@ -514,7 +510,7 @@ class YuanbaoAdapter(BaseAdapter):
         chat_id: str,
         content: str,
         *,
-        reply_to: str | None = None,
+        _reply_to: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """Send a message via the Yuanbao REST API.
@@ -540,7 +536,7 @@ class YuanbaoAdapter(BaseAdapter):
             if i == 0:
                 first_result = result
             if not result.success:
-                logger.warning("[yuanbao] Chunk %d/%d send failed: %s", i + 1, len(rest_chunks), result.error)  # noqa: E501
+                logger.warning("[yuanbao] Chunk %d/%d send failed: %s", i + 1, len(rest_chunks), result.error)
 
         if first_result is None:
             return SendResult(success=False, error="send failed")
@@ -552,7 +548,7 @@ class YuanbaoAdapter(BaseAdapter):
         )
 
     async def _send_chunk(
-        self, chat_id: str, content: str, metadata: dict[str, Any]
+        self, chat_id: str, content: str, _metadata: dict[str, Any]
     ) -> SendResult:
         """Send a single message chunk via the Yuanbao REST API."""
         if not self._http_client:
@@ -794,7 +790,7 @@ class YuanbaoAdapter(BaseAdapter):
 
         timestamp = str(int(time.time() * 1000))
         path = "/v1/media/upload"
-        body_json = json.dumps({"file_name": file_path.rsplit("/", 1)[-1], "media_type": media_type})  # noqa: E501
+        body_json = json.dumps({"file_name": file_path.rsplit("/", 1)[-1], "media_type": media_type})
         signature = YuanbaoProtocol.build_rest_signature(
             self._app_key, self._app_secret, "POST", path, body_json, timestamp
         )

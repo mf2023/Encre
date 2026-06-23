@@ -75,7 +75,7 @@ async def _handle_csv(action: str, file_path: str, data: str) -> str:
         return "CSV files have a single sheet only"
 
 
-async def _handle_excel(action: str, file_path: str, sheet_name: str, data: str, _range: str) -> str:  # noqa: E501
+async def _handle_excel(action: str, file_path: str, sheet_name: str, data: str, _range: str) -> str:
     try:
         import openpyxl
     except ImportError:

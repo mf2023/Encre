@@ -1,218 +1,268 @@
-# 用户协议
+# User Agreement
 
-**最后更新：2026年6月7日**
+**Last updated: 2026-06-21**
+**Counterparty:** Dunimd
+**Scope:** Global — applies to all users of Dunimd Services worldwide.
 
----
+This User Agreement (the "**Agreement**") is the master agreement between you and Dunimd that bundles the user-facing commitments governing your use of Dunimd Services. Together with the documents incorporated by reference below, it forms the complete user agreement.
 
-## 1. 协议接受
-
-### 1.1 协议构成
-
-本用户协议（"本协议"）由以下文件组成：
-
-- 《用户协议》正文
-- 《隐私政策》（`docs/PRIVACY_CN.md`）
-- 《未成年人个人信息保护规则》（`docs/MINORS_PRIVACY.md`）
-- 《个人信息处理规则》（`docs/DATA_PROCESSING_RULES.md`）
-- 《内容安全与用户行为规范》（`docs/CONTENT_GUIDELINES.md`）
-
-以上文件共同构成完整的用户协议体系。
-
-### 1.2 协议接受
-
-欢迎使用 Dunimd（"本软件"）。下载、安装或使用本软件，即表示您同意受本协议的约束。如果您不同意本协议的任何条款，请勿使用本软件。
-
-本协议构成您（"用户"或"您"）与 Dunimd 项目维护者（"我们"或"我们的"）之间的具有法律约束力的协议。
+If you are in the **People's Republic of China**, the PRC-specific counterpart at [`USER_AGREEMENT_CN.md`](USER_AGREEMENT_CN.md) supplements this one.
 
 ---
 
-## 2. 服务说明
+## Table of Contents
 
-### 2.1 服务概述
-
-Dunimd 是一款通用 AI 代理桌面应用程序，使用户能够通过统一界面与多种 AI 模型进行交互。服务功能包括：
-
-- 多模型对话与任务执行
-- 文件与代码分析
-- 基于 AI 代理的工作流自动化
-- 与第三方 AI 后端集成（OpenAI、Anthropic、Ollama 等）
-- 本地模型处理能力
-- 网络搜索与浏览能力
-- 文件处理（PDF、DOCX、Excel、图片）
-- 屏幕捕获与自动化操作
-- 多平台消息集成（Discord、Slack、Telegram、钉钉）
-
-### 2.2 服务变更
-
-我们有权根据业务需要对服务内容进行变更、升级或中断。如变更可能对用户产生重大影响的，我们将提前通知用户。
+1. [Documents Incorporated by Reference](#1-documents-incorporated-by-reference)
+2. [Agreement Structure](#2-agreement-structure)
+3. [Your Relationship with Dunimd](#3-your-relationship-with-dunimd)
+4. [User Conduct](#4-user-conduct)
+5. [User Content](#5-user-content)
+6. [Intellectual Property](#6-intellectual-property)
+7. [Infringement Complaints](#7-infringement-complaints)
+8. [AI and Generative Content](#8-ai-and-generative-content)
+9. [Children's Use](#9-childrens-use)
+10. [Privacy and Data Processing](#10-privacy-and-data-processing)
+11. [Disclaimers and Liability](#11-disclaimers-and-liability)
+12. [Changes](#12-changes)
+13. [Governing Law and Dispute Resolution](#13-governing-law-and-dispute-resolution)
+14. [Contact](#14-contact)
 
 ---
 
-## 3. 账户注册与管理
+## 1. Documents Incorporated by Reference
 
-### 3.1 账户注册
+This Agreement incorporates, by reference, the following documents (each, an "**Incorporated Document**"):
 
-用户应当按照要求提供真实、准确、完整的注册信息。用户对注册信息的真实性、准确性、完整性负责。
+| Document | Location | Purpose |
+|---|---|---|
+| **Terms of Service** | [`TERMS.md`](TERMS.md) | Commercial terms: license, payment, termination, liability |
+| **Privacy Policy** | [`PRIVACY.md`](PRIVACY.md) | How we collect, use, and protect personal information |
+| **Code of Conduct** | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
+| **Security Policy** | [`SECURITY.md`](SECURITY.md) | How to report vulnerabilities and our commitments |
+| **Third-Party Notices** | [`THANKS.md`](THANKS.md) | Attribution for open-source dependencies |
 
-### 3.2 账户安全
+For PRC users, the corresponding `_CN.md` versions of these documents take precedence on PRC-law matters (see [USER_AGREEMENT_CN.md](USER_AGREEMENT_CN.md)).
 
-用户应当妥善保管其账户信息和认证凭据（包括但不限于 API 密钥）。用户对其账户下发生的所有活动承担责任。
-
-### 3.3 账户注销
-
-用户可以随时注销其账户。账户注销后，我们将按照《个人信息处理规则》删除或匿名化处理用户的个人信息。
-
----
-
-## 4. 用户使用规范
-
-### 4.1 合法使用
-
-用户应当遵守法律法规，文明使用本软件。用户不得使用本软件从事违反中国法律法规的活动。
-
-### 4.2 禁止行为
-
-用户不得有以下行为，详见《内容安全与用户行为规范》：
-
-- 生成、传播违法不良信息；
-- 生成恶意代码或用于网络攻击的内容；
-- 侵犯他人知识产权或合法权益；
-- 利用本软件进行欺诈或犯罪活动；
-- 规避本软件的安全措施；
-- 滥用服务资源。
-
-### 4.3 AI 使用规范
-
-用户应当了解并遵守 AI 相关法规，包括但不限于：
-
-- 《生成式人工智能服务管理暂行办法》
-- 《互联网信息服务深度合成管理规定》
-- 《互联网信息服务算法推荐管理规定》
+If any provision of this Agreement conflicts with an Incorporated Document on a given topic, the Incorporated Document controls for that topic.
 
 ---
 
-## 5. 知识产权
+## 2. Agreement Structure
 
-### 5.1 我们的权利
+This Agreement is layered so that each document does one job well:
 
-Dunimd 名称、徽标、软件代码及相关文档的知识产权归我们所有。未经我们事先书面同意，用户不得以任何方式使用我们的商标或标识。
+- **This Agreement (USER_AGREEMENT.md)** — establishes who you are agreeing with, what you are agreeing to at a high level, and how the documents fit together.
+- **Terms of Service (TERMS.md)** — the binding commercial terms.
+- **Privacy Policy (PRIVACY.md)** — how your personal information is handled.
+- **Code of Conduct (CODE_OF_CONDUCT.md)** — community behavior standards.
+- **Security Policy (SECURITY.md)** — coordinated vulnerability disclosure.
 
-### 5.2 用户的权利
-
-用户对提交或使用本软件处理的内容保留所有知识产权。我们对用户的内容不主张任何所有权。
-
-### 5.3 开源许可
-
-本软件根据 Apache 许可证，版本 2.0 授权。用户可根据开源许可证的条款使用、修改和分发本软件。
+You do not need to read every document in full to use the Services, but you are bound by all of them once you accept this Agreement.
 
 ---
 
-## 6. 知识产权侵权投诉
+## 3. Your Relationship with Dunimd
 
-### 6.1 投诉
+### 3.1 Who You Are Agreeing With
 
-如发现本软件或其用户内容侵犯您的知识产权，请通过以下方式联系我们：
+**Dunimd** ("we," "our," "us") is an independently-operated technical team focused on AI Agent, large language models, enterprise AI services, operating systems, and supporting cloud and developer tools. This Agreement is between you and Dunimd — not with any individual contributor.
 
-- **电子邮件**：dunimd@outlook.com
+### 3.2 Acceptance
 
-### 6.2 投诉材料
+You accept this Agreement when you first access, install, configure, or use any Dunimd Service. If you accept on behalf of an organization, you represent that you have authority to bind that organization, and references to "you" refer to that organization.
 
-投诉材料应包括但不限于：
+### 3.3 Eligibility
 
-- 权利人的身份信息；
-- 权利证明；
-- 侵权内容的具体位置；
-- 侵权事实的说明。
-
-### 6.3 处理
-
-我们将在收到投诉后的 15 个工作日内进行处理。
+You must be at least the age of digital consent in your jurisdiction (commonly 13 or 14) to accept this Agreement. See [§9](#9-childrens-use) for children.
 
 ---
 
-## 7. 免责声明
+## 4. User Conduct
 
-### 7.1 服务按"原样"提供
+### 4.1 General Standard
 
-本软件按"原样"和"可用"基础提供，不附带任何种类的明示或暗示的担保，包括但不限于适销性、特定用途适用性和不侵权的担保。
+You agree to use Dunimd Services lawfully, respectfully, and in compliance with all Incorporated Documents.
 
-### 7.2 AI 生成内容
+### 4.2 Prohibited Conduct
 
-AI 模型的输出可能包含不准确之处、偏见或错误。用户应当独立核实 AI 生成的内容，我们不对 AI 生成内容的准确性、可靠性作任何保证。
+You agree **not** to:
 
-### 7.3 第三方服务
+1. Use the Services for any illegal purpose or in violation of any applicable law.
+2. Generate, upload, or distribute content that is illegal in your jurisdiction, including child sexual abuse material (CSAM), content that incites violence or terrorism, or content that infringes third-party intellectual property.
+3. Impersonate any person or entity, or misrepresent your affiliation.
+4. Attempt to bypass, probe, or attack any security mechanism, rate limit, or access control.
+5. Use the Services to build a directly competing product, except as expressly permitted by Apache 2.0 or a separate written agreement.
+6. Use the Services in connection with life-critical, safety-critical, or regulated activities without a separate written agreement with Dunimd.
+7. Engage in conduct that disrupts other users' enjoyment of the Services.
+8. Scrape, crawl, or bulk-collect data from the Services in violation of applicable terms.
+9. Use AI Services to produce deceptive synthetic media intended to mislead (deepfakes), to bulk-generate spam, or to make automated decisions that produce legal effects on individuals without proper safeguards.
 
-本软件可能集成第三方服务。我们对第三方服务的可用性、可靠性、安全性不作任何保证。
+For the full, jurisdiction-aware list of prohibited uses, see [TERMS.md §5](TERMS.md#5-acceptable-use).
 
----
+### 4.3 Reporting Misuse
 
-## 8. 责任限制
-
-### 8.1 责任范围
-
-在法律允许的最大范围内，我们不对以下损失承担责任：
-
-- 利润、数据、业务的损失；
-- 因使用或无法使用本软件而产生的间接、偶然、特殊、后果性或惩罚性损害；
-- 因 AI 模型输出或第三方服务导致的损害。
-
-### 8.2 赔偿
-
-用户应当赔偿、辩护并使我们的维护者和贡献者免受因以下原因产生的任何索赔、责任、损害、损失、成本和费用：
-
-- 用户违反本协议使用本软件；
-- 用户违反任何适用法律或法规；
-- 用户的内容或通过用户使用本软件进行的活动。
+If you encounter content or behavior that violates this Agreement, report it at the contact address in [§14](#14-contact). See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards and reporting procedures.
 
 ---
 
-## 9. 协议的变更和终止
+## 5. User Content
 
-### 9.1 协议变更
+### 5.1 Ownership
 
-我们有权根据法律法规变化或业务需要对本协议进行修订。修订后的协议将通过软件内提示或公告方式发布。
+You retain all rights in content you submit to Dunimd Services ("**User Content**"). Dunimd claims no ownership over User Content.
 
-### 9.2 协议终止
+### 5.2 License to Dunimd
 
-用户可随时通过停止使用本软件终止本协议。如用户违反本协议，我们有权终止用户对软件的使用。
+You grant Dunimd a worldwide, non-exclusive, royalty-free license to host, transmit, process, and display User Content **solely** to operate the Services for you. This license ends when you delete the User Content or terminate your account, except where retention is required by law or for legitimate business records.
 
----
+### 5.3 No Training Without Consent
 
-## 10. 法律适用和争议解决
+We do not use User Content to train AI models unless you give **separate, explicit consent** at the point of submission. See [PRIVACY.md §11](PRIVACY.md#11-ai-llm-and-generative-content).
 
-### 10.1 法律适用
+### 5.4 Feedback
 
-本协议受中华人民共和国法律管辖，并按照中华人民共和国法律解释。
-
-### 10.2 争议解决
-
-因本协议引起的或与本协议有关的任何争议，双方应友好协商解决。协商不成的，任何一方均可向项目维护者住所地的有管辖权的人民法院提起诉讼。
+If you provide feedback or suggestions, we may use them without obligation to you.
 
 ---
 
-## 11. 其他
+## 6. Intellectual Property
 
-### 11.1 可分割性
+### 6.1 Dunimd's IP
 
-如本协议的任何规定被认定为无效或不可执行，其余规定应继续完全有效。
+The Dunimd name, logos, brand identity, documentation, and the open-source components of the Services are our intellectual property (or that of our licensors). These Terms and this Agreement do not grant you any right to use them without our prior written consent.
 
-### 11.2 完整协议
+### 6.2 Open-Source License
 
-本协议构成用户与我们关于使用本软件的完整协议，取代此前所有口头或书面的约定。
+The open-source components of Dunimd Services are licensed under **Apache License 2.0**. You may exercise the rights granted by that license independently of this Agreement. To the extent there is any conflict between Apache 2.0 and this Agreement regarding open-source components, Apache 2.0 controls.
 
-### 11.3  waivers
+### 6.3 Trademarks
 
-我们未能执行本协议的任何权利或规定不应被视为对该权利或规定的放弃。
-
----
-
-## 12. 联系我们
-
-如对用户协议有任何疑问，请通过以下方式联系我们：
-
-- **电子邮件**：dunimd@outlook.com
-- **GitHub**：[github.com/dunimd-team/dunimd](https://github.com/dunimd-team/dunimd)
+"Dunimd," "Encre," "PiscesLx," "StadionOS," and any associated logos are our trademarks. You may not use them to endorse or promote derivative works without our written consent, except as permitted by applicable trademark law (e.g. nominative fair use).
 
 ---
 
-*本用户协议仅供参考，不构成法律意见。建议您咨询专业法律顾问以确保符合所有适用的法律法规要求。*
+## 7. Infringement Complaints
+
+### 7.1 How to Report IP Infringement
+
+If you believe Dunimd Services or content hosted through them infringe your copyright, trademark, or other intellectual property right, send a written notice to the contact in [§14](#14-contact) that includes:
+
+- Your name, address, telephone number, and email.
+- Identification of the IP right allegedly infringed.
+- Identification of the allegedly infringing material, with enough detail for us to locate it.
+- A statement that you have a good-faith belief the use is not authorized.
+- A statement, made under penalty of perjury, that the information is accurate and you are authorized to act for the rights holder.
+- Your physical or electronic signature.
+
+### 7.2 Counter-Notice
+
+If you believe content you posted was removed (or access was disabled) in error, you may submit a counter-notice containing the same elements, plus a statement under penalty of perjury and consent to the jurisdiction of a federal court in your district (or, for non-US users, the competent court of your jurisdiction).
+
+### 7.3 Repeat-Infringer Policy
+
+We may terminate accounts that are the subject of repeated infringement notices.
+
+### 7.4 Response Time
+
+We aim to acknowledge infringement notices within **5 business days** and to act on substantiated notices within **10 business days**.
+
+---
+
+## 8. AI and Generative Content
+
+### 8.1 Output Is Generated
+
+Content produced by Dunimd's AI Services (Encre when used with a generative backend, PiscesLx, and any other generative Service) is generated by statistical models. It may be inaccurate, biased, outdated, or inappropriate. You are responsible for evaluating AI output before relying on it.
+
+### 8.2 Your Responsibilities for AI Use
+
+You must:
+
+- Comply with AI-specific laws in your jurisdiction (e.g. EU AI Act, PRC generative AI rules).
+- Label AI-generated content as such where required by local law before redistribution.
+- Refrain from the prohibited model uses listed in [TERMS.md §6](TERMS.md#6-ai-and-generative-services).
+- Verify AI output before using it for professional, medical, legal, financial, or safety-critical purposes.
+
+### 8.3 Service Provider Responsibility
+
+For Services where Dunimd is the AI service provider, Dunimd bears the regulatory responsibility (e.g. under PRC 《生成式人工智能服务管理暂行办法》). For Services where you configure a third-party AI backend (typical with Encre), the **third-party provider** bears that responsibility, and Dunimd acts only as a tool provider.
+
+---
+
+## 9. Children's Use
+
+Dunimd Services are not directed to children below the age of digital consent in their jurisdiction (commonly 13 or 14). We do not knowingly collect personal information from children without verifiable parental consent.
+
+For PRC users, see the supplementary rules at [`MINORS_PRIVACY.md`](MINORS_PRIVACY.md).
+
+---
+
+## 10. Privacy and Data Processing
+
+Your privacy is governed by the **Dunimd Privacy Policy**:
+
+- Global users: [`PRIVACY.md`](PRIVACY.md)
+- PRC users: [`PRIVACY_CN.md`](PRIVACY_CN.md)
+
+The Privacy Policy is incorporated into this Agreement by reference.
+
+For PRC users, additional processing rules apply — see [`DATA_PROCESSING_RULES.md`](DATA_PROCESSING_RULES.md) when published in this repository.
+
+---
+
+## 11. Disclaimers and Liability
+
+### 11.1 Disclaimers
+
+The Services are provided "AS IS" and "AS AVAILABLE," without warranty of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, non-infringement, accuracy, and freedom from vulnerabilities. See [TERMS.md §11](TERMS.md#11-disclaimers) for the full disclaimer.
+
+### 11.2 AI Output Disclaimers
+
+We do not warrant that AI output will be accurate, unbiased, or appropriate for any purpose. You assume all risk of relying on AI output.
+
+### 11.3 Limitation of Liability
+
+Our total aggregate liability is limited per [TERMS.md §12](TERMS.md#12-limitation-of-liability). Nothing in this Agreement excludes liability that cannot be excluded under applicable law.
+
+### 11.4 Indemnification (Limited)
+
+You agree to indemnify Dunimd and its contributors against **third-party claims** arising from your misuse of the Services or your User Content, per [TERMS.md §13](TERMS.md#13-indemnification).
+
+---
+
+## 12. Changes
+
+We may update this Agreement or any Incorporated Document. Material changes will be communicated through the Services or by other appropriate means, with reasonable prior notice (typically **30 days**).
+
+If you do not agree to a material change, you may stop using the Services and close your account. Continued use after the effective date constitutes acceptance.
+
+---
+
+## 13. Governing Law and Dispute Resolution
+
+Because Dunimd Services are used worldwide, this Agreement does not specify a single governing law. The applicable law and forum for a given dispute is determined per [TERMS.md §16](TERMS.md#16-governing-law-and-dispute-resolution), summarized below:
+
+| Your jurisdiction | Governing law | Forum |
+|---|---|---|
+| **PRC** | Laws of the People's Republic of China | Friendly consultation → courts at Dunimd's principal place of business |
+| **EU/EEA/UK** | Laws of your country of residence | Your local courts |
+| **United States** | Laws of the State of Delaware, USA | State or federal courts in Delaware |
+| **Other** | Laws of your country of residence | Your local courts |
+
+Where mandatory consumer-protection laws in your country give you the right to bring claims in your local courts, you retain that right regardless of the table above.
+
+---
+
+## 14. Contact
+
+| Channel | Address |
+|---|---|
+| Email | [dunimd@outlook.com](mailto:dunimd@outlook.com) |
+| Website | [dunimd.com](https://dunimd.com) |
+| IP / DMCA notices | [legal.dunimd.com](https://legal.dunimd.com) *(pending activation)* |
+| GitHub | [github.com/mf2023/Encre](https://github.com/mf2023/Encre) |
+| Gitee mirror | [gitee.com/dunimd/encre](https://gitee.com/dunimd/encre) |
+
+---
+
+*This User Agreement is provided for informational purposes and does not constitute legal advice. Consult qualified counsel in your jurisdiction to ensure your use of the Services complies with all applicable laws and regulations.*

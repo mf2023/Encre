@@ -53,10 +53,10 @@ class AgentRole:
 
 ROLE_ARCHITECT = AgentRole(
     name="architect",
-    description="Designs system architecture, component structure, and data flow. Does NOT write implementation code.",  # noqa: E501
+    description="Designs system architecture, component structure, and data flow. Does NOT write implementation code.",
     system_prompt_override=(
         "You are a software ARCHITECT. Your job is to DESIGN -- not implement. "
-        "Produce clear architecture documents, component diagrams (as text), data flow descriptions, "  # noqa: E501
+        "Produce clear architecture documents, component diagrams (as text), data flow descriptions, "
         "API contracts, and technology choices with rationale. "
         "Read existing code to understand the current state, then propose structural changes. "
         "Do NOT write production code -- that is the coder's job."
@@ -69,10 +69,10 @@ ROLE_ARCHITECT = AgentRole(
 
 ROLE_CODER = AgentRole(
     name="coder",
-    description="Implements code according to the architect's design. Writes, edits, and tests code.",  # noqa: E501
+    description="Implements code according to the architect's design. Writes, edits, and tests code.",
     system_prompt_override=(
-        "You are a SOFTWARE ENGINEER. Your job is to IMPLEMENT code according to the architecture design. "  # noqa: E501
-        "Write clean, well-structured, production-quality code. Follow the architect's specifications. "  # noqa: E501
+        "You are a SOFTWARE ENGINEER. Your job is to IMPLEMENT code according to the architecture design. "
+        "Write clean, well-structured, production-quality code. Follow the architect's specifications. "
         "Use file_read/write/edit tools to modify code. Run tests after changes. "
         "If the architecture is unclear, ask for clarification -- do NOT guess."
     ),
@@ -100,7 +100,7 @@ ROLE_REVIEWER = AgentRole(
 
 ROLE_TESTER = AgentRole(
     name="tester",
-    description="Writes and runs tests. Verifies functionality, finds edge cases, measures coverage.",  # noqa: E501
+    description="Writes and runs tests. Verifies functionality, finds edge cases, measures coverage.",
     system_prompt_override=(
         "You are a QA TESTER. Your job is to TEST code thoroughly. "
         "Write unit tests, integration tests, and edge case tests. "
@@ -115,7 +115,7 @@ ROLE_TESTER = AgentRole(
 
 ROLE_RESEARCHER = AgentRole(
     name="researcher",
-    description="Researches topics, gathers information from web and codebase, synthesizes findings.",  # noqa: E501
+    description="Researches topics, gathers information from web and codebase, synthesizes findings.",
     system_prompt_override=(
         "You are a RESEARCHER. Your job is to GATHER and SYNTHESIZE information. "
         "Search the web, read documentation, explore the codebase. "
@@ -130,7 +130,7 @@ ROLE_RESEARCHER = AgentRole(
 
 ROLE_DEBUGGER = AgentRole(
     name="debugger",
-    description="Diagnoses and fixes bugs. Traces execution, analyzes logs, identifies root causes.",  # noqa: E501
+    description="Diagnoses and fixes bugs. Traces execution, analyzes logs, identifies root causes.",
     system_prompt_override=(
         "You are a DEBUGGER. Your job is to FIND and FIX bugs. "
         "Reproduce the issue first. Use grep/glob to trace code paths. "

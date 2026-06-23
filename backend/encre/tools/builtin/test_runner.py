@@ -150,7 +150,7 @@ def _detect_framework(workspace: str, hint: str | None) -> str:
             return "vitest"
         if "jest" in deps:
             return "jest"
-    if (ws / "pyproject.toml").exists() or (ws / "pytest.ini").exists() or (ws / "setup.cfg").exists():  # noqa: E501
+    if (ws / "pyproject.toml").exists() or (ws / "pytest.ini").exists() or (ws / "setup.cfg").exists():
         return "pytest"
     # Fallback: if any *.py exists, use pytest; else if any *.js/*.ts, jest.
     py_files = list(ws.rglob("*.py"))
@@ -273,7 +273,7 @@ async def _run_npm_test(
         report.raw_output = "npx/npm not found in PATH"
         return report
     bin_name = "vitest" if framework == "vitest" else "jest"
-    cmd: list[str] = [npx, "--no-install", bin_name, "run", "--reporter=json", "--outputFile=/dev/null"]  # noqa: E501
+    cmd: list[str] = [npx, "--no-install", bin_name, "run", "--reporter=json", "--outputFile=/dev/null"]
     # vitest honours ``--reporter=json`` and writes JSON to stdout
     # (no outputFile); jest writes via ``--json``.
     if framework == "jest":
@@ -409,7 +409,7 @@ async def _run_cargo(workspace: str, test_filter: str | None, timeout: float) ->
             )
         if "test" in msg and isinstance(msg["test"], str):
             name = msg["test"]
-            event = msg.get("event") or ("ok" if "passed" not in obj else "ok")
+            event = msg.get("event") or "ok"
             suite.setdefault(name, []).append({"event": event, "exec": obj})
     # Build per-test records from the latest event per name.
     for name, events in suite.items():

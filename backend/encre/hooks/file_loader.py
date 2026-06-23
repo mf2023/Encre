@@ -160,11 +160,7 @@ def _extract_entries(
     """Walk a decoded YAML object and produce flat hook entries."""
     # Accept both the bare ``{"pre_tool_exec": [...]}`` shape and the
     # Claude Code-style ``{"hooks": {"PreToolUse": [...]}}`` envelope.
-    payload: dict[str, Any]
-    if "hooks" in raw and isinstance(raw["hooks"], dict):
-        payload = raw["hooks"]
-    else:
-        payload = {k: v for k, v in raw.items() if k != "hooks"}
+    payload: dict[str, Any] = raw["hooks"] if "hooks" in raw and isinstance(raw["hooks"], dict) else {k: v for k, v in raw.items() if k != "hooks"}
     entries: list[HookEntry] = []
     for raw_name, raw_list in payload.items():
         if not isinstance(raw_list, list):

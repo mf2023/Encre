@@ -135,6 +135,7 @@ from encre.logging_config import get_logger
 from encre.plugins.registry import PluginRegistry
 from encre.safety import EncreSafetyEngine
 from encre.scheduler import EncreScheduler, ScheduledJob
+from encre.server.session_manager import SessionManager
 from encre.swarm.blackboard import EncreBlackboard
 from encre.swarm.consensus import EncreConsensus
 from encre.swarm.orchestrator import EncreOrchestrator
@@ -156,8 +157,8 @@ logger = get_logger("encre.iclaw")
 
 __all__ = [
     "DaemonStats",
-    "iClawDaemon",
-    "iClawEngine",
+    "IClawDaemon",
+    "IClawEngine",
     "is_running",
     "run_iclaw",
     "stop_daemon",
@@ -243,7 +244,7 @@ def _create_default_agent(config: EncreConfig | None = None) -> EncreAgent:
     return agent
 
 
-class iClawEngine:
+class IClawEngine:
     """Core orchestration engine for the iClaw daemon.
 
     Manages ALL encre subsystems: session manager, event router, scheduler,
@@ -609,10 +610,10 @@ class iClawEngine:
         if hs is None:
             return
 
-        async def _on_tool_complete(name: str, context: dict[str, Any], extra: dict[str, Any] | None) -> dict[str, Any] | None:  # noqa: E501
+        async def _on_tool_complete(_name: str, _context: dict[str, Any], _extra: dict[str, Any] | None) -> dict[str, Any] | None:
             return None
 
-        async def _on_turn_end(name: str, context: dict[str, Any], extra: dict[str, Any] | None) -> dict[str, Any] | None:  # noqa: E501
+        async def _on_turn_end(_name: str, _context: dict[str, Any], _extra: dict[str, Any] | None) -> dict[str, Any] | None:
             return None
 
         try:
@@ -665,7 +666,7 @@ class iClawEngine:
             try:
                 messages = [{"role": "user", "content": prompt}]
                 if await self._compact_engine.should_compact(messages, self._compact_max_tokens):
-                    compressed = await self._compact_engine.compact(messages, self._compact_max_tokens)  # noqa: E501
+                    compressed = await self._compact_engine.compact(messages, self._compact_max_tokens)
                     if compressed and len(compressed) > 0:
                         prompt = compressed[0].get("content", prompt)
                         self.stats.compact_runs += 1
@@ -705,7 +706,7 @@ class iClawEngine:
                     duration_seconds=stream_duration,
                 )
                 if pr_result.get("completed"):
-                    self.stats.skills_generated = pr_result.get("stages", {}).get("learning", {}).get(  # noqa: E501
+                    self.stats.skills_generated = pr_result.get("stages", {}).get("learning", {}).get(
                         "skills_generated", self.stats.skills_generated
                     )
             except Exception:
@@ -747,8 +748,8 @@ class iClawEngine:
         goal: str,
         *,
         max_concurrent: int = 5,
-        enable_reviewer: bool = True,
-        timeout_seconds: float = 3600.0,
+        _enable_reviewer: bool = True,
+        _timeout_seconds: float = 3600.0,
         on_event: Callable[[Any], None] | None = None,
     ) -> Any:
         if self._swarm_session is None:
@@ -888,7 +889,7 @@ class iClawEngine:
         return {
             "status": "ok" if self._running else "stopped",
             "running": self._running,
-            "uptime_seconds": time.time() - self.stats.started_at if self.stats.started_at > 0 else 0,  # noqa: E501
+            "uptime_seconds": time.time() - self.stats.started_at if self.stats.started_at > 0 else 0,
             "active_sessions": self._session_manager.active_count if self._session_manager else 0,
             "scheduled_jobs": len(self.list_jobs()),
             "adapters": list(self.get_gateway_status().get("adapters", {}).keys()),
@@ -1009,12 +1010,12 @@ class iClawEngine:
                 f"User goal: {summary.prompt[:500]}\n\n"
                 f"Tools used ({summary.tool_call_count}): "
                 f"{', '.join(sorted(summary.unique_tools))}\n\n"
-                f"Repeated patterns: {summary.repeated_patterns[:5] if summary.repeated_patterns else 'none'}\n\n"  # noqa: E501
+                f"Repeated patterns: {summary.repeated_patterns[:5] if summary.repeated_patterns else 'none'}\n\n"
                 f"Response preview: {summary.text_output[:300]}\n\n"
                 f"Extract the following as JSON:\n"
                 f'{{"task_summary": "one-sentence summary of what was accomplished",\n'
-                f' "user_preferences": ["any user preferences or patterns observed as strings, or empty list"],\n'  # noqa: E501
-                f' "skill_candidates": ["reusable workflows worth saving as skills, or empty list"],\n'  # noqa: E501
+                f' "user_preferences": ["any user preferences or patterns observed as strings, or empty list"],\n'
+                f' "skill_candidates": ["reusable workflows worth saving as skills, or empty list"],\n'
                 f' "key_insights": ["any important learnings, or empty list"]}}'
             )
             try:
@@ -1045,7 +1046,7 @@ class iClawEngine:
         return _analyze
 
 
-class iClawDaemon:
+class IClawDaemon:
     """Headless background daemon managed by the desktop application.
 
     Wraps ``iClawEngine`` with PID lifecycle management and top-level
@@ -1122,12 +1123,12 @@ class iClawDaemon:
         self._enable_hooks = enable_hooks
         self._compact_max_tokens = compact_max_tokens
 
-        self._engine: iClawEngine | None = None
+        self._engine: IClawEngine | None = None
         self._running = False
         self._shutdown_event: asyncio.Event | None = None
 
     @property
-    def engine(self) -> iClawEngine | None:
+    def engine(self) -> IClawEngine | None:
         return self._engine
 
     @property
@@ -1143,7 +1144,7 @@ class iClawDaemon:
             return
         self._running = True
 
-        self._engine = iClawEngine(
+        self._engine = IClawEngine(
             self._agent,
             max_concurrent=self._max_concurrent,
             consolidation_interval=self._consolidation_interval,
@@ -1224,7 +1225,7 @@ async def run_iclaw(
     if agent is None:
         agent = _create_default_agent()
 
-    daemon = iClawDaemon(
+    daemon = IClawDaemon(
         agent,
         host=host,
         port=port,

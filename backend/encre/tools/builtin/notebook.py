@@ -123,7 +123,7 @@ EncreNotebookTool = build_tool(
             },
             "cell_id": {
                 "type": "string",
-                "description": "Cell ID (used with edit_cell, execute_cell, get_output, delete_cell)",  # noqa: E501
+                "description": "Cell ID (used with edit_cell, execute_cell, get_output, delete_cell)",
             },
             "cell_type": {
                 "type": "string",

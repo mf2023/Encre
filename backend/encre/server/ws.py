@@ -35,24 +35,22 @@ import tempfile
 import time
 import traceback
 import zipfile
-
-import websockets
 from dataclasses import replace
 from typing import Any
 
-logger = logging.getLogger("encre.server.ws")
+import websockets
 
-from encre.backend import create_backend  # noqa: E402
-from encre.backends.catalog import catalog_payload  # noqa: E402
-from encre.backends.mcp_catalog import mcp_catalog_payload  # noqa: E402
-from encre.channels.slash_commands import get_slash_command_defs  # noqa: E402
-from encre.config import (  # noqa: E402
+from encre.backend import create_backend
+from encre.backends.catalog import catalog_payload
+from encre.backends.mcp_catalog import mcp_catalog_payload
+from encre.channels.slash_commands import get_slash_command_defs
+from encre.config import (
     AgentConfig,
     EncreConfig,
     ModelConfig,
     SubAgentConfig,
 )
-from encre.server.protocol import (  # noqa: E402
+from encre.server.protocol import (
     ClientAddDocument,
     ClientAgentCreate,
     ClientAgentDelete,
@@ -68,7 +66,6 @@ from encre.server.protocol import (  # noqa: E402
     ClientAutomationUpdateJob,
     ClientCancel,
     ClientCloseWorkspace,
-    ClientEngineInstallResponse,
     ClientConfigure,
     ClientDeleteGlobalRule,
     ClientDeleteIndex,
@@ -76,6 +73,7 @@ from encre.server.protocol import (  # noqa: E402
     ClientDeleteModel,
     ClientDeleteSession,
     ClientEditMessage,
+    ClientEngineInstallResponse,
     ClientExportSession,
     ClientFetchModels,
     ClientGetConfig,
@@ -84,15 +82,16 @@ from encre.server.protocol import (  # noqa: E402
     ClientGetMemoryDetail,
     ClientGetMemoryList,
     ClientGetProfile,
+    ClientGetUsageStats,
     ClientIclawResume,
     ClientInstallSkill,
+    ClientListAllSessions,
     ClientListDocuments,
     ClientListGlobalRules,
     ClientListModels,
-    ClientListProjectRules,
     ClientListProjectHooks,
+    ClientListProjectRules,
     ClientListSessions,
-    ClientListAllSessions,
     ClientListWorkspaces,
     ClientNewSession,
     ClientOpenWorkspace,
@@ -129,14 +128,13 @@ from encre.server.protocol import (  # noqa: E402
     ClientUpdateSkill,
     ClientUpdateSkills,
     ClientUpdateSubAgents,
-    ClientGetUsageStats,
     ClientValidateModel,
     encode_server_message,
     parse_client_message,
 )
-from encre.server.session_manager import SessionManager  # noqa: E402
-from encre.spec import EncreSpecEngine  # noqa: E402
-from encre.utils.tokens import count_message_tokens  # noqa: E402
+from encre.server.session_manager import SessionManager
+from encre.spec import EncreSpecEngine
+from encre.utils.tokens import count_message_tokens
 
 
 def _inject_context_windows(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -167,13 +165,15 @@ from encre.keybinds import (  # noqa: E402
     load_keybinds,
     save_keybinds,
 )
-from encre.settings_manager import (  # noqa: E402  # noqa: E501
+from encre.settings_manager import (  # noqa: E402
     load_custom_slash_commands,
     save_custom_slash_commands,
 )
 from encre.utils.types import (  # noqa: E402
     Artifact,
     AssistantBoundary,
+    BackendError,
+    BackendFinish,
     CompactNotification,
     EngineInstallProgress,
     EngineInstallRequest,
@@ -193,6 +193,8 @@ from encre.utils.types import (  # noqa: E402
     WorkflowStartedEvent,
     WorkflowTaskEvent,
 )
+
+logger = logging.getLogger("encre.server.ws")
 
 
 class EncreWSHandler:
@@ -215,13 +217,14 @@ class EncreWSHandler:
         self._connections: list[Any] = []
         self._iclaw_task: asyncio.Task[None] | None = None
         self._manager.on_sessions_changed(self._broadcast_sessions)
+        self._tasks: set[asyncio.Task[Any]] = set()
 
     async def _send(self, ws, msg_type: str, **kwargs) -> None:
         encrypt = self._client_encrypted if self._client_encrypted is not None else False
         try:
             payload = encode_server_message(msg_type, encrypt=encrypt, **kwargs)
         except Exception as exc:
-            logger.error("[_send] Failed to encode %s: %s\n%s", msg_type, exc, traceback.format_exc())  # noqa: E501
+            logger.error("[_send] Failed to encode %s: %s\n%s", msg_type, exc, traceback.format_exc())
             return
         try:
             await ws.send(payload)
@@ -265,7 +268,7 @@ class EncreWSHandler:
             self._info = self._manager.create_session(config=self._default_config)
             self._current_session_id = self._info.session_id
             # Tag with current channel so _list_all_sessions groups it correctly
-            self._info.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"  # noqa: E501
+            self._info.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"
             # Load MCP servers from the canonical mcp.json
             try:
                 from encre.tools.mcp_manager import default_mcp_config_path
@@ -331,11 +334,11 @@ class EncreWSHandler:
                 try:
                     msg = parse_client_message(raw)
                 except Exception:
-                    await self._send(ws, "error", message="Failed to parse message", code="parse_error")  # noqa: E501
+                    await self._send(ws, "error", message="Failed to parse message", code="parse_error")
                     continue
 
                 if msg is None:
-                    await self._send(ws, "error", message="Unknown message type", code="parse_error")  # noqa: E501
+                    await self._send(ws, "error", message="Unknown message type", code="parse_error")
                     continue
 
                 if isinstance(msg, ClientPing):
@@ -361,7 +364,7 @@ class EncreWSHandler:
 
                 elif isinstance(msg, ClientNewSession):
                     if self._info:
-                        real_msgs = [m for m in self._info.agent.session.messages if m.get("role") != "system"]  # noqa: E501
+                        real_msgs = [m for m in self._info.agent.session.messages if m.get("role") != "system"]
                         if not real_msgs:
                             await self._manager.remove_session(self._info.session_id)
                     # Use workspace config if currently in workspace mode
@@ -374,8 +377,8 @@ class EncreWSHandler:
                     self._current_session_id = self._info.session_id
                     # Tag the session with its channel immediately so
                     # _list_all_sessions filters it into the correct sidebar
-                    self._info.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"  # noqa: E501
-                    await self._send(ws, "session_ready", session_id=self._info.session_id, plan_items=[], request_id=msg.request_id)  # noqa: E501
+                    self._info.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"
+                    await self._send(ws, "session_ready", session_id=self._info.session_id, plan_items=[], request_id=msg.request_id)
 
                 elif isinstance(msg, ClientConfigure):
                     session = (
@@ -387,7 +390,7 @@ class EncreWSHandler:
                     self._manager.touch(session.session_id)
                     _backend_keys = {"backend_type", "api_key", "base_url", "model"}
                     _rebuild = _backend_keys & set(msg.config.keys())
-                    logger.info("[configure] keys=%s, rebuild=%s", list(msg.config.keys()), _rebuild)  # noqa: E501
+                    logger.info("[configure] keys=%s, rebuild=%s", list(msg.config.keys()), _rebuild)
                     for key, value in msg.config.items():
                         if value == "" or value is None:
                             logger.info("[configure] skip key=%s (empty/null)", key)
@@ -397,7 +400,7 @@ class EncreWSHandler:
                             setattr(session.agent.config, key, value)
                             logger.info("[configure] set %s: %r -> %r", key, old_val, value)
                         else:
-                            logger.warning("[configure] key=%s NOT found on EncreConfig, skipping", key)  # noqa: E501
+                            logger.warning("[configure] key=%s NOT found on EncreConfig, skipping", key)
                     if _rebuild:
                         session.agent.rebuild_backend()
                         logger.info("[configure] backend rebuilt due to key change")
@@ -414,7 +417,7 @@ class EncreWSHandler:
                             self._default_config.apply_active_model()
                             logger.info("[configure] synced models to _default_config")
                     if self._adapter_manager:
-                        adapter_keys = {k: v for k, v in msg.config.items() if k.startswith("adapter_")}  # noqa: E501
+                        adapter_keys = {k: v for k, v in msg.config.items() if k.startswith("adapter_")}
                         if adapter_keys:
                             await self._adapter_manager.apply_config(adapter_keys)
                             # Persist adapter configs on EncreConfig so they survive restart
@@ -434,19 +437,19 @@ class EncreWSHandler:
                                     self._default_config.adapter_configs[aid].update(fields)
                                 else:
                                     self._default_config.adapter_configs[aid] = fields
-                            logger.info("[configure] applied %d adapter config keys and persisted", len(adapter_keys))  # noqa: E501
+                            logger.info("[configure] applied %d adapter config keys and persisted", len(adapter_keys))
                     self._persist_config(session)
                     self._persist_settings(session)
                     if "custom_slash_commands" in msg.config:
                         custom_cmds = msg.config["custom_slash_commands"]
                         if isinstance(custom_cmds, list):
                             save_custom_slash_commands(custom_cmds)
-                            logger.info("[configure] saved %d custom slash commands", len(custom_cmds))  # noqa: E501
+                            logger.info("[configure] saved %d custom slash commands", len(custom_cmds))
                     if "keybinds" in msg.config:
                         raw = msg.config["keybinds"]
                         if isinstance(raw, dict):
                             save_keybinds(raw)
-                            logger.info("[configure] saved keybinds (%d entries)", len(raw.get("keybinds", [])))  # noqa: E501
+                            logger.info("[configure] saved keybinds (%d entries)", len(raw.get("keybinds", [])))
                     await self._send(ws, "configured", config=msg.config)
 
                 elif isinstance(msg, ClientTestAdapter):
@@ -478,8 +481,8 @@ class EncreWSHandler:
                         for k, v in msg.config.items():
                             if k != "enabled":
                                 adapter_keys[f"adapter_{adapter_id}_{k}"] = v
-                        adapter_keys[f"adapter_{adapter_id}_enabled"] = msg.config.get("enabled", True)  # noqa: E501
-                        logger.info("[test_adapter] auto-saving config for %s: %s", adapter_id, list(adapter_keys.keys()))  # noqa: E501
+                        adapter_keys[f"adapter_{adapter_id}_enabled"] = msg.config.get("enabled", True)
+                        logger.info("[test_adapter] auto-saving config for %s: %s", adapter_id, list(adapter_keys.keys()))
                         await self._adapter_manager.apply_config(adapter_keys)
                         # Persist to configs so it survives restart
                         parsed: dict[str, dict[str, Any]] = {}
@@ -514,10 +517,10 @@ class EncreWSHandler:
                         # connectivity).
                         # If start_adapter failed, override the test result with the real error.
                         if adapter_id not in self._adapter_manager._instances:
-                            err = self._adapter_manager._last_errors.get(adapter_id, "Adapter failed to start")  # noqa: E501
+                            err = self._adapter_manager._last_errors.get(adapter_id, "Adapter failed to start")
                             success = False
                             message = err
-                            logger.warning("[test_adapter] %s validate OK but connect failed: %s", adapter_id, err)  # noqa: E501
+                            logger.warning("[test_adapter] %s validate OK but connect failed: %s", adapter_id, err)
 
                     await self._send(ws, "adapter_test_result",
                         adapter_id=msg.adapter_id, success=success, message=message)
@@ -525,17 +528,17 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientRun):
                     #   iClaw mode: route through EventRouter in a task (same session space as
                     # adapters)
-                    if msg.channel == "iclaw" and self._adapter_manager and self._adapter_manager.router:  # noqa: E501
+                    if msg.channel == "iclaw" and self._adapter_manager and self._adapter_manager.router:
                         router = self._adapter_manager.router
-                        logger.info("[iclaw] received run: prompt=%.60s session_id=%s adapter_router=%s",  # noqa: E501
+                        logger.info("[iclaw] received run: prompt=%.60s session_id=%s adapter_router=%s",
                                     msg.prompt, msg.session_id, bool(router))
                         # 在闭包外部提取所有需要捕获的值，避免闭包变量覆盖问题
-                        iclaw_requested_sid = msg.session_id  # raw frontend value, resolved inside the task  # noqa: E501
+                        iclaw_requested_sid = msg.session_id  # raw frontend value, resolved inside the task
                         iclaw_prompt = msg.prompt
                         iclaw_system_prompt = msg.system_prompt
                         iclaw_default_config = replace(self._default_config, workspace="")
 
-                        async def _run_iclaw():
+                        async def _run_iclaw(*, router=router, iclaw_requested_sid=iclaw_requested_sid, iclaw_default_config=iclaw_default_config, iclaw_prompt=iclaw_prompt, iclaw_system_prompt=iclaw_system_prompt):
                             logger.info("[iclaw] task started, acquiring iclaw context")
                             async with router.iclaw_context():
                                 sid = iclaw_requested_sid
@@ -546,7 +549,7 @@ class EncreWSHandler:
                                         sid = existing.session_id
                                         logger.info("[iclaw] resumed most recent session: %s", sid)
                                     else:
-                                        logger.info("[iclaw] no existing session, will create new one")  # noqa: E501
+                                        logger.info("[iclaw] no existing session, will create new one")
                                 logger.info("[iclaw] calling router.submit_stream sid=%s", sid)
 
                                 try:
@@ -556,23 +559,34 @@ class EncreWSHandler:
                                         session_id=sid,
                                         system_prompt=iclaw_system_prompt,
                                     )
+                                    # Resolve the session info once so every event
+                                    # dispatched downstream carries a concrete
+                                    # session_id, allowing the desktop UI to
+                                    # filter by session and prevent one session's
+                                    # tokens from leaking into another session.
+                                    iclaw_info = (
+                                        router.session_manager.get_session(sid)
+                                        if sid else None
+                                    )
                                     try:
                                         async for event in stream:
-                                            await self._dispatch_event(ws, None, event)
+                                            await self._dispatch_event(ws, iclaw_info, event)
                                     except asyncio.CancelledError:
                                         logger.info("[iclaw] task cancelled")
                                         with contextlib.suppress(Exception):
                                             await stream.aclose()
                                         with contextlib.suppress(Exception):
-                                            await self._send(ws, "finish", reason="cancelled")
+                                            await self._send(ws, "finish", reason="cancelled", session_id=sid)
                                     except Exception as e:
                                         logger.error("[iclaw] run error: %s", e, exc_info=True)
+                                        from encre.backends.base import format_backend_error
                                         with contextlib.suppress(Exception):
-                                            await self._send(ws, "finish", reason="error", error=str(e))  # noqa: E501
+                                            await self._send(ws, "finish", reason="error", error=format_backend_error(e), session_id=sid)
                                 except Exception as e:
                                     logger.error("[iclaw] setup error: %s", e, exc_info=True)
+                                    from encre.backends.base import format_backend_error
                                     with contextlib.suppress(Exception):
-                                        await self._send(ws, "finish", reason="error", error=str(e))
+                                        await self._send(ws, "finish", reason="error", error=format_backend_error(e), session_id=sid)
 
                         self._iclaw_task = asyncio.create_task(_run_iclaw())
                         continue
@@ -592,7 +606,7 @@ class EncreWSHandler:
 
                     self._manager.touch(session.session_id)
 
-                    session.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"  # noqa: E501
+                    session.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"
 
                     # Temp chat: never persist, never list in sidebar
                     if msg.temp_chat:
@@ -651,27 +665,28 @@ class EncreWSHandler:
                     session.agent.add_message("user", prompt)
                     if not session.agent.session.metadata.get("temp_chat"):
                         await self._manager._save_session_async(session)
-                    logger.info("[run] session=%s workspace=%s", session.session_id[:8], self._workspace_path or "(none)")  # noqa: E501
+                    logger.info("[run] session=%s workspace=%s", session.session_id[:8], self._workspace_path or "(none)")
 
                     # Auto-name: fire-and-forget so conversation is not delayed.
                     sess = session.agent.session
                     if not sess.metadata.get("name") and sess.turn_count <= 1:
                         _sid = session.session_id
                         _p = prompt
-                        asyncio.ensure_future(self._auto_name_and_rename(session, _p))
+                        _t = asyncio.ensure_future(self._auto_name_and_rename(session, _p))
+                        self._tasks.add(_t)
 
                     # Don't block on background code index -- let the agent run
                     # immediately. The code index becomes available asynchronously.
                     if self._index_manager and self._current_ws_id:
                         task = self._index_manager.get_task(self._current_ws_id)
                         if task and not task.done():
-                            logger.info("[run] index still building, running agent without full index")  # noqa: E501
+                            logger.info("[run] index still building, running agent without full index")
 
                     # Wire the engine-install requester's immediate emit
                     # hook so the desktop dialog pops up the moment a
                     # browser / desktop action needs the engine, without
                     # waiting for the agent's event loop to tick.
-                    async def _emit_engine(evt: Any) -> None:
+                    async def _emit_engine(evt: Any, session=session) -> None:
                         try:
                             await self._dispatch_event(ws, session, evt)
                         except Exception as exc:
@@ -681,19 +696,19 @@ class EncreWSHandler:
                     except Exception:
                         logger.debug("agent has no set_engine_emit", exc_info=True)
 
-                    async def _run_agent():
+                    async def _run_agent(*, session=session, prompt=prompt, system_prompt=system_prompt, mode_prompt=mode_prompt):
                         try:
                             async for event in session.agent.run(
                                 prompt=prompt, system_prompt=system_prompt,
                                 custom_instructions=mode_prompt):
                                 await self._dispatch_event(ws, session, event)
                                 # Mid-turn checkpoint & real-time canvas update
-                                if isinstance(event, (ToolResult, AssistantBoundary)):
+                                if isinstance(event, ToolResult | AssistantBoundary):
                                     # Push context usage to canvas panel so the
                                     # progress bar updates in real time
                                     ctx_msgs = session.agent.session.get_context_messages()
                                     ctx_tokens = count_message_tokens(ctx_msgs)
-                                    window = session.agent.loop.backend.context_window_size() if session.agent.loop.backend else 0  # noqa: E501
+                                    window = session.agent.loop.backend.context_window_size() if session.agent.loop.backend else 0
                                     await self._send(ws, "context_usage",
                                         context_tokens=ctx_tokens,
                                         context_window=window,
@@ -707,23 +722,23 @@ class EncreWSHandler:
                                                 data=session.agent.telemetry.get_summary(),
                                                 session_id=session.session_id)
                                     if not session.agent.session.metadata.get("temp_chat"):
-                                        try:
+                                        with contextlib.suppress(Exception):
                                             await self._manager._save_session_async(session)
-                                        except Exception:
-                                            pass  # non-blocking
                         except asyncio.CancelledError:
-                            await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)  # noqa: E501
+                            await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)
                         except Exception as e:
                             logger.error(f"Agent run failed: {e}\n{traceback.format_exc()}")
+                            from encre.backends.base import format_backend_error
+                            err_msg = format_backend_error(e)
                             with contextlib.suppress(Exception):
-                                await self._send(ws, "error", message=str(e), code="execution_error", session_id=session.session_id)  # noqa: E501
+                                await self._send(ws, "error", message=err_msg, code="execution_error", session_id=session.session_id)
                             with contextlib.suppress(Exception):
-                                await self._send(ws, "finish", reason="error", session_id=session.session_id)  # noqa: E501
+                                await self._send(ws, "finish", reason="error", session_id=session.session_id)
                         finally:
                             if session.agent.telemetry.enabled:
                                 with contextlib.suppress(Exception):
                                     summary = session.agent.telemetry.get_summary()
-                                    await self._send(ws, "telemetry", data=summary)
+                                    await self._send(ws, "telemetry", data=summary, session_id=session.session_id)
                             # Only release state when this task is still the
                             # current owner -- a new run may have already taken
                             # over, and we must NOT clear its is_running flag
@@ -764,7 +779,7 @@ class EncreWSHandler:
                     if session is None:
                         session = self._get_or_create_session()
                     self._manager.touch(session.session_id)
-                    session.agent.loop.approve_plan(msg.proposal_id) if msg.approved else session.agent.loop.reject_plan(msg.proposal_id)  # noqa: E501
+                    session.agent.loop.approve_plan(msg.proposal_id) if msg.approved else session.agent.loop.reject_plan(msg.proposal_id)
 
                 elif isinstance(msg, ClientSetPlanMode):
                     session = (
@@ -839,11 +854,11 @@ class EncreWSHandler:
                         with contextlib.suppress(Exception):
                             await session.agent.loop.backend.aclose()
                         self._manager.release_slot()
-                        await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)  # noqa: E501
+                        await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)
                     else:
                         session.is_running = False
                         self._manager.release_slot()
-                        await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)  # noqa: E501
+                        await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)
 
                 elif isinstance(msg, ClientGetConfig):
                     info = self._get_or_create_session()
@@ -931,24 +946,24 @@ class EncreWSHandler:
                             logger.info("[delete_model] deleting index=%d, total_models=%d",
                                         msg.model_index, len(info.agent.config.models))
                             del info.agent.config.models[msg.model_index]
-                            if info.agent.config.active_model_index >= len(info.agent.config.models):  # noqa: E501
-                                info.agent.config.active_model_index = max(0, len(info.agent.config.models) - 1)  # noqa: E501
+                            if info.agent.config.active_model_index >= len(info.agent.config.models):
+                                info.agent.config.active_model_index = max(0, len(info.agent.config.models) - 1)
                             if info.agent.config.models:
                                 info.agent.config.apply_active_model()
                                 info.agent.rebuild_backend()
                             # Sync to _default_config
                             self._default_config.models = info.agent.config.models
-                            self._default_config.active_model_index = info.agent.config.active_model_index  # noqa: E501
+                            self._default_config.active_model_index = info.agent.config.active_model_index
                             if info.agent.config.models:
                                 self._default_config.apply_active_model()
                             self._persist_config(info)
                             cfg_models = info.agent.config.models
                             models_dict = _inject_context_windows([
-                                m.to_dict(encrypt_api_keys=False) if isinstance(m, ModelConfig) else m  # noqa: E501
+                                m.to_dict(encrypt_api_keys=False) if isinstance(m, ModelConfig) else m
                                 for m in cfg_models
                             ])
                             await self._send(ws, "models_updated",
-                                models=models_dict, active_model_index=info.agent.config.active_model_index)  # noqa: E501
+                                models=models_dict, active_model_index=info.agent.config.active_model_index)
                             logger.info("[delete_model] done, remaining=%d", len(cfg_models))
                         else:
                             logger.warning("[delete_model] invalid index %d (max %d)",
@@ -957,10 +972,11 @@ class EncreWSHandler:
                                 message="Invalid model index", code="invalid_index")
                     except Exception as exc:
                         logger.error("[delete_model] failed: %s\n%s", exc, traceback.format_exc())
-                        await self._send(ws, "error", message=f"Delete model failed: {exc}", code="handler_error")  # noqa: E501
+                        await self._send(ws, "error", message=f"Delete model failed: {exc}", code="handler_error")
 
                 elif isinstance(msg, ClientFetchModels):
                     from encre.backend import create_backend
+                    from encre.backends.base import format_backend_error
                     backend = create_backend(
                         msg.backend_type,
                         api_key=msg.api_key,
@@ -976,7 +992,8 @@ class EncreWSHandler:
                             model_ids = await backend.list_models()
                         except Exception as e:
                             await self._send(ws, "error",
-                                message=f"Failed to fetch models: {e!s}", code="api_error")
+                                message=format_backend_error(e, "Failed to fetch models:"),
+                                code="api_error")
                         finally:
                             await backend.aclose()
                         if model_ids:
@@ -984,6 +1001,8 @@ class EncreWSHandler:
 
                 elif isinstance(msg, ClientValidateModel):
                     from encre.backend import create_backend
+                    from encre.backends.base import format_backend_error
+                    from encre.config import ModelConfig
                     backend = create_backend(
                         msg.backend_type,
                         api_key=msg.api_key,
@@ -1001,12 +1020,67 @@ class EncreWSHandler:
                                 stream=False,
                             ):
                                 pass
-                            await self._send(ws, "model_validated")
                         except Exception as e:
                             await self._send(ws, "model_validation_error",
-                                message=f"Validation failed: {e!s}")
+                                message=format_backend_error(e, "Validation failed:"))
+                            return
                         finally:
                             await backend.aclose()
+
+                        # Test connection passed -- auto-add the model to the
+                        # user's config so they see it in the model list right
+                        # away.  Mirrors the test_adapter pattern (test OK =
+                        # applied), and matches user expectation that
+                        # "Test + OK" should leave the model registered.
+                        info = self._get_or_create_session()
+                        cfg = info.agent.config
+                        existing_idx = next(
+                            (i for i, m in enumerate(cfg.models)
+                             if m.backend_type == msg.backend_type
+                             and m.model_id == msg.model_id
+                             and (m.base_url or "") == (msg.base_url or "")),
+                            None,
+                        )
+                        if existing_idx is not None:
+                            target = cfg.models[existing_idx]
+                            target.api_key = msg.api_key
+                            target.base_url = msg.base_url
+                            target.max_tokens = msg.max_tokens
+                            target.enabled = True
+                            active_idx = existing_idx
+                        else:
+                            new_model = ModelConfig(
+                                name=msg.model_id,
+                                backend_type=msg.backend_type,
+                                model_id=msg.model_id,
+                                api_key=msg.api_key,
+                                base_url=msg.base_url,
+                                max_tokens=msg.max_tokens,
+                                enabled=True,
+                            )
+                            cfg.models.append(new_model)
+                            active_idx = len(cfg.models) - 1
+                        cfg.active_model_index = active_idx
+                        cfg.apply_active_model()
+                        # Sync to _default_config so new sessions pick it up
+                        self._default_config.models = list(cfg.models)
+                        self._default_config.active_model_index = active_idx
+                        self._default_config.apply_active_model()
+                        try:
+                            info.agent.rebuild_backend()
+                        except Exception as exc:
+                            logger.warning("[validate_model] rebuild_backend failed: %s", exc)
+                        self._persist_config(info)
+                        # Re-inject context windows for the response payload
+                        models_dict = _inject_context_windows([
+                            m.to_dict(encrypt_api_keys=False) for m in cfg.models
+                        ])
+                        await self._send(ws, "models_updated",
+                            models=models_dict, active_model_index=active_idx)
+                        await self._send(ws, "model_validated",
+                            backend_type=msg.backend_type,
+                            model_id=msg.model_id,
+                            model_index=active_idx)
 
                 elif isinstance(msg, ClientUpdateSkills):
                     info = self._get_or_create_session()
@@ -1033,7 +1107,7 @@ class EncreWSHandler:
                             shutil.rmtree(str(skill_dir), ignore_errors=True)
                         skill_dir.mkdir(parents=True, exist_ok=True)
 
-                        if file_path and file_path.lower().endswith(".zip") and os.path.isfile(file_path):  # noqa: E501
+                        if file_path and file_path.lower().endswith(".zip") and os.path.isfile(file_path):
                             self._install_skill_from_zip_file(file_path, skill_dir)
                             self._add_skill_to_index(skills_dir, msg.name, "zip")
                         elif self._looks_like_base64_zip(content):
@@ -1044,9 +1118,9 @@ class EncreWSHandler:
                             skill_md.write_text(content, encoding="utf-8")
                             self._add_skill_to_index(skills_dir, msg.name, "md")
 
-                        info.agent.skill_registry.load_from_dir(str(skills_dir), source=SkillSource.USER)  # noqa: E501
+                        info.agent.skill_registry.load_from_dir(str(skills_dir), source=SkillSource.USER)
                         available = await self._build_skills_list(info)
-                        await self._send(ws, "skill_installed", name=msg.name, available_skills=available)  # noqa: E501
+                        await self._send(ws, "skill_installed", name=msg.name, available_skills=available)
                     except Exception as e:
                         logger.error(f"Skill install failed: {e}")
                         await self._send(ws, "skill_install_error", name=msg.name, message=str(e))
@@ -1074,7 +1148,7 @@ class EncreWSHandler:
                                         try:
                                             text = skill_md.read_text(encoding="utf-8")
                                             import re as _re
-                                            m = _re.search(r"^name\s*:\s*(.+)$", text, _re.MULTILINE)  # noqa: E501
+                                            m = _re.search(r"^name\s*:\s*(.+)$", text, _re.MULTILINE)
                                             if m and m.group(1).strip() == skill_name:
                                                 found_dir = entry_path
                                                 break
@@ -1095,9 +1169,9 @@ class EncreWSHandler:
                         EncreWSHandler._save_skills_index(skills_dir, index)
                         # Clear from registry and reload
                         info.agent.skill_registry._skills.pop(skill_name, None)
-                        info.agent.skill_registry.load_from_dir(str(skills_dir), source=SkillSource.USER)  # noqa: E501
+                        info.agent.skill_registry.load_from_dir(str(skills_dir), source=SkillSource.USER)
                         available = await self._build_skills_list(info)
-                        await self._send(ws, "skill_uninstalled", name=skill_name, available_skills=available)  # noqa: E501
+                        await self._send(ws, "skill_uninstalled", name=skill_name, available_skills=available)
                     except Exception as e:
                         logger.error(f"Skill uninstall failed: {e}")
                         await self._send(ws, "error", message=f"Failed to uninstall skill: {e}")
@@ -1114,9 +1188,9 @@ class EncreWSHandler:
                         skill_dir.mkdir(parents=True, exist_ok=True)
                         skill_md = skill_dir / "SKILL.md"
                         skill_md.write_text(msg.content, encoding="utf-8")
-                        info.agent.skill_registry.load_from_dir(str(skills_dir), source=SkillSource.USER)  # noqa: E501
+                        info.agent.skill_registry.load_from_dir(str(skills_dir), source=SkillSource.USER)
                         available = await self._build_skills_list(info)
-                        await self._send(ws, "skill_installed", name=msg.name, available_skills=available)  # noqa: E501
+                        await self._send(ws, "skill_installed", name=msg.name, available_skills=available)
                     except Exception as e:
                         await self._send(ws, "skill_install_error", name=msg.name, message=str(e))
 
@@ -1151,7 +1225,7 @@ class EncreWSHandler:
                         logger.info("[update_mcp] done")
                     except Exception as exc:
                         logger.error("[update_mcp] failed: %s\n%s", exc, traceback.format_exc())
-                        await self._send(ws, "error", message=f"MCP update failed: {exc}", code="handler_error")  # noqa: E501
+                        await self._send(ws, "error", message=f"MCP update failed: {exc}", code="handler_error")
 
                 elif isinstance(msg, ClientUpdateAgent):
                     info = self._get_or_create_session()
@@ -1179,7 +1253,7 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientRollbackLog):
                     sid = msg.session_id or self._current_session_id
                     if not sid:
-                        await self._send(ws, "error", message="No active session", code="no_session")  # noqa: E501
+                        await self._send(ws, "error", message="No active session", code="no_session")
                         continue
                     from encre.rollback import EncreRollbackGit
                     rb = EncreRollbackGit()
@@ -1226,7 +1300,7 @@ class EncreWSHandler:
                     self._manager.touch(session.session_id)
                     try:
                         await self._edit_message(session, msg.message_index, msg.new_content)
-                        msgs = [m for m in session.agent.session.messages if m.get("role") != "system"]  # noqa: E501
+                        msgs = [m for m in session.agent.session.messages if m.get("role") != "system"]
                         head = session.agent.loop.rollback.head(session.agent.session.id) or ""
                         await self._send(ws, "messages_updated", messages=msgs,
                                          session_id=session.session_id, commit_hash=head,
@@ -1242,12 +1316,12 @@ class EncreWSHandler:
                     session = self._get_or_create_session()
                     self._manager.touch(session.session_id)
                     if session.is_running:
-                        await self._send(ws, "error", message="Session is running, cannot delete messages", code="busy",  # noqa: E501
+                        await self._send(ws, "error", message="Session is running, cannot delete messages", code="busy",
                                          session_id=session.session_id)
                         continue
                     try:
                         await self._delete_message(session, msg.message_index)
-                        msgs = [m for m in session.agent.session.messages if m.get("role") != "system"]  # noqa: E501
+                        msgs = [m for m in session.agent.session.messages if m.get("role") != "system"]
                         head = session.agent.loop.rollback.head(session.agent.session.id) or ""
                         await self._send(ws, "messages_updated", messages=msgs,
                                          session_id=session.session_id, commit_hash=head,
@@ -1261,7 +1335,7 @@ class EncreWSHandler:
 
                 elif isinstance(msg, ClientDeleteSession):
                     if not msg.session_id:
-                        await self._send(ws, "error", message="No session_id provided", code="invalid_request")  # noqa: E501
+                        await self._send(ws, "error", message="No session_id provided", code="invalid_request")
                         continue
                     if self._current_session_id == msg.session_id:
                         self._current_session_id = None
@@ -1296,7 +1370,7 @@ class EncreWSHandler:
 
                 elif isinstance(msg, ClientExportSession):
                     if not msg.session_id:
-                        await self._send(ws, "error", message="No session_id provided", code="invalid_request")  # noqa: E501
+                        await self._send(ws, "error", message="No session_id provided", code="invalid_request")
                         continue
                     from encre.session import EncreSession
                     dir_path = self._manager._session_dir_path(msg.session_id)
@@ -1305,27 +1379,27 @@ class EncreWSHandler:
                         continue
                     try:
                         md = EncreSession.export_to_markdown(str(dir_path))
-                        name = self._manager._index.get(msg.session_id, {}).get("name", msg.session_id[:8])  # noqa: E501
+                        name = self._manager._index.get(msg.session_id, {}).get("name", msg.session_id[:8])
                         filename = f"{name or msg.session_id[:8]}.md"
-                        await self._send(ws, "session_exported", session_id=msg.session_id, markdown=md, filename=filename)  # noqa: E501
+                        await self._send(ws, "session_exported", session_id=msg.session_id, markdown=md, filename=filename)
                     except Exception as e:
                         logger.error(f"Export session failed: {e}")
                         await self._send(ws, "error", message=str(e), code="export_error")
 
                 elif isinstance(msg, ClientRenameSession):
                     if not msg.session_id or not msg.new_name.strip():
-                        await self._send(ws, "error", message="Missing session_id or new_name", code="invalid_request")  # noqa: E501
+                        await self._send(ws, "error", message="Missing session_id or new_name", code="invalid_request")
                         continue
                     ok = self._manager.rename_session(msg.session_id, msg.new_name.strip())
                     if ok:
-                        await self._send(ws, "session_renamed", session_id=msg.session_id, new_name=msg.new_name.strip())  # noqa: E501
+                        await self._send(ws, "session_renamed", session_id=msg.session_id, new_name=msg.new_name.strip())
                     else:
                         await self._send(ws, "error", message="Session not found", code="not_found")
 
                 elif isinstance(msg, ClientAgentList):
                     info = self._get_or_create_session()
                     agents = [a.to_dict() for a in info.agent.config.agents]
-                    await self._send(ws, "agents_list", agents=agents, active_index=info.agent.config.active_agent_index)  # noqa: E501
+                    await self._send(ws, "agents_list", agents=agents, active_index=info.agent.config.active_agent_index)
 
                 elif isinstance(msg, ClientAgentCreate):
                     info = self._get_or_create_session()
@@ -1334,7 +1408,7 @@ class EncreWSHandler:
                     info.agent.config.agents.append(agent)
                     self._persist_config(info)
                     agents = [a.to_dict() for a in info.agent.config.agents]
-                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)  # noqa: E501
+                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)
 
                 elif isinstance(msg, ClientAgentDelete):
                     info = self._get_or_create_session()
@@ -1344,15 +1418,15 @@ class EncreWSHandler:
                     if 0 <= idx < total_before:
                         deleted_name = info.agent.config.agents[idx].name
                         del info.agent.config.agents[idx]
-                        logger.info("[agent_delete] deleted agent '%s' at index %d", deleted_name, idx)  # noqa: E501
+                        logger.info("[agent_delete] deleted agent '%s' at index %d", deleted_name, idx)
                         if info.agent.config.active_agent_index >= len(info.agent.config.agents):
                             info.agent.config.active_agent_index = len(info.agent.config.agents) - 1
-                            logger.info("[agent_delete] adjusted active_agent_index to %d", info.agent.config.active_agent_index)  # noqa: E501
+                            logger.info("[agent_delete] adjusted active_agent_index to %d", info.agent.config.active_agent_index)
                         self._persist_config(info)
                     else:
-                        logger.warning("[agent_delete] invalid index %d (total=%d)", idx, total_before)  # noqa: E501
+                        logger.warning("[agent_delete] invalid index %d (total=%d)", idx, total_before)
                     agents = [a.to_dict() for a in info.agent.config.agents]
-                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)  # noqa: E501
+                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)
                     logger.info("[agent_delete] done, remaining=%d", len(agents))
 
                 elif isinstance(msg, ClientAgentUpdate):
@@ -1364,7 +1438,7 @@ class EncreWSHandler:
                         info.agent.config.agents[idx] = updated
                         self._persist_config(info)
                     agents = [a.to_dict() for a in info.agent.config.agents]
-                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)  # noqa: E501
+                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)
 
                 elif isinstance(msg, ClientAgentSetActive):
                     info = self._get_or_create_session()
@@ -1373,7 +1447,7 @@ class EncreWSHandler:
                         info.agent.config.active_agent_index = idx
                         self._persist_config(info)
                     agents = [a.to_dict() for a in info.agent.config.agents]
-                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)  # noqa: E501
+                    await self._send(ws, "agents_updated", agents=agents, active_index=info.agent.config.active_agent_index)
 
                 elif isinstance(msg, ClientUpdateSubAgents):
                     info = self._get_or_create_session()
@@ -1393,13 +1467,13 @@ class EncreWSHandler:
                         await self._send(ws, "sub_agents_updated", sub_agents=sub_agents_dict)
                         logger.info("[update_sub_agents] done")
                     except Exception as exc:
-                        logger.error("[update_sub_agents] failed: %s\n%s", exc, traceback.format_exc())  # noqa: E501
-                        await self._send(ws, "error", message=f"Sub agents update failed: {exc}", code="handler_error")  # noqa: E501
+                        logger.error("[update_sub_agents] failed: %s\n%s", exc, traceback.format_exc())
+                        await self._send(ws, "error", message=f"Sub agents update failed: {exc}", code="handler_error")
 
                 elif isinstance(msg, ClientOpenWorkspace):
                     folder_path = os.path.abspath(os.path.expanduser(msg.path))
                     if not os.path.isdir(folder_path):
-                        await self._send(ws, "error", message="Folder not found", code="invalid_path")  # noqa: E501
+                        await self._send(ws, "error", message="Folder not found", code="invalid_path")
                         continue
 
                     _t_open = time.time()
@@ -1464,10 +1538,7 @@ class EncreWSHandler:
                     startup_mode = self._resolve_startup_mode()
                     if startup_mode == "resume":
                         existing = self._manager.try_resume_most_recent(config=ws_config)
-                        if existing is not None:
-                            info = existing
-                        else:
-                            info = self._manager.create_session(config=ws_config)
+                        info = existing if existing is not None else self._manager.create_session(config=ws_config)
                     else:
                         info = self._manager.create_session(config=ws_config)
 
@@ -1487,12 +1558,12 @@ class EncreWSHandler:
                     idx_files = 0
                     if self._index_manager:
                         # Check if index is already cached (ready)
-                        cached_status = self._index_manager.get_status(ws_id) if hasattr(self._index_manager, "get_status") else {}  # noqa: E501
+                        cached_status = self._index_manager.get_status(ws_id) if hasattr(self._index_manager, "get_status") else {}
                         if cached_status.get("status") == "ready":
                             idx_status = "ready"
                             idx_files = cached_status.get("files", 0)
                         else:
-                            task = self._index_manager.get_task(ws_id) if hasattr(self._index_manager, "get_task") else None  # noqa: E501
+                            task = self._index_manager.get_task(ws_id) if hasattr(self._index_manager, "get_task") else None
                             if task is not None and not task.done():
                                 idx_status = "indexing"
                     await self._send(ws, "workspace_opened",
@@ -1506,7 +1577,7 @@ class EncreWSHandler:
                     msgs = [m for m in context if m.get("role") != "system"]
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=info.session_id, messages=msgs,
-                                     plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,  # noqa: E501
+                                     plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id,
                                      request_id=msg.request_id)
                     _t1 = time.time()
@@ -1527,10 +1598,7 @@ class EncreWSHandler:
                     workspaces = [w for w in workspaces if w["path"] != msg.path]
                     _save_workspaces(workspaces)
                     # Clean up workspace session data on disk
-                    if removed_ws and removed_ws.get("id"):
-                        ws_id = removed_ws["id"]
-                    else:
-                        ws_id = _make_workspace_id(msg.path)
+                    ws_id = removed_ws["id"] if removed_ws and removed_ws.get("id") else _make_workspace_id(msg.path)
                     ws_dir = _get_workspace_dir(ws_id)
                     if os.path.isdir(ws_dir):
                         shutil.rmtree(ws_dir, ignore_errors=True)
@@ -1539,8 +1607,8 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientCloseWorkspace):
                     # Unsubscribe from index progress but do NOT cancel -- indexing
                     # continues in the background service even without a WS connection.
-                    if self._index_manager and self._current_ws_id and self._index_progress_callback:  # noqa: E501
-                        self._index_manager.unsubscribe(self._current_ws_id, self._index_progress_callback)  # noqa: E501
+                    if self._index_manager and self._current_ws_id and self._index_progress_callback:
+                        self._index_manager.unsubscribe(self._current_ws_id, self._index_progress_callback)
                         self._index_progress_callback = None
                         self._current_ws_id = ""
                     # Switch back to global session storage
@@ -1555,10 +1623,7 @@ class EncreWSHandler:
                     startup_mode = self._resolve_startup_mode()
                     if startup_mode == "resume":
                         existing = self._manager.try_resume_most_recent(config=clean_config)
-                        if existing is not None:
-                            info = existing
-                        else:
-                            info = self._manager.create_session(config=clean_config)
+                        info = existing if existing is not None else self._manager.create_session(config=clean_config)
                     else:
                         info = self._manager.create_session(config=clean_config)
                     self._info = info
@@ -1572,7 +1637,7 @@ class EncreWSHandler:
                     msgs = [m for m in context if m.get("role") != "system"]
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=info.session_id, messages=msgs,
-                                     plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,  # noqa: E501
+                                     plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id,
                                      request_id=msg.request_id)
 
@@ -1588,12 +1653,12 @@ class EncreWSHandler:
                                 raw = fpath.read_text("utf-8")
                                 # Decrypt memory files (all encrypted by default)
                                 content = raw
-                                if raw.strip() and not raw.strip().startswith("---") and not raw.strip().startswith("#"):  # noqa: E501
+                                if raw.strip() and not raw.strip().startswith("---") and not raw.strip().startswith("#"):
                                     with contextlib.suppress(Exception):
                                         content = _decrypt(raw)
                                 meta = self._parse_memory_frontmatter(raw) if "---" in raw else None
                                 if not meta:
-                                    meta = self._parse_memory_frontmatter(content) if "---" in content else None  # noqa: E501
+                                    meta = self._parse_memory_frontmatter(content) if "---" in content else None
                                 entry: dict[str, Any] = {
                                     "name": fpath.stem,
                                     "path": str(fpath.relative_to(mem_dir)),
@@ -1603,7 +1668,7 @@ class EncreWSHandler:
                                 }
                                 if meta:
                                     entry["title"] = meta.get("title", "")
-                                    entry["tags"] = list(meta.get("tags", [])) if isinstance(meta.get("tags"), (list, tuple)) else []  # noqa: E501
+                                    entry["tags"] = list(meta.get("tags", [])) if isinstance(meta.get("tags"), list | tuple) else []
                                     entry["type"] = str(meta.get("type", ""))
                                 entries.append(entry)
                             except Exception:
@@ -1615,8 +1680,8 @@ class EncreWSHandler:
                     mem_dir = get_data_dir() / "memory"
                     file_path = mem_dir / msg.path
                     file_path = file_path.resolve()
-                    if not str(file_path).startswith(str(mem_dir.resolve())) or not file_path.is_file():  # noqa: E501
-                        await self._send(ws, "memory_detail", path=msg.path, content="", error="File not found or access denied")  # noqa: E501
+                    if not str(file_path).startswith(str(mem_dir.resolve())) or not file_path.is_file():
+                        await self._send(ws, "memory_detail", path=msg.path, content="", error="File not found or access denied")
                     else:
                         try:
                             raw = file_path.read_text("utf-8")
@@ -1648,7 +1713,7 @@ class EncreWSHandler:
                     await self._send(ws, "global_rules_list", rules=rules_list)
 
                 elif isinstance(msg, ClientListProjectRules):
-                    ws_path = self._workspace_path or self._default_config.workspace if self._default_config else ""  # noqa: E501
+                    ws_path = self._workspace_path or self._default_config.workspace if self._default_config else ""
                     rules_list: list[dict[str, Any]] = []
                     if ws_path and os.path.isdir(ws_path):
                         for rel_path, priority, name in [
@@ -1760,14 +1825,14 @@ class EncreWSHandler:
                     from encre.config import get_data_dir
                     rules_dir = get_data_dir() / "rules"
                     rule_path = (rules_dir / f"{msg.name}.md").resolve()
-                    if not str(rule_path).startswith(str(rules_dir.resolve())) or not rule_path.is_file():  # noqa: E501
-                        await self._send(ws, "global_rule_content", name=msg.name, content="", error="File not found")  # noqa: E501
+                    if not str(rule_path).startswith(str(rules_dir.resolve())) or not rule_path.is_file():
+                        await self._send(ws, "global_rule_content", name=msg.name, content="", error="File not found")
                     else:
                         try:
                             content = rule_path.read_text("utf-8")
-                            await self._send(ws, "global_rule_content", name=msg.name, content=content)  # noqa: E501
+                            await self._send(ws, "global_rule_content", name=msg.name, content=content)
                         except Exception as e:
-                            await self._send(ws, "global_rule_content", name=msg.name, content="", error=str(e))  # noqa: E501
+                            await self._send(ws, "global_rule_content", name=msg.name, content="", error=str(e))
 
                 elif isinstance(msg, ClientGetProfile):
                     from encre.config import get_data_dir
@@ -1787,9 +1852,9 @@ class EncreWSHandler:
                                         self._current_ws_id[:8], self._workspace_path)
                             # Subscribe for progress updates during reindex
                             if self._index_progress_callback:
-                                self._index_manager.unsubscribe(self._current_ws_id, self._index_progress_callback)  # noqa: E501
+                                self._index_manager.unsubscribe(self._current_ws_id, self._index_progress_callback)
                             self._index_progress_callback = self._make_index_callback(ws)
-                            self._index_manager.subscribe(self._current_ws_id, self._index_progress_callback)  # noqa: E501
+                            self._index_manager.subscribe(self._current_ws_id, self._index_progress_callback)
                             self._index_manager.reindex(self._current_ws_id, self._workspace_path)
                             asyncio.get_running_loop().call_soon(
                                 lambda: logger.info("[index] reindex triggered")
@@ -1815,11 +1880,11 @@ class EncreWSHandler:
                             try:
                                 with open(gitignore_path, encoding="utf-8", errors="replace") as f:
                                     content = f.read()
-                                await self._send(ws, "gitignore_content", path=gitignore_path, content=content)  # noqa: E501
+                                await self._send(ws, "gitignore_content", path=gitignore_path, content=content)
                             except Exception as e:
-                                await self._send(ws, "gitignore_content", path=gitignore_path, content=f"# Error reading .gitignore: {e}")  # noqa: E501
+                                await self._send(ws, "gitignore_content", path=gitignore_path, content=f"# Error reading .gitignore: {e}")
                         else:
-                            await self._send(ws, "gitignore_content", path=gitignore_path, content="")  # noqa: E501
+                            await self._send(ws, "gitignore_content", path=gitignore_path, content="")
 
                 elif isinstance(msg, ClientSetGitignore):
                     if self._workspace_path:
@@ -1829,7 +1894,7 @@ class EncreWSHandler:
                         try:
                             with open(gitignore_path, "w", encoding="utf-8") as f:
                                 f.write(msg.content)
-                            await self._send(ws, "gitignore_content", path=gitignore_path, content=msg.content)  # noqa: E501
+                            await self._send(ws, "gitignore_content", path=gitignore_path, content=msg.content)
                         except Exception as e:
                             await self._send(ws, "error", message=f"Failed to save .gitignore: {e}")
 
@@ -1838,7 +1903,7 @@ class EncreWSHandler:
                         await self._send(ws, "index_status", files=0, status="no_workspace")
                     else:
                         try:
-                            self._index_manager.delete_index(self._current_ws_id, self._workspace_path)  # noqa: E501
+                            self._index_manager.delete_index(self._current_ws_id, self._workspace_path)
                             await self._send(ws, "index_status", files=0, status="idle")
                         except Exception as e:
                             await self._send(ws, "index_status", files=0, status=f"error: {e}")
@@ -1855,9 +1920,10 @@ class EncreWSHandler:
                         elif msg.url:
                             doc = mgr.add_pending_url(msg.name, msg.url)
                             await self._send(ws, "document_added", document=doc.to_dict())
-                            asyncio.ensure_future(self._crawl_and_update(ws, mgr, doc, msg.url))
+                            _t = asyncio.ensure_future(self._crawl_and_update(ws, mgr, doc, msg.url))
+                            self._tasks.add(_t)
                         else:
-                            await self._send(ws, "document_error", message="Either file_path or url is required")  # noqa: E501
+                            await self._send(ws, "document_error", message="Either file_path or url is required")
                     except Exception as e:
                         await self._send(ws, "document_error", message=str(e))
 
@@ -1889,7 +1955,7 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientResume):
                     # Use workspace config if currently in workspace mode
                     if self._workspace_path and os.path.isdir(self._workspace_path):
-                        resume_config = replace(self._default_config, workspace=self._workspace_path)  # noqa: E501
+                        resume_config = replace(self._default_config, workspace=self._workspace_path)
                         _apply_workspace_config(resume_config, self._workspace_path)
                     else:
                         resume_config = replace(self._default_config, workspace="")
@@ -1901,7 +1967,7 @@ class EncreWSHandler:
                         session = self._get_or_create_session()
                     self._current_session_id = session.session_id
                     # Tag the resumed session with the correct channel for the current mode
-                    session.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"  # noqa: E501
+                    session.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"
                     # Reconcile is_running from the actual task state -- if the
                     # task is still alive, the session is definitely running even
                     # if the finally block has not fired yet.
@@ -1912,8 +1978,8 @@ class EncreWSHandler:
                     context = sess.get_context_messages()
                     msgs = [m for m in context if m.get("role") != "system"]
                     branches_list = [b.__dict__ for b in sess.branches.values()]
-                    await self._send(ws, "session_ready", session_id=session.session_id, messages=msgs,  # noqa: E501
-                                     plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,  # noqa: E501
+                    await self._send(ws, "session_ready", session_id=session.session_id, messages=msgs,
+                                     plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id,
                                      is_running=session.is_running, request_id=msg.request_id)
 
@@ -1930,7 +1996,7 @@ class EncreWSHandler:
                                 self._current_session_id = existing.session_id
                                 await self._send(ws, "session_ready",
                                     session_id=existing.session_id, messages=msgs)
-                                logger.info("[iclaw] resume sent session_ready with %d messages sid=%s",  # noqa: E501
+                                logger.info("[iclaw] resume sent session_ready with %d messages sid=%s",
                                             len(msgs), existing.session_id)
                             else:
                                 logger.info("[iclaw] no session to resume")
@@ -1948,7 +2014,7 @@ class EncreWSHandler:
                     else:
                         for sp in ["/bin/bash", "/bin/zsh", "/bin/sh"]:
                             if os.path.isfile(sp):
-                                shells.append({"name": os.path.basename(sp), "path": sp, "args": []})  # noqa: E501
+                                shells.append({"name": os.path.basename(sp), "path": sp, "args": []})
                     await self._send(ws, "terminal_shells", shells=shells)
 
                 elif isinstance(msg, ClientTerminalSpawn):
@@ -1967,7 +2033,7 @@ class EncreWSHandler:
                             **term_kwargs,
                         )
                     except Exception as e:
-                        await self._send(ws, "error", message=f"Terminal spawn failed: {e}", code="terminal_error")  # noqa: E501
+                        await self._send(ws, "error", message=f"Terminal spawn failed: {e}", code="terminal_error")
                         continue
                     tid = self._term_seq
                     self._term_seq += 1
@@ -1975,7 +2041,7 @@ class EncreWSHandler:
                     self._term_sessions[tid] = term_info
                     await self._send(ws, "terminal_spawned", id=tid)
 
-                    async def _read_stdout():
+                    async def _read_stdout(*, proc=proc, term_info=term_info, tid=tid):
                         try:
                             while True:
                                 data = await proc.stdout.read(4096)
@@ -1993,12 +2059,13 @@ class EncreWSHandler:
                             self._term_sessions.pop(tid, None)
                             await self._send(ws, "terminal_data", id=tid, data="")
 
-                    asyncio.ensure_future(_read_stdout())
+                    _t = asyncio.ensure_future(_read_stdout())
+                    self._tasks.add(_t)
 
                 elif isinstance(msg, ClientTerminalWrite):
                     tinfo = self._term_sessions.get(msg.id)
                     if tinfo is None:
-                        await self._send(ws, "error", message="Terminal not found", code="terminal_not_found")  # noqa: E501
+                        await self._send(ws, "error", message="Terminal not found", code="terminal_not_found")
                         continue
                     proc = tinfo["proc"]
                     if proc.stdin and not proc.stdin.is_closed():
@@ -2031,11 +2098,11 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientRetry):
                     sid = msg.session_id or self._current_session_id
                     if not sid:
-                        await self._send(ws, "error", message="No active session", code="no_session")  # noqa: E501
+                        await self._send(ws, "error", message="No active session", code="no_session")
                         continue
                     info = self._manager.get_session(sid)
                     if info is None:
-                        info = self._manager.load_or_create_session(sid, config=self._default_config)  # noqa: E501
+                        info = self._manager.load_or_create_session(sid, config=self._default_config)
                     self._manager.touch(sid)
                     sess = info.agent.session
                     try:
@@ -2053,9 +2120,9 @@ class EncreWSHandler:
                     if user_msg:
                         mode = getattr(msg, "mode", "normal")
                         if mode == "detailed":
-                            user_msg += "\n\n(Please provide a more detailed response with thorough explanations and comprehensive coverage.)"  # noqa: E501
+                            user_msg += "\n\n(Please provide a more detailed response with thorough explanations and comprehensive coverage.)"
                         elif mode == "concise":
-                            user_msg += "\n\n(Please provide a concise response, keeping it brief and to the point.)"  # noqa: E501
+                            user_msg += "\n\n(Please provide a concise response, keeping it brief and to the point.)"
                         self._current_session_id = sid
                         self._info = info
                         info.is_running = True
@@ -2067,21 +2134,21 @@ class EncreWSHandler:
                             info.is_running = False
                             continue
 
-                        async def _run_retry(session_id: str, prompt: str):
+                        async def _run_retry(session_id: str, prompt: str, info=info):
                             try:
                                 async for event in info.agent.run(prompt=prompt):
                                     await self._dispatch_event(ws, info, event)
-                                    if isinstance(event, (ToolResult, AssistantBoundary)):
+                                    if isinstance(event, ToolResult | AssistantBoundary):
                                         with contextlib.suppress(Exception):
                                             await self._manager._save_session_async(info)
                             except asyncio.CancelledError:
-                                await self._send(ws, "finish", reason="cancelled", session_id=session_id)  # noqa: E501
+                                await self._send(ws, "finish", reason="cancelled", session_id=session_id)
                             except Exception as e:
                                 logger.error(f"Retry run failed: {e}\n{traceback.format_exc()}")
                                 with contextlib.suppress(Exception):
-                                    await self._send(ws, "error", message=str(e), code="execution_error", session_id=session_id)  # noqa: E501
+                                    await self._send(ws, "error", message=str(e), code="execution_error", session_id=session_id)
                                 with contextlib.suppress(Exception):
-                                    await self._send(ws, "finish", reason="error", session_id=session_id)  # noqa: E501
+                                    await self._send(ws, "finish", reason="error", session_id=session_id)
                             finally:
                                 if info.agent_task is asyncio.current_task():
                                     info.is_running = False
@@ -2097,21 +2164,21 @@ class EncreWSHandler:
                         info.agent_task = asyncio.create_task(_run_retry(sid, user_msg))
                     else:
                         await self._send(ws, "error", message="Original user message not found", code="retry_error",
-                                         session_id=sid)  # noqa: E501
+                                         session_id=sid)
 
                 elif isinstance(msg, ClientSwitchBranch):
                     sid = msg.session_id or self._current_session_id
                     if not sid:
-                        await self._send(ws, "error", message="No active session", code="no_session")  # noqa: E501
+                        await self._send(ws, "error", message="No active session", code="no_session")
                         continue
                     info = self._manager.get_session(sid)
                     if info is None:
-                        info = self._manager.load_or_create_session(sid, config=self._default_config)  # noqa: E501
+                        info = self._manager.load_or_create_session(sid, config=self._default_config)
                     self._manager.touch(sid)
                     sess = info.agent.session
                     if msg.branch_id not in sess.branches:
                         await self._send(ws, "error", message=f"Branch not found: {msg.branch_id}", code="branch_not_found",
-                                         session_id=sid)  # noqa: E501
+                                         session_id=sid)
                         continue
                     sess.switch_branch(msg.branch_id)
                     context_msgs = sess.get_context_messages()
@@ -2130,11 +2197,11 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientRollbackBranch):
                     sid = msg.session_id or self._current_session_id
                     if not sid:
-                        await self._send(ws, "error", message="No active session", code="no_session")  # noqa: E501
+                        await self._send(ws, "error", message="No active session", code="no_session")
                         continue
                     info = self._manager.get_session(sid)
                     if info is None:
-                        info = self._manager.load_or_create_session(sid, config=self._default_config)  # noqa: E501
+                        info = self._manager.load_or_create_session(sid, config=self._default_config)
                     self._manager.touch(sid)
                     self._info = info
                     self._current_session_id = sid
@@ -2155,8 +2222,8 @@ class EncreWSHandler:
                         )
                     ]
                     try:
-                        loop = asyncio.get_running_loop()
-                        loop.create_task(self._manager._save_session_async(info))
+                        _t = asyncio.ensure_future(self._manager._save_session_async(info))
+                        self._tasks.add(_t)
                     except Exception:
                         pass
                     context_msgs = sess.get_context_messages()
@@ -2206,11 +2273,11 @@ class EncreWSHandler:
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
                     if self._scheduler is None:
-                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")  # noqa: E501
+                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
                         continue
                     try:
                         agent_config = None
-                        if self._default_config and 0 <= msg.model_index < len(self._default_config.models):  # noqa: E501
+                        if self._default_config and 0 <= msg.model_index < len(self._default_config.models):
                             mc = self._default_config.models[msg.model_index]
                             agent_config = {
                                 "backend_type": mc.backend_type,
@@ -2242,7 +2309,7 @@ class EncreWSHandler:
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
                     if self._scheduler is None:
-                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")  # noqa: E501
+                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
                         continue
                     ok = self._scheduler.cancel(msg.job_id)
                     if ok:
@@ -2255,11 +2322,11 @@ class EncreWSHandler:
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
                     if self._scheduler is None:
-                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")  # noqa: E501
+                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
                         continue
                     running = self._scheduler.toggle_job(msg.job_id)
                     if running is not None:
-                        await self._send(ws, "automation_job_toggled", job_id=msg.job_id, running=running)  # noqa: E501
+                        await self._send(ws, "automation_job_toggled", job_id=msg.job_id, running=running)
                     else:
                         await self._send(ws, "error",
                             message="Job not found", code="job_not_found")
@@ -2268,10 +2335,10 @@ class EncreWSHandler:
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
                     if self._scheduler is None:
-                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")  # noqa: E501
+                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
                         continue
                     agent_config = None
-                    if self._default_config and 0 <= msg.model_index < len(self._default_config.models):  # noqa: E501
+                    if self._default_config and 0 <= msg.model_index < len(self._default_config.models):
                         mc = self._default_config.models[msg.model_index]
                         agent_config = {
                             "backend_type": mc.backend_type,
@@ -2302,7 +2369,7 @@ class EncreWSHandler:
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
                     if self._scheduler is None:
-                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")  # noqa: E501
+                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
                         continue
                     ok = self._scheduler.delete_job(msg.job_id)
                     if ok:
@@ -2350,36 +2417,53 @@ class EncreWSHandler:
                     try:
                         from encre.telemetry import EncreTelemetry
                         stats = EncreTelemetry.get_all_sessions_usage()
-                        # Build model_id → display_name mapping from config
+                        # Build model_id → display_name mapping from the CURRENT
+                        # config.  Sessions whose model is no longer configured
+                        # keep their raw model_id so historical data is never
+                        # lost -- the frontend can show a "(deleted)" tag.
                         model_names: dict[str, str] = {}
+                        current_model_ids: set[str] = set()
                         if self._default_config:
                             for mc in self._default_config.models:
-                                mid = mc.model_id or ""
-                                if mid and mc.name:
-                                    model_names[mid] = mc.name
-                        # Apply display names & strip empty/unknown
+                                mid = (mc.model_id or "").strip()
+                                if mid:
+                                    current_model_ids.add(mid)
+                                    if mc.name:
+                                        model_names[mid] = mc.name
+                        # Apply display names & label sessions whose model is no
+                        # longer in the config, so the user can see the model
+                        # was deleted/renamed.  No session is dropped -- every
+                        # historical record is preserved.
                         if stats.get("sessions"):
-                            cleaned: list[dict[str, Any]] = []
                             for s in stats["sessions"]:
-                                raw = s.get("model", "") or ""
+                                raw = (s.get("model", "") or "").strip()
                                 if not raw or raw == "unknown":
-                                    continue  # skip sessions with no model
-                                if raw in model_names:
+                                    s["model"] = "(unknown model)"
+                                    s["model_status"] = "unknown"
+                                elif raw in model_names:
                                     s["model"] = model_names[raw]
-                                cleaned.append(s)
-                            stats["sessions"] = cleaned
+                                    s["model_status"] = "active"
+                                else:
+                                    # Model is no longer in the user's config.
+                                    # Keep the raw id so the historical record
+                                    # is preserved and the user knows which
+                                    # model it was.
+                                    s["model"] = raw
+                                    s["model_status"] = "deleted"
                         if stats.get("model_breakdown"):
-                            mb = {}
+                            mb: dict[str, dict[str, Any]] = {}
                             for raw, data in stats["model_breakdown"].items():
                                 if not raw or raw == "unknown":
-                                    continue
-                                key = model_names.get(raw, raw)
-                                if key in mb:
-                                    # merge if same display name from different ids
-                                    for k in ("input_tokens", "output_tokens", "total_tokens", "turns"):
-                                        mb[key][k] = mb[key].get(k, 0) + data.get(k, 0)
+                                    display = "(unknown model)"
+                                elif raw in model_names:
+                                    display = model_names[raw]
                                 else:
-                                    mb[key] = dict(data)
+                                    display = raw
+                                if display in mb:
+                                    for k in ("input_tokens", "output_tokens", "total_tokens", "turns"):
+                                        mb[display][k] = mb[display].get(k, 0) + data.get(k, 0)
+                                else:
+                                    mb[display] = dict(data)
                             stats["model_breakdown"] = mb
                         await self._send(ws, "usage_stats", stats=stats)
                     except Exception:
@@ -2410,7 +2494,7 @@ class EncreWSHandler:
         fetch both groups at once).
         """
         result = self._manager.list_sessions()
-        index_entries = self._manager.query_index()
+        self._manager.query_index()
         active_ids = {s["session_id"] for s in result}
 
         # Include sessions managed by the EventRouter (iClaw desktop + QQ/Telegram etc. adapters)
@@ -2436,7 +2520,8 @@ class EncreWSHandler:
                 if not os.path.isfile(idx_file):
                     continue
                 try:
-                    raw = open(idx_file, encoding="utf-8").read().strip()
+                    with open(idx_file, encoding="utf-8") as f:
+                        raw = f.read().strip()
                     if raw and not raw.startswith("{"):
                         from encre.crypto import decrypt as _decrypt
                         with contextlib.suppress(Exception):
@@ -2483,7 +2568,8 @@ class EncreWSHandler:
             global_idx = os.path.join(_get_yim_data_dir(), "sessions", "index.json")
             if os.path.isfile(global_idx):
                 try:
-                    raw = open(global_idx, encoding="utf-8").read().strip()
+                    with open(global_idx, encoding="utf-8") as f:
+                        raw = f.read().strip()
                     if raw and not raw.startswith("{"):
                         from encre.crypto import decrypt as _decrypt
                         with contextlib.suppress(Exception):
@@ -2523,13 +2609,10 @@ class EncreWSHandler:
                     pass
 
         result.sort(key=lambda s: s.get("last_active", s.get("created_at", 0)), reverse=True)
-        result = [s for s in result if (s.get("message_count") or 0) > 0 and s.get("channel", "normal") not in ("automation", "sub_agent")]  # noqa: E501
+        result = [s for s in result if (s.get("message_count") or 0) > 0 and s.get("channel", "normal") not in ("automation", "sub_agent")]
 
         # ── Workspace-channel filter ───────────────────────────────────
-        if channel_filter is None:
-            expected_channel = "iwork" if self._workspace_path else "normal"
-        else:
-            expected_channel = channel_filter
+        expected_channel = ("iwork" if self._workspace_path else "normal") if channel_filter is None else channel_filter
         result = [s for s in result if s.get("channel", "normal") == expected_channel]
 
         # ── Exclude temp chats from the sidebar ───────────────────────
@@ -2623,7 +2706,7 @@ class EncreWSHandler:
 
         workspace = os.getcwd()
         if os.path.isdir(workspace):
-            excluded = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "target", ".encre", ".pytest_cache", ".mypy_cache", "__pypackages__"}  # noqa: E501
+            excluded = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "target", ".encre", ".pytest_cache", ".mypy_cache", "__pypackages__"}
             for root, dirs, files in os.walk(workspace):
                 dirs[:] = [d for d in dirs if d not in excluded and not d.startswith(".")]
                 if len(results) >= 100:
@@ -2644,7 +2727,7 @@ class EncreWSHandler:
                         if size > 300_000 or size == 0:
                             continue
                         ext = os.path.splitext(fname)[1].lower()
-                        if ext in (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".zip", ".tar", ".gz", ".7z", ".exe", ".dll", ".so", ".dylib", ".wasm", ".bin", ".pyc", ".pyo"):  # noqa: E501
+                        if ext in (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".zip", ".tar", ".gz", ".7z", ".exe", ".dll", ".so", ".dylib", ".wasm", ".bin", ".pyc", ".pyo"):
                             continue
                         with open(fpath, encoding="utf-8", errors="replace") as f:
                             for li, line in enumerate(f):
@@ -2695,7 +2778,8 @@ class EncreWSHandler:
         closed = []
         for ws in self._connections:
             try:
-                asyncio.ensure_future(self._send(ws, "gateway_status", status=status))
+                _t = asyncio.ensure_future(self._send(ws, "gateway_status", status=status))
+                self._tasks.add(_t)
             except Exception:
                 closed.append(ws)
         for ws in closed:
@@ -2722,7 +2806,7 @@ class EncreWSHandler:
             session = EncreSession.load_from_dir(str(sess_dir), config=cfg)
             return [dict(m) for m in session.messages]
         except Exception:
-            logger.warning("[automation] failed to load sub-agent session %s", session_id, exc_info=True)  # noqa: E501
+            logger.warning("[automation] failed to load sub-agent session %s", session_id, exc_info=True)
             return None
 
     def broadcast_automation_update(self, job: Any = None) -> None:
@@ -2780,7 +2864,7 @@ class EncreWSHandler:
                 result_data["session_id"] = job.session_id
 
         # ── Push result through configured gateways ─────────────────
-        if job and job.last_result and hasattr(job, "push_gateways") and job.push_gateways and self._adapter_manager:  # noqa: E501
+        if job and job.last_result and hasattr(job, "push_gateways") and job.push_gateways and self._adapter_manager:
             push_text = f"🤖 {job.name}\n\n{job.last_result[:1500]}"
             for gw_id in job.push_gateways:
                 try:
@@ -2792,24 +2876,25 @@ class EncreWSHandler:
                     # Use the adapter's auto-detected default push target (e.g. the
                     # most recently active chat).  No manual configuration needed.
                     push_chat_id = getattr(adapter, "default_push_chat_id", None)
-                    logger.info("[automation] push gateway %s adapter=%s default_push=%s", gw_id, type(adapter).__name__, push_chat_id)  # noqa: E501
+                    logger.info("[automation] push gateway %s adapter=%s default_push=%s", gw_id, type(adapter).__name__, push_chat_id)
                     if not push_chat_id:
-                        logger.warning("[automation] push gateway %s has no push target, skipping", gw_id)  # noqa: E501
+                        logger.warning("[automation] push gateway %s has no push target, skipping", gw_id)
                         continue
-                    _ = asyncio.create_task(adapter.send(push_chat_id, push_text))  # noqa: RUF006
-                    logger.info("[automation] pushed result to gateway %s (chat=%s)", gw_id, push_chat_id)  # noqa: E501
+                    self._tasks.add(asyncio.create_task(adapter.send(push_chat_id, push_text)))
+                    logger.info("[automation] pushed result to gateway %s (chat=%s)", gw_id, push_chat_id)
                 except Exception as exc:
                     logger.warning("[automation] failed to push to gateway %s: %s", gw_id, exc)
 
         for ws in self._connections:
             try:
-                asyncio.ensure_future(self._send(ws, "automation_job_update", history=history, result=result_data))  # noqa: E501
+                _t = asyncio.ensure_future(self._send(ws, "automation_job_update", history=history, result=result_data))
+                self._tasks.add(_t)
             except Exception:
                 closed.append(ws)
         for ws in closed:
             self._connections.remove(ws)
 
-    async def broadcast_automation_progress(self, job: Any = None, event_type: str = "", event_data: dict[str, Any] | None = None) -> None:  # noqa: E501
+    async def broadcast_automation_progress(self, job: Any = None, event_type: str = "", event_data: dict[str, Any] | None = None) -> None:
         """Broadcast a real-time streaming event from an automation job execution.
 
         Called (and awaited) by the scheduler's progress callback during
@@ -2851,7 +2936,7 @@ class EncreWSHandler:
             """Send sessions_list to one connection without cascading to _cancel_current_task."""
             encrypt = self._client_encrypted if self._client_encrypted is not None else False
             try:
-                payload = encode_server_message("sessions_list", encrypt=encrypt, sessions=payload_sessions)  # noqa: E501
+                payload = encode_server_message("sessions_list", encrypt=encrypt, sessions=payload_sessions)
                 await ws_conn.send(payload)
             except Exception as exc:
                 logger.warning("[broadcast] send failed (will remove connection): %s", exc)
@@ -2859,7 +2944,8 @@ class EncreWSHandler:
         closed: list[Any] = []
         for ws in self._connections:
             try:
-                asyncio.ensure_future(_try_send(ws, sessions))
+                _t = asyncio.ensure_future(_try_send(ws, sessions))
+                self._tasks.add(_t)
             except Exception as exc:
                 logger.warning("[broadcast] schedule send failed: %s", exc)
                 closed.append(ws)
@@ -2875,7 +2961,7 @@ class EncreWSHandler:
             config_to_save.save(str(config_path))
             logger.info("[persist_config] saved to %s", config_path)
         except Exception as exc:
-            logger.error("[persist_config] Failed to persist config: %s\n%s", exc, traceback.format_exc())  # noqa: E501
+            logger.error("[persist_config] Failed to persist config: %s\n%s", exc, traceback.format_exc())
 
     @staticmethod
     def _persist_settings(info: Any) -> None:
@@ -2905,7 +2991,7 @@ class EncreWSHandler:
             logger.warning("Failed to persist settings: %s", exc)
 
     @staticmethod
-    def _persist_mcp_json(info: Any, servers: list[dict[str, Any]]) -> None:
+    def _persist_mcp_json(_info: Any, servers: list[dict[str, Any]]) -> None:
         """Persist MCP servers to canonical encre mcp.json + ~/.claude/mcp.json."""
         try:
             mcp_data: dict[str, dict[str, Any]] = {}
@@ -3013,9 +3099,10 @@ class EncreWSHandler:
                                 progress, status, files,
                                 self._current_ws_id[:8] if self._current_ws_id else "?")
                 # Fire-and-forget the send coroutine (ignore connection errors)
-                asyncio.ensure_future(
+                _t = asyncio.ensure_future(
                     self._safe_send_index_status(ws, status, files, progress, current_file)
                 )
+                self._tasks.add(_t)
             except Exception:
                 pass
         return callback
@@ -3056,7 +3143,7 @@ class EncreWSHandler:
                 from encre.utils.types import BackendText
                 if isinstance(event, BackendText):
                     full_text += event.text
-                elif isinstance(event, (BackendFinish,)):
+                elif isinstance(event, BackendFinish):
                     break
             name = full_text.strip().strip('"').strip("'").strip("「").strip("」").strip("『").strip("』")[:15]
             if len(name) < 2:
@@ -3073,7 +3160,7 @@ class EncreWSHandler:
             if name:
                 self._manager.rename_session(session.session_id, name)
                 logger.info("[session] auto-named %s -> %s", session.session_id[:8], name)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.debug("[session] auto-name timed out")
         except Exception:
             logger.debug("[session] auto-name failed", exc_info=True)
@@ -3313,7 +3400,7 @@ class EncreWSHandler:
             await self._send(ws, "tool_call_start", name=event.name, id=event.id, session_id=sid)
 
         elif isinstance(event, ToolCallDelta):
-            await self._send(ws, "tool_call_delta", id=event.id, key=event.key, value=event.value, session_id=sid)  # noqa: E501
+            await self._send(ws, "tool_call_delta", id=event.id, key=event.key, value=event.value, session_id=sid)
 
         elif isinstance(event, ToolCallEnd):
             await self._send(ws, "tool_call_end", id=event.id, session_id=sid)
@@ -3345,13 +3432,20 @@ class EncreWSHandler:
             )
 
         elif isinstance(event, PermissionRequest):
-            await self._send(ws, "permission_request", tool_name=event.tool_name, reason=event.reason, session_id=sid)  # noqa: E501
+            await self._send(ws, "permission_request", tool_name=event.tool_name, reason=event.reason, session_id=sid)
 
         elif isinstance(event, QuestionRequest):
-            await self._send(ws, "question_request", tool_call_id=event.tool_call_id, questions=event.questions, session_id=sid)  # noqa: E501
+            await self._send(ws, "question_request", tool_call_id=event.tool_call_id, questions=event.questions, session_id=sid)
 
         elif isinstance(event, Artifact):
             await self._send(ws, "artifacts_update", artifacts=[event.artifact], session_id=sid)
+
+        elif isinstance(event, BackendError):
+            # A backend yielded a structured error event (e.g. provider returned
+            # a non-retryable 400 mid-stream).  Surface it to the UI immediately
+            # so the user sees the provider's actual error message instead of a
+            # generic "Error 400" once the agent loop finally unwinds.
+            await self._send(ws, "error", message=event.error, code="backend_error", session_id=sid)
 
         elif isinstance(event, Reference):
             await self._send(ws, "references_update", references=[event.reference], session_id=sid)
@@ -3378,7 +3472,7 @@ class EncreWSHandler:
             if _info is not None:
                 ctx_msgs = _info.agent.session.get_context_messages()
                 ctx_tokens = count_message_tokens(ctx_msgs)
-                window = _info.agent.loop.backend.context_window_size() if _info.agent.loop.backend else 0  # noqa: E501
+                window = _info.agent.loop.backend.context_window_size() if _info.agent.loop.backend else 0
                 await self._send(ws, "context_usage",
                     context_tokens=ctx_tokens,
                     context_window=window,
@@ -3456,7 +3550,7 @@ class EncreWSHandler:
             if _info is not None:
                 ctx_msgs = _info.agent.session.get_context_messages()
                 ctx_tokens = count_message_tokens(ctx_msgs)
-                window = _info.agent.loop.backend.context_window_size() if _info.agent.loop.backend else 0  # noqa: E501
+                window = _info.agent.loop.backend.context_window_size() if _info.agent.loop.backend else 0
                 await self._send(ws, "context_usage",
                     context_tokens=ctx_tokens,
                     context_window=window,
@@ -3577,7 +3671,7 @@ def _apply_workspace_config(config: Any, workspace_path: str) -> None:
 
 
 def _get_yim_data_dir() -> str:
-    return os.environ.get("ENCRE_DATA_DIR", os.path.join(os.path.expanduser("~"), ".dunimd", "encre"))  # noqa: E501
+    return os.environ.get("ENCRE_DATA_DIR", os.path.join(os.path.expanduser("~"), ".dunimd", "encre"))
 
 
 def _build_workspace_tree(ws_path: str, max_depth: int = 4, max_entries: int = 200) -> str:
@@ -3662,7 +3756,8 @@ def _remove_session_from_workspace_indices(session_id: str) -> None:
         if not os.path.isfile(idx_file):
             continue
         try:
-            raw = open(idx_file, encoding="utf-8").read().strip()
+            with open(idx_file, encoding="utf-8") as f:
+                raw = f.read().strip()
             if raw and not raw.startswith("{"):
                 from encre.crypto import decrypt
                 with contextlib.suppress(Exception):
@@ -3678,7 +3773,8 @@ def _remove_session_from_workspace_indices(session_id: str) -> None:
                     new_raw = encrypt(new_raw)
                 except Exception:
                     pass
-                open(idx_file, "w", encoding="utf-8").write(new_raw)
+                with open(idx_file, "w", encoding="utf-8") as f:
+                    f.write(new_raw)
         except Exception:
             continue
 

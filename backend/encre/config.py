@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -250,6 +251,7 @@ class EncreConfig:
     backend_type: str = ""
     backend_kwargs: dict[str, Any] = field(default_factory=dict)
     enable_prompt_caching: bool = True
+    enable_streaming_tool_execution: bool = False
     enable_project_rules: bool = True
     enable_global_rules: bool = True
     checkpoint_max_count: int = 10
@@ -398,7 +400,7 @@ class EncreConfig:
         result: dict[str, Any] = {}
         has_models = bool(self.models)
         for field_info in self.__dataclass_fields__.values():
-            if field_info.name in self._SKIP_TO_DICT or (has_models and field_info.name in self._MODEL_FLAT_FIELDS):  # noqa: E501
+            if field_info.name in self._SKIP_TO_DICT or (has_models and field_info.name in self._MODEL_FLAT_FIELDS):
                 continue
             elif field_info.name == "api_key":
                 raw = self.api_key
@@ -414,11 +416,11 @@ class EncreConfig:
 
         # Models, agents, sub_agents
         if self.models:
-            result["models"] = [m.to_dict(encrypt_api_keys=encrypt_api_keys) if isinstance(m, ModelConfig) else m for m in self.models]  # noqa: E501
+            result["models"] = [m.to_dict(encrypt_api_keys=encrypt_api_keys) if isinstance(m, ModelConfig) else m for m in self.models]
         if self.agents:
-            result["agents"] = [a.to_dict() if isinstance(a, AgentConfig) else a for a in self.agents]  # noqa: E501
+            result["agents"] = [a.to_dict() if isinstance(a, AgentConfig) else a for a in self.agents]
         if self.sub_agents:
-            result["sub_agents"] = [s.to_dict() if isinstance(s, SubAgentConfig) else s for s in self.sub_agents]  # noqa: E501
+            result["sub_agents"] = [s.to_dict() if isinstance(s, SubAgentConfig) else s for s in self.sub_agents]
 
         # Flatten adapter_configs -> flat adapter_* keys for frontend compatibility
         for adapter_id, fields in self.adapter_configs.items():

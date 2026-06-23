@@ -91,9 +91,9 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "claude-opus-4-7", "label": "Claude Opus 4.7", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "context": 200000, "modalities": ["text", "image"]},  # noqa: E501
+            {"id": "claude-opus-4-7", "label": "Claude Opus 4.7", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "context": 200000, "modalities": ["text", "image"]},
         ],
     },
     # ── OpenAI ───────────────────────────────────────────────────────────
@@ -105,14 +105,14 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "gpt-5.5", "label": "GPT-5.5", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "gpt-5.4", "label": "GPT-5.4", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "gpt-5.4-mini", "label": "GPT-5.4 mini", "context": 400000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "gpt-4.1", "label": "GPT-4.1", "context": 1047576, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "gpt-4.1-mini", "label": "GPT-4.1 mini", "context": 1047576, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "gpt-4.1-nano", "label": "GPT-4.1 nano", "context": 1047576, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "gpt-4o", "label": "GPT-4o", "context": 128000, "modalities": ["text", "image", "audio"]},  # noqa: E501
-            {"id": "gpt-4o-mini", "label": "GPT-4o mini", "context": 128000, "modalities": ["text", "image", "audio"]},  # noqa: E501
+            {"id": "gpt-5.5", "label": "GPT-5.5", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "gpt-5.4", "label": "GPT-5.4", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "gpt-5.4-mini", "label": "GPT-5.4 mini", "context": 400000, "modalities": ["text", "image"]},
+            {"id": "gpt-4.1", "label": "GPT-4.1", "context": 1047576, "modalities": ["text", "image"]},
+            {"id": "gpt-4.1-mini", "label": "GPT-4.1 mini", "context": 1047576, "modalities": ["text", "image"]},
+            {"id": "gpt-4.1-nano", "label": "GPT-4.1 nano", "context": 1047576, "modalities": ["text", "image"]},
+            {"id": "gpt-4o", "label": "GPT-4o", "context": 128000, "modalities": ["text", "image", "audio"]},
+            {"id": "gpt-4o-mini", "label": "GPT-4o mini", "context": 128000, "modalities": ["text", "image", "audio"]},
             {"id": "o3", "label": "o3", "context": 200000, "modalities": ["text"]},
             {"id": "o3-mini", "label": "o3-mini", "context": 200000, "modalities": ["text"]},
             {"id": "o4-mini", "label": "o4-mini", "context": 200000, "modalities": ["text"]},
@@ -127,10 +127,10 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "deepseek-v4-flash", "label": "DeepSeek-V4-Flash", "context": 1000000, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-v4-pro", "label": "DeepSeek-V4-Pro", "context": 1000000, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-chat", "label": "DeepSeek-V3.2 (chat, deprecated)", "context": 128000, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-reasoner", "label": "DeepSeek-R1 (reasoner, deprecated)", "context": 128000, "modalities": ["text"]},  # noqa: E501
+            {"id": "deepseek-v4-flash", "label": "DeepSeek-V4-Flash", "context": 1000000, "modalities": ["text"]},
+            {"id": "deepseek-v4-pro", "label": "DeepSeek-V4-Pro", "context": 1000000, "modalities": ["text"]},
+            {"id": "deepseek-chat", "label": "DeepSeek-V3.2 (chat, deprecated)", "context": 128000, "modalities": ["text"]},
+            {"id": "deepseek-reasoner", "label": "DeepSeek-R1 (reasoner, deprecated)", "context": 128000, "modalities": ["text"]},
         ],
     },
     # ── Google Gemini ────────────────────────────────────────────────────
@@ -142,12 +142,12 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "gemini-3.1-pro", "label": "Gemini 3.1 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "gemini-3-flash", "label": "Gemini 3 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
+            {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "gemini-3.1-pro", "label": "Gemini 3.1 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "gemini-3-flash", "label": "Gemini 3 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},
         ],
     },
     # ── Groq ─────────────────────────────────────────────────────────────
@@ -159,14 +159,14 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B Versatile", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B Instant", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "groq/compound", "label": "Groq Compound", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "groq/compound-mini", "label": "Groq Compound Mini", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "meta-llama/llama-4-scout-17b-16e-instruct", "label": "Llama 4 Scout 17B", "context": 131072, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "qwen/qwen3-32b", "label": "Qwen3-32B", "context": 131072, "modalities": ["text"]},  # noqa: E501
+            {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B Versatile", "context": 131072, "modalities": ["text"]},
+            {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B Instant", "context": 131072, "modalities": ["text"]},
+            {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B", "context": 131072, "modalities": ["text"]},
+            {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B", "context": 131072, "modalities": ["text"]},
+            {"id": "groq/compound", "label": "Groq Compound", "context": 131072, "modalities": ["text"]},
+            {"id": "groq/compound-mini", "label": "Groq Compound Mini", "context": 131072, "modalities": ["text"]},
+            {"id": "meta-llama/llama-4-scout-17b-16e-instruct", "label": "Llama 4 Scout 17B", "context": 131072, "modalities": ["text", "image"]},
+            {"id": "qwen/qwen3-32b", "label": "Qwen3-32B", "context": 131072, "modalities": ["text"]},
         ],
     },
     # ── Ollama (local) ───────────────────────────────────────────────────
@@ -182,9 +182,9 @@ PROVIDERS: list[dict[str, Any]] = [
             {"id": "llama3.2", "label": "Llama 3.2", "context": 131072, "modalities": ["text"]},
             {"id": "llama3.1", "label": "Llama 3.1", "context": 131072, "modalities": ["text"]},
             {"id": "qwen2.5", "label": "Qwen 2.5", "context": 131072, "modalities": ["text"]},
-            {"id": "qwen2.5-coder", "label": "Qwen 2.5 Coder", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-r1", "label": "DeepSeek R1", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-v3", "label": "DeepSeek V3", "context": 131072, "modalities": ["text"]},  # noqa: E501
+            {"id": "qwen2.5-coder", "label": "Qwen 2.5 Coder", "context": 131072, "modalities": ["text"]},
+            {"id": "deepseek-r1", "label": "DeepSeek R1", "context": 131072, "modalities": ["text"]},
+            {"id": "deepseek-v3", "label": "DeepSeek V3", "context": 131072, "modalities": ["text"]},
             {"id": "mistral", "label": "Mistral 7B", "context": 32768, "modalities": ["text"]},
             {"id": "mixtral", "label": "Mixtral 8x7B", "context": 32768, "modalities": ["text"]},
             {"id": "phi4", "label": "Phi-4 14B", "context": 16384, "modalities": ["text"]},
@@ -220,13 +220,13 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "aws_iam",
         "models": [
-            {"id": "anthropic.claude-opus-4-7", "label": "Claude Opus 4.7 (Bedrock)", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "anthropic.claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (Bedrock)", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "anthropic.claude-haiku-4-5-20251001-v1:0", "label": "Claude Haiku 4.5 (Bedrock)", "context": 200000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "us.meta.llama3-3-70b-instruct-v1:0", "label": "Llama 3.3 70B Instruct", "context": 128000, "modalities": ["text"]},  # noqa: E501
-            {"id": "amazon.nova-pro-v1:0", "label": "Amazon Nova Pro", "context": 300000, "modalities": ["text", "image", "video"]},  # noqa: E501
-            {"id": "amazon.nova-lite-v1:0", "label": "Amazon Nova Lite", "context": 300000, "modalities": ["text", "image", "video"]},  # noqa: E501
-            {"id": "amazon.nova-micro-v1:0", "label": "Amazon Nova Micro", "context": 128000, "modalities": ["text"]},  # noqa: E501
+            {"id": "anthropic.claude-opus-4-7", "label": "Claude Opus 4.7 (Bedrock)", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "anthropic.claude-sonnet-4-6", "label": "Claude Sonnet 4.6 (Bedrock)", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "anthropic.claude-haiku-4-5-20251001-v1:0", "label": "Claude Haiku 4.5 (Bedrock)", "context": 200000, "modalities": ["text", "image"]},
+            {"id": "us.meta.llama3-3-70b-instruct-v1:0", "label": "Llama 3.3 70B Instruct", "context": 128000, "modalities": ["text"]},
+            {"id": "amazon.nova-pro-v1:0", "label": "Amazon Nova Pro", "context": 300000, "modalities": ["text", "image", "video"]},
+            {"id": "amazon.nova-lite-v1:0", "label": "Amazon Nova Lite", "context": 300000, "modalities": ["text", "image", "video"]},
+            {"id": "amazon.nova-micro-v1:0", "label": "Amazon Nova Micro", "context": 128000, "modalities": ["text"]},
         ],
     },
     # ── Generic OpenAI-compatible ─────────────────────────────────────────
@@ -248,18 +248,18 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "openrouter/auto", "label": "Auto (router)", "context": 200000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "anthropic/claude-opus-4.7", "label": "Claude Opus 4.7", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "anthropic/claude-sonnet-4.6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "openai/gpt-5.5", "label": "GPT-5.5", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "openai/gpt-5.4", "label": "GPT-5.4", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "openai/gpt-4.1", "label": "GPT-4.1", "context": 1047576, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "google/gemini-3.5-flash", "label": "Gemini 3.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "context": 1000000, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "context": 1000000, "modalities": ["text"]},  # noqa: E501
-            {"id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "context": 128000, "modalities": ["text"]},  # noqa: E501
-            {"id": "x-ai/grok-4", "label": "xAI Grok 4", "context": 256000, "modalities": ["text", "image"]},  # noqa: E501
+            {"id": "openrouter/auto", "label": "Auto (router)", "context": 200000, "modalities": ["text", "image"]},
+            {"id": "anthropic/claude-opus-4.7", "label": "Claude Opus 4.7", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "anthropic/claude-sonnet-4.6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "openai/gpt-5.5", "label": "GPT-5.5", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "openai/gpt-5.4", "label": "GPT-5.4", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "openai/gpt-4.1", "label": "GPT-4.1", "context": 1047576, "modalities": ["text", "image"]},
+            {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "google/gemini-3.5-flash", "label": "Gemini 3.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "context": 1000000, "modalities": ["text"]},
+            {"id": "deepseek/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "context": 1000000, "modalities": ["text"]},
+            {"id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "context": 128000, "modalities": ["text"]},
+            {"id": "x-ai/grok-4", "label": "xAI Grok 4", "context": 256000, "modalities": ["text", "image"]},
         ],
     },
     {
@@ -270,10 +270,10 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "context": 1000000, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "context": 1000000, "modalities": ["text"]},  # noqa: E501
-            {"id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "qwen/qwen-2.5-72b-instruct", "label": "Qwen 2.5 72B Instruct", "context": 131072, "modalities": ["text"]},  # noqa: E501
+            {"id": "deepseek/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "context": 1000000, "modalities": ["text"]},
+            {"id": "deepseek/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "context": 1000000, "modalities": ["text"]},
+            {"id": "meta-llama/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "context": 131072, "modalities": ["text"]},
+            {"id": "qwen/qwen-2.5-72b-instruct", "label": "Qwen 2.5 72B Instruct", "context": 131072, "modalities": ["text"]},
         ],
     },
     {
@@ -293,10 +293,10 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "meta-llama/Llama-3.3-70B-Instruct", "label": "Llama 3.3 70B Instruct", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "Qwen/Qwen2.5-72B-Instruct", "label": "Qwen 2.5 72B Instruct", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-ai/DeepSeek-V3", "label": "DeepSeek V3", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-ai/DeepSeek-R1", "label": "DeepSeek R1", "context": 131072, "modalities": ["text"]},  # noqa: E501
+            {"id": "meta-llama/Llama-3.3-70B-Instruct", "label": "Llama 3.3 70B Instruct", "context": 131072, "modalities": ["text"]},
+            {"id": "Qwen/Qwen2.5-72B-Instruct", "label": "Qwen 2.5 72B Instruct", "context": 131072, "modalities": ["text"]},
+            {"id": "deepseek-ai/DeepSeek-V3", "label": "DeepSeek V3", "context": 131072, "modalities": ["text"]},
+            {"id": "deepseek-ai/DeepSeek-R1", "label": "DeepSeek R1", "context": 131072, "modalities": ["text"]},
         ],
     },
     {
@@ -307,11 +307,11 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "github_oauth",
         "models": [
-            {"id": "gpt-4o", "label": "GPT-4o", "context": 128000, "modalities": ["text", "image", "audio"]},  # noqa: E501
-            {"id": "gpt-4o-mini", "label": "GPT-4o mini", "context": 128000, "modalities": ["text", "image", "audio"]},  # noqa: E501
+            {"id": "gpt-4o", "label": "GPT-4o", "context": 128000, "modalities": ["text", "image", "audio"]},
+            {"id": "gpt-4o-mini", "label": "GPT-4o mini", "context": 128000, "modalities": ["text", "image", "audio"]},
             {"id": "o3-mini", "label": "o3-mini", "context": 200000, "modalities": ["text"]},
-            {"id": "claude-3.5-sonnet", "label": "Claude 3.5 Sonnet", "context": 200000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "gemini-2.0-flash-001", "label": "Gemini 2.0 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
+            {"id": "claude-3.5-sonnet", "label": "Claude 3.5 Sonnet", "context": 200000, "modalities": ["text", "image"]},
+            {"id": "gemini-2.0-flash-001", "label": "Gemini 2.0 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},
         ],
     },
     # ── 国内服务商 ──────────────────────────────────────────────────────
@@ -325,10 +325,10 @@ PROVIDERS: list[dict[str, Any]] = [
         "models": [
             {"id": "glm-5.1", "label": "GLM-5.1", "context": 200000, "modalities": ["text"]},
             {"id": "glm-5", "label": "GLM-5", "context": 200000, "modalities": ["text"]},
-            {"id": "glm-5-turbo", "label": "GLM-5-Turbo", "context": 200000, "modalities": ["text"]},  # noqa: E501
+            {"id": "glm-5-turbo", "label": "GLM-5-Turbo", "context": 200000, "modalities": ["text"]},
             {"id": "glm-4.7", "label": "GLM-4.7", "context": 200000, "modalities": ["text"]},
             {"id": "glm-4.6", "label": "GLM-4.6", "context": 200000, "modalities": ["text"]},
-            {"id": "glm-4.7-flash", "label": "GLM-4.7-Flash (free)", "context": 200000, "modalities": ["text"]},  # noqa: E501
+            {"id": "glm-4.7-flash", "label": "GLM-4.7-Flash (free)", "context": 200000, "modalities": ["text"]},
         ],
     },
     {
@@ -339,10 +339,10 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "kimi-k2.6", "label": "Kimi K2.6", "context": 262144, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "kimi-k2.5", "label": "Kimi K2.5", "context": 262144, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "kimi-k2-0905-preview", "label": "Kimi K2 (preview)", "context": 262144, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "context": 262144, "modalities": ["text"]},  # noqa: E501
+            {"id": "kimi-k2.6", "label": "Kimi K2.6", "context": 262144, "modalities": ["text", "image"]},
+            {"id": "kimi-k2.5", "label": "Kimi K2.5", "context": 262144, "modalities": ["text", "image"]},
+            {"id": "kimi-k2-0905-preview", "label": "Kimi K2 (preview)", "context": 262144, "modalities": ["text", "image"]},
+            {"id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "context": 262144, "modalities": ["text"]},
         ],
     },
     {
@@ -353,10 +353,10 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "MiniMax-M2.7", "label": "MiniMax-M2.7", "context": 204800, "modalities": ["text"]},  # noqa: E501
-            {"id": "MiniMax-M2.7-highspeed", "label": "MiniMax-M2.7-HighSpeed", "context": 204800, "modalities": ["text"]},  # noqa: E501
-            {"id": "MiniMax-M2.5", "label": "MiniMax-M2.5", "context": 204800, "modalities": ["text"]},  # noqa: E501
-            {"id": "MiniMax-M2.1", "label": "MiniMax-M2.1", "context": 204800, "modalities": ["text"]},  # noqa: E501
+            {"id": "MiniMax-M2.7", "label": "MiniMax-M2.7", "context": 204800, "modalities": ["text"]},
+            {"id": "MiniMax-M2.7-highspeed", "label": "MiniMax-M2.7-HighSpeed", "context": 204800, "modalities": ["text"]},
+            {"id": "MiniMax-M2.5", "label": "MiniMax-M2.5", "context": 204800, "modalities": ["text"]},
+            {"id": "MiniMax-M2.1", "label": "MiniMax-M2.1", "context": 204800, "modalities": ["text"]},
         ],
     },
     {
@@ -367,9 +367,9 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "qwen3.6-max-preview", "label": "Qwen3.6-Max", "context": 256000, "modalities": ["text"]},  # noqa: E501
-            {"id": "qwen3.6-plus", "label": "Qwen3.6-Plus", "context": 256000, "modalities": ["text"]},  # noqa: E501
-            {"id": "qwen3.6-flash", "label": "Qwen3.6-Flash", "context": 256000, "modalities": ["text"]},  # noqa: E501
+            {"id": "qwen3.6-max-preview", "label": "Qwen3.6-Max", "context": 256000, "modalities": ["text"]},
+            {"id": "qwen3.6-plus", "label": "Qwen3.6-Plus", "context": 256000, "modalities": ["text"]},
+            {"id": "qwen3.6-flash", "label": "Qwen3.6-Flash", "context": 256000, "modalities": ["text"]},
             {"id": "qwen-max", "label": "Qwen-Max", "context": 32768, "modalities": ["text"]},
             {"id": "qwen-plus", "label": "Qwen-Plus", "context": 131072, "modalities": ["text"]},
             {"id": "qwen-turbo", "label": "Qwen-Turbo", "context": 131072, "modalities": ["text"]},
@@ -384,12 +384,12 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "hy3-preview", "label": "Hy3 Preview", "context": 131072, "modalities": ["text"]},  # noqa: E501
+            {"id": "hy3-preview", "label": "Hy3 Preview", "context": 131072, "modalities": ["text"]},
             {"id": "hunyuan-t1", "label": "Hunyuan-T1", "context": 131072, "modalities": ["text"]},
-            {"id": "hunyuan-turbo-s", "label": "Hunyuan-TurboS", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "hunyuan-2.0-instruct", "label": "Tencent HY 2.0 Instruct", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "hunyuan-2.0-think", "label": "Tencent HY 2.0 Think", "context": 131072, "modalities": ["text"]},  # noqa: E501
-            {"id": "hunyuan-lite", "label": "Hunyuan-Lite (free)", "context": 262144, "modalities": ["text"]},  # noqa: E501
+            {"id": "hunyuan-turbo-s", "label": "Hunyuan-TurboS", "context": 131072, "modalities": ["text"]},
+            {"id": "hunyuan-2.0-instruct", "label": "Tencent HY 2.0 Instruct", "context": 131072, "modalities": ["text"]},
+            {"id": "hunyuan-2.0-think", "label": "Tencent HY 2.0 Think", "context": 131072, "modalities": ["text"]},
+            {"id": "hunyuan-lite", "label": "Hunyuan-Lite (free)", "context": 262144, "modalities": ["text"]},
         ],
     },
     {
@@ -401,7 +401,7 @@ PROVIDERS: list[dict[str, Any]] = [
         "auth": "api_key",
         "models": [
             {"id": "mimo-7b-rl", "label": "MiMo 7B RL", "context": 32768, "modalities": ["text"]},
-            {"id": "mimo-7b-base", "label": "MiMo 7B Base", "context": 32768, "modalities": ["text"]},  # noqa: E501
+            {"id": "mimo-7b-base", "label": "MiMo 7B Base", "context": 32768, "modalities": ["text"]},
         ],
     },
     # ── Volcengine Ark (火山方舟) ────────────────────────────────────────
@@ -428,11 +428,11 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "virtuoso-large", "label": "Virtuoso Large", "context": 128000, "modalities": ["text"]},  # noqa: E501
-            {"id": "virtuoso-medium-v2", "label": "Virtuoso Medium v2", "context": 128000, "modalities": ["text"]},  # noqa: E501
-            {"id": "caller-large", "label": "Caller Large", "context": 32000, "modalities": ["text"]},  # noqa: E501
-            {"id": "spotlight", "label": "Spotlight (vision)", "context": 32000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "maestro-reasoning", "label": "Maestro Reasoning", "context": 64000, "modalities": ["text"]},  # noqa: E501
+            {"id": "virtuoso-large", "label": "Virtuoso Large", "context": 128000, "modalities": ["text"]},
+            {"id": "virtuoso-medium-v2", "label": "Virtuoso Medium v2", "context": 128000, "modalities": ["text"]},
+            {"id": "caller-large", "label": "Caller Large", "context": 32000, "modalities": ["text"]},
+            {"id": "spotlight", "label": "Spotlight (vision)", "context": 32000, "modalities": ["text", "image"]},
+            {"id": "maestro-reasoning", "label": "Maestro Reasoning", "context": 64000, "modalities": ["text"]},
         ],
     },
     {
@@ -443,9 +443,9 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "deepseek-ai/DeepSeek-V3", "label": "DeepSeek V3", "context": 128000, "modalities": ["text"]},  # noqa: E501
-            {"id": "deepseek-ai/DeepSeek-R1", "label": "DeepSeek R1", "context": 128000, "modalities": ["text"]},  # noqa: E501
-            {"id": "meta-llama/Llama-3.3-70B-Instruct", "label": "Llama 3.3 70B Instruct", "context": 131072, "modalities": ["text"]},  # noqa: E501
+            {"id": "deepseek-ai/DeepSeek-V3", "label": "DeepSeek V3", "context": 128000, "modalities": ["text"]},
+            {"id": "deepseek-ai/DeepSeek-R1", "label": "DeepSeek R1", "context": 128000, "modalities": ["text"]},
+            {"id": "meta-llama/Llama-3.3-70B-Instruct", "label": "Llama 3.3 70B Instruct", "context": 131072, "modalities": ["text"]},
         ],
     },
     {
@@ -456,12 +456,12 @@ PROVIDERS: list[dict[str, Any]] = [
         "allow_custom": True,
         "auth": "api_key",
         "models": [
-            {"id": "anthropic/claude-sonnet-4.6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "anthropic/claude-opus-4.7", "label": "Claude Opus 4.7", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "openai/gpt-5.5", "label": "GPT-5.5", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "openai/gpt-5.4", "label": "GPT-5.4", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
-            {"id": "google/gemini-3.5-flash", "label": "Gemini 3.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},  # noqa: E501
+            {"id": "anthropic/claude-sonnet-4.6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "anthropic/claude-opus-4.7", "label": "Claude Opus 4.7", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "openai/gpt-5.5", "label": "GPT-5.5", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "openai/gpt-5.4", "label": "GPT-5.4", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context": 2097152, "modalities": ["text", "image", "audio", "video"]},
+            {"id": "google/gemini-3.5-flash", "label": "Gemini 3.5 Flash", "context": 1048576, "modalities": ["text", "image", "audio", "video"]},
         ],
     },
     {
@@ -473,9 +473,9 @@ PROVIDERS: list[dict[str, Any]] = [
         "auth": "api_key",
         "models": [
             {"id": "grok-code", "label": "Grok Code", "context": 256000, "modalities": ["text"]},
-            {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},  # noqa: E501
-            {"id": "qwen3-coder", "label": "Qwen3 Coder", "context": 256000, "modalities": ["text"]},  # noqa: E501
-            {"id": "kimi-k2.6", "label": "Kimi K2.6", "context": 262144, "modalities": ["text", "image"]},  # noqa: E501
+            {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "context": 1000000, "modalities": ["text", "image"]},
+            {"id": "qwen3-coder", "label": "Qwen3 Coder", "context": 256000, "modalities": ["text"]},
+            {"id": "kimi-k2.6", "label": "Kimi K2.6", "context": 262144, "modalities": ["text", "image"]},
         ],
     },
     {

@@ -30,6 +30,6 @@ from encre.prompts.loader import PromptLoader
 _loader = PromptLoader()
 
 
-async def _batch_prompt(args: str | None, ctx: dict[str, Any]) -> str:
+async def _batch_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
     task_description = args or "the user's request described in conversation history"
     return _loader.load_with_context("batch", category="skills", task_description=task_description)

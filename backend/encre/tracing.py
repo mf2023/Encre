@@ -100,14 +100,14 @@ class _NoOpSpan:
 class _NoOpTracer:
     """Tracer that returns ``_NoOpSpan`` for every call."""
 
-    def start_span(self, *args: Any, **kwargs: Any) -> _NoOpSpan:
+    def start_span(self, *_args: Any, **_kwargs: Any) -> _NoOpSpan:
         return _NoOpSpan()
 
-    def start_as_current_span(self, *args: Any, **kwargs: Any) -> _NoOpSpan:
+    def start_as_current_span(self, *_args: Any, **_kwargs: Any) -> _NoOpSpan:
         return _NoOpSpan()
 
     @contextmanager
-    def start_span_cm(self, name: str, **kwargs: Any) -> Generator[_NoOpSpan, None, None]:
+    def start_span_cm(self, _name: str, **_kwargs: Any) -> Generator[_NoOpSpan, None, None]:
         yield _NoOpSpan()
 
 

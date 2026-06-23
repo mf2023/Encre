@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """Prompt testing and validation framework.
 
@@ -27,8 +26,8 @@ from __future__ import annotations
 
 import hashlib
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
 
 from encre.logging_config import get_logger
 from encre.prompts.loader import PromptLoader

@@ -149,7 +149,7 @@ async def _workflow_execute(**kwargs: Any) -> Any:
         async def _run_task_node(
             nid: str, node: TaskNode
         ) -> tuple[str, str, dict[str, Any] | None]:
-            prompt = f"## Task: {node.name}\n\n{node.description}\n\nComplete this task thoroughly. Report results clearly."  # noqa: E501
+            prompt = f"## Task: {node.name}\n\n{node.description}\n\nComplete this task thoroughly. Report results clearly."
             try:
                 sub_result = await loop._run_sub_agent(
                     prompt=prompt,
@@ -157,7 +157,7 @@ async def _workflow_execute(**kwargs: Any) -> Any:
                     progress_callback=None,  # sub-agent events stream via normal channels
                 )
                 msgs = sub_result.get("messages", []) if isinstance(sub_result, dict) else []
-                content = sub_result.get("content", "") if isinstance(sub_result, dict) else str(sub_result)  # noqa: E501
+                content = sub_result.get("content", "") if isinstance(sub_result, dict) else str(sub_result)
                 return nid, content, msgs
             except Exception as exc:
                 return nid, f"FAILED: {exc}", None
@@ -211,9 +211,9 @@ async def _workflow_execute(**kwargs: Any) -> Any:
     # Phase 3: Aggregate results
     success = len(failed_ids) == 0
     result_parts = [f"## Workflow Results: {tree.goal}\n"]
-    for nid, node in tree.nodes.items():
-        status_icon = "✓" if node.status == "completed" else "✗" if node.status == "failed" else "--"  # noqa: E501
-        result_parts.append(f"- {status_icon} **{node.name}**: {node.result[:200] if node.result else node.status}")  # noqa: E501
+    for _nid, node in tree.nodes.items():
+        status_icon = "✓" if node.status == "completed" else "✗" if node.status == "failed" else "--"
+        result_parts.append(f"- {status_icon} **{node.name}**: {node.result[:200] if node.result else node.status}")
 
     if progress_callback:
         await progress_callback([{

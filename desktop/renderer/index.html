@@ -24,6 +24,17 @@
       <button id="btn-sidebar-search" class="btn-icon btn-sm" data-i18n-title="sidebar.search" title="Search">
         <i data-lucide="search" class="lucide"></i>
       </button>
+      <!-- Shared mode switch (same .seg component as tray popup) -->
+      <div class="seg" id="mode-seg" role="tablist" aria-label="Mode switch">
+        <button type="button" class="seg-item active" data-mode="normal" role="tab" aria-selected="true">
+          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span data-i18n="mode.normal">Chats</span>
+        </button>
+        <button type="button" class="seg-item" data-mode="iwork" role="tab" aria-selected="false">
+          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 12v7"/></svg>
+          <span data-i18n="mode.iwork">iWork</span>
+        </button>
+      </div>
     </div>
     <div class="header-right">
       <button id="btn-bell" class="btn-icon btn-sm" data-i18n-title="header.notifications" title="Notifications">
@@ -58,10 +69,8 @@
               <i data-lucide="message-square-dashed" class="lucide"></i>
             </button>
           </div>
-          <button class="nav-item" id="btn-sidebar-workspace" data-shortcut="workspace_open">
-            <span class="btn-content"><i data-lucide="compass" class="lucide"></i>
-            <span data-i18n="workspace.title">iWork</span></span>
-          </button>
+          <!-- iWork entry removed: the top-bar .seg switch is the single
+               entry point for normal ↔ iwork mode. Automation stays here. -->
           <button class="nav-item" id="btn-automation" data-shortcut="automation_open">
             <span class="btn-content"><i data-lucide="zap" class="lucide"></i>
             <span data-i18n="automation.title">自动化</span></span>

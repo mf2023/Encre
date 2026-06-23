@@ -83,18 +83,18 @@ EncreQuestionTool = build_tool(
         "Usage examples:\n"
         '- Single: question(question="你要开发什么类型的网站？")\n'
         '- With options: question(question="你更偏好哪个方案？", options=["方案A: 性能优先", "方案B: 可维护性优先"])\n'
-        '- Multiple at once: question(questions=[{question:"项目名称是什么？"},{question:"目标用户是谁？"},{question:"主要功能有哪些？"}])'  # noqa: E501
+        '- Multiple at once: question(questions=[{question:"项目名称是什么？"},{question:"目标用户是谁？"},{question:"主要功能有哪些？"}])'
     ),
     input_schema={
         "type": "object",
         "properties": {
             "question": {
                 "type": "string",
-                "description": "A single question to ask the user. Use this for simple queries, or use 'questions' for multiple.",  # noqa: E501
+                "description": "A single question to ask the user. Use this for simple queries, or use 'questions' for multiple.",
             },
             "details": {
                 "type": "string",
-                "description": "Optional background context to help the user understand why you're asking.",  # noqa: E501
+                "description": "Optional background context to help the user understand why you're asking.",
             },
             "options": {
                 "type": "array",
@@ -107,7 +107,7 @@ EncreQuestionTool = build_tool(
                     "type": "object",
                     "properties": {
                         "question": {"type": "string", "description": "The question text."},
-                        "details": {"type": "string", "description": "Optional context for this question."},  # noqa: E501
+                        "details": {"type": "string", "description": "Optional context for this question."},
                         "options": {
                             "type": "array", "items": {"type": "string"},
                             "description": "Optional predefined choices.",
@@ -115,7 +115,7 @@ EncreQuestionTool = build_tool(
                     },
                     "required": ["question"],
                 },
-                "description": "Multiple questions to ask at once. Each can have its own details and options. All are displayed together, and the user answers before the model continues.",  # noqa: E501
+                "description": "Multiple questions to ask at once. Each can have its own details and options. All are displayed together, and the user answers before the model continues.",
             },
         },
         "required": ["question"],
@@ -129,4 +129,4 @@ EncreQuestionTool = build_tool(
 )
 
 
-__all__ = ["EncreQuestionTool", "_set_backend"]
+__all__ = ["EncreQuestionTool"]

@@ -129,6 +129,6 @@ class EncrePlugin:
         """Return JSON Schema for plugin configuration, or None."""
         return None
 
-    def validate_config(self, config: dict[str, Any]) -> list[str]:
+    def validate_config(self, _config: dict[str, Any]) -> list[str]:
         """Validate plugin configuration. Returns list of errors (empty = valid)."""
         return []

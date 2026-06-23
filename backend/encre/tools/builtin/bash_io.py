@@ -69,7 +69,7 @@ async def _bash_kill_execute(**kwargs: Any) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-async def _bash_list_execute(**kwargs: Any) -> str:
+async def _bash_list_execute(**_kwargs: Any) -> str:
     shells = BackgroundShellManager.instance().list_shells()
     return json.dumps(shells, ensure_ascii=False)
 

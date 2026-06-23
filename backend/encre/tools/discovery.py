@@ -141,7 +141,7 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
     # Code intelligence
     "lsp": {
         "category": "code_intel",
-        "triggers": ["lsp", "language server", "hover", "go to definition", "diagnostics", "rename symbol"],  # noqa: E501
+        "triggers": ["lsp", "language server", "hover", "go to definition", "diagnostics", "rename symbol"],
     },
     "git": {
         "category": "code_intel",
@@ -150,11 +150,11 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
     # Browser / GUI
     "browser": {
         "category": "gui",
-        "triggers": ["browser", "chromium", "click button", "navigate url", "screenshot page", "cdp"],  # noqa: E501
+        "triggers": ["browser", "chromium", "click button", "navigate url", "screenshot page", "cdp"],
     },
     "desktop": {
         "category": "gui",
-        "triggers": ["desktop", "windows", "ui automation", "click ui", "type", "screenshot", "screen", "mouse", "keyboard"],  # noqa: E501
+        "triggers": ["desktop", "windows", "ui automation", "click ui", "type", "screenshot", "screen", "mouse", "keyboard"],
     },
     # Notebook / docs
     "notebook": {
@@ -209,7 +209,7 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
     "task_update": {"category": "task", "triggers": ["update task"]},
     "task_stop": {"category": "task", "triggers": ["stop task"]},
     "task_output": {"category": "task", "triggers": ["task output", "task result"]},
-    "cron_create": {"category": "task", "triggers": ["cron", "schedule", "recurring", "every minute", "every hour"]},  # noqa: E501
+    "cron_create": {"category": "task", "triggers": ["cron", "schedule", "recurring", "every minute", "every hour"]},
     "cron_list": {"category": "task", "triggers": ["list cron"]},
     "cron_delete": {"category": "task", "triggers": ["delete cron", "remove schedule"]},
     # Sub-agent
@@ -349,7 +349,7 @@ class ToolDiscovery:
 
     # ─── BM25 scoring ───────────────────────────────────────────────
 
-    def _score(self, query_tokens: list[str], entry: _IndexEntry, k1: float = 1.5, b: float = 0.75) -> float:  # noqa: E501
+    def _score(self, query_tokens: list[str], entry: _IndexEntry, k1: float = 1.5, b: float = 0.75) -> float:
         if not query_tokens or not self._entries:
             return 0.0
         n = len(self._entries)
@@ -478,7 +478,7 @@ class ToolDiscovery:
                 names.add(n)
         return sorted(names)
 
-    def get_active_tools_payload(self, session_id: str, fmt: str = "openai") -> list[dict[str, Any]]:  # noqa: E501
+    def get_active_tools_payload(self, session_id: str, fmt: str = "openai") -> list[dict[str, Any]]:
         """Materialize the active tool list as backend-format dicts."""
         self._ensure_built()
         cache_key = (self._signature, session_id, fmt)

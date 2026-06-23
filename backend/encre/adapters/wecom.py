@@ -149,7 +149,7 @@ class WXBizMsgCrypt:
             raise WeComCryptoError("receive_id mismatch")
         return xml_content
 
-    def encrypt(self, plaintext: str, nonce: str | None = None, timestamp: str | None = None) -> str:  # noqa: E501
+    def encrypt(self, plaintext: str, nonce: str | None = None, timestamp: str | None = None) -> str:
         nonce = nonce or self._random_nonce()
         timestamp = timestamp or str(int(time.time()))
         encrypt = self._encrypt_bytes(plaintext.encode("utf-8"))
@@ -279,7 +279,7 @@ class WeComAdapter(BaseAdapter):
 
         try:
             logger.info("[%s] Step 1/3: Starting HTTP server on port %d...", self.name, self._port)
-            self._http_client = httpx.AsyncClient(timeout=20.0, follow_redirects=True, proxy=BaseAdapter.resolve_proxy_url())  # noqa: E501
+            self._http_client = httpx.AsyncClient(timeout=20.0, follow_redirects=True, proxy=BaseAdapter.resolve_proxy_url())
             self._app = web.Application()
             self._app.router.add_get("/", self._handle_verify)
             self._app.router.add_post("/", self._handle_callback)
@@ -294,7 +294,7 @@ class WeComAdapter(BaseAdapter):
             logger.info("[%s] Step 2/3: Token refreshed", self.name)
 
             self._mark_connected()
-            logger.info("[%s] Step 3/3: Webhook server listening on 0.0.0.0:%d", self.name, self._port)  # noqa: E501
+            logger.info("[%s] Step 3/3: Webhook server listening on 0.0.0.0:%d", self.name, self._port)
             return True
         except Exception:
             await self._cleanup()
@@ -354,7 +354,7 @@ class WeComAdapter(BaseAdapter):
         chat_id: str,
         file_path: str,
         *,
-        caption: str | None = None,
+        _caption: str | None = None,
     ) -> SendResult:
         if not self._http_client:
             return SendResult(success=False, error="adapter not connected")
@@ -478,7 +478,7 @@ class WeComAdapter(BaseAdapter):
     async def handle_callback(
         self,
         body: bytes,
-        query_params: dict[str, str],
+        _query_params: dict[str, str],
         msg_signature: str,
         timestamp: str,
         nonce: str,
@@ -511,16 +511,16 @@ class WeComAdapter(BaseAdapter):
         if event is not None:
             if event.message_id:
                 now = time.time()
-                if event.message_id in self._seen_messages:
-                    if now - self._seen_messages[event.message_id] < MESSAGE_DEDUP_TTL_SECONDS:
-                        logger.debug("[%s] Duplicate MsgId %s, skipping", self.name, event.message_id)  # noqa: E501
-                        return b"success"
+                if event.message_id in self._seen_messages and now - self._seen_messages[event.message_id] < MESSAGE_DEDUP_TTL_SECONDS:
+                    logger.debug("[%s] Duplicate MsgId %s, skipping", self.name, event.message_id)
+                    return b"success"
                 self._seen_messages[event.message_id] = now
                 if len(self._seen_messages) > 2000:
                     cutoff = now - MESSAGE_DEDUP_TTL_SECONDS
-                    self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > cutoff}  # noqa: E501
+                    self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > cutoff}
 
-            asyncio.ensure_future(self._dispatch_event(event))
+            _t = asyncio.ensure_future(self._dispatch_event(event))
+            self._background_tasks.add(_t)
 
         return b"success"
 
@@ -578,10 +578,11 @@ class WeComAdapter(BaseAdapter):
     async def _dispatch_event(self, event: MessageEvent) -> None:
         try:
             self.dispatch_message(event)
-            asyncio.ensure_future(self._process_chat(
+            _t = asyncio.ensure_future(self._process_chat(
                 chat_id=event.chat_id or "",
                 content=event.text,
             ))
+            self._background_tasks.add(_t)
         except Exception as exc:
             logger.error("[%s] Event dispatch error: %s", self.name, exc)
 
@@ -632,15 +633,15 @@ class WeComAdapter(BaseAdapter):
         if event is not None:
             if event.message_id:
                 now = time.time()
-                if event.message_id in self._seen_messages:
-                    if now - self._seen_messages[event.message_id] < MESSAGE_DEDUP_TTL_SECONDS:
-                        logger.debug("[%s] Duplicate MsgId %s, skipping", self.name, event.message_id)  # noqa: E501
-                        return web.Response(text="success", content_type="text/plain")
+                if event.message_id in self._seen_messages and now - self._seen_messages[event.message_id] < MESSAGE_DEDUP_TTL_SECONDS:
+                    logger.debug("[%s] Duplicate MsgId %s, skipping", self.name, event.message_id)
+                    return web.Response(text="success", content_type="text/plain")
                 self._seen_messages[event.message_id] = now
                 if len(self._seen_messages) > 2000:
                     cutoff = now - MESSAGE_DEDUP_TTL_SECONDS
-                    self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > cutoff}  # noqa: E501
+                    self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > cutoff}
 
-            asyncio.ensure_future(self._dispatch_event(event))
+            _t2 = asyncio.ensure_future(self._dispatch_event(event))
+            self._background_tasks.add(_t2)
 
         return web.Response(text="success", content_type="text/plain")

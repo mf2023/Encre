@@ -48,7 +48,7 @@ _INDEXER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _get_data_dir() -> str:
-    return os.environ.get("ENCRE_DATA_DIR", os.path.join(os.path.expanduser("~"), ".dunimd", "encre"))  # noqa: E501
+    return os.environ.get("ENCRE_DATA_DIR", os.path.join(os.path.expanduser("~"), ".dunimd", "encre"))
 
 
 def _progress_path(ws_id: str) -> str:
@@ -377,7 +377,7 @@ class IndexManager:
             except Exception:
                 idx = None
             if idx and not idx._need_reindex:
-                self._notify(ws_id, {"progress": 100, "status": "ready", "files": len(idx._modules)})  # noqa: E501
+                self._notify(ws_id, {"progress": 100, "status": "ready", "files": len(idx._modules)})
                 with self._lock:
                     entry = self._indices.get(ws_id)
                     if entry:
@@ -393,14 +393,14 @@ class IndexManager:
         env = os.environ.copy()
         if _INDEXER_ROOT not in env.get("PYTHONPATH", ""):
             existing = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = f"{_INDEXER_ROOT}{os.pathsep}{existing}" if existing else _INDEXER_ROOT  # noqa: E501
+            env["PYTHONPATH"] = f"{_INDEXER_ROOT}{os.pathsep}{existing}" if existing else _INDEXER_ROOT
         env["ENCRE_DATA_DIR"] = data_dir
 
         # Redirect stderr to a log file so crashes are debuggable
         stderr_path = os.path.join(os.path.dirname(prog_path), "index_stderr.log")
         try:
             os.makedirs(os.path.dirname(stderr_path), exist_ok=True)
-            stderr_file = open(stderr_path, "wb")
+            stderr_file = open(stderr_path, "wb")  # noqa: SIM115
         except Exception:
             stderr_file = None
 
@@ -544,7 +544,7 @@ class IndexManager:
             try:
                 cb(ws_id, idx)
             except Exception:
-                logger.warning("[index_manager] on_index_ready callback failed ws=%s", ws_id, exc_info=True)  # noqa: E501
+                logger.warning("[index_manager] on_index_ready callback failed ws=%s", ws_id, exc_info=True)
 
     async def _load_cached_index(self, ws_id: str, ws_path: str) -> None:
         """Load a previously-built index from disk without spawning a subprocess."""
@@ -559,11 +559,11 @@ class IndexManager:
             if entry:
                 entry["index"] = idx
                 if idx is not None:
-                    entry["progress"] = {"progress": 100, "status": "ready", "files": len(idx._modules)}  # noqa: E501
+                    entry["progress"] = {"progress": 100, "status": "ready", "files": len(idx._modules)}
                 else:
                     entry["progress"] = {"progress": 0, "status": "error", "files": 0}
             if idx:
-                self._notify(ws_id, {"progress": 100, "status": "ready", "files": len(idx._modules)})  # noqa: E501
+                self._notify(ws_id, {"progress": 100, "status": "ready", "files": len(idx._modules)})
                 self._fire_index_ready(ws_id, idx)
             else:
                 self._notify(ws_id, {"progress": 0, "status": "error", "files": 0})

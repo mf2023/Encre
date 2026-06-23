@@ -26,7 +26,7 @@ async def _task_stop_execute(**kwargs: Any) -> str:
     if task.status == TaskStatus.CANCELLED:
         return f"Task '{task_id}' already cancelled."
 
-    EncreTaskManager.update_task(task_id, status=TaskStatus.CANCELLED, error="Stopped by user request")  # noqa: E501
+    EncreTaskManager.update_task(task_id, status=TaskStatus.CANCELLED, error="Stopped by user request")
     return f"Task '{task_id}' stopped."
 
 

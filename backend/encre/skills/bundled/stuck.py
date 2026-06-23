@@ -30,6 +30,6 @@ from encre.prompts.loader import PromptLoader
 _loader = PromptLoader()
 
 
-async def _stuck_prompt(args: str | None, ctx: dict[str, Any]) -> str:
+async def _stuck_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
     context_desc = args or "the current conversation"
     return _loader.load_with_context("stuck", category="skills", context_desc=context_desc)

@@ -73,6 +73,104 @@ from encre.utils.types import (
 )
 
 
+def format_backend_error(exc: BaseException, prefix: str = "") -> str:
+    """Render a backend/HTTP exception into a human-readable message.
+
+    The default ``str()`` of :class:`httpx.HTTPStatusError` is
+    ``"Client error '400 Bad Request' for url '...'"`` -- the actual response
+    body (which usually contains the provider's diagnostic, e.g.
+    ``{"error": {"message": "Incorrect API key provided", "type": "..."}}``)
+    is dropped.  This helper pulls the body out so the frontend can show the
+    real reason to the user, and falls back gracefully for non-HTTP errors.
+
+    Args:
+        exc: The exception raised by a backend call.
+        prefix: Optional prefix prepended to the message (e.g. ``"Validation
+            failed: "``).  A single space is added if the prefix does not
+            already end with whitespace or punctuation.
+
+    Returns:
+        A single-line string suitable for surfacing to the user.  Long bodies
+        are truncated to keep the UI readable.
+    """
+    body_text = ""
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            raw = response.text
+        except Exception:  # pragma: no cover - defensive
+            raw = ""
+        if raw:
+            # Try to lift the provider's structured error message out of the
+            # JSON body.  Many providers (OpenAI, Anthropic, Google, DeepSeek,
+            # Groq, ...) put the user-facing text under one of these keys.
+            try:
+                import json
+                payload = json.loads(raw)
+            except Exception:
+                payload = None
+            if isinstance(payload, dict):
+                err = payload.get("error")
+                msg: Any = None
+                if isinstance(err, dict):
+                    msg = err.get("message") or err.get("msg") or err.get("detail")
+                elif isinstance(err, str):
+                    msg = err
+                if msg is None:
+                    msg = (
+                        payload.get("message")
+                        or payload.get("detail")
+                        or payload.get("error_description")
+                    )
+                if isinstance(msg, list):
+                    msg = "; ".join(str(x) for x in msg)
+                if msg is None and isinstance(err, dict):
+                    # Last resort: stringify the whole error object.
+                    msg = str(err)
+                body_text = str(msg) if msg else raw
+            else:
+                body_text = raw
+            # Keep the message bounded so the chat UI does not explode.
+            if len(body_text) > 1500:
+                body_text = body_text[:1500] + "...(truncated)"
+
+    if body_text:
+        status_code = getattr(response, "status_code", None) if response is not None else None
+        url = getattr(request, "url", None) if (request := getattr(exc, "request", None)) is not None else None
+        if status_code and url:
+            rendered = f"HTTP {status_code}: {body_text} (url={url})"
+        elif status_code:
+            rendered = f"HTTP {status_code}: {body_text}"
+        else:
+            rendered = body_text
+    elif response is not None:
+        status_code = getattr(response, "status_code", None)
+        request = getattr(exc, "request", None)
+        url = getattr(request, "url", None) if request is not None else None
+        suffix = f" (url={url})" if url else ""
+        # Fallback to str(exc) when response.text is unavailable (e.g. after
+        # streaming aclose).  Avoid duplicating "HTTP {status}:" if the
+        # exception message already begins with it.
+        exc_str = str(exc) or ""
+        if status_code:
+            prefix_str = f"HTTP {status_code}: "
+            if exc_str:
+                if exc_str.startswith(prefix_str):
+                    rendered = f"{exc_str}{suffix}"
+                else:
+                    rendered = f"{prefix_str}{exc_str}{suffix}"
+            else:
+                rendered = f"{prefix_str}<no response body>{suffix}"
+        else:
+            rendered = exc_str or f"<no response body>{suffix}"
+    else:
+        rendered = str(exc) or type(exc).__name__
+
+    if prefix:
+        return f"{prefix} {rendered}"
+    return rendered
+
+
 class BaseBackend(ABC):
     """Abstract base class for LLM provider backends.
 
@@ -188,7 +286,7 @@ class BaseBackend(ABC):
         """
         return True
 
-    def count_tokens(self, text: str) -> int:
+    def count_tokens(self, _text: str) -> int:
         """Estimate the token count for a given text string.
 
         Returns -1 when the backend cannot provide an accurate count (the
@@ -205,7 +303,7 @@ class BaseBackend(ABC):
         """
         return []
 
-    async def aclose(self) -> None:
+    async def aclose(self) -> None:  # noqa: B027
         """Release any resources held by this backend.
 
         This includes closing HTTP client sessions (httpx.AsyncClient),
@@ -278,17 +376,17 @@ class BaseBackend(ABC):
 
     # ── Image generation ────────────────────────────────────────────────
 
-    async def generate_image(  # noqa: ARG002
+    async def generate_image(
         self,
-        prompt: str,
-        model: str | None = None,
-        n: int = 1,
-        size: str = "1024x1024",
-        quality: str = "standard",
-        response_format: str = "b64_json",
-        style: str | None = None,
-        user: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _prompt: str,
+        _model: str | None = None,
+        _n: int = 1,
+        _size: str = "1024x1024",
+        _quality: str = "standard",
+        _response_format: str = "b64_json",
+        _style: str | None = None,
+        _user: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> ImageGenerationResponse:
         """Generate one or more images from a text prompt.
 
@@ -319,16 +417,16 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def edit_image(  # noqa: ARG002
+    async def edit_image(
         self,
-        prompt: str,
-        image_b64: str,
-        mask_b64: str | None = None,
-        model: str | None = None,
-        n: int = 1,
-        size: str = "1024x1024",
-        response_format: str = "b64_json",
-        extra_params: dict[str, Any] | None = None,
+        _prompt: str,
+        _image_b64: str,
+        _mask_b64: str | None = None,
+        _model: str | None = None,
+        _n: int = 1,
+        _size: str = "1024x1024",
+        _response_format: str = "b64_json",
+        _extra_params: dict[str, Any] | None = None,
     ) -> ImageGenerationResponse:
         """Edit an image (inpaint) using a prompt and optional mask.
 
@@ -352,14 +450,14 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def create_image_variation(  # noqa: ARG002
+    async def create_image_variation(
         self,
-        image_b64: str,
-        model: str | None = None,
-        n: int = 1,
-        size: str = "1024x1024",
-        response_format: str = "b64_json",
-        extra_params: dict[str, Any] | None = None,
+        _image_b64: str,
+        _model: str | None = None,
+        _n: int = 1,
+        _size: str = "1024x1024",
+        _response_format: str = "b64_json",
+        _extra_params: dict[str, Any] | None = None,
     ) -> ImageGenerationResponse:
         """Produce variations of a source image.
 
@@ -382,14 +480,14 @@ class BaseBackend(ABC):
 
     # ── Audio ────────────────────────────────────────────────────────────
 
-    async def text_to_speech(  # noqa: ARG002
+    async def text_to_speech(
         self,
-        text: str,
-        model: str | None = None,
-        voice: str = "alloy",
-        response_format: str = "mp3",
-        speed: float = 1.0,
-        extra_params: dict[str, Any] | None = None,
+        _text: str,
+        _model: str | None = None,
+        _voice: str = "alloy",
+        _response_format: str = "mp3",
+        _speed: float = 1.0,
+        _extra_params: dict[str, Any] | None = None,
     ) -> AudioResult:
         """Synthesise speech from text.
 
@@ -413,15 +511,15 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def transcribe_audio(  # noqa: ARG002
+    async def transcribe_audio(
         self,
-        audio_b64: str,
-        model: str | None = None,
-        language: str | None = None,
-        response_format: str = "json",
-        temperature: float = 0.0,
-        prompt: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _audio_b64: str,
+        _model: str | None = None,
+        _language: str | None = None,
+        _response_format: str = "json",
+        _temperature: float = 0.0,
+        _prompt: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> AudioResult:
         """Transcribe speech from an audio recording.
 
@@ -445,14 +543,14 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def translate_audio(  # noqa: ARG002
+    async def translate_audio(
         self,
-        audio_b64: str,
-        model: str | None = None,
-        response_format: str = "json",
-        temperature: float = 0.0,
-        prompt: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _audio_b64: str,
+        _model: str | None = None,
+        _response_format: str = "json",
+        _temperature: float = 0.0,
+        _prompt: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> AudioResult:
         """Translate non-English audio into English text.
 
@@ -475,14 +573,14 @@ class BaseBackend(ABC):
 
     # ── Embeddings ───────────────────────────────────────────────────────
 
-    async def create_embeddings(  # noqa: ARG002
+    async def create_embeddings(
         self,
-        input: str | list[str],
-        model: str | None = None,
-        encoding_format: str = "float",
-        dimensions: int | None = None,
-        user: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _input: str | list[str],
+        _model: str | None = None,
+        _encoding_format: str = "float",
+        _dimensions: int | None = None,
+        _user: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> EmbeddingResponse:
         """Generate embedding vectors for the given text input(s).
 
@@ -507,11 +605,11 @@ class BaseBackend(ABC):
 
     # ── Moderation ───────────────────────────────────────────────────────
 
-    async def create_moderation(  # noqa: ARG002
+    async def create_moderation(
         self,
-        input: str | list[str],
-        model: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _input: str | list[str],
+        _model: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> ModerationResponse:
         """Classify whether text violates the provider's content policy.
 
@@ -531,13 +629,13 @@ class BaseBackend(ABC):
 
     # ── Files ────────────────────────────────────────────────────────────
 
-    async def upload_file(  # noqa: ARG002
+    async def upload_file(
         self,
-        filename: str,
-        content_b64: str,
-        purpose: str = "assistants",
-        mime_type: str = "application/octet-stream",
-        extra_params: dict[str, Any] | None = None,
+        _filename: str,
+        _content_b64: str,
+        _purpose: str = "assistants",
+        _mime_type: str = "application/octet-stream",
+        _extra_params: dict[str, Any] | None = None,
     ) -> FileObject:
         """Upload a file to the provider's storage.
 
@@ -559,13 +657,13 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def list_files(  # noqa: ARG002
+    async def list_files(
         self,
-        purpose: str | None = None,
-        limit: int = 100,
-        after: str | None = None,
-        order: str = "desc",
-        extra_params: dict[str, Any] | None = None,
+        _purpose: str | None = None,
+        _limit: int = 100,
+        _after: str | None = None,
+        _order: str = "desc",
+        _extra_params: dict[str, Any] | None = None,
     ) -> FileListResponse:
         """List files previously uploaded to the provider.
 
@@ -585,7 +683,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def retrieve_file(self, file_id: str) -> FileObject:  # noqa: ARG002
+    async def retrieve_file(self, _file_id: str) -> FileObject:
         """Fetch metadata for a single uploaded file.
 
         Args:
@@ -600,7 +698,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def delete_file(self, file_id: str) -> bool:  # noqa: ARG002
+    async def delete_file(self, _file_id: str) -> bool:
         """Delete an uploaded file.
 
         Args:
@@ -615,7 +713,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def download_file(self, file_id: str) -> FileContent:  # noqa: ARG002
+    async def download_file(self, _file_id: str) -> FileContent:
         """Download the raw content of an uploaded file.
 
         Args:
@@ -632,13 +730,13 @@ class BaseBackend(ABC):
 
     # ── Batch ────────────────────────────────────────────────────────────
 
-    async def create_batch(  # noqa: ARG002
+    async def create_batch(
         self,
-        requests: list[BatchRequest],
-        endpoint: str = "/v1/chat/completions",
-        completion_window: str = "24h",
-        metadata: dict[str, Any] | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _requests: list[BatchRequest],
+        _endpoint: str = "/v1/chat/completions",
+        _completion_window: str = "24h",
+        _metadata: dict[str, Any] | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> BatchObject:
         """Create a batch of API requests for asynchronous processing.
 
@@ -662,9 +760,9 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def retrieve_batch(  # noqa: ARG002
+    async def retrieve_batch(
         self,
-        batch_id: str,
+        _batch_id: str,
     ) -> BatchObject:
         """Fetch the current state of a batch.
 
@@ -682,9 +780,9 @@ class BaseBackend(ABC):
 
     async def list_batches(
         self,
-        limit: int = 20,
-        after: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _limit: int = 20,
+        _after: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> BatchListResponse:
         """List the most recent batches.
 
@@ -702,7 +800,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def cancel_batch(self, batch_id: str) -> BatchObject:
+    async def cancel_batch(self, _batch_id: str) -> BatchObject:
         """Cancel an in-flight batch.
 
         Args:
@@ -722,12 +820,12 @@ class BaseBackend(ABC):
 
     async def create_fine_tuning_job(
         self,
-        training_file: str,
-        model: str,
-        hyperparameters: FineTuneHyperparameters | None = None,
-        validation_file: str | None = None,
-        suffix: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _training_file: str,
+        _model: str,
+        _hyperparameters: FineTuneHyperparameters | None = None,
+        _validation_file: str | None = None,
+        _suffix: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> FineTuneJob:
         """Create a supervised fine-tuning job.
 
@@ -749,7 +847,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def retrieve_fine_tuning_job(self, job_id: str) -> FineTuneJob:
+    async def retrieve_fine_tuning_job(self, _job_id: str) -> FineTuneJob:
         """Fetch a fine-tuning job by id."""
         if not self.supports_fine_tuning():
             raise NotImplementedError(
@@ -759,9 +857,9 @@ class BaseBackend(ABC):
 
     async def list_fine_tuning_jobs(
         self,
-        limit: int = 20,
-        after: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _limit: int = 20,
+        _after: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> FineTuneJobList:
         """List the most recent fine-tuning jobs."""
         if not self.supports_fine_tuning():
@@ -772,10 +870,10 @@ class BaseBackend(ABC):
 
     async def list_fine_tuning_events(
         self,
-        job_id: str,
-        limit: int = 20,
-        after: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _job_id: str,
+        _limit: int = 20,
+        _after: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> list[FineTuneEvent]:
         """List the event log of a fine-tuning job."""
         if not self.supports_fine_tuning():
@@ -784,7 +882,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def cancel_fine_tuning_job(self, job_id: str) -> FineTuneJob:
+    async def cancel_fine_tuning_job(self, _job_id: str) -> FineTuneJob:
         """Cancel an in-flight fine-tuning job."""
         if not self.supports_fine_tuning():
             raise NotImplementedError(
@@ -796,8 +894,8 @@ class BaseBackend(ABC):
 
     async def create_realtime_session(
         self,
-        config: RealtimeSessionConfig | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _config: RealtimeSessionConfig | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> RealtimeSession:
         """Open a Realtime (WebSocket) session with the provider.
 
@@ -814,7 +912,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def close_realtime_session(self, session: RealtimeSession) -> None:
+    async def close_realtime_session(self, _session: RealtimeSession) -> None:
         """Close a previously-opened Realtime session."""
         if not self.supports_realtime():
             raise NotImplementedError(
@@ -826,17 +924,17 @@ class BaseBackend(ABC):
 
     async def create_response(
         self,
-        input: str | list[dict[str, Any]],
-        model: str | None = None,
-        instructions: str | None = None,
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: str = "auto",
-        temperature: float = 0.0,
-        max_output_tokens: int | None = None,
-        stream: bool = False,
-        background: bool = False,
-        previous_response_id: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        _input: str | list[dict[str, Any]],
+        _model: str | None = None,
+        _instructions: str | None = None,
+        _tools: list[dict[str, Any]] | None = None,
+        _tool_choice: str = "auto",
+        _temperature: float = 0.0,
+        _max_output_tokens: int | None = None,
+        _stream: bool = False,
+        _background: bool = False,
+        _previous_response_id: str | None = None,
+        _extra_params: dict[str, Any] | None = None,
     ) -> ResponseObject:
         """Call the OpenAI Responses API (unified chat + tools endpoint).
 
@@ -864,7 +962,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def retrieve_response(self, response_id: str) -> ResponseObject:
+    async def retrieve_response(self, _response_id: str) -> ResponseObject:
         """Fetch a previously-created response by id."""
         if not self.supports_responses_api():
             raise NotImplementedError(
@@ -872,7 +970,7 @@ class BaseBackend(ABC):
             )
         raise NotImplementedError
 
-    async def delete_response(self, response_id: str) -> bool:
+    async def delete_response(self, _response_id: str) -> bool:
         """Delete a previously-created response by id."""
         if not self.supports_responses_api():
             raise NotImplementedError(

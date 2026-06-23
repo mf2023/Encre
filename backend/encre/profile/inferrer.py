@@ -69,7 +69,7 @@ class ProfileInferrer:
     MAX_TOOL_TOKENS = 600
     MAX_TOTAL_MESSAGES = 20
 
-    async def infer(self, messages: list[dict[str, Any]], backend: Any) -> tuple[dict[str, Any], dict[str, float]] | None:  # noqa: E501
+    async def infer(self, messages: list[dict[str, Any]], backend: Any) -> tuple[dict[str, Any], dict[str, float]] | None:
         sample = self._sample_messages(messages)
         if not sample:
             return None
@@ -112,7 +112,7 @@ class ProfileInferrer:
                 continue
             content = msg.get("content", "")
             if isinstance(content, list):
-                texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]  # noqa: E501
+                texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
                 content = " ".join(texts)
             if not isinstance(content, str):
                 continue
@@ -129,14 +129,14 @@ class ProfileInferrer:
             elif role == "assistant":
                 tool_calls = msg.get("tool_calls")
                 if tool_calls:
-                    names = [tc.get("function", {}).get("name", "") for tc in tool_calls if isinstance(tc, dict)]  # noqa: E501
+                    names = [tc.get("function", {}).get("name", "") for tc in tool_calls if isinstance(tc, dict)]
                     tool_text = f"[used tools: {', '.join(names)}]"
                     sampled.insert(0, {"role": "assistant", "content": tool_text})
                 else:
                     sampled.insert(0, {"role": "assistant", "content": content[:200]})
         return sampled
 
-    def _parse_response(self, text: str) -> tuple[dict[str, Any], dict[str, float], list[str], list[str], list[str]] | None:  # noqa: E501
+    def _parse_response(self, text: str) -> tuple[dict[str, Any], dict[str, float], list[str], list[str], list[str]] | None:
         text = text.strip()
         start = text.find("{")
         end = text.rfind("}")
@@ -155,7 +155,7 @@ class ProfileInferrer:
         goals: list[str] = data.get("goals", [])
 
         inferred = {k: v for k, v in inferred.items() if v is not None and v != ""}
-        confidences = {k: v for k, v in confidences.items() if isinstance(v, (int, float))}
+        confidences = {k: v for k, v in confidences.items() if isinstance(v, int | float)}
 
         if not inferred:
             return None

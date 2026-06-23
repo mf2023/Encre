@@ -43,8 +43,8 @@ from encre.tools.builtin.cron_list import EncreCronListTool
 from encre.tools.builtin.database import EncreDatabaseTool
 from encre.tools.builtin.deploy import EncreDeployTool
 from encre.tools.builtin.desktop import EncreDesktopTool
-from encre.tools.builtin.expand import EncreExpandTool
 from encre.tools.builtin.docker import EncreDockerTool
+from encre.tools.builtin.expand import EncreExpandTool
 from encre.tools.builtin.file_edit import EncreFileEditTool
 from encre.tools.builtin.file_read import EncreFileReadTool
 from encre.tools.builtin.file_write import EncreFileWriteTool
@@ -98,8 +98,8 @@ __all__ = [
     "EncreDatabaseTool",
     "EncreDeployTool",
     "EncreDesktopTool",
-    "EncreExpandTool",
     "EncreDockerTool",
+    "EncreExpandTool",
     "EncreFileEditTool",
     "EncreFileReadTool",
     "EncreFileWriteTool",

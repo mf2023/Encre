@@ -224,7 +224,7 @@ async def _memory_profile_execute(**kwargs: Any) -> str:
     sections = {
         "Basic": ["name", "language_preference", "timezone", "expertise_level", "domain"],
         "Communication": ["formality", "detail_preference", "tone", "response_style"],
-        "Technical": ["preferred_languages", "preferred_frameworks", "skill_levels", "os", "editor"],  # noqa: E501
+        "Technical": ["preferred_languages", "preferred_frameworks", "skill_levels", "os", "editor"],
         "Behavioral": ["testing_preference", "learning_style", "error_tolerance", "common_goals"],
     }
     has_any = False
@@ -402,7 +402,7 @@ EncreMemoryProfileTool = build_tool(
             },
             "confidence": {
                 "type": "number",
-                "description": "How confident you are (0.0-1.0, default 0.7). Only used when updating.",  # noqa: E501
+                "description": "How confident you are (0.0-1.0, default 0.7). Only used when updating.",
             },
         },
     },

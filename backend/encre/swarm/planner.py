@@ -117,7 +117,7 @@ class EncreTaskPlanner:
         """Decompose a goal into a task tree (async-compatible)."""
         return self.plan(goal)
 
-    def plan(self, goal: str, context: str = "") -> TaskTree:
+    def plan(self, goal: str, _context: str = "") -> TaskTree:
         pattern_key = _detect_pattern(goal)
         if pattern_key and pattern_key in self._known_patterns:
             return self._build_from_pattern(goal, pattern_key)
@@ -212,7 +212,7 @@ def _detect_pattern(goal: str) -> str | None:
         return "build"
     if any(kw in g for kw in ("debug", "fix", "bug", "error", "issue", "broken", "wrong")):
         return "debug"
-    if any(kw in g for kw in ("research", "investigate", "explore", "study", "analyze", "understand")):  # noqa: E501
+    if any(kw in g for kw in ("research", "investigate", "explore", "study", "analyze", "understand")):
         return "research"
     if any(kw in g for kw in ("refactor", "clean up", "restructure", "reorganize", "improve")):
         return "refactor"

@@ -112,7 +112,7 @@ class EncreMemorySystem:
                                 f.readline() for _ in range(FRONTMATTER_MAX_LINES + 5)
                             )
                         # Decrypt if needed
-                        if raw_head.strip() and not raw_head.strip().startswith("---") and not raw_head.strip().startswith("#"):  # noqa: E501
+                        if raw_head.strip() and not raw_head.strip().startswith("---") and not raw_head.strip().startswith("#"):
                             try:
                                 from encre.crypto import decrypt
                                 head = decrypt(raw_head.strip())

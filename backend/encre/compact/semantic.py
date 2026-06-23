@@ -32,7 +32,7 @@ from encre.utils.tokens import estimate_tokens
 # Patterns for extracting key info from tool outputs
 _RE_FILE_LIST = re.compile(r'^(\S+)\s*$', re.MULTILINE)
 _RE_GREP_MATCH = re.compile(r'^([^:]+):(\d+):(.*)$', re.MULTILINE)
-_RE_ERROR_LINE = re.compile(r'.*(?:error|Error|ERROR|exception|Exception|Traceback|FAILED|failed).*')  # noqa: E501
+_RE_ERROR_LINE = re.compile(r'.*(?:error|Error|ERROR|exception|Exception|Traceback|FAILED|failed).*')
 _RE_PATH_LINE = re.compile(r'[/\\][\w./\\-]+')
 _RE_NUMBER = re.compile(r'\b\d+\b')
 
@@ -184,7 +184,7 @@ class SemanticToolOutputCompactor:
         func_sigs: list[str] = []
         for line in output.split("\n"):
             stripped = line.strip()
-            if re.match(r'^\s*(def |class |async def |@|import |from |# |//|/\*\*|export |function |const |let |var )', line):  # noqa: E501
+            if re.match(r'^\s*(def |class |async def |@|import |from |# |//|/\*\*|export |function |const |let |var )', line):
                 func_sigs.append(stripped[:120])
         if func_sigs:
             return "[File signatures]\n" + "\n".join(func_sigs[:50])
@@ -216,7 +216,7 @@ class SemanticToolOutputCompactor:
 
     def _compact_default(self, output: str) -> str:
         half = self.MAX_TOOL_OUTPUT_CHARS // 2
-        return output[:half] + f"\n\n... [{len(output) - self.MAX_TOOL_OUTPUT_CHARS} chars omitted]\n\n" + output[-half:]  # noqa: E501
+        return output[:half] + f"\n\n... [{len(output) - self.MAX_TOOL_OUTPUT_CHARS} chars omitted]\n\n" + output[-half:]
 
 
 class ContextPartitioner:
