@@ -110,6 +110,23 @@ logger = get_logger(__name__)
 
 _WRITE_TOOL_NAMES = {"file_write", "file_edit", "write_file", "writeFile", "apply_patch"}
 _PROMPT_CACHE_TTL_SECONDS = 30.0
+_TASK_STAGES = ("discover", "plan", "execute", "verify", "report")
+_STUCK_LOOP_THRESHOLD = 6
+_SUMMARY_INTERVAL_TURNS = 3
+
+# Max concurrency-safe tools executed in parallel per turn. Mirrors Claude
+# Code's getMaxToolUseConcurrency() default of 10 (CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY).
+# Overridable via the same-spirited ENCRE_MAX_TOOL_USE_CONCURRENCY env var.
+_MAX_TOOL_CONCURRENCY = max(1, int(os.environ.get("ENCRE_MAX_TOOL_USE_CONCURRENCY", "10") or "10"))
+
+# Master switch for Encre's self-modification "evolution" layer (learner/reflex/
+# meta/advisor guidance injected into the request each turn, plus the post-turn
+# evolution pipeline). Disabled to match Claude Code's clean execution cadence.
+# Set ENCRE_EVOLUTION=1 to re-enable.
+_EVOLUTION_ENABLED = os.environ.get("ENCRE_EVOLUTION", "0") == "1"
+_WORKING_SET_ARTIFACT_LIMIT = 8
+_WORKING_SET_REFERENCE_LIMIT = 8
+_WORKING_SET_TOOL_LIMIT = 12
 
 # ── Context overflow detection (reactive compact) ──────────────
 _CONTEXT_OVERFLOW_PATTERN = re.compile(
@@ -330,6 +347,77 @@ def _ensure_plan_items(tool_name: str, args: dict[str, Any]) -> list[dict[str, A
     return items if items else None
 
 
+def _infer_tool_semantics(tool_name: str, tool: Any) -> dict[str, str]:
+    semantic_type = str(getattr(tool, "semantic_type", "") or "").strip().lower()
+    cost_level = str(getattr(tool, "cost_level", "") or "").strip().lower()
+    retryability = str(getattr(tool, "retryability", "") or "").strip().lower()
+    safe_fallback = str(getattr(tool, "safe_fallback", "") or "").strip()
+    lowered = tool_name.lower()
+
+    if not semantic_type or semantic_type == "general":
+        if lowered in _WRITE_TOOL_NAMES or "write" in lowered or "edit" in lowered or "patch" in lowered or "delete" in lowered:
+            semantic_type = "write"
+        elif "read" in lowered or "cat" in lowered or "view" in lowered:
+            semantic_type = "read"
+        elif "search" in lowered or "grep" in lowered or "glob" in lowered or "find" in lowered:
+            semantic_type = "search"
+        elif lowered in {"bash", "shell", "execute", "run"}:
+            semantic_type = "exec"
+        elif lowered.startswith("web_") or lowered in {"browser", "rest_client"}:
+            semantic_type = "network"
+        elif lowered in {"agent", "workflow"}:
+            semantic_type = "orchestrate"
+        else:
+            semantic_type = "general"
+
+    if not cost_level:
+        if semantic_type in {"search", "read"}:
+            cost_level = "low"
+        elif semantic_type in {"write", "exec", "network", "orchestrate"}:
+            cost_level = "high"
+        else:
+            cost_level = "medium"
+
+    if not retryability:
+        if semantic_type in {"search", "read", "network"}:
+            retryability = "auto"
+        elif semantic_type in {"write", "exec"}:
+            retryability = "guarded"
+        else:
+            retryability = "manual"
+
+    if not safe_fallback:
+        fallback_map = {
+            "write": "Read the target file again, narrow the scope, and propose a smaller change.",
+            "exec": "Inspect the environment and command preconditions before retrying.",
+            "search": "Refine the query or switch to a more specific file/path filter.",
+            "network": "Use local context first and only retry if an external lookup is necessary.",
+            "orchestrate": "Summarize the sub-task and continue in the main thread if delegation is unnecessary.",
+        }
+        safe_fallback = fallback_map.get(semantic_type, "Gather more context before retrying.")
+
+    return {
+        "semantic_type": semantic_type,
+        "cost_level": cost_level,
+        "retryability": retryability,
+        "safe_fallback": safe_fallback,
+    }
+
+
+def _tool_retry_allowed(p: dict[str, Any], repeated_signatures: list[tuple[str, ...]]) -> bool:
+    semantics = p.get("semantics", {}) or {}
+    retryability = str(semantics.get("retryability", "auto"))
+    if retryability == "manual":
+        return False
+    if retryability == "guarded":
+        sig = f"{p.get('name', '')}:{p.get('args_summary', '')[:80]}"
+        if repeated_signatures:
+            last = repeated_signatures[-1]
+            if any(sig == item for item in last):
+                return False
+    return True
+
+
 class EncreLoop:
     def __init__(
         self,
@@ -443,6 +531,13 @@ class EncreLoop:
         # Read-before-write tracking: maps resolved file_path -> {mtime, read_time}.
         # Populated by file_read results; checked before file_write/file_edit.
         self._read_file_state: dict[str, dict[str, float]] = {}
+        self.session.metadata.setdefault("task_stage", "discover")
+        self.session.metadata.setdefault("task_stage_history", [])
+        self.session.metadata.setdefault("working_set", {})
+        self.session.metadata.setdefault("turn_summaries", [])
+        self.session.metadata.setdefault("tool_semantics", {})
+        self.session.metadata.setdefault("delegate_history", [])
+        self.session.metadata.setdefault("stuck_events", [])
 
     def _cache_fresh(self, built_at: float, ttl: float = _PROMPT_CACHE_TTL_SECONDS) -> bool:
         return (time.time() - built_at) < ttl
@@ -487,6 +582,248 @@ class EncreLoop:
             )
 
         return None
+
+    def _set_task_stage(self, stage: str, reason: str = "") -> None:
+        if stage not in _TASK_STAGES:
+            return
+        prev = str(self.session.metadata.get("task_stage", "discover"))
+        if prev == stage:
+            return
+        history = self.session.metadata.setdefault("task_stage_history", [])
+        history.append({
+            "from": prev,
+            "to": stage,
+            "reason": reason[:240],
+            "turn": self.session.turn_count,
+            "timestamp": time.time(),
+        })
+        self.session.metadata["task_stage"] = stage
+
+    def _infer_task_stage(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> str:
+        current = str(self.session.metadata.get("task_stage", "discover"))
+        prompt_lower = (prompt or "").lower()
+        prepared = prepared or []
+        names = [str(p.get("name", "")).lower() for p in prepared]
+        semantic_types = [str(p.get("semantics", {}).get("semantic_type", "")).lower() for p in prepared]
+
+        if any(x in prompt_lower for x in ("summary", "report", "what did", "结果", "总结", "汇报")):
+            return "report"
+        if any(x in prompt_lower for x in ("plan", "方案", "设计", "spec", "步骤")):
+            return "plan"
+        if any(t in {"write", "exec"} for t in semantic_types) or any(n in _WRITE_TOOL_NAMES for n in names):
+            return "execute"
+        if any(x in prompt_lower for x in ("verify", "test", "check", "确认", "验证")) or any("test" in n or "lint" in n for n in names):
+            return "verify"
+        if any(t in {"read", "search", "network"} for t in semantic_types) or current == "discover":
+            return "discover"
+        return current
+
+    def _summarize_args(self, args: dict[str, Any]) -> str:
+        summary = _args_summary(args)
+        return summary if len(summary) <= 180 else summary[:177] + "..."
+
+    def _refresh_working_set(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> None:
+        prepared = prepared or []
+        tool_entries = []
+        for p in prepared[-_WORKING_SET_TOOL_LIMIT:]:
+            tool_entries.append({
+                "name": p.get("name", ""),
+                "semantic_type": p.get("semantics", {}).get("semantic_type", ""),
+                "cost_level": p.get("semantics", {}).get("cost_level", ""),
+                "args": self._summarize_args(p.get("args", {})),
+            })
+        artifacts = []
+        for a in self.session.artifacts[-_WORKING_SET_ARTIFACT_LIMIT:]:
+            artifacts.append({
+                "path": a.get("path", ""),
+                "tool": a.get("tool", ""),
+                "name": a.get("name", ""),
+            })
+        references = []
+        for r in self.session.references[-_WORKING_SET_REFERENCE_LIMIT:]:
+            references.append({
+                "tool": r.get("tool", ""),
+                "summary": r.get("summary", ""),
+            })
+        self.session.metadata["working_set"] = {
+            "prompt": (prompt or "")[:500],
+            "stage": self.session.metadata.get("task_stage", "discover"),
+            "tools": tool_entries,
+            "artifacts": artifacts,
+            "references": references,
+            "plan_items": self.session.plan_items[-10:],
+            "updated_at": time.time(),
+        }
+
+    def _build_working_set_prompt(self) -> str:
+        ws = self.session.metadata.get("working_set") or {}
+        if not ws:
+            return ""
+        lines = ["## Current Task State"]
+        lines.append(f"Stage: {ws.get('stage', 'discover')}")
+        prompt = str(ws.get("prompt", "")).strip()
+        if prompt:
+            lines.append(f"Current objective: {prompt[:260]}")
+        plan_items = ws.get("plan_items") or []
+        if plan_items:
+            lines.append("Plan:")
+            for item in plan_items[:6]:
+                lines.append(f"- [{item.get('status', 'pending')}] {item.get('text', '')}")
+        tools = ws.get("tools") or []
+        if tools:
+            lines.append("Recent tools:")
+            for t in tools[:8]:
+                lines.append(f"- {t.get('name')} ({t.get('semantic_type')}, {t.get('cost_level')}): {t.get('args')}")
+        artifacts = ws.get("artifacts") or []
+        if artifacts:
+            lines.append("Touched files:")
+            for a in artifacts[:6]:
+                lines.append(f"- {a.get('path')}")
+        references = ws.get("references") or []
+        if references:
+            lines.append("Recent external references:")
+            for r in references[:6]:
+                lines.append(f"- {r.get('summary')}")
+        return "\n".join(lines)
+
+    def _maybe_record_turn_summary(
+        self,
+        prompt: str,
+        prepared: list[dict[str, Any]],
+        tool_outcomes: list[dict[str, Any]],
+    ) -> None:
+        if self.session.turn_count == 0:
+            return
+        if self.session.turn_count % _SUMMARY_INTERVAL_TURNS != 0 and not any(r.get("is_error") for r in tool_outcomes):
+            return
+        artifacts = [a.get("path", "") for a in self.session.artifacts[-4:]]
+        summary = {
+            "turn": self.session.turn_count,
+            "stage": self.session.metadata.get("task_stage", "discover"),
+            "goal": prompt[:220],
+            "tools": [p.get("name", "") for p in prepared[:8]],
+            "errors": [r.get("tool_name", "") for r in tool_outcomes if r.get("is_error")][:6],
+            "artifacts": artifacts,
+            "timestamp": time.time(),
+        }
+        summaries = self.session.metadata.setdefault("turn_summaries", [])
+        summaries.append(summary)
+        if len(summaries) > 30:
+            del summaries[:-30]
+
+    def _build_turn_summary_prompt(self) -> str:
+        summaries = self.session.metadata.get("turn_summaries") or []
+        if not summaries:
+            return ""
+        lines = ["## Prior Turn Summaries"]
+        for entry in summaries[-5:]:
+            tools = ", ".join(entry.get("tools", [])[:5]) or "none"
+            errors = ", ".join(entry.get("errors", [])[:4]) or "none"
+            files = ", ".join(entry.get("artifacts", [])[:3]) or "none"
+            lines.append(
+                f"- Turn {entry.get('turn')}: stage={entry.get('stage')} | tools={tools} | errors={errors} | files={files}"
+            )
+        return "\n".join(lines)
+
+    def _build_stage_prompt(self) -> str:
+        stage = str(self.session.metadata.get("task_stage", "discover"))
+        guidance = {
+            "discover": "Collect missing facts first. Prefer read/search tools. Do not edit until the target is clear.",
+            "plan": "State the intended sequence of work and keep changes scoped. Avoid premature execution.",
+            "execute": "Make the smallest effective change. Prefer one concrete action over repeated searching.",
+            "verify": "Validate with reads, tests, or checks. Look for regressions and mismatches with the plan.",
+            "report": "Summarize outcomes, touched files, verification evidence, and remaining risks.",
+        }
+        return f"## Task Stage\nCurrent stage: {stage}\nGuidance: {guidance.get(stage, '')}"
+
+    def _should_delegate_sub_agent(self, prompt: str, prepared: list[dict[str, Any]]) -> tuple[bool, str, str]:
+        if self.sub_agent_depth > 0:
+            return False, "", ""
+        prompt_lower = (prompt or "").lower()
+        stage = str(self.session.metadata.get("task_stage", "discover"))
+        tool_count = len(prepared)
+        search_count = sum(1 for p in prepared if p.get("semantics", {}).get("semantic_type") in {"search", "read", "network"})
+        write_count = sum(1 for p in prepared if p.get("semantics", {}).get("semantic_type") in {"write", "exec"})
+
+        if stage == "discover" and (search_count >= 3 or any(x in prompt_lower for x in ("compare", "investigate", "research", "分析", "调研"))):
+            return True, "researcher", "parallel research would reduce repeated discovery turns"
+        if stage == "execute" and write_count >= 2 and tool_count >= 4:
+            return True, "executor", "execution has become multi-step and benefits from a focused implementer"
+        if stage in {"verify", "report"} or any(x in prompt_lower for x in ("review", "audit", "check regression", "审查", "复核")):
+            return True, "critic", "a reviewer sub-agent can inspect regressions and residual risks"
+        should_delegate, reason = self.meta.should_delegate(prompt)
+        if should_delegate:
+            return True, "researcher", reason
+        return False, "", ""
+
+    async def _maybe_run_advisor_sub_agent(self, prompt: str, prepared: list[dict[str, Any]]) -> str:
+        should_delegate, delegate, reason = self._should_delegate_sub_agent(prompt, prepared)
+        if not should_delegate or not delegate:
+            return ""
+        try:
+            role = next((sa for sa in getattr(self.config, "sub_agents", []) if str(sa.name).lower() == delegate.lower()), None)
+        except Exception:
+            role = None
+        if role is None:
+            return ""
+        advisor_prompt = (
+            f"Parent task: {prompt}\n\n"
+            f"Current stage: {self.session.metadata.get('task_stage', 'discover')}\n"
+            f"Reason for delegation: {reason}\n\n"
+            "Return only concise guidance for the parent agent:\n"
+            "1. What facts matter most now\n"
+            "2. What next step should be taken\n"
+            "3. What to avoid repeating\n"
+        )
+        try:
+            result = await self._run_sub_agent(
+                prompt=advisor_prompt,
+                system_prompt=role.system_prompt or "",
+                max_turns=2,
+                tool_policy=role.tool_policy or "all",
+            )
+            content = str(result.get("content", "") or "").strip()
+            if content:
+                history = self.session.metadata.setdefault("delegate_history", [])
+                history.append({
+                    "delegate": delegate,
+                    "reason": reason,
+                    "turn": self.session.turn_count,
+                    "timestamp": time.time(),
+                })
+                if len(history) > 20:
+                    del history[:-20]
+                self.meta.record_delegation(prompt, delegate, True)
+                return content[:1500]
+        except Exception:
+            logger.warning("[delegate] advisor sub-agent failed", exc_info=True)
+            self.meta.record_delegation(prompt, delegate, False)
+        return ""
+
+    def _build_stuck_recovery_prompt(self) -> str:
+        stuck_events = self.session.metadata.get("stuck_events") or []
+        if not stuck_events:
+            return ""
+        latest = stuck_events[-1]
+        lines = ["## Stuck Recovery"]
+        lines.append("You are repeating similar tool calls without enough new information.")
+        lines.append(f"Repeated signature: {latest.get('signature', '')}")
+        lines.append("Before calling another tool, do all of the following:")
+        lines.append("1. State what is already known.")
+        lines.append("2. State the smallest missing fact.")
+        lines.append("3. Choose one next action that differs from the repeated loop.")
+        lines.append("4. Prefer reading existing artifacts or summarizing rather than repeating the same call.")
+        return "\n".join(lines)
+
+    def _record_stuck_event(self, signature: tuple[str, ...]) -> None:
+        stuck = self.session.metadata.setdefault("stuck_events", [])
+        stuck.append({
+            "turn": self.session.turn_count,
+            "signature": " | ".join(signature),
+            "timestamp": time.time(),
+        })
+        if len(stuck) > 20:
+            del stuck[:-20]
 
     async def aclose(self) -> None:
         """Release backend resources (httpx clients, model memory, etc.)."""
@@ -1523,16 +1860,28 @@ class EncreLoop:
             except Exception:
                 pass
 
-            # Inject user rules (project-level + global)
-            try:
-                rules_prompt = self._build_rules_prompt()
-                if rules_prompt:
-                    from encre.prompts.loader import PromptLoader
-                    _loader = PromptLoader()
-                    rules_block = _loader.load_with_context("rules", rules_content=rules_prompt)
-                    system_prompt = system_prompt + "\n\n" + rules_block
-            except Exception:
-                pass
+        stage_prompt = self._build_stage_prompt()
+        if stage_prompt:
+            system_prompt = system_prompt + "\n\n" + stage_prompt
+        working_set_prompt = self._build_working_set_prompt()
+        if working_set_prompt:
+            system_prompt = system_prompt + "\n\n" + working_set_prompt
+        turn_summary_prompt = self._build_turn_summary_prompt()
+        if turn_summary_prompt:
+            system_prompt = system_prompt + "\n\n" + turn_summary_prompt
+        stuck_prompt = self._build_stuck_recovery_prompt()
+        if stuck_prompt:
+            system_prompt = system_prompt + "\n\n" + stuck_prompt
+        # Inject user rules (project-level + global)
+        try:
+            rules_prompt = self._build_rules_prompt()
+            if rules_prompt:
+                from encre.prompts.loader import PromptLoader
+                _loader = PromptLoader()
+                rules_block = _loader.load_with_context("rules", rules_content=rules_prompt)
+                system_prompt = system_prompt + "\n\n" + rules_block
+        except Exception:
+            pass
 
         # Update system message on every run so prompt blocks match current intents
         has_system = any(
@@ -1720,7 +2069,7 @@ class EncreLoop:
             # tricks the model into responding to the guidance as if it were a fresh
             # instruction, often producing a text-only summary that hits the `return`
             # at the text-only-exit points below, terminating the entire agent loop.
-            if self.session.turn_count > 0:
+            if _EVOLUTION_ENABLED and self.session.turn_count > 0:
                 guidance_parts: list[str] = []
                 learner_hint = self.learner.get_guidance("__any__", prompt[:300])
                 if not learner_hint:
@@ -1751,6 +2100,30 @@ class EncreLoop:
                     fb = self.feedback.get_relevant_feedback("__any__", prompt[:300])
                     if fb:
                         _merge_into_last_user(backend_messages, f"[PAST CORRECTIONS]\n{fb}")
+
+            advisor_note = ""
+            if _EVOLUTION_ENABLED:
+                advisor_seed: list[dict[str, Any]] = []
+                ws_tools = (self.session.metadata.get("working_set") or {}).get("tools") or []
+                for item in ws_tools:
+                    advisor_seed.append({
+                        "name": item.get("name", ""),
+                        "semantics": {
+                            "semantic_type": item.get("semantic_type", ""),
+                            "cost_level": item.get("cost_level", ""),
+                        },
+                    })
+                advisor_note = await self._maybe_run_advisor_sub_agent(prompt, advisor_seed)
+            if advisor_note:
+                def _merge_advisor(msgs: list[dict[str, Any]], suffix: str) -> None:
+                    for i in range(len(msgs) - 1, -1, -1):
+                        if msgs[i].get("role") == "user":
+                            msg = dict(msgs[i])
+                            existing = str(msg.get("content") or "")
+                            msg["content"] = existing + "\n\n" + suffix
+                            msgs[i] = msg
+                            return
+                _merge_advisor(backend_messages, f"[SUB-AGENT ADVICE]\n{advisor_note}")
 
             response_text = ""
             _backend_usage: dict[str, Any] | None = None
@@ -2020,22 +2393,39 @@ class EncreLoop:
                 # the error as a plain user message.
                 err_msg = format_backend_error(exc)
                 yield create_finish("error", error=err_msg)
-                # Store the error on the last assistant message so it persists
-                # across session reloads.  The frontend picks up these fields
-                # and renders the red error card.
-                for _i in range(len(self.session.messages) - 1, -1, -1):
-                    _m = self.session.messages[_i]
-                    if _m.get("role") == "assistant":
-                        _m["errorMessage"] = err_msg
-                        _m["errorCode"] = "execution_error"
-                        # Also append the error text to the assistant's content
-                        # for the model to see in the next turn.
-                        _c = _m.get("content", "")
-                        if isinstance(_c, str):
-                            _m["content"] = _c + f"\n\n[Backend API Error]\n{err_msg}"
+                # Store the error on the CURRENT turn's assistant message (the
+                # one after the last user message) so it persists across session
+                # reloads.  The frontend picks up these fields and renders the
+                # red error card on the correct turn.
+                _last_ui = -1
+                for _j in range(len(self.session.messages) - 1, -1, -1):
+                    if self.session.messages[_j].get("role") == "user":
+                        _last_ui = _j
                         break
-                logger.info("[run] stored backend error on assistant msg turn={turn}, continuing", turn=self.session.turn_count)
-                continue
+                _cur_asst = None
+                for _j in range(_last_ui + 1, len(self.session.messages)):
+                    if self.session.messages[_j].get("role") == "assistant":
+                        _cur_asst = self.session.messages[_j]
+                        break
+                if _cur_asst is not None:
+                    _cur_asst["errorMessage"] = err_msg
+                    _cur_asst["errorCode"] = "execution_error"
+                    _c = _cur_asst.get("content", "")
+                    if isinstance(_c, str):
+                        _cur_asst["content"] = _c + f"\n\n[Backend API Error]\n{err_msg}"
+                else:
+                    # No assistant message in the current turn (API failed
+                    # immediately).  Create a placeholder so the error persists
+                    # across reloads.  Must use add_message() to set branch_id /
+                    # seq / id etc. so get_context_messages() includes it.
+                    self.session.add_message("assistant",
+                        f"[Backend API Error]\n{err_msg}",
+                        errorMessage=err_msg,
+                        errorCode="execution_error",
+                        segments=[{"kind": "text", "text": f"[Backend API Error]\n{err_msg}"}],
+                    )
+                logger.info("[run] stored backend error on assistant msg turn={turn}, exiting", turn=self.session.turn_count)
+                return
             else:
                 logger.info("[run] backend.chat() completed in {elapsed:.1f}s turn={turn} events={events}",
                             elapsed=time.time() - _t_chat, turn=self.session.turn_count, events=turn_events)
@@ -2213,11 +2603,14 @@ class EncreLoop:
                     continue
 
                 is_safe = tool.is_concurrency_safe(args)
+                semantics = _infer_tool_semantics(tc["name"], tool)
+                self.session.metadata.setdefault("tool_semantics", {})[tc["name"]] = semantics
                 prepared.append({
                     "id": tc["id"], "client_id": client_id,
                     "name": tc["name"], "args": args,
                     "tool": tool, "skip": False, "safe": is_safe,
                     "args_summary": _args_summary(args),
+                    "semantics": semantics,
                 })
 
             # Tag tools that were pre-executed during streaming so the permission
@@ -2227,6 +2620,10 @@ class EncreLoop:
                     if _pre_p["client_id"] in self._streaming_tool_results:
                         _pre_p["pre_executed"] = True
 
+            next_stage = self._infer_task_stage(prompt, prepared)
+            self._set_task_stage(next_stage, reason="tool preparation")
+            self._refresh_working_set(prompt, prepared)
+
             # ── Permission & hooks for all tools (sequential -- these may need user input) ──
             if self._cancelled():
                 break
@@ -2234,6 +2631,24 @@ class EncreLoop:
                 if self._cancelled():
                     break
                 if p.get("skip") or p.get("pre_executed"):
+                    continue
+                if not _tool_retry_allowed(p, self._recent_tool_names):
+                    retry_msg = (
+                        "Blocked repeated high-risk tool retry. "
+                        + p.get("semantics", {}).get("safe_fallback", "Gather more context before retrying.")
+                    )
+                    yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="blocked")
+                    yield create_tool_result(id=p["client_id"], content=retry_msg, is_error=True)
+                    self.session.add_tool_result(p["id"], retry_msg, is_error=True, client_id=p["client_id"])
+                    turn_events += 1
+                    self.telemetry.record_tool_call(
+                        tool_name=p["name"], latency_ms=0,
+                        success=False, error_message=retry_msg,
+                    )
+                    yield create_tool_call_end(id=p["client_id"])
+                    turn_events += 1
+                    p["skip"] = True
+                    p["error"] = retry_msg
                     continue
                 permission = await self.safety.check_tool_permission(p["name"], p["args"])
                 if permission.behavior == "deny":
@@ -2547,7 +2962,15 @@ class EncreLoop:
                     p["latency_ms"] = (time.time() - tool_start) * 1000
                     return p
 
-                safe_tasks = [_execute_safe(p) for p in safe_tools]
+                # Cap parallel fan-out to match Claude Code (default 10) instead
+                # of launching every concurrency-safe tool at once.
+                _tool_sem = asyncio.Semaphore(_MAX_TOOL_CONCURRENCY)
+
+                async def _execute_safe_bounded(p: dict[str, Any]) -> dict[str, Any]:
+                    async with _tool_sem:
+                        return await _execute_safe(p)
+
+                safe_tasks = [_execute_safe_bounded(p) for p in safe_tools]
                 completed = await asyncio.gather(*safe_tasks, return_exceptions=True)
                 for idx, item in enumerate(completed):
                     if isinstance(item, BaseException):
@@ -2987,6 +3410,7 @@ class EncreLoop:
                         "name": tc["name"], "args": args,
                         "tool": tool,
                         "args_summary": _args_summary(args),
+                        "semantics": _infer_tool_semantics(tc["name"], tool),
                     })
 
                 # Permission & hooks for secondary tools
@@ -3210,15 +3634,16 @@ class EncreLoop:
                 self._recent_tool_names.append(tuple(turn_sigs))
                 if len(self._recent_tool_names) > 20:
                     self._recent_tool_names.pop(0)
-                if len(self._recent_tool_names) >= 12 and not self._error_tool_names:
-                    last12 = self._recent_tool_names[-12:]
-                    if last12.count(last12[-1]) >= 12:
+                if len(self._recent_tool_names) >= _STUCK_LOOP_THRESHOLD and not self._error_tool_names:
+                    recent = self._recent_tool_names[-_STUCK_LOOP_THRESHOLD:]
+                    if recent.count(recent[-1]) >= _STUCK_LOOP_THRESHOLD:
                         logger.warning(
                             "[run] repetitive tool-loop: %s turn=%d -- continuing session",
-                            last12[-1], self.session.turn_count,
+                            recent[-1], self.session.turn_count,
                         )
-                        # Don't kill the session, just warn and let it continue.
-                        # The model or user can decide to stop if needed.
+                        self._record_stuck_event(recent[-1])
+                        self._set_task_stage("discover", reason="stuck loop recovery")
+                        self._refresh_working_set(prompt, prepared)
 
             self.telemetry.record_turn(
                 turn_number=self.session.turn_count,
@@ -3230,9 +3655,15 @@ class EncreLoop:
 
             # Evolution: reflex + meta-cognition
             tool_outcomes: list[dict[str, Any]] = [
-                {"tool_name": tc["name"], "is_error": False}
-                for tc in tool_call_buffers.values()
+                {
+                    "tool_name": p.get("name", ""),
+                    "is_error": bool(p.get("is_error") or p.get("skip") and p.get("error")),
+                    "semantic_type": p.get("semantics", {}).get("semantic_type", ""),
+                }
+                for p in prepared
             ]
+            self._maybe_record_turn_summary(prompt, prepared, tool_outcomes)
+            self._refresh_working_set(prompt, prepared)
             self.reflex.reflect(
                 turn_number=self.session.turn_count,
                 tool_results=tool_outcomes,

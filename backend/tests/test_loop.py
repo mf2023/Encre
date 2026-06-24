@@ -31,12 +31,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from encre.config import EncreConfig
 from encre.hooks.system import EncreHookSystem
-from encre.loop import EncreLoop
+from encre.loop import EncreLoop, _infer_tool_semantics, _tool_retry_allowed
 from encre.memdir.system import EncreMemorySystem
 from encre.safety import EncreSafetyEngine
 from encre.session import EncreSession
 from encre.telemetry import EncreTelemetry
+from encre.tools.base import build_tool
 from encre.tools.registry import ToolRegistry
+from encre.tools.builtin.agent import EncreAgentTool
+from encre.tools.builtin.apply_patch import EncreApplyPatchTool
+from encre.tools.builtin.bash import EncreBashTool
+from encre.tools.builtin.file_edit import EncreFileEditTool
+from encre.tools.builtin.file_read import EncreFileReadTool
+from encre.tools.builtin.grep import EncreGrepTool
+from encre.tools.builtin.test_runner import EncreTestRunTool
+from encre.tools.builtin.web_search import EncreWebSearchTool
 
 
 class TestEncreLoopConstruction:
@@ -329,3 +338,120 @@ class TestEncreLoopMemorySystem:
         mem = EncreMemorySystem(auto_memory_path=str(tmp_path / "memory"))
         loop = EncreLoop(config=self.config, session=self.session, memory_system=mem)
         assert loop.memory_system is mem
+
+
+class TestEncreLoopTaskState:
+    def setup_method(self):
+        self.config = EncreConfig(
+            model="gpt-4o",
+            backend_type="openai",
+            permission_mode="default",
+            max_turns=10,
+            max_tokens=4096,
+            log_level="ERROR",
+        )
+        self.session = EncreSession(self.config)
+
+    @patch("encre.loop.create_backend")
+    def test_initial_task_state_metadata(self, mock_create_backend):
+        mock_backend = MagicMock()
+        mock_backend.supports_tool_calling.return_value = True
+        mock_backend.supports_prompt_caching.return_value = False
+        mock_backend.context_window_size.return_value = 128000
+        mock_create_backend.return_value = mock_backend
+
+        loop = EncreLoop(config=self.config, session=self.session)
+        assert loop.session.metadata["task_stage"] == "discover"
+        assert loop.session.metadata["working_set"] == {}
+        assert loop.session.metadata["turn_summaries"] == []
+
+    @patch("encre.loop.create_backend")
+    def test_working_set_prompt_contains_recent_tools(self, mock_create_backend):
+        mock_backend = MagicMock()
+        mock_backend.supports_tool_calling.return_value = True
+        mock_backend.supports_prompt_caching.return_value = False
+        mock_backend.context_window_size.return_value = 128000
+        mock_create_backend.return_value = mock_backend
+
+        loop = EncreLoop(config=self.config, session=self.session)
+        prepared = [{
+            "name": "grep",
+            "args": {"pattern": "todo", "path": "src"},
+            "semantics": {"semantic_type": "search", "cost_level": "low"},
+        }]
+        loop._refresh_working_set("find todos", prepared)
+        rendered = loop._build_working_set_prompt()
+        assert "Current Task State" in rendered
+        assert "grep" in rendered
+        assert "find todos" in rendered
+
+    @patch("encre.loop.create_backend")
+    def test_task_stage_inference(self, mock_create_backend):
+        mock_backend = MagicMock()
+        mock_backend.supports_tool_calling.return_value = True
+        mock_backend.supports_prompt_caching.return_value = False
+        mock_backend.context_window_size.return_value = 128000
+        mock_create_backend.return_value = mock_backend
+
+        loop = EncreLoop(config=self.config, session=self.session)
+        assert loop._infer_task_stage("Please plan the refactor") == "plan"
+        assert loop._infer_task_stage(
+            "edit the file",
+            [{"name": "apply_patch", "semantics": {"semantic_type": "write"}}],
+        ) == "execute"
+        assert loop._infer_task_stage("verify the tests") == "verify"
+        assert loop._infer_task_stage("write a summary for me") == "report"
+
+    @patch("encre.loop.create_backend")
+    def test_turn_summary_recorded(self, mock_create_backend):
+        mock_backend = MagicMock()
+        mock_backend.supports_tool_calling.return_value = True
+        mock_backend.supports_prompt_caching.return_value = False
+        mock_backend.context_window_size.return_value = 128000
+        mock_create_backend.return_value = mock_backend
+
+        loop = EncreLoop(config=self.config, session=self.session)
+        loop.session.turn_count = 3
+        prepared = [{"name": "file_read"}]
+        outcomes = [{"tool_name": "file_read", "is_error": False}]
+        loop._maybe_record_turn_summary("inspect file", prepared, outcomes)
+        assert len(loop.session.metadata["turn_summaries"]) == 1
+
+
+class TestEncreLoopToolSemantics:
+    def test_infer_tool_semantics_defaults(self):
+        tool = build_tool(
+            name="grep",
+            description="search",
+            input_schema={"type": "object", "properties": {}},
+            execute=AsyncMock(),
+        )
+        semantics = _infer_tool_semantics("grep", tool)
+        assert semantics["semantic_type"] == "search"
+        assert semantics["cost_level"] == "low"
+
+    def test_retry_guard_blocks_guarded_repeat(self):
+        p = {
+            "name": "apply_patch",
+            "args_summary": '{"file_path":"x.py"}',
+            "semantics": {"retryability": "guarded"},
+        }
+        assert _tool_retry_allowed(p, [('apply_patch:{"file_path":"x.py"}',)]) is False
+
+    def test_retry_guard_allows_auto_retry(self):
+        p = {
+            "name": "grep",
+            "args_summary": '{"pattern":"todo"}',
+            "semantics": {"retryability": "auto"},
+        }
+        assert _tool_retry_allowed(p, [('grep:{"pattern":"todo"}',)]) is True
+
+    def test_core_tools_have_explicit_semantics(self):
+        assert EncreBashTool.semantic_type == "exec"
+        assert EncreFileReadTool.semantic_type == "read"
+        assert EncreGrepTool.semantic_type == "search"
+        assert EncreFileEditTool.semantic_type == "write"
+        assert EncreApplyPatchTool.semantic_type == "write"
+        assert EncreWebSearchTool.semantic_type == "network"
+        assert EncreTestRunTool.semantic_type == "exec"
+        assert EncreAgentTool.semantic_type == "orchestrate"

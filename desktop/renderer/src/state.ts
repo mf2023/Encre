@@ -60,6 +60,7 @@ function syncActiveSessionState(): void {
   state.branches = snapshot.branches;
   state.activeBranchId = snapshot.activeBranchId;
   state.running = snapshot.running;
+  state.agentState = snapshot.agentState ?? null;
 }
 
 function syncSessionState(sessionId?: string): void {
@@ -706,6 +707,10 @@ export function setSettings(settings: Record<string, unknown>): void {
   update({ settings });
 }
 
+export function setPermissionPolicies(policies: import("./types.js").PermissionPolicies): void {
+  update({ permissionPolicies: policies });
+}
+
 export function setTheme(theme: "dark" | "light"): void {
   update({ theme });
   document.documentElement.setAttribute("data-theme", theme);
@@ -864,6 +869,13 @@ export function addCompactEvent(evt: import("./types.js").CompactInfo, sessionId
       "info",
     );
   }
+}
+
+export function setAgentState(agentState: import("./types.js").AgentStateSnapshot, sessionId = state.sessionId): void {
+  const snapshot = getOrCreateSessionSnapshot(sessionId);
+  snapshot.agentState = agentState;
+  syncSessionState(sessionId);
+  emit();
 }
 
 export function clearCompactEvents(): void {

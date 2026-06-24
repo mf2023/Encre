@@ -214,5 +214,9 @@ EncreFileReadTool = build_tool(
     },
     execute=_file_read_execute,
     intents=["general", "coding", "data"],
+    semantic_type="read",
+    cost_level="low",
+    retryability="auto",
+    safe_fallback="Read a smaller range, switch mode for images/PDFs, or verify the path exists before retrying.",
     is_concurrency_safe=lambda _: True,
 )

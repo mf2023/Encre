@@ -88,15 +88,21 @@ export function t(key: string, params?: Record<string, string | number>): string
   }
 
   const keys = key.split(".");
-  let value: unknown = translations[currentLocale];
-
-  for (const k of keys) {
-    if (value && typeof value === "object" && k in value) {
-      value = (value as LocaleMessages)[k];
-    } else {
-      value = undefined;
-      break;
+  const lookup = (locale: Locale): unknown => {
+    let value: unknown = translations[locale];
+    for (const k of keys) {
+      if (value && typeof value === "object" && k in value) {
+        value = (value as LocaleMessages)[k];
+      } else {
+        return undefined;
+      }
     }
+    return value;
+  };
+
+  let value = lookup(currentLocale);
+  if (typeof value !== "string" && currentLocale !== "en") {
+    value = lookup("en");
   }
 
   let result = typeof value === "string" ? value : key;

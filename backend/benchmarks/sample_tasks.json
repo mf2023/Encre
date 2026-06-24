@@ -1,0 +1,42 @@
+[
+  {
+    "id": "codebase-summary",
+    "category": "discovery",
+    "prompt": "Summarize the backend loop architecture and identify the most important execution control points.",
+    "must_include": [
+      "loop",
+      "tool",
+      "session"
+    ]
+  },
+  {
+    "id": "safety-review",
+    "category": "review",
+    "prompt": "Review the tool execution loop for repeated high-risk retries and explain the current safeguards.",
+    "must_include": [
+      "retry",
+      "guard",
+      "tool"
+    ]
+  },
+  {
+    "id": "refactor-plan",
+    "category": "planning",
+    "prompt": "Propose a concrete plan for improving agent loop robustness against repetitive tool retries and long-context degradation.",
+    "must_include": [
+      "plan",
+      "retry",
+      "context"
+    ]
+  },
+  {
+    "id": "verification-focus",
+    "category": "verification",
+    "prompt": "Explain how this codebase currently verifies agent changes and what validation gaps still exist.",
+    "must_include": [
+      "test",
+      "validation",
+      "gap"
+    ]
+  }
+]

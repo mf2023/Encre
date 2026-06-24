@@ -211,7 +211,7 @@ class EncreSession:
         self,
         tool_call_id: str,
         content: str,
-        _is_error: bool = False,
+        is_error: bool = False,
         sub_agent_messages: list[dict[str, Any]] | None = None,
         sub_agent_session_id: str | None = None,
         client_id: str | None = None,

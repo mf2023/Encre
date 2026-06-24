@@ -450,6 +450,29 @@ class EncreWSHandler:
                         if isinstance(raw, dict):
                             save_keybinds(raw)
                             logger.info("[configure] saved keybinds (%d entries)", len(raw.get("keybinds", [])))
+                    if "permission_settings" in msg.config:
+                        raw = msg.config["permission_settings"]
+                        if isinstance(raw, dict):
+                            capability_keys = {
+                                "network", "file", "bash_io", "docker", "browser",
+                                "workflow", "git", "deploy", "desktop", "database", "misc", "mcp",
+                            }
+                            # Empty dict is a read request: return the persisted settings.
+                            if not raw:
+                                msg.config["permission_settings"] = dict(session.agent.config.permission_settings)
+                            else:
+                                tools: dict[str, str] = {}
+                                capabilities: dict[str, str] = {}
+                                for key, value in raw.items():
+                                    if not isinstance(value, str):
+                                        continue
+                                    if key in capability_keys:
+                                        capabilities[key] = value
+                                    else:
+                                        tools[key] = value
+                                session.agent.safety.set_policies(tools, capabilities)
+                                session.agent.config.permission_settings = {**session.agent.config.permission_settings, **raw}
+                                logger.info("[configure] applied permission_settings (%d tools, %d capabilities)", len(tools), len(capabilities))
                     await self._send(ws, "configured", config=msg.config)
 
                 elif isinstance(msg, ClientTestAdapter):
@@ -1002,7 +1025,6 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientValidateModel):
                     from encre.backend import create_backend
                     from encre.backends.base import format_backend_error
-                    from encre.config import ModelConfig
                     backend = create_backend(
                         msg.backend_type,
                         api_key=msg.api_key,
@@ -1013,6 +1035,7 @@ class EncreWSHandler:
                         await self._send(ws, "model_validation_error",
                             message=f"Unknown backend type: {msg.backend_type}")
                     else:
+                        validated = False
                         try:
                             async for _ in backend.chat(
                                 messages=[{"role": "user", "content": "hi"}],
@@ -1020,67 +1043,87 @@ class EncreWSHandler:
                                 stream=False,
                             ):
                                 pass
+                            validated = True
                         except Exception as e:
+                            # Validation failed — report it and keep the
+                            # connection alive (do NOT return, which would tear
+                            # down the whole WebSocket and lose this message).
                             await self._send(ws, "model_validation_error",
                                 message=format_backend_error(e, "Validation failed:"))
-                            return
                         finally:
                             await backend.aclose()
 
-                        # Test connection passed -- auto-add the model to the
-                        # user's config so they see it in the model list right
-                        # away.  Mirrors the test_adapter pattern (test OK =
-                        # applied), and matches user expectation that
-                        # "Test + OK" should leave the model registered.
-                        info = self._get_or_create_session()
-                        cfg = info.agent.config
-                        existing_idx = next(
-                            (i for i, m in enumerate(cfg.models)
-                             if m.backend_type == msg.backend_type
-                             and m.model_id == msg.model_id
-                             and (m.base_url or "") == (msg.base_url or "")),
-                            None,
-                        )
-                        if existing_idx is not None:
-                            target = cfg.models[existing_idx]
-                            target.api_key = msg.api_key
-                            target.base_url = msg.base_url
-                            target.max_tokens = msg.max_tokens
-                            target.enabled = True
-                            active_idx = existing_idx
-                        else:
+                        if validated:
+                          try:
+                            # Validation passed — persist the model authoritatively
+                            # in THIS single round-trip and echo the full list via
+                            # models_updated.  The frontend syncs its state from that
+                            # echo, so there is no fragile second update_models
+                            # message that can be lost if the WebSocket goes away.
+                            info = self._get_or_create_session()
+                            self._manager.touch(info.session_id)
+                            cfg = info.agent.config
                             new_model = ModelConfig(
-                                name=msg.model_id,
-                                backend_type=msg.backend_type,
+                                name=msg.name or msg.model_id,
                                 model_id=msg.model_id,
+                                backend_type=msg.backend_type,
                                 api_key=msg.api_key,
                                 base_url=msg.base_url,
-                                max_tokens=msg.max_tokens,
+                                max_tokens=msg.max_tokens or 4096,
+                                context_window=0,
                                 enabled=True,
                             )
-                            cfg.models.append(new_model)
-                            active_idx = len(cfg.models) - 1
-                        cfg.active_model_index = active_idx
-                        cfg.apply_active_model()
-                        # Sync to _default_config so new sessions pick it up
-                        self._default_config.models = list(cfg.models)
-                        self._default_config.active_model_index = active_idx
-                        self._default_config.apply_active_model()
-                        try:
-                            info.agent.rebuild_backend()
-                        except Exception as exc:
-                            logger.warning("[validate_model] rebuild_backend failed: %s", exc)
-                        self._persist_config(info)
-                        # Re-inject context windows for the response payload
-                        models_dict = _inject_context_windows([
-                            m.to_dict(encrypt_api_keys=False) for m in cfg.models
-                        ])
-                        await self._send(ws, "models_updated",
-                            models=models_dict, active_model_index=active_idx)
-                        await self._send(ws, "model_validated",
-                            backend_type=msg.backend_type,
-                            model_id=msg.model_id,
-                            model_index=active_idx)
+                            if 0 <= msg.model_index < len(cfg.models):
+                                # Edit: replace the exact entry the user opened and
+                                # keep the current active selection.
+                                cfg.models[msg.model_index] = new_model
+                                active_idx = cfg.active_model_index
+                            else:
+                                # Add: collapse onto an existing identical model
+                                # (same backend + model_id + base_url) rather than
+                                # appending a duplicate when re-validated.
+                                existing_idx = next(
+                                    (i for i, m in enumerate(cfg.models)
+                                     if m.backend_type == msg.backend_type
+                                     and m.model_id == msg.model_id
+                                     and (m.base_url or "") == (msg.base_url or "")),
+                                    None,
+                                )
+                                if existing_idx is not None:
+                                    cfg.models[existing_idx] = new_model
+                                    active_idx = existing_idx
+                                else:
+                                    cfg.models.append(new_model)
+                                    active_idx = len(cfg.models) - 1
+                            cfg.active_model_index = active_idx
+                            cfg.apply_active_model()
+                            # Sync to _default_config so new sessions pick it up.
+                            self._default_config.models = list(cfg.models)
+                            self._default_config.active_model_index = active_idx
+                            self._default_config.apply_active_model()
+                            try:
+                                info.agent.rebuild_backend()
+                            except Exception as exc:
+                                logger.warning("[validate_model] rebuild_backend failed: %s", exc)
+                            self._persist_config(info)
+
+                            models_dict = _inject_context_windows([
+                                m.to_dict(encrypt_api_keys=False) for m in cfg.models
+                            ])
+                            await self._send(ws, "models_updated",
+                                models=models_dict, active_model_index=active_idx)
+                            await self._send(ws, "model_validated",
+                                backend_type=msg.backend_type,
+                                model_id=msg.model_id,
+                                model_index=active_idx)
+                          except Exception as exc:
+                            # The connection test passed but persisting failed.
+                            # Surface a real error instead of letting the
+                            # frontend hang until its 30s timeout.
+                            logger.error("[validate_model] save failed: %s\n%s",
+                                exc, traceback.format_exc())
+                            await self._send(ws, "model_validation_error",
+                                message=f"Validation passed but saving failed: {exc}")
 
                 elif isinstance(msg, ClientUpdateSkills):
                     info = self._get_or_create_session()
@@ -1268,6 +1311,19 @@ class EncreWSHandler:
                             code="invalid_request", session_id=sid or "")
                         continue
                     session = self._manager.load_or_create_session(sid, config=self._default_config)
+                    # Cancel any running agent task before rollback to prevent
+                    # session state corruption (the running task's finally block
+                    # could overwrite the rollback's restored state).
+                    if session.agent_task and not session.agent_task.done():
+                        session.is_running = False
+                        session.agent.loop.cancel()
+                        session.agent_task.cancel()
+                        with contextlib.suppress(Exception):
+                            await session.agent.loop.backend.aclose()
+                        self._manager.release_slot()
+                        with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                            await asyncio.wait_for(session.agent_task, timeout=0.5)
+                        session.agent_task = None
                     from encre.rollback import EncreRollbackGit
                     rb = EncreRollbackGit()
                     ok = rb.checkout(session.agent.loop.session, msg.commit_hash)
@@ -2203,6 +2259,18 @@ class EncreWSHandler:
                     if info is None:
                         info = self._manager.load_or_create_session(sid, config=self._default_config)
                     self._manager.touch(sid)
+                    # Cancel any running agent task before rollback to prevent
+                    # session state corruption.
+                    if info.agent_task and not info.agent_task.done():
+                        info.is_running = False
+                        info.agent.loop.cancel()
+                        info.agent_task.cancel()
+                        with contextlib.suppress(Exception):
+                            await info.agent.loop.backend.aclose()
+                        self._manager.release_slot()
+                        with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                            await asyncio.wait_for(info.agent_task, timeout=0.5)
+                        info.agent_task = None
                     self._info = info
                     self._current_session_id = sid
                     sess = info.agent.session
@@ -3390,6 +3458,27 @@ class EncreWSHandler:
 
     async def _dispatch_event(self, ws, _info, event: Any) -> None:
         sid = _info.session_id if _info else None
+
+        async def _send_agent_state() -> None:
+            if _info is None:
+                return
+            sess = _info.agent.session
+            meta = sess.metadata or {}
+            await self._send(
+                ws,
+                "agent_state",
+                state={
+                    "task_stage": meta.get("task_stage", "discover"),
+                    "task_stage_history": meta.get("task_stage_history", []),
+                    "working_set": meta.get("working_set", {}),
+                    "turn_summaries": meta.get("turn_summaries", []),
+                    "delegate_history": meta.get("delegate_history", []),
+                    "stuck_events": meta.get("stuck_events", []),
+                    "tool_semantics": meta.get("tool_semantics", {}),
+                },
+                session_id=sid,
+            )
+
         if isinstance(event, TextDelta) and event.text:
             await self._send(ws, "text_delta", text=event.text, session_id=sid)
 
@@ -3452,6 +3541,7 @@ class EncreWSHandler:
 
         elif isinstance(event, PlanUpdate):
             await self._send(ws, "plan_update", plan_items=event.plan_items, session_id=sid)
+            await _send_agent_state()
             # Persist plan items asynchronously (debounced) so they survive app
             # refresh without blocking the event dispatch / subsequent WS sends.
             if _info is not None:
@@ -3468,6 +3558,7 @@ class EncreWSHandler:
                 old_tokens=event.old_tokens,
                 new_tokens=event.new_tokens,
                 session_id=sid)
+            await _send_agent_state()
             # Also push updated context usage to the canvas panel
             if _info is not None:
                 ctx_msgs = _info.agent.session.get_context_messages()
@@ -3546,6 +3637,7 @@ class EncreWSHandler:
             await self._send(ws, "finish", reason=event.reason, usage=event.usage,
                              error=event.error, assistant_message_id=last_msg_id,
                              session_id=sid)
+            await _send_agent_state()
             # Push updated context usage so the canvas panel stays in sync
             if _info is not None:
                 ctx_msgs = _info.agent.session.get_context_messages()

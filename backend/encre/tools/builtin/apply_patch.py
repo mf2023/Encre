@@ -461,4 +461,8 @@ EncreApplyPatchTool = build_tool(
     },
     execute=_apply_patch_execute,
     intents=["general", "coding"],
+    semantic_type="write",
+    cost_level="high",
+    retryability="guarded",
+    safe_fallback="Read the target files again, reduce the patch scope, or run a dry run to inspect failed hunks before retrying.",
 )

@@ -539,6 +539,9 @@ class ClientValidateModel:
     base_url: str = ""
     model_id: str = ""
     max_tokens: int = 4096
+    name: str = ""
+    # Index of the model being edited; -1 (default) means "add new".
+    model_index: int = -1
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ClientValidateModel":
@@ -549,6 +552,8 @@ class ClientValidateModel:
             base_url=d.get("base_url", ""),
             model_id=d.get("model_id", ""),
             max_tokens=d.get("max_tokens", 4096),
+            name=d.get("name", ""),
+            model_index=d.get("model_index", -1),
         )
 
 
@@ -1345,6 +1350,7 @@ ServerMessageType = Literal[
     "configured",
     "telemetry",
     "plan_update",
+    "agent_state",
     "spec_update",
     "models_list",
     "sessions_list",
@@ -1524,6 +1530,10 @@ def encode_telemetry(data: dict[str, Any]) -> str:
 
 def encode_plan_update(plan_items: list[dict[str, Any]]) -> str:
     return encode_server_message("plan_update", plan_items=plan_items)
+
+
+def encode_agent_state(state: dict[str, Any]) -> str:
+    return encode_server_message("agent_state", state=state)
 
 
 def encode_spec_update(

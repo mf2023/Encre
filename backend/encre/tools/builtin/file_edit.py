@@ -344,4 +344,8 @@ EncreFileEditTool = build_tool(
     },
     execute=_file_edit_execute,
     intents=["general", "coding", "data"],
+    semantic_type="write",
+    cost_level="high",
+    retryability="guarded",
+    safe_fallback="Re-read the file, make the target text more unique, or switch to dry_run to inspect the proposed diff first.",
 )

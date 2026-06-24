@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, subscribe, showToast } from "./state.js";
+import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, setPermissionPolicies, subscribe, showToast } from "./state.js";
 import { send } from "./ws.js";
 import { waitForModelValidation, onAdapterTestResult } from "./stream.js";
 import { setModelConfigs, setMcpServers, setSkillsList, setSubAgents } from "./state.js";
@@ -37,7 +37,7 @@ initLocale();
 
 const APP_VERSION = "0.1.5-pre.1";
 
-export type PanelId = "general" | "usage" | "model" | "gateway" | "index" | "skills" | "rules" | "mcp" | "agent" | "about" | "developer" | "memory";
+export type PanelId = "general" | "usage" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory";
 
 const DEV_MODE_STORAGE_KEY = "encre-dev-mode";
 const DEV_TAP_THRESHOLD = 7;
@@ -96,6 +96,7 @@ export class Settings {
       index: document.getElementById("panel-index")!,
       skills: document.getElementById("panel-skills")!,
       rules: document.getElementById("panel-rules")!,
+      permissions: document.getElementById("panel-permissions")!,
       mcp: document.getElementById("panel-mcp")!,
       agent: document.getElementById("panel-agent")!,
       about: document.getElementById("panel-about")!,
@@ -543,6 +544,20 @@ export class Settings {
       }
     });
 
+    // Auto-refresh permissions panel when policies change
+    let lastPermissionPolicies = JSON.stringify(getState().permissionPolicies);
+    subscribe(() => {
+      const app = document.getElementById("app");
+      if (!app?.classList.contains("settings-mode")) return;
+      const current = JSON.stringify(getState().permissionPolicies);
+      if (current !== lastPermissionPolicies) {
+        lastPermissionPolicies = current;
+        if (this.currentPanel === "permissions" && this.panels.permissions) {
+          this.renderPermissions();
+        }
+      }
+    });
+
     // Auto-refresh usage panel when usageStats changes
     let lastUsageStats = getState().usageStats;
     subscribe(() => {
@@ -920,6 +935,9 @@ export class Settings {
     } else if (id === "rules") {
       this.panels.rules.classList.add("active");
       this.renderRules();
+    } else if (id === "permissions") {
+      this.panels.permissions.classList.add("active");
+      this.renderPermissions();
     } else if (id === "developer") {
       this.panels.developer.classList.add("active");
       this.renderDeveloper();
@@ -974,6 +992,7 @@ export class Settings {
     this.renderIndex();
     this.renderSkills();
     this.renderRules();
+    this.renderPermissions();
     this.renderMcp();
     this.renderAgent();
     this.renderAbout();
@@ -2037,7 +2056,11 @@ private _bindModelSelect(): void {
       }
 
       showToast(t("common.validatingConnection"), "", "info");
-      send({ type: "validate_model", backend_type: backend, api_key: apiKey, base_url: baseUrl, model_id: modelId, max_tokens: maxTokens });
+      send({
+        type: "validate_model", backend_type: backend, api_key: apiKey,
+        base_url: baseUrl, model_id: modelId, max_tokens: maxTokens,
+        name, model_index: isEdit && editIdx !== undefined ? editIdx : -1,
+      });
       try {
         await waitForModelValidation();
       } catch (e: any) {
@@ -2045,20 +2068,10 @@ private _bindModelSelect(): void {
         return;
       }
 
-      const currentModels = [...getState().modelConfigs];
-      const newModel = {
-        name, model_id: modelId, backend_type: backend,
-        api_key: apiKey, base_url: baseUrl, max_tokens: maxTokens,
-        context_window: 0, enabled: true,
-      };
-      if (isEdit && editIdx !== undefined) {
-        currentModels[editIdx] = newModel;
-      } else {
-        currentModels.push(newModel);
-      }
-      const activeIdx = isEdit ? getState().activeModelIndex : currentModels.length - 1;
-      setModelConfigs(currentModels, activeIdx);
-      send({ type: "update_models", models: currentModels, active_model_index: activeIdx });
+      // Validation succeeded: the backend has already persisted the model and
+      // pushed the authoritative list via models_updated (which updated state
+      // before model_validated resolved).  No second round-trip to lose — just
+      // refresh from the synced state and close.
       this.renderModel();
       close();
     });
@@ -2956,6 +2969,165 @@ private _bindModelSelect(): void {
       send({ type: "save_global_rule", name: inputName, content: inputContent });
       close();
     });
+  }
+
+  private renderPermissions(): void {
+    const st = getState();
+    const policies = st.permissionPolicies || { tools: {}, capabilities: {} };
+
+    // Request persisted policies on first open.
+    if (Object.keys(policies.tools).length === 0 && Object.keys(policies.capabilities).length === 0) {
+      send({ type: "configure", config: { permission_settings: {} } });
+    }
+
+    const options: DropdownOption[] = [
+      { id: "default", label: t("permissions.settings.default") },
+      { id: "allow", label: t("permissions.settings.allow") },
+      { id: "deny", label: t("permissions.settings.deny") },
+      { id: "ask", label: t("permissions.settings.ask") },
+    ];
+
+    const capabilityKeys = new Set([
+      "network", "file", "bash_io", "docker", "browser",
+      "workflow", "git", "deploy", "desktop", "database", "misc", "mcp",
+    ]);
+
+    const knownTools = [
+      "bash", "bash_output", "file_write", "file_edit", "apply_patch",
+      "docker", "deploy", "database", "browser", "desktop",
+    ];
+    const knownCapabilities = Array.from(capabilityKeys);
+
+    const ensureEntries = (keys: string[], existing: Record<string, import("./types.js").PermissionPolicy>) => {
+      const entries: Array<[string, import("./types.js").PermissionPolicy]> = [];
+      for (const key of keys) {
+        entries.push([key, existing[key] || { value: "default", source: "default" }]);
+      }
+      for (const [key, policy] of Object.entries(existing)) {
+        if (!keys.includes(key)) entries.push([key, policy]);
+      }
+      return entries;
+    };
+
+    const toolEntries = ensureEntries(knownTools, policies.tools);
+    const capEntries = ensureEntries(knownCapabilities, policies.capabilities);
+
+    const renderRows = (group: "tools" | "capabilities", entries: Array<[string, import("./types.js").PermissionPolicy]>) => {
+      if (entries.length === 0) {
+        return `<div class="empty-state">${t("permissions.settings.noItems")}</div>`;
+      }
+      return entries.map(([name, policy], idx) => {
+        const divider = idx < entries.length - 1 ? '<div class="settings-item-divider"></div>' : "";
+        const descKey = `permissions.settings.desc.${name}`;
+        const desc = t(descKey as any) === descKey ? "" : t(descKey as any);
+        return `
+          <div class="settings-item-row" data-perm-group="${group}" data-perm-name="${this.esc(name)}">
+            <div class="settings-item-info">
+              <div class="settings-item-title">
+                ${this.esc(name)}
+                <span class="model-active-tag perm-source-${policy.source || "default"}">${policy.source || "default"}</span>
+              </div>
+              ${desc ? `<div class="settings-item-desc">${this.esc(desc)}</div>` : ""}
+            </div>
+            <div class="settings-item-control">
+              ${this.renderDropdown(`perm-dd-${group}-${name}`, options, policy.value || "default", () => {})}
+            </div>
+          </div>
+          ${divider}
+        `;
+      }).join("");
+    };
+
+    const toolsHtml = renderRows("tools", toolEntries);
+    const capsHtml = renderRows("capabilities", capEntries);
+
+    this.panels.permissions.innerHTML = `
+      <div class="settings-section-title"><i data-lucide="shield" class="lucide section-title-icon"></i> ${t("permissions.settings.title")}</div>
+      <div class="settings-card">
+        <div class="model-manage-header">
+          <div class="model-manage-desc">${t("permissions.settings.subtitle")}</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-add-model-top" id="btn-permissions-reset">
+              <span>${t("permissions.settings.resetDefaults")}</span>
+            </button>
+            <button class="btn-add-model-top" id="btn-permissions-save">
+              <i data-lucide="save" class="lucide"></i>
+              <span>${t("permissions.settings.saveChanges")}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section-title"><i data-lucide="wrench" class="lucide section-title-icon"></i> ${t("permissions.settings.tools")}</div>
+      <div class="settings-card">${toolsHtml}</div>
+
+      <div class="settings-section-title"><i data-lucide="zap" class="lucide section-title-icon"></i> ${t("permissions.settings.capabilities")}</div>
+      <div class="settings-card">${capsHtml}</div>
+
+      <div class="perm-hint-block" style="margin-top:12px;">
+        <div class="perm-hint-title">${t("permissions.settings.defaultNoteTitle")}</div>
+        <div class="perm-hint-desc">${t("permissions.settings.defaultNoteDesc")}</div>
+      </div>
+    `;
+
+    // Bind dropdowns and capture changes into a local draft.
+    const draft: Record<string, string> = {};
+    for (const group of ["tools", "capabilities"] as const) {
+      const entries = group === "tools" ? toolEntries : capEntries;
+      for (const [name] of entries) {
+        this.bindDropdown(`perm-dd-${group}-${name}`, (val) => {
+          draft[name] = val;
+        });
+      }
+    }
+
+    document.getElementById("btn-permissions-save")?.addEventListener("click", () => {
+      const payload: Record<string, string> = {};
+      for (const group of ["tools", "capabilities"] as const) {
+        const entries = group === "tools" ? toolEntries : capEntries;
+        for (const [name, policy] of entries) {
+          const key = `perm-dd-${group}-${name}`;
+          const wrap = document.getElementById(`${key}-wrap`);
+          const trigger = wrap?.querySelector(".settings-dropdown-trigger span");
+          const selectedOption = options.find(o => o.label === trigger?.textContent);
+          const value = draft[name] ?? selectedOption?.id ?? policy.value ?? "default";
+          payload[name] = value;
+        }
+      }
+      send({ type: "configure", config: { permission_settings: payload } });
+      // Optimistically update local state so the panel does not flicker.
+      const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
+      for (const [name, policy] of toolEntries) {
+        next.tools[name] = { value: (payload[name] as any) || policy.value || "default", source: "user" };
+      }
+      for (const [name, policy] of capEntries) {
+        if (capabilityKeys.has(name)) {
+          next.capabilities[name] = { value: (payload[name] as any) || policy.value || "default", source: "user" };
+        }
+      }
+      setPermissionPolicies(next);
+      showToast(t("permissions.settings.saved"), "");
+    });
+
+    document.getElementById("btn-permissions-reset")?.addEventListener("click", async () => {
+      if (await Dialog.confirm(t("permissions.settings.resetConfirmTitle"), t("permissions.settings.resetConfirmDesc"))) {
+        const payload: Record<string, string> = {};
+        for (const group of ["tools", "capabilities"] as const) {
+          const entries = group === "tools" ? toolEntries : capEntries;
+          for (const [name] of entries) payload[name] = "default";
+        }
+        send({ type: "configure", config: { permission_settings: payload } });
+        const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
+        for (const [name] of toolEntries) next.tools[name] = { value: "default", source: "default" };
+        for (const [name] of capEntries) next.capabilities[name] = { value: "default", source: "default" };
+        setPermissionPolicies(next);
+        showToast(t("permissions.settings.reset"), "");
+      }
+    });
+
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.panels.permissions });
+    }
   }
 
   private renderMcp(): void {

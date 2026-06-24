@@ -204,7 +204,8 @@ def _normal_mode_block(session_id: str = "") -> PromptBlock:
     return PromptBlock(priority=2, name="mode", condition=None, content=content)
 
 
-def _environment_block() -> PromptBlock:
+def _environment_block(workspace_root: str = "") -> PromptBlock:
+    import os as _os
     import platform as _platform
     import sys as _sys
 
@@ -237,7 +238,18 @@ def _environment_block() -> PromptBlock:
         details = os_name
         shell_hint = ""
 
+    # CC-style <env> facts: working directory + whether it is a git repo.
+    cwd = workspace_root or _os.getcwd()
+    is_git = _os.path.isdir(_os.path.join(cwd, ".git"))
+    env_facts = (
+        f"Working directory: {cwd}\n"
+        f"Is directory a git repo: {'Yes' if is_git else 'No'}\n"
+    )
+
     content = (
+        f"## Environment\n"
+        f"{env_facts}"
+        f"\n"
         f"## Operating System\n"
         f"**{os_name}** -- {details}\n"
         f"{shell_hint}"
@@ -316,7 +328,7 @@ class EncrePromptBuilder:
             _identity_block(),
             _safety_block(),
             _current_datetime_block(),
-            _environment_block(),
+            _environment_block(workspace_root),
             _tool_usage_block(tools),
             _task_management_block(),
             _permission_block(mode),

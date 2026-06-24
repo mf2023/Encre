@@ -356,4 +356,8 @@ EncreBashTool = build_tool(
     },
     execute=_bash_execute,
     intents=["general", "coding", "data"],
+    semantic_type="exec",
+    cost_level="high",
+    retryability="guarded",
+    safe_fallback="Prefer a dedicated tool, or inspect command preconditions and the current workspace state before retrying bash.",
 )

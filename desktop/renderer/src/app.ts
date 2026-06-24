@@ -1958,7 +1958,6 @@ class App {
     setSubAgentView(null);
     clearSubAgentBreadcrumb();
     (window as any).__closeSubAgentView = undefined;
-    (window as any).__openSubAgentView = undefined;
     (window as any).__navigateToBreadcrumb = undefined;
 
     // ── 2. Automation panel state ──────────────────────────────────

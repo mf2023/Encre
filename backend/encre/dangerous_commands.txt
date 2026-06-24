@@ -26,94 +26,139 @@
 # Lines starting with '#' are comments and ignored.
 # Empty lines are ignored.
 #
-# When permission_mode="blacklist", any bash command matching a pattern
-# below will trigger a permission prompt.
+# When permission_mode="blacklist", each subcommand produced by the shell
+# splitter is tested independently. Any subcommand matching a pattern below
+# triggers a permission prompt.
 # ==============================================================================
 
-# ── LINUX ──────────────────────────────────────────────────────────────────────
+# ── LINUX ─────────────────────────────────────────────────────────────────────
 [linux]
 
-# File destruction
-\brm\s+.*-(?:[a-z]*r[a-z]*f|rf)\b
+# File / directory destruction
+\brm\s+.*-(?:[a-zA-Z]*r[a-zA-Z]*f|rf)\b
+\brm\s+.*--recursive.*--force\b
+\brm\s+-[a-zA-Z]*f.*(?:/\s*$|/\s+&&|/\s+\|)
+\brm\s+-[a-zA-Z]*f\s+/(?:\s|$)
+\brm\s+-[a-zA-Z]*f\s+/\.\b
+\bfind\s+\S+\s+.*-exec\s+rm\s+.*\{\}\s*\+
+\bfind\s+\S+\s+.*-delete\b
 \bmkfs\.?\w*\s
 \bdd\s+if=.*\s+of=
 \bshred\s
 \bwipe\s
+\btrash-empty\b
 
-# Privilege escalation & permission changes
+# Privilege escalation
 \bsudo\b
 \bsu\s+-
+\bdoas\b
+\bpkexec\b
+
+# Permission / ownership changes
 \bchmod\s+.*777\b
 \bchmod\s+[0-7]*[456][0-7]{2}\b
 \bchown\s+.*root
 \bchattr\s
+\bsetfacl\s+.*-m\b
 
 # Fork bombs & resource exhaustion
 :\(\)\s*\{.*
 \b:(){ :\|:& };:
+\b:()\s*\{.*:\s*\|
 
-# Reverse shells
-\bbash\s+-i\s*>&.*0>&1
+# Reverse / interactive shells
+\bbash\s+-i\s*.*>&.*0>&1
 \bnc\s+.*-(?:e|(?:l|n)vp?)\s
 \bsocat\s+.*exec:
 \btelnet\s+.*(?:/bin/sh|/bin/bash|cmd)
 \bpython[23]?\s+-c\s+.*socket
+\bpython[23]?\s+-c\s+.*subprocess
+\bpython[23]?\s+-c\s+.*os\.system
+\bruby\s+-rsocket\s+-e
+\bperl\s+-MIO::Socket
+\bphp\s+-r\s+.*sock
 
-# Curl/wget piping to shell
+# Download-to-shell pipelines
 \bcurl\s+\S+.*\|\s*(?:ba)?sh\b
+\bcurl\s+\S+.*\|\s*python[23]?\b
 \bwget\s+\S+.*-O\s*-\s*\|\s*(?:ba)?sh\b
+\bwget\s+\S+.*-O\s*-\s*\|\s*python[23]?\b
+\bcat\s+\S+\s*\|\s*(?:ba)?sh\b
+\becho\s+.*\|\s*base64\s+.*\|\s*(?:ba)?sh\b
 
-# Encoded/obfuscated evaluation
+# Encoded / obfuscated evaluation
 \bbase64\s+.*\|.*(?:ba)?sh\b
 \bxxd\s+.*-r.*(?:ba)?sh\b
 \beval\s
 \bexec\s+\d*>&\d*
+\bsource\s+\S+\.(?:sh|bash|zsh)\s+.*\|
 
-# System service control
-\bsystemctl\s+(?:stop|disable|mask)\s
-\bservice\s+\S+\s+stop\b
+# System service / process control
+\bsystemctl\s+(?:stop|disable|mask|restart)\s
+\bservice\s+\S+\s+(?:stop|restart)\b
 \bmodprobe\s+-r\s
 \bkill\s+-9\s
+\bkillall\s
 \bpkill\s
+\bxargs\s+.*\bkill\b
 
-# Data exfiltration & network
+# Data exfiltration & network tunnels
 \bnc\s+\S+\s+\d+\s*<
 \bcurl\s+.*-F\s+\S+@\S+
 \bscp\s+\S+@
 \bssh\s+-[DRL]\s
+\bss\s+.*-l\b
 
-# Redirect to system paths
+# Redirects to system paths
 >\s*/dev/(?:sd[a-z]+|nvme\d+n\d+|mmcblk\d+)
 >\s*/etc/(?:passwd|shadow|sudoers|hosts|resolv\.conf)
 >\s*/(?:etc|boot|sys|proc|dev)/
+>>?\s*/boot/
+\bdd\s+.*of=/dev/
+\bcat\s+.*>\s*/etc/
 
 # Scheduled tasks & boot
 \bcrontab\s+-
 \bat\s+\d
 
-# Network configuration
+# Network / firewall / routing
 \biptables\s+-[ADIF]
+\bip6tables\s
+\bfirewall-cmd\s+--remove
+\broute\s+(?:add|del)\s
 
-# Mount operations
-\bmount\s
-\bumount\s
+# Mount / remount operations
+\bmount\s+-o\s+remount.*,\s*rw\s+/
+\bumount\s+-l\s+/
+\bumount\s+/
+\bmount\s+\S+\s+/
+
+# Package manager destructive operations
+\bapt\s+remove\s+.*\b(systemd|linux-image|grub)
+\bapt-get\s+remove\s+.*\b(systemd|linux-image|grub)
+\byum\s+remove\s+.*\b(kernel|grub)
+\bdnf\s+remove\s+.*\b(kernel|grub)
+\bpacman\s+-R\s+.*\b(base|linux)
 
 # Sensitive file reads
 \bcat\s+/etc/(?:shadow|passwd)\b
 \bcat\s+.*\.ssh/
 \bcat\s+.*\.env\b
+\bless\s+.*\.ssh
 
-# Variable manipulation
+# Variable / environment manipulation
 \$\{(?:PATH|HOME|SHELL|IFS)[:#%/]
 \bIFS\s*=
+\bexport\s+PATH=
 
 # ── WINDOWS (cmd.exe / PowerShell) ────────────────────────────────────────────
 [windows]
 
 # File & disk destruction
-\bmkdir\s+/s\s+/q\b
-\bdel\s+/f\s+/s\s+/q\b
+\brd\s+/s\s+/q\b
 \brmdir\s+/s\s+/q\b
+\bdel\s+/[a-zA-Z]*f[a-zA-Z]*\s+/[a-zA-Z]*s[a-zA-Z]*\b
+\bdel\s+/f\s+/s\s+/q\b
 \bformat\s+[a-zA-Z]:
 \bdiskpart\b
 \bRemove-Item\s+.*-Recurse\s+.*-Force\b
@@ -215,10 +260,16 @@
 \bAdd-Content\s+.*\\etc\\hosts\b
 \bipconfig\s+/flushdns\b
 
+# Live system binary abuse
+\bcertutil\s+-urlcache\s+-split\s+-f\b
+\bcertutil\s+-decode\b
+\bcertutil\s+-encode\b
+\bmshta\s+\S+\.(?:hta|vbs|js)\b
+
 # ── macOS ─────────────────────────────────────────────────────────────────────
 [macos]
 
-# Same Unix patterns apply (macOS is Unix-based)
+# Same Unix patterns apply (macOS is Unix-based).
 # Plus macOS-specific dangerous commands:
 
 # Disk management
@@ -243,10 +294,11 @@
 \binstaller\s+-pkg\s+.*-target\s+/\b
 \binstaller\s+-store\b
 
-# Firmware modification
+# Firmware / boot modification
 \bnvram\s+.*boot-args\b
 \bnvram\s+-d\s
 \bsystemsetup\s+-set
+\bbless\s+.*--setBoot
 
 # Keychain & security
 \bsecurity\s+delete-keychain\b

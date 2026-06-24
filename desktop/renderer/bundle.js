@@ -178,7 +178,8 @@
       compactEvents: [],
       branches: [],
       activeBranchId: "",
-      running: false
+      running: false,
+      agentState: null
     };
   }
   function createEmptyState() {
@@ -223,6 +224,7 @@
       profile: null,
       inputMode: "",
       pendingPermission: null,
+      permissionPolicies: { tools: {}, capabilities: {} },
       tempChat: false,
       customCommands: [],
       agentConfig: {
@@ -259,7 +261,8 @@
       runQueuePosition: null,
       workflowState: null,
       contextTokens: 0,
-      contextWindow: 0
+      contextWindow: 0,
+      agentState: null
     };
   }
   var init_types = __esm({
@@ -371,7 +374,6 @@
           tempChatActive: "\u4E34\u65F6\u5BF9\u8BDD\u4E2D",
           tempChatHint: "\u9000\u51FA\u540E\u5C06\u81EA\u52A8\u6E05\u9664",
           toggleSidebar: "\u5207\u6362\u4F1A\u8BDD\u4FA7\u8FB9\u680F",
-          // Channel / mode badge labels (shown in the session sidebar)
           channelAutomation: "\u81EA\u52A8"
         },
         notifications: {
@@ -693,242 +695,88 @@
           enableProjectRules: "\u542F\u7528\u9879\u76EE\u7EA7\u89C4\u5219",
           enableProjectRulesDesc: "\u81EA\u52A8\u68C0\u6D4B\u5E76\u52A0\u8F7D\u5DE5\u4F5C\u533A\u4E2D\u7684\u89C4\u5219\u6587\u4EF6\uFF08.encre/rules.md\u3001.cursorrules \u7B49\uFF09",
           enableGlobalRules: "\u542F\u7528\u5168\u5C40\u89C4\u5219",
-          enableGlobalRulesDesc: "\u52A0\u8F7D ~/.dunimd/encre/rules/ \u4E0B\u7684\u5168\u5C40\u89C4\u5219",
+          enableGlobalRulesDesc: "\u52A0\u8F7D ~/.dunimd/encre/rules/ \u4E2D\u7684\u5168\u5C40\u89C4\u5219",
           projectRules: "\u9879\u76EE\u89C4\u5219",
           globalRules: "\u5168\u5C40\u89C4\u5219",
-          globalRulesDesc: "\u5168\u5C40\u89C4\u5219\u6587\u4EF6\u5B58\u653E\u5728 ~/.dunimd/encre/rules/ \u4E0B\uFF0C\u8DE8\u4F1A\u8BDD\u6301\u4E45\u751F\u6548",
+          globalRulesDesc: "\u5B58\u653E\u4E8E ~/.dunimd/encre/rules/ \u7684\u5168\u5C40\u89C4\u5219\uFF0C\u8DE8\u4F1A\u8BDD\u6301\u4E45\u5316",
           addGlobalRule: "\u6DFB\u52A0\u5168\u5C40\u89C4\u5219",
           noProjectRules: "\u672A\u68C0\u6D4B\u5230\u9879\u76EE\u89C4\u5219\u6587\u4EF6",
           noGlobalRules: "\u6682\u65E0\u5168\u5C40\u89C4\u5219",
           ruleSource: "\u6765\u6E90",
-          ruleContent: "\u89C4\u5219\u5185\u5BB9",
+          ruleContent: "\u5185\u5BB9",
           backToRulesList: "\u2190 \u8FD4\u56DE\u89C4\u5219\u5217\u8868",
           loading: "\u52A0\u8F7D\u4E2D...",
           userProfile: "\u7528\u6237\u753B\u50CF",
-          profileDesc: "\u8DE8\u4F1A\u8BDD\u81EA\u52A8\u63A8\u65AD\u7684\u7528\u6237\u7279\u5F81",
-          profileBasic: "\u57FA\u672C\u4FE1\u606F",
-          profileComm: "\u6C9F\u901A\u98CE\u683C",
-          profileTech: "\u6280\u672F\u504F\u597D",
-          profileBehav: "\u884C\u4E3A\u6A21\u5F0F",
-          profileExpertise: "\u4E13\u4E1A\u6C34\u5E73",
+          profileDesc: "\u81EA\u52A8\u4ECE\u591A\u6B21\u4F1A\u8BDD\u4E2D\u63A8\u65AD\u51FA\u7684\u7528\u6237\u7279\u5F81",
+          profileBasic: "\u57FA\u7840",
+          profileComm: "\u6C9F\u901A",
+          profileTech: "\u6280\u672F",
+          profileBehav: "\u884C\u4E3A",
+          profileExpertise: "\u4E13\u957F",
           profileDomain: "\u9886\u57DF",
-          profileLanguage: "\u8BED\u8A00\u504F\u597D",
-          profileFormality: "\u6B63\u5F0F\u7A0B\u5EA6",
-          profileDetail: "\u8BE6\u7EC6\u504F\u597D",
+          profileLanguage: "\u8BED\u8A00",
+          profileFormality: "\u6B63\u5F0F\u5EA6",
+          profileDetail: "\u8BE6\u7565",
           profileTone: "\u8BED\u6C14",
-          profileStyle: "\u56DE\u7B54\u98CE\u683C",
-          profileLanguages: "\u7F16\u7A0B\u8BED\u8A00",
-          profileFrameworks: "\u6846\u67B6/\u5DE5\u5177",
+          profileStyle: "\u98CE\u683C",
+          profileLanguages: "\u8BED\u8A00",
+          profileFrameworks: "\u6846\u67B6",
           profileEditor: "\u7F16\u8F91\u5668",
-          profileTesting: "\u6D4B\u8BD5\u504F\u597D",
-          profileLearning: "\u5B66\u4E60\u65B9\u5F0F",
-          profileError: "\u5BB9\u9519\u7A0B\u5EA6",
-          profileGoals: "\u5E38\u89C1\u76EE\u6807",
+          profileTesting: "\u6D4B\u8BD5",
+          profileLearning: "\u5B66\u4E60",
+          profileError: "\u9519\u8BEF\u5BB9\u5FCD\u5EA6",
+          profileGoals: "\u76EE\u6807",
           profileUpdates: "\u6B21\u66F4\u65B0",
-          noProfileData: "\u6682\u65E0\u753B\u50CF\u6570\u636E\uFF0C\u753B\u50CF\u5C06\u5728\u4EA4\u4E92\u4E2D\u9010\u6B65\u5EFA\u7ACB",
+          noProfileData: "\u6682\u65E0\u7528\u6237\u753B\u50CF\u6570\u636E\u3002\u968F\u7740\u4EA4\u4E92\u8FDB\u884C\u5C06\u81EA\u52A8\u751F\u6210\u3002",
           lastUpdate: "\u6700\u540E\u66F4\u65B0",
-          rebuild: "\u91CD\u65B0\u6784\u5EFA",
-          skillFileError: "\u4EC5\u652F\u6301 .md (SKILL.md) \u6216 .zip (\u6280\u80FD\u5305) \u6587\u4EF6",
-          failedInstallSkill: "\u5B89\u88C5\u6280\u80FD\u5931\u8D25",
-          modelNamePlaceholder: "\u4F8B\u5982 Claude Sonnet 4.6",
+          rebuild: "\u91CD\u5EFA",
+          skillFileError: "\u4EC5\u652F\u6301 .md (SKILL.md) \u6216 .zip (skill package) \u6587\u4EF6",
+          failedInstallSkill: "\u5B89\u88C5 skill \u5931\u8D25",
+          modelNamePlaceholder: "\u4F8B\u5982\uFF1AClaude Sonnet 4.6",
           baseUrlPlaceholder: "https://api.deepseek.com",
-          envKeyPlaceholder: "\u952E\u540D",
-          envValuePlaceholder: "\u952E\u503C",
+          envKeyPlaceholder: "KEY",
+          envValuePlaceholder: "VALUE",
           cwdPlaceholder: "/path/to/working/directory",
           mcpUrlPlaceholder: "http://localhost:3000/mcp",
           httpTimeoutPlaceholder: "60",
-          transportStdio: "\u6807\u51C6\u8F93\u5165\u8F93\u51FA",
+          transportStdio: "Stdio",
           transportHttp: "HTTP/SSE",
-          transportTagStdio: "\u6807\u51C6\u8F93\u5165\u8F93\u51FA",
+          transportTagStdio: "Stdio",
           transportTagHttp: "HTTP",
           logoAlt: "Encre",
-          // Service
           service: "\u670D\u52A1",
           autoStart: "\u5F00\u673A\u81EA\u542F\u52A8",
-          autoStartDesc: "\u767B\u5F55\u65F6\u81EA\u52A8\u542F\u52A8 Encre \u540E\u53F0\u670D\u52A1",
-          autoExpandTitle: "\u81EA\u52A8\u5C55\u5F00\u5DE5\u5177\u8BE6\u60C5",
-          autoExpandDesc: "\u5DE5\u5177\u6267\u884C\u65F6\u81EA\u52A8\u5C55\u5F00\u8BE6\u60C5\uFF08\u601D\u8003\u8FC7\u7A0B\u3001\u8054\u7F51\u641C\u7D22\u3001grep \u7B49\uFF09",
-          subAgentAutoOpenTitle: "\u5B50\u4EE3\u7406\u81EA\u52A8\u8DF3\u8F6C",
-          subAgentAutoOpenDesc: "\u4E3B\u4EE3\u7406\u8C03\u7528\u5B50\u4EE3\u7406\u65F6\u81EA\u52A8\u6253\u5F00\u5B50\u4EE3\u7406\u89C6\u56FE\uFF0C\u5173\u95ED\u540E\u4ECD\u53EF\u70B9\u51FB\u4EE3\u7406\u5361\u7247\u624B\u52A8\u8FDB\u5165",
-          automationAutoOpenTitle: "\u81EA\u52A8\u5316\u4EFB\u52A1\u81EA\u52A8\u8DF3\u8F6C",
-          automationAutoOpenDesc: "\u5B9A\u65F6\u4EFB\u52A1\u6267\u884C\u65F6\u81EA\u52A8\u8DF3\u8F6C\u5230\u5B50\u4EE3\u7406\u89C6\u56FE\uFF0C\u5173\u95ED\u540E\u53EA\u66F4\u65B0\u6267\u884C\u5386\u53F2\uFF0C\u9700\u624B\u52A8\u8FDB\u5165\u67E5\u770B",
-          // Usage
+          autoStartDesc: "\u767B\u5F55\u7CFB\u7EDF\u65F6\u81EA\u52A8\u542F\u52A8 Encre \u540E\u53F0\u670D\u52A1",
+          autoExpandTitle: "\u81EA\u52A8\u5C55\u5F00\u5DE5\u5177\u7ED3\u679C",
+          autoExpandDesc: "\u5F53 thinking\u3001web search\u3001grep \u7B49\u5DE5\u5177\u7ED3\u679C\u51FA\u73B0\u65F6\u81EA\u52A8\u5C55\u5F00\u8BE6\u60C5",
+          subAgentAutoOpenTitle: "\u81EA\u52A8\u6253\u5F00\u5B50\u667A\u80FD\u4F53\u89C6\u56FE",
+          subAgentAutoOpenDesc: "\u4E3B\u667A\u80FD\u4F53\u521B\u5EFA\u5B50\u667A\u80FD\u4F53\u65F6\u81EA\u52A8\u8DF3\u8F6C\u8FC7\u53BB\u3002\u5173\u95ED\u540E\u4EC5\u5728\u70B9\u51FB\u5B50\u667A\u80FD\u4F53\u5361\u7247\u65F6\u8FDB\u5165\u3002",
+          automationAutoOpenTitle: "\u81EA\u52A8\u6253\u5F00\u81EA\u52A8\u5316\u89C6\u56FE",
+          automationAutoOpenDesc: "\u5B9A\u65F6\u4EFB\u52A1\u89E6\u53D1\u65F6\u81EA\u52A8\u8DF3\u8F6C\u5230\u6267\u884C\u89C6\u56FE\u3002\u5173\u95ED\u540E\u4FDD\u6301\u5F53\u524D\u804A\u5929\u4E0D\u88AB\u6253\u65AD\uFF0C\u7A0D\u540E\u5728\u5386\u53F2\u4E2D\u67E5\u770B\u7ED3\u679C\u3002",
           usageStats: "\u7528\u91CF\u7EDF\u8BA1",
-          usageDesc: "\u8DE8\u6240\u6709\u4F1A\u8BDD\u7684 Token \u6D88\u8017\u4E0E\u5DE5\u5177\u8C03\u7528\u7EDF\u8BA1",
-          totalSessions: "\u603B\u4F1A\u8BDD\u6570",
-          totalTokens: "\u603B Tokens",
-          totalInputTokens: "\u8F93\u5165 Tokens",
-          totalOutputTokens: "\u8F93\u51FA Tokens",
-          totalToolCalls: "\u603B\u5DE5\u5177\u8C03\u7528",
-          modelBreakdown: "\u6309\u6A21\u578B",
-          toolBreakdown: "\u6309\u5DE5\u5177",
-          sessionBreakdown: "\u6309\u4F1A\u8BDD",
-          noUsageData: "\u6682\u65E0\u7528\u91CF\u6570\u636E\u3002\u5F00\u59CB\u5BF9\u8BDD\u4EE5\u6536\u96C6\u7EDF\u8BA1\u4FE1\u606F\u3002",
-          dailyUsageByModel: "\u6BCF\u65E5\u7528\u91CF\uFF08\u6309\u6A21\u578B\u5206\u8272\u5806\u53E0\uFF09",
-          activityHeatmap: "\u6D3B\u8DC3\u5EA6\u70ED\u529B\u56FE",
-          deletedModel: "\u5DF2\u5220\u9664",
-          unknownModel: "\u672A\u77E5",
-          less: "\u5C11",
-          more: "\u591A",
-          activeDays: "\u6D3B\u8DC3\u5929\u6570",
-          weeks: "\u5468",
-          days: "\u5929",
-          hoursPerDay: "\u5C0F\u65F6/\u5929",
-          longestStreak: "\u6700\u957F",
-          currentStreak: "\u5F53\u524D",
-          peak: "\u5CF0\u503C",
-          models: "\u4E2A\u6A21\u578B",
-          olderDaysHidden: "\u66F4\u65E9\u7684\u5929\u5DF2\u9690\u85CF",
-          tokenTrend: "Token \u8D8B\u52BF",
-          noToolData: "\u6682\u65E0\u5DE5\u5177\u8C03\u7528",
-          tokens: "tokens",
-          turnCount: "\u8F6E\u6B21",
-          toolCallCount: "\u5DE5\u5177\u8C03\u7528",
-          // Gateway Adapters
-          gatewayManagement: "\u5E73\u53F0\u9002\u914D\u5668",
-          gatewayDesc: "\u914D\u7F6E\u5404\u5E73\u53F0\u9002\u914D\u5668\u7684\u8FDE\u63A5\u51ED\u8BC1",
-          adapterEnabled: "\u5DF2\u542F\u7528",
-          adapterDisabled: "\u5DF2\u7981\u7528",
-          adapterConfig: "\u914D\u7F6E",
-          adapterNotConfigured: "\u672A\u914D\u7F6E",
-          adapterConfigureNow: "\u8F93\u5165\u4EE5\u4E0B\u51ED\u8BC1\u4FE1\u606F\u4EE5\u542F\u7528\u6B64\u9002\u914D\u5668",
-          adapterSave: "\u4FDD\u5B58",
-          adapterSaved: "\u5DF2\u4FDD\u5B58",
-          adapterTest: "\u6D4B\u8BD5\u8FDE\u63A5",
-          adapterTesting: "\u6D4B\u8BD5\u8FDE\u63A5\u4E2D",
-          adapterStatusConnected: "\u5DF2\u8FDE\u63A5",
-          adapterStatusDisconnected: "\u672A\u8FDE\u63A5",
-          adapterStatusError: "\u8FDE\u63A5\u9519\u8BEF",
-          fieldAppId: "App ID",
-          fieldClientSecret: "Client Secret",
-          fieldBotToken: "Bot Token",
-          fieldWebhookUrl: "Webhook URL",
-          fieldWebhookSecret: "Webhook Secret",
-          fieldSigningSecret: "Signing Secret",
-          fieldPhoneNumberId: "Phone Number ID",
-          fieldAccessToken: "Access Token",
-          fieldPhoneNumber: "Phone Number",
-          fieldApiUrl: "API URL",
-          fieldHomeserverUrl: "Homeserver URL",
-          fieldSmtpHost: "SMTP Host",
-          fieldSmtpPort: "SMTP Port",
-          fieldSmtpUser: "SMTP User",
-          fieldSmtpPass: "SMTP Password",
-          fieldImapHost: "IMAP Host",
-          fieldImapPort: "IMAP Port",
-          fieldProvider: "Provider",
-          fieldAccountSid: "Account SID",
-          fieldAuthToken: "Auth Token",
-          fieldAppKey: "App Key",
-          fieldAppSecret: "App Secret",
-          fieldServerUrl: "Server URL",
-          fieldApiKey: "API Key",
-          fieldListenPath: "Listen Path",
-          fieldSecret: "Secret",
-          fieldTenantId: "Tenant ID",
-          fieldClientId: "Client ID",
-          fieldLongLivedToken: "Long-Lived Access Token",
-          fieldCorpId: "Corp ID",
-          fieldAgentId: "Agent ID",
-          fieldToken: "Token",
-          fieldEncodingAesKey: "Encoding AES Key",
-          // States and labels
-          enabled: "\u5DF2\u542F\u7528",
-          disabled: "\u5DF2\u7981\u7528",
-          error: "\u9519\u8BEF",
-          memoryTime: "\u8BB0\u5FC6\u65F6\u95F4",
-          priority: "\u4F18\u5148\u7EA7",
-          skillContent: "\u6280\u80FD\u5185\u5BB9",
-          // Gateway adapter descriptions
-          adapterDescQqbot: "\u63A5\u5165 QQ \u673A\u5668\u4EBA\u5E73\u53F0\uFF0C\u5B9E\u65F6\u63A5\u6536\u4E0E\u56DE\u590D\u7FA4\u804A\u53CA\u79C1\u804A\u6D88\u606F",
-          adapterDescTelegram: "\u8FDE\u63A5 Telegram Bot API\uFF0C\u81EA\u52A8\u5904\u7406\u9891\u9053\u4E0E\u79C1\u4FE1\u4E2D\u7684\u6307\u4EE4\u548C\u5BF9\u8BDD",
-          adapterDescDiscord: "\u96C6\u6210 Discord \u673A\u5668\u4EBA\uFF0C\u7BA1\u7406\u670D\u52A1\u5668\u9891\u9053\u6D88\u606F\u4E0E\u4EA4\u4E92",
-          adapterDescWeixin: "\u63A5\u5165\u5FAE\u4FE1\u516C\u4F17\u53F7\u5E73\u53F0\uFF0C\u81EA\u52A8\u56DE\u590D\u7528\u6237\u6D88\u606F\u4E0E\u4E8B\u4EF6\u63A8\u9001",
-          adapterDescWecom: "\u5BF9\u63A5\u4F01\u4E1A\u5FAE\u4FE1\u81EA\u5EFA\u5E94\u7528\uFF0C\u5B9E\u73B0\u4F01\u4E1A\u5185\u90E8\u6D88\u606F\u901A\u77E5\u4E0E\u534F\u4F5C",
-          adapterDescFeishu: "\u8FDE\u63A5\u98DE\u4E66\u5F00\u653E\u5E73\u53F0\uFF0C\u63A5\u6536\u673A\u5668\u4EBA\u4E8B\u4EF6\u5E76\u56DE\u590D\u6D88\u606F",
-          adapterDescDingtalk: "\u63A5\u5165\u9489\u9489\u81EA\u5B9A\u4E49\u673A\u5668\u4EBA Webhook\uFF0C\u53D1\u9001\u5DE5\u4F5C\u901A\u77E5\u4E0E\u7FA4\u6D88\u606F",
-          adapterDescSlack: "\u96C6\u6210 Slack \u5DE5\u4F5C\u7A7A\u95F4\uFF0C\u901A\u8FC7 Bot Token \u76D1\u542C\u548C\u53D1\u9001\u9891\u9053\u6D88\u606F",
-          adapterDescWhatsapp: "\u8FDE\u63A5 WhatsApp Business API\uFF0C\u5904\u7406\u5BA2\u6237\u6D88\u606F\u4E0E\u5BF9\u8BDD",
-          adapterDescSignal: "\u5BF9\u63A5 Signal \u6D88\u606F\u670D\u52A1\uFF0C\u901A\u8FC7 REST API \u6536\u53D1\u52A0\u5BC6\u6D88\u606F",
-          adapterDescMatrix: "\u63A5\u5165 Matrix \u53BB\u4E2D\u5FC3\u5316\u901A\u4FE1\u7F51\u7EDC\uFF0C\u52A0\u5165\u623F\u95F4\u5E76\u81EA\u52A8\u54CD\u5E94\u6D88\u606F",
-          adapterDescEmail: "\u901A\u8FC7 SMTP/IMAP \u534F\u8BAE\u6536\u53D1\u7535\u5B50\u90AE\u4EF6\uFF0C\u652F\u6301\u81EA\u52A8\u56DE\u590D\u4E0E\u5904\u7406",
-          adapterDescSms: "\u5BF9\u63A5\u77ED\u4FE1\u670D\u52A1\u5546 API\uFF0C\u53D1\u9001\u548C\u63A5\u6536\u77ED\u4FE1\u901A\u77E5",
-          adapterDescYuanbao: "\u63A5\u5165\u5143\u5B9D\u5F00\u653E\u5E73\u53F0\uFF0C\u901A\u8FC7 API \u5B9E\u73B0\u6D88\u606F\u4EA4\u4E92",
-          adapterDescBluebubbles: "\u8FDE\u63A5 BlueBubbles \u670D\u52A1\u5668\uFF0C\u5B9E\u73B0 iMessage \u6D88\u606F\u6536\u53D1",
-          adapterDescWebhook: "\u542F\u52A8 Webhook \u76D1\u542C\u670D\u52A1\uFF0C\u63A5\u6536\u5916\u90E8\u7CFB\u7EDF\u7684 HTTP \u56DE\u8C03\u8BF7\u6C42",
-          adapterDescHomeassistant: "\u8FDE\u63A5 Home Assistant \u667A\u80FD\u5BB6\u5C45\u5E73\u53F0\uFF0C\u6267\u884C\u8BBE\u5907\u63A7\u5236\u4E0E\u72B6\u6001\u67E5\u8BE2",
-          adapterDescMsgraph: "\u901A\u8FC7 Microsoft Graph API \u63A5\u5165 Office 365\uFF0C\u7BA1\u7406\u90AE\u4EF6\u65E5\u5386\u548C\u7528\u6237",
-          // Gateway adapter fallback abbreviations (shown when no icon is available)
-          abbrFeishu: "\u98DE",
-          abbrDingtalk: "\u9489",
-          abbrYuanbao: "\u5143"
-        },
-        app: {
-          // Default fallback name for automation sub-agent when no name is set
-          automationDefaultName: "\u81EA\u52A8\u5316",
-          // Voice / recording error toasts
-          voiceNotSupported: "\u8BED\u97F3\u8F93\u5165\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301",
-          audioEncodeFailed: "\u97F3\u9891\u7F16\u7801\u5931\u8D25",
-          recordingError: "\u5F55\u97F3\u51FA\u9519",
-          micAccessDenied: "\u65E0\u6CD5\u8BBF\u95EE\u9EA6\u514B\u98CE",
-          toolsTokens: "{count} \u5DE5\u5177 \xB7 {tokens} tokens",
-          inputOutput: "\u8F93\u5165: {input} | \u8F93\u51FA: {output}",
-          turns: "\u8F6E\u6B21",
-          duration: "\u8017\u65F6",
-          comingSoon: "\u5373\u5C06\u63A8\u51FA",
-          noModelsConfigured: "\u672A\u914D\u7F6E\u6A21\u578B",
-          model: "\u6A21\u578B",
-          commands: "\u547D\u4EE4",
-          tokens: "tokens",
-          slashActivated: "\u5DF2\u6FC0\u6D3B"
-        },
-        engineInstall: {
-          cancel: "\u53D6\u6D88",
-          download: "\u4E0B\u8F7D\u5F15\u64CE",
-          fallbackHint: "\u82E5\u4E0D\u63A5\u53D7\uFF0C\u5C06\u4F9D\u6B21\u5C1D\u8BD5\uFF1A{remaining}\u3002",
-          configuring: "\u6B63\u5728\u914D\u7F6E\u6D4F\u89C8\u5668\u5F15\u64CE",
-          downloading: "\u6B63\u5728\u4E0B\u8F7D Playwright Chromium \u5F15\u64CE\u2026",
-          downloadingSub: "\u7EA6 {size}\uFF0C\u6309\u7F51\u901F\u53EF\u80FD\u9700\u8981 1-5 \u5206\u949F",
-          stillDownloading: "\u6B63\u5728\u4E0B\u8F7D\u2026\uFF08\u5DF2\u7B49\u5F85 {elapsed} \u79D2\uFF09",
-          downloadSuccess: "Chromium \u5F15\u64CE\u5B89\u88C5\u6210\u529F",
-          downloadFailed: "\u5F15\u64CE\u4E0B\u8F7D\u5931\u8D25\uFF08\u8FD4\u56DE\u7801 {code}\uFF09",
-          downloadFailedSub: "playwright install \u8FD4\u56DE\u7801 {code}",
-          verifyFailed: "\u4E0B\u8F7D\u5B8C\u6210\u4F46\u65E0\u6CD5\u542F\u52A8 Chromium\u3002{error}",
-          dialogTitle: "\u9700\u8981\u5148\u5B89\u88C5 Playwright \u6D4F\u89C8\u5668\u5F15\u64CE",
-          dialogBody: "\u68C0\u6D4B\u5230\u672C\u673A\u5C1A\u672A\u5B89\u88C5 Playwright \u81EA\u5E26\u7684 Chromium\u3002\n\u4E0B\u8F7D\u5B8C\u6210\u540E\uFF0C\u6D4F\u89C8\u5668\u81EA\u52A8\u5316\u5C06\u5B8C\u5168\u53EF\u7528\u3002\n\u4E5F\u53EF\u4EE5\u6539\u7528\u672C\u673A Edge (CDP) \u6216\u7CFB\u7EDF WebDriver\u3002",
-          dialogHint: "cdn.playwright.dev \xB7 chromium-1187 \xB7 \u7EA6 200 MB",
-          optDownload: "\u4E0B\u8F7D\u5F15\u64CE",
-          optDownloadDesc: "\u63A8\u8350\u3002\u7EA6 200 MB\uFF0C\u6309\u5F53\u524D\u7F51\u901F 1-3 \u5206\u949F\u3002",
-          optLocalEdge: "\u672C\u673A Edge (CDP)",
-          optLocalEdgeDesc: "\u5229\u7528\u672C\u673A\u5DF2\u5B89\u88C5\u7684 Edge \u6D4F\u89C8\u5668\uFF0C\u65E0\u9700\u989D\u5916\u4E0B\u8F7D\u3002",
-          optWebDriver: "WebDriver",
-          optWebDriverDesc: "\u8D70 msedgedriver \u534F\u8BAE\uFF0C\u542F\u52A8\u8F83\u6162\u3002",
-          optCancel: "\u53D6\u6D88",
-          optCancelDesc: "\u4E0D\u5B89\u88C5\uFF0C\u6D4F\u89C8\u5668\u5DE5\u5177\u5C06\u4E0D\u53EF\u7528\u3002"
+          usageDesc: "Token \u6D88\u8017\u4E0E\u5DE5\u5177\u8C03\u7528\u7EDF\u8BA1"
         },
         chat: {
-          thought: "Thought",
-          thinkingProcess: "\u601D\u8003\u8FC7\u7A0B",
-          showReasoning: "\u67E5\u770B\u601D\u8003\u8FC7\u7A0B",
+          showReasoning: "\u663E\u793A\u63A8\u7406",
           deepThinking: "\u6DF1\u5EA6\u601D\u8003",
-          operated: "\u5DF2\u64CD\u4F5C ",
-          times: "\u6B21",
+          operated: "",
+          times: " \u6B21\u64CD\u4F5C",
           executionFailed: "\u6267\u884C\u5931\u8D25",
-          abortedError: "\u6267\u884C\u5F02\u5E38",
+          abortedError: "\u6267\u884C\u9519\u8BEF",
           interrupted: "\u5DF2\u4E2D\u65AD",
           taskComplete: "\u4EFB\u52A1\u5B8C\u6210",
-          abnormalInterruption: "\u5F02\u5E38\u6253\u65AD",
-          running: "\u6B63\u5728\u8FD0\u884C...",
+          abnormalInterruption: "\u5F02\u5E38\u4E2D\u65AD",
+          running: "\u8FD0\u884C\u4E2D...",
           plan: "\u8BA1\u5212",
-          spec: "\u89C4\u8303",
-          executionComplete: "\u6267\u884C\u5B8C\u6210",
-          waitingExecution: "\u7B49\u5F85\u6267\u884C",
-          viewInTerminal: "\u5728\u7EC8\u7AEF\u67E5\u770B",
-          viewInTerminalShort: "\u5728\u7EC8\u7AEF\u67E5\u770B",
-          inSandbox: "\u5728\u6C99\u7BB1\u4E2D",
+          spec: "\u89C4\u683C",
+          executionComplete: "\u5B8C\u6210",
+          waitingExecution: "\u7B49\u5F85",
+          viewInTerminal: "\u5728\u7EC8\u7AEF\u4E2D\u67E5\u770B",
+          viewInTerminalShort: "\u67E5\u770B",
+          inSandbox: "\u6C99\u7BB1\u4E2D",
           viewChanges: "\u67E5\u770B\u53D8\u66F4",
           failed: "\u5931\u8D25",
-          inProgress: "\u8FD0\u884C\u4E2D",
+          inProgress: "\u8FDB\u884C\u4E2D",
           completed: "\u5DF2\u5B8C\u6210",
           waiting: "\u7B49\u5F85\u4E2D",
           yimAgent: "Encre Agent",
@@ -936,26 +784,27 @@
           copy: "\u590D\u5236",
           retry: "\u91CD\u8BD5",
           retryNormal: "\u91CD\u65B0\u751F\u6210",
-          retryDetailed: "\u66F4\u52A0\u8BE6\u7EC6",
-          retryConcise: "\u66F4\u52A0\u7B80\u7565",
+          retryDetailed: "\u66F4\u8BE6\u7EC6",
+          retryConcise: "\u66F4\u7B80\u6D01",
           delete: "\u5220\u9664",
           editMessage: "\u7F16\u8F91\u6D88\u606F",
-          editMessageDesc: "\u4FEE\u6539\u8FD9\u6761\u6D88\u606F\u7684\u5185\u5BB9\uFF1A",
+          editMessageDesc: "\u4FEE\u6539\u8FD9\u6761\u6D88\u606F\uFF1A",
           rollbackEdit: "\u56DE\u6EDA\u7F16\u8F91",
-          rollbackEditDesc: "\u5C06\u56DE\u6EDA\u5230\u6B64\u6D88\u606F\u5E76\u5220\u9664\u540E\u7EED\u6240\u6709\u56DE\u590D\uFF0C\u539F\u6D88\u606F\u5185\u5BB9\u5C06\u663E\u793A\u5728\u8F93\u5165\u6846\u4E2D\u3002",
+          rollbackEditDesc: "\u56DE\u6EDA\u5230\u8FD9\u6761\u6D88\u606F\u5E76\u5220\u9664\u540E\u7EED\u6240\u6709\u56DE\u590D\u3002\u539F\u5185\u5BB9\u4F1A\u88AB\u653E\u56DE\u8F93\u5165\u6846\u3002",
           deleteMessage: "\u5220\u9664\u6D88\u606F",
-          deleteMessageDesc: "\u786E\u5B9A\u8981\u5220\u9664\u8FD9\u6761\u6D88\u606F\u53CA\u5176\u540E\u7EED\u6240\u6709\u56DE\u590D\u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002",
+          deleteMessageDesc: "\u5220\u9664\u8FD9\u6761\u6D88\u606F\u4EE5\u53CA\u5176\u540E\u7684\u6240\u6709\u56DE\u590D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002",
           copied: "\u5DF2\u590D\u5236",
           copyFailed: "\u590D\u5236\u5931\u8D25",
           items: "\u9879",
-          artifactsSummary: "\u4EA7\u7269\u6C47\u603B",
-          artifactsCount: "\u672C\u6B21\u5BF9\u8BDD\u4EA7\u751F {count} \u4E2A\u4EA7\u7269",
+          artifactsSummary: "\u4EA7\u7269\u6458\u8981",
+          artifactsCount: "\u672C\u6B21\u5BF9\u8BDD\u4E2D\u521B\u5EFA\u4E86 {count} \u4E2A\u4EA7\u7269",
           compact: "\u538B\u7F29",
-          toolBash: "\u7EC8\u7AEF",
-          toolBashOutput: "\u7EC8\u7AEF\u8F93\u51FA",
+          toolBash: "Bash",
+          toolBashOutput: "Bash \u8F93\u51FA",
+          toolShell: "Shell",
           toolTerminal: "\u7EC8\u7AEF",
           toolWebSearch: "\u7F51\u9875\u641C\u7D22",
-          toolWebFetch: "\u7F51\u9875\u83B7\u53D6",
+          toolWebFetch: "\u7F51\u9875\u6293\u53D6",
           toolFindTool: "\u67E5\u627E\u5DE5\u5177",
           toolReadFile: "\u8BFB\u53D6\u6587\u4EF6",
           toolWriteFile: "\u5199\u5165\u6587\u4EF6",
@@ -969,29 +818,27 @@
           toolCron: "\u5B9A\u65F6\u4EFB\u52A1",
           toolRestClient: "Rest Client",
           toolDesktop: "\u684C\u9762",
-          toolQuestion: "\u63D0\u95EE",
-          toolMemoryProfile: "\u7528\u6237\u753B\u50CF",
-          toolShell: "\u6267\u884C\u547D\u4EE4",
+          toolQuestion: "\u95EE\u9898",
           toolFailed: "\u5931\u8D25",
+          toolMemoryProfile: "\u8BB0\u5FC6\u753B\u50CF",
           noSubAgentOutput: "\u5B50\u667A\u80FD\u4F53\u65E0\u8F93\u51FA",
           workflowRunning: "\u8FD0\u884C\u4E2D",
           workflowDone: "\u5DF2\u5B8C\u6210",
           workflowFailed: "\u5931\u8D25",
           waitingForAnswer: "\u7B49\u5F85\u56DE\u7B54",
-          // Fun loading status quotes (shown while the assistant is thinking)
-          statusQuoteWaves: "\u5728\u4EE3\u7801\u6D77\u6D0B\u91CC\u51B2\u6D6A...",
-          statusQuoteCpu: "\u6B63\u5728\u7ED9 CPU \u6295\u5582\u5496\u5561...",
-          statusQuoteBrain: "\u8111\u7EC6\u80DE\u6B63\u5728\u5168\u529B\u5954\u8DD1...",
-          statusQuoteZap: "\u6B63\u5728\u758F\u901A\u601D\u7EF4\u7BA1\u9053...",
-          statusQuoteDices: "\u63B7\u51FA\u4E86\u601D\u8003\u9AB0\u5B50...",
-          statusQuoteNetwork: "\u795E\u7ECF\u7F51\u7EDC\u6D6A\u82B1\u7FFB\u6D8C...",
-          statusQuoteRocket: "\u5F15\u64CE\u70B9\u706B\uFF0C3\u30012\u30011...",
-          statusQuoteTarget: "\u6B63\u5728\u7784\u51C6\u95EE\u9898\u9776\u5FC3...",
+          statusQuoteWaves: "\u6B63\u5728\u4EE3\u7801\u6D77\u6D0B\u91CC\u51B2\u6D6A...",
+          statusQuoteCpu: "\u6B63\u5728\u7ED9 CPU \u5582\u5496\u5561...",
+          statusQuoteBrain: "\u8111\u7EC6\u80DE\u5168\u901F\u8FD0\u8F6C\u4E2D...",
+          statusQuoteZap: "\u6B63\u5728\u6E05\u7A7A\u601D\u7EF4\u7BA1\u9053...",
+          statusQuoteDices: "\u6B63\u5728\u63B7\u601D\u8003\u9AB0\u5B50...",
+          statusQuoteNetwork: "\u795E\u7ECF\u7F51\u7EDC\u6CE2\u6D6A\u5347\u8D77\u4E2D...",
+          statusQuoteRocket: "\u5F15\u64CE\u70B9\u706B\uFF0C3\uFF0C2\uFF0C1...",
+          statusQuoteTarget: "\u7784\u51C6\u95EE\u9898\u9776\u5FC3\u4E2D...",
           statusQuotePuzzle: "\u62FC\u56FE\u788E\u7247\u6B63\u5728\u5F52\u4F4D...",
           statusQuoteCrystalBall: "\u6C34\u6676\u7403\u6B63\u5728\u663E\u5F71...",
-          statusQuotePalette: "\u6B63\u5728\u7ED9\u4EE3\u7801\u67D3\u4E0A\u989C\u8272...",
+          statusQuotePalette: "\u6B63\u5728\u7ED9\u4EE3\u7801\u6D82\u4E0A\u989C\u8272...",
           statusQuoteEgg: "\u601D\u7EF4\u714E\u86CB\u6B63\u5728\u7FFB\u9762...",
-          statusQuoteGuitar: "\u7ED9\u903B\u8F91\u7EBF\u6765\u6BB5\u72EC\u594F...",
+          statusQuoteGuitar: "\u7ED9\u903B\u8F91\u5F26\u6765\u6BB5\u72EC\u594F...",
           statusQuoteBinary: "\u5728\u4E8C\u8FDB\u5236\u6CB3\u6D41\u91CC\u6F02\u6D41...",
           statusQuoteBattery: "\u6B63\u5728\u7ED9\u903B\u8F91\u7535\u8DEF\u5145\u7535...",
           statusQuoteBrush: "\u50CF\u7D20\u753B\u5E03\u6B63\u5728\u6D82\u62B9...",
@@ -1021,8 +868,8 @@
           waitingToSend: "\u7B49\u5F85\u53D1\u9001..."
         },
         files: {
-          attachedFiles: "I've attached the following files:",
-          attached: "Attached"
+          attachedFiles: "\u6211\u5DF2\u9644\u52A0\u4EE5\u4E0B\u6587\u4EF6\uFF1A",
+          attached: "\u5DF2\u9644\u52A0"
         },
         sessionInner: {
           tabInfo: "\u6458\u8981",
@@ -1031,6 +878,7 @@
           tabReview: "\u5BA1\u67E5",
           tabCode: "\u4EE3\u7801",
           tabEditor: "\u7F16\u8F91\u5668",
+          tabAgent: "Agent \u72B6\u6001",
           closeTab: "\u5173\u95ED\u6807\u7B7E\u9875",
           newTab: "\u65B0\u5EFA\u6807\u7B7E\u9875",
           newTabEmpty: "\u6240\u6709\u6807\u7B7E\u9875\u5747\u5DF2\u6253\u5F00",
@@ -1115,7 +963,27 @@
           reviewUnstaged: "\u672A\u6682\u5B58",
           reviewUntracked: "\u672A\u8DDF\u8E2A",
           reviewCreated: "\u5DF2\u521B\u5EFA",
-          reviewModified: "\u5DF2\u4FEE\u6539"
+          reviewModified: "\u5DF2\u4FEE\u6539",
+          agentNoState: "\u6682\u65E0 Agent \u72B6\u6001\u6570\u636E\u3002",
+          agentOverview: "\u6982\u89C8",
+          agentWorkingSet: "\u5DE5\u4F5C\u96C6",
+          agentDelegation: "\u59D4\u6D3E",
+          agentRecovery: "\u6062\u590D",
+          agentStageHistory: "\u9636\u6BB5\u5386\u53F2",
+          agentCurrentStage: "\u5F53\u524D\u9636\u6BB5",
+          agentDelegations: "\u59D4\u6D3E\u6B21\u6570",
+          agentStuckEvents: "\u5361\u4F4F\u4E8B\u4EF6",
+          agentPlanItems: "\u8BA1\u5212\u9879",
+          agentSectionTools: "\u5DE5\u5177",
+          agentSectionArtifacts: "\u4EA7\u7269",
+          agentSectionReferences: "\u5F15\u7528",
+          agentSectionPlan: "\u8BA1\u5212",
+          agentEmptyInline: "\u65E0",
+          agentNoDelegation: "\u6682\u65E0\u59D4\u6D3E\u5386\u53F2\u3002",
+          agentNoRecovery: "\u6682\u65E0\u5361\u4F4F\u6216\u6062\u590D\u4E8B\u4EF6\u3002",
+          agentNoStages: "\u6682\u65E0\u9636\u6BB5\u5207\u6362\u8BB0\u5F55\u3002",
+          agentUnknown: "\u672A\u77E5",
+          agentEvent: "\u4E8B\u4EF6"
         },
         workspace: {
           title: "iWork",
@@ -1145,7 +1013,7 @@
           planTitle: "\u8BA1\u5212\u6A21\u5F0F",
           planDesc: "\u5148\u5236\u5B9A\u8BA1\u5212\uFF0C\u51C6\u5907\u597D\u540E\u518D\u6267\u884C",
           specTitle: "\u89C4\u683C\u6A21\u5F0F",
-          specDesc: "\u5728\u5B9E\u73B0\u4E4B\u524D\u7F16\u5199\u89C4\u8303",
+          specDesc: "\u5728\u5B9E\u73B0\u4E4B\u524D\u7F16\u5199\u89C4\u683C",
           newSessionTitle: "\u65B0\u4F1A\u8BDD",
           newSessionDesc: "\u5F00\u59CB\u65B0\u7684\u5BF9\u8BDD",
           clearSessionTitle: "\u6E05\u9664\u4F1A\u8BDD",
@@ -1225,7 +1093,6 @@
           statePending: "\u7B49\u5F85\u4E2D",
           stateSuccess: "\u6210\u529F",
           stateFailed: "\u5931\u8D25",
-          // History filters
           filterSuccess: "\u6210\u529F",
           filterFailed: "\u5931\u8D25",
           dateFrom: "\u5F00\u59CB",
@@ -1254,7 +1121,6 @@
           templateTestCoverageDesc: "\u8BC6\u522B\u6700\u8FD1\u53D8\u66F4\u4E2D\u7F3A\u5C11\u6D4B\u8BD5\u7684\u9AD8\u98CE\u9669\u4EE3\u7801\uFF0C\u81EA\u52A8\u8865\u5145\u6D4B\u8BD5",
           templateDailySummaryTitle: "\u6BCF\u65E5\u53D8\u66F4\u6458\u8981",
           templateDailySummaryDesc: "\u6BCF\u5929\u6C47\u603B\u4EE3\u7801\u4ED3\u5E93\u7684\u53D8\u66F4\u60C5\u51B5\uFF0C\u751F\u6210\u56E2\u961F\u53EF\u8BFB\u7684\u5DE5\u7A0B\u65E5\u62A5",
-          // Default task name used when a template is selected
           defaultNameAiNews: "\u6BCF\u65E5 AI \u65B0\u95FB\u7B80\u62A5",
           defaultNameBrandMonitor: "\u54C1\u724C\u8206\u60C5\u76D1\u63A7\u5468\u62A5",
           defaultNameCompetitorTrack: "\u6BCF\u5468\u7ADE\u54C1\u52A8\u6001\u8FFD\u8E2A",
@@ -1263,9 +1129,7 @@
           defaultNameBugScan: "\u626B\u63CF\u63D0\u4EA4\u53D1\u73B0 Bug",
           defaultNameTestCoverage: "\u8865\u5145\u6D4B\u8BD5\u8986\u76D6",
           defaultNameDailySummary: "\u6BCF\u65E5\u53D8\u66F4\u6458\u8981",
-          // UI text
           customCreate: "\u81EA\u5B9A\u4E49\u521B\u5EFA",
-          // Permission management
           permManagement: "\u6743\u9650\u7BA1\u7406",
           permManagementDesc: '\u4E3A\u6BCF\u4E2A\u5DE5\u5177\u548C\u529F\u80FD\u72EC\u7ACB\u8BBE\u7F6E\u5141\u8BB8/\u7981\u6B62/\u8BE2\u95EE\u7B56\u7565\u3002"\u8BE2\u95EE"\u4EC5\u9650\u5355\u6B21\u6267\u884C\uFF0C\u4E0D\u66F4\u6539\u8BBE\u7F6E\u3002',
           permCommand: "\u547D\u4EE4",
@@ -2155,6 +2019,7 @@
           tabReview: "Review",
           tabCode: "Code",
           tabEditor: "Editor",
+          tabAgent: "Agent State",
           closeTab: "Close tab",
           newTab: "New tab",
           newTabEmpty: "All tabs are open",
@@ -2239,7 +2104,27 @@
           reviewUnstaged: "Unstaged",
           reviewUntracked: "Untracked",
           reviewCreated: "Created",
-          reviewModified: "Modified"
+          reviewModified: "Modified",
+          agentNoState: "No agent state available yet.",
+          agentOverview: "Overview",
+          agentWorkingSet: "Working Set",
+          agentDelegation: "Delegation",
+          agentRecovery: "Recovery",
+          agentStageHistory: "Stage History",
+          agentCurrentStage: "Current Stage",
+          agentDelegations: "Delegations",
+          agentStuckEvents: "Stuck Events",
+          agentPlanItems: "Plan Items",
+          agentSectionTools: "Tools",
+          agentSectionArtifacts: "Artifacts",
+          agentSectionReferences: "References",
+          agentSectionPlan: "Plan",
+          agentEmptyInline: "None",
+          agentNoDelegation: "No delegation history yet.",
+          agentNoRecovery: "No stuck or recovery events yet.",
+          agentNoStages: "No stage transitions yet.",
+          agentUnknown: "unknown",
+          agentEvent: "event"
         },
         workspace: {
           title: "iWork",
@@ -2296,7 +2181,45 @@
           body: "The agent wants to run \u201C{name}\u201D.\n\nReason: {reason}\n\nAllowing will remember your choice for this tool until you change it in Settings \u2192 Permissions.",
           allow: "Allow",
           deny: "Deny",
-          noReason: "(no reason given)"
+          noReason: "(no reason given)",
+          settings: {
+            title: "Permissions",
+            subtitle: "Manage allow / deny / ask policies for tools and capabilities.",
+            tools: "Tools",
+            capabilities: "Capabilities",
+            default: "Default (allow)",
+            allow: "Allow",
+            deny: "Deny",
+            ask: "Ask",
+            saveChanges: "Save changes",
+            resetDefaults: "Reset defaults",
+            saved: "Permission settings saved",
+            reset: "Permission settings reset",
+            resetConfirmTitle: "Reset permissions?",
+            resetConfirmDesc: "This will reset all tools and capabilities to the default (allow) policy.",
+            defaultNoteTitle: "Default policy",
+            defaultNoteDesc: "Items set to Default follow the built-in behavior. For most tools this means allow, but dangerous tools such as bash still require confirmation.",
+            noItems: "No permissions configured.",
+            desc: {
+              bash: "Shell command execution",
+              bash_output: "Read output of background shells",
+              file_write: "Create or overwrite files",
+              file_edit: "Edit existing files",
+              apply_patch: "Apply multi-file patches",
+              docker: "Docker container operations",
+              deploy: "Deploy to remote environments",
+              database: "Database queries",
+              browser: "Browser automation",
+              desktop: "Desktop control",
+              bash_io: "Shell input / output",
+              network: "Outbound network requests",
+              file: "File system read / write",
+              workflow: "Workflow execution",
+              git: "Git repository operations",
+              misc: "Miscellaneous capabilities",
+              mcp: "MCP tool invocation"
+            }
+          }
         },
         agents: {
           activeAgents: "Active Agents",
@@ -2554,14 +2477,20 @@
       return stringCache.get(cacheKey);
     }
     const keys = key.split(".");
-    let value = translations[currentLocale];
-    for (const k2 of keys) {
-      if (value && typeof value === "object" && k2 in value) {
-        value = value[k2];
-      } else {
-        value = void 0;
-        break;
+    const lookup = (locale) => {
+      let value2 = translations[locale];
+      for (const k2 of keys) {
+        if (value2 && typeof value2 === "object" && k2 in value2) {
+          value2 = value2[k2];
+        } else {
+          return void 0;
+        }
       }
+      return value2;
+    };
+    let value = lookup(currentLocale);
+    if (typeof value !== "string" && currentLocale !== "en") {
+      value = lookup("en");
     }
     let result = typeof value === "string" ? value : key;
     if (params) {
@@ -2753,6 +2682,7 @@
     state.branches = snapshot.branches;
     state.activeBranchId = snapshot.activeBranchId;
     state.running = snapshot.running;
+    state.agentState = snapshot.agentState ?? null;
   }
   function syncSessionState(sessionId) {
     if (getSessionKey(sessionId) === getSessionKey(state.sessionId)) {
@@ -3250,6 +3180,9 @@
   function setSettings(settings) {
     update({ settings });
   }
+  function setPermissionPolicies(policies) {
+    update({ permissionPolicies: policies });
+  }
   function setTheme(theme) {
     update({ theme });
     document.documentElement.setAttribute("data-theme", theme);
@@ -3369,6 +3302,12 @@
         "info"
       );
     }
+  }
+  function setAgentState(agentState, sessionId = state.sessionId) {
+    const snapshot = getOrCreateSessionSnapshot(sessionId);
+    snapshot.agentState = agentState;
+    syncSessionState(sessionId);
+    emit();
   }
   function resetChat() {
     state.sessionId = "";
@@ -4367,7 +4306,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     return type === "text_delta" || type === "thinking_delta" || type === "tool_call_start" || type === "tool_call_delta" || type === "tool_call_end" || type === "tool_progress" || type === "tool_result" || type === "permission_request" || type === "engine_install_request" || type === "engine_install_progress" || type === "workflow_started" || type === "workflow_task" || type === "workflow_completed" || type === "finish" || type === "error" || type === "plan_update" || type === "plan_proposal" || type === "plan_mode_changed" || type === "plan_resolved" || type === "assistant_boundary" || type === "compact";
   }
   function _requiresExplicitSessionId(type) {
-    return _isSessionBoundStreamEvent(type) || type === "messages_updated" || type === "rollback_checkout" || type === "telemetry" || type === "context_usage" || type === "artifacts_update" || type === "references_update";
+    return _isSessionBoundStreamEvent(type) || type === "messages_updated" || type === "rollback_checkout" || type === "telemetry" || type === "agent_state" || type === "context_usage" || type === "artifacts_update" || type === "references_update";
   }
   function _ensureAssistantMessage(sessionId) {
     const st3 = getState();
@@ -4676,6 +4615,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
         _activeStreamSessionId = "";
         setRunning(false, _eventSessionId(event));
+        if (event.reason === "error" || event.error) {
+          const msgs = getState().messages;
+          const hasStreaming = msgs.some((m) => m.role === "assistant" && m.isStreaming);
+          if (!hasStreaming) {
+            startAssistantMessage();
+          }
+        }
         const sid = _eventSessionId(event);
         const lastMsg2 = getLastAssistantMessage(sid);
         if (lastMsg2) {
@@ -4756,6 +4702,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       case "configured":
         console.log("[stream] configured event, config keys:", Object.keys(event.config ?? {}));
         setSettings({ ...getState().settings, ...event.config });
+        if (event.config && typeof event.config === "object" && "permission_settings" in event.config) {
+          const raw = event.config.permission_settings;
+          setPermissionPolicies(normalizePermissionPolicies(raw));
+        }
         break;
       case "telemetry":
         if (!_hasSessionId(event)) break;
@@ -5025,6 +4975,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           event.context_window,
           _eventSessionId(event)
         );
+        window.__sessionInner?.render?.();
+        break;
+      case "agent_state":
+        if (!_hasSessionId(event)) break;
+        setAgentState(event.state, _eventSessionId(event));
         window.__sessionInner?.render?.();
         break;
       case "artifacts_update":
@@ -5375,6 +5330,52 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+  function normalizePermissionPolicies(raw) {
+    const empty = { tools: {}, capabilities: {} };
+    if (!raw || typeof raw !== "object") return empty;
+    const result = { tools: {}, capabilities: {} };
+    const capabilityKeys = /* @__PURE__ */ new Set([
+      "network",
+      "file",
+      "bash_io",
+      "docker",
+      "browser",
+      "workflow",
+      "git",
+      "deploy",
+      "desktop",
+      "database",
+      "misc",
+      "mcp"
+    ]);
+    for (const [key, value] of Object.entries(raw)) {
+      const policy = normalizePolicyValue(value);
+      if (policy) {
+        if (capabilityKeys.has(key)) result.capabilities[key] = policy;
+        else result.tools[key] = policy;
+      }
+    }
+    return result;
+  }
+  function normalizePolicyValue(raw) {
+    if (typeof raw === "string") {
+      const value = raw;
+      if (["allow", "deny", "ask", "default"].includes(value)) {
+        return { value };
+      }
+    }
+    if (raw && typeof raw === "object") {
+      const obj = raw;
+      const value = obj.value;
+      if (typeof value === "string" && ["allow", "deny", "ask", "default"].includes(value)) {
+        return {
+          value,
+          source: typeof obj.source === "string" ? obj.source : void 0
+        };
+      }
+    }
+    return null;
   }
   var _adapterTestCallback, _automationJobsCallback, _automationHistoryCallback, _automationJobCreatedCallback, _automationJobCancelledCallback, _automationJobUpdatedCallback, _automationShowResultCallback, _automationStreamCallback, chat, tools, permissions, _settings, permissionResolve, _sessionGeneration, _requestedSessionId, _requestedSessionRequestId, _activeStreamSessionId, _toolCallGeneration, _validationResolve, _validationReject, _onTranscription, _lastSync;
   var init_stream = __esm({
@@ -63751,7 +63752,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             } else if (seg.kind === "text") {
               const segText = (seg.text || "").trim();
               const isLast = textSegIndex === lastTextSegIndex;
-              if (segText.length > 0 || msg.isStreaming) {
+              const isErrorOnly = msg.errorMessage && segText.startsWith("[Backend API Error]");
+              if ((segText.length > 0 || msg.isStreaming) && !isErrorOnly) {
                 items.push({
                   kind: "assistant_text",
                   id: `a-${msg.id}-seg-${textSegIndex}`,
@@ -63762,21 +63764,21 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
                   showActions: !msg.isStreaming && isLast && !st3.running,
                   showBranchSwitcher: i8 === firstAssistantAfterForkIdx && isLast
                 });
-                if (isLast) {
-                  if (msg.errorMessage) {
-                    items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
-                  } else if (msg.interruptedReason) {
-                    items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
-                  }
-                  if (msg.turnStatusText) {
-                    items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
-                  }
-                  if (msg.cancelledText) {
-                    items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
-                  }
-                }
-                textSegIndex++;
               }
+              if (isLast) {
+                if (msg.errorMessage) {
+                  items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
+                } else if (msg.interruptedReason) {
+                  items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
+                }
+                if (msg.turnStatusText) {
+                  items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
+                }
+                if (msg.cancelledText) {
+                  items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
+                }
+              }
+              textSegIndex++;
             } else if (seg.kind === "tool") {
               const tc2 = seg.toolId ? msg.toolCalls.find((t2) => t2.id === seg.toolId) : void 0;
               if (tc2) {
@@ -64690,10 +64692,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       <div class="status-header" onclick="window.__toggleStatusCard('${id}')">
         <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span class="status-label">${t("chat.abortedError")}</span>
+        ${item.errorCode ? `<span class="status-code-tag">${escapeHtml2(item.errorCode)}</span>` : ""}
         <svg class="status-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="status-body">
-        ${item.errorCode ? `<div class="status-code">${escapeHtml2(item.errorCode)}</div>` : ""}
         <div class="status-message">${escapeHtml2(item.errorMessage)}</div>
       </div>
     </div>`;
@@ -79856,6 +79858,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         index: document.getElementById("panel-index"),
         skills: document.getElementById("panel-skills"),
         rules: document.getElementById("panel-rules"),
+        permissions: document.getElementById("panel-permissions"),
         mcp: document.getElementById("panel-mcp"),
         agent: document.getElementById("panel-agent"),
         about: document.getElementById("panel-about"),
@@ -80229,6 +80232,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           }
         }
       });
+      let lastPermissionPolicies = JSON.stringify(getState().permissionPolicies);
+      subscribe2(() => {
+        const app2 = document.getElementById("app");
+        if (!app2?.classList.contains("settings-mode")) return;
+        const current = JSON.stringify(getState().permissionPolicies);
+        if (current !== lastPermissionPolicies) {
+          lastPermissionPolicies = current;
+          if (this.currentPanel === "permissions" && this.panels.permissions) {
+            this.renderPermissions();
+          }
+        }
+      });
       let lastUsageStats = getState().usageStats;
       subscribe2(() => {
         const app2 = document.getElementById("app");
@@ -80543,6 +80558,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       } else if (id === "rules") {
         this.panels.rules.classList.add("active");
         this.renderRules();
+      } else if (id === "permissions") {
+        this.panels.permissions.classList.add("active");
+        this.renderPermissions();
       } else if (id === "developer") {
         this.panels.developer.classList.add("active");
         this.renderDeveloper();
@@ -80588,6 +80606,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.renderIndex();
       this.renderSkills();
       this.renderRules();
+      this.renderPermissions();
       this.renderMcp();
       this.renderAgent();
       this.renderAbout();
@@ -81614,32 +81633,22 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           return;
         }
         showToast(t("common.validatingConnection"), "", "info");
-        send({ type: "validate_model", backend_type: backend, api_key: apiKey, base_url: baseUrl, model_id: modelId, max_tokens: maxTokens });
+        send({
+          type: "validate_model",
+          backend_type: backend,
+          api_key: apiKey,
+          base_url: baseUrl,
+          model_id: modelId,
+          max_tokens: maxTokens,
+          name,
+          model_index: isEdit && editIdx !== void 0 ? editIdx : -1
+        });
         try {
           await waitForModelValidation();
         } catch (e) {
           showToast(t("common.connectionFailed") + (e ? `: ${e}` : ""), "", "error");
           return;
         }
-        const currentModels = [...getState().modelConfigs];
-        const newModel = {
-          name,
-          model_id: modelId,
-          backend_type: backend,
-          api_key: apiKey,
-          base_url: baseUrl,
-          max_tokens: maxTokens,
-          context_window: 0,
-          enabled: true
-        };
-        if (isEdit && editIdx !== void 0) {
-          currentModels[editIdx] = newModel;
-        } else {
-          currentModels.push(newModel);
-        }
-        const activeIdx = isEdit ? getState().activeModelIndex : currentModels.length - 1;
-        setModelConfigs(currentModels, activeIdx);
-        send({ type: "update_models", models: currentModels, active_model_index: activeIdx });
         this.renderModel();
         close();
       });
@@ -82435,6 +82444,167 @@ ${content}`;
         send({ type: "save_global_rule", name: inputName, content: inputContent });
         close();
       });
+    }
+    renderPermissions() {
+      const st3 = getState();
+      const policies = st3.permissionPolicies || { tools: {}, capabilities: {} };
+      if (Object.keys(policies.tools).length === 0 && Object.keys(policies.capabilities).length === 0) {
+        send({ type: "configure", config: { permission_settings: {} } });
+      }
+      const options = [
+        { id: "default", label: t("permissions.settings.default") },
+        { id: "allow", label: t("permissions.settings.allow") },
+        { id: "deny", label: t("permissions.settings.deny") },
+        { id: "ask", label: t("permissions.settings.ask") }
+      ];
+      const capabilityKeys = /* @__PURE__ */ new Set([
+        "network",
+        "file",
+        "bash_io",
+        "docker",
+        "browser",
+        "workflow",
+        "git",
+        "deploy",
+        "desktop",
+        "database",
+        "misc",
+        "mcp"
+      ]);
+      const knownTools = [
+        "bash",
+        "bash_output",
+        "file_write",
+        "file_edit",
+        "apply_patch",
+        "docker",
+        "deploy",
+        "database",
+        "browser",
+        "desktop"
+      ];
+      const knownCapabilities = Array.from(capabilityKeys);
+      const ensureEntries = (keys, existing) => {
+        const entries = [];
+        for (const key of keys) {
+          entries.push([key, existing[key] || { value: "default", source: "default" }]);
+        }
+        for (const [key, policy] of Object.entries(existing)) {
+          if (!keys.includes(key)) entries.push([key, policy]);
+        }
+        return entries;
+      };
+      const toolEntries = ensureEntries(knownTools, policies.tools);
+      const capEntries = ensureEntries(knownCapabilities, policies.capabilities);
+      const renderRows = (group, entries) => {
+        if (entries.length === 0) {
+          return `<div class="empty-state">${t("permissions.settings.noItems")}</div>`;
+        }
+        return entries.map(([name, policy], idx) => {
+          const divider = idx < entries.length - 1 ? '<div class="settings-item-divider"></div>' : "";
+          const descKey = `permissions.settings.desc.${name}`;
+          const desc = t(descKey) === descKey ? "" : t(descKey);
+          return `
+          <div class="settings-item-row" data-perm-group="${group}" data-perm-name="${this.esc(name)}">
+            <div class="settings-item-info">
+              <div class="settings-item-title">
+                ${this.esc(name)}
+                <span class="model-active-tag perm-source-${policy.source || "default"}">${policy.source || "default"}</span>
+              </div>
+              ${desc ? `<div class="settings-item-desc">${this.esc(desc)}</div>` : ""}
+            </div>
+            <div class="settings-item-control">
+              ${this.renderDropdown(`perm-dd-${group}-${name}`, options, policy.value || "default", () => {
+          })}
+            </div>
+          </div>
+          ${divider}
+        `;
+        }).join("");
+      };
+      const toolsHtml = renderRows("tools", toolEntries);
+      const capsHtml = renderRows("capabilities", capEntries);
+      this.panels.permissions.innerHTML = `
+      <div class="settings-section-title"><i data-lucide="shield" class="lucide section-title-icon"></i> ${t("permissions.settings.title")}</div>
+      <div class="settings-card">
+        <div class="model-manage-header">
+          <div class="model-manage-desc">${t("permissions.settings.subtitle")}</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-add-model-top" id="btn-permissions-reset">
+              <span>${t("permissions.settings.resetDefaults")}</span>
+            </button>
+            <button class="btn-add-model-top" id="btn-permissions-save">
+              <i data-lucide="save" class="lucide"></i>
+              <span>${t("permissions.settings.saveChanges")}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section-title"><i data-lucide="wrench" class="lucide section-title-icon"></i> ${t("permissions.settings.tools")}</div>
+      <div class="settings-card">${toolsHtml}</div>
+
+      <div class="settings-section-title"><i data-lucide="zap" class="lucide section-title-icon"></i> ${t("permissions.settings.capabilities")}</div>
+      <div class="settings-card">${capsHtml}</div>
+
+      <div class="perm-hint-block" style="margin-top:12px;">
+        <div class="perm-hint-title">${t("permissions.settings.defaultNoteTitle")}</div>
+        <div class="perm-hint-desc">${t("permissions.settings.defaultNoteDesc")}</div>
+      </div>
+    `;
+      const draft = {};
+      for (const group of ["tools", "capabilities"]) {
+        const entries = group === "tools" ? toolEntries : capEntries;
+        for (const [name] of entries) {
+          this.bindDropdown(`perm-dd-${group}-${name}`, (val) => {
+            draft[name] = val;
+          });
+        }
+      }
+      document.getElementById("btn-permissions-save")?.addEventListener("click", () => {
+        const payload = {};
+        for (const group of ["tools", "capabilities"]) {
+          const entries = group === "tools" ? toolEntries : capEntries;
+          for (const [name, policy] of entries) {
+            const key = `perm-dd-${group}-${name}`;
+            const wrap = document.getElementById(`${key}-wrap`);
+            const trigger = wrap?.querySelector(".settings-dropdown-trigger span");
+            const selectedOption = options.find((o2) => o2.label === trigger?.textContent);
+            const value = draft[name] ?? selectedOption?.id ?? policy.value ?? "default";
+            payload[name] = value;
+          }
+        }
+        send({ type: "configure", config: { permission_settings: payload } });
+        const next = { tools: {}, capabilities: {} };
+        for (const [name, policy] of toolEntries) {
+          next.tools[name] = { value: payload[name] || policy.value || "default", source: "user" };
+        }
+        for (const [name, policy] of capEntries) {
+          if (capabilityKeys.has(name)) {
+            next.capabilities[name] = { value: payload[name] || policy.value || "default", source: "user" };
+          }
+        }
+        setPermissionPolicies(next);
+        showToast(t("permissions.settings.saved"), "");
+      });
+      document.getElementById("btn-permissions-reset")?.addEventListener("click", async () => {
+        if (await Dialog.confirm(t("permissions.settings.resetConfirmTitle"), t("permissions.settings.resetConfirmDesc"))) {
+          const payload = {};
+          for (const group of ["tools", "capabilities"]) {
+            const entries = group === "tools" ? toolEntries : capEntries;
+            for (const [name] of entries) payload[name] = "default";
+          }
+          send({ type: "configure", config: { permission_settings: payload } });
+          const next = { tools: {}, capabilities: {} };
+          for (const [name] of toolEntries) next.tools[name] = { value: "default", source: "default" };
+          for (const [name] of capEntries) next.capabilities[name] = { value: "default", source: "default" };
+          setPermissionPolicies(next);
+          showToast(t("permissions.settings.reset"), "");
+        }
+      });
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: this.panels.permissions });
+      }
     }
     renderMcp() {
       this.renderMcpList();
@@ -100659,6 +100829,7 @@ void main() {
     { id: "terminal", icon: "terminal" },
     { id: "editor", icon: "code-2" },
     { id: "review", icon: "eye" },
+    { id: "agent", icon: "bot" },
     { id: "info", icon: "file-text" }
   ];
   function tabLabel(id) {
@@ -100675,6 +100846,8 @@ void main() {
         return t("sessionInner.tabEditor");
       case "review":
         return t("sessionInner.tabReview");
+      case "agent":
+        return t("sessionInner.tabAgent");
       default:
         return id;
     }
@@ -100697,6 +100870,9 @@ void main() {
   }
   var SessionInner = class {
     constructor() {
+      this.tabAddBtn = null;
+      this.tabAddDropdown = null;
+      this.tabAddDocClickHandler = null;
       this.tabs = [
         { id: "info", closable: true }
       ];
@@ -100759,9 +100935,17 @@ void main() {
     }
     render() {
       this.renderContent();
+      const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]');
+      if (agentPanel) {
+        this.renderAgentPanel(agentPanel);
+      }
     }
     renderForce() {
       this.renderContent();
+      const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]');
+      if (agentPanel) {
+        this.renderAgentPanel(agentPanel);
+      }
     }
     /* ── Tab Management ─────────────────────────────────────────────── */
     async renderTabs() {
@@ -100785,14 +100969,22 @@ void main() {
       }
     }
     bindAddButton() {
+      this.tabAddBtn?.remove();
+      this.tabAddDropdown?.remove();
+      if (this.tabAddDocClickHandler) {
+        document.removeEventListener("click", this.tabAddDocClickHandler);
+        this.tabAddDocClickHandler = null;
+      }
       const btn = document.createElement("button");
       btn.className = "tab-add-btn";
       btn.title = t("sessionInner.newTab");
       btn.innerHTML = `<i data-lucide="plus" class="lucide lucide-sm"></i>`;
       this.tabBar.appendChild(btn);
+      this.tabAddBtn = btn;
       const dropdown = document.createElement("div");
       dropdown.className = "tab-add-dropdown hidden";
       document.body.appendChild(dropdown);
+      this.tabAddDropdown = dropdown;
       const rebuildDropdown = () => {
         const openIds = new Set(this.tabs.map((t2) => t2.id));
         const available = NEW_TAB_OPTIONS.filter((opt) => !openIds.has(opt.id));
@@ -100831,11 +101023,12 @@ void main() {
         e.stopPropagation();
         toggle();
       });
-      document.addEventListener("click", (e) => {
+      this.tabAddDocClickHandler = (e) => {
         if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
           dropdown.classList.add("hidden");
         }
-      });
+      };
+      document.addEventListener("click", this.tabAddDocClickHandler);
     }
     getTabs() {
       return this.tabs.slice();
@@ -100876,11 +101069,19 @@ void main() {
       this.panelShellPath.clear();
       this.panelShellArgs.clear();
       document.querySelectorAll(".si-term-shell-dropdown").forEach((el2) => el2.remove());
-      document.querySelectorAll(".tab-add-dropdown").forEach((el2) => el2.remove());
+      this.tabAddBtn?.remove();
+      this.tabAddBtn = null;
+      this.tabAddDropdown?.remove();
+      this.tabAddDropdown = null;
+      if (this.tabAddDocClickHandler) {
+        document.removeEventListener("click", this.tabAddDocClickHandler);
+        this.tabAddDocClickHandler = null;
+      }
       this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
       this.tabs = [{ id: "info", closable: false }];
       this.activeTab = "info";
       await this.renderTabs();
+      this.bindAddButton();
     }
     async createTab(id) {
       if (!this.tabs.some((tab) => tab.id === id)) {
@@ -100912,6 +101113,8 @@ void main() {
           this.setupEditorPanel(panel);
         } else if (t2.id === "review") {
           this.setupReviewPanel(panel);
+        } else if (t2.id === "agent") {
+          this.setupAgentPanel(panel);
         }
         this.tabBody.appendChild(panel);
       }
@@ -101774,6 +101977,141 @@ void main() {
       } else {
         await load(void 0, false);
       }
+    }
+    setupAgentPanel(panel) {
+      panel.innerHTML = `<div class="session-inner-sidebar-body"><div class="si-agent-root"></div></div>`;
+      this.renderAgentPanel(panel);
+    }
+    renderAgentPanel(panel) {
+      const root = panel.querySelector(".si-agent-root");
+      if (!root) return;
+      const agentState = getState().agentState;
+      if (!agentState) {
+        root.innerHTML = `<div class="si-panel-empty">${this.esc(t("sessionInner.agentNoState"))}</div>`;
+        return;
+      }
+      const workingSet = agentState.working_set || {};
+      const tools2 = this.asStringList(workingSet.tools);
+      const artifacts = this.asStringList(workingSet.artifacts);
+      const references = this.asStringList(workingSet.references);
+      const planItems = this.asStringList(workingSet.plan_items);
+      const delegates = Array.isArray(agentState.delegate_history) ? agentState.delegate_history.slice(-6).reverse() : [];
+      const stuckEvents = Array.isArray(agentState.stuck_events) ? agentState.stuck_events.slice(-6).reverse() : [];
+      const stages = Array.isArray(agentState.task_stage_history) ? agentState.task_stage_history.slice(-8).reverse() : [];
+      root.innerHTML = `<div class="si-panels">
+      <div class="si-panel">
+        ${this.panelHeader("agent-overview", t("sessionInner.agentOverview"), "bot")}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-overview") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            <div class="si-agent-stage-row">
+              <span class="si-agent-label">${this.esc(t("sessionInner.agentCurrentStage"))}</span>
+              <span class="si-agent-stage-badge">${this.esc(agentState.task_stage || t("sessionInner.agentUnknown"))}</span>
+            </div>
+            <div class="si-agent-kv-grid">
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.agentDelegations"))}</span><span class="si-agent-v">${delegates.length}</span></div>
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.agentStuckEvents"))}</span><span class="si-agent-v">${stuckEvents.length}</span></div>
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.tools"))}</span><span class="si-agent-v">${tools2.length}</span></div>
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.agentPlanItems"))}</span><span class="si-agent-v">${planItems.length}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-working-set", t("sessionInner.agentWorkingSet"), "layers")}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-working-set") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentListSection(t("sessionInner.agentSectionTools"), tools2)}
+            ${this.renderAgentListSection(t("sessionInner.agentSectionArtifacts"), artifacts)}
+            ${this.renderAgentListSection(t("sessionInner.agentSectionReferences"), references)}
+            ${this.renderAgentListSection(t("sessionInner.agentSectionPlan"), planItems)}
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-delegates", t("sessionInner.agentDelegation"), "git-branch", delegates.length > 0 ? String(delegates.length) : void 0)}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-delegates") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentEventList(delegates, t("sessionInner.agentNoDelegation"))}
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-stuck", t("sessionInner.agentRecovery"), "siren", stuckEvents.length > 0 ? String(stuckEvents.length) : void 0)}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-stuck") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentEventList(stuckEvents, t("sessionInner.agentNoRecovery"))}
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-stages", t("sessionInner.agentStageHistory"), "route", stages.length > 0 ? String(stages.length) : void 0)}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-stages") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentEventList(stages, t("sessionInner.agentNoStages"))}
+          </div>
+        </div>
+      </div>
+    </div>`;
+      this.bindAgentPanel(panel);
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: panel });
+      }
+    }
+    bindAgentPanel(panel) {
+      panel.querySelectorAll(".si-panel-header").forEach((header) => {
+        header.addEventListener("click", () => {
+          const panelId = header.dataset.panel;
+          this.togglePanel(panelId);
+          this.renderAgentPanel(panel);
+        });
+      });
+    }
+    renderAgentListSection(label, items) {
+      return `<div class="si-agent-section">
+      <div class="si-agent-section-title">${this.esc(label)}</div>
+      ${items.length > 0 ? `<div class="si-agent-chip-list">${items.map((item) => `<span class="si-agent-chip">${this.esc(item)}</span>`).join("")}</div>` : `<div class="si-agent-empty-inline">${this.esc(t("sessionInner.agentEmptyInline"))}</div>`}
+    </div>`;
+    }
+    renderAgentEventList(items, emptyText) {
+      if (!items.length) {
+        return `<div class="si-agent-empty-inline">${this.esc(emptyText)}</div>`;
+      }
+      return `<div class="si-agent-event-list">${items.map((item) => {
+        const entries = Object.entries(item).filter(([, value]) => value !== null && value !== void 0 && String(value).trim() !== "").slice(0, 4);
+        const title = this.esc(this.getAgentEventTitle(item, entries));
+        const meta = entries.slice(1).map(
+          ([key, value]) => `<span class="si-agent-event-meta"><span class="si-agent-event-key">${this.esc(key)}</span>${this.esc(this.stringifyAgentValue(value))}</span>`
+        ).join("");
+        return `<div class="si-agent-event">
+        <div class="si-agent-event-title">${title}</div>
+        ${meta ? `<div class="si-agent-event-row">${meta}</div>` : ""}
+      </div>`;
+      }).join("")}</div>`;
+    }
+    asStringList(value) {
+      if (!Array.isArray(value)) return [];
+      return value.map((item) => this.stringifyAgentValue(item)).filter((item) => item.length > 0);
+    }
+    getAgentEventTitle(item, entries) {
+      const preferredKeys = ["summary", "message", "stage", "agent", "name", "reason", "status", "tool"];
+      for (const key of preferredKeys) {
+        const text2 = this.stringifyAgentValue(item[key]);
+        if (text2) return text2;
+      }
+      if (entries.length > 0) {
+        return this.stringifyAgentValue(entries[0][1]);
+      }
+      return t("sessionInner.agentEvent");
+    }
+    stringifyAgentValue(value) {
+      if (typeof value === "string") return value;
+      if (typeof value === "number" || typeof value === "boolean") return String(value);
+      if (Array.isArray(value)) return value.map((item) => this.stringifyAgentValue(item)).filter(Boolean).join(", ");
+      if (value && typeof value === "object") {
+        const pairs = Object.entries(value).slice(0, 3).map(([key, inner]) => `${key}: ${this.stringifyAgentValue(inner)}`);
+        return pairs.join(" | ");
+      }
+      return "";
     }
     parseDiff(output) {
       if (!output.trim()) return `<div class="si-empty">${t("sessionInner.reviewNoChanges")}</div>`;
@@ -104720,7 +105058,6 @@ void main() {
       setSubAgentView(null);
       clearSubAgentBreadcrumb();
       window.__closeSubAgentView = void 0;
-      window.__openSubAgentView = void 0;
       window.__navigateToBreadcrumb = void 0;
       if (!opts?.keepAutomationFlag) {
         window.__isAutomationView = false;

@@ -786,7 +786,8 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
           } else if (seg.kind === "text") {
             const segText = (seg.text || "").trim();
             const isLast = textSegIndex === lastTextSegIndex;
-            if (segText.length > 0 || msg.isStreaming) {
+            const isErrorOnly = msg.errorMessage && segText.startsWith("[Backend API Error]");
+            if ((segText.length > 0 || msg.isStreaming) && !isErrorOnly) {
               items.push({
                 kind: "assistant_text",
                 id: `a-${msg.id}-seg-${textSegIndex}`,
@@ -797,22 +798,25 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
                 showActions: !msg.isStreaming && isLast && !st.running,
                 showBranchSwitcher: i === firstAssistantAfterForkIdx && isLast,
               });
-              // Insert status cards after the last text segment of each assistant message
-              if (isLast) {
-                if (msg.errorMessage) {
-                  items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
-                } else if (msg.interruptedReason) {
-                  items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
-                }
-                if (msg.turnStatusText) {
-                  items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
-                }
-                if (msg.cancelledText) {
-                  items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
-                }
-              }
-              textSegIndex++;
             }
+            // Insert status cards after the last text segment of each
+            // assistant message.  Must be outside the isErrorOnly check
+            // so the error card still renders when the text content is
+            // purely the error message (avoiding double display).
+            if (isLast) {
+              if (msg.errorMessage) {
+                items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
+              } else if (msg.interruptedReason) {
+                items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
+              }
+              if (msg.turnStatusText) {
+                items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
+              }
+              if (msg.cancelledText) {
+                items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
+              }
+            }
+            textSegIndex++;
           } else if (seg.kind === "tool") {
             const tc = seg.toolId ? msg.toolCalls.find(t => t.id === seg.toolId) : undefined;
             if (tc) {
@@ -1902,10 +1906,10 @@ export class Chat {
       <div class="status-header" onclick="window.__toggleStatusCard('${id}')">
         <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span class="status-label">${t("chat.abortedError")}</span>
+        ${item.errorCode ? `<span class="status-code-tag">${escapeHtml(item.errorCode)}</span>` : ""}
         <svg class="status-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="status-body">
-        ${item.errorCode ? `<div class="status-code">${escapeHtml(item.errorCode)}</div>` : ""}
         <div class="status-message">${escapeHtml(item.errorMessage)}</div>
       </div>
     </div>`;

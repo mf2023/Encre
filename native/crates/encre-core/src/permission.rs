@@ -13,6 +13,7 @@
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -50,7 +51,7 @@ impl PermissionDecision {
 
 /// Persisted user-managed policy for a tool or capability.  `Default` defers
 /// to dangerous-pattern detection (only meaningful for the `bash` tool).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum PolicyValue {
     Allow,
@@ -70,13 +71,91 @@ impl PolicyValue {
     }
 }
 
+/// Origin of a policy entry.  Higher precedence sources override lower ones
+/// when resolving the effective policy for a tool or capability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PolicySource {
+    /// Fallback value when nothing else is configured.
+    Default,
+    /// User-level configuration, e.g. `~/.encre/config.toml`.
+    User,
+    /// Project-level configuration, e.g. `<cwd>/.claude/settings.json`.
+    Project,
+    /// Command-line overrides supplied at startup.
+    Cli,
+    /// Dynamically injected by a permission hook.
+    Hook,
+    /// A transient decision made by the user during the current session.
+    Session,
+}
+
+impl PolicySource {
+    /// Resolution order: session decisions are most specific, defaults least.
+    fn precedence() -> &'static [PolicySource] {
+        &[
+            PolicySource::Session,
+            PolicySource::Hook,
+            PolicySource::Cli,
+            PolicySource::Project,
+            PolicySource::User,
+            PolicySource::Default,
+        ]
+    }
+}
+
 /// State holder for the active policy set.  Persists through Python.
+///
+/// Policies are grouped by source so that a project-level deny can override a
+/// user-level allow, and a one-off session decision can override everything.
+/// The legacy flat `tools` and `capabilities` maps are retained for backward
+/// compatibility with older configuration payloads and are treated as `User`
+/// source entries.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PolicyState {
-    /// Per-tool policy: `tool_name -> PolicyValue`.
+    /// `source -> tool_name -> policy`.
+    #[serde(default)]
+    pub tools_by_source: HashMap<PolicySource, HashMap<String, PolicyValue>>,
+    /// `source -> capability_name -> policy`.
+    #[serde(default)]
+    pub capabilities_by_source: HashMap<PolicySource, HashMap<String, PolicyValue>>,
+    /// Legacy flat tool map; treated as `User` source.
+    #[serde(default)]
     pub tools: HashMap<String, PolicyValue>,
-    /// Per-capability policy: `network | docker | browser | agent | workflow | ...`.
+    /// Legacy flat capability map; treated as `User` source.
+    #[serde(default)]
     pub capabilities: HashMap<String, PolicyValue>,
+}
+
+impl PolicyState {
+    /// Resolve the effective policy for a key across all sources.
+    fn resolve_tool(&self, key: &str) -> Option<PolicyValue> {
+        resolve_policy(&self.tools_by_source, &self.tools, key)
+    }
+
+    /// Resolve the effective policy for a capability across all sources.
+    fn resolve_capability(&self, key: &str) -> Option<PolicyValue> {
+        resolve_policy(&self.capabilities_by_source, &self.capabilities, key)
+    }
+}
+
+/// Resolve a policy by walking the source precedence list.  Legacy flat maps
+/// are consulted after all explicit source groups.
+fn resolve_policy(
+    by_source: &HashMap<PolicySource, HashMap<String, PolicyValue>>,
+    legacy: &HashMap<String, PolicyValue>,
+    key: &str,
+) -> Option<PolicyValue> {
+    for source in PolicySource::precedence() {
+        if let Some(map) = by_source.get(source) {
+            if let Some(policy) = map.get(key) {
+                if !matches!(policy, PolicyValue::Default) {
+                    return Some(policy.clone());
+                }
+            }
+        }
+    }
+    legacy.get(key).cloned()
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +196,83 @@ pub fn tool_capabilities(name: &str) -> &'static [&'static str] {
 }
 
 // ---------------------------------------------------------------------------
+// Shell command splitting
+// ---------------------------------------------------------------------------
+
+/// Split a shell command line by control operators (`;`, `&&`, `||`, bare `|`)
+/// into individual subcommands.  This is intentionally lightweight: it honours
+/// single/double quoting and backslash escaping but does not expand variables
+/// or process subshells.  The result is accurate enough for dangerous-pattern
+/// matching on each subcommand.
+pub fn split_shell_command(command: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = command.chars().collect();
+    let mut i = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            // Escaped character outside quotes: keep the pair together.
+            '\\' if !in_single && !in_double => {
+                current.push(c);
+                i += 1;
+                if i < chars.len() {
+                    current.push(chars[i]);
+                }
+            }
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            ';' if !in_single && !in_double => {
+                flush_subcommand(&mut parts, &mut current);
+            }
+            '&' if !in_single && !in_double && i + 1 < chars.len() && chars[i + 1] == '&' => {
+                flush_subcommand(&mut parts, &mut current);
+                i += 1; // skip the second '&'
+            }
+            '|' if !in_single && !in_double && i + 1 < chars.len() && chars[i + 1] == '|' => {
+                flush_subcommand(&mut parts, &mut current);
+                i += 1; // skip the second '|'
+            }
+            '|' if !in_single && !in_double => {
+                // A bare pipe separates commands for our purposes; the receiving
+                // command (e.g. `sh`) is what we actually want to gate.
+                flush_subcommand(&mut parts, &mut current);
+            }
+            '\n' if !in_single && !in_double => {
+                flush_subcommand(&mut parts, &mut current);
+            }
+            _ => current.push(c),
+        }
+        i += 1;
+    }
+    flush_subcommand(&mut parts, &mut current);
+
+    parts
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn flush_subcommand(parts: &mut Vec<String>, current: &mut String) {
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        parts.push(trimmed.to_string());
+    }
+    current.clear();
+}
+
+/// Extract the raw shell command from the JSON-serialized bash tool input.
+/// Returns `None` when the payload is not valid JSON or has no `command` key.
+fn extract_bash_command(args: &str) -> Option<String> {
+    let parsed: Value = serde_json::from_str(args).ok()?;
+    parsed.get("command")?.as_str().map(|s| s.to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Dangerous-command patterns loaded from dangerous_commands.txt
 // ---------------------------------------------------------------------------
 
@@ -148,7 +304,7 @@ impl DangerousTable {
                 }
                 continue;
             }
-            // Pure comment lines that look like ``# ── LINUX ──...`` are
+            // Pure comment lines that look like ``# -- LINUX --...`` are
             // ignored, but inline tags like ``# [linux]`` also switch the
             // section so older formatted files keep working.
             if let Some(rest) = line.strip_prefix('#') {
@@ -173,8 +329,8 @@ impl DangerousTable {
         DangerousTable { patterns }
     }
 
-    /// Test a command against the patterns for the given platform.  Returns
-    /// the first matching pattern string for use as a `rule` identifier.
+    /// Test a command subcommand against the patterns for the given platform.
+    /// Returns the first matching pattern string for use as a `rule` identifier.
     fn match_command(&self, command: &str, platform: &str) -> Option<String> {
         for (tag, re) in &self.patterns {
             if tag != platform {
@@ -288,11 +444,14 @@ pub fn permission_get_policies() -> PolicyState {
 }
 
 /// Record the user's answer to a previous `Ask` decision so we don't have to
-/// ask again for the same tool.  `policy` is one of `allow` / `deny`.
+/// ask again for the same tool.  Stored under the `Session` source so it
+/// overrides project/user policy but remains transient.
 pub fn permission_record_decision(tool_name: &str, policy: &str) {
     let mut g = manager().write().expect("permission lock poisoned");
     g.state
-        .tools
+        .tools_by_source
+        .entry(PolicySource::Session)
+        .or_default()
         .insert(tool_name.to_string(), PolicyValue::from_str(policy));
 }
 
@@ -315,9 +474,9 @@ const ALWAYS_ALLOW: &[&str] = &[
 ///
 /// Precedence (highest first):
 /// 0.  Always-allow list (these tools skip all checks entirely).
-/// 1.  Tool-level override from the user policy table.
+/// 1.  Tool-level override from the policy table (source-aware).
 /// 2.  Capability-level override (`network`, `file`, ...).
-/// 3.  Dangerous-pattern match for the `bash` tool family.
+/// 3.  Dangerous-pattern match for the `bash` tool family, per subcommand.
 /// 4.  Default: allow.
 pub fn permission_check(tool_name: &str, args: &str) -> PermissionDecision {
     // 0) Always-allow tools skip everything.
@@ -328,26 +487,33 @@ pub fn permission_check(tool_name: &str, args: &str) -> PermissionDecision {
     let g = manager().read().expect("permission lock poisoned");
 
     // 1) Tool-level override.
-    if let Some(p) = g.state.tools.get(tool_name) {
-        return decision_from_policy(p, tool_name);
+    if let Some(p) = g.state.resolve_tool(tool_name) {
+        return decision_from_policy(&p, tool_name);
     }
 
     // 2) Capability-level override.
     for cap in tool_capabilities(tool_name) {
-        if let Some(p) = g.state.capabilities.get(*cap) {
-            return decision_from_policy(p, tool_name);
+        if let Some(p) = g.state.resolve_capability(cap) {
+            return decision_from_policy(&p, tool_name);
         }
     }
 
-    // 3) Bash dangerous patterns.
+    // 3) Bash dangerous patterns, evaluated per subcommand.
     if matches!(tool_name, "bash" | "bash_output") {
-        if let Some(rule) = g.dangerous.match_command(args, current_platform_tag()) {
-            return PermissionDecision::Ask {
-                reason: format!(
-                    "Command matches dangerous pattern: {rule}"
-                ),
-                rule,
-            };
+        let command_text = extract_bash_command(args).unwrap_or_else(|| args.to_string());
+        let subcommands = split_shell_command(&command_text);
+        let effective = if subcommands.is_empty() {
+            vec![command_text]
+        } else {
+            subcommands
+        };
+        for cmd in effective {
+            if let Some(rule) = g.dangerous.match_command(&cmd, current_platform_tag()) {
+                return PermissionDecision::Ask {
+                    reason: format!("Subcommand matches dangerous pattern: {rule}"),
+                    rule,
+                };
+            }
         }
     }
 
@@ -358,7 +524,7 @@ fn decision_from_policy(p: &PolicyValue, tool_name: &str) -> PermissionDecision 
     match p {
         PolicyValue::Allow => PermissionDecision::Allow,
         PolicyValue::Deny => PermissionDecision::Deny {
-            reason: format!("Tool '{tool_name}' is denied by user policy."),
+            reason: format!("Tool '{tool_name}' is denied by policy."),
         },
         PolicyValue::Ask => PermissionDecision::Ask {
             reason: format!("Tool '{tool_name}' is configured to ask for permission."),
@@ -403,4 +569,5 @@ mod tests {
         // Restore default for other tests.
         permission_set_policies(PolicyState::default());
     }
+
 }

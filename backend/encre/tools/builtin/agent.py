@@ -307,6 +307,10 @@ EncreAgentTool = build_tool(
     },
     execute=_agent_execute,
     intents=["general", "coding", "system"],
+    semantic_type="orchestrate",
+    cost_level="high",
+    retryability="manual",
+    safe_fallback="If delegation is not clearly splitting independent work, continue in the main thread and summarize the next concrete step.",
 )
 
 

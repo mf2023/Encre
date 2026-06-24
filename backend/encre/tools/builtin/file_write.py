@@ -66,7 +66,19 @@ async def _file_write_execute(**kwargs: Any) -> str:
 
 EncreFileWriteTool = build_tool(
     name="file_write",
-    description="Write content to a file, creating it if it does not exist",
+    description=(
+        "Writes a file to the local filesystem.\n\n"
+        "Usage:\n"
+        "- This tool will overwrite the existing file if there is one at the provided path.\n"
+        "- If this is an existing file, you MUST use the file_read tool first to read the "
+        "file's contents. This tool will fail if you did not read the file first.\n"
+        "- Prefer the file_edit tool for modifying existing files — it only sends the diff. "
+        "Only use this tool to create new files or for complete rewrites.\n"
+        "- NEVER create documentation files (*.md) or README files unless explicitly "
+        "requested by the user.\n"
+        "- Only use emojis if the user explicitly requests it. Avoid writing emojis to "
+        "files unless asked."
+    ),
     input_schema={
         "type": "object",
         "properties": {

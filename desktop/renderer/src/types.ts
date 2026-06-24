@@ -567,6 +567,9 @@ export interface ClientValidateModel {
   base_url: string;
   model_id: string;
   max_tokens: number;
+  name?: string;
+  /** Index of the model being edited; omit or -1 to add a new model. */
+  model_index?: number;
 }
 
 export interface ClientUpdateSkills {
@@ -693,6 +696,22 @@ export interface ContextUsageEvent {
   type: "context_usage";
   context_tokens: number;
   context_window: number;
+  session_id?: string;
+}
+
+export interface AgentStateSnapshot {
+  task_stage: string;
+  task_stage_history: Array<Record<string, unknown>>;
+  working_set: Record<string, unknown>;
+  turn_summaries: Array<Record<string, unknown>>;
+  delegate_history: Array<Record<string, unknown>>;
+  stuck_events: Array<Record<string, unknown>>;
+  tool_semantics: Record<string, unknown>;
+}
+
+export interface AgentStateEvent {
+  type: "agent_state";
+  state: AgentStateSnapshot;
   session_id?: string;
 }
 
@@ -1127,6 +1146,16 @@ export interface PermissionRequest {
   reason: string;
 }
 
+export interface PermissionPolicy {
+  value: "allow" | "deny" | "ask" | "default";
+  source?: "user" | "project" | "session" | "cli" | "hook" | "default";
+}
+
+export interface PermissionPolicies {
+  tools: Record<string, PermissionPolicy>;
+  capabilities: Record<string, PermissionPolicy>;
+}
+
 export interface EngineInstallRequestEvent {
   type: "engine_install_request";
   request_id: string;
@@ -1335,6 +1364,7 @@ export interface SessionSnapshot {
   branches: BranchMeta[];
   activeBranchId: string;
   running: boolean;
+  agentState?: AgentStateSnapshot | null;
 }
 
 export interface AppState {
@@ -1398,6 +1428,7 @@ export interface AppState {
   profile: ProfileData | null;
   inputMode: string;
   pendingPermission: string | null;
+  permissionPolicies: PermissionPolicies;
   tempChat: boolean;
   customCommands: CustomCommand[];
   branches: BranchMeta[];
@@ -1408,6 +1439,7 @@ export interface AppState {
   workflowState: WorkflowState | null;
   contextTokens: number;
   contextWindow: number;
+  agentState: AgentStateSnapshot | null;
 }
 
 export interface WorkflowTaskInfo {
@@ -1663,6 +1695,7 @@ export function createEmptySessionSnapshot(): SessionSnapshot {
     branches: [],
     activeBranchId: "",
     running: false,
+    agentState: null,
   };
 }
 
@@ -1722,6 +1755,7 @@ export function createEmptyState(): AppState {
     profile: null,
     inputMode: "",
     pendingPermission: null,
+    permissionPolicies: { tools: {}, capabilities: {} },
     tempChat: false,
     customCommands: [],
     agentConfig: {
@@ -1759,5 +1793,6 @@ export function createEmptyState(): AppState {
     workflowState: null,
     contextTokens: 0,
     contextWindow: 0,
+    agentState: null,
   };
 }

@@ -530,5 +530,9 @@ EncreTestRunTool = build_tool(
     },
     execute=_test_run_execute,
     intents=["coding", "data", "general"],
+    semantic_type="exec",
+    cost_level="high",
+    retryability="guarded",
+    safe_fallback="Scope the test filter, inspect raw failures, or verify the workspace and dependencies before rerunning tests.",
     is_concurrency_safe=lambda _: True,
 )

@@ -431,5 +431,9 @@ EncreGrepTool = build_tool(
     },
     execute=_grep_execute,
     intents=["general", "coding", "data"],
+    semantic_type="search",
+    cost_level="low",
+    retryability="auto",
+    safe_fallback="Narrow the path, add a file type filter, or refine the regex before retrying the search.",
     is_concurrency_safe=lambda _: True,
 )

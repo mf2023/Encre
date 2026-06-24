@@ -63,6 +63,10 @@ _TOOL_DEFAULTS = {
     "triggers": [],
     "always_available": False,
     "max_result_size_chars": 100_000,
+    "semantic_type": "general",
+    "cost_level": "medium",
+    "retryability": "auto",
+    "safe_fallback": "",
 }
 
 
@@ -86,6 +90,10 @@ class EncreTool:
     triggers: ClassVar[list[str]] = []
     always_available: bool = False
     max_result_size_chars: int = 100_000
+    semantic_type: str = "general"
+    cost_level: str = "medium"
+    retryability: str = "auto"
+    safe_fallback: str = ""
 
     async def execute(self, **kwargs: Any) -> str:
         raise NotImplementedError
@@ -116,6 +124,10 @@ class EncreTool:
             "category": self.category,
             "description": self.description,
             "parameters": self.input_schema,
+            "semantic_type": self.semantic_type,
+            "cost_level": self.cost_level,
+            "retryability": self.retryability,
+            "safe_fallback": self.safe_fallback,
         }
 
 
@@ -132,6 +144,10 @@ def build_tool(
     triggers: list[str] | None = None,
     always_available: bool | None = None,
     max_result_size_chars: int | None = None,
+    semantic_type: str | None = None,
+    cost_level: str | None = None,
+    retryability: str | None = None,
+    safe_fallback: str | None = None,
     is_concurrency_safe: Callable[[dict[str, Any]], bool] | None = None,
 ) -> EncreTool:
     """Create a tool object without subclassing ``EncreTool``.
@@ -181,6 +197,10 @@ def build_tool(
         "triggers": triggers if triggers is not None else _TOOL_DEFAULTS["triggers"],
         "always_available": always_available if always_available is not None else _TOOL_DEFAULTS["always_available"],
         "max_result_size_chars": max_result_size_chars if max_result_size_chars is not None else _TOOL_DEFAULTS["max_result_size_chars"],
+        "semantic_type": semantic_type if semantic_type is not None else _TOOL_DEFAULTS["semantic_type"],
+        "cost_level": cost_level if cost_level is not None else _TOOL_DEFAULTS["cost_level"],
+        "retryability": retryability if retryability is not None else _TOOL_DEFAULTS["retryability"],
+        "safe_fallback": safe_fallback if safe_fallback is not None else _TOOL_DEFAULTS["safe_fallback"],
         "_concurrency_check": is_concurrency_safe or (lambda _: False),
         "_execute_fn": execute,
         "execute": _make_execute(execute),

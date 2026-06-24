@@ -42,6 +42,7 @@ const NEW_TAB_OPTIONS: NewTabOption[] = [
   { id: "terminal", icon: "terminal" },
   { id: "editor", icon: "code-2" },
   { id: "review", icon: "eye" },
+  { id: "agent", icon: "bot" },
   { id: "info", icon: "file-text" },
 ];
 
@@ -53,6 +54,7 @@ function tabLabel(id: string): string {
     case "code": return t("sessionInner.tabCode");
     case "editor": return t("sessionInner.tabEditor");
     case "review": return t("sessionInner.tabReview");
+    case "agent": return t("sessionInner.tabAgent");
     default: return id;
   }
 }
@@ -78,6 +80,9 @@ export class SessionInner {
   private tabList: HTMLElement;
   private tabBody: HTMLElement;
   private infoBody!: HTMLElement;
+  private tabAddBtn: HTMLButtonElement | null = null;
+  private tabAddDropdown: HTMLDivElement | null = null;
+  private tabAddDocClickHandler: ((e: MouseEvent) => void) | null = null;
   private tabs: TabDef[] = [
     { id: "info", closable: true },
   ];
@@ -132,10 +137,18 @@ export class SessionInner {
 
   render(): void {
     this.renderContent();
+    const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]') as HTMLElement | null;
+    if (agentPanel) {
+      this.renderAgentPanel(agentPanel);
+    }
   }
 
   renderForce(): void {
     this.renderContent();
+    const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]') as HTMLElement | null;
+    if (agentPanel) {
+      this.renderAgentPanel(agentPanel);
+    }
   }
 
   /* ── Tab Management ─────────────────────────────────────────────── */
@@ -167,15 +180,24 @@ export class SessionInner {
   }
 
   private bindAddButton(): void {
+    this.tabAddBtn?.remove();
+    this.tabAddDropdown?.remove();
+    if (this.tabAddDocClickHandler) {
+      document.removeEventListener("click", this.tabAddDocClickHandler);
+      this.tabAddDocClickHandler = null;
+    }
+
     const btn = document.createElement("button");
     btn.className = "tab-add-btn";
     btn.title = t("sessionInner.newTab");
     btn.innerHTML = `<i data-lucide="plus" class="lucide lucide-sm"></i>`;
     this.tabBar.appendChild(btn);
+    this.tabAddBtn = btn;
 
     const dropdown = document.createElement("div");
     dropdown.className = "tab-add-dropdown hidden";
     document.body.appendChild(dropdown);
+    this.tabAddDropdown = dropdown;
 
     const rebuildDropdown = () => {
       const openIds = new Set(this.tabs.map((t) => t.id));
@@ -218,11 +240,12 @@ export class SessionInner {
       toggle();
     });
 
-    document.addEventListener("click", (e) => {
+    this.tabAddDocClickHandler = (e: MouseEvent) => {
       if (!btn.contains(e.target as Node) && !dropdown.contains(e.target as Node)) {
         dropdown.classList.add("hidden");
       }
-    });
+    };
+    document.addEventListener("click", this.tabAddDocClickHandler);
   }
 
   public getTabs(): TabDef[] {
@@ -261,8 +284,16 @@ export class SessionInner {
     // so querySelector'ing inside that container would not find it.
     document.querySelectorAll(".si-term-shell-dropdown").forEach((el) => el.remove());
 
-    // Remove the per-tab "new tab" dropdown from document.body.
-    document.querySelectorAll(".tab-add-dropdown").forEach((el) => el.remove());
+    // Rebuild the "+" tab affordance after reset. Its dropdown lives on
+    // document.body, so removing it without rebinding leaves the button inert.
+    this.tabAddBtn?.remove();
+    this.tabAddBtn = null;
+    this.tabAddDropdown?.remove();
+    this.tabAddDropdown = null;
+    if (this.tabAddDocClickHandler) {
+      document.removeEventListener("click", this.tabAddDocClickHandler);
+      this.tabAddDocClickHandler = null;
+    }
 
     // Remove every panel DOM node; renderTabs() will recreate the default
     // "info" tab from scratch on the next render cycle.
@@ -272,6 +303,7 @@ export class SessionInner {
     this.tabs = [{ id: "info", closable: false }];
     this.activeTab = "info";
     await this.renderTabs();
+    this.bindAddButton();
   }
 
   public async createTab(id: string): Promise<void> {
@@ -307,6 +339,8 @@ export class SessionInner {
         this.setupEditorPanel(panel);
       } else if (t.id === "review") {
         this.setupReviewPanel(panel);
+      } else if (t.id === "agent") {
+        this.setupAgentPanel(panel);
       }
 
       this.tabBody.appendChild(panel);
@@ -1222,6 +1256,164 @@ export class SessionInner {
     } else {
       await load(undefined, false);
     }
+  }
+
+  private setupAgentPanel(panel: HTMLElement): void {
+    panel.innerHTML = `<div class="session-inner-sidebar-body"><div class="si-agent-root"></div></div>`;
+    this.renderAgentPanel(panel);
+  }
+
+  private renderAgentPanel(panel: HTMLElement): void {
+    const root = panel.querySelector(".si-agent-root") as HTMLElement | null;
+    if (!root) return;
+
+    const agentState = getState().agentState;
+    if (!agentState) {
+      root.innerHTML = `<div class="si-panel-empty">${this.esc(t("sessionInner.agentNoState"))}</div>`;
+      return;
+    }
+
+    const workingSet = (agentState.working_set || {}) as Record<string, unknown>;
+    const tools = this.asStringList(workingSet.tools);
+    const artifacts = this.asStringList(workingSet.artifacts);
+    const references = this.asStringList(workingSet.references);
+    const planItems = this.asStringList(workingSet.plan_items);
+    const delegates = Array.isArray(agentState.delegate_history) ? agentState.delegate_history.slice(-6).reverse() : [];
+    const stuckEvents = Array.isArray(agentState.stuck_events) ? agentState.stuck_events.slice(-6).reverse() : [];
+    const stages = Array.isArray(agentState.task_stage_history) ? agentState.task_stage_history.slice(-8).reverse() : [];
+
+    root.innerHTML = `<div class="si-panels">
+      <div class="si-panel">
+        ${this.panelHeader("agent-overview", t("sessionInner.agentOverview"), "bot")}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-overview") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            <div class="si-agent-stage-row">
+              <span class="si-agent-label">${this.esc(t("sessionInner.agentCurrentStage"))}</span>
+              <span class="si-agent-stage-badge">${this.esc(agentState.task_stage || t("sessionInner.agentUnknown"))}</span>
+            </div>
+            <div class="si-agent-kv-grid">
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.agentDelegations"))}</span><span class="si-agent-v">${delegates.length}</span></div>
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.agentStuckEvents"))}</span><span class="si-agent-v">${stuckEvents.length}</span></div>
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.tools"))}</span><span class="si-agent-v">${tools.length}</span></div>
+              <div class="si-agent-kv"><span class="si-agent-k">${this.esc(t("sessionInner.agentPlanItems"))}</span><span class="si-agent-v">${planItems.length}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-working-set", t("sessionInner.agentWorkingSet"), "layers")}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-working-set") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentListSection(t("sessionInner.agentSectionTools"), tools)}
+            ${this.renderAgentListSection(t("sessionInner.agentSectionArtifacts"), artifacts)}
+            ${this.renderAgentListSection(t("sessionInner.agentSectionReferences"), references)}
+            ${this.renderAgentListSection(t("sessionInner.agentSectionPlan"), planItems)}
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-delegates", t("sessionInner.agentDelegation"), "git-branch", delegates.length > 0 ? String(delegates.length) : undefined)}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-delegates") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentEventList(delegates, t("sessionInner.agentNoDelegation"))}
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-stuck", t("sessionInner.agentRecovery"), "siren", stuckEvents.length > 0 ? String(stuckEvents.length) : undefined)}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-stuck") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentEventList(stuckEvents, t("sessionInner.agentNoRecovery"))}
+          </div>
+        </div>
+      </div>
+      <div class="si-panel">
+        ${this.panelHeader("agent-stages", t("sessionInner.agentStageHistory"), "route", stages.length > 0 ? String(stages.length) : undefined)}
+        <div class="si-panel-body${this.collapsedPanels.has("agent-stages") ? " hidden" : ""}">
+          <div class="si-panel-inner">
+            ${this.renderAgentEventList(stages, t("sessionInner.agentNoStages"))}
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+    this.bindAgentPanel(panel);
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: panel });
+    }
+  }
+
+  private bindAgentPanel(panel: HTMLElement): void {
+    panel.querySelectorAll(".si-panel-header").forEach((header) => {
+      header.addEventListener("click", () => {
+        const panelId = (header as HTMLElement).dataset.panel!;
+        this.togglePanel(panelId);
+        this.renderAgentPanel(panel);
+      });
+    });
+  }
+
+  private renderAgentListSection(label: string, items: string[]): string {
+    return `<div class="si-agent-section">
+      <div class="si-agent-section-title">${this.esc(label)}</div>
+      ${items.length > 0
+        ? `<div class="si-agent-chip-list">${items.map((item) => `<span class="si-agent-chip">${this.esc(item)}</span>`).join("")}</div>`
+        : `<div class="si-agent-empty-inline">${this.esc(t("sessionInner.agentEmptyInline"))}</div>`}
+    </div>`;
+  }
+
+  private renderAgentEventList(items: Array<Record<string, unknown>>, emptyText: string): string {
+    if (!items.length) {
+      return `<div class="si-agent-empty-inline">${this.esc(emptyText)}</div>`;
+    }
+    return `<div class="si-agent-event-list">${items.map((item) => {
+      const entries = Object.entries(item)
+        .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
+        .slice(0, 4);
+      const title = this.esc(this.getAgentEventTitle(item, entries));
+      const meta = entries.slice(1).map(([key, value]) =>
+        `<span class="si-agent-event-meta"><span class="si-agent-event-key">${this.esc(key)}</span>${this.esc(this.stringifyAgentValue(value))}</span>`
+      ).join("");
+      return `<div class="si-agent-event">
+        <div class="si-agent-event-title">${title}</div>
+        ${meta ? `<div class="si-agent-event-row">${meta}</div>` : ""}
+      </div>`;
+    }).join("")}</div>`;
+  }
+
+  private asStringList(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => this.stringifyAgentValue(item))
+      .filter((item) => item.length > 0);
+  }
+
+  private getAgentEventTitle(
+    item: Record<string, unknown>,
+    entries: Array<[string, unknown]>,
+  ): string {
+    const preferredKeys = ["summary", "message", "stage", "agent", "name", "reason", "status", "tool"];
+    for (const key of preferredKeys) {
+      const text = this.stringifyAgentValue(item[key]);
+      if (text) return text;
+    }
+    if (entries.length > 0) {
+      return this.stringifyAgentValue(entries[0][1]);
+    }
+    return t("sessionInner.agentEvent");
+  }
+
+  private stringifyAgentValue(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    if (Array.isArray(value)) return value.map((item) => this.stringifyAgentValue(item)).filter(Boolean).join(", ");
+    if (value && typeof value === "object") {
+      const pairs = Object.entries(value as Record<string, unknown>)
+        .slice(0, 3)
+        .map(([key, inner]) => `${key}: ${this.stringifyAgentValue(inner)}`);
+      return pairs.join(" | ");
+    }
+    return "";
   }
 
   private parseDiff(output: string): string {

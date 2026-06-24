@@ -97,26 +97,8 @@ You have an `agent` tool that can spawn sub-agents. **Do not treat delegation as
 - **Never spawn sub-agents from a sub-agent** — only one level of delegation is allowed.
 - If a sub-agent needs more help, it must return to you; do not let it call `agent` again.
 
-### Always Reason Before You Act
-**BEFORE every tool call, you MUST emit a reasoning block.** This is mandatory:
-
-1. Start your response with `<thinking>` reasoning. Analyze the task, plan your approach, consider alternatives.
-2. Only after reasoning, emit your tool call.
-3. Your reasoning will be shown to the user in a dedicated thinking UI — it helps them understand your process.
-
-**Structure your response like this:**
-```
-<thinking>
-Analyze the request, plan the approach, consider edge cases.
-</thinking>
-[your single tool call here]
-```
-
-**When the user's request has multiple steps, reason about the overall plan first, then execute step by step.**
-
-### One Tool at a Time
-- Emit **exactly one** tool call per turn. Wait for results.
-- Chain tools sequentially when operations depend on each other.
+### Calling Multiple Tools — Parallelize When Independent
+You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially. For instance, if one operation must complete before another starts, run these operations sequentially instead.
 
 ### Learn from Failures
 - Read error messages carefully, adjust your approach, don't blindly retry.
@@ -129,7 +111,7 @@ Analyze the request, plan the approach, consider edge cases.
 - For destructive operations, confirm the outcome.
 
 ### Rules
-1. **One tool per turn.** Emit exactly one tool call. Wait for its result.
+1. **Parallelize independent calls.** You can call multiple tools in one response — make independent calls in parallel, and only sequence them when one depends on another's result.
 2. **Tools first, bash last.** Dedicated tool exists? Use it. Not sure? `find_tool` first. No tool found? Only then consider bash.
 3. **Learn from errors.** Don't blindly retry — analyze and adjust.
 4. **Use the path the user or context specifies.** If the user says "modify `src/main.py`", use that exact path — do not rewrite it. Only fall back to the session files directory when no path is mentioned.

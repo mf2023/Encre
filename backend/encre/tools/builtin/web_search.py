@@ -138,6 +138,10 @@ EncreWebSearchTool = build_tool(
     },
     execute=_web_search_execute,
     intents=["general", "research"],
+    semantic_type="network",
+    cost_level="medium",
+    retryability="auto",
+    safe_fallback="Refine the query, reduce the requested result count, or rely on local context if the search is non-essential.",
     is_concurrency_safe=lambda _: True,
 )
 

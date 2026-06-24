@@ -107,8 +107,13 @@ class OpenAICompatibleBackend(OpenAISSEBackend):
         context_window: int = 0,
         **kwargs: Any,
     ) -> None:
-        # Normalise the base URL: many providers use /v1, but users may omit it.
+        # Normalise the base URL: many providers use /v1, but users may omit it
+        # -- and some users paste the full chat-completions endpoint.  Strip a
+        # trailing ``/chat/completions`` first so the path is not doubled (the
+        # request layer appends ``/chat/completions`` itself); only then decide
+        # whether ``/v1`` needs to be added.
         base_url = (base_url or "").rstrip("/")
+        base_url = base_url.removesuffix("/chat/completions").rstrip("/")
         if base_url and not base_url.endswith("/v1") and not re.search(r"/v\d+$", base_url):
             base_url = base_url + "/v1"
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)

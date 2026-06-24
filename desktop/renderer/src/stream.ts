@@ -151,6 +151,7 @@ function _requiresExplicitSessionId(type: ServerEvent["type"]): boolean {
     type === "messages_updated" ||
     type === "rollback_checkout" ||
     type === "telemetry" ||
+    type === "agent_state" ||
     type === "context_usage" ||
     type === "artifacts_update" ||
     type === "references_update";
@@ -557,6 +558,16 @@ export function handleEvent(event: ServerEvent): void {
       }
       _activeStreamSessionId = "";
       state.setRunning(false, _eventSessionId(event));
+      // For error finishes without a streaming assistant (e.g. API failed
+      // immediately, no text_delta received), create a placeholder so the
+      // error card renders on the correct turn rather than the previous one.
+      if (event.reason === "error" || event.error) {
+        const msgs = state.getState().messages;
+        const hasStreaming = msgs.some(m => m.role === "assistant" && m.isStreaming);
+        if (!hasStreaming) {
+          state.startAssistantMessage();
+        }
+      }
       // Store server-side message ID before finishing — emit() in
       // finishAssistantMessage will trigger segment cache save with this set.
       const sid = _eventSessionId(event);
@@ -646,6 +657,10 @@ export function handleEvent(event: ServerEvent): void {
     case "configured":
       console.log("[stream] configured event, config keys:", Object.keys(event.config ?? {}));
       state.setSettings({ ...state.getState().settings, ...event.config });
+      if (event.config && typeof event.config === "object" && "permission_settings" in event.config) {
+        const raw = (event.config as Record<string, unknown>).permission_settings;
+        state.setPermissionPolicies(normalizePermissionPolicies(raw));
+      }
       break;
 
     case "telemetry":
@@ -963,6 +978,12 @@ export function handleEvent(event: ServerEvent): void {
         (event as any).context_window,
         _eventSessionId(event as any),
       );
+      (window as any).__sessionInner?.render?.();
+      break;
+
+    case "agent_state":
+      if (!_hasSessionId(event as any)) break;
+      state.setAgentState((event as any).state, _eventSessionId(event as any));
       (window as any).__sessionInner?.render?.();
       break;
 
@@ -1406,4 +1427,42 @@ export function downloadMarkdownFile(markdown: string, filename: string): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function normalizePermissionPolicies(raw: unknown): import("./types.js").PermissionPolicies {
+  const empty: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
+  if (!raw || typeof raw !== "object") return empty;
+  const result: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
+  const capabilityKeys = new Set([
+    "network", "file", "bash_io", "docker", "browser",
+    "workflow", "git", "deploy", "desktop", "database", "misc", "mcp",
+  ]);
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const policy = normalizePolicyValue(value);
+    if (policy) {
+      if (capabilityKeys.has(key)) result.capabilities[key] = policy;
+      else result.tools[key] = policy;
+    }
+  }
+  return result;
+}
+
+function normalizePolicyValue(raw: unknown): import("./types.js").PermissionPolicy | null {
+  if (typeof raw === "string") {
+    const value = raw as "allow" | "deny" | "ask" | "default";
+    if (["allow", "deny", "ask", "default"].includes(value)) {
+      return { value };
+    }
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const value = obj.value;
+    if (typeof value === "string" && ["allow", "deny", "ask", "default"].includes(value)) {
+      return {
+        value: value as "allow" | "deny" | "ask" | "default",
+        source: typeof obj.source === "string" ? (obj.source as any) : undefined,
+      };
+    }
+  }
+  return null;
 }
