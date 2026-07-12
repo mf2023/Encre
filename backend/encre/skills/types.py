@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Skill type definitions.
+
+Defines the enums (:class:`SkillContext`, :class:`SkillSource`), the source
+priority ordering, and the :class:`BundledSkillDefinition` dataclass that
+describes a single registered skill.
+"""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -30,17 +37,23 @@ from typing import Any
 
 
 class SkillContext(str, Enum):
+    """Where a skill's prompt is injected when activated."""
+
     INLINE = "inline"
     FORK = "fork"
 
 
 class SkillSource(str, Enum):
+    """Origin of a skill definition (lower number = higher precedence)."""
+
     MANAGED = "managed"
     USER = "user"
     PROJECT = "project"
     BUNDLED = "bundled"
 
 
+# Priority ordering for skill sources: managed overrides user, user overrides
+# project, project overrides bundled.  Used during registration conflict resolution.
 _PRIORITY_ORDER: dict[SkillSource, int] = {
     SkillSource.MANAGED: 0,
     SkillSource.USER: 1,
@@ -51,6 +64,30 @@ _PRIORITY_ORDER: dict[SkillSource, int] = {
 
 @dataclass
 class BundledSkillDefinition:
+    """A registered skill: its metadata plus a callable that renders its prompt.
+
+    Attributes:
+        name: Unique skill identifier (lowercase, hyphen-separated).
+        description: Short human-readable summary.
+        get_prompt_for_command: Coroutine returning the skill's prompt for the
+            given arguments and context.
+        aliases: Alternative names that resolve to this skill.
+        when_to_use: File-extension hints that trigger auto-activation.
+        argument_hint: Usage hint for the argument string.
+        allowed_tools: Tool names the skill is permitted to use (``None`` = all).
+        model: Optional model override for the skill.
+        disable_model_invocation: If true, the skill only emits instructions.
+        user_invocable: Whether the skill can be invoked by the user directly.
+        context: :class:`SkillContext` (inline or forked sub-agent).
+        source: :class:`SkillSource` provenance.
+        file_path: Path to the source SKILL.md, if loaded from disk.
+        body: Raw prompt body loaded from the skill file.
+        hidden: Hide from user-facing skill listings.
+        license: Agent-Skills standard ``license`` field.
+        compatibility: Agent-Skills standard ``compatibility`` field.
+        metadata: Arbitrary extra metadata key/value pairs.
+    """
+
     name: str
     description: str
     get_prompt_for_command: Callable[[str | None, dict[str, Any]], Awaitable[str]]

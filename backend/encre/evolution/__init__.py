@@ -21,7 +21,23 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Evolution subsystem for Encre.
+
+Brings self-improving behaviour to the agent:
+
+* :mod:`encre.evolution.learner` -- records successful tool usages and
+  errors, then supplies guidance for future calls.
+* :mod:`encre.evolution.optimizer` -- learns per-tool strategy preferences.
+* :mod:`encre.evolution.reflex` -- a reflexion-style self-correction loop.
+* :mod:`encre.evolution.meta` -- metacognitive capability tracking.
+* :mod:`encre.evolution.plan_do_review` -- hierarchical task planning.
+* :mod:`encre.evolution.config` -- aggregate configuration object.
+
+:class:`EvolutionConfig` wires the individual components together and
+toggles each one on or off.
+"""
 
 from encre.evolution.config import EvolutionConfig
 from encre.evolution.learner import EncreEvolutionLearner, ErrorRecord, SuccessRecord

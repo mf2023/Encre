@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Learns from explicit user corrections to tool errors.
+
+:class:`EncreFeedbackLearner` stores :class:`CorrectionRecord` entries
+indexed by tool name.  When the agent is about to retry a failing tool it
+can ask for :meth:`get_relevant_feedback`, which returns the past
+corrections most similar to the current error context.  Records decay and
+become stale over time so outdated advice is eventually dropped.
+"""
 
 import json
 import os
@@ -32,6 +41,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CorrectionRecord:
+    """A user-supplied correction for a specific tool error."""
     tool_name: str
     error_type: str
     error_context: str
@@ -42,6 +52,7 @@ class CorrectionRecord:
     stale: bool = False
 
     def to_dict(self) -> dict:
+        """Serialise the record to a plain dictionary."""
         return {
             "tool_name": self.tool_name,
             "error_type": self.error_type,
@@ -55,6 +66,7 @@ class CorrectionRecord:
 
     @classmethod
     def from_dict(cls, d: dict) -> "CorrectionRecord":
+        """Reconstruct a record from a dictionary produced by :meth:`to_dict`."""
         return cls(
             tool_name=d["tool_name"],
             error_type=d["error_type"],
@@ -68,11 +80,13 @@ class CorrectionRecord:
 
 
 class EncreFeedbackLearner:
+    """Remembers user corrections and recalls them when a tool fails again."""
     MAX_RECORDS: int = 100
     STALE_THRESHOLD: int = 5
     REMOVE_THRESHOLD: int = 10
 
     def __init__(self, storage_path: str | None = None) -> None:
+        """Initialise the record list and resolve the storage path."""
         self._records: list[CorrectionRecord] = []
         if storage_path is None:
             from encre.config import get_data_dir
@@ -89,6 +103,7 @@ class EncreFeedbackLearner:
         error_context: str,
         user_correction: str,
     ) -> None:
+        """Record a user correction, merging with a similar past record."""
         existing_idx = self._find_similar(tool_name, error_type, error_context)
         if existing_idx >= 0:
             rec = self._records[existing_idx]
@@ -112,6 +127,7 @@ class EncreFeedbackLearner:
             self._prune()
 
     def _find_similar(self, tool_name: str, error_type: str, context: str) -> int:
+        """Index lookup for a non-stale record matching type + context."""
         indices = self._tool_index.get(tool_name, [])
         for idx in indices:
             rec = self._records[idx]
@@ -124,6 +140,7 @@ class EncreFeedbackLearner:
         return -1
 
     def _context_similarity(self, a: str, b: str) -> float:
+        """Jaccard similarity of context tokens, with a length bonus."""
         if not a or not b:
             return 0.0
         a_tokens = set(re.findall(r'[a-zA-Z_]\w*', a.lower()))
@@ -144,6 +161,7 @@ class EncreFeedbackLearner:
         return min(jaccard, 1.0)
 
     def get_relevant_feedback(self, tool_name: str, context: str) -> str:
+        """Return the most relevant past corrections for this tool/context."""
         indices = self._tool_index.get(tool_name, [])
         if not indices:
             return ""
@@ -169,6 +187,7 @@ class EncreFeedbackLearner:
         return "\n".join(lines)
 
     def _apply_decay(self) -> None:
+        """Age records; mark them stale after 30 days + threshold misses."""
         now = time.time()
         for rec in self._records:
             if rec.stale:
@@ -181,6 +200,7 @@ class EncreFeedbackLearner:
         self._cleanup_stale()
 
     def _cleanup_stale(self) -> None:
+        """Drop stale records once enough have accumulated."""
         stale_indices = {i for i, rec in enumerate(self._records) if rec.stale}
         if not stale_indices:
             return
@@ -189,6 +209,7 @@ class EncreFeedbackLearner:
             self._rebuild_index()
 
     def _rebuild_index(self) -> None:
+        """Rebuild the per-tool index of records from scratch."""
         self._tool_index.clear()
         for idx, rec in enumerate(self._records):
             if rec.tool_name not in self._tool_index:
@@ -196,6 +217,7 @@ class EncreFeedbackLearner:
             self._tool_index[rec.tool_name].append(idx)
 
     def _prune(self) -> None:
+        """Apply decay then drop the least-triggering records past the cap."""
         if len(self._records) > self.MAX_RECORDS:
             self._apply_decay()
         if len(self._records) > self.MAX_RECORDS:
@@ -208,6 +230,7 @@ class EncreFeedbackLearner:
             self._rebuild_index()
 
     def save(self) -> None:
+        """Persist records to disk (applying decay first)."""
         self._apply_decay()
         data = [rec.to_dict() for rec in self._records]
         os.makedirs(os.path.dirname(self._storage_path), exist_ok=True)
@@ -215,6 +238,7 @@ class EncreFeedbackLearner:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def load(self) -> bool:
+        """Load persisted records; returns ``True`` on success."""
         if not os.path.exists(self._storage_path):
             return False
         try:
@@ -228,19 +252,23 @@ class EncreFeedbackLearner:
             return False
 
     def reset(self) -> None:
+        """Clear all records and the tool index."""
         self._records.clear()
         self._tool_index.clear()
 
     @property
     def record_count(self) -> int:
+        """Total number of stored records (incl. stale)."""
         return len(self._records)
 
     @property
     def active_count(self) -> int:
+        """Number of non-stale (still-relevant) records."""
         return sum(1 for rec in self._records if not rec.stale)
 
 
 def cut_str(s: str, max_len: int) -> str:
+    """Truncate a string to ``max_len`` characters with an ellipsis."""
     if len(s) <= max_len:
         return s
     return s[:max_len - 3] + "..."

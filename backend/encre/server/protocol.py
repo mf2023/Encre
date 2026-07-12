@@ -21,7 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre WebSocket protocol: typed client/server messages.
+
+This module defines the wire format exchanged between the desktop client and the
+:mod:`encre.server.ws` handler.  Client messages are dataclasses
+(``Client*``) with a ``from_dict`` constructor; server messages are produced by
+the ``encode_*`` convenience functions, which optionally AES-encrypt the JSON
+payload.
+
+Security note: sensitive client/server payloads may be AES-256-GCM encrypted
+(see :func:`_parse_client_encrypted` / :func:`encode_server_encrypted`).  A
+plaintext ``{...}`` payload is treated as a legacy/backwards-compatible message.
+"""
 
 import json
 from dataclasses import dataclass, field
@@ -117,11 +130,52 @@ ClientMessageType = Literal[
     "automation_create_job",
     "automation_cancel_job",
     "automation_get_history",
+    "steer",
+    "spec_approve",
+    "spec_reject",
 ]
 
 
 @dataclass
+class ClientSteer:
+    """Mid-run instruction injection.
+
+    Unlike ``ClientRun``, this does NOT start a new turn.  Instead it
+    queues the instruction into the agent's ``SteerQueue`` so the
+    currently-running loop iteration picks it up before the next API call.
+    """
+
+    type: str = "steer"
+    session_id: str | None = None
+    prompt: str = ""
+
+
+@dataclass
+class ClientSpecApprove:
+    """Approve the current spec, allowing the agent to proceed with implementation."""
+
+    type: str = "spec_approve"
+    session_id: str | None = None
+
+
+@dataclass
+class ClientSpecReject:
+    """Reject the current spec with feedback, asking the agent to revise."""
+
+    type: str = "spec_reject"
+    session_id: str | None = None
+    feedback: str = ""
+
+
+@dataclass
 class ClientRun:
+    """Request to run a prompt through the agent (the primary user action).
+
+    Carries the prompt, optional system prompt, target session, attachments,
+    slash-command mode, and an ``iclaw`` channel flag for iClaw runs.
+    ``temp_chat`` marks ephemeral sessions that are never persisted.
+    """
+
     type: str = "run"
     prompt: str = ""
     system_prompt: str | None = None
@@ -1159,6 +1213,8 @@ class ClientAutomationDeleteJob:
         )
 
 
+# The discriminated union of every client message type understood by the handler.
+# ``parse_client_message`` returns one of these based on the wire ``type`` field.
 ClientMessage = (
     ClientRun
     | ClientRespondPermission
@@ -1236,6 +1292,13 @@ ClientMessage = (
 
 
 def parse_client_message(raw: str | bytes) -> ClientMessage | None:
+    """Parse a raw WebSocket frame into the matching ``Client*`` message.
+
+    Decrypts the payload if it is ciphertext (see
+    :func:`_parse_client_encrypted`), then dispatches on the ``type``
+    field via the ``parsers`` table.  Returns ``None`` for unknown or
+    unparseable frames so the handler can emit a safe error.
+    """
     decrypted = _parse_client_encrypted(raw)
     try:
         if isinstance(decrypted, bytes):

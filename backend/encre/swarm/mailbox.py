@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Point-to-point message passing between swarm agents.
+#
+# ``EncreMailbox`` is an asyncio-queue-backed inbox owned by one agent.  Agents
+# ``send`` messages to another mailbox (delivering to its queue and archiving a
+# copy) and ``receive`` (blocking with a timeout).  ``peek``/``clear`` support
+# inspection and reset.  It is the lightweight channel used for consensus
+# voting and teammate-to-teammate communication.
 
 import asyncio
 import contextlib
@@ -31,6 +39,11 @@ from dataclasses import dataclass, field
 
 @dataclass
 class MailboxMessage:
+    """One message delivered through a mailbox.
+
+    Carries the sender id, payload ``content``, an optional metadata dict, and
+    an auto-assigned timestamp.
+    """
     sender: str
     content: str
     timestamp: float = field(default_factory=time.time)
@@ -38,6 +51,14 @@ class MailboxMessage:
 
 
 class EncreMailbox:
+    """Async inbox/outbox for a single swarm participant.
+
+    Messages are queued (bounded by ``max_messages`` with oldest-eviction) and
+    also archived in ``_received`` for auditing.  ``receive`` blocks up to the
+    mailbox's ``timeout`` (overridable per call) and returns ``None`` on
+    timeout.  ``peek`` non-destructively inspects pending messages; ``clear``
+    empties everything.
+    """
     def __init__(self, owner_id: str = "", max_messages: int = 100, timeout: float = 30.0):
         self.owner_id = owner_id
         self.max_messages = max_messages

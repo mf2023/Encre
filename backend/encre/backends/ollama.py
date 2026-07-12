@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Ollama backend -- locally-hosted models via the Ollama API.
@@ -147,6 +147,7 @@ class OllamaBackend(OpenAISSEBackend):
         try:
             client = self._get_client()
             base = self.api_base_url.rstrip("/").removesuffix("/v1")
+            # Query Ollama's native (non-OpenAI) API for the model's real context length.
             resp = await client.post(
                 f"{base}/api/show",
                 json={"name": self.model},

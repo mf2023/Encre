@@ -21,21 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
-
-"""High-fidelity grep that uses ripgrep when available, with a real Python
+"""High-fidelity grep that uses ripgrep when available, with a Rust-native
 fallback covering the same flag set. The flags mirror the ripgrep CLI so the
 model can rely on familiar semantics regardless of which backend runs."""
-
-from __future__ import annotations
 
 import asyncio
 import fnmatch
 import os
-import re
 import shutil
 from typing import Any
 
+from encre import native as _native
 from encre.tools.base import build_tool
 
 _TYPE_GLOBS: dict[str, list[str]] = {
@@ -58,6 +56,7 @@ _TYPE_GLOBS: dict[str, list[str]] = {
 
 
 async def _grep_execute(**kwargs: Any) -> str:
+    """Search files for a regex pattern. Uses ripgrep when available, falls back to Python."""
     pattern = str(kwargs.get("pattern", ""))
     path = str(kwargs.get("path") or ".")
     glob_filter = str(kwargs.get("glob") or "")
@@ -115,6 +114,7 @@ async def _run_rg(
     type_filter: str,
     head_limit: int | None,
 ) -> str:
+    """Search using ripgrep (rg) CLI with the given flags and output mode."""
     args: list[str] = [rg, "--color=never"]
     if case_insensitive:
         args.append("-i")
@@ -184,171 +184,103 @@ def _run_python(
     head_limit: int | None,
     multiline: bool,
 ) -> str:
-    flags = re.MULTILINE
-    if case_insensitive:
-        flags |= re.IGNORECASE
-    if multiline:
-        flags |= re.DOTALL
-    try:
-        regex = re.compile(pattern, flags)
-    except re.error as exc:
-        return f"Error: invalid regex: {exc}"
+    """Fallback grep using Rust native engine — returns context directly."""
+    rust_glob = glob_filter or None
 
-    files = list(_iter_files(path, glob_filter, type_filter))
+    try:
+        if output_mode in ("files_with_matches", "count"):
+            raw = _native.grep(pattern, path, case_insensitive, rust_glob, multiline, None, context_before, context_after)
+        else:
+            raw = _native.grep(pattern, path, case_insensitive, rust_glob, multiline, head_limit, context_before, context_after)
+    except Exception as exc:
+        return f"Error: grep failed: {exc}"
+
+    if not raw:
+        return "(no matches)"
+
+    if type_filter and type_filter in _TYPE_GLOBS:
+        type_globs = _TYPE_GLOBS[type_filter]
+        raw = [r for r in raw if any(
+            fnmatch.fnmatch(os.path.basename(r["file_path"]), g) for g in type_globs
+        )]
+
+    if not raw:
+        return "(no matches)"
 
     if output_mode == "files_with_matches":
-        return _py_files_with_matches(regex, files, multiline, head_limit)
+        return _fmt_files_with_matches(raw, head_limit)
     if output_mode == "count":
-        return _py_count(regex, files, multiline, head_limit)
-    return _py_content(
-        regex, files, show_numbers,
-        context_after, context_before, multiline, head_limit,
-    )
+        return _fmt_count(raw, head_limit)
+    return _fmt_content(raw, show_numbers, head_limit)
 
 
-def _iter_files(root: str, glob_filter: str, type_filter: str):
-    if os.path.isfile(root):
-        if _file_matches(root, glob_filter, type_filter):
-            yield root
-        return
-    if not os.path.isdir(root):
-        return
-    skip_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv",
-                 "dist", "build", "target", ".mypy_cache", ".pytest_cache",
-                 ".idea", ".vscode"}
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in skip_dirs]
-        for f in filenames:
-            full = os.path.join(dirpath, f)
-            if _file_matches(full, glob_filter, type_filter):
-                yield full
-
-
-def _file_matches(path: str, glob_filter: str, type_filter: str) -> bool:
-    name = os.path.basename(path)
-    if glob_filter:
-        # Support both "*.py" and "**/*.py" style globs
-        if "/" in glob_filter or "\\" in glob_filter:
-            norm_path = path.replace("\\", "/")
-            if not (fnmatch.fnmatch(norm_path, glob_filter)
-                    or fnmatch.fnmatch(name, glob_filter)):
-                return False
-        else:
-            if not fnmatch.fnmatch(name, glob_filter):
-                return False
-    if type_filter:
-        globs = _TYPE_GLOBS.get(type_filter)
-        if globs is None:
-            return False
-        if not any(fnmatch.fnmatch(name, g) for g in globs):
-            return False
-    return True
-
-
-def _read_text(path: str) -> str | None:
-    try:
-        with open(path, "rb") as fh:
-            raw = fh.read(8 * 1024 * 1024)  # cap at 8 MiB per file
-    except (OSError, PermissionError):
-        return None
-    # Quick binary sniff
-    if b"\x00" in raw[:
-        8192]:
-        return None
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        try:
-            return raw.decode("utf-8", errors="replace")
-        except Exception:
-            return None
-
-
-def _py_files_with_matches(
-    regex: re.Pattern[str],
-    files: list[str],
-    multiline: bool,
+def _fmt_files_with_matches(
+    results: list[dict],
     head_limit: int | None,
 ) -> str:
-    hits: list[str] = []
-    for f in files:
-        text = _read_text(f)
-        if text is None:
-            continue
-        if multiline:
-            if regex.search(text):
-                hits.append(f)
-        else:
-            if any(regex.search(line) for line in text.splitlines()):
-                hits.append(f)
-        if head_limit is not None and len(hits) >= head_limit:
-            break
-    return "\n".join(hits) if hits else "(no matches)"
+    seen: set[str] = set()
+    files: list[str] = []
+    for r in results:
+        fp = r["file_path"]
+        if fp not in seen:
+            seen.add(fp)
+            files.append(fp)
+            if head_limit is not None and len(files) >= head_limit:
+                break
+    return "\n".join(sorted(files)) if files else "(no matches)"
 
 
-def _py_count(
-    regex: re.Pattern[str],
-    files: list[str],
-    multiline: bool,
+def _fmt_count(
+    results: list[dict],
     head_limit: int | None,
 ) -> str:
-    rows: list[str] = []
-    for f in files:
-        text = _read_text(f)
-        if text is None:
-            continue
-        count = len(regex.findall(text)) if multiline else sum(1 for line in text.splitlines() if regex.search(line))
-        if count:
-            rows.append(f"{f}:{count}")
-        if head_limit is not None and len(rows) >= head_limit:
-            break
-    return "\n".join(rows) if rows else "(no matches)"
+    counts: dict[str, int] = {}
+    for r in results:
+        counts[r["file_path"]] = counts.get(r["file_path"], 0) + 1
+    ordered = sorted(counts)
+    if head_limit is not None:
+        ordered = ordered[:head_limit]
+    return "\n".join(f"{fp}:{counts[fp]}" for fp in ordered) if ordered else "(no matches)"
 
 
-def _py_content(
-    regex: re.Pattern[str],
-    files: list[str],
+def _fmt_content(
+    results: list[dict],
     show_numbers: bool,
-    context_after: int,
-    context_before: int,
-    multiline: bool,
     head_limit: int | None,
 ) -> str:
+    from collections import defaultdict
+    by_file: dict[str, list[dict]] = defaultdict(list)
+    for r in results:
+        by_file[r["file_path"]].append(r)
+
     out_lines: list[str] = []
-    for f in files:
-        text = _read_text(f)
-        if text is None:
-            continue
-        if multiline:
-            # In multiline mode we emit each match with its byte/char position.
-            for m in regex.finditer(text):
-                start_line = text.count("\n", 0, m.start()) + 1
-                snippet = m.group(0)
-                if show_numbers:
-                    out_lines.append(f"{f}:{start_line}:{snippet}")
-                else:
-                    out_lines.append(f"{f}:{snippet}")
-                if head_limit is not None and len(out_lines) >= head_limit:
-                    break
-        else:
-            lines = text.splitlines()
-            emitted_idxs: set[int] = set()
-            for i, line in enumerate(lines):
-                if not regex.search(line):
-                    continue
-                lo = max(0, i - context_before)
-                hi = min(len(lines), i + context_after + 1)
-                for j in range(lo, hi):
-                    if j in emitted_idxs:
-                        continue
-                    emitted_idxs.add(j)
-                    sep = "-" if j != i else ":"
-                    if show_numbers:
-                        out_lines.append(f"{f}{sep}{j + 1}{sep}{lines[j]}")
-                    else:
-                        out_lines.append(f"{f}{sep}{lines[j]}")
-                if head_limit is not None and len(out_lines) >= head_limit:
-                    break
+    for file_path in sorted(by_file):
+        matches = by_file[file_path]
+
+        for m in matches:
+            segs: list[str] = []
+            if m["line_number"] == 0:
+                # Multiline — show entire matched snippet
+                segs.append(m["line_content"])
+                line = f"{file_path}:{segs[0]}"
+                out_lines.append(line)
+            else:
+                # Context before
+                for ln, lc in m.get("context_before", []):
+                    segs.append(f"{file_path}-{ln}-{lc}" if show_numbers else f"{file_path}-{lc}")
+                # The matched line
+                ln = m["line_number"]
+                lc = m["line_content"]
+                segs.append(f"{file_path}:{ln}:{lc}" if show_numbers else f"{file_path}:{lc}")
+                # Context after
+                for ln, lc in m.get("context_after", []):
+                    segs.append(f"{file_path}-{ln}-{lc}" if show_numbers else f"{file_path}-{lc}")
+
+                for s in segs:
+                    out_lines.append(s)
+
+            if head_limit is not None and len(out_lines) >= head_limit:
+                break
         if head_limit is not None and len(out_lines) >= head_limit:
             break
 
@@ -363,12 +295,10 @@ EncreGrepTool = build_tool(
     name="grep",
     description=(
         "Search files for a regex pattern. Wraps ripgrep when available, "
-        "with a full Python fallback. Supports context lines (-A/-B/-C), "
+        "with a Rust-native fallback. Supports context lines (-A/-B/-C), "
         "line numbers, multiline patterns, file-type filtering, glob filters, "
         "case-insensitive matching, head_limit, and three output modes.\n\n"
-        "DO NOT use this tool for searching persistent memory -- use "
-        "memory_search instead. DO NOT use this tool for searching the web "
-        "-- use web_search instead."
+        "For persistent memory search, use memory_search. For web search, use web_search."
     ),
     input_schema={
         "type": "object",
@@ -431,9 +361,12 @@ EncreGrepTool = build_tool(
     },
     execute=_grep_execute,
     intents=["general", "coding", "data"],
+    category="search",
+    triggers=["search", "find", "grep", "rg", "ripgrep", "search code", "code search"],
     semantic_type="search",
     cost_level="low",
     retryability="auto",
     safe_fallback="Narrow the path, add a file type filter, or refine the regex before retrying the search.",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

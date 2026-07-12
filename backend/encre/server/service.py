@@ -21,12 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Background service wrapper for the Encre server.
 
 Provides daemon infrastructure: PID file tracking, file logging,
 stale PID detection, and signal handling for graceful shutdown.
+
+The service is launched with ``--service`` from :mod:`encre.server.app` and is
+responsible only for process lifecycle.  All agent logic lives in
+:mod:`encre.server.app` / :mod:`encre.server.ws`.
 """
 
 import argparse

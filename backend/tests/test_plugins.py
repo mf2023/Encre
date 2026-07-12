@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for plugin system: manifest, plugin protocol, and registry."""
 
@@ -31,13 +31,20 @@ from encre.plugins.types import EncrePlugin, PluginManifest, PluginSource
 
 
 class TestPluginManifest:
+    """Test cases covering plugin manifest.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_create_minimal(self):
+        """Verifies that create minimal."""
         m = PluginManifest(name="test-plugin", version="0.1.0")
+        # Confirm the expected result for this scenario: create minimal.
         assert m.name == "test-plugin"
         assert m.version == "0.1.0"
         assert m.source == PluginSource.INSTALLED
 
     def test_create_full(self):
+        """Verifies that create full."""
         m = PluginManifest(
             name="full-plugin",
             version="1.0.0",
@@ -54,6 +61,7 @@ class TestPluginManifest:
             provides_hooks=["on_session_start"],
             provides_backends=["postgres"],
         )
+        # Confirm the expected result for this scenario: create full.
         assert m.name == "full-plugin"
         assert m.author == "Test Author"
         assert m.license == "Apache-2.0"
@@ -63,48 +71,76 @@ class TestPluginManifest:
         assert "db_query" in m.provides_tools
 
     def test_plugin_source_enum(self):
+        """Verifies that plugin source enum."""
+        # Confirm the expected result for this scenario: plugin source enum.
         assert PluginSource.BUNDLED.value == "bundled"
         assert PluginSource.INSTALLED.value == "installed"
         assert PluginSource.PROJECT.value == "project"
         assert PluginSource.USER.value == "user"
 
     def test_to_dict(self):
+        """Verifies that to dict."""
         m = PluginManifest(name="dict-test", version="0.1.0")
         d = m.to_dict()
+        # Confirm the expected result for this scenario: to dict.
         assert d["name"] == "dict-test"
         assert d["version"] == "0.1.0"
         assert d["source"] == "installed"
 
 
 class TestEncrePlugin:
+    """Test cases covering encre plugin.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_plugin_with_tools(self):
+        """Verifies that plugin with tools."""
         class MyPlugin(EncrePlugin):
+            """Test cases covering my plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="my-plugin", version="1.0.0")
 
             def get_tools(self):
+                """Verifies that get tools."""
                 return ["fake_tool"]
 
         plugin = MyPlugin()
+        # Confirm the expected result for this scenario: plugin with tools.
         assert plugin.manifest.name == "my-plugin"
         assert plugin.get_tools() == ["fake_tool"]
 
     def test_plugin_with_hooks(self):
+        """Verifies that plugin with hooks."""
         class HookPlugin(EncrePlugin):
+            """Test cases covering hook plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="hook-plugin", version="1.0.0")
 
             def get_hooks(self):
+                """Verifies that get hooks."""
                 return [("on_session_start", lambda: None)]
 
         plugin = HookPlugin()
         hooks = plugin.get_hooks()
+        # Confirm the expected result for this scenario: plugin with hooks.
         assert len(hooks) == 1
         assert hooks[0][0] == "on_session_start"
 
     def test_plugin_default_returns_empty(self):
+        """Verifies that plugin default returns empty."""
         class EmptyPlugin(EncrePlugin):
+            """Test cases covering empty plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="empty", version="0.1.0")
 
         plugin = EmptyPlugin()
+        # Confirm the expected result for this scenario: plugin default returns empty.
         assert plugin.get_tools() == []
         assert plugin.get_skills() == []
         assert plugin.get_hooks() == []
@@ -112,74 +148,122 @@ class TestEncrePlugin:
 
 
 class TestPluginRegistry:
+    """Test cases covering plugin registry.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_empty_registry(self):
+        """Verifies that empty registry."""
         registry = PluginRegistry()
+        # Confirm the expected result for this scenario: empty registry.
         assert registry.count == 0
         assert registry.active_count == 0
 
     def test_register_plugin(self):
+        """Verifies that register plugin."""
         class TestPlugin(EncrePlugin):
+            """Test cases covering plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="reg-test", version="1.0.0")
 
         registry = PluginRegistry()
         registry.register(TestPlugin())
+        # Confirm the expected result for this scenario: register plugin.
         assert registry.count == 1
 
     def test_register_duplicate_name(self):
+        """Verifies that register duplicate name."""
         class DupPlugin(EncrePlugin):
+            """Test cases covering dup plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="dup", version="1.0.0")
 
         registry = PluginRegistry()
         registry.register(DupPlugin())
         registry.register(DupPlugin())
+        # Confirm the expected result for this scenario: register duplicate name.
         assert registry.count == 1
 
     def test_activate_deactivate(self):
+        """Verifies that activate deactivate."""
         class ActPlugin(EncrePlugin):
+            """Test cases covering act plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="act-test", version="1.0.0")
 
         registry = PluginRegistry()
         plugin = ActPlugin()
         registry.register(plugin)
+        # Confirm the expected result for this scenario: activate deactivate.
         assert registry.activate("act-test") is True
         assert registry.active_count == 1
         assert registry.deactivate("act-test") is True
         assert registry.active_count == 0
 
     def test_unregister(self):
+        """Verifies that unregister."""
         class UnregPlugin(EncrePlugin):
+            """Test cases covering unreg plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="unreg-test", version="1.0.0")
 
         registry = PluginRegistry()
         registry.register(UnregPlugin())
+        # Confirm the expected result for this scenario: unregister.
         assert registry.unregister("unreg-test") is True
         assert registry.count == 0
 
     def test_get(self):
+        """Verifies that get."""
         class GetPlugin(EncrePlugin):
+            """Test cases covering get plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="get-test", version="1.0.0")
 
         registry = PluginRegistry()
         plugin = GetPlugin()
         registry.register(plugin)
+        # Confirm the expected result for this scenario: get.
         assert registry.get("get-test") is not None
         assert registry.get_manifest("get-test") is not None
 
     def test_list_all(self):
+        """Verifies that list all."""
         class ListPlugin(EncrePlugin):
+            """Test cases covering list plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="list-test", version="1.0.0")
 
         registry = PluginRegistry()
         registry.register(ListPlugin())
         manifests = registry.list_all()
+        # Confirm the expected result for this scenario: list all.
         assert len(manifests) == 1
         assert manifests[0].name == "list-test"
 
     def test_get_all_tools(self):
+        """Verifies that get all tools."""
         class ToolPlugin(EncrePlugin):
+            """Test cases covering tool plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="tool-plugin", version="1.0.0")
 
             def get_tools(self):
+                """Verifies that get tools."""
                 return ["tool1", "tool2"]
 
         registry = PluginRegistry()
@@ -187,13 +271,20 @@ class TestPluginRegistry:
         registry.register(plugin)
         registry.activate("tool-plugin")
         tools = registry.get_all_tools()
+        # Confirm the expected result for this scenario: get all tools.
         assert isinstance(tools, list)
 
     def test_get_all_skills(self):
+        """Verifies that get all skills."""
         class SkillPlugin(EncrePlugin):
+            """Test cases covering skill plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="skill-plugin", version="1.0.0")
 
             def get_skills(self):
+                """Verifies that get skills."""
                 return ["skill1"]
 
         registry = PluginRegistry()
@@ -201,13 +292,20 @@ class TestPluginRegistry:
         registry.register(plugin)
         registry.activate("skill-plugin")
         skills = registry.get_all_skills()
+        # Confirm the expected result for this scenario: get all skills.
         assert isinstance(skills, list)
 
     def test_get_all_hooks(self):
+        """Verifies that get all hooks."""
         class HookPlugin(EncrePlugin):
+            """Test cases covering hook plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="hook-plugin2", version="1.0.0")
 
             def get_hooks(self):
+                """Verifies that get hooks."""
                 return [("pre_tool_exec", lambda: None)]
 
         registry = PluginRegistry()
@@ -215,13 +313,20 @@ class TestPluginRegistry:
         registry.register(plugin)
         registry.activate("hook-plugin2")
         hooks = registry.get_all_hooks()
+        # Confirm the expected result for this scenario: get all hooks.
         assert isinstance(hooks, dict)
 
     def test_get_all_backends(self):
+        """Verifies that get all backends."""
         class BackendPlugin(EncrePlugin):
+            """Test cases covering backend plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="be-plugin", version="1.0.0")
 
             def get_backends(self):
+                """Verifies that get backends."""
                 return {"custom": "FakeBackend"}
 
         registry = PluginRegistry()
@@ -229,16 +334,23 @@ class TestPluginRegistry:
         registry.register(plugin)
         registry.activate("be-plugin")
         backends = registry.get_all_backends()
+        # Confirm the expected result for this scenario: get all backends.
         assert isinstance(backends, dict)
         assert "custom" in backends
 
     def test_reset(self):
+        """Verifies that reset."""
         class ResetPlugin(EncrePlugin):
+            """Test cases covering reset plugin.
+            
+            Covers the expected behavior and relevant edge cases.
+            """
             manifest = PluginManifest(name="reset-test", version="1.0.0")
 
         registry = PluginRegistry()
         registry.register(ResetPlugin())
         registry.activate("reset-test")
         registry.reset()
+        # Confirm the expected result for this scenario: reset.
         assert registry.count == 0
         assert registry.active_count == 0

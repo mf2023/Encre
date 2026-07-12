@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Web-research skill prompt loader.
+
+Loads the ``web_research`` prompt from the ``skills`` category and substitutes
+the research topic supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _web_research_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the web-research skill prompt for the given topic."""
     target = args or "the specified topic"
     return _loader.load_with_context("web_research", category="skills", target=target)

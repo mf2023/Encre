@@ -21,7 +21,23 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre WebSocket message handler.
+
+:class:`EncreWSHandler` is the per-connection handler bound to
+:class:`~encre.server.app.EncreServer`.  It receives typed client messages
+(parsed by :mod:`encre.server.protocol`), drives the agent runtime, and
+streams :class:`~encre.utils.types.AgentEvent` results back to the desktop
+client as JSON frames.
+
+The handler owns a great deal of the product surface: session lifecycle,
+model / skill / agent configuration, workspaces & code indexing, memory &
+rules, terminal control, branch/rollback editing, and the automation
+scheduler bridge.  iClaw (``channel == "iclaw"``) runs are dispatched
+through the adapter :class:`~encre.gateway.server.GatewayServer`'s
+EventRouter in a background task.
+"""
 
 import asyncio
 import base64
@@ -114,6 +130,9 @@ from encre.server.protocol import (
     ClientSetActiveModel,
     ClientSetGitignore,
     ClientSetPlanMode,
+    ClientSpecApprove,
+    ClientSpecReject,
+    ClientSteer,
     ClientSwitchBranch,
     ClientTerminalKill,
     ClientTerminalListShells,
@@ -182,6 +201,7 @@ from encre.utils.types import (  # noqa: E402
     PlanUpdate,
     QuestionRequest,
     Reference,
+    SystemMessage,
     TextDelta,
     ThinkingDelta,
     ToolCallDelta,
@@ -198,6 +218,15 @@ logger = logging.getLogger("encre.server.ws")
 
 
 class EncreWSHandler:
+    """Per-connection handler for the Encre WebSocket protocol.
+
+    One instance is created per :class:`~encre.server.app.EncreServer` and is
+    reused across connections.  It owns the session manager, optional index
+    manager, adapter manager and automation scheduler, and implements the big
+    ``handle`` dispatch loop that turns client protocol messages into agent
+    runs and server protocol frames.
+    """
+
     def __init__(self, session_manager: SessionManager, config: EncreConfig | None = None,
                  index_manager=None, adapter_manager=None, scheduler=None) -> None:
         self._manager = session_manager
@@ -220,6 +249,13 @@ class EncreWSHandler:
         self._tasks: set[asyncio.Task[Any]] = set()
 
     async def _send(self, ws, msg_type: str, **kwargs) -> None:
+        """Encode and send a server message, then deliver it over the WebSocket.
+
+        Honours the per-connection ``_client_encrypted`` flag so legacy
+        plaintext clients keep receiving plain JSON while encrypted clients
+        get AES-GCM frames.  On send failure (disconnect) the running
+        agent task is cancelled.
+        """
         encrypt = self._client_encrypted if self._client_encrypted is not None else False
         try:
             payload = encode_server_message(msg_type, encrypt=encrypt, **kwargs)
@@ -269,6 +305,27 @@ class EncreWSHandler:
             self._current_session_id = self._info.session_id
             # Tag with current channel so _list_all_sessions groups it correctly
             self._info.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"
+            # Restore permission_settings from persisted settings
+            try:
+                from encre.settings_manager import load_settings
+                stored = load_settings()
+                pset = stored.get("permission_settings")
+                if pset and hasattr(self._info.agent.config, "permission_settings"):
+                    self._info.agent.config.permission_settings = pset
+                    if hasattr(self._info.agent, "safety"):
+                        from encre.utils.types import PermissionAllow
+                        tools_dict = {}
+                        caps_dict = {}
+                        for k, v in pset.items():
+                            if v not in ("default", "allow", "deny", "ask"):
+                                continue
+                            if k in ("network", "file", "bash_io", "docker", "browser", "workflow", "git", "deploy", "desktop", "database", "misc", "mcp"):
+                                caps_dict[k] = v
+                            else:
+                                tools_dict[k] = v
+                        self._info.agent.safety.set_policies(tools_dict, caps_dict)
+            except Exception:
+                pass
             # Load MCP servers from the canonical mcp.json
             try:
                 from encre.tools.mcp_manager import default_mcp_config_path
@@ -281,6 +338,13 @@ class EncreWSHandler:
         return self._info
 
     async def handle(self, ws) -> None:
+        """Main per-connection message loop.
+
+        Reads raw WebSocket frames, parses them into typed client messages,
+        dispatches on their type (the large ``elif isinstance(msg, ...)``
+        chain below), drives the agent, and streams events back.  Also
+        handles startup-mode session restore and connection lifecycle.
+        """
         self._info = None
         self._current_session_id = None
         self._current_ws_id = ""
@@ -326,6 +390,9 @@ class EncreWSHandler:
                 logger.warning("[gateway_status] send error: %s", e)
 
         try:
+            # Main dispatch loop: read each WebSocket frame, parse it into a
+            # typed ClientMessage, then route on its type through the
+            # elif isinstance(msg, ...) chain below.
             async for raw in ws:
                 if self._client_encrypted is None:
                     text = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
@@ -473,6 +540,7 @@ class EncreWSHandler:
                                 session.agent.safety.set_policies(tools, capabilities)
                                 session.agent.config.permission_settings = {**session.agent.config.permission_settings, **raw}
                                 logger.info("[configure] applied permission_settings (%d tools, %d capabilities)", len(tools), len(capabilities))
+                    self._persist_settings(session)
                     await self._send(ws, "configured", config=msg.config)
 
                 elif isinstance(msg, ClientTestAdapter):
@@ -672,6 +740,10 @@ class EncreWSHandler:
                     if msg.specialty and msg.specialty != "general":
                         session.agent.loop.prompt_builder._specialty = msg.specialty
 
+                    # Wire the spec engine into the loop so spec mode can
+                    # parse specs and enforce the approval gate.
+                    session.agent.loop.spec_engine = self._spec_engine
+
                     active_agent = session.agent.config.get_active_agent()
                     if active_agent is not None:
                         if not msg.system_prompt:
@@ -685,7 +757,7 @@ class EncreWSHandler:
 
                     session.agent.config.slash_command_mode = msg.mode or ""
 
-                    session.agent.add_message("user", prompt)
+                    session.agent.add_message("user", prompt, mode=msg.mode or "")
                     if not session.agent.session.metadata.get("temp_chat"):
                         await self._manager._save_session_async(session)
                     logger.info("[run] session=%s workspace=%s", session.session_id[:8], self._workspace_path or "(none)")
@@ -882,6 +954,40 @@ class EncreWSHandler:
                         session.is_running = False
                         self._manager.release_slot()
                         await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)
+
+                elif isinstance(msg, ClientSteer):
+                    sid = msg.session_id or self._current_session_id or ""
+                    if sid:
+                        info = self._manager.get_session(sid)
+                    else:
+                        info = self._get_or_create_session()
+                    if info and info.agent and info.agent.loop:
+                        info.agent.loop._steer_queue.add(msg.prompt or "")
+                        logger.info("[steer] queued instruction for session=%s", info.session_id)
+                        await self._send(ws, "steer_queued", session_id=info.session_id)
+                    else:
+                        await self._send(ws, "steer_queued", session_id=sid, error="no_active_session")
+
+                elif isinstance(msg, ClientSpecApprove):
+                    self._spec_engine.approve()
+                    spec = self._spec_engine.current_spec
+                    if spec:
+                        logger.info("[spec] approved by user")
+                        await self._send(ws, "spec_update",
+                                         spec=spec.to_dict() if spec else None,
+                                         status="approved",
+                                         session_id=msg.session_id or self._current_session_id or "")
+
+                elif isinstance(msg, ClientSpecReject):
+                    self._spec_engine.reject(feedback=msg.feedback or "")
+                    spec = self._spec_engine.current_spec
+                    if spec:
+                        logger.info("[spec] rejected by user: %s", msg.feedback[:80] if msg.feedback else "(no feedback)")
+                        await self._send(ws, "spec_update",
+                                         spec=spec.to_dict() if spec else None,
+                                         status="rejected",
+                                         feedback=msg.feedback or "",
+                                         session_id=msg.session_id or self._current_session_id or "")
 
                 elif isinstance(msg, ClientGetConfig):
                     info = self._get_or_create_session()
@@ -2742,6 +2848,11 @@ class EncreWSHandler:
         return "Empty session"
 
     def _do_search(self, query: str) -> list[dict[str, Any]]:
+        """Search sessions (by message content) and the workspace (by file name / content).
+
+        Returns at most ~60 results tagged ``conversation`` or ``file`` so
+        the desktop search box can jump to a past turn or a source file.
+        """
         results: list[dict[str, Any]] = []
         q = query.strip().lower()
         if not q:
@@ -3051,6 +3162,8 @@ class EncreWSHandler:
                 for adapter_id, fields in cfg.adapter_configs.items():
                     for fk, fv in fields.items():
                         existing[f"adapter_{adapter_id}_{fk}"] = fv
+            if hasattr(cfg, "permission_settings") and cfg.permission_settings:
+                existing["permission_settings"] = dict(cfg.permission_settings)
             logger.info("[persist_settings] saving keys: %s", list(existing.keys()))
             if existing:
                 save_settings(existing)
@@ -3457,6 +3570,13 @@ class EncreWSHandler:
         raise ValueError(f"Message index {index} not found")
 
     async def _dispatch_event(self, ws, _info, event: Any) -> None:
+        """Translate one agent :class:`~encre.utils.types.AgentEvent` to WS frames.
+
+        Each branch matches an event type and emits the corresponding server
+        protocol message (``text_delta``, ``tool_call_start``, ``finish``,
+        ``plan_update``, ``compact``, workflow events, engine-install dialogs,
+        ...).  Keeps the canvas/usage panel in sync where relevant.
+        """
         sid = _info.session_id if _info else None
 
         async def _send_agent_state() -> None:
@@ -3559,6 +3679,11 @@ class EncreWSHandler:
                 new_tokens=event.new_tokens,
                 session_id=sid)
             await _send_agent_state()
+        elif isinstance(event, SystemMessage):
+            await self._send(ws, "system_message",
+                content=event.content,
+                kind=event.kind,
+                session_id=sid)
             # Also push updated context usage to the canvas panel
             if _info is not None:
                 ctx_msgs = _info.agent.session.get_context_messages()

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import contextlib
 import os
@@ -251,8 +251,28 @@ class EncreConfig:
     backend_type: str = ""
     backend_kwargs: dict[str, Any] = field(default_factory=dict)
     enable_prompt_caching: bool = True
-    enable_streaming_tool_execution: bool = False
+    enable_streaming_tool_execution: bool = True
+    enable_multi_stage_compact: bool = False
     enable_project_rules: bool = True
+    # Fallback model: auto-switched when the primary model fails (rate limit,
+    # overload, etc.).  Empty string = no fallback.  Mirrors Claude Code's
+    # fallbackModel in query.ts.
+    fallback_model: str = ""
+    fallback_base_url: str = ""
+    fallback_api_key: str = ""
+    fallback_backend_type: str = ""
+    # Slot reservation: initial output token budget for the first API call
+    # each turn.  Escalates to max_tokens when the model hits this limit
+    # (finish_reason = "max_tokens" or "length").  0 = disabled (use max_tokens
+    # directly).  Mirrors Claude Code's slot reservation in query.ts.
+    default_slot_tokens: int = 0
+    # Thinking prefill: inject a thinking hint to guide the model's
+    # reasoning process.  Mirrors Hermes agent's thinking prefill.
+    thinking_prefill_enabled: bool = False
+    # Token budget: total output token budget across all turns (0 = unlimited).
+    # When exhausted, the model gets one grace call to wrap up.
+    # Mirrors Claude Code's token budget (+500k style).
+    token_budget: int = 0
     enable_global_rules: bool = True
     checkpoint_max_count: int = 10
     telemetry_enabled: bool = True

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tool discovery -- replace "list every tool in the system prompt" with a search interface.
 
@@ -44,8 +44,6 @@ and a match comes back. Subsequent backend.chat() calls include them in the
 The discovery index is built lazily from the global ToolRegistry on first
 search. It refreshes when the registry changes (e.g. MCP servers connect).
 """
-
-from __future__ import annotations
 
 import math
 import re
@@ -234,6 +232,31 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
         "category": "task",
         "triggers": ["todo", "checklist", "track progress"],
     },
+    # Lint / format
+    "lint_format": {
+        "category": "code_intel",
+        "triggers": [
+            "lint", "format", "linter", "linting", "code format",
+            "ruff", "pylint", "black", "isort", "format code",
+            "fix lint", "autoformat", "check style",
+        ],
+    },
+    # Test runner
+    "test_run": {
+        "category": "code_intel",
+        "triggers": [
+            "test", "pytest", "vitest", "jest", "cargo test",
+            "run test", "test suite", "unit test", "coverage",
+        ],
+    },
+    # Workflow / multi-step orchestration
+    "workflow": {
+        "category": "delegation",
+        "triggers": [
+            "workflow", "multi step", "dag", "orchestration",
+            "sub agent", "parallel task", "complex goal",
+        ],
+    },
 }
 
 
@@ -262,11 +285,13 @@ _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 
 def _tokenize(text: str) -> list[str]:
+    """Split text into lowercase alphanumeric tokens for BM25 indexing."""
     return [t.lower() for t in _TOKEN_RE.findall(text)]
 
 
 @dataclass
 class _IndexEntry:
+    """Internal index entry for one tool in the BM25 search index."""
     name: str
     category: str
     description: str
@@ -277,6 +302,7 @@ class _IndexEntry:
 
 @dataclass
 class _SessionUnlockState:
+    """Tracks which tools have been unlocked via find_tool for one session."""
     unlocked: set[str] = field(default_factory=set)
 
 
@@ -293,6 +319,11 @@ class ToolDiscovery:
     """
 
     def __init__(self, registry: ToolRegistry) -> None:
+        """Initialize the discovery index backed by a ToolRegistry.
+
+        Args:
+            registry: The global tool registry to index.
+        """
         self.registry = registry
         self._entries: list[_IndexEntry] = []
         self._avgdl: float = 1.0
@@ -304,10 +335,12 @@ class ToolDiscovery:
     # ─── Index lifecycle ─────────────────────────────────────────────
 
     def _registry_signature(self) -> int:
+        """Compute a hash of the current registry contents for cache invalidation."""
         tools = self.registry.list_tools()
         return hash(tuple(sorted(tools.keys())))
 
     def _ensure_built(self) -> None:
+        """Rebuild the search index if the registry has changed."""
         sig = self._registry_signature()
         if sig == self._signature and self._entries:
             return
@@ -316,6 +349,7 @@ class ToolDiscovery:
         self._payload_cache.clear()
 
     def _build(self) -> None:
+        """Build the BM25 index from all tools in the registry."""
         entries: list[_IndexEntry] = []
         df: Counter[str] = Counter()
         for name, tool in self.registry.list_tools().items():
@@ -350,6 +384,17 @@ class ToolDiscovery:
     # ─── BM25 scoring ───────────────────────────────────────────────
 
     def _score(self, query_tokens: list[str], entry: _IndexEntry, k1: float = 1.5, b: float = 0.75) -> float:
+        """Compute BM25 relevance score for an entry against query tokens.
+
+        Args:
+            query_tokens: Tokenized query terms.
+            entry: The index entry to score.
+            k1: BM25 k1 parameter (term saturation).
+            b: BM25 b parameter (length normalization).
+
+        Returns:
+            A float relevance score (higher = more relevant).
+        """
         if not query_tokens or not self._entries:
             return 0.0
         n = len(self._entries)
@@ -374,6 +419,18 @@ class ToolDiscovery:
         category: str | None = None,
         exclude: set[str] | None = None,
     ) -> list[dict[str, Any]]:
+        """Search indexed tools by BM25 relevance to a natural-language query.
+
+        Args:
+            query: Natural-language description of the desired capability.
+            top_k: Maximum results to return (default 5).
+            category: Optional category filter.
+            exclude: Optional set of tool names to exclude.
+
+        Returns:
+            A list of discovery cards, each with name, category, description,
+            parameters, and score.
+        """
         self._ensure_built()
         qtokens = _tokenize(query)
         if not qtokens:
@@ -412,6 +469,7 @@ class ToolDiscovery:
         return results
 
     def list_by_category(self) -> dict[str, list[str]]:
+        """List all indexed tools grouped by category."""
         self._ensure_built()
         out: dict[str, list[str]] = {}
         for entry in self._entries:
@@ -423,6 +481,7 @@ class ToolDiscovery:
     # ─── Per-session unlock tracking ────────────────────────────────
 
     def _state(self, session_id: str) -> _SessionUnlockState:
+        """Get or create the unlock state for a session."""
         st = self._sessions.get(session_id)
         if st is None:
             st = _SessionUnlockState()
@@ -450,9 +509,11 @@ class ToolDiscovery:
         return newly
 
     def get_unlocked(self, session_id: str) -> list[str]:
+        """Return sorted list of tool names unlocked in the given session."""
         return sorted(self._state(session_id).unlocked)
 
     def reset_session(self, session_id: str) -> None:
+        """Clear unlock state and cached payload for a session."""
         self._sessions.pop(session_id, None)
         self._payload_cache = {
             key: value for key, value in self._payload_cache.items()

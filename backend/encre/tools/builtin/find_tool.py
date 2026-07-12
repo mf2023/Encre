@@ -21,20 +21,25 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/find_tool.py
 
+Find tool implementation for the Encre tool system.
+"""
 import json
 from contextvars import ContextVar
 from typing import Any
 
 from encre.tools.base import build_tool
 
-_current_loop: ContextVar[Any] = ContextVar("yim_current_loop", default=None)
+_current_loop: ContextVar[Any] = ContextVar("encre_current_loop", default=None)
 
 _parent_loop: Any = None
 
 
 def set_parent_loop(loop: Any) -> None:
+    """Set the fallback parent loop reference for tool discovery."""
     global _parent_loop
     _parent_loop = loop
 
@@ -49,11 +54,13 @@ def set_active_loop(loop: Any) -> Any:
 
 
 def reset_active_loop(token: Any) -> None:
+    """Restore the active loop to its previous value using a token from set_active_loop()."""
     _current_loop.reset(token)
 
 
 def _resolve_loop() -> Any:
     # Prefer a contextvar-set loop (e.g. sub-agent in progress); fall back to class-level.
+    """Resolve loop."""
     ctx_loop = _current_loop.get()
     if ctx_loop is not None:
         return ctx_loop
@@ -126,18 +133,8 @@ async def _find_tool_execute(**kwargs: Any) -> str:
 EncreFindToolTool = build_tool(
     name="find_tool",
     description=(
-        "Discover and unlock specialized tools for your task. "
-        "Only basic tools (file_read/write/edit, bash, grep, glob, "
-        "web_search, todo) are always available.  Everything else must "
-        "be unlocked first via find_tool. "
-        "Call this proactively at the START of any task that might need "
-        "non-basic capabilities. "
-        "Examples: 'fetch a URL and extract text content', "
-        "'run git log and show a diff', 'take a screenshot of the screen', "
-        "'execute SQL queries on a database', 'open a headless browser and "
-        "navigate to a page', 'spawn a sub-agent to do research', "
-        "'schedule a cron job', 'use Docker to run a container', "
-        "'search my memory for notes about X'."
+        "Discover and unlock specialized tools beyond the basic set. "
+        "Call proactively at the start of any task needing non-basic capabilities."
     ),
     input_schema={
         "type": "object",
@@ -167,4 +164,5 @@ EncreFindToolTool = build_tool(
     triggers=["find tool", "search tools", "discover tool"],
     always_available=True,
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

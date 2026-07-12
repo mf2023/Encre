@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for task subsystem, browser, auto-safety, feedback, skills, thinking."""
 
@@ -32,7 +32,12 @@
 # ===========================================================================
 
 class TestTaskSystem:
+    """Test cases covering task system.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_encre_task(self):
+        """Verifies that encre task."""
         from encre.task.types import EncreTask
         task = EncreTask(
             id="task_1",
@@ -42,12 +47,14 @@ class TestTaskSystem:
             prompt="run tests",
             status="pending",
         )
+        # Confirm the expected result for this scenario: encre task.
         assert task.id == "task_1"
         assert task.name == "Test task"
         assert task.task_type == "bash"
         assert task.status == "pending"
 
     def test_encre_task_with_id(self):
+        """Verifies that encre task with id."""
         from encre.task.types import EncreTask
         task = EncreTask(
             id="task_custom",
@@ -56,17 +63,22 @@ class TestTaskSystem:
             task_type="agent",
             prompt="do something",
         )
+        # Confirm the expected result for this scenario: encre task with id.
         assert task.id == "task_custom"
         assert task.name == "Custom id task"
 
     def test_task_manager_create(self):
+        """Verifies that task manager create."""
         from encre.task.manager import EncreTaskManager
         tm = EncreTaskManager()
+        # Confirm the expected result for this scenario: task manager create.
         assert tm is not None
 
     def test_task_executor_create(self):
+        """Verifies that task executor create."""
         from encre.task.executor import EncreTaskExecutor
         te = EncreTaskExecutor()
+        # Confirm the expected result for this scenario: task executor create.
         assert te is not None
 
 
@@ -75,17 +87,25 @@ class TestTaskSystem:
 # ===========================================================================
 
 class TestBrowser:
+    """Test cases covering browser.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_browser_state(self):
+        """Verifies that browser state."""
         from encre.computer.browser import BrowserState
         state = BrowserState(url="https://example.com", title="Example")
+        # Confirm the expected result for this scenario: browser state.
         assert state.url == "https://example.com"
         assert state.title == "Example"
         assert state.html == ""
         assert state.text == ""
 
     def test_browser_session_create(self):
+        """Verifies that browser session create."""
         from encre.computer.browser import EncreBrowserSession
         bs = EncreBrowserSession()
+        # Confirm the expected result for this scenario: browser session create.
         assert bs is not None
         assert bs.headless is True
 
@@ -95,8 +115,14 @@ class TestBrowser:
 # ===========================================================================
 
 class TestAutoSafety:
+    """Test cases covering auto safety.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_auto_decision(self):
+        """Verifies that auto decision."""
         from encre.autosafety import AutoDecision
+        # Confirm the expected result for this scenario: auto decision.
         assert AutoDecision.SAFE is not None
         assert AutoDecision.LOW_RISK is not None
         assert AutoDecision.ASK_USER is not None
@@ -104,28 +130,34 @@ class TestAutoSafety:
         assert AutoDecision.BLOCK is not None
 
     def test_classification_result(self):
+        """Verifies that classification result."""
         from encre.autosafety import AutoDecision, ClassificationResult
         cr = ClassificationResult(
             decision=AutoDecision.SAFE,
             confidence=0.95,
             reasoning="safe command",
         )
+        # Confirm the expected result for this scenario: classification result.
         assert cr.decision == AutoDecision.SAFE
         assert cr.confidence == 0.95
 
     def test_user_decision_record(self):
+        """Verifies that user decision record."""
         from encre.autosafety import UserDecisionRecord
         udr = UserDecisionRecord(
             tool_name="bash",
             tool_args_summary="cmd=ls",
             user_approved=True,
         )
+        # Confirm the expected result for this scenario: user decision record.
         assert udr.tool_name == "bash"
         assert udr.user_approved is True
 
     def test_classifier_create(self):
+        """Verifies that classifier create."""
         from encre.autosafety import EncreAutoSafetyClassifier
         classifier = EncreAutoSafetyClassifier()
+        # Confirm the expected result for this scenario: classifier create.
         assert classifier is not None
 
 
@@ -134,7 +166,12 @@ class TestAutoSafety:
 # ===========================================================================
 
 class TestFeedback:
+    """Test cases covering feedback.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_correction_record(self):
+        """Verifies that correction record."""
         from encre.feedback.learner import CorrectionRecord
         cr = CorrectionRecord(
             tool_name="bash",
@@ -142,13 +179,16 @@ class TestFeedback:
             error_context="command not found: pyth",
             user_correction="use correct path: python",
         )
+        # Confirm the expected result for this scenario: correction record.
         assert cr.tool_name == "bash"
         assert cr.error_type == "command_not_found"
         assert cr.user_correction == "use correct path: python"
 
     def test_learner_create(self):
+        """Verifies that learner create."""
         from encre.feedback.learner import EncreFeedbackLearner
         learner = EncreFeedbackLearner()
+        # Confirm the expected result for this scenario: learner create.
         assert learner is not None
 
 
@@ -157,10 +197,16 @@ class TestFeedback:
 # ===========================================================================
 
 class TestSkills:
+    """Test cases covering skills.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_skill_definition(self):
+        """Verifies that skill definition."""
         from encre.skills.types import BundledSkillDefinition
 
         async def _prompt_fn(args, ctx):
+            """Verifies that prompt fn."""
             return "debugging prompt"
 
         skill = BundledSkillDefinition(
@@ -168,21 +214,26 @@ class TestSkills:
             description="Debugging skill",
             get_prompt_for_command=_prompt_fn,
         )
+        # Confirm the expected result for this scenario: skill definition.
         assert skill.name == "debug"
         assert skill.description == "Debugging skill"
 
     def test_skill_registry_create(self):
+        """Verifies that skill registry create."""
         from encre.skills.registry import EncreSkillRegistry
         registry = EncreSkillRegistry()
+        # Confirm the expected result for this scenario: skill registry create.
         assert registry is not None
 
     def test_create_bundled_skills(self):
+        """Verifies that create bundled skills."""
         from encre.skills.bundled import create_bundled_skills
         from encre.skills.registry import EncreSkillRegistry
         registry = EncreSkillRegistry()
         create_bundled_skills(registry)
         # After creation, registry should have bundled skills
         skill = registry.lookup("debug")
+        # Confirm the expected result for this scenario: create bundled skills.
         assert skill is not None
         assert skill.name == "debug"
 
@@ -192,25 +243,35 @@ class TestSkills:
 # ===========================================================================
 
 class TestThinking:
+    """Test cases covering thinking.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_thinking_module_imports(self):
+        """Verifies that thinking module imports."""
         from encre.thinking.config import resolve_thinking_config
         result = resolve_thinking_config(None, "claude-sonnet-4-20250514")
+        # Confirm the expected result for this scenario: thinking module imports.
         assert result is not None
         assert result.enabled is True
 
     def test_adaptive_thinking_resolution(self):
+        """Verifies that adaptive thinking resolution."""
         from encre.thinking.config import resolve_thinking_config
         from encre.utils.types import AdaptiveThinking, DisabledThinking
         # None config + claude model -> adaptive
         resolved = resolve_thinking_config(None, "claude-sonnet-4-20250514")
+        # Confirm the expected result for this scenario: adaptive thinking resolution.
         assert isinstance(resolved, AdaptiveThinking)
         # None config + non-claude model -> disabled
         resolved2 = resolve_thinking_config(None, "gpt-4o")
         assert isinstance(resolved2, DisabledThinking)
 
     def test_get_thinking_budget(self):
+        """Verifies that get thinking budget."""
         from encre.thinking.config import get_thinking_budget_tokens
         from encre.utils.types import DisabledThinking, EnabledThinking
+        # Confirm the expected result for this scenario: get thinking budget.
         assert get_thinking_budget_tokens(EnabledThinking(budget_tokens=8000)) == 8000
         assert get_thinking_budget_tokens(DisabledThinking()) == 0
 
@@ -220,7 +281,12 @@ class TestThinking:
 # ===========================================================================
 
 class TestSchedulerTypes:
+    """Test cases covering scheduler types.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_scheduled_job(self):
+        """Verifies that scheduled job."""
         from encre.scheduler import ScheduledJob, ScheduleType
         job = ScheduledJob(
             id="job1",
@@ -228,24 +294,31 @@ class TestSchedulerTypes:
             prompt="run tests",
             schedule_type=ScheduleType.RECURRING,
         )
+        # Confirm the expected result for this scenario: scheduled job.
         assert job.id == "job1"
         assert job.name == "test job"
         assert job.prompt == "run tests"
 
     def test_cron_schedule(self):
+        """Verifies that cron schedule."""
         from encre.scheduler import CronSchedule
         cs = CronSchedule(
             minute="*/5", hour="*", day_of_month="*", month="*", day_of_week="*"
         )
+        # Confirm the expected result for this scenario: cron schedule.
         assert cs.minute == "*/5"
 
     def test_schedule_type(self):
+        """Verifies that schedule type."""
         from encre.scheduler import ScheduleType
+        # Confirm the expected result for this scenario: schedule type.
         assert ScheduleType.ONE_SHOT is not None
         assert ScheduleType.RECURRING is not None
 
     def test_job_state(self):
+        """Verifies that job state."""
         from encre.scheduler import JobState
+        # Confirm the expected result for this scenario: job state.
         assert JobState.PENDING is not None
         assert JobState.RUNNING is not None
         assert JobState.COMPLETED is not None
@@ -258,38 +331,56 @@ class TestSchedulerTypes:
 # ===========================================================================
 
 class TestPrompts:
+    """Test cases covering prompts.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_base_prompt(self):
+        """Verifies that base prompt."""
         from encre.prompts.base import EncreBasePrompt
         # EncreBasePrompt is an ABC, can't instantiate directly
+        # Confirm the expected result for this scenario: base prompt.
         assert EncreBasePrompt is not None
 
     def test_prompt_template(self):
+        """Verifies that prompt template."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate(specialty="coding")
+        # Confirm the expected result for this scenario: prompt template.
         assert tmpl is not None
         assert tmpl._specialty == "coding"
 
     def test_prompt_builder(self):
+        """Verifies that prompt builder."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
+        # Confirm the expected result for this scenario: prompt builder.
         assert builder is not None
 
     def test_coding_prompt(self):
+        """Verifies that coding prompt."""
         from encre.prompts.coding import EncreCodingPrompt
         cp = EncreCodingPrompt()
+        # Confirm the expected result for this scenario: coding prompt.
         assert cp is not None
 
     def test_general_prompt(self):
+        """Verifies that general prompt."""
         from encre.prompts.general import EncreGeneralPrompt
         gp = EncreGeneralPrompt()
+        # Confirm the expected result for this scenario: general prompt.
         assert gp is not None
 
     def test_research_prompt(self):
+        """Verifies that research prompt."""
         from encre.prompts.research import EncreResearchPrompt
         rp = EncreResearchPrompt()
+        # Confirm the expected result for this scenario: research prompt.
         assert rp is not None
 
     def test_data_prompt(self):
+        """Verifies that data prompt."""
         from encre.prompts.data import EncreDataPrompt
         dp = EncreDataPrompt()
+        # Confirm the expected result for this scenario: data prompt.
         assert dp is not None

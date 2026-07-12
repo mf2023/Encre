@@ -21,6 +21,23 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+"""Encre server package.
+
+This package is the backend entry point for the Encre agent.  It exposes the
+high-level :class:`EncreServer` class (defined in :mod:`encre.server.app`) and
+the WebSocket protocol types (:mod:`encre.server.protocol`) used to exchange
+messages between the desktop client and the agent runtime.
+
+The package aggregates:
+    * :mod:`encre.server.app`   -- the :class:`EncreServer` orchestrator.
+    * :mod:`encre.server.ws`    -- the per-connection WebSocket message handler.
+    * :mod:`encre.server.session_manager` -- in-memory + on-disk session store.
+    * :mod:`encre.server.admin`  -- lightweight HTTP admin endpoints.
+    * :mod:`encre.server.protocol` -- typed client/server message definitions.
+    * :mod:`encre.server.service` -- background daemon wrapper.
+"""
 
 
 def __getattr__(name: str):

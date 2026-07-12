@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# email.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - EmailAdapter
+#
 import asyncio
 import contextlib
 import email
@@ -108,6 +121,24 @@ class EmailAdapter(BaseAdapter):
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
         poll_interval: int = 30,
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            smtp_host (str):
+            smtp_port (int):
+            smtp_user (str):
+            smtp_pass (str):
+            imap_host (str):
+            imap_port (int):
+            imap_user (str):
+            imap_pass (str):
+            gateway_url (str):
+            poll_interval (int):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text", "image", "file"])
         if not AIOIMAPLIB_AVAILABLE:
             raise ImportError(

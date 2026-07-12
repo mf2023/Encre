@@ -15,16 +15,31 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * 
  * DISCLAIMER: Users must comply with applicable AI regulations.
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Application splash screen controller.
+ *
+ * Manages the full-screen splash overlay shown during application startup and
+ * engine bootstrap. Wraps an {@link EALoader} animation and toggles the
+ * `splash-mode` body class plus the `#splash-screen` visibility.
+ */
+
 import { EALoader } from "./ealoader.js";
 
+/**
+ * Controls the startup splash screen.
+ *
+ * Owns a lazily-created {@link EALoader} instance used for the animated logo and
+ * exposes `show`/`hide` to drive the overlay.
+ */
 export class SplashScreen {
   private loader: EALoader | null = null;
 
+  /** Shows the splash overlay and (lazily) creates the EALoader animation. */
   show(): void {
     document.body.classList.add("splash-mode");
     const el = document.getElementById("splash-screen")!;
@@ -37,6 +52,7 @@ export class SplashScreen {
     }
   }
 
+  /** Hides the splash overlay and tears down the EALoader animation. */
   hide(): void {
     document.body.classList.remove("splash-mode");
     const el = document.getElementById("splash-screen");

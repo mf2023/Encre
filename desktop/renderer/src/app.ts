@@ -113,6 +113,7 @@ class App {
   private tokenCountEl: HTMLElement;
   private welcomeScreen: HTMLElement;
   private messageList: HTMLElement;
+  private summaryPanel: HTMLElement;
   private userToggledSidebar = false;
   private skipNextInput = false;
   private _slashActive = false;
@@ -142,6 +143,7 @@ class App {
     this.tokenCountEl = document.getElementById("token-count")!;
     this.welcomeScreen = document.getElementById("welcome-screen")!;
     this.messageList = document.getElementById("message-list")!;
+    this.summaryPanel = document.getElementById("summary-panel")!;
 
     // Expose the cleanup function on window so other modules (settings,
     // search, etc.) can request a content-area reset without needing a
@@ -355,6 +357,7 @@ class App {
     this.bindInput();
     this.updatePlaceholder();
     this.bindToolbarButtons();
+    this.bindSummaryPanel();
     this.bindWindowControls();
     this.bindSearchOverlay();
     this.initKeybindActions();
@@ -376,6 +379,10 @@ class App {
 
     // Forward locale to tray
     let lastTrayLocale = "";
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const locale = getState().settings.language as string;
       if (locale && locale !== lastTrayLocale) {
@@ -388,6 +395,10 @@ class App {
 
     // Forward resolved theme to tray popup
     let lastTrayThemePref = "";
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const pref = getState().themePreference;
       if (pref && pref !== lastTrayThemePref) {
@@ -401,6 +412,10 @@ class App {
     // Forward workspace mode to tray + refresh dual session list on mode change
     let lastTrayMode = "";
     ;
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const mode = getState().workspaceMode;
       if (mode && mode !== lastTrayMode) {
@@ -417,6 +432,10 @@ class App {
 
     // Auto-update send/stop button: show send when input has text,
     // show stop only when running AND input is empty.
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const running = getState().running;
       const hasText = this.getPlainText().length > 0;
@@ -438,6 +457,10 @@ class App {
     // Re-fetch models when backend or base_url changes
     let lastBackend = getState().settings.backend;
     let lastBaseUrl = getState().settings.base_url;
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const s = getState();
       if (s.settings.backend !== lastBackend || s.settings.base_url !== lastBaseUrl) {
@@ -504,6 +527,10 @@ class App {
 
     // Sync inputMode state to DOM attribute for CSS selector
     let prevInputMode = "";
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const s = getState();
       if (s.inputMode !== prevInputMode) {
@@ -538,6 +565,10 @@ class App {
     // handler in stream.ts) — checking Object.keys won't work because
     // initTheme() populates settings.theme before the server responds.
     let _startupModeApplied = false;
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const st = getState();
       if (!st.connected) return;
@@ -556,6 +587,10 @@ class App {
     subscribe(() => this._renderQueueCard());
 
     // Sync temp chat button active state
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       const btn = document.getElementById("btn-temp-chat");
       if (btn) {
@@ -1230,11 +1265,14 @@ class App {
         e.preventDefault();
         const text = this.getPlainText();
 
-        // Check exact slash command match first (e.g. /plan → activate mode)
-        const parsed = parseSlashInput(text);
-        if (parsed && parsed.exact) {
-          this.activateSlashCommand(parsed.command);
-          return;
+        // Don't re-activate slash command when a mode chip is already present
+        if (!this.hasModeChip()) {
+          // Check exact slash command match first (e.g. /plan → activate mode)
+          const parsed = parseSlashInput(text);
+          if (parsed && parsed.exact) {
+            this.activateSlashCommand(parsed.command);
+            return;
+          }
         }
 
         // If slash menu is active, check for matched command first
@@ -1578,6 +1616,9 @@ class App {
       mentionDropdown.classList.add("hidden");
       btnMention?.classList.remove("active");
 
+      // Don't re-activate if a mode chip already exists
+      if (this.hasModeChip()) return;
+
       const cmd = SLASH_COMMANDS.find(c => c.id === action || c.name === action);
       if (cmd) {
         this.activateSlashCommand(cmd);
@@ -1600,6 +1641,110 @@ class App {
     });
 
     this.bindInputModelSelector();
+  }
+
+  private bindSummaryPanel(): void {
+    const btn = document.getElementById("btn-summary-panel");
+    const panel = document.getElementById("summary-panel");
+    if (!btn || !panel) return;
+
+    const toggle = () => {
+      const isHidden = panel!.classList.toggle("hidden");
+      btn!.classList.toggle("active", !isHidden);
+      if (!isHidden) this.renderSummaryPanel();
+    };
+
+    btn.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });
+
+    // Close panel on outside click
+    document.addEventListener("click", (e) => {
+      if (panel!.classList.contains("hidden")) return;
+      if (!panel!.contains(e.target as Node) && !btn!.contains(e.target as Node)) {
+        panel!.classList.add("hidden");
+        btn!.classList.remove("active");
+      }
+    });
+
+    // Re-render when state changes
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
+    subscribe(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+  }
+
+  private renderSummaryPanel(): void {
+    const st = getState();
+    this.renderSummaryProgress(st);
+    this.renderSummaryArtifacts(st);
+    this.renderSummaryReferences(st);
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons();
+    }
+  }
+
+  private renderSummaryProgress(st: ReturnType<typeof getState>): void {
+    const el = document.getElementById("summary-progress-items");
+    if (!el) return;
+    const items = st.planItems;
+    if (!items || items.length === 0) {
+      el.innerHTML = `<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">${t("sessionInner.noProgress")}</div>`;
+      return;
+    }
+    el.innerHTML = items.slice(0, 8).map((item: any) => {
+      let icon = "circle";
+      let cls = "";
+      if (item.status === "done") { icon = "check-circle-2"; cls = "color:var(--success)"; }
+      else if (item.status === "active") { icon = "loader"; cls = "color:var(--accent)"; }
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary);${cls}">
+        <i data-lucide="${icon}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px"></i>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(item.text)}</span>
+      </div>`;
+    }).join("");
+  }
+
+  private renderSummaryArtifacts(st: ReturnType<typeof getState>): void {
+    const el = document.getElementById("summary-artifacts-items");
+    if (!el) return;
+    const artifacts = st.artifacts;
+    if (!artifacts || artifacts.length === 0) {
+      el.innerHTML = `<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">${t("sessionInner.noArtifacts")}</div>`;
+      return;
+    }
+    el.innerHTML = artifacts.slice(0, 6).map((a: any) => {
+      const iconSrc = a.ext === "py" ? "file-code-2" : a.ext === "ts" || a.ext === "tsx" || a.ext === "js" ? "file-code-2" : "file-plus-2";
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary)">
+        <i data-lucide="${iconSrc}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px"></i>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(a.name)}</span>
+        <span style="font-size:11px;flex-shrink:0;color:var(--text-muted)">+${a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : 0}/-${a.diff_text ? (a.diff_text.match(/^-/gm) || []).length : 0}</span>
+      </div>`;
+    }).join("");
+  }
+
+  private renderSummaryReferences(st: ReturnType<typeof getState>): void {
+    const el = document.getElementById("summary-references-items");
+    if (!el) return;
+    const refs = st.references || [];
+    if (refs.length === 0) {
+      el.innerHTML = `<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">${t("sessionInner.noRefs")}</div>`;
+      return;
+    }
+    const shown = refs.slice(-8).reverse();
+    el.innerHTML = shown.map((r: any) => {
+      const iconSrc = r.icon || "link-2";
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary)">
+        <i data-lucide="${iconSrc}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px;opacity:0.6"></i>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(r.summary)}</span>
+      </div>`;
+    }).join("");
+  }
+
+  private esc(s: string): string {
+    const el = document.createElement("span");
+    el.textContent = s;
+    return el.innerHTML;
   }
 
   private bindInputModelSelector(): void {
@@ -1658,6 +1803,10 @@ class App {
       }
     });
 
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+
     subscribe(() => {
       try {
         render();
@@ -1710,6 +1859,12 @@ class App {
           setRequestedSessionId("", requestId);
           send({ type: "new_session", request_id: requestId });
         }
+        return;
+      case "steer":
+        this.insertModeChip(cmd.id, restText);
+        this._currentChipMode = "steer";
+        this.updateChipState();
+        this.input.focus();
         return;
       default:
         break;
@@ -2256,12 +2411,6 @@ class App {
     sel.addRange(range);
   }
 
-  private esc(s: string): string {
-    const el = document.createElement("span");
-    el.textContent = s;
-    return el.innerHTML;
-  }
-
   private renderSlashDropdown(): void {
     const slashPage = document.querySelector('[data-page="slash"]');
     if (!slashPage) return;
@@ -2403,8 +2552,7 @@ class App {
     // If user submitted with no text, generate default text
     if (!text.trim()) {
       if (sendMode) {
-        const cmd = SLASH_COMMANDS.find(c => c.id === sendMode);
-        text = cmd ? cmd.title : sendMode;
+        text = `<mode>${sendMode}</mode>`;
       } else if (hasAttachments) {
         const first = st.attachments[0];
         if (first.mime_type === "text/x-terminal") {
@@ -2426,6 +2574,21 @@ class App {
       setInputMode("");
       return;
     }
+
+    // /steer: mid-run injection - don't add a user message or start a new turn
+    if (this._currentChipMode === "steer") {
+      if (!text.trim()) return;
+      send({ type: "steer", session_id: st.sessionId || undefined, prompt: text } as any);
+      this.input.innerHTML = "";
+      this.input.style.height = "56px";
+      this._currentChipMode = "";
+      setInputMode("");
+      this.updateChipState();
+      this.updatePlaceholder();
+      this.updateSendButton();
+      return;
+    }
+
     addUserMessage(text, sendMode, fileRefs);
     startAssistantMessage();
     setRunning(true);
@@ -2771,18 +2934,23 @@ class App {
       if (this._inputHistory.length === 0) return;
       if (this._inputHistoryIdx > 0) {
         this._inputHistoryIdx--;
+        const mode = this.getCurrentMode();
         this.input.innerHTML = "";
+        if (mode) this.insertModeChip(mode);
         document.execCommand("insertText", false, this._inputHistory[this._inputHistoryIdx]);
       }
     };
     a["history_next"] = () => {
+      const mode = this.getCurrentMode();
       if (this._inputHistoryIdx < this._inputHistory.length - 1) {
         this._inputHistoryIdx++;
         this.input.innerHTML = "";
+        if (mode) this.insertModeChip(mode);
         document.execCommand("insertText", false, this._inputHistory[this._inputHistoryIdx]);
       } else {
         this._inputHistoryIdx = this._inputHistory.length;
         this.input.innerHTML = "";
+        if (mode) this.insertModeChip(mode);
       }
     };
 

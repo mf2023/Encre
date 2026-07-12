@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/desktop.py
 
+Desktop implementation for the Encre tool system.
+"""
 import json
 from typing import Any
 
@@ -32,6 +36,7 @@ _session: Any = None
 
 
 def _get_session():
+    """Get session."""
     global _session
     if _session is None:
         from encre.computer.desktop import EncreDesktopSession
@@ -40,6 +45,11 @@ def _get_session():
 
 
 async def _desktop_execute(**kwargs: Any) -> str:
+    """Desktop execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     action = kwargs.get("action", "")
     session = _get_session()
     coord_space = str(kwargs.get("coord_space", "auto"))
@@ -488,4 +498,7 @@ EncreDesktopTool = build_tool(
         "clipboard_get",
         "wait",
     ),
+    category="system",
+    semantic_type="exec",
+    is_destructive=lambda args: args.get("action", "") in ("click", "type", "scroll", "drag", "hotkey", "keyboard_write"),
 )

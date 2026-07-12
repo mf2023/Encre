@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Research prompt template.
+
+Defines :class:`EncreResearchPrompt`, a
+:class:`~encre.prompts.base.EncrePromptTemplate` specialized for web
+research and information-synthesis tasks.  It delegates assembly to the
+shared :class:`~encre.prompts.system.EncrePromptBuilder` with the
+``"research"`` specialty so the research block and tool guidance are included.
+"""
 
 from typing import Any
 
@@ -31,7 +40,21 @@ from encre.utils.types import PermissionMode
 
 
 class EncreResearchPrompt(EncrePromptTemplate):
+    """Research prompt template.
+
+    Builds the system prompt for research conversations by delegating to the
+    layered :class:`~encre.prompts.system.EncrePromptBuilder` with the
+    ``"research"`` specialty.
+    """
+
     def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "research") -> None:
+        """Initialize the template.
+
+        Args:
+            builder: Optional pre-configured prompt builder.  A new one is
+                created when omitted.
+            specialty: Specialty label forwarded to the builder (``"research"``).
+        """
         super().__init__(builder=builder, specialty=specialty)
 
     def build_system_prompt(
@@ -49,6 +72,12 @@ class EncreResearchPrompt(EncrePromptTemplate):
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> str:
+        """Build the research system prompt from session context.
+
+        Forwards every argument to
+        :meth:`~encre.prompts.system.EncrePromptBuilder.build` with the
+        ``"research"`` specialty so the shared block-assembly logic is reused.
+        """
         return self._builder.build(
             mode=mode,
             tools=tools,

@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Unified ``computer_use`` tool -- single schema for browser & desktop.
 
 This is the tool Codex / Manus / Claude Code all expose to their
@@ -43,8 +45,6 @@ directly for fine-grained scripting where you know exactly which
 backend you want.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from typing import Any
@@ -59,6 +59,7 @@ _session: Any = None
 
 
 def _get_session() -> Any:
+    """Get session."""
     global _session, _engine_requester
     if _session is None:
         from encre.computer.computer_use import EncreComputerUseSession
@@ -113,6 +114,7 @@ def set_engine_requester(requester: Any) -> None:
 
 
 def _action_enum() -> list[str]:
+    """Action enum."""
     from encre.computer.computer_use import VALID_ACTIONS
     return sorted(VALID_ACTIONS)
 
@@ -651,6 +653,7 @@ def _summarize_for_model(
 # Lazy list so the schema is correct at tool-construction time without
 # having to import computer_use at module load.
 def _build_schema() -> dict[str, Any]:
+    """Build schema."""
     return {
         "type": "object",
         "properties": {
@@ -1035,4 +1038,7 @@ EncreComputerUseTool = build_tool(
     input_schema=_build_schema(),
     execute=_computer_use_execute,
     intents=["coding", "system"],
+    category="system",
+    semantic_type="exec",
+    is_destructive=lambda args: args.get("action", "") in ("click", "type", "press_key", "clipboard_set", "file_drop"),
 )

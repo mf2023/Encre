@@ -20,10 +20,23 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Slash command registry.
+ *
+ * Defines the built-in and user/project-defined slash commands available in the
+ * composer (e.g. `/plan`, `/spec`, `/new`, `/clear`). Commands can originate
+ * from three layers — bundled, custom settings, and project-level config — and
+ * are merged so that later layers override earlier ones.
+ */
+
 import { t } from "./i18n.js";
 
+/** Distinguishes persistent "mode" commands from one-shot "action" commands. */
 export type SlashCommandKind = "mode" | "action";
 
+/**
+ * A slash command exposed in the composer's command palette.
+ */
 export interface SlashCommand {
   id: string;
   name: string;
@@ -68,12 +81,23 @@ const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
     icon: "rotate-ccw",
     kind: "action",
   },
+  {
+    id: "steer",
+    name: "steer",
+    title: "Steer",
+    description: "Inject a mid-conversation instruction into the running agent",
+    icon: "navigation",
+    kind: "action",
+  },
 ];
 
 /** Active slash commands — starts with built-in, can be overridden from backend. */
 export let SLASH_COMMANDS: SlashCommand[] = [...BUILTIN_SLASH_COMMANDS];
 
 /** Incoming command shape from the backend (both custom settings and project-level). */
+/**
+ * Command received from the backend (both custom settings and project-level).
+ */
 export interface ServerSlashCommand {
   name: string;
   title: string;
@@ -122,6 +146,14 @@ function rebuildSlashCommands(
 
 /** Merge user-defined custom slash commands (from settings) into the active list.
  *  Custom definitions override built-ins; project-level commands are preserved. */
+/**
+ * Merges user-defined custom slash commands (from settings) into the active list.
+ *
+ * Custom definitions override built-ins; existing project-level commands are
+ * preserved during the rebuild.
+ *
+ * @param serverCmds - Custom commands coming from the settings backend.
+ */
 export function applyServerCommands(serverCmds: ServerSlashCommand[]): void {
   const project = SLASH_COMMANDS.filter((c) => c.source === "project");
   rebuildSlashCommands(serverCmds, project);
@@ -129,16 +161,35 @@ export function applyServerCommands(serverCmds: ServerSlashCommand[]): void {
 
 /** Merge project-level slash commands (from .encre/commands or .claude/commands)
  *  into the active list. Project definitions override built-ins and custom commands. */
+/**
+ * Merges project-level slash commands (`.encre/commands`, `.claude/commands`).
+ *
+ * Project definitions override built-ins and custom commands.
+ *
+ * @param projectCmds - Project-level commands discovered by the backend.
+ */
 export function applyProjectCommands(projectCmds: ServerSlashCommand[]): void {
   const custom = SLASH_COMMANDS.filter((c) => c.source !== "project" && c.source !== "bundled");
   rebuildSlashCommands(custom, projectCmds);
 }
 
+/**
+ * Finds a slash command by name or id (case-insensitive, leading `/` trimmed).
+ *
+ * @param name - The command name or id to look up.
+ * @returns The matching command, or `undefined`.
+ */
 export function findSlashCommand(name: string): SlashCommand | undefined {
   const normalized = name.toLowerCase().replace(/^\//, "");
   return SLASH_COMMANDS.find((cmd) => cmd.name === normalized || cmd.id === normalized);
 }
 
+/**
+ * Parses a raw composer input string into a slash command plus trailing text.
+ *
+ * @param text - The raw input text.
+ * @returns `{ command, rest, exact }` when it begins with a known command, else `null`.
+ */
 export function parseSlashInput(text: string): { command: SlashCommand; rest: string; exact: boolean } | null {
   const trimmed = text.trimStart();
   if (!trimmed.startsWith("/")) return null;
@@ -155,6 +206,11 @@ export function parseSlashInput(text: string): { command: SlashCommand; rest: st
   };
 }
 
+/**
+ * Returns slash commands whose name/title/description match the query.
+ *
+ * @param query - The (already `/`-stripped) search query; empty returns all.
+ */
 export function matchingSlashCommands(query: string): SlashCommand[] {
   const normalized = query.toLowerCase().replace(/^\//, "");
   if (!normalized) return SLASH_COMMANDS;

@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/file_read.py
 
+File read implementation for the Encre tool system.
+"""
 import base64
 import json
 import os
@@ -52,6 +56,7 @@ _IMAGE_MAGIC: list[tuple[bytes, str]] = [
 
 
 def _detect_image_mime(path: str) -> str | None:
+    """Detect image MIME type by extension first, then magic bytes."""
     ext = os.path.splitext(path)[1].lower()
     if ext in _IMAGE_EXTS:
         return _IMAGE_EXTS[ext]
@@ -71,6 +76,7 @@ def _detect_image_mime(path: str) -> str | None:
 
 
 def _is_pdf(path: str) -> bool:
+    """Check if a file is a PDF by extension and magic bytes."""
     if os.path.splitext(path)[1].lower() == ".pdf":
         return True
     try:
@@ -109,10 +115,12 @@ def _read_pdf_text(path: str, max_pages: int | None) -> str:
 
 
 def _looks_like_image(path: str) -> bool:
+    """Return True if the file is detected as an image (extension or magic bytes)."""
     return _detect_image_mime(path) is not None
 
 
 async def _file_read_execute(**kwargs: Any) -> str:
+    """Read a file: text (paginated), image (base64 envelope), or PDF (extracted text)."""
     file_path = kwargs.get("file_path", "")
     if not file_path:
         return "Error: file_path is required"
@@ -175,13 +183,11 @@ async def _file_read_execute(**kwargs: Any) -> str:
 EncreFileReadTool = build_tool(
     name="file_read",
     description=(
-        "Read the contents of a file. Text files return paginated lines "
-        "(offset/limit). Images (png/jpg/gif/webp/bmp) return a base64 + mime "
-        "envelope so multimodal models can consume them directly. PDFs return "
-        "extracted text (use max_pages to cap).\n\n"
-        "DO NOT use this tool for reading persistent memory -- use memory_read "
-        "instead. DO NOT use this tool for reading the user profile -- use "
-        "memory_profile instead."
+        "Text files → paginated lines (offset/limit, 1-indexed). "
+        "Images (png/jpg/gif/webp/bmp) → base64 + mime envelope. "
+        "PDFs → extracted text (cap with max_pages).\n\n"
+        "If the file content is already in the conversation context, do not re-read it.\n"
+        "For persistent memory or user profile content, use memory_read or memory_profile instead."
     ),
     input_schema={
         "type": "object",
@@ -214,9 +220,12 @@ EncreFileReadTool = build_tool(
     },
     execute=_file_read_execute,
     intents=["general", "coding", "data"],
+    category="filesystem",
+    triggers=["read file", "cat", "view file", "open file", "show file", "read file", "list file"],
     semantic_type="read",
     cost_level="low",
     retryability="auto",
     safe_fallback="Read a smaller range, switch mode for images/PDFs, or verify the path exists before retrying.",
     is_concurrency_safe=lambda _: True,
+    is_readonly=lambda _: True,
 )

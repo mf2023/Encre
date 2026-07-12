@@ -21,8 +21,9 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
-
+# Agent-integrated executor that runs each DAG node as a sub-agent.
 from encre.workflow.agent_executor import (
     WorkflowAgentExecutor,
 )

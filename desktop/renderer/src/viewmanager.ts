@@ -20,11 +20,26 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Sidebar view switching.
+ *
+ * Implements the small client-side router that maps the sidebar navigation
+ * items (`[data-view]`) to their corresponding container elements and toggles
+ * visibility/active state when the user switches views. Currently only the
+ * `chat` view is registered.
+ */
+
 export class ViewManager {
   private currentView: string;
   private navItems: NodeListOf<HTMLElement>;
   private containers: Map<string, HTMLElement>;
 
+  /**
+   * Initializes the view manager.
+   *
+   * Resolves the nav items and container elements, wires up click handlers and
+   * activates the default `chat` view.
+   */
   constructor() {
     this.currentView = "chat";
     this.navItems = document.querySelectorAll(".nav-item[data-view]");
@@ -51,12 +66,14 @@ export class ViewManager {
     this.showView("chat");
   }
 
+  /** Switches to the given view if it is registered. */
   switchTo(view: string): void {
     if (!this.containers.has(view)) return;
     this.currentView = view;
     this.showView(view);
   }
 
+  /** Updates nav active states and shows/hides the matching container. */
   private showView(view: string): void {
     // Update nav items active state
     this.navItems.forEach((item) => {
@@ -78,6 +95,7 @@ export class ViewManager {
     });
   }
 
+  /** Returns the currently active view id. */
   getCurrentView(): string {
     return this.currentView;
   }

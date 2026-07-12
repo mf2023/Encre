@@ -1,4 +1,27 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Single source of truth for ALL subprocess spawning in Encre.
 
@@ -21,8 +44,6 @@ The wrappers automatically inject platform-specific window-suppression
 flags (``CREATE_NO_WINDOW`` on Windows, ``start_new_session`` on Unix).
 """
 
-from __future__ import annotations
-
 import asyncio
 import os
 import subprocess
@@ -42,6 +63,11 @@ else:
 
 
 def _inject_creationflags(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Inject creationflags.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     if os.name == "nt":
         kwargs.setdefault("creationflags", _CREATION_FLAGS)
         if _STARTUPINFO is not None:
@@ -54,6 +80,12 @@ def _inject_creationflags(kwargs: dict[str, Any]) -> dict[str, Any]:
 async def create_subprocess_exec(
     *args: Any, **kwargs: Any
 ) -> asyncio.subprocess.Process:
+    """Create subprocess exec.
+
+    Args:
+        args: Description of the args parameter.
+        kwargs: Description of the kwargs parameter.
+    """
     _inject_creationflags(kwargs)
     return await asyncio.create_subprocess_exec(*args, **kwargs)
 
@@ -63,5 +95,12 @@ def create_subprocess_run(
     timeout: float | None = None,
     **kwargs: Any,
 ) -> subprocess.CompletedProcess:
+    """Create subprocess run.
+
+    Args:
+        cmd_parts: Description of the cmd_parts parameter.
+        timeout: Description of the timeout parameter.
+        kwargs: Description of the kwargs parameter.
+    """
     _inject_creationflags(kwargs)
     return subprocess.run(cmd_parts, timeout=timeout, **kwargs)

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Kimi / Moonshot backend -- Kimi-K2, Kimi-K2.5, Kimi-K2.6 (2026 lineup).
@@ -62,7 +62,17 @@ class KimiBackend(OpenAISSEBackend):
         model: str = "kimi-k2.6",
         **kwargs: Any,
     ) -> None:
+        """Initialize the Kimi (Moonshot) backend.
+
+        Args:
+            api_key: Moonshot API key. Falls back to the KIMI_API_KEY
+                environment variable when empty.
+            base_url: API endpoint; defaults to the Moonshot v1 URL.
+            model: Default Kimi model identifier.
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the Moonshot v1 URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
@@ -102,4 +112,5 @@ class KimiBackend(OpenAISSEBackend):
         return None
 
     def context_window_size(self) -> int:
+        """Return the context window size (in tokens) for Kimi models."""
         return 262144

@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""User profile subsystem for Encre.
+
+Builds and maintains a durable :class:`UserProfile` (expertise, language,
+tooling, tone, ...).  :class:`EncreProfileSystem` persists it to disk
+and :class:`~encre.profile.inferrer.ProfileInferrer` derives new
+traits from a conversation with an LLM.
+"""
 
 from encre.profile.system import EncreProfileSystem, UserProfile
 

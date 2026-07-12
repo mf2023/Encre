@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 GMI Cloud backend -- GPU cloud infrastructure with multi-model API.
@@ -56,13 +56,30 @@ class GMIBackend(OpenAISSEBackend):
         model: str = "deepseek-ai/DeepSeek-V3.2",
         **kwargs: Any,
     ) -> None:
+        """Initialize the GMI Cloud backend.
+
+        Args:
+            api_key: GMI Cloud API key. Falls back to the GMI_API_KEY
+                environment variable when empty.
+            base_url: API endpoint; defaults to the GMI serving URL.
+            model: Default model identifier (provider-prefixed).
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the GMI serving URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def _extract_extra_stream_events(
         self, delta: dict[str, Any]
     ) -> list[BackendEvent]:
+        """Extract reasoning tokens from a streaming response delta.
+
+        GMI-hosted reasoning models emit chain-of-thought text under the
+        ``reasoning_content`` key. When present, it is surfaced as a
+        BackendThinking event so the agent loop can display it separately.
+        """
+        # Pull the incremental reasoning text from this chunk, if any.
         reasoning = delta.get("reasoning_content")
         if reasoning:
             return [create_backend_thinking(reasoning)]
@@ -71,10 +88,18 @@ class GMIBackend(OpenAISSEBackend):
     def _extract_extra_non_stream_events(
         self, message: dict[str, Any]
     ) -> list[BackendEvent]:
+        """Extract reasoning tokens from a non-streaming response message.
+
+        Mirrors :meth:`_extract_extra_stream_events` for the non-streaming
+        code path, where the full message object is available at once.
+        """
+        # Pull the complete reasoning text from the finished message, if any.
         reasoning = message.get("reasoning_content")
         if reasoning:
             return [create_backend_thinking(reasoning)]
         return []
 
     def context_window_size(self) -> int:
+        """Return the context window size (in tokens) for GMI models."""
+        # GMI Cloud's hosted models (DeepSeek V3, Llama 3.3) use ~163K context.
         return 163000

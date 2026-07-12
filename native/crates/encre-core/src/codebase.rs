@@ -15,23 +15,38 @@ const SKIP_DIRS: &[&str] = &[
     "win-unpacked", "resources",
 ];
 
+/// Per-module index entry: imports, exports, and metadata.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
+    /// Relative path of the module within the workspace.
 pub struct ModuleInfo {
+    /// Module name (defaults to its relative path).
     pub path: String,
+    /// Modules/packages this module imports.
     pub name: String,
+    /// Modules that import this module (reverse edges).
     pub imports: Vec<String>,
+    /// Public symbols this module exports.
     pub imported_by: Vec<String>,
+    /// Detected language of the module.
     pub exports: Vec<String>,
+    /// Line count of the module.
     pub language: String,
     pub loc: usize,
 }
 
+/// Serialised workspace code index.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
+    /// Workspace root path.
 pub struct CodeIndexData {
+    /// Indexed modules keyed by relative path.
     pub workspace: String,
+    /// Per-file modification times for incremental updates.
     pub modules: HashMap<String, ModuleInfo>,
+    /// Whether the workspace is a git repository.
     pub file_mtimes: HashMap<String, f64>,
+    /// Whether a `.gitignore` exists in the workspace.
     pub has_git: bool,
+    /// Count of git-ignored files encountered during scan.
     pub has_gitignore: bool,
     pub gitignored_count: usize,
 }
@@ -270,6 +285,7 @@ fn parse_module(rel: &str, content: &str, ext: &str) -> ModuleInfo {
     }
 }
 
+// Recompute reverse dependency edges between modules.
 fn build_dependencies(modules: &mut HashMap<String, ModuleInfo>) {
     let mut modules_by_name: HashMap<String, String> = HashMap::new();
     for mod_info in modules.values() {
@@ -302,6 +318,7 @@ fn build_dependencies(modules: &mut HashMap<String, ModuleInfo>) {
     }
 }
 
+// Walk the workspace honouring .gitignore, skipping ignored directories.
 fn scan_workspace_files(workspace_path: &Path) -> Vec<(String, PathBuf, fs::Metadata)> {
     let walker = WalkBuilder::new(workspace_path)
         .hidden(false)
@@ -374,6 +391,7 @@ fn parse_file_to_module(rel: &str, path: &Path, metadata: &fs::Metadata) -> Opti
     Some((parse_module(rel, &content, &ext), mtime))
 }
 
+/// Build (or rebuild) the full code index for a workspace from scratch.
 pub fn build_code_index(workspace: &str) -> Result<CodeIndexData, String> {
     let workspace_path = Path::new(workspace)
         .canonicalize()
@@ -399,6 +417,7 @@ pub fn build_code_index(workspace: &str) -> Result<CodeIndexData, String> {
     Ok(data)
 }
 
+/// Count the number of files that would be indexed in a workspace.
 pub fn count_code_index_candidates(workspace: &str) -> Result<usize, String> {
     let workspace_path = Path::new(workspace)
         .canonicalize()
@@ -406,6 +425,7 @@ pub fn count_code_index_candidates(workspace: &str) -> Result<usize, String> {
     Ok(scan_workspace_files(&workspace_path).len())
 }
 
+/// Incrementally update the code index, re-parsing only changed files.
 pub fn update_code_index(workspace: &str) -> Result<CodeIndexData, String> {
     let workspace_path = Path::new(workspace)
         .canonicalize()
@@ -464,6 +484,7 @@ pub fn update_code_index(workspace: &str) -> Result<CodeIndexData, String> {
     Ok(data)
 }
 
+/// Persist the code index to `.encre/code_index.json`.
 pub fn save_code_index(workspace: &str, data: &CodeIndexData) -> Result<(), String> {
     let path = storage_path(workspace);
     if let Some(parent) = path.parent() {
@@ -473,12 +494,14 @@ pub fn save_code_index(workspace: &str, data: &CodeIndexData) -> Result<(), Stri
     fs::write(path, json).map_err(|e| e.to_string())
 }
 
+/// Load a previously built code index from disk.
 pub fn load_code_index(workspace: &str) -> Result<CodeIndexData, String> {
     let path = storage_path(workspace);
     let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str::<CodeIndexData>(&raw).map_err(|e| e.to_string())
 }
 
+/// BM25-rank files in the index for a free-text query.
 pub fn search_code_index(workspace: &str, query: &str, limit: usize) -> Result<Vec<(String, f64)>, String> {
     let data = load_code_index(workspace)?;
     let workspace_path = Path::new(workspace);
@@ -500,6 +523,7 @@ pub fn search_code_index(workspace: &str, query: &str, limit: usize) -> Result<V
     Ok(idx.search(query, limit, 1.5, 0.75, 2.0))
 }
 
+/// Build a textual context block (source + imports/exports) for a file.
 pub fn build_code_context(workspace: &str, file_path: &str) -> Result<String, String> {
     let mut data = load_code_index(workspace)?;
     build_dependencies(&mut data.modules);

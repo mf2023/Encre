@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for GroqBackend -- construction, capabilities, context window, tokens."""
 
@@ -39,18 +39,23 @@ class TestGroqBackendConstruction:
     def test_create_default(self):
         """Default model is llama-3.3-70b-versatile, base URL is api.groq.com."""
         be = GroqBackend(api_key="gsk-test")
+        # Verify: be.model == "llama-3.3-70b-versatile"
         assert be.model == "llama-3.3-70b-versatile"
+        # Verify: be.api_key == "gsk-test"
         assert be.api_key == "gsk-test"
+        # Verify: be.api_base_url == "https://api.groq.com/openai/v1"
         assert be.api_base_url == "https://api.groq.com/openai/v1"
 
     def test_create_with_custom_model(self):
         """Explicit model is stored correctly."""
         be = GroqBackend(api_key="gsk-test", model="llama-4-scout")
+        # Verify: be.model == "llama-4-scout"
         assert be.model == "llama-4-scout"
 
     def test_create_with_gpt_oss_model(self):
         """GPT-OSS 120B model."""
         be = GroqBackend(api_key="gsk-test", model="gpt-oss-120b")
+        # Verify: be.model == "gpt-oss-120b"
         assert be.model == "gpt-oss-120b"
 
     def test_create_with_custom_base_url(self):
@@ -59,17 +64,21 @@ class TestGroqBackendConstruction:
             api_key="gsk-test",
             base_url="https://custom-groq.example.com/openai/v1",
         )
+        # Verify: be.api_base_url == "https://custom-groq.example.com/openai/v1"
         assert be.api_base_url == "https://custom-groq.example.com/openai/v1"
 
     def test_create_with_empty_api_key(self):
         """Empty API key is allowed."""
         be = GroqBackend()
+        # Verify: be.api_key == ""
         assert be.api_key == ""
+        # Verify: be.model == "llama-3.3-70b-versatile"
         assert be.model == "llama-3.3-70b-versatile"
 
     def test_create_with_http_timeout(self):
         """http_timeout kwarg is forwarded."""
         be = GroqBackend(api_key="gsk-test", http_timeout=30.0)
+        # Verify: be.http_timeout == 30.0
         assert be.http_timeout == 30.0
 
 
@@ -83,6 +92,7 @@ class TestGroqBackendCapabilities:
     def test_supports_tool_calling(self):
         """Groq models support OpenAI-compatible tool calling."""
         be = GroqBackend(api_key="gsk-test")
+        # Verify: be.supports_tool_calling() is True
         assert be.supports_tool_calling() is True
 
     def test_supports_tool_calling_different_models(self):
@@ -90,18 +100,21 @@ class TestGroqBackendCapabilities:
         models = ["llama-3.3-70b-versatile", "llama-4-scout", "gpt-oss-120b"]
         for m in models:
             be = GroqBackend(api_key="gsk-test", model=m)
+            # Verify: be.supports_tool_calling() is True, f"model={m}"
             assert be.supports_tool_calling() is True, f"model={m}"
 
     def test_supports_thinking_returns_bool(self):
         """Groq does not override supports_thinking; returns inherited bool."""
         be = GroqBackend(api_key="gsk-test")
         result = be.supports_thinking()
+        # Verify: isinstance(result, bool)
         assert isinstance(result, bool)
 
     def test_supports_prompt_caching_returns_bool(self):
         """Prompt caching flag is a boolean (inherited default)."""
         be = GroqBackend(api_key="gsk-test")
         result = be.supports_prompt_caching()
+        # Verify: isinstance(result, bool)
         assert isinstance(result, bool)
 
 
@@ -115,22 +128,27 @@ class TestGroqBackendContextWindow:
     def test_context_window_size_default(self):
         """All Groq models: 131,072 tokens (128K)."""
         be = GroqBackend(api_key="gsk-test")
+        # Verify: be.context_window_size() == 131072
         assert be.context_window_size() == 131072
 
     def test_context_window_size_scout(self):
         """Llama 4 Scout: 131,072 tokens."""
         be = GroqBackend(api_key="gsk-test", model="llama-4-scout")
+        # Verify: be.context_window_size() == 131072
         assert be.context_window_size() == 131072
 
     def test_context_window_size_gpt_oss(self):
         """GPT-OSS 120B: 131,072 tokens."""
         be = GroqBackend(api_key="gsk-test", model="gpt-oss-120b")
+        # Verify: be.context_window_size() == 131072
         assert be.context_window_size() == 131072
 
     def test_context_window_positive(self):
         """Context window is always positive."""
         be = GroqBackend(api_key="gsk-test")
+        # Verify: be.context_window_size() > 0
         assert be.context_window_size() > 0
+        # Verify: isinstance(be.context_window_size(), int)
         assert isinstance(be.context_window_size(), int)
 
 
@@ -145,24 +163,29 @@ class TestGroqBackendTokens:
         """count_tokens returns an integer."""
         be = GroqBackend(api_key="gsk-test")
         result = be.count_tokens("hello world")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_empty_string(self):
         """Empty string should not crash."""
         be = GroqBackend(api_key="gsk-test")
         result = be.count_tokens("")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_long_text(self):
         """Long text should not crash."""
         be = GroqBackend(api_key="gsk-test")
         result = be.count_tokens("Groq ultra-low-latency inference. " * 200)
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_model_attribute(self):
         """model attribute matches constructor argument."""
         be = GroqBackend(api_key="gsk-test", model="llama-4-scout")
+        # Verify: be.model == "llama-4-scout"
         assert be.model == "llama-4-scout"
+        # Verify: isinstance(be.model, str)
         assert isinstance(be.model, str)
 
 
@@ -180,6 +203,7 @@ class TestGroqBackendRequestBuilding:
             messages=[{"role": "user", "content": "hello"}],
             max_tokens=1024,
         )
+        # Verify: data["max_tokens"] == 1024
         assert data["max_tokens"] == 1024
 
     def test_build_request_includes_model(self):
@@ -188,6 +212,7 @@ class TestGroqBackendRequestBuilding:
         data = be._build_request_data(
             messages=[{"role": "user", "content": "hello"}],
         )
+        # Verify: data["model"] == "llama-4-scout"
         assert data["model"] == "llama-4-scout"
 
     def test_build_request_stream_flag(self):
@@ -197,12 +222,14 @@ class TestGroqBackendRequestBuilding:
             messages=[{"role": "user", "content": "hello"}],
             stream=True,
         )
+        # Verify: data_stream["stream"] is True
         assert data_stream["stream"] is True
 
         data_nostream = be._build_request_data(
             messages=[{"role": "user", "content": "hello"}],
             stream=False,
         )
+        # Verify: data_nostream["stream"] is False
         assert data_nostream["stream"] is False
 
 
@@ -222,6 +249,7 @@ class TestGroqBackendLifecycle:
         """aclose() called twice should not raise."""
 
         async def _double():
+            """Helper: Double."""
             be = GroqBackend(api_key="gsk-test")
             await be.aclose()
             await be.aclose()

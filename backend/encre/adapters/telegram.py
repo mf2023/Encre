@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# telegram.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - TelegramAdapter
+#
 import asyncio
 import logging
 from typing import Any
@@ -78,6 +91,15 @@ class TelegramAdapter(BaseAdapter):
 
     @classmethod
     async def validate_config(cls, config: dict[str, Any]) -> tuple[bool, str]:
+        """
+        Validate config.
+
+        Args:
+            config (dict[str, Any]):
+
+        Returns:
+            tuple[bool, str]
+        """
         token = config.get("bot_token", "")
         if not token:
             return (False, "bot_token is required")
@@ -104,6 +126,16 @@ class TelegramAdapter(BaseAdapter):
         token: str,
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            token (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         if not TELEGRAM_AVAILABLE:
             raise ImportError(

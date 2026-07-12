@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Performance benchmarks for critical paths: semantic search, tokenization,
 memory scanning, Jaccard/tf-idf vectorization."""
@@ -43,19 +43,25 @@ from encre.memdir.semantic import (
 # ===========================================================================
 
 class TestTokenizerBench:
+    """Test suite for TokenizerBench."""
     def test_tokenize_10k_lines(self):
+        """Test: Tokenize 10k lines."""
         text = "Hello world this is a test of the tokenizer. " * 10000
         start = time.perf_counter()
         tokens = _tokenize(text)
         elapsed = time.perf_counter() - start
+        # Verify: len(tokens) > 0
         assert len(tokens) > 0
+        # Verify: elapsed < 5.0, f"tokenize 10k lines took {elapsed:.2f}s"
         assert elapsed < 5.0, f"tokenize 10k lines took {elapsed:.2f}s"
 
     def test_tokenize_chinese(self):
+        """Test: Tokenize chinese."""
         text = "测试中文分词效果 这是一个测试 " * 5000
         start = time.perf_counter()
         _tokenize(text)
         elapsed = time.perf_counter() - start
+        # Verify: elapsed < 5.0, f"tokenize Chinese took {elapsed:.2f}s"
         assert elapsed < 5.0, f"tokenize Chinese took {elapsed:.2f}s"
 
 
@@ -64,19 +70,24 @@ class TestTokenizerBench:
 # ===========================================================================
 
 class TestJaccardBench:
+    """Test suite for JaccardBench."""
     def test_jaccard_1000_pairs(self):
+        """Test: Jaccard 1000 pairs."""
         docs = [f"This is document number {i} about various topics including python, rust, typescript, and more." for i in range(100)]  # noqa: E501
         start = time.perf_counter()
         for i in range(len(docs) - 1):
             _jaccard_similarity(docs[i], docs[i + 1])
         elapsed = time.perf_counter() - start
+        # Verify: elapsed < 1.0, f"1000 Jaccard pairs took {elapsed:.2f}s"
         assert elapsed < 1.0, f"1000 Jaccard pairs took {elapsed:.2f}s"
 
     def test_jaccard_empty(self):
+        """Test: Jaccard empty."""
         start = time.perf_counter()
         for _ in range(10000):
             _jaccard_similarity("", "")
         elapsed = time.perf_counter() - start
+        # Verify: elapsed < 0.5, f"10000 empty Jaccard took {elapsed:.2f}s"
         assert elapsed < 0.5, f"10000 empty Jaccard took {elapsed:.2f}s"
 
 
@@ -85,15 +96,20 @@ class TestJaccardBench:
 # ===========================================================================
 
 class TestTfIdfBench:
+    """Test suite for TfIdfBench."""
     def test_build_idf_large_corpus(self):
+        """Test: Build idf large corpus."""
         corpus = [f"Document {i}: contains words about various topics like python programming and async rust development." for i in range(1000)]  # noqa: E501
         start = time.perf_counter()
         idf = _build_idf(corpus)
         elapsed = time.perf_counter() - start
+        # Verify: len(idf) > 0
         assert len(idf) > 0
+        # Verify: elapsed < 2.0, f"build_idf 1000 docs took {elapsed:.2f}s"
         assert elapsed < 2.0, f"build_idf 1000 docs took {elapsed:.2f}s"
 
     def test_vectorize_and_cosine(self):
+        """Test: Vectorize and cosine."""
         corpus = [f"Document {i}: python rust typescript async programming patterns" for i in range(500)]  # noqa: E501
         idf = _build_idf(corpus)
         vocab = set(idf.keys())
@@ -102,6 +118,7 @@ class TestTfIdfBench:
         for i in range(len(vecs) - 1):
             _cosine_similarity(vecs[i], vecs[i + 1])
         elapsed = time.perf_counter() - start
+        # Verify: elapsed < 1.0, f"500 cosine pairs took {elapsed:.2f}s"
         assert elapsed < 1.0, f"500 cosine pairs took {elapsed:.2f}s"
 
 
@@ -110,7 +127,9 @@ class TestTfIdfBench:
 # ===========================================================================
 
 class TestMemoryScanBench:
+    """Test suite for MemoryScanBench."""
     def test_scan_large_memory_dir(self):
+        """Test: Scan large memory dir."""
         tmpdir = tempfile.mkdtemp()
         # Create 200 memory files
         for i in range(200):
@@ -122,13 +141,16 @@ class TestMemoryScanBench:
         start = time.perf_counter()
         memories = ms.scan()
         elapsed = time.perf_counter() - start
+        # Verify: len(memories) > 0
         assert len(memories) > 0
+        # Verify: elapsed < 3.0, f"scan 200 files took {elapsed:.2f}s"
         assert elapsed < 3.0, f"scan 200 files took {elapsed:.2f}s"
 
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_semantic_search_performance(self):
+        """Test: Semantic search performance."""
         tmpdir = tempfile.mkdtemp()
         for i in range(100):
             with open(os.path.join(tmpdir, f"doc_{i:04d}.md"), "w", encoding="utf-8") as f:
@@ -139,7 +161,9 @@ class TestMemoryScanBench:
         start = time.perf_counter()
         results = sms.search("python async programming", top_k=10)
         elapsed = time.perf_counter() - start
+        # Verify: len(results) > 0
         assert len(results) > 0
+        # Verify: elapsed < 2.0, f"semantic search 100 docs took {elapsed:.2f}s"
         assert elapsed < 2.0, f"semantic search 100 docs took {elapsed:.2f}s"
 
         import shutil
@@ -151,7 +175,9 @@ class TestMemoryScanBench:
 # ===========================================================================
 
 class TestConsolidationBench:
+    """Test suite for ConsolidationBench."""
     def test_consolidate_many_files(self):
+        """Test: Consolidate many files."""
         tmpdir = tempfile.mkdtemp()
         from encre.memdir.semantic import MemoryConsolidator
 
@@ -163,6 +189,7 @@ class TestConsolidationBench:
         start = time.perf_counter()
         mc.consolidate(files, {})
         elapsed = time.perf_counter() - start
+        # Verify: elapsed < 2.0, f"consolidate 50 files took {elapsed:.2f}s"
         assert elapsed < 2.0, f"consolidate 50 files took {elapsed:.2f}s"
 
         import shutil

@@ -21,10 +21,11 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 from encre.rules.loader import RulesLoader
 
+# Public surface of the rules package: only the loader is exported.
 __all__ = [
     "RulesLoader",
 ]

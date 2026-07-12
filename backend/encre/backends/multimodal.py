@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Multimodal capability mixin for OpenAI-protocol backends.
@@ -52,11 +52,9 @@ Provider-specific overrides:
   ``httpx_ws`` package to a transport instance for Realtime.
 
 The mixin is additive; every multimodal method starts by checking the
-relevant ``supports_*`` flag and falls back to :class:`NotImplementedError`
-when the feature is not available.
-"""
-
-from __future__ import annotations
+    relevant ``supports_*`` flag and falls back to :class:`NotImplementedError`
+    when the feature is not available.
+    """
 
 import asyncio
 import base64
@@ -91,6 +89,7 @@ from encre.utils.types import (
     ResponseObject,
 )
 
+# Central logger for all multimodal API activity.
 _LOG = logging.getLogger("encre.backend.multimodal")
 
 
@@ -570,6 +569,8 @@ class MultimodalMixin:
                     # Decode as little-endian float32 list
                     import struct
                     count = len(decoded) // 4
+                    # Interpret the raw bytes as ``count`` little-endian f32
+                    # values (OpenAI's binary embedding format).
                     emb_raw = list(struct.unpack(f"<{count}f", decoded[: count * 4]))
                 except Exception:
                     emb_raw = []

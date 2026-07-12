@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/docker.py
 
+Docker implementation for the Encre tool system.
+"""
 import asyncio
 from typing import Any
 
@@ -30,6 +34,11 @@ from encre.tools.base import build_tool
 
 
 async def _docker_execute(**kwargs: Any) -> str:
+    """Docker execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     command = kwargs.get("command", "ps")
     image_or_container = kwargs.get("image_or_container", "")
     options = kwargs.get("options", "")
@@ -102,4 +111,7 @@ EncreDockerTool = build_tool(
     execute=_docker_execute,
     intents=["coding", "system"],
     is_concurrency_safe=lambda data: data.get("command") in ("ps", "logs"),
+    category="infra",
+    semantic_type="exec",
+    is_destructive=lambda args: args.get("action", "") in ("rm", "rmi", "stop", "compose", "prune", "system"),
 )

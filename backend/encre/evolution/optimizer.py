@@ -21,7 +21,17 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Per-tool strategy optimisation for the evolution subsystem.
+
+:class:`EncreStrategyOptimizer` records the outcome of each tool invocation
+keyed by a parameter-signature, learning which parameter *patterns* tend to
+succeed.  It can then :meth:`suggest_strategy` (prefer the best-known
+pattern) or :meth:`get_fallback` (suggest an alternative when the current
+pattern looks likely to fail).  :class:`ToolStrategy` holds the per-pattern
+statistics.
+"""
 
 import re
 import time
@@ -31,6 +41,11 @@ from typing import Any
 
 @dataclass
 class ToolStrategy:
+    """Statistics for one parameter-pattern of a tool.
+
+    Tracks success/failure counts, accumulated latency and last-use time so a
+    score (success rate weighted by sample count) can rank competing patterns.
+    """
     tool_name: str
     param_signature: str  # hash of key param structure
     success_count: int = 0
@@ -40,24 +55,29 @@ class ToolStrategy:
 
     @property
     def success_rate(self) -> float:
+        """Fraction of recorded outcomes that succeeded."""
         total = self.success_count + self.fail_count
         return self.success_count / total if total > 0 else 0.0
 
     @property
     def avg_latency_ms(self) -> float:
+        """Mean latency (ms) across all recorded outcomes."""
         total = self.success_count + self.fail_count
         return self.total_latency_ms / total if total > 0 else 0.0
 
     @property
     def score(self) -> float:
+        """Rank score: success rate boosted by sample count."""
         return self.success_rate * (1.0 + min(self.success_count, 10) * 0.1)
 
 
 class EncreStrategyOptimizer:
+    """Learns and ranks per-tool parameter patterns from outcomes."""
     MAX_STRATEGIES_PER_TOOL = 20
     MIN_SAMPLES_FOR_RECOMMENDATION = 3
 
     def __init__(self) -> None:
+        """Initialise the empty per-tool strategy table."""
         self._strategies: dict[str, dict[str, ToolStrategy]] = {}
 
     def record_outcome(
@@ -67,6 +87,7 @@ class EncreStrategyOptimizer:
         success: bool,
         latency_ms: float = 0.0,
     ) -> None:
+        """Record a single tool outcome, creating/updating its strategy."""
         sig = _param_signature(params)
         strategies = self._strategies.setdefault(tool_name, {})
         if sig not in strategies:
@@ -85,6 +106,7 @@ class EncreStrategyOptimizer:
         st.last_used = time.time()
 
     def suggest_strategy(self, tool_name: str, _context: str) -> dict[str, Any] | None:
+        """Suggest the highest-scoring pattern once enough samples exist."""
         strategies = self._strategies.get(tool_name, {})
         if not strategies:
             return None
@@ -98,7 +120,9 @@ class EncreStrategyOptimizer:
         return {"_strategy_hint": f"prefer pattern: {best.param_signature}", "_confidence": best.success_rate}
 
     def get_fallback(self, tool_name: str, current_params: dict[str, Any]) -> dict[str, Any] | None:
+        """Suggest a different high-success pattern than the one in use."""
         strategies = self._strategies.get(tool_name, {})
+        current_sig = _param_signature(current_params)
         current_sig = _param_signature(current_params)
         ranked = sorted(strategies.values(), key=lambda s: s.score, reverse=True)
         for st in ranked:
@@ -109,6 +133,7 @@ class EncreStrategyOptimizer:
         return None
 
     def get_statistics(self) -> dict[str, Any]:
+        """Return per-tool strategy counts and best success rates."""
         result: dict[str, Any] = {}
         for tool_name, strategies in self._strategies.items():
             ranked = sorted(strategies.values(), key=lambda s: s.score, reverse=True)
@@ -120,6 +145,7 @@ class EncreStrategyOptimizer:
         return result
 
     def _evict_one(self, tool_name: str) -> None:
+        """Evict the worst-scoring, least-recently-used strategy."""
         strategies = self._strategies.get(tool_name, {})
         if not strategies:
             return
@@ -127,10 +153,12 @@ class EncreStrategyOptimizer:
         del strategies[worst.param_signature]
 
     def reset(self) -> None:
+        """Clear all learned strategies."""
         self._strategies.clear()
 
 
 def _param_signature(params: dict[str, Any]) -> str:
+    """Encode the key/type structure of params into a stable signature."""
     keys = sorted(params.keys())
     types = []
     for k in keys:

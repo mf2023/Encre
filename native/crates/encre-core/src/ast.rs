@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{Language, Node, Parser};
 use walkdir::WalkDir;
 
+/// Maximum file size (2 MiB) that is indexed or parsed for symbols.
 const MAX_FILE_SIZE: u64 = 2 * 1024 * 1024;
+/// Directories excluded from AST walking.
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
     "__pycache__",
@@ -29,44 +31,68 @@ const SKIP_DIRS: &[&str] = &[
     ".encre",
 ];
 
+/// A symbol (function, class, variable, …) extracted from source.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
+    /// Symbol name as written in source.
 pub struct Symbol {
+    /// Kind of symbol (e.g. "function", "class", "struct").
     pub name: String,
+    /// Relative path of the file containing the symbol.
     pub kind: String,
+    /// 0-based start line of the symbol.
     pub file: String,
+    /// 0-based start column of the symbol.
     pub start_line: usize,
+    /// 0-based end line of the symbol.
     pub start_col: usize,
+    /// 0-based end column of the symbol.
     pub end_line: usize,
+    /// Name of the enclosing symbol, if any.
     pub end_col: usize,
+    /// Optional source signature (first non-empty line).
     pub parent: Option<String>,
+    /// Optional docstring (Python only).
     pub signature: Option<String>,
     pub docstring: Option<String>,
 }
 
+/// A textual reference / usage occurrence of an identifier.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
+    /// File containing the reference.
 pub struct Reference {
+    /// 0-based line of the reference.
     pub file: String,
+    /// 0-based column of the reference.
     pub line: usize,
+    /// Referenced identifier name.
     pub col: usize,
+    /// Always "reference".
     pub name: String,
     pub kind: String,
 }
 
+/// Serialised AST index for a workspace.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
+    /// Workspace root path.
 pub struct AstIndexData {
+    /// Per-file modification times, used for incremental updates.
     pub workspace: String,
+    /// Symbols grouped by relative file path.
     pub file_mtimes: HashMap<String, f64>,
     pub symbols_by_file: HashMap<String, Vec<Symbol>>,
 }
 
+// Path to the persisted JSON index inside `.encre/`.
 fn storage_path(workspace: &str) -> PathBuf {
     Path::new(workspace).join(".encre").join("ast_index.json")
 }
 
+// Detect binary content by scanning for NUL bytes in the first 8 KiB.
 fn is_binary(content: &[u8]) -> bool {
     content[..content.len().min(8192)].contains(&0x00)
 }
 
+// Skip a path whose any component is a dotfile or a skipped directory.
 fn should_skip_path(path: &Path) -> bool {
     path.components().any(|component| match component {
         std::path::Component::Normal(part) => {
@@ -77,12 +103,14 @@ fn should_skip_path(path: &Path) -> bool {
     })
 }
 
+// Convert an absolute path to a repo-relative, forward-slash path.
 fn rel_path(path: &Path, workspace: &Path) -> Option<String> {
     path.strip_prefix(workspace)
         .ok()
         .map(|p| p.to_string_lossy().replace('\\', "/"))
 }
 
+// Map a file extension to its tree-sitter language name.
 fn lang_by_ext(ext: &str) -> Option<&'static str> {
     match ext {
         ".py" | ".pyi" | ".pyx" => Some("python"),
@@ -104,6 +132,7 @@ fn lang_by_ext(ext: &str) -> Option<&'static str> {
     }
 }
 
+// Resolve a tree-sitter `Language` for a given language name.
 fn language_for_name(name: &str) -> Option<Language> {
     match name {
         "python" => Some(tree_sitter_python::LANGUAGE.into()),
@@ -125,6 +154,7 @@ fn language_for_name(name: &str) -> Option<Language> {
     }
 }
 
+// Map a tree-sitter node type to a normalized symbol-kind string.
 fn definition_kind(lang: &str, node_type: &str) -> Option<&'static str> {
     match lang {
         "python" => match node_type {
@@ -240,6 +270,7 @@ fn definition_kind(lang: &str, node_type: &str) -> Option<&'static str> {
     }
 }
 
+// Read a source file, rejecting oversized or binary content.
 fn read_source_file(path: &Path) -> Result<String, String> {
     let raw = fs::read(path).map_err(|e| e.to_string())?;
     if raw.len() as u64 > MAX_FILE_SIZE {
@@ -251,10 +282,12 @@ fn read_source_file(path: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&raw).into_owned())
 }
 
+// Slice `content` by byte offsets into an owned `String`.
 fn slice_bytes(content: &str, start: usize, end: usize) -> Option<String> {
     content.get(start..end).map(|s| s.to_string())
 }
 
+// Extract the identifier name from a definition node.
 fn extract_name(node: &Node<'_>, content: &str) -> Option<String> {
     if let Some(name_node) = node.child_by_field_name("name") {
         return slice_bytes(content, name_node.start_byte(), name_node.end_byte());
@@ -312,6 +345,7 @@ fn extract_name(node: &Node<'_>, content: &str) -> Option<String> {
     None
 }
 
+// Extract the first non-empty source line as a signature.
 fn extract_signature(node: &Node<'_>, content: &str) -> Option<String> {
     let start = node.start_position().row;
     let lines: Vec<&str> = content.split('\n').collect();
@@ -326,6 +360,7 @@ fn extract_signature(node: &Node<'_>, content: &str) -> Option<String> {
     None
 }
 
+// Extract a Python docstring from the first body statement.
 fn extract_docstring(node: &Node<'_>, content: &str, lang: &str) -> Option<String> {
     if lang != "python" {
         return None;
@@ -351,6 +386,7 @@ fn extract_docstring(node: &Node<'_>, content: &str, lang: &str) -> Option<Strin
     None
 }
 
+// Recursively walk a tree-sitter node, collecting symbols.
 fn walk_symbols(
     node: Node<'_>,
     rel_path: &str,
@@ -390,6 +426,7 @@ fn walk_symbols(
     }
 }
 
+// Parse a single source file into a list of symbols.
 fn parse_symbols(rel_path: &str, content: &str, lang: &str) -> Vec<Symbol> {
     let Some(language) = language_for_name(lang) else {
         return Vec::new();
@@ -407,6 +444,7 @@ fn parse_symbols(rel_path: &str, content: &str, lang: &str) -> Vec<Symbol> {
     out
 }
 
+// Walk the workspace and gather (path, rel, lang, mtime) tuples.
 fn collect_source_files(workspace: &Path) -> Vec<(PathBuf, String, String, f64)> {
     let mut out = Vec::new();
     for entry in WalkDir::new(workspace).into_iter().filter_map(Result::ok) {
@@ -447,6 +485,7 @@ fn collect_source_files(workspace: &Path) -> Vec<(PathBuf, String, String, f64)>
     out
 }
 
+// Persist the AST index to `.encre/ast_index.json`.
 fn save_index(data: &AstIndexData) -> Result<(), String> {
     let path = storage_path(&data.workspace);
     let parent = path.parent().ok_or_else(|| "invalid storage path".to_string())?;
@@ -455,14 +494,17 @@ fn save_index(data: &AstIndexData) -> Result<(), String> {
     fs::write(path, payload).map_err(|e| e.to_string())
 }
 
+/// Always returns `true`: the tree-sitter backend is statically linked.
 pub fn ast_available() -> bool {
     true
 }
 
+/// Return the human-readable name of the AST backend.
 pub fn ast_backend_name() -> &'static str {
     "tree-sitter-static"
 }
 
+/// Load a previously built AST index from disk.
 pub fn load_ast_index(workspace: &str) -> Result<AstIndexData, String> {
     let path = storage_path(workspace);
     let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
@@ -473,6 +515,7 @@ pub fn load_ast_index(workspace: &str) -> Result<AstIndexData, String> {
     Ok(data)
 }
 
+/// Build (or rebuild) the AST index for a workspace from scratch.
 pub fn build_ast_index(workspace: &str) -> Result<AstIndexData, String> {
     let ws = Path::new(workspace);
     if !ws.exists() {
@@ -498,6 +541,7 @@ pub fn build_ast_index(workspace: &str) -> Result<AstIndexData, String> {
     Ok(data)
 }
 
+/// Incrementally update the AST index, re-parsing only changed files.
 pub fn update_ast_index(workspace: &str) -> Result<AstIndexData, String> {
     let ws = Path::new(workspace);
     if !ws.exists() {
@@ -542,6 +586,7 @@ pub fn update_ast_index(workspace: &str) -> Result<AstIndexData, String> {
     Ok(data)
 }
 
+// Build a name -> symbols map across the whole workspace.
 fn global_index(data: &AstIndexData) -> HashMap<String, Vec<Symbol>> {
     let mut out: HashMap<String, Vec<Symbol>> = HashMap::new();
     for symbols in data.symbols_by_file.values() {
@@ -552,16 +597,19 @@ fn global_index(data: &AstIndexData) -> HashMap<String, Vec<Symbol>> {
     out
 }
 
+/// Look up all symbols matching a given name across the workspace.
 pub fn ast_get_symbol(workspace: &str, name: &str) -> Result<Vec<Symbol>, String> {
     let data = load_ast_index(workspace)?;
     Ok(global_index(&data).remove(name).unwrap_or_default())
 }
 
+/// Return all symbols defined in a single file.
 pub fn ast_get_outline(workspace: &str, file: &str) -> Result<Vec<Symbol>, String> {
     let data = load_ast_index(workspace)?;
     Ok(data.symbols_by_file.get(file).cloned().unwrap_or_default())
 }
 
+/// Return a sorted list of indexed file paths.
 pub fn ast_list_files(workspace: &str) -> Result<Vec<String>, String> {
     let data = load_ast_index(workspace)?;
     let mut files: Vec<String> = data.file_mtimes.keys().cloned().collect();
@@ -569,6 +617,7 @@ pub fn ast_list_files(workspace: &str) -> Result<Vec<String>, String> {
     Ok(files)
 }
 
+/// Find symbols whose name contains `name`, up to `limit` results.
 pub fn ast_find_relevant(workspace: &str, name: &str, limit: usize) -> Result<Vec<Symbol>, String> {
     if name.is_empty() {
         return Ok(Vec::new());
@@ -588,6 +637,7 @@ pub fn ast_find_relevant(workspace: &str, name: &str, limit: usize) -> Result<Ve
     Ok(out)
 }
 
+/// Find every textual occurrence of `name` across indexed files.
 pub fn ast_find_references(workspace: &str, name: &str) -> Result<Vec<Reference>, String> {
     let ident = Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*$").expect("valid identifier regex");
     if name.is_empty() || !ident.is_match(name) {
@@ -619,6 +669,7 @@ pub fn ast_find_references(workspace: &str, name: &str) -> Result<Vec<Reference>
     Ok(refs)
 }
 
+// Extract the identifier surrounding a (line, column) position.
 fn extract_identifier_at(line_text: &str, col: usize) -> Option<String> {
     if col >= line_text.chars().count() {
         return None;
@@ -638,6 +689,7 @@ fn extract_identifier_at(line_text: &str, col: usize) -> Option<String> {
     Some(chars[start..end].iter().collect())
 }
 
+/// Resolve the definition of the symbol at a position in a file.
 pub fn ast_goto_definition(workspace: &str, file: &str, line: usize, col: usize) -> Result<Option<Symbol>, String> {
     let full = Path::new(workspace).join(file);
     let content = fs::read_to_string(full).map_err(|e| e.to_string())?;

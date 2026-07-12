@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# signal.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - SignalAdapter
+#
 import asyncio
 import json
 import logging
@@ -95,6 +108,17 @@ class SignalAdapter(BaseAdapter):
         http_url: str = "http://127.0.0.1:8080",
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            account (str):
+            http_url (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         self._account = account
         self._http_url = http_url.rstrip("/")

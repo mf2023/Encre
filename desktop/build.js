@@ -20,12 +20,23 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Encre desktop build script.
+ *
+ * Uses esbuild to bundle the three entry points (main process, preload script
+ * and React renderer) into the `dist`/`renderer` output folders, then copies
+ * third-party assets (Monaco editor, xterm.css) and generates the tray icon.
+ * Run with `node desktop/build.js` (or the package.json build script).
+ */
+
 const esbuild = require("esbuild");
 const path = require("path");
 const fs = require("fs");
 
+// Absolute path of this script's directory (the desktop package root).
 const desktop = __dirname;
 
+// Bundle the Electron main process (keeps electron/node-pty external).
 // Main process
 esbuild.buildSync({
   entryPoints: [path.join(desktop, "main.ts")],
@@ -36,6 +47,7 @@ esbuild.buildSync({
   external: ["electron", "node-pty"],
 });
 
+// Bundle the preload script (electron stays external for security).
 // Preload
 esbuild.buildSync({
   entryPoints: [path.join(desktop, "preload.ts")],
@@ -46,6 +58,7 @@ esbuild.buildSync({
   external: ["electron"],
 });
 
+// Bundle the React renderer (browser target, automatic JSX runtime).
 // Renderer
 esbuild.buildSync({
   entryPoints: [path.join(desktop, "renderer", "src", "app.ts")],
@@ -73,6 +86,11 @@ if (fs.existsSync(xtermCssSrc)) {
   console.log("xterm.css copied.");
 }
 
+/**
+ * Recursively copies a directory tree from `src` to `dst`.
+ * @param {string} src - Source directory.
+ * @param {string} dst - Destination directory (created if missing).
+ */
 function copyRecursive(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
   const entries = fs.readdirSync(src, { withFileTypes: true });

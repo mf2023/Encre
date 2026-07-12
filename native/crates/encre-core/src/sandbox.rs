@@ -362,14 +362,27 @@ pub fn sandbox_read_file(path: &str) -> Result<String, String> {
     std::fs::read_to_string(p).map_err(|e| format!("Read error: {e}"))
 }
 
-/// Write a file inside the sandbox (path-bounded).
+/// Write a file inside the sandbox (path-bounded) atomically.
 pub fn sandbox_write_file(path: &str, content: &str) -> Result<bool, String> {
     let p = Path::new(path);
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Mkdir error: {e}"))?;
     }
-    std::fs::write(p, content)
-        .map_err(|e| format!("Write error: {e}"))?;
+
+    // Atomic write: temp → fsync → rename
+    let tmp_path = p.with_extension("tmp");
+    let mut tmp = std::fs::File::create(&tmp_path)
+        .map_err(|e| format!("Create temp error: {e}"))?;
+    std::io::Write::write_all(&mut tmp, content.as_bytes())
+        .map_err(|e| format!("Write temp error: {e}"))?;
+    tmp.sync_all()
+        .map_err(|e| format!("Fsync error: {e}"))?;
+    drop(tmp);
+
+    let _ = std::fs::remove_file(p);
+    std::fs::rename(&tmp_path, p)
+        .map_err(|e| format!("Rename error: {e}"))?;
+
     Ok(true)
 }

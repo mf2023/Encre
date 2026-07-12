@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for OllamaBackend -- construction, capabilities, context window, tokens."""
 
@@ -39,38 +39,47 @@ class TestOllamaBackendConstruction:
     def test_create_default(self):
         """Default model is llama3.2, base URL is localhost:11434/v1."""
         be = OllamaBackend()
+        # Verify: be.model == "llama3.2"
         assert be.model == "llama3.2"
+        # Verify: be.api_base_url == "http://localhost:11434/v1"
         assert be.api_base_url == "http://localhost:11434/v1"
+        # Verify: be.api_key == ""
         assert be.api_key == ""
 
     def test_create_with_base_url(self):
         """Custom base_url for a remote Ollama instance."""
         be = OllamaBackend(base_url="http://192.168.1.100:11434/v1")
+        # Verify: be.api_base_url == "http://192.168.1.100:11434/v1"
         assert be.api_base_url == "http://192.168.1.100:11434/v1"
 
     def test_create_with_model(self):
         """Custom model name (must exist in the local Ollama library)."""
         be = OllamaBackend(model="llama3.1")
+        # Verify: be.model == "llama3.1"
         assert be.model == "llama3.1"
 
     def test_create_with_qwen_model(self):
         """Qwen 2.5 model name."""
         be = OllamaBackend(model="qwen2.5")
+        # Verify: be.model == "qwen2.5"
         assert be.model == "qwen2.5"
 
     def test_create_with_mistral_model(self):
         """Mistral model name."""
         be = OllamaBackend(model="mistral")
+        # Verify: be.model == "mistral"
         assert be.model == "mistral"
 
     def test_create_no_api_key_required(self):
         """Ollama runs locally -- no API key needed."""
         be = OllamaBackend()
+        # Verify: be.api_key == ""
         assert be.api_key == ""
 
     def test_create_with_http_timeout(self):
         """http_timeout kwarg is forwarded."""
         be = OllamaBackend(http_timeout=60.0)
+        # Verify: be.http_timeout == 60.0
         assert be.http_timeout == 60.0
 
     def test_create_full_custom(self):
@@ -80,8 +89,11 @@ class TestOllamaBackendConstruction:
             model="deepseek-r1:8b",
             http_timeout=300.0,
         )
+        # Verify: be.api_base_url == "http://gpu-server:11434/v1"
         assert be.api_base_url == "http://gpu-server:11434/v1"
+        # Verify: be.model == "deepseek-r1:8b"
         assert be.model == "deepseek-r1:8b"
+        # Verify: be.http_timeout == 300.0
         assert be.http_timeout == 300.0
 
 
@@ -96,23 +108,27 @@ class TestOllamaBackendCapabilities:
         """Tool calling depends on the model -- returns a boolean."""
         be = OllamaBackend()
         result = be.supports_tool_calling()
+        # Verify: isinstance(result, bool)
         assert isinstance(result, bool)
 
     def test_supports_tool_calling_default_true(self):
         """Ollama inherits True from OpenAISSEBackend (model-dependent in practice)."""
         be = OllamaBackend()
+        # Verify: be.supports_tool_calling() is True
         assert be.supports_tool_calling() is True
 
     def test_supports_thinking_returns_bool(self):
         """Thinking support flag is a boolean."""
         be = OllamaBackend()
         result = be.supports_thinking()
+        # Verify: isinstance(result, bool)
         assert isinstance(result, bool)
 
     def test_supports_prompt_caching_returns_bool(self):
         """Prompt caching is not supported locally -- returns bool."""
         be = OllamaBackend()
         result = be.supports_prompt_caching()
+        # Verify: isinstance(result, bool)
         assert isinstance(result, bool)
 
 
@@ -126,6 +142,7 @@ class TestOllamaBackendContextWindow:
     def test_context_window_size_default(self):
         """Returns conservative 8192 as safe default for local models."""
         be = OllamaBackend()
+        # Verify: be.context_window_size() == 8192
         assert be.context_window_size() == 8192
 
     def test_context_window_size_different_models(self):
@@ -133,12 +150,15 @@ class TestOllamaBackendContextWindow:
         models = ["llama3.2", "llama3.1", "qwen2.5", "mistral", "deepseek-r1:8b"]
         for m in models:
             be = OllamaBackend(model=m)
+            # Verify: be.context_window_size() == 8192, f"model={m}"
             assert be.context_window_size() == 8192, f"model={m}"
 
     def test_context_window_positive(self):
         """Context window is always positive."""
         be = OllamaBackend()
+        # Verify: be.context_window_size() > 0
         assert be.context_window_size() > 0
+        # Verify: isinstance(be.context_window_size(), int)
         assert isinstance(be.context_window_size(), int)
 
 
@@ -153,29 +173,35 @@ class TestOllamaBackendTokens:
         """count_tokens returns an integer."""
         be = OllamaBackend()
         result = be.count_tokens("hello world")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_empty_string(self):
         """Empty string should not crash."""
         be = OllamaBackend()
         result = be.count_tokens("")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_long_text(self):
         """Long text should not crash."""
         be = OllamaBackend()
         result = be.count_tokens("Ollama local model token counting. " * 200)
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_model_attribute(self):
         """model attribute matches constructor argument."""
         be = OllamaBackend(model="mistral")
+        # Verify: be.model == "mistral"
         assert be.model == "mistral"
+        # Verify: isinstance(be.model, str)
         assert isinstance(be.model, str)
 
     def test_model_default(self):
         """Default model is llama3.2."""
         be = OllamaBackend()
+        # Verify: be.model == "llama3.2"
         assert be.model == "llama3.2"
 
 
@@ -193,6 +219,7 @@ class TestOllamaBackendRequestBuilding:
             messages=[{"role": "user", "content": "hello"}],
             max_tokens=512,
         )
+        # Verify: data["max_tokens"] == 512
         assert data["max_tokens"] == 512
 
     def test_build_request_includes_model(self):
@@ -201,6 +228,7 @@ class TestOllamaBackendRequestBuilding:
         data = be._build_request_data(
             messages=[{"role": "user", "content": "hello"}],
         )
+        # Verify: data["model"] == "qwen2.5"
         assert data["model"] == "qwen2.5"
 
     def test_build_request_with_tools(self):
@@ -220,8 +248,11 @@ class TestOllamaBackendRequestBuilding:
             messages=[{"role": "user", "content": "read the file"}],
             tools=tools,
         )
+        # Verify: "tools" in data
         assert "tools" in data
+        # Verify: data["tools"] == tools
         assert data["tools"] == tools
+        # Verify: "tool_choice" in data
         assert "tool_choice" in data
 
     def test_build_request_without_tools(self):
@@ -230,7 +261,9 @@ class TestOllamaBackendRequestBuilding:
         data = be._build_request_data(
             messages=[{"role": "user", "content": "hello"}],
         )
+        # Verify: "tools" not in data
         assert "tools" not in data
+        # Verify: "tool_choice" not in data
         assert "tool_choice" not in data
 
     def test_build_request_default_stream(self):
@@ -239,6 +272,7 @@ class TestOllamaBackendRequestBuilding:
         data = be._build_request_data(
             messages=[{"role": "user", "content": "hello"}],
         )
+        # Verify: data["stream"] is True
         assert data["stream"] is True
 
     def test_build_request_default_temperature(self):
@@ -247,6 +281,7 @@ class TestOllamaBackendRequestBuilding:
         data = be._build_request_data(
             messages=[{"role": "user", "content": "hello"}],
         )
+        # Verify: data["temperature"] == 0.0
         assert data["temperature"] == 0.0
 
 
@@ -266,6 +301,7 @@ class TestOllamaBackendLifecycle:
         """aclose() called twice should not raise."""
 
         async def _double():
+            """Helper: Double."""
             be = OllamaBackend()
             await be.aclose()
             await be.aclose()

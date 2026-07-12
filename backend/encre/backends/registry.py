@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Model metadata registry -- centralised model info for all supported providers.
@@ -743,6 +743,7 @@ def _infer_provider(model_name: str) -> str:
     - Everything else -> ``"openai"`` (OpenAI-compatible default)
     """
     name_lower = model_name.lower()
+    # Case-insensitive prefix matching drives all the rules below.
     if name_lower.startswith("gpt-") or name_lower.startswith("o3") or name_lower.startswith("o4-"):
         return "openai"
     if name_lower.startswith("claude-"):

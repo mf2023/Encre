@@ -21,9 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
+
+"""Encre agent channels: interactive terminal REPL.
+
+Implements :class:`TerminalChannel`, a stdin/stdout REPL used for headless /
+CI smoke tests.  It is disabled when ``ENCRE_DESKTOP_ONLY`` is set (see the
+class docstring) in favour of the desktop UI.  Slash commands such as
+``/new`` and ``/exit`` are parsed by
+:func:`encre.channels.slash_commands.parse_terminal_slash_command`.
+"""
 
 import asyncio
 import sys

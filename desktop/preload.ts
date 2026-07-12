@@ -20,8 +20,20 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Electron preload script for the Encre renderer.
+ *
+ * Runs in an isolated context with access to Node/Electron APIs and safely
+ * exposes a curated `electronAPI` object onto `window` via contextBridge.
+ * Every method here is a thin wrapper around `ipcRenderer.invoke` (request/
+ * response) or `ipcRenderer.send` (fire-and-forget), with strongly typed
+ * signatures so the renderer never touches Electron internals directly.
+ * This keeps `nodeIntegration` disabled and `contextIsolation` enabled.
+ */
+
 import { contextBridge, ipcRenderer } from "electron";
 
+// Expose the curated, safe API surface to the renderer under `window.electronAPI`.
 contextBridge.exposeInMainWorld("electronAPI", {
   getServerPort: (): Promise<number> => ipcRenderer.invoke("getServerPort"),
 

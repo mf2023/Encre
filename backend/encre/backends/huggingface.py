@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Hugging Face backend -- Inference API for open-source models.
@@ -57,9 +57,22 @@ class HuggingFaceBackend(OpenAISSEBackend):
         model: str = "meta-llama/Llama-3.3-70B-Instruct",
         **kwargs: Any,
     ) -> None:
+        """Initialize the Hugging Face Inference API backend.
+
+        Args:
+            api_key: Hugging Face access token. Falls back to the HF_TOKEN
+                environment variable when empty.
+            base_url: API endpoint; defaults to the HF Inference API URL.
+            model: Default model repository id (e.g. a Llama variant).
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the HF Inference API URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        """Return the context window size (in tokens) for HF models."""
+        # Hugging Face Inference API models vary widely; 128K is a safe
+        # conservative default for the hosted Llama/Qwen/DeepSeek SKUs.
         return 128000

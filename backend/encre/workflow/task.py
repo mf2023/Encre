@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
 
 import time
@@ -120,6 +118,7 @@ class WorkflowTask:
     """Timestamp when execution completed (success or failure)."""
 
     def __hash__(self) -> int:
+        # Tasks are keyed by id so they hash consistently in sets/dicts.
         return hash(self.id)
 
     def __eq__(self, other: object) -> bool:
@@ -151,6 +150,7 @@ class WorkflowTask:
     def from_dict(cls, data: dict[str, Any]) -> WorkflowTask:
         """Deserialise a task from a dict (``execute`` remains ``None``)."""
         status_str = data.get("status", "PENDING")
+        # Resolve the status name back to the enum, falling back to PENDING.
         status = WorkflowTaskStatus[status_str] if isinstance(status_str, str) else WorkflowTaskStatus.PENDING
         return cls(
             id=data["id"],
@@ -180,4 +180,5 @@ def make_ready_predicate(task: WorkflowTask, completed_ids: set[str]) -> bool:
     """
     if task.status != WorkflowTaskStatus.PENDING:
         return False
+    # Only PENDING tasks with every dependency completed are considered ready.
     return all(dep_id in completed_ids for dep_id in task.dependencies)

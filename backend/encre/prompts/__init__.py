@@ -21,7 +21,18 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Prompt system package.
+
+Exposes the prompt template base classes (:class:`EncreBasePrompt`,
+:class:`EncrePromptTemplate`) and the :class:`PromptLoader` used to load
+prompt text blocks at runtime.
+
+The prompt subsystem assembles the layered system prompt that is sent to
+the language model.  Callers pick a specialty template (general, coding,
+research, data) and call ``build_system_prompt`` with the session context.
+"""
 
 from encre.prompts.base import EncreBasePrompt, EncrePromptTemplate
 from encre.prompts.loader import PromptLoader

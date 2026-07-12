@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# slack.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - SlackAdapter
+#
 import asyncio
 import logging
 import re
@@ -93,6 +106,19 @@ class SlackAdapter(BaseAdapter):
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
         port: int = 18796,
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            bot_token (str):
+            app_token (str):
+            signing_secret (str):
+            gateway_url (str):
+            port (int):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         if not SLACK_AVAILABLE:
             raise ImportError(
@@ -136,10 +162,30 @@ class SlackAdapter(BaseAdapter):
         try:
             @self._app.event("message")
             async def handle_message_event(event: dict, _say: Any) -> None:
+                """
+                Handle message event.
+
+                Args:
+                    event (dict):
+                    _say (Any):
+
+                Returns:
+                    None
+                """
                 await self._handle_message(event)
 
             @self._app.event("app_mention")
             async def handle_app_mention(event: dict, _say: Any) -> None:
+                """
+                Handle app mention.
+
+                Args:
+                    event (dict):
+                    _say (Any):
+
+                Returns:
+                    None
+                """
                 await self._handle_message(event)
             logger.info("[slack] Step 3: Event handlers registered")
         except Exception as e:
@@ -306,6 +352,15 @@ class SlackAdapter(BaseAdapter):
         counter = [0]
 
         def _ph(value: str) -> str:
+            """
+            Ph.
+
+            Args:
+                value (str):
+
+            Returns:
+                str
+            """
             key = f"\x00SL{counter[0]}\x00"
             counter[0] += 1
             placeholders[key] = value
@@ -322,6 +377,15 @@ class SlackAdapter(BaseAdapter):
         text = re.sub(r"(`[^`]+`)", lambda m: _ph(m.group(0)), text)
 
         def _convert_markdown_link(m: re.Match[str]) -> str:
+            """
+            Convert markdown link.
+
+            Args:
+                m (re.Match[str]):
+
+            Returns:
+                str
+            """
             label = m.group(1)
             url = m.group(2).strip()
             if url.startswith("<") and url.endswith(">"):
@@ -344,6 +408,15 @@ class SlackAdapter(BaseAdapter):
         text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
         def _convert_header(m: re.Match[str]) -> str:
+            """
+            Convert header.
+
+            Args:
+                m (re.Match[str]):
+
+            Returns:
+                str
+            """
             inner = m.group(1).strip()
             inner = re.sub(r"\*\*(.+?)\*\*", r"\1", inner)
             return _ph(f"*{inner}*")

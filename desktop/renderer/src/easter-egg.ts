@@ -20,6 +20,14 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Easter-egg galaxy animation.
+ *
+ * Renders an interactive, mouse-following "nebula" of glowing stars on a canvas.
+ * The single public entry point {@link mountNebula} injects the canvas, runs the
+ * animation loop and returns a cleanup function that stops everything.
+ */
+
 interface Star {
   orbitRadius: number;
   radius: number;
@@ -37,6 +45,12 @@ const TRAIL_ALPHA = 0.5;
 /**
  * Mount the rotating galaxy into a container element.
  * Returns a cleanup function that stops the animation.
+ */
+/**
+ * Mounts the rotating galaxy animation into the given container.
+ *
+ * @param container - The element into which the canvas is appended.
+ * @returns A cleanup function that cancels the animation and detaches listeners.
  */
 export function mountNebula(container: HTMLElement): () => void {
   const canvas = document.createElement("canvas");

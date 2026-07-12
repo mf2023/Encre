@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Batch / multi-agent execution skill prompt loader.
+
+Loads the ``batch`` prompt from the ``skills`` category and substitutes the
+high-level task description supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _batch_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the batch skill prompt for the given task description."""
     task_description = args or "the user's request described in conversation history"
     return _loader.load_with_context("batch", category="skills", task_description=task_description)

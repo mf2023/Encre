@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Infer user-profile traits from a conversation via an LLM.
+
+:class:`ProfileInferrer` samples a bounded slice of recent messages, asks the
+backend to emit a strict JSON blob of inferred traits + per-field confidences,
+and returns them for merging into the :class:`~encre.profile.system.UserProfile`.
+"""
 
 import json
 from typing import Any
@@ -65,11 +72,13 @@ IMPORTANT: Return ONLY the JSON, no other text."""
 
 
 class ProfileInferrer:
+    """Extracts user traits from conversation history using an LLM."""
     MAX_USER_TOKENS = 800
     MAX_TOOL_TOKENS = 600
     MAX_TOTAL_MESSAGES = 20
 
     async def infer(self, messages: list[dict[str, Any]], backend: Any) -> tuple[dict[str, Any], dict[str, float]] | None:
+        """Sample messages, ask the backend, and parse the JSON trait blob."""
         sample = self._sample_messages(messages)
         if not sample:
             return None
@@ -102,6 +111,7 @@ class ProfileInferrer:
         return None
 
     def _sample_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build a token-bounded, role-aware sample of recent messages."""
         sampled: list[dict[str, Any]] = []
         char_count = 0
         for msg in reversed(messages):
@@ -137,6 +147,7 @@ class ProfileInferrer:
         return sampled
 
     def _parse_response(self, text: str) -> tuple[dict[str, Any], dict[str, float], list[str], list[str], list[str]] | None:
+        """Extract the JSON object from the model's free-text response."""
         text = text.strip()
         start = text.find("{")
         end = text.rfind("}")

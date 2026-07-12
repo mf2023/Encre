@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/rest_client.py
 
+Rest client implementation for the Encre tool system.
+"""
 import json
 from typing import Any
 
@@ -32,6 +36,11 @@ from encre.tools.base import build_tool
 
 
 async def _rest_client_execute(**kwargs: Any) -> str:
+    """Rest client execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     method = kwargs.get("method", "GET")
     url = kwargs.get("url", "")
     headers = kwargs.get("headers", {}) or {}
@@ -107,4 +116,7 @@ EncreRESTTool = build_tool(
     execute=_rest_client_execute,
     intents=["coding", "system"],
     is_concurrency_safe=lambda _: True,
+    category="web",
+    semantic_type="network",
+    is_destructive=lambda args: args.get("method", "GET").upper() in ("POST", "PUT", "DELETE", "PATCH"),
 )

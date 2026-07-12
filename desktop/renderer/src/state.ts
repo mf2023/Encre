@@ -20,6 +20,17 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Global application state store.
+ *
+ * A tiny reactive singleton holding the entire renderer-side `AppState`
+ * (connection, active session, messages, tool calls, plans, telemetry,
+ * notifications, settings, …). Components read via `getState()` and subscribe
+ * for re-render via `subscribe()`; state is mutated only through the exported
+ * `set*`/`add*`/`update*` helpers, which mirror changes into per-session
+ * snapshots and notify listeners on a microtask.
+ */
+
 import { AppState, createEmptyState, createEmptySessionSnapshot, Message, ToolCallState, TelemetryData, UsageStatsData, TokenUsage, PlanItem, PlanProposal, NotificationItem, AttachmentMeta, TimelineSegment, BranchMeta, SessionSnapshot } from "./types.js";
 import { t } from "./i18n.js";
 import { findSlashCommand } from "./slash_commands.js";
@@ -56,7 +67,8 @@ function syncActiveSessionState(): void {
   state.planProposals = snapshot.planProposals;
   state.artifacts = snapshot.artifacts;
   state.references = snapshot.references;
-  state.compactEvents = snapshot.compactEvents;
+state.compactEvents = snapshot.compactEvents;
+  state.systemMessages = snapshot.systemMessages || [];
   state.branches = snapshot.branches;
   state.activeBranchId = snapshot.activeBranchId;
   state.running = snapshot.running;
@@ -69,10 +81,12 @@ function syncSessionState(sessionId?: string): void {
   }
 }
 
+/** Returns the current (read-only) application state. */
 export function getState(): Readonly<AppState> {
   return state;
 }
 
+/** Subscribes a listener to state changes; returns an unsubscribe function. */
 export function subscribe(fn: Listener): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
@@ -96,10 +110,12 @@ function update(partial: Partial<AppState>): void {
   emit();
 }
 
+/** Sets the WebSocket connected flag. */
 export function setConnected(v: boolean): void {
   update({ connected: v });
 }
 
+/** Switches the active session id, resetting scoped fields and syncing its snapshot. */
 export function setSessionId(id: string): void {
   state.sessionId = id;
   getOrCreateSessionSnapshot(id);
@@ -113,6 +129,7 @@ export function setSessionId(id: string): void {
   emit();
 }
 
+/** Appends a message to the (active) session snapshot. */
 export function addMessage(msg: Message, sessionId = state.sessionId): void {
   // Defense-in-depth: refuse to write into a different session's snapshot
   // than the one currently active.
@@ -167,6 +184,7 @@ function restoreToolCalls(rawToolCalls: any[] | undefined): ToolCallState[] {
   return restoredToolCalls;
 }
 
+/** Reconciles a raw message list into `Message` objects (used on resume). */
 export function restoreMessages(rawMessages: Array<{ role: string; content: string | Array<{ type: string; text: string }>; tool_calls?: any[]; reasoning_content?: string; segments?: Array<{kind: string; text?: string; tool_id?: string}>; created_at?: number; mode?: string }>): Message[] {
   const messages: Message[] = [];
   for (const raw of rawMessages || []) {
@@ -236,6 +254,7 @@ export function restoreMessages(rawMessages: Array<{ role: string; content: stri
   return messages;
 }
 
+/** Loads a session's raw messages into the active session snapshot. */
 export function loadSessionMessages(rawMessages: Array<{ role: string; content: string | Array<{ type: string; text: string }>; tool_calls?: any[]; reasoning_content?: string }>, sessionId = state.sessionId): void {
   const messages: Message[] = [];
   let totalInput = 0;
@@ -274,7 +293,7 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
     }
 
     const content = extractMessageText(raw.content);
-    const cleanContent = (content.includes("<attach ") || content.includes("<terminal>")) ? "" : content;
+    const cleanContent = (content.includes("<attach ") || content.includes("<terminal>") || content.includes("<mode>")) ? "" : content;
     const usage = (raw as any).usage || (raw as any).token_usage;
     const tu = usage ? {
       input_tokens: usage.input_tokens ?? 0,
@@ -371,6 +390,7 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
   emit();
 }
 
+/** Remembers which user message should receive a pending rollback edit. */
 export function rememberRollbackEditTarget(message: Message, userIdx: number): void {
   pendingRollbackEdit = {
     serverId: message.serverId,
@@ -379,6 +399,7 @@ export function rememberRollbackEditTarget(message: Message, userIdx: number): v
   };
 }
 
+/** Applies the pending rollback edit onto a raw message list, if any. */
 export function applyPendingRollbackEdit<T extends { role?: string; content?: string | Array<{ type: string; text: string }>; id?: string }>(rawMessages: T[]): T[] {
   if (!pendingRollbackEdit) return rawMessages;
 
@@ -407,6 +428,7 @@ export function applyPendingRollbackEdit<T extends { role?: string; content?: st
   return rawMessages.slice(0, cutIdx);
 }
 
+/** Clears all messages for the (active) session. */
 export function clearMessages(sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.messages = [];
@@ -433,12 +455,14 @@ export function clearMessages(sessionId = state.sessionId): void {
 
 let _thinkingStartTime: number | null = null;
 
+/** Marks the assistant as starting a "thinking" (reasoning) phase. */
 export function beginThinking(): void {
   if (_thinkingStartTime === null) {
     _thinkingStartTime = Date.now();
   }
 }
 
+/** Marks the assistant "thinking" phase as finished. */
 export function finishThinking(): void {
   if (_thinkingStartTime !== null) {
     const msg = getLastAssistantMessage();
@@ -449,6 +473,7 @@ export function finishThinking(): void {
   }
 }
 
+/** Adds a user message (optionally with file references) and returns it. */
 export function addUserMessage(content: string, mode?: string, fileRefs?: { name: string; size: number; icon: string; path?: string; mime_type?: string }[]): Message {
   const msg: Message = {
     id: crypto.randomUUID(),
@@ -471,6 +496,7 @@ export function addUserMessage(content: string, mode?: string, fileRefs?: { name
   return msg;
 }
 
+/** Starts a new (empty) assistant message and returns it. */
 export function startAssistantMessage(sessionId = state.sessionId): Message {
   const msg: Message = {
     id: crypto.randomUUID(),
@@ -490,6 +516,7 @@ export function startAssistantMessage(sessionId = state.sessionId): Message {
  * order of thinking / text / tool call events as they arrive from the server.
  * Skips duplicate consecutive segments of the same kind.
  */
+/** Records a timeline segment (text/thinking/tool) for the active message. */
 export function recordSegment(kind: TimelineSegment["kind"], toolId?: string, sessionId = state.sessionId): void {
   const msg = getLastAssistantMessage(sessionId);
   if (!msg) return;
@@ -504,6 +531,7 @@ export function recordSegment(kind: TimelineSegment["kind"], toolId?: string, se
   emit();
 }
 
+/** Returns the last assistant message in the (active) session, if any. */
 export function getLastAssistantMessage(sessionId = state.sessionId): Message | undefined {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   for (let i = snapshot.messages.length - 1; i >= 0; i--) {
@@ -514,6 +542,7 @@ export function getLastAssistantMessage(sessionId = state.sessionId): Message | 
   return undefined;
 }
 
+/** Appends raw content to the last assistant message. */
 export function appendContent(content: string): void {
   if (!content) return;
   finishThinking();
@@ -529,6 +558,7 @@ export function appendContent(content: string): void {
  * Atomic append of a text delta — records the "text" segment and appends
  * content in a single emit(). Use this from stream.ts for text_delta events.
  */
+/** Appends a text delta to the last assistant message. */
 export function appendTextDelta(text: string, sessionId = state.sessionId): void {
   if (!text) return;
   // Defense-in-depth: never write a token to a different session's snapshot
@@ -553,6 +583,7 @@ export function appendTextDelta(text: string, sessionId = state.sessionId): void
  * Atomic append of a thinking delta — records the "thinking" segment and
  * appends content in a single emit(). Use this from stream.ts for thinking_delta events.
  */
+/** Appends a reasoning/thinking delta to the last assistant message. */
 export function appendThinkingDelta(text: string, sessionId = state.sessionId): void {
   if (!text) return;
   if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
@@ -572,6 +603,7 @@ export function appendThinkingDelta(text: string, sessionId = state.sessionId): 
   emit();
 }
 
+/** Appends a complete reasoning/thinking block to the last assistant message. */
 export function appendThinking(text: string): void {
   if (!text) return;
   const msg = getLastAssistantMessage();
@@ -585,6 +617,7 @@ export function appendThinking(text: string): void {
   }
 }
 
+/** Finalizes the assistant message, recording token usage if provided. */
 export function finishAssistantMessage(tokenUsage?: { input_tokens: number; output_tokens: number; total_tokens: number }, sessionId = state.sessionId): void {
   const msg = getLastAssistantMessage(sessionId);
   if (msg) {
@@ -608,6 +641,7 @@ export function finishAssistantMessage(tokenUsage?: { input_tokens: number; outp
   }
 }
 
+/** Adds a tool-call record to the (active) session. */
 export function addToolCall(tc: ToolCallState, sessionId = state.sessionId): void {
   if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
   const msg = getLastAssistantMessage(sessionId);
@@ -618,6 +652,7 @@ export function addToolCall(tc: ToolCallState, sessionId = state.sessionId): voi
   }
 }
 
+/** Updates an existing tool call by id (status/result/params). */
 export function updateToolCall(
   id: string,
   patch: Partial<ToolCallState>,
@@ -636,6 +671,7 @@ export function updateToolCall(
   }
 }
 
+/** Sets the running/streaming flag for the (active) session. */
 export function setRunning(v: boolean, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.running = v;
@@ -652,18 +688,22 @@ export function setRunning(v: boolean, sessionId = state.sessionId): void {
   }
 }
 
+/** Sets the currently active (expanded) tool-call id for the detail panel. */
 export function setActiveToolId(id: string | null): void {
   update({ activeToolId: id });
 }
 
+/** Sets the sub-agent view tool call (currently opened sub-agent panel). */
 export function setSubAgentView(tc: import("./types.js").ToolCallState | null): void {
   update({ subAgentView: tc });
 }
 
+/** Returns the current sub-agent breadcrumb trail. */
 export function getSubAgentBreadcrumb(): Array<{sessionId: string; name: string; toolCallId: string; parentToolCallId: string | null}> {
   return state.subAgentBreadcrumb;
 }
 
+/** Pushes a sub-agent breadcrumb entry. */
 export function pushSubAgentBreadcrumb(entry: {sessionId: string; name: string; toolCallId: string; parentToolCallId: string | null}): void {
   const MAX_DEPTH = 4;
   // Dedupe: if a crumb with the same toolCallId already exists, replace it
@@ -682,6 +722,7 @@ export function pushSubAgentBreadcrumb(entry: {sessionId: string; name: string; 
   update({ subAgentBreadcrumb: crumb });
 }
 
+/** Pops the top sub-agent breadcrumb entry, or `null` if empty. */
 export function popSubAgentBreadcrumb(): {sessionId: string; name: string; toolCallId: string; parentToolCallId: string | null} | null {
   if (state.subAgentBreadcrumb.length === 0) return null;
   const popped = state.subAgentBreadcrumb[state.subAgentBreadcrumb.length - 1];
@@ -689,10 +730,12 @@ export function popSubAgentBreadcrumb(): {sessionId: string; name: string; toolC
   return popped;
 }
 
+/** Clears the entire sub-agent breadcrumb trail. */
 export function clearSubAgentBreadcrumb(): void {
   update({ subAgentBreadcrumb: [] });
 }
 
+/** Resets to a specific breadcrumb index, returning the popped entry. */
 export function resetToSubAgentBreadcrumbIndex(index: number): {sessionId: string; name: string; toolCallId: string; parentToolCallId: string | null} | null {
   if (index < 0 || index >= state.subAgentBreadcrumb.length) return null;
   const target = state.subAgentBreadcrumb[index];
@@ -703,27 +746,33 @@ export function resetToSubAgentBreadcrumbIndex(index: number): {sessionId: strin
   return target;
 }
 
+/** Replaces the user settings object. */
 export function setSettings(settings: Record<string, unknown>): void {
   update({ settings });
 }
 
+/** Replaces the tool-permission policies. */
 export function setPermissionPolicies(policies: import("./types.js").PermissionPolicies): void {
   update({ permissionPolicies: policies });
 }
 
+/** Sets the concrete resolved theme (`dark`/`light`). */
 export function setTheme(theme: "dark" | "light"): void {
   update({ theme });
   document.documentElement.setAttribute("data-theme", theme);
 }
 
+/** Sets the user's theme preference (`system`/`dark`/`light`). */
 export function setThemePreference(pref: "system" | "dark" | "light"): void {
   update({ themePreference: pref });
 }
 
+/** Generates a random unique id. */
 export function generateId(): string {
   return crypto.randomUUID();
 }
 
+/** Finds a tool call by id in the (active) session. */
 export function findToolCall(id: string, sessionId = state.sessionId): ToolCallState | null {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   for (const msg of snapshot.messages) {
@@ -734,6 +783,7 @@ export function findToolCall(id: string, sessionId = state.sessionId): ToolCallS
   return null;
 }
 
+/** Sets the telemetry summary data for the (active) session. */
 export function setTelemetry(data: TelemetryData, sessionId = state.sessionId): void {
   if (!sessionId) return;
   // Persist to per-session snapshot so the canvas panel survives
@@ -746,10 +796,12 @@ export function setTelemetry(data: TelemetryData, sessionId = state.sessionId): 
   }
 }
 
+/** Sets the usage-stats data (or `null` to clear). */
 export function setUsageStats(data: UsageStatsData | null): void {
   update({ usageStats: data });
 }
 
+/** Sets the token usage for the (active) session. */
 export function setTokenUsage(data: TokenUsage, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   const prev = snapshot.tokenUsage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
@@ -764,16 +816,19 @@ export function setTokenUsage(data: TokenUsage, sessionId = state.sessionId): vo
 
 // ── Attachments ──────────────────────────────────────────────────────────
 
+/** Adds attachment records to the composer state. */
 export function addAttachments(items: AttachmentMeta[]): void {
   state.attachments.push(...items);
   emit();
 }
 
+/** Clears all attachments. */
 export function clearAttachments(): void {
   state.attachments = [];
   emit();
 }
 
+/** Removes a single attachment by path. */
 export function removeAttachment(path: string): void {
   state.attachments = state.attachments.filter((a) => a.path !== path);
   emit();
@@ -781,6 +836,7 @@ export function removeAttachment(path: string): void {
 
 // ── Plan ──────────────────────────────────────────────────────────────────
 
+/** Sets the plan items for the (active) session. */
 export function setPlanItems(items: PlanItem[], sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.planItems = items;
@@ -788,6 +844,7 @@ export function setPlanItems(items: PlanItem[], sessionId = state.sessionId): vo
   emit();
 }
 
+/** Toggles plan mode for the (active) session. */
 export function setPlanModeActive(active: boolean, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.planModeActive = active;
@@ -798,6 +855,7 @@ export function setPlanModeActive(active: boolean, sessionId = state.sessionId):
   emit();
 }
 
+/** Adds a plan proposal to the (active) session. */
 export function addPlanProposal(proposal: PlanProposal, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.planProposals = [...snapshot.planProposals, proposal];
@@ -805,6 +863,7 @@ export function addPlanProposal(proposal: PlanProposal, sessionId = state.sessio
   emit();
 }
 
+/** Removes a plan proposal by id. */
 export function removePlanProposal(proposalId: string, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.planProposals = snapshot.planProposals.filter((p) => p.proposal_id !== proposalId);
@@ -812,6 +871,7 @@ export function removePlanProposal(proposalId: string, sessionId = state.session
   emit();
 }
 
+/** Patches a single plan item by id. */
 export function updatePlanItem(id: string, patch: Partial<PlanItem>): void {
   const updated = state.planItems.map((item) =>
     item.id === id ? { ...item, ...patch } : item
@@ -819,6 +879,7 @@ export function updatePlanItem(id: string, patch: Partial<PlanItem>): void {
   setPlanItems(updated);
 }
 
+/** Replaces the artifacts list for the (active) session. */
 export function setArtifacts(artifacts: import("./types.js").ArtifactItem[], sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.artifacts = artifacts;
@@ -827,6 +888,7 @@ export function setArtifacts(artifacts: import("./types.js").ArtifactItem[], ses
 }
 
 /** Append new artifacts, deduplicating by path. Used for streaming artifacts_update events. */
+/** Appends artifacts to the (active) session's list. */
 export function appendArtifacts(newArtifacts: import("./types.js").ArtifactItem[], sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   const existing = new Set(snapshot.artifacts.map(a => a.path));
@@ -838,6 +900,7 @@ export function appendArtifacts(newArtifacts: import("./types.js").ArtifactItem[
   }
 }
 
+/** Replaces the references list for the (active) session. */
 export function setReferences(references: import("./types.js").ReferenceItem[], sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.references = references;
@@ -845,6 +908,7 @@ export function setReferences(references: import("./types.js").ReferenceItem[], 
   emit();
 }
 
+/** Appends references to the (active) session's list. */
 export function appendReferences(newRefs: import("./types.js").ReferenceItem[], sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.references = [...(snapshot.references || []), ...newRefs];
@@ -852,6 +916,7 @@ export function appendReferences(newRefs: import("./types.js").ReferenceItem[], 
   emit();
 }
 
+/** Records a context-compaction event for the (active) session. */
 export function addCompactEvent(evt: import("./types.js").CompactInfo, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.compactEvents = [...snapshot.compactEvents, evt];
@@ -871,6 +936,7 @@ export function addCompactEvent(evt: import("./types.js").CompactInfo, sessionId
   }
 }
 
+/** Sets the agent-state snapshot for the (active) session. */
 export function setAgentState(agentState: import("./types.js").AgentStateSnapshot, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.agentState = agentState;
@@ -878,6 +944,7 @@ export function setAgentState(agentState: import("./types.js").AgentStateSnapsho
   emit();
 }
 
+/** Clears all context-compaction events. */
 export function clearCompactEvents(): void {
   const snapshot = getOrCreateSessionSnapshot();
   snapshot.compactEvents = [];
@@ -885,8 +952,31 @@ export function clearCompactEvents(): void {
   emit();
 }
 
+export function addSystemMessage(info: { content: string; kind: string; sessionId: string }): void {
+  const sessionId = info.sessionId || state.sessionId;
+  const snapshot = getOrCreateSessionSnapshot(sessionId);
+  snapshot.systemMessages = [...(snapshot.systemMessages || []), {
+    content: info.content,
+    kind: info.kind,
+    timestamp: Date.now(),
+  }];
+  syncSessionState(sessionId);
+  emit();
+}
+
+// ── Spec / Spec Update ──────────────────────────────────────────────────────
+
+export function updateSpec(spec: any, sessionId?: string): void {
+  const sid = sessionId || state.sessionId;
+  const snapshot = getOrCreateSessionSnapshot(sid);
+  snapshot.spec = spec;
+  syncSessionState(sid);
+  emit();
+}
+
 // ── Notifications ─────────────────────────────────────────────────────────
 
+/** Resets per-session chat fields (messages, plans, telemetry, …) for the active session. */
 export function resetChat(): void {
   state.sessionId = "";
   state.sessionStore[""] = createEmptySessionSnapshot();
@@ -904,12 +994,14 @@ export function resetChat(): void {
   emit();
 }
 
+/** Adds a notification to the store. */
 export function addNotification(item: NotificationItem): void {
   state.notifications.push(item);
   emit();
   scheduleNotificationSave();
 }
 
+/** Shows a transient toast for a notification (delegates to the controller). */
 export function showToast(
   title: string,
   message: string,
@@ -928,12 +1020,14 @@ export function showToast(
   });
 }
 
+/** Marks all notifications as read. */
 export function markNotificationsRead(): void {
   const updated = state.notifications.map((n) => ({ ...n, read: true }));
   update({ notifications: updated });
   scheduleNotificationSave();
 }
 
+/** Marks a single notification (by id) as read. */
 export function markOneNotificationRead(id: string): void {
   const updated = state.notifications.map((n) =>
     n.id === id ? { ...n, read: true } : n
@@ -942,16 +1036,19 @@ export function markOneNotificationRead(id: string): void {
   scheduleNotificationSave();
 }
 
+/** Dismisses (removes) a notification by id. */
 export function dismissNotification(id: string): void {
   update({ notifications: state.notifications.filter((n) => n.id !== id) });
   scheduleNotificationSave();
 }
 
+/** Clears all notifications. */
 export function clearAllNotifications(): void {
   update({ notifications: [] });
   scheduleNotificationSave();
 }
 
+/** Returns the number of unread notifications. */
 export function getUnreadCount(): number {
   return state.notifications.filter((n) => !n.read).length;
 }
@@ -988,6 +1085,7 @@ async function persistNotifications(): Promise<void> {
   }
 }
 
+/** Loads persisted notifications from storage and seeds the store. */
 export async function initNotificationPersistence(onLoaded?: () => void): Promise<void> {
   try {
     const appPath = await window.electronAPI?.getAppPath();
@@ -1015,15 +1113,18 @@ export async function initNotificationPersistence(onLoaded?: () => void): Promis
 
 // ── Models ──────────────────────────────────────────────────────────────────
 
+/** Sets the list of available model ids. */
 export function setAvailableModels(models: string[]): void {
   update({ availableModels: models });
 }
 
+/** Sets the current composer input mode. */
 export function setInputMode(mode: string): void {
   update({ inputMode: mode });
 }
 
 /** Restore a mode chip into the prompt input and sync state. */
+/** Restores the input-mode chip UI for a given mode. */
 export function restoreInputModeChip(mode: string): void {
   setInputMode(mode);
   const input = document.getElementById("prompt-input") as HTMLElement | null;
@@ -1048,6 +1149,7 @@ export function restoreInputModeChip(mode: string): void {
   }
 }
 
+/** Replaces the sidebar session list. */
 export function setSessionsList(sessions: import("./types.js").SessionEntryData[]): void {
   update({ sessionsList: sessions });
   // Note: do NOT update traySessionsCache here — it only has one mode's
@@ -1068,6 +1170,7 @@ export function getTraySessions(): { normal: any[]; iwork: any[] } {
   return traySessionsCache;
 }
 
+/** Removes a session from the sidebar list by id. */
 export function removeSessionById(sessionId: string): void {
   const sessions = state.sessionsList.filter((s) => s.session_id !== sessionId);
   const history = state.automationHistory.filter((h: any) => h.session_id !== sessionId);
@@ -1116,21 +1219,25 @@ export function pushQueuedPrompt(text: string, mode?: string): void {
   emit();
 }
 
+/** Shifts the next queued prompt off the queue and returns it. */
 export function shiftQueuedPrompt(): void {
   state.queuedPrompts.shift();
   emit();
 }
 
+/** Clears all queued prompts. */
 export function clearQueuedPrompts(): void {
   state.queuedPrompts = [];
   emit();
 }
 
+/** Removes a queued prompt at the given index. */
 export function removeQueuedPromptAt(index: number): void {
   state.queuedPrompts.splice(index, 1);
   emit();
 }
 
+/** Removes the last (assistant) message from the (active) session. */
 export function removeLastMessage(): void {
   const snapshot = getOrCreateSessionSnapshot();
   if (snapshot.messages.length > 0) {
@@ -1140,6 +1247,7 @@ export function removeLastMessage(): void {
   }
 }
 
+/** Truncates the conversation back to a given user message; returns success. */
 export function truncateToUserMessage(userIdx: number): boolean {
   const snapshot = getOrCreateSessionSnapshot();
   let ui = 0;
@@ -1162,10 +1270,12 @@ export function truncateToUserMessage(userIdx: number): boolean {
   return false;
 }
 
+/** Sets the configured sub-agents list. */
 export function setSubAgents(agents: import("./types.js").SubAgentConfig[]): void {
   update({ subAgents: agents });
 }
 
+/** Sets the agent configuration object. */
 export function setAgentConfig(config: {
   system_prompt: string;
   specialty: string;
@@ -1177,6 +1287,7 @@ export function setAgentConfig(config: {
 
 // ── Workspace ───────────────────────────────────────────────────────────────
 
+/** Replaces the workspace list. */
 export function setWorkspaces(workspaces: import("./types.js").WorkspaceEntry[]): void {
   // Filter out invalid entries
   const valid = workspaces.filter((w) => w.path && w.name);
@@ -1187,26 +1298,32 @@ export function setWorkspaces(workspaces: import("./types.js").WorkspaceEntry[])
   update({ workspaces: valid });
 }
 
+/** Sets the active workspace path. */
 export function setActiveWorkspace(path: string): void {
   update({ activeWorkspace: path });
 }
 
+/** Sets the workspace mode (`iwork`/`normal`). */
 export function setWorkspaceMode(mode: "iwork" | "normal"): void {
   update({ workspaceMode: mode });
 }
 
+/** Sets the document index status. */
 export function setIndexStatus(status: "idle" | "ready" | "indexing" | "error" | "no_workspace"): void {
   update({ indexStatus: status });
 }
 
+/** Sets the indexed file count. */
 export function setIndexFiles(files: number): void {
   update({ indexFiles: files });
 }
 
+/** Sets the index progress (0-100). */
 export function setIndexProgress(progress: number): void {
   update({ indexProgress: progress });
 }
 
+/** Updates context-token usage for the (active) session. */
 export function updateContextUsage(tokens: number, window: number, sessionId = state.sessionId): void {
   if (!sessionId) return;
   // Ignore events from non-active sessions so background sessions cannot
@@ -1217,6 +1334,7 @@ export function updateContextUsage(tokens: number, window: number, sessionId = s
   emit();
 }
 
+/** Updates a workspace's index status/files. */
 export function updateWorkspaceIndex(wsId: string, status: string, files: number): void {
   if (!wsId) return;
   state.workspaces = state.workspaces.map(w =>
@@ -1228,58 +1346,72 @@ export function updateWorkspaceIndex(wsId: string, status: string, files: number
   emit();
 }
 
+/** Sets the .gitignore content being viewed. */
 export function setGitignoreContent(content: string): void {
   update({ gitignoreContent: content });
 }
 
+/** Sets the document list (indexed docs). */
 export function setDocsList(docs: import("./types.js").DocumentEntry[]): void {
   update({ docsList: docs });
 }
 
+/** Sets the gateway (MCP gateway) status. */
 export function setGatewayStatus(status: import("./types.js").GatewayStatusData | null): void {
   update({ gatewayStatus: status });
 }
 
+/** Sets the tools info (available tool metadata). */
 export function setToolsInfo(info: import("./types.js").ToolsInfo): void {
   update({ toolsInfo: info });
 }
 
+/** Sets the model catalog. */
 export function setModelCatalog(catalog: import("./types.js").ModelCatalog): void {
   update({ modelCatalog: catalog });
 }
 
+/** Sets the MCP server catalog. */
 export function setMcpCatalog(catalog: import("./types.js").McpCatalog): void {
   update({ mcpCatalog: catalog });
 }
 
+/** Sets the memory entries list. */
 export function setMemoryList(entries: import("./types.js").MemoryEntry[]): void {
   update({ memoryList: entries });
 }
 
+/** Sets the memory detail being viewed. */
 export function setMemoryDetail(detail: { path: string; content: string; error?: string } | null): void {
   update({ memoryDetail: detail });
 }
 
+/** Sets the global rules list. */
 export function setGlobalRulesList(rules: import("./types.js").GlobalRuleEntry[]): void {
   update({ globalRules: rules });
 }
 
+/** Sets the project rules list. */
 export function setProjectRulesList(rules: import("./types.js").ProjectRuleEntry[]): void {
   update({ projectRules: rules });
 }
 
+/** Sets the project hooks list. */
 export function setProjectHooksList(hooks: import("./types.js").ProjectHookEntry[]): void {
   update({ projectHooks: hooks });
 }
 
+/** Sets the global rule currently being viewed. */
 export function setViewingGlobalRule(data: { name: string; content: string; error?: string } | null): void {
   update({ viewingGlobalRule: data });
 }
 
+/** Sets the user/profile data. */
 export function setProfile(profile: import("./types.js").ProfileData | null): void {
   update({ profile });
 }
 
+/** Records the pending permission request awaiting user decision. */
 export function setPendingPermission(
   toolName: string | null | { tool: string; reason: string },
 ): void {
@@ -1296,10 +1428,12 @@ export function setPendingPermission(
   update({ pendingPermission: toolName.tool });
 }
 
+/** Toggles the temporary-chat flag. */
 export function setTempChat(v: boolean): void {
   update({ tempChat: v });
 }
 
+/** Switches the active branch for the (active) session. */
 export function switchBranch(branchId: string, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.activeBranchId = branchId;
@@ -1307,6 +1441,7 @@ export function switchBranch(branchId: string, sessionId = state.sessionId): voi
   emit();
 }
 
+/** Updates a branch's metadata/state. */
 export function setBranchState(
   activeBranchId: string,
   branches: BranchMeta[],
@@ -1323,6 +1458,7 @@ export function setBranchState(
   emit();
 }
 
+/** Replaces the branch list and active branch id. */
 export function setBranches(branches: BranchMeta[], activeBranchId: string, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.branches = branches;
@@ -1331,6 +1467,7 @@ export function setBranches(branches: BranchMeta[], activeBranchId: string, sess
   emit();
 }
 
+/** Removes the given message ids from a branch. */
 export function removeBranchMessages(removedIds: Set<string>, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.messages = snapshot.messages.filter(m => !removedIds.has(m.id));
@@ -1340,6 +1477,7 @@ export function removeBranchMessages(removedIds: Set<string>, sessionId = state.
 
 // ── Workflow state ──────────────────────────────────────────────────────
 
+/** Merges a partial workflow-state update. */
 export function setWorkflowState(partial: {
   workflowId: string;
   goal: string;
@@ -1380,6 +1518,7 @@ export function setWorkflowState(partial: {
   emit();
 }
 
+/** Updates a single workflow task's info. */
 export function updateWorkflowTask(info: {
   workflowId: string;
   taskId: string;

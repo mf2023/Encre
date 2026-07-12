@@ -18,6 +18,8 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Vector and text similarity, embedding-slice construction, and
+//! (feature-gated) ONNX-backed text embeddings.
 use crate::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

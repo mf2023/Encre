@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# In-memory registry for tracked tasks.
+#
+# ``EncreTaskManager`` stores ``EncreTask`` records in a process-wide class
+# dictionary keyed by task id.  It provides the create/get/update/list/delete
+# lifecycle used by ``EncreTaskExecutor`` and by workflow tooling.  Because the
+# store is a ``ClassVar``, tasks are shared across all manager instances in the
+# same process.
 
 import time
 import uuid
@@ -32,6 +40,12 @@ from encre.utils.types import TaskStatus, TaskType
 
 
 class EncreTaskManager:
+    """Process-wide, in-memory registry of tracked tasks.
+
+    Tasks are kept in the ``_tasks`` class dictionary so any manager instance
+    (or the executor) shares the same view.  The API is intentionally thin and
+    synchronous; heavy lifting (execution) lives in ``EncreTaskExecutor``.
+    """
     _tasks: ClassVar[dict[str, EncreTask]] = {}
 
     @classmethod
@@ -44,6 +58,7 @@ class EncreTaskManager:
         parent_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
+        """Create and persist a new task, returning its generated id."""
         task_id = str(uuid.uuid4())
         now = time.time()
         task = EncreTask(
@@ -62,6 +77,7 @@ class EncreTaskManager:
 
     @classmethod
     def get_task(cls, task_id: str) -> EncreTask | None:
+        """Return the task with *task_id*, or ``None`` if unknown."""
         return cls._tasks.get(task_id)
 
     @classmethod
@@ -72,6 +88,7 @@ class EncreTaskManager:
         result: str | None = None,
         error: str | None = None,
     ) -> bool:
+        """Patch mutable fields of a task. Returns False when not found."""
         task = cls._tasks.get(task_id)
         if task is None:
             return False
@@ -86,6 +103,7 @@ class EncreTaskManager:
 
     @classmethod
     def list_tasks(cls, status: TaskStatus | None = None) -> list[EncreTask]:
+        """Return all tasks, newest first; optionally filtered by status."""
         tasks = list(cls._tasks.values())
         if status is not None:
             tasks = [t for t in tasks if t.status == status]
@@ -93,6 +111,7 @@ class EncreTaskManager:
 
     @classmethod
     def delete_task(cls, task_id: str) -> bool:
+        """Remove a task from the registry. Returns True on removal."""
         if task_id in cls._tasks:
             del cls._tasks[task_id]
             return True
@@ -100,4 +119,5 @@ class EncreTaskManager:
 
     @classmethod
     def clear(cls) -> None:
+        """Drop every tracked task."""
         cls._tasks.clear()

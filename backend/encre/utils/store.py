@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Minimal publish-subscribe state store.
@@ -31,8 +31,6 @@ Provides a single ``Store[T]`` interface: ``get_state`` / ``set_state`` /
 ``subscribe``.  No immutability helpers, no middleware -- just the bare
 minimum needed for cross-component state sharing.
 """
-
-from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Generic, TypeVar
@@ -53,6 +51,7 @@ class Store(Generic[T]):
 
     def __init__(self, initial_state: T) -> None:
         self._state: T = initial_state
+        # Listeners are invoked synchronously on every state change.
         self._listeners: list[Callable[[T, T], None]] = []
 
     def get_state(self) -> T:
@@ -70,6 +69,7 @@ class Store(Generic[T]):
         if new_state is not self._state:
             old_state = self._state
             self._state = new_state
+            # Fan out to every subscriber with the new and previous snapshots.
             for listener in self._listeners:
                 listener(new_state, old_state)
 
@@ -79,6 +79,7 @@ class Store(Generic[T]):
         Returns an ``unsubscribe`` callable.
         """
         self._listeners.append(listener)
+        # The returned closure removes just this listener from the list.
         return lambda: self._listeners.remove(listener)
 
 

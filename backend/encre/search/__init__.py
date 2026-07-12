@@ -21,8 +21,11 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Public search API: MCP-backed web search exposed via :class:`EncreSearchManager`.
 
+# Re-export the search manager, the single public entry point for web search.
 from encre.search.manager import EncreSearchManager
 
 __all__ = ["EncreSearchManager"]

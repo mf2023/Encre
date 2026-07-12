@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 OpenTelemetry integration for Encre.
@@ -40,9 +40,6 @@ Usage in ``loop.py``::
         span.set_attribute("turn", n)
         ...
 """
-
-from __future__ import annotations
-
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any

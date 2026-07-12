@@ -15,9 +15,17 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * 
  * DISCLAIMER: Users must comply with applicable AI regulations.
  * Non-compliance may result in service termination or legal liability.
+ */
+
+/**
+ * Animated brand-logo loader component.
+ *
+ * A self-contained, theme-aware animated SVG loader used across the app
+ * (splash screen, engine install, etc.). It auto-swaps the source when the
+ * document `data-theme` attribute changes and supports a static-image mode.
  */
 
 /**
@@ -44,6 +52,13 @@ export class EALoader {
   private isDark: boolean;
   private readonly _staticMode: boolean;
 
+  /**
+   * Creates the loader inside `parent`.
+   *
+   * @param parent - Element to append the loader to.
+   * @param opts   - Optional `maxWidth` (CSS value, capped by `--ea-loader-max-w`)
+   *                 and `staticSrc` (when provided, render a static image, no observer).
+   */
   constructor(parent: HTMLElement, opts: { maxWidth?: string; staticSrc?: string } = {}) {
     this._staticMode = !!opts.staticSrc;
     this.isDark = EALoader.readDark();

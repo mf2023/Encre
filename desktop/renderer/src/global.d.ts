@@ -20,12 +20,21 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Global type ambient declarations for the renderer.
+ *
+ * Declares the shapes exposed on `window` by the Electron preload bridge
+ * (`electronAPI`) and the `lucide` icon runtime, plus ambient interfaces used
+ * across the renderer and a module shim for `markdown-it`.
+ */
+
 interface DirEntry {
   name: string;
   isDirectory: boolean;
   isFile: boolean;
 }
 
+/** Result of reading a single file through the Electron bridge. */
 interface FileReadResult {
   content: string;
   mime_type: string;
@@ -33,6 +42,7 @@ interface FileReadResult {
   is_binary: boolean;
 }
 
+/** The surface of the Electron preload bridge exposed as `window.electronAPI`. */
 interface ElectronAPI {
   getServerPort(): Promise<number>;
   pickFiles(): Promise<string[]>;
@@ -96,11 +106,13 @@ interface ElectronAPI {
   }>;
 }
 
+/** Global `Window` augmentation exposing the Electron bridge and icon runtime. */
 interface Window {
   electronAPI?: ElectronAPI;
   lucide?: any;
 }
 
+/** Ambient module shim so `import Fuse from "fuse.js"` type-checks without types. */
 declare module "markdown-it" {
   const MarkdownIt: any;
   export default MarkdownIt;

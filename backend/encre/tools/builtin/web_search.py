@@ -21,15 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Web search via encre's built-in search engine -- no API keys, no Docker.
 
 Uses ``EncreSearchManager`` (DuckDuckGo Lite by default, with optional
 external SearXNG support).  Zero configuration required.
 """
-
-from __future__ import annotations
 
 from typing import Any
 
@@ -41,6 +39,7 @@ _manager: EncreSearchManager | None = None
 
 
 def _get_manager() -> EncreSearchManager:
+    """Return the global EncreSearchManager singleton (lazy-init)."""
     global _manager
     if _manager is None:
         _manager = EncreSearchManager()
@@ -62,6 +61,7 @@ def set_search_mode(mode: str, searxng_url: str = "") -> None:
 
 
 async def _web_search_execute(**kwargs: Any) -> str:
+    """Search the web via EncreSearchManager (DuckDuckGo Lite by default). Returns formatted results."""
     query = kwargs.get("query", "")
     if not query:
         return "Error: No search query provided."
@@ -91,8 +91,7 @@ async def _web_search_execute(**kwargs: Any) -> str:
         return "No results found."
 
     lines: list[str] = []
-    for i, r in enumerate(results[:
-        num], 1):
+    for i, r in enumerate(results[:num], 1):
         title = r.get("title", "").strip()
         url = r.get("url", "")
         content = r.get("content", "").strip()
@@ -112,7 +111,9 @@ EncreWebSearchTool = build_tool(
     name="web_search",
     description=(
         "Search the internet for up-to-date information, news, or answers. "
-        "Powered by DuckDuckGo Lite -- zero setup, zero API keys."
+        "Powered by DuckDuckGo Lite -- zero setup, zero API keys.\n\n"
+        "Use this for: current events, recent data, documentation lookups, "
+        "or any question that needs information beyond the training cutoff."
     ),
     input_schema={
         "type": "object",
@@ -138,11 +139,14 @@ EncreWebSearchTool = build_tool(
     },
     execute=_web_search_execute,
     intents=["general", "research"],
+    category="web",
+    triggers=["search web", "internet search", "google", "duckduckgo", "bing", "lookup", "browse web"],
     semantic_type="network",
     cost_level="medium",
     retryability="auto",
     safe_fallback="Refine the query, reduce the requested result count, or rely on local context if the search is non-essential.",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )
 
 

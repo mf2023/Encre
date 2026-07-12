@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Backends package -- multi-provider LLM inference adapters.
@@ -68,6 +68,8 @@ Typical usage::
         print(event)
 """
 
+# Re-export every backend class and shared helper from this package so callers
+# can import them directly from ``encre.backends``.
 from encre.backends.aigateway import AIGatewayBackend
 from encre.backends.alibaba import AlibabaBackend
 from encre.backends.anthropic import AnthropicBackend

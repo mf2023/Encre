@@ -1,4 +1,27 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """End-to-end evaluation framework for Encre agent.
 
@@ -24,8 +47,6 @@ Usage::
     result = await runner.run(task)
     print(f"Passed: {result.passed}, Score: {result.score}")
 """
-
-from __future__ import annotations
 
 import json
 import time
@@ -81,10 +102,12 @@ class EvalSummary:
 
     @property
     def pass_rate(self) -> float:
+        """Fraction of tasks that passed (``passed / total``)."""
         return self.passed / self.total if self.total > 0 else 0.0
 
     @property
     def average_score(self) -> float:
+        """Mean score across all tasks (``total_score / total``)."""
         return self.total_score / self.total if self.total > 0 else 0.0
 
 
@@ -105,6 +128,7 @@ class EvalRunner:
         self._agent: EncreAgent | None = None
 
     async def _get_agent(self) -> EncreAgent:
+        """Return a (possibly reused) agent instance for the next task."""
         if self._agent is None or not self.keep_session:
             self._agent = EncreAgent(config=self.config)
         return self._agent
@@ -135,6 +159,7 @@ class EvalRunner:
 
         # Score: check success criteria against output
         score = self._score_output(output, task)
+        # Require a strong match (>=0.7) and a clean run (no exception) to pass.
         passed = score >= 0.7 and not error
 
         return EvalResult(
@@ -158,6 +183,8 @@ class EvalRunner:
 
         # Check success criteria keywords present in output
         if task.success_criteria:
+            # Use content words longer than 3 chars, dropping stop words so the
+            # score reflects substance rather than boilerplate.
             criteria_keywords = [
                 w for w in task.success_criteria.split()
                 if len(w) > 3 and w not in ("the", "that", "this", "with", "from", "been", "were", "have", "your")

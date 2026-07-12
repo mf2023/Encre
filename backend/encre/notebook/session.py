@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Notebook session: execute code cells in a persistent Python kernel.
+
+:class:`EncreNotebookSession` spawns a hidden Python subprocess that speaks
+a tiny JSON line protocol (see ``_kernel_script``), runs each cell's code
+with captured stdout/stderr, and records the result.  Cells are addressed
+by id and can be created, edited, executed, inspected and deleted.
+"""
 
 import asyncio
 import json
@@ -34,6 +42,7 @@ from dataclasses import dataclass
 
 @dataclass
 class _CellData:
+    """Internal per-cell state (code, output, status, timing)."""
     code: str
     cell_type: str
     output: str = ""
@@ -43,7 +52,9 @@ class _CellData:
 
 
 class EncreNotebookSession:
+    """A notebook-like session backed by an out-of-process Python kernel."""
     def __init__(self, kernel_name: str = "python3") -> None:
+        """Create a fresh session (kernel lazily started on first execute)."""
         self.kernel_name = kernel_name
         self.session_id: str = str(uuid.uuid4())
         self._cells: dict[str, _CellData] = {}
@@ -51,6 +62,9 @@ class EncreNotebookSession:
         self._process: subprocess.Popen[bytes] | None = None
         self._started: bool = False
         self._kernel_script: str = (
+            # Inline Python REPL: reads JSON {"code": ...} lines and writes
+            # back JSON {"ok", "output", "error"} results; "__SHUTDOWN__"
+            # terminates the kernel cleanly.
             "import sys, json, traceback\n"
             "import builtins as _bi\n"
             "_ns = {}\n"
@@ -92,6 +106,7 @@ class EncreNotebookSession:
         )
 
     def _ensure_kernel(self) -> None:
+        """Start the kernel subprocess if it is not already running."""
         if self._started and self._process is not None and self._process.poll() is None:
             return
         python_exe = self.kernel_name if self.kernel_name else sys.executable
@@ -112,12 +127,14 @@ class EncreNotebookSession:
         self._started = True
 
     def create_cell(self, code: str, cell_type: str = "code") -> str:
+        """Create a new idle cell and return its id."""
         cell_id = str(uuid.uuid4())[:8]
         self._cells[cell_id] = _CellData(code=code, cell_type=cell_type, status="idle")
         self._cell_order.append(cell_id)
         return cell_id
 
     def edit_cell(self, cell_id: str, code: str) -> bool:
+        """Replace a cell's code (resetting its output/status)."""
         if cell_id not in self._cells:
             return False
         self._cells[cell_id].code = code
@@ -127,6 +144,7 @@ class EncreNotebookSession:
         return True
 
     async def execute_cell(self, cell_id: str, timeout: int = 60) -> dict[str, str | float]:
+        """Run one cell in the kernel; return its output/error/time."""
         if cell_id not in self._cells:
             return {"output": "", "error": f"Cell {cell_id} not found", "execution_time": 0.0}
         cell = self._cells[cell_id]
@@ -166,6 +184,7 @@ class EncreNotebookSession:
             return {"output": "", "error": str(e), "execution_time": cell.execution_time}
 
     async def execute_all(self, timeout: int = 300) -> list[dict[str, str | float]]:
+        """Execute every cell in order, returning per-cell results."""
         results: list[dict[str, str | float]] = []
         for cell_id in self._cell_order:
             result = await self.execute_cell(cell_id, timeout=max(timeout // max(len(self._cell_order), 1), 10))
@@ -173,6 +192,7 @@ class EncreNotebookSession:
         return results
 
     def get_state(self) -> dict:
+        """Return a serialisable snapshot of the whole session."""
         cells = []
         for cell_id in self._cell_order:
             cell = self._cells.get(cell_id)
@@ -195,18 +215,21 @@ class EncreNotebookSession:
         }
 
     def get_output(self, cell_id: str) -> str:
+        """Return the last captured stdout for a cell."""
         cell = self._cells.get(cell_id)
         if cell is None:
             return ""
         return cell.output
 
     def get_error(self, cell_id: str) -> str:
+        """Return the last captured stderr/traceback for a cell."""
         cell = self._cells.get(cell_id)
         if cell is None:
             return ""
         return cell.error
 
     def delete_cell(self, cell_id: str) -> bool:
+        """Remove a cell from the session; return True if it existed."""
         if cell_id not in self._cells:
             return False
         del self._cells[cell_id]
@@ -214,6 +237,7 @@ class EncreNotebookSession:
         return True
 
     def close(self) -> None:
+        """Shut the kernel down and release the subprocess."""
         if self._process is not None and self._process.stdin is not None:
             try:
                 request = json.dumps({"code": "__SHUTDOWN__"}) + "\n"

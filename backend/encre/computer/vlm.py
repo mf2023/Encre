@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Vision-Language-Model driven computer use.
@@ -64,8 +64,6 @@ rather than fall back to a stub -- VLM-driven UI automation is
 unsafe without a real model in the loop.
 """
 
-from __future__ import annotations
-
 import base64
 import json
 import logging
@@ -103,6 +101,7 @@ class VLMDecision:
     reasoning: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise this decision to a JSON-friendly dictionary."""
         return {
             "action": self.action,
             "x": self.x,
@@ -127,6 +126,7 @@ class VLMUseResult:
     error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise this result (including all decisions) to a dictionary."""
         return {
             "success": self.success,
             "steps_taken": self.steps_taken,
@@ -160,6 +160,14 @@ class OpenAICompatibleVLM:
         model: str = "gpt-4o-mini",
         timeout: float = 60.0,
     ) -> None:
+        """Store OpenAI-compatible endpoint config and validate the API key.
+
+        Args:
+            api_key: API key; falls back to ``OPENAI_API_KEY`` env var.
+            base_url: Base URL of the OpenAI-compatible API.
+            model: Vision-capable chat model name.
+            timeout: Per-request timeout in seconds.
+        """
         self.api_key: str = api_key or os.environ.get("OPENAI_API_KEY", "")
         if not self.api_key:
             raise ValueError(
@@ -171,6 +179,16 @@ class OpenAICompatibleVLM:
         self.timeout: float = timeout
 
     def __call__(self, screenshot_bytes: bytes, system_prompt: str, user_prompt: str) -> str:
+        """Send a screenshot + prompts to the chat API and return the reply text.
+
+        Args:
+            screenshot_bytes: Raw PNG bytes of the current screen.
+            system_prompt: System instruction describing the schema/role.
+            user_prompt: Per-step user instruction.
+
+        Returns:
+            The model's textual response (expected to contain a JSON decision).
+        """
         import httpx  # lazy: httpx is a hard dep but defer import for diagnostics
 
         image_b64 = base64.b64encode(screenshot_bytes).decode("ascii")
@@ -220,6 +238,14 @@ class AnthropicVLM:
         model: str = "claude-3-5-sonnet-20241022",
         timeout: float = 60.0,
     ) -> None:
+        """Store Anthropic endpoint config and validate the API key.
+
+        Args:
+            api_key: API key; falls back to ``ANTHROPIC_API_KEY`` env var.
+            base_url: Base URL of the Anthropic API.
+            model: Vision-capable Claude model name.
+            timeout: Per-request timeout in seconds.
+        """
         self.api_key: str = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not self.api_key:
             raise ValueError(
@@ -231,6 +257,7 @@ class AnthropicVLM:
         self.timeout: float = timeout
 
     def __call__(self, screenshot_bytes: bytes, system_prompt: str, user_prompt: str) -> str:
+        """Send a screenshot + prompts to Claude and return the reply text."""
         import httpx
 
         image_b64 = base64.b64encode(screenshot_bytes).decode("ascii")
@@ -544,11 +571,19 @@ class VLMComputerUseSession:
         desktop: Any | None = None,
         max_steps: int = 20,
     ) -> None:
+        """Bind a VLM backend and (optional) desktop session together.
+
+        Args:
+            vlm: Callable backend that maps (png, system, user) -> reply text.
+            desktop: Optional pre-built desktop session; created lazily if None.
+            max_steps: Safety cap on the number of perception/action iterations.
+        """
         self.vlm: VLMBackendFn = vlm
         self._desktop = desktop  # EncreDesktopSession instance
         self.max_steps: int = max_steps
 
     def _ensure_desktop(self) -> Any:
+        """Return the desktop session, creating a default one on first use."""
         if self._desktop is None:
             from encre.computer.desktop import EncreDesktopSession
             self._desktop = EncreDesktopSession()

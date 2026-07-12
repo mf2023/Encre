@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Data-analysis & visualization skill prompt loader.
+
+Loads the ``data_viz`` prompt from the ``skills`` category and substitutes the
+analysis target supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _data_viz_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the data-viz skill prompt for the given analysis target."""
     target = args or "the specified data"
     return _loader.load_with_context("data_viz", category="skills", target=target)

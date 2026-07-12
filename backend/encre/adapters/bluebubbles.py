@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# bluebubbles.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - BlueBubblesAdapter
+#
 import asyncio
 import json
 import logging
@@ -96,6 +109,17 @@ class BlueBubblesAdapter(BaseAdapter):
         *,
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            server_url (str):
+            password (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text", "image", "file"])
         self._server_url = server_url.rstrip("/")
         self._password = password

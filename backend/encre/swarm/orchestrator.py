@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Dependency-aware execution engine for a swarm task tree.
+#
+# ``EncreOrchestrator`` walks a ``TaskTree``, launching each ready node as a
+# role-configured ``EncreAgent`` (bounded by a concurrency semaphore), running
+# an optional reviewer gate on coder output, sharing context via the blackboard,
+# and yielding ``OrchestrationEvent`` progress events.  It also supports
+# cooperative cancellation of all in-flight node tasks.
 
 import asyncio
 import time
@@ -181,6 +189,13 @@ class EncreOrchestrator:
             yield OrchestrationEvent(type="team_finished", progress=1.0)
 
     async def _execute_node(self, node: Any, task_tree: Any) -> None:
+        """Run one node to completion inside the concurrency semaphore.
+
+        Builds the agent context, runs the role-configured agent, applies the
+        reviewer gate when enabled for coder nodes, and on success stores the
+        result on the node and the blackboard.  Exceptions and cancellations
+        are captured into ``node.status``/``node.error``.
+        """
         async with self._semaphore:
             try:
                 role = self._roles.get(node.assigned_role)
@@ -215,6 +230,11 @@ class EncreOrchestrator:
                 node.error = str(e)
 
     async def _run_agent(self, node: Any, role: AgentRole, context: str) -> str:
+        """Execute a single node's prompt through a fresh ``EncreAgent``.
+
+        Returns the concatenated text output.  A ``Finish`` with reason
+        ``"error"`` appends a marker so the caller knows the agent aborted.
+        """
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
         from encre.utils.types import Finish, TextDelta

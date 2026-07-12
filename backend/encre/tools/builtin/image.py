@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/image.py
 
+Image implementation for the Encre tool system.
+"""
 import json
 import os
 from typing import Any
@@ -31,6 +35,11 @@ from encre.tools.base import build_tool
 
 
 async def _image_execute(**kwargs: Any) -> str:
+    """Image execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     action = kwargs.get("action", "info")
     file_path = kwargs.get("file_path", "")
     options = kwargs.get("options", {}) or {}
@@ -109,5 +118,8 @@ EncreImageTool = build_tool(
     },
     execute=_image_execute,
     intents=["data", "research"],
+    category="media",
+    semantic_type="media",
+    is_destructive=lambda args: args.get("action", "") == "convert",
     is_concurrency_safe=lambda _: True,
 )

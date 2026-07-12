@@ -21,6 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+"""Module: builtin/browser.py
+
+Browser implementation for the Encre tool system.
+"""
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +48,7 @@ def set_engine_requester(requester: Any) -> None:
 
 
 def _get_session():
+    """Get session."""
     global _session
     if _session is None:
         from encre.computer.browser import EncreBrowserSession
@@ -52,6 +59,11 @@ def _get_session():
 
 
 async def _browser_execute(**kwargs: Any) -> str:
+    """Browser execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     action = kwargs.get("action", "")
     session = _get_session()
 
@@ -536,4 +548,7 @@ EncreBrowserTool = build_tool(
     },
     execute=_browser_execute,
     intents=["coding", "system"],
+    category="web",
+    semantic_type="network",
+    is_destructive=lambda args: args.get("action", "") in ("click", "type", "fill_form", "navigate", "execute_js", "press_key", "drag"),
 )

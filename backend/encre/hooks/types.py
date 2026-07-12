@@ -21,7 +21,23 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre hook system: event & result types.
+
+This module defines the *vocabulary* of the hook system:
+
+    * :data:`HookEventType` -- the closed set of lifecycle events hooks can
+      subscribe to (``pre_tool_exec``, ``post_tool_exec``,
+      ``on_session_start``, ``pre_model_request`` ...).
+    * :data:`HookHandler` -- the async callable signature each handler must
+      match: ``(name, context, state) -> HookResult``.
+    * :data:`HookResult` -- the dict a handler returns, optionally carrying
+      ``block`` / ``block_reason`` / ``modified_input`` / ``extra_context``.
+    * :class:`HookStartedEvent`, :class:`HookProgressEvent`,
+      :class:`HookResponseEvent` -- observer event records emitted by
+      :class:`~encre.hooks.system.EncreHookSystem` for the UI / logging.
+"""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field

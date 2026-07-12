@@ -21,7 +21,17 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre slash-command registry.
+
+Slash commands (``/plan``, ``/spec``, project/user ``*.md`` command files, ...)
+are modelled as :class:`SlashCommandDef` records and aggregated in
+:class:`EncreCommandRegistry`, which merges sources by priority
+(builtin < user < project < bundled) and resolves aliases.  This module also
+parses terminal-only commands and exposes helpers used by the desktop UI to
+render the command palette.
+"""
 
 import os
 import re

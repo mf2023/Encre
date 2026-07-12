@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 AWS Bedrock backend -- Converse API (Claude, Llama, Mistral, etc.).
@@ -326,6 +326,8 @@ class BedrockBackend(BaseBackend):
 
         import asyncio
 
+        # Translate the OpenAI-style history into Converse API shape and
+        # split out any system prompt (Converse takes it separately).
         converted_messages, system_message = self._convert_messages(messages)
 
         inference_config: dict[str, Any] = {
@@ -355,6 +357,7 @@ class BedrockBackend(BaseBackend):
             loop = asyncio.get_running_loop()
 
             if stream:
+                # boto3 is synchronous; run the streaming call off-thread.
                 response = await loop.run_in_executor(
                     None,
                     lambda: self._client.converse_stream(**params),
@@ -365,9 +368,13 @@ class BedrockBackend(BaseBackend):
                 tool_use_buffer: dict[str, Any] | None = None
                 tool_index: int = 0
                 thinking_block: bool = False  # current content block is thinking
+                # ``thinking_block`` tracks whether the in-progress content block
+                # is a reasoning block so that deltas are routed to
+                # create_backend_thinking vs create_backend_text.
 
                 for event in stream:
                     if "contentBlockStart" in event:
+                        # A new content block begins; detect tool vs thinking.
                         start = event["contentBlockStart"]
                         tool_use = start.get("toolUse", {})
                         thinking_data = start.get("thinking", {})
@@ -433,6 +440,7 @@ class BedrockBackend(BaseBackend):
                             tool_index += 1
 
                     elif "messageStop" in event:
+                        # End of the message; normalize the stop reason.
                         stop_reason = event["messageStop"].get("stopReason", "")
                         if stop_reason == "end_turn":
                             finish_reason = "stop"
@@ -450,6 +458,7 @@ class BedrockBackend(BaseBackend):
                 yield create_backend_finish(finish_reason)
 
             else:
+                # Non-streaming path: one blocking Converse call off-thread.
                 response = await loop.run_in_executor(
                     None,
                     lambda: self._client.converse(**params),

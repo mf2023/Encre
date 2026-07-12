@@ -21,7 +21,18 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Prompt template base classes.
+
+Provides :class:`EncreBasePrompt` (an abstract interface for prompt
+templates) and :class:`EncrePromptTemplate` (a general-purpose concrete
+implementation backed by the layered
+:class:`~encre.prompts.system.EncrePromptBuilder`).
+
+Subclasses such as ``EncreCodingPrompt`` specialize behaviour by passing a
+fixed ``specialty`` to the builder.
+"""
 
 from abc import ABC, abstractmethod
 from typing import Any
@@ -60,6 +71,14 @@ class EncrePromptTemplate(EncreBasePrompt):
     """General-purpose prompt template using the layered builder."""
 
     def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "general") -> None:
+        """Initialize the template.
+
+        Args:
+            builder: Optional pre-configured prompt builder.  A new
+                :class:`~encre.prompts.system.EncrePromptBuilder` is created
+                when omitted.
+            specialty: Default specialty label forwarded to the builder.
+        """
         self._builder = builder or EncrePromptBuilder()
         self._specialty = specialty
 
@@ -78,6 +97,12 @@ class EncrePromptTemplate(EncreBasePrompt):
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> str:
+        """Build the system prompt from session context.
+
+        Delegates to
+        :meth:`~encre.prompts.system.EncrePromptBuilder.build` using the
+        template's configured ``specialty``.
+        """
         return self._builder.build(
             mode=mode,
             tools=tools,
@@ -95,6 +120,15 @@ class EncrePromptTemplate(EncreBasePrompt):
         )
 
     def build_tool_instructions(self, tool_names: list[str]) -> str:
+        """Render a human-readable list of available tools.
+
+        Args:
+            tool_names: Names of tools exposed to the model.
+
+        Returns:
+            A prompt fragment describing the tools, or a notice when no tools
+            are available.
+        """
         if not tool_names:
             return "You do not have access to any tools."
         tools_list = "\n".join(f"- {name}" for name in tool_names)
@@ -102,4 +136,5 @@ class EncrePromptTemplate(EncreBasePrompt):
 
     @property
     def builder(self) -> EncrePromptBuilder:
+        """The underlying prompt builder instance."""
         return self._builder

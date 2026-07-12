@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import base64
 import contextlib
@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import pathlib
+import tempfile
 import time
 import uuid
 from collections import OrderedDict
@@ -41,6 +42,99 @@ from encre.utils.idgen import BranchIDGenerator
 from encre.utils.tokens import count_message_tokens, estimate_tokens
 
 logger = logging.getLogger("encre.session")
+
+
+def _atomic_write_text(path: pathlib.Path, payload: str, *, encoding: str = "utf-8") -> None:
+    """Write *payload* to *path* atomically.
+
+    Writes to a unique ``.tmp`` file in the same directory and then renames
+    it over the target, so a crash mid-write never leaves a truncated turn
+    file. ``os.replace`` is atomic on both POSIX and Windows.
+    """
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(tmp_fd, "w", encoding=encoding) as fh:
+            fh.write(payload)
+        os.replace(tmp_name, str(path))
+    except Exception:
+        with contextlib.suppress(Exception):
+            os.unlink(tmp_name)
+        raise
+
+
+def _inject_orphan_tool_tombstones(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Insert synthetic ``tool_result`` blocks for tool calls whose result was never persisted.
+
+    If the process crashed after an assistant emitted ``tool_use`` but before
+    the tool result reached disk, the reloaded conversation ends with an
+    orphan ``tool_use`` and the next API call rejects it. We insert an error
+    tombstone for each orphan so the loop can resume cleanly. Each tombstone
+    is placed immediately after the last real ``tool_result`` that follows
+    the emitting assistant message (or right after the assistant message
+    when no real results follow).
+    """
+    satisfied = {
+        m.get("tool_call_id")
+        for m in messages
+        if m.get("role") == "tool" and m.get("tool_call_id")
+    }
+
+    tombstones_by_id: dict[str, dict[str, Any]] = {}
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        calls = m.get("tool_calls")
+        if not isinstance(calls, list):
+            continue
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            cid = call.get("id")
+            if not cid or cid in satisfied or cid in tombstones_by_id:
+                continue
+            name = ""
+            fn = call.get("function")
+            if isinstance(fn, dict):
+                name = fn.get("name", "") or ""
+            tombstones_by_id[cid] = {
+                "role": "tool",
+                "tool_call_id": cid,
+                "name": name,
+                "content": (
+                    "[Tool execution was interrupted by a crash; "
+                    "result was not persisted. The tool did not complete.]"
+                ),
+                "is_error": True,
+            }
+
+    if not tombstones_by_id:
+        return messages
+
+    logger.warning(
+        "[session] recovered %d orphan tool_use block(s) with tombstones",
+        len(tombstones_by_id),
+    )
+
+    out: list[dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
+    for m in messages:
+        role = m.get("role")
+        if role != "tool" and pending:
+            out.extend(pending)
+            pending = []
+        out.append(m)
+        if role == "assistant":
+            calls = m.get("tool_calls")
+            if isinstance(calls, list):
+                for call in calls:
+                    if isinstance(call, dict):
+                        cid = call.get("id")
+                        if cid and cid in tombstones_by_id:
+                            pending.append(tombstones_by_id[cid])
+    out.extend(pending)
+    return out
 
 
 def _tool_to_icon(tool_name: str) -> str:
@@ -1055,7 +1149,7 @@ class EncreSession:
             payload = json.dumps(msgs, ensure_ascii=False, separators=(",", ":"))
             with contextlib.suppress(Exception):
                 payload = encrypt(payload)
-            fpath.write_text(payload, encoding="utf-8")
+            _atomic_write_text(fpath, payload)
 
         for p in d.iterdir():
             if not p.name.startswith("turn_") or p.suffix != ".json":
@@ -1142,7 +1236,7 @@ class EncreSession:
             except json.JSONDecodeError:
                 continue
 
-        session.messages = messages
+        session.messages = _inject_orphan_tool_tombstones(messages)
         # Rebuild artifacts from authoritative message data rather than
         # relying on potentially-buggy streaming artifact creation.
         session.rebuild_artifacts_from_messages()
@@ -1390,7 +1484,7 @@ class EncreSession:
         payload = json.dumps(self.to_meta_dict(), ensure_ascii=False, separators=(",", ":"))
         with contextlib.suppress(Exception):
             payload = encrypt(payload)
-        (dirpath / "meta.json").write_text(payload, encoding="utf-8")
+        _atomic_write_text(dirpath / "meta.json", payload)
 
     def _partition_messages_into_turns(self) -> list[list[dict[str, Any]]]:
         """Split self.messages into per‑turn chunks.

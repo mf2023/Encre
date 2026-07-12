@@ -10,13 +10,20 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+/// Result of running a shell command: captured streams and exit code.
 #[derive(Serialize, Deserialize, Debug)]
+    /// Captured standard output (decoded to UTF-8 / UTF-16 as needed).
 pub struct ShellResult {
+    /// Captured standard error.
     pub stdout: String,
+    /// Process exit code (or -1 if the process could not be waited on).
     pub stderr: String,
     pub exit_code: i32,
 }
 
+/// Run `command` in a shell with an optional working directory and
+/// timeout, returning captured output. Cross-platform with automatic
+/// Unicode decoding.
 pub fn execute_shell(
     command: &str,
     cwd: Option<&str>,
@@ -76,6 +83,8 @@ pub fn execute_shell(
     }
 }
 
+/// Decode raw command output on Windows, detecting UTF-16LE produced
+/// by `cmd /U` and falling back to UTF-8.
 #[cfg(target_os = "windows")]
 fn decode_win(raw: &[u8]) -> String {
     // ``cmd /U`` produces UTF-16LE for built-in commands (echo, dir, etc.)

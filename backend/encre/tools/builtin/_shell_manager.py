@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Background shell manager.
 
@@ -30,8 +30,6 @@ Maintains running shell processes started via the bash tool with
 exposing an offset-based read protocol so the bash_output tool can stream
 new bytes since the last read without re-sending what the model already saw.
 """
-
-from __future__ import annotations
 
 import asyncio
 import os
@@ -46,8 +44,17 @@ from typing import Any
 from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
 
 
+def _win_kill_tree(pid: int, force: bool = False) -> None:
+    """Terminate a process and all its children on Windows."""
+    import subprocess as _sp
+    flag = "/F" if force else "/T"
+    _sp.run(["taskkill", flag, "/T", "/PID", str(pid)],
+            capture_output=True, timeout=5)
+
+
 @dataclass
 class _ShellRecord:
+    """ShellRecord."""
     id: str
     command: str
     cwd: str
@@ -63,6 +70,7 @@ class _ShellRecord:
 
     @property
     def running(self) -> bool:
+        """Running."""
         return self.exit_code is None and self.process.returncode is None
 
 
@@ -73,11 +81,13 @@ class BackgroundShellManager:
     _MAX_BUFFER_BYTES = 4 * 1024 * 1024  # 4 MiB ring per stream
 
     def __init__(self) -> None:
+        """Init."""
         self._shells: dict[str, _ShellRecord] = {}
         self._lock = asyncio.Lock()
 
     @classmethod
     def instance(cls) -> BackgroundShellManager:
+        """Instance."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -135,6 +145,12 @@ class BackgroundShellManager:
         return rec
 
     async def _drain(self, rec: _ShellRecord, stream: str) -> None:
+        """Drain.
+
+        Args:
+            rec: Description of the rec parameter.
+            stream: Description of the stream parameter.
+        """
         pipe = rec.process.stdout if stream == "stdout" else rec.process.stderr
         if pipe is None:
             return
@@ -158,6 +174,11 @@ class BackgroundShellManager:
             pass
 
     async def _wait(self, rec: _ShellRecord) -> None:
+        """Wait.
+
+        Args:
+            rec: Description of the rec parameter.
+        """
         try:
             rec.exit_code = await rec.process.wait()
             rec.finished_at = time.time()
@@ -169,6 +190,11 @@ class BackgroundShellManager:
     # ------------------------------------------------------------------
 
     def read_new_output(self, shell_id: str) -> dict[str, Any]:
+        """Read new output.
+
+        Args:
+            shell_id: Description of the shell_id parameter.
+        """
         rec = self._shells.get(shell_id)
         if rec is None:
             return {"error": f"Unknown shell id: {shell_id}"}
@@ -196,6 +222,12 @@ class BackgroundShellManager:
     # ------------------------------------------------------------------
 
     async def kill(self, shell_id: str, force: bool = False) -> dict[str, Any]:
+        """Kill.
+
+        Args:
+            shell_id: Description of the shell_id parameter.
+            force: Description of the force parameter.
+        """
         rec = self._shells.get(shell_id)
         if rec is None:
             return {"error": f"Unknown shell id: {shell_id}"}
@@ -205,7 +237,7 @@ class BackgroundShellManager:
 
         try:
             if sys.platform == "win32":
-                rec.process.kill() if force else rec.process.terminate()
+                _win_kill_tree(rec.process.pid, force)
             else:
                 pgid = os.getpgid(rec.process.pid)
                 sig = signal.SIGKILL if force else signal.SIGTERM
@@ -233,6 +265,7 @@ class BackgroundShellManager:
     # ------------------------------------------------------------------
 
     def list_shells(self) -> list[dict[str, Any]]:
+        """List shells."""
         out: list[dict[str, Any]] = []
         for rec in self._shells.values():
             out.append({

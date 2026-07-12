@@ -18,56 +18,73 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Heuristic tokenizer that estimates LLM token counts for mixed
+//! natural-language, source-code, numeric, and CJK text.
 use regex::Regex;
 use std::sync::OnceLock;
 
+/// Average characters per token assumed for natural-language English text.
 const ENGLISH_CHARS_PER_TOKEN: f64 = 4.0;
+/// Average characters per token assumed for source code and identifiers.
 const CODE_CHARS_PER_TOKEN: f64 = 3.5;
+/// Tokens charged per CJK (Chinese/Japanese/Korean) character.
 const CJK_TOKENS_PER_CHAR: f64 = 2.0;
+/// Digits consumed per token for numeric literals.
 const DIGITS_PER_TOKEN: f64 = 2.0;
+/// Token cost charged for a single punctuation-only word.
 const PUNCTUATION_TOKEN_COST: usize = 1;
 
+/// Lazily-compiled regex matching a maximal non-whitespace word.
 fn word_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"[^\s]+").unwrap())
 }
 
+/// Lazily-compiled regex matching a standalone numeric literal.
 fn number_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^\d[\d,.]*\d$|^\d$").unwrap())
 }
 
+/// Lazily-compiled regex matching a hexadecimal literal such as `0x1F`.
 fn hex_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^0x[0-9a-fA-F]+$").unwrap())
 }
 
+/// Lazily-compiled regex matching a pure ASCII word (letters, `_`, `-`).
 fn all_ascii_alpha_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^[A-Za-z_\-]+$").unwrap())
 }
 
+/// Lazily-compiled regex matching any ASCII word character.
 fn mixed_ascii_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"[A-Za-z0-9_]").unwrap())
 }
 
+/// Lazily-compiled regex matching a single Han (CJK) character.
 fn cjk_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\p{Han}").unwrap())
 }
 
+/// Lazily-compiled regex matching a single punctuation character.
 fn single_punctuation_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^[^\w\s]$").unwrap())
 }
 
+/// Estimate the number of tokens a string would consume in an LLM
+/// context window, using per-category heuristics.
 pub fn count_tokens(text: &str) -> usize {
     let text = text.trim();
     if text.is_empty() {
         return 0;
     }
 
+    // Accumulate the estimated token count across every word.
     let mut tokens: f64 = 0.0;
 
     for m in word_re().find_iter(text) {
@@ -98,6 +115,7 @@ pub fn count_tokens(text: &str) -> usize {
         }
     }
 
+    // Add a small penalty for the whitespace between words.
     let whitespace_segments = text.split_whitespace().count();
     if whitespace_segments > 1 {
         tokens += (whitespace_segments as f64 * 0.25).ceil();

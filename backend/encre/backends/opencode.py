@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 OpenCode backend -- OpenCode Zen and OpenCode Go providers.
@@ -63,10 +63,12 @@ class OpenCodeZenBackend(OpenAISSEBackend):
         **kwargs: Any,
     ) -> None:
         if not base_url:
+            # Fall back to the OpenCode API default when no URL is supplied.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        # Curated Zen/Go models default to a 128K context window.
         return 128000
 
 
@@ -87,8 +89,10 @@ class OpenCodeGoBackend(OpenAISSEBackend):
         **kwargs: Any,
     ) -> None:
         if not base_url:
+            # Fall back to the OpenCode API default when no URL is supplied.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        # Curated Zen/Go models default to a 128K context window.
         return 128000

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """MCP (Model Context Protocol) client implementation.
 
@@ -34,12 +34,11 @@ Implements the standard JSON-RPC 2.0 based MCP protocol with support for:
 - Proper JSON-RPC 2.0 error codes
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import json
 import logging
+import os
 import shlex
 import subprocess
 import sys
@@ -192,6 +191,13 @@ class MCPProtocolError(MCPError):
     """Raised for JSON-RPC protocol-level errors."""
 
     def __init__(self, code: int, message: str, data: Any = None) -> None:
+        """Initialize the MCP protocol error.
+
+        Args:
+            code: JSON-RPC error code.
+            message: Human-readable error message.
+            data: Optional additional error data.
+        """
         super().__init__(f"[{code}] {message}")
         self.code = code
         self.message = message
@@ -230,7 +236,6 @@ class StdioTransport(MCPTransport):
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
         self._lock = asyncio.Lock()
-        self._buffer = b""
         self._connected = False
 
     # ------------------------------------------------------------------
@@ -239,6 +244,7 @@ class StdioTransport(MCPTransport):
 
     @property
     def is_connected(self) -> bool:
+        """Is connected."""
         return self._connected and self._process is not None and self._process.returncode is None
 
     # ------------------------------------------------------------------
@@ -261,6 +267,11 @@ class StdioTransport(MCPTransport):
         logger.debug("Spawning MCP server: %s", args)
 
         try:
+            # Merge parent env so subprocess inherits TMP, PATH, etc.
+            merged_env = dict(os.environ)
+            if self._env:
+                merged_env.update(self._env)
+
             from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
             popen_kwargs = hidden_subprocess_kwargs()
             self._process = await asyncio.create_subprocess_exec(
@@ -268,7 +279,7 @@ class StdioTransport(MCPTransport):
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                env=self._env,
+                env=merged_env,
                 cwd=self._cwd,
                 **popen_kwargs,
             )
@@ -308,7 +319,6 @@ class StdioTransport(MCPTransport):
 
         self._connected = False
         self._process = None
-        self._buffer = b""
 
     # ------------------------------------------------------------------
     # Message I/O
@@ -348,8 +358,10 @@ class StdioTransport(MCPTransport):
         assert self._process.stdin is not None
 
         body = json.dumps(message, ensure_ascii=False).encode("utf-8")
-        header = f"Content-Length: {len(body)}\r\n\r\n".encode()
-        self._process.stdin.write(header + body)
+        # Use newline-delimited JSON framing for rmcp compatibility.
+        # The rmcp Rust crate Default transport expects raw JSON lines
+        # rather than Content-Length headers.
+        self._process.stdin.write(body + b"\n")
         await self._process.stdin.drain()
 
         logger.debug("Sent MCP request: id=%s method=%s", message.get("id", "<none>"), message.get("method"))
@@ -389,12 +401,15 @@ class StdioTransport(MCPTransport):
             return msg
 
     async def _read_one_message(self) -> dict[str, Any]:
-        """Read a single Content-Length-framed message from stdout."""
+        """Read a single JSON-line message from stdout.
+
+        Supports both newline-delimited JSON (rmcp-native) and legacy
+        Content-Length framing for backward compatibility.
+        """
         assert self._process is not None
         assert self._process.stdout is not None
 
-        content_length: int | None = None
-
+        data = b""
         while True:
             # Check if the server process has died
             if self._process.returncode is not None:
@@ -408,64 +423,47 @@ class StdioTransport(MCPTransport):
                     f"Stderr: {stderr_text}"
                 )
 
-            if content_length is None:
-                # Search for Content-Length header in the buffer
-                header_end = self._buffer.find(b"\r\n\r\n")
-                if header_end == -1:
-                    # Read more data
-                    chunk = await self._process.stdout.read(4096)
-                    if not chunk:
-                        await asyncio.sleep(0.01)
-                        continue
-                    self._buffer += chunk
-                    continue
-
-                # Parse the header
-                header = self._buffer[:header_end].decode("utf-8", errors="replace")
-                self._buffer = self._buffer[header_end + 4:]  # strip header + \r\n\r\n
-
-                # Extract Content-Length value
-                content_length = self._parse_content_length(header)
-                if content_length is None:
-                    raise MCPTransportError(
-                        f"Invalid MCP frame header (no Content-Length): {header!r}"
-                    )
-
-            # Wait until we have enough bytes for the body
-            if len(self._buffer) < content_length:
-                needed = content_length - len(self._buffer)
-                chunk = await self._process.stdout.read(max(needed, 4096))
-                if not chunk:
-                    await asyncio.sleep(0.01)
-                    continue
-                self._buffer += chunk
+            # Read more data
+            chunk = await self._process.stdout.read(4096)
+            if not chunk:
+                await asyncio.sleep(0.01)
                 continue
+            data += chunk
 
-            # Extract the JSON body
-            body_bytes = self._buffer[:content_length]
-            self._buffer = self._buffer[content_length:]
-            content_length = None  # reset for next message
+            # Try newline-delimited JSON first
+            lines = data.split(b"\n")
+            if len(lines) > 1:
+                line = lines[0].strip()
+                if line:
+                    try:
+                        return json.loads(line)
+                    except json.JSONDecodeError:
+                        # Not JSON -- might be Content-Length header; fall through
+                        pass
 
-            try:
-                msg = json.loads(body_bytes.decode("utf-8"))
-            except json.JSONDecodeError as exc:
-                logger.error("Failed to parse MCP message JSON: %s", exc)
-                raise MCPProtocolError(
-                    PARSE_ERROR,
-                    f"Failed to parse JSON-RPC message: {exc}",
-                ) from exc
-
-            return msg
+            # Fallback: Content-Length framing
+            header_end = data.find(b"\r\n\r\n")
+            if header_end != -1:
+                header = data[:header_end].decode("utf-8", errors="replace")
+                body_start = header_end + 4
+                cl = self._parse_content_length(header)
+                if cl is not None and len(data) >= body_start + cl:
+                    body = data[body_start:body_start + cl]
+                    try:
+                        return json.loads(body)
+                    except json.JSONDecodeError:
+                        raise MCPTransportError(
+                            f"Failed to parse MCP response body: {body[:200]!r}"
+                        )
 
     @staticmethod
     def _parse_content_length(header: str) -> int | None:
-        """Parse Content-Length from an MCP frame header."""
+        """Extract Content-Length value from a header string."""
         for line in header.split("\r\n"):
-            line = line.strip()
-            if line.lower().startswith("content-length: "):
+            if line.lower().startswith("content-length:"):
                 try:
                     return int(line.split(":", 1)[1].strip())
-                except ValueError:
+                except (ValueError, IndexError):
                     return None
         return None
 
@@ -521,6 +519,7 @@ class HttpTransport(MCPTransport):
 
     @property
     def is_connected(self) -> bool:
+        """Is connected."""
         return self._connected and self._client is not None
 
     # ------------------------------------------------------------------
@@ -737,6 +736,11 @@ class MCPClient:
     """
 
     def __init__(self, transport: MCPTransport) -> None:
+        """Initialize the MCP client with a transport layer.
+
+        Args:
+            transport: The transport implementation (stdio or HTTP).
+        """
         self._transport = transport
         self._initialized = False
         self._server_info: dict[str, Any] = {}
@@ -749,10 +753,12 @@ class MCPClient:
     # ------------------------------------------------------------------
 
     async def __aenter__(self) -> MCPClient:
+        """Enter async context: initialize the MCP connection."""
         await self.initialize()
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit async context: close the MCP connection."""
         await self.close()
 
     # ------------------------------------------------------------------
@@ -1000,6 +1006,7 @@ class MCPClient:
 
     @property
     def is_initialized(self) -> bool:
+        """Is initialized."""
         return self._initialized
 
 
@@ -1361,6 +1368,14 @@ class _MCPDiscoveredTool(EncreTool):
 
     def __init__(self, mcp_tool: EncreMCPTool, tool_name: str,
                  schema: dict[str, Any], registered_name: str) -> None:
+        """Initialize a wrapper around a single MCP-discovered tool.
+
+        Args:
+            mcp_tool: The parent EncreMCPTool instance that owns the connection.
+            tool_name: The original tool name on the MCP server.
+            schema: The tool's JSON schema from the MCP server.
+            registered_name: The prefixed name used in the local registry.
+        """
         super().__init__()
         self._mcp_tool = mcp_tool
         self._tool_name = tool_name
@@ -1381,4 +1396,9 @@ class _MCPDiscoveredTool(EncreTool):
         return await self._mcp_tool.call_tool(self._tool_name, filtered_args)
 
     def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
+        """Is concurrency safe.
+
+        Args:
+            input_data: Description of the input_data parameter.
+        """
         return self._mcp_tool.is_concurrency_safe(input_data)

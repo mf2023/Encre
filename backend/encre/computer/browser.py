@@ -21,14 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """CDP-based browser automation session.
 
 Replaces the previous Playwright-based implementation with direct
 Chrome DevTools Protocol (CDP) communication.  Supports Chrome,
 Edge, and other Chromium-based browsers.
 """
-
-from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -53,6 +53,7 @@ _module_launched_process: Any | None = None
 
 @dataclass
 class BrowserState:
+    """Snapshot of the current page: URL, title, HTML and visible text."""
     url: str = ""
     title: str = ""
     html: str = ""
@@ -61,6 +62,7 @@ class BrowserState:
 
 @dataclass
 class BrowserViewport:
+    """Viewport dimensions, scroll offsets, and device pixel ratio."""
     width: int = 0
     height: int = 0
     scroll_x: int = 0
@@ -100,6 +102,7 @@ _CDP_KEYS: dict[str, str] = {
 
 
 def _translate_key(key: str) -> str:
+    """Map a friendly key name to its CDP key identifier (identity if unknown)."""
     return _CDP_KEYS.get(key, key)
 
 
@@ -122,6 +125,14 @@ class EncreBrowserSession:
         viewport_height: int = 800,
         timeout: int = 30000,
     ) -> None:
+        """Store connection defaults; the browser is launched lazily on use.
+
+        Args:
+            headless: Whether to launch the browser without a visible window.
+            viewport_width: Emulated viewport width in pixels.
+            viewport_height: Emulated viewport height in pixels.
+            timeout: Default operation timeout in milliseconds.
+        """
         self.headless = headless
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
@@ -145,9 +156,11 @@ class EncreBrowserSession:
     # ------------------------------------------------------------------
 
     def set_engine_requester(self, requester: Any | None) -> None:
+        """Install the engine-install requester used when no browser is found."""
         self._engine_requester = requester
 
     def is_idle(self, max_idle_seconds: int = 600) -> bool:
+        """Return True if the session hasn't been used within the idle window."""
         return (time.time() - self._last_used) > max_idle_seconds
 
     async def _ensure_browser(self) -> None:
@@ -210,6 +223,7 @@ class EncreBrowserSession:
             logger.debug("viewport apply skipped (page may not be ready)")
 
     def _tick(self) -> None:
+        """Update the last-used timestamp to keep the session alive."""
         self._last_used = time.time()
 
     # ------------------------------------------------------------------

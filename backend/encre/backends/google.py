@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Google backend -- Gemini 2.5 Pro, Gemini 2.5 Flash (2026 lineup).
@@ -500,6 +500,7 @@ class GoogleBackend(BaseBackend):
             finish_reason: str = "stop"
             accumulated_text: dict[int, str] = {}
 
+            # Gemini streams SSE "data: {json}" lines; parse each candidate.
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -510,6 +511,7 @@ class GoogleBackend(BaseBackend):
                 try:
                     chunk = json.loads(payload)
                 except json.JSONDecodeError:
+                    # Ignore malformed/partial JSON lines defensively.
                     continue
 
                 candidates = chunk.get("candidates", [])
@@ -541,6 +543,8 @@ class GoogleBackend(BaseBackend):
                     elif "text" in part:
                         text = part.get("text", "")
                         if text:
+                            # Gemini may resend cumulative text; emit only the
+                            # newly-appended suffix as an incremental delta.
                             if part_idx not in accumulated_text:
                                 accumulated_text[part_idx] = ""
                             prev = accumulated_text[part_idx]

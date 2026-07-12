@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Layered retry engine for LLM API calls.
@@ -581,6 +581,7 @@ def retry_with_backoff(
             state = _RetryState(config)
 
             attempt = 0
+            # Total attempts = retries + 1 initial try; None means unbounded (persistent mode).
             max_attempts = (config.max_retries + 1) if not config.persistent_retry else None
 
             while max_attempts is None or attempt < max_attempts:

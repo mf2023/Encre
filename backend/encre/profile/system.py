@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Durable, privacy-aware user profile storage and inference merge.
+
+:class:`EncreProfileSystem` loads/saves a :class:`UserProfile` (encrypted
+markdown with a YAML frontmatter) and exposes helpers to update single
+fields (with decaying confidence), merge LLM-inferred traits, and build the
+prompt context that is shown to the model *without* leaking it to the user.
+"""
 
 import contextlib
 import dataclasses
@@ -41,6 +49,7 @@ PROFILE_FILENAME = "_profile.md"
 
 @dataclass
 class UserProfile:
+    """All persisted, per-user traits with their confidence scores."""
     schema_version: int = 1
     last_updated: float = 0.0
     update_count: int = 0
@@ -71,15 +80,18 @@ class UserProfile:
     confidence: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the profile to a plain dictionary."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "UserProfile":
+        """Reconstruct a profile, ignoring unknown fields."""
         known_fields = set(f.name for f in dataclasses.fields(cls))
         filtered = {k: v for k, v in d.items() if k in known_fields}
         return cls(**filtered)
 
     def to_prompt_text(self) -> str:
+        """Render the full profile as a markdown prompt snippet."""
         parts: list[str] = []
         parts.append("## User Profile")
 
@@ -127,6 +139,7 @@ class UserProfile:
 
     @staticmethod
     def _keywords(text: str) -> set[str]:
+        """Tokenise text into Latin words + individual CJK characters."""
         words: set[str] = set()
         # Latin words (space-separated)
         for m in re.finditer(r"[a-zA-Z0-9_+#.]+", text.lower()):
@@ -138,6 +151,7 @@ class UserProfile:
             words.add(m.group())
         return words
 
+    # Stopwords ignored when matching query keywords against fields.
     _STOPWORDS = frozenset({
         "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
         "her", "was", "one", "our", "out", "has", "have", "been", "some",
@@ -151,6 +165,7 @@ class UserProfile:
     })
 
     def _field_relevant(self, field_name: str, field_value: Any, query_words: set[str]) -> bool:
+        """True if the query shares keywords with this field's label/value."""
         if not field_value:
             return False
         # Check field label + value text for keyword overlap
@@ -228,6 +243,7 @@ class UserProfile:
         return "\n".join(parts)
 
     def get_frontend_data(self) -> dict[str, Any]:
+        """Return a dict for the UI (mirrors the profile fields)."""
         return {
             "name": self.name,
             "language_preference": self.language_preference,
@@ -265,16 +281,20 @@ LEARNING_RATE_EXISTING = 0.15
 
 
 def _compute_decay(update_count: int) -> float:
+    """Confidence decay factor that shrinks with each update."""
     return max(0.5, DECAY_FACTOR_BASE - DECAY_PER_UPDATE * update_count)
 
 
 class EncreProfileSystem:
+    """Loads, persists and evolves the user profile on disk."""
     def __init__(self, memory_dir: str) -> None:
+        """Resolve the profile file path under ``memory_dir``."""
         self._memory_dir = memory_dir
         self._profile_path = os.path.join(memory_dir, PROFILE_FILENAME)
         self._profile = UserProfile()
 
     def load(self) -> None:
+        """Load (and decrypt) the profile, or start fresh on failure."""
         if not os.path.isfile(self._profile_path):
             self._profile = UserProfile()
             return
@@ -302,6 +322,7 @@ class EncreProfileSystem:
             self._profile = UserProfile()
 
     def save(self) -> None:
+        """Persist the profile as encrypted markdown+YAML frontmatter."""
         os.makedirs(self._memory_dir, exist_ok=True)
         data_json = json.dumps(self._profile.to_dict(), ensure_ascii=False)
         frontmatter = {
@@ -324,15 +345,19 @@ class EncreProfileSystem:
                 f.write(content)
 
     def build_profile_prompt(self) -> str:
+        """Return the full-profile prompt text."""
         return self._profile.to_prompt_text()
 
     def build_relevant_prompt(self, query: str, threshold: float = 0.0) -> str:
+        """Return only the profile fields relevant to ``query``."""
         return self._profile.build_relevant_prompt(query=query, threshold=threshold)
 
     def get_data(self) -> dict[str, Any]:
+        """Alias for the profile's frontend data dict."""
         return self._profile.get_frontend_data()
 
     def update_field(self, field: str, value: Any, confidence: float = 0.6) -> None:
+        """Update one field, blending confidence with decay, then save."""
         if not hasattr(self._profile, field):
             return
         old_val = getattr(self._profile, field)
@@ -351,6 +376,7 @@ class EncreProfileSystem:
         self.save()
 
     def merge_inferred(self, inferred: dict[str, Any], confidences: dict[str, float]) -> None:
+        """Merge an LLM-inferred trait dict into the profile."""
         for fname, value in inferred.items():
             if value is None or value == "" or value == [] or value == {}:
                 continue
@@ -358,6 +384,7 @@ class EncreProfileSystem:
             self.update_field(fname, value, confidence=conf)
 
     def update_raw(self, data: dict[str, Any]) -> None:
+        """Bulk-apply a raw dict of profile fields and persist."""
         profile_dict = self._profile.to_dict()
         profile_dict.update(data)
         self._profile = UserProfile.from_dict(profile_dict)
@@ -366,6 +393,7 @@ class EncreProfileSystem:
         self.save()
 
     async def infer_from_session(self, messages: list[dict[str, Any]], backend: Any) -> None:
+        """Infer traits from a session and merge them into the profile."""
         from encre.profile.inferrer import ProfileInferrer
         inferrer = ProfileInferrer()
         try:

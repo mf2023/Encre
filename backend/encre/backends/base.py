@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Abstract base class for all LLM backends.
@@ -94,6 +94,7 @@ def format_backend_error(exc: BaseException, prefix: str = "") -> str:
         are truncated to keep the UI readable.
     """
     body_text = ""
+    # HTTP-style exceptions carry the server response under ``.response``.
     response = getattr(exc, "response", None)
     if response is not None:
         try:
@@ -110,6 +111,7 @@ def format_backend_error(exc: BaseException, prefix: str = "") -> str:
             except Exception:
                 payload = None
             if isinstance(payload, dict):
+                # Providers nest the message under an "error" object or key.
                 err = payload.get("error")
                 msg: Any = None
                 if isinstance(err, dict):

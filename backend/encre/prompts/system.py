@@ -21,9 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
+
+"""Layered system-prompt builder.
+
+Assembles the agent's system prompt from reusable *blocks*.  Each block has a
+``priority`` (lower numbers are emitted earlier) and an optional ``condition``
+list of intents that gate its inclusion.  :class:`EncrePromptBuilder` collects
+core blocks, mode-specific blocks, slash-command blocks and a specialty block,
+filters them by the active intents, sorts by priority, and concatenates them.
+
+A ``__PROMPT_CACHE_BOUNDARY__`` marker is appended so callers can split the
+static (cacheable) prefix from the dynamic (session-specific) suffix.
+"""
 
 from dataclasses import dataclass
 from typing import Any
@@ -38,12 +48,23 @@ _loader = PromptLoader()
 
 @dataclass
 class PromptBlock:
+    """A single reusable fragment of the system prompt.
+
+    Attributes:
+        priority: Emission order; lower values come first.
+        name: Unique block identifier (later blocks may override earlier ones).
+        content: Rendered prompt text.
+        condition: Intents that must be present for inclusion; ``None`` means
+            always include.
+    """
+
     priority: int
     name: str
     content: str
     condition: list[str] | None = None  # intents that trigger this block; None = always
 
     def with_context(self, ctx: dict[str, str]) -> PromptBlock:
+        """Return a copy with ``{{key}}`` placeholders replaced by *ctx* values."""
         content = self.content
         for key, val in ctx.items():
             content = content.replace(f"{{{{{key}}}}}", val)
@@ -57,10 +78,12 @@ class PromptBlock:
 
 
 def _identity_block() -> PromptBlock:
+    """Core identity/behaviour block, always included (highest priority 0)."""
     return PromptBlock(priority=0, name="identity", condition=None, content=_loader.load("identity"))
 
 
 def _tool_usage_block(_tools: list[dict[str, Any]] | None = None) -> PromptBlock:
+    """Tool-usage guidance block (the model's instructions for using tools)."""
     return PromptBlock(
         priority=5, name="tool_usage",
         condition=None,
@@ -69,6 +92,7 @@ def _tool_usage_block(_tools: list[dict[str, Any]] | None = None) -> PromptBlock
 
 
 def _permission_block(mode: PermissionMode) -> PromptBlock:
+    """Permission/autonomy block describing how freely the agent may act."""
     if mode == "bypass":
         guidance = "You have full autonomy to execute any tool without asking for permission. Use this responsibly."
     elif mode == "dont_ask":
@@ -91,6 +115,7 @@ def _permission_block(mode: PermissionMode) -> PromptBlock:
 
 
 def _language_block(lang_pref: str, app_lang: str) -> PromptBlock | None:
+    """Language block forcing the response language (``zh``/``en``), or None."""
     resolved = lang_pref if lang_pref != "auto" else app_lang
     if resolved == "zh":
         instruction = "IMPORTANT: You must always respond in Chinese (中文) throughout the entire conversation. Even if the user writes in another language, you must reply in Chinese. Do not switch to other languages under any circumstances."
@@ -102,34 +127,42 @@ def _language_block(lang_pref: str, app_lang: str) -> PromptBlock | None:
 
 
 def _output_format_block() -> PromptBlock:
+    """Output-formatting block (inverted pyramid, diff format, no emojis)."""
     return PromptBlock(priority=30, name="output_format", condition=["general", "coding", "data"], content=_loader.load("output_format"))
 
 
 def _safety_block() -> PromptBlock:
+    """Safety/security block (secrets, data protection, risk framework)."""
     return PromptBlock(priority=5, name="safety", condition=None, content=_loader.load("safety"))
 
 
 def _task_management_block() -> PromptBlock:
+    """Task-management block (todo lists) for coding/data sessions."""
     return PromptBlock(priority=15, name="task_management", condition=["coding", "data"], content=_loader.load("task_management"))
 
 
 def _specialty_coding_block() -> PromptBlock:
+    """Specialty block for coding-domain guidance."""
     return PromptBlock(priority=100, name="specialty", condition=["coding"], content=_loader.load("specialty_coding"))
 
 
 def _specialty_research_block() -> PromptBlock:
+    """Specialty block for research-domain guidance."""
     return PromptBlock(priority=100, name="specialty", condition=["research"], content=_loader.load("specialty_research"))
 
 
 def _specialty_data_block() -> PromptBlock:
+    """Specialty block for data-analysis-domain guidance."""
     return PromptBlock(priority=100, name="specialty", condition=["data"], content=_loader.load("specialty_data"))
 
 
 def _specialty_general_block() -> PromptBlock:
+    """Fallback specialty block used when no specific intent is detected."""
     return PromptBlock(priority=100, name="specialty", condition=None, content=_loader.load("specialty_general"))
 
 
 def _iwork_block(workspace_root: str, workspace_name: str, project_summary: str = "") -> PromptBlock:
+    """Workspace (iWork) mode block describing the project and its files."""
     ctx = dict(workspace_name=workspace_name, workspace_root=workspace_root)
     content = _loader.load_with_context("workspace_mode", **ctx)
     if project_summary:
@@ -141,6 +174,7 @@ def _iwork_block(workspace_root: str, workspace_name: str, project_summary: str 
 
 
 def _plan_mode_block() -> PromptBlock:
+    """Plan-mode block: instruct the model to plan, not execute."""
     content = _loader.load("planner", category="skills")
     content = content.replace(
         "## Planner Sub-Agent -- Task Breakdown Specialist",
@@ -158,6 +192,7 @@ def _plan_mode_block() -> PromptBlock:
 
 
 def _spec_mode_block() -> PromptBlock:
+    """Spec-mode block: instruct the model to specify, not implement."""
     content = _loader.load("spec_writer", category="skills")
     content = content.replace(
         "## Spec Writer Sub-Agent -- Requirements & Specification Specialist\n\n"
@@ -185,12 +220,22 @@ def _slash_commands_block(
             "Follow the mode instructions above for this turn."
         )
     if commands:
-        lines.append("Available slash commands:")
-        for cmd in commands:
-            name = cmd.get("name", "")
-            title = cmd.get("title", name)
-            description = cmd.get("description", "")
-            lines.append(f"- /{name}: {title}{f' -- {description}' if description else ''}")
+        modes = [c for c in commands if c.get("kind") == "mode"]
+        actions = [c for c in commands if c.get("kind", "action") != "mode"]
+        if modes:
+            lines.append("Available modes:")
+            for cmd in modes:
+                name = cmd.get("name", "")
+                title = cmd.get("title", name)
+                description = cmd.get("description", "")
+                lines.append(f"- /{name}: {title}{f' -- {description}' if description else ''}")
+        if actions:
+            lines.append("Available commands:")
+            for cmd in actions:
+                name = cmd.get("name", "")
+                title = cmd.get("title", name)
+                description = cmd.get("description", "")
+                lines.append(f"- /{name}: {title}{f' -- {description}' if description else ''}")
     else:
         lines.append("No slash commands are available.")
     content = "\n".join(lines)
@@ -198,6 +243,7 @@ def _slash_commands_block(
 
 
 def _normal_mode_block(session_id: str = "") -> PromptBlock:
+    """Normal (non-workspace) mode block with the session files directory."""
     from encre.tools.builtin._sandbox import get_session_files_dir
     files_root = str(get_session_files_dir(session_id))
     content = _loader.load_with_context("general_mode", files_root=files_root)
@@ -205,6 +251,7 @@ def _normal_mode_block(session_id: str = "") -> PromptBlock:
 
 
 def _environment_block(workspace_root: str = "") -> PromptBlock:
+    """Environment block: OS, shell hints, cwd, and git-repo detection."""
     import os as _os
     import platform as _platform
     import sys as _sys
@@ -287,12 +334,15 @@ class EncrePromptBuilder:
         self._blocks: dict[str, PromptBlock] = {}
 
     def add_block(self, block: PromptBlock) -> None:
+        """Register or override a block by its ``name``."""
         self._blocks[block.name] = block
 
     def remove_block(self, name: str) -> None:
+        """Remove a previously registered block (no-op if absent)."""
         self._blocks.pop(name, None)
 
     def add_custom_instructions(self, text: str) -> None:
+        """Add user-provided custom instructions at the highest priority."""
         self.add_block(PromptBlock(priority=200, name="custom", content=text))
 
     def build(
@@ -311,6 +361,12 @@ class EncrePromptBuilder:
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> str:
+        """Assemble the full system prompt from the active blocks.
+
+        Collects core, mode, slash-command and specialty blocks, filters them
+        by the active intents, sorts by priority, concatenates, and appends the
+        prompt-cache boundary marker.
+        """
         intents = intents or ["general"]
 
         # Collect blocks

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Shared SSE (Server-Sent Events) streaming backend for OpenAI-compatible APIs.
@@ -210,6 +210,7 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
         """
         self.api_key = api_key
         self.api_base_url = base_url.rstrip("/").removesuffix("/chat/completions")
+        # Normalise so the endpoint is always the API root (no trailing path).
         self.model = model
         self.http_timeout = http_timeout
         self._client: httpx.AsyncClient | None = None

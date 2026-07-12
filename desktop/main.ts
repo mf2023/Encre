@@ -20,30 +20,68 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Encre desktop application entry point (Electron main process).
+ *
+ * Responsibilities of this module:
+ *  - Boot a Python backend service (`encre.server.app`) as a child process and
+ *    manage its lifecycle (start, restart, kill on quit, free its TCP port).
+ *  - Create and manage the main BrowserWindow and auxiliary child windows.
+ *  - Provide a system tray icon + popup for quick session switching.
+ *  - Expose an encrypted on-disk cookie store for the in-app browser.
+ *  - Register a large set of IPC handlers bridging the renderer to the OS
+ *    (file system, terminal/pty, git, window controls, auto-start, docs…).
+ *
+ * All heavy interaction with the OS happens here; the renderer only talks to
+ * the main process through the `electronAPI` exposed by `preload.ts`.
+ */
+
 import { app, BrowserWindow, ipcMain, shell, dialog, Tray, nativeImage, nativeTheme, session } from "electron";
 import { ChildProcess, spawn, execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as crypto from "crypto";
 
+// Handle to the spawned Python backend process (null when not running).
 let serverProcess: ChildProcess | null = null;
+// The primary application window (null when hidden/closed).
 let mainWindow: BrowserWindow | null = null;
+// System tray icon handle.
 let tray: Tray | null = null;
+// Set to true right before an explicit "Quit" so the window close handler
+// does not just hide the app to the tray.
 let isQuitting = false;
+// WebSocket / HTTP port the Python backend listens on.
 const WS_PORT = 7110;
+// Root directory for all Encre user data (~/.dunimd/encre).
 const DATA_DIR = getDataDir();
+// Set of auxiliary "child" BrowserWindows (e.g. the ESD window).
 const childWindows = new Set<BrowserWindow>();
+// PID file written by the Python service; used to manage its lifecycle.
 const PID_FILE = path.join(DATA_DIR, "yimd.pid");
+// In-memory cache for `git status` results keyed by repository path.
 const GIT_STATUS_CACHE = new Map<string, { ts: number; result: any }>();
+// In-memory cache for `git diff` results keyed by "repo::file" string.
 const GIT_DIFF_CACHE = new Map<string, { ts: number; result: any }>();
+// Time-to-live (ms) for the git caches before a fresh command is run.
 const GIT_CACHE_TTL_MS = 5000;
+// Tracks in-flight `git diff` child processes so a duplicate request can
+// cancel the previous one.
 const GIT_RUNNING_DIFFS = new Map<string, ChildProcess>();
 
 /* ── Encrypted browser cookie store ──────────────────────────────────── */
 
+// On-disk path to the static AES-256 key for the cookie store.
 const BROWSER_KEY_FILE = path.join(DATA_DIR, "browser_key");
+// On-disk path to the encrypted cookie blob.
 const BROWSER_COOKIE_FILE = path.join(DATA_DIR, "browser_cookies.enc");
 
+/**
+ * Returns the AES-256 key used to encrypt/decrypt browser cookies.
+ * The key is generated once and persisted to BROWSER_KEY_FILE; subsequent
+ * calls reuse the stored key so cookies survive app restarts.
+ * @returns A 32-byte Buffer holding the raw encryption key.
+ */
 function getBrowserEncryptionKey(): Buffer {
   try {
     if (fs.existsSync(BROWSER_KEY_FILE)) {
@@ -57,6 +95,12 @@ function getBrowserEncryptionKey(): Buffer {
   return key;
 }
 
+/**
+ * Encrypts a JSON cookie string using AES-256-GCM.
+ * Output layout: [iv(16 bytes) | authTag(16 bytes) | ciphertext].
+ * @param json - The serialized cookie array to encrypt.
+ * @returns A Buffer containing the IV, auth tag and ciphertext.
+ */
 function encryptCookies(json: string): Buffer {
   const key = getBrowserEncryptionKey();
   const iv = crypto.randomBytes(16);
@@ -67,6 +111,12 @@ function encryptCookies(json: string): Buffer {
   return Buffer.concat([iv, tag, encrypted]);
 }
 
+/**
+ * Decrypts a cookie blob produced by {@link encryptCookies}.
+ * Returns null on any failure (truncated data, wrong key, tampered payload).
+ * @param data - The encrypted Buffer (iv | tag | ciphertext).
+ * @returns The decrypted JSON string, or null if decryption fails.
+ */
 function decryptCookies(data: Buffer): string | null {
   try {
     const key = getBrowserEncryptionKey();
@@ -82,6 +132,11 @@ function decryptCookies(data: Buffer): string | null {
   }
 }
 
+/**
+ * Persists an encrypted cookie JSON blob to disk. Failures are logged but
+ * swallowed so the caller is never blocked.
+ * @param cookieJson - Serialized cookie array to encrypt and save.
+ */
 function saveBrowserCookies(cookieJson: string): void {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -92,6 +147,11 @@ function saveBrowserCookies(cookieJson: string): void {
   }
 }
 
+/**
+ * Loads and decrypts the persisted cookie blob from disk.
+ * @returns The decrypted JSON string, or null when no file exists or the
+ *          decryption fails.
+ */
 function loadBrowserCookies(): string | null {
   try {
     if (!fs.existsSync(BROWSER_COOKIE_FILE)) return null;
@@ -102,6 +162,15 @@ function loadBrowserCookies(): string | null {
   }
 }
 
+/**
+ * Wires up the persistent, encrypted cookie store for the in-app browser
+ * session (`encre-browser` partition). Responsibilities:
+ *  - Loads previously saved cookies into the session on startup.
+ *  - Watches cookie changes, debouncing writes to disk (500ms).
+ *  - Flushes the cache synchronously on `before-quit` (async handlers are
+ *    not awaited by Electron on quit).
+ *  - Restricts which permissions the in-app browser may request.
+ */
 function setupBrowserSession(): void {
   const bs = session.fromPartition("encre-browser");
 
@@ -171,6 +240,7 @@ function setupBrowserSession(): void {
   });
 }
 
+// Clears the in-app browser's cookies, storage and encrypted cookie file.
 ipcMain.handle("browser:clear-data", async () => {
   try {
     const bs = session.fromPartition("encre-browser");
@@ -197,14 +267,23 @@ ipcMain.handle("browser:clear-data", async () => {
 
 /* ── Terminal sessions ──────────────────────────────────────────────────── */
 
+// A single terminal/pty session tracked by the main process.
 interface PtySession {
   pty: any;
   terminalId: number;
 }
+// Map of terminal id -> session.
 const terminals = new Map<number, PtySession>();
+// Monotonic counter used to assign terminal ids.
 let terminalSeq = 0;
+// Lazily loaded `node-pty` module (optional dependency).
 let _nodePty: any = null;
 
+/**
+ * Lazily requires `node-pty`. Returns null when the native module is not
+ * installed, so terminal features degrade gracefully.
+ * @returns The node-pty module or null.
+ */
 function getNodePty(): any {
   if (!_nodePty) {
     try { _nodePty = require("node-pty"); } catch { return null; }
@@ -212,6 +291,11 @@ function getNodePty(): any {
   return _nodePty;
 }
 
+/**
+ * Resolves the per-user data directory for Encre (`~/.dunimd/encre`).
+ * Falls back to the current directory when no HOME/USERPROFILE is set.
+ * @returns Absolute path to the Encre data directory.
+ */
 function getDataDir(): string {
   const home = process.env.HOME || process.env.USERPROFILE || ".";
   return path.join(home, ".dunimd", "encre");
@@ -219,6 +303,10 @@ function getDataDir(): string {
 
 /* ── Service management helpers ─────────────────────────────────────────── */
 
+/**
+ * Reads the PID recorded in the service PID file.
+ * @returns The parsed PID, or null when the file is missing/invalid.
+ */
 function readPidFile(): number | null {
   try {
     if (fs.existsSync(PID_FILE)) {
@@ -229,6 +317,12 @@ function readPidFile(): number | null {
   return null;
 }
 
+/**
+ * Tests whether a process with the given PID is currently alive using a
+ * signal-less `kill(pid, 0)`.
+ * @param pid - The process id to test.
+ * @returns True if the process exists, false otherwise.
+ */
 function isProcessRunning(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -238,6 +332,12 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
+/**
+ * Kills a backend process (and its children) by PID.
+ * On Windows uses `taskkill /F /T` (force + tree); on POSIX sends SIGKILL to
+ * the process group (negative pid).
+ * @param pid - The process id (or process-group id) to kill.
+ */
 function killServiceByPid(pid: number): void {
   try {
     if (process.platform === "win32") {
@@ -268,6 +368,12 @@ function killProcessOnPort(port: number): void {
   } catch { /* nothing on that port */ }
 }
 
+/**
+ * Spawns the Python backend service (`python -m encre.server.app`) as a
+ * detached child process and resolves once it logs "Server ready".
+ * Rejects on timeout (30s) or early exit/error.
+ * @returns A promise that resolves when the server is ready.
+ */
 function startPythonServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     const pythonCmd = process.platform === "win32" ? "python" : "python3";
@@ -338,6 +444,11 @@ function startPythonServer(): Promise<void> {
   });
 }
 
+/**
+ * Fully restarts the backend service: kills any existing instance (via PID
+ * file and/or the tracked process), frees the port, then spawns a fresh one
+ * and updates the tray status.
+ */
 async function restartService(): Promise<void> {
   // Kill existing process via PID file (most reliable across detached processes)
   const existingPid = readPidFile();
@@ -363,29 +474,50 @@ async function restartService(): Promise<void> {
   }
 }
 
+// Currently selected tray locale ("en" or "zh").
 let currentTrayLocale = "en";
+// Currently selected tray theme ("dark" or "light").
 let currentTrayTheme = "dark";
+// Currently active session mode in the tray ("normal" or "iwork").
 let currentTrayMode = "normal";
+// Cache of all sessions shown in the tray popup.
 let traySessionsCache: any[] = [];
+// Cache of normal/iwork sessions shown in the tray popup.
 let traySessionsBothCache: { normal: any[]; iwork: any[] } = { normal: [], iwork: [] };
+// The floating tray popup window (null when not open).
 let trayPopup: BrowserWindow | null = null;
 
+// Localized strings for the tray, keyed by locale.
 const TRAY_LABELS: Record<string, { openYim: string; quit: string; tooltip: string }> = {
   en: { openYim: "Open Encre", quit: "Quit", tooltip: "Encre Server" },
   zh: { openYim: "打开 Encre", quit: "退出", tooltip: "Encre Server" },
 };
 
+/**
+ * Updates the tray icon tooltip based on whether the service is running.
+ * @param running - Whether the backend service is currently running.
+ */
 function updateTrayStatus(running: boolean): void {
   if (!tray) return;
   const labels = TRAY_LABELS[currentTrayLocale] || TRAY_LABELS.en;
   tray.setToolTip(labels.tooltip);
 }
 
+/**
+ * Resolves the effective tray theme from a preference string.
+ * Explicit "light"/"dark" are returned as-is; "system" (or anything else)
+ * defers to the OS dark-mode setting via nativeTheme.
+ * @param themePreference - "light", "dark", or "system".
+ * @returns The resolved concrete theme ("light" | "dark").
+ */
 function resolveTrayTheme(themePreference: string): string {
   if (themePreference === "light" || themePreference === "dark") return themePreference;
   return nativeTheme.shouldUseDarkColors ? "dark" : "light";
 }
 
+/**
+ * Pushes the latest cached session/theme data to the open tray popup window.
+ */
 function sendTrayDataToPopup(): void {
   if (trayPopup && !trayPopup.isDestroyed()) {
     trayPopup.webContents.send("tray-data", {
@@ -399,6 +531,9 @@ function sendTrayDataToPopup(): void {
   }
 }
 
+/**
+ * Closes and destroys the tray popup window if it is open.
+ */
 function closeTrayPopup(): void {
   if (trayPopup && !trayPopup.isDestroyed()) {
     trayPopup.close();
@@ -406,6 +541,11 @@ function closeTrayPopup(): void {
   }
 }
 
+/**
+ * Shows or hides the tray popup window. When opening, it creates a small
+ * frameless window, positions it above the tray icon, and loads the popup
+ * HTML. Clicking outside (blur) closes it.
+ */
 function toggleTrayPopup(): void {
   if (trayPopup && !trayPopup.isDestroyed()) {
     closeTrayPopup();
@@ -456,22 +596,46 @@ function toggleTrayPopup(): void {
   trayPopup.on("closed", () => { trayPopup = null; });
 }
 
+/**
+ * Returns the tray label set for the current locale (falls back to English).
+ * @returns The localized open/quit/tooltip labels.
+ */
 function getTrayLabels(): { openYim: string; quit: string; tooltip: string } {
   return TRAY_LABELS[currentTrayLocale] || TRAY_LABELS.en;
 }
 
+/**
+ * HTML-escapes a string for safe insertion into the tray popup markup.
+ * @param s - The raw string to escape.
+ * @returns The escaped string.
+ */
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/**
+ * Truncates a string to `max` characters, appending an ellipsis when cut.
+ * @param str - The string to truncate.
+ * @param max - Maximum length (including the ellipsis).
+ * @returns The truncated string.
+ */
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + "…" : str;
 }
 
+/**
+ * Returns the on-disk path to the Encre application icon (ICO) asset.
+ * @returns Absolute path to the renderer's Encre.ico.
+ */
 function resolveAppIconPath(): string {
   return path.join(__dirname, "..", "renderer", "assets", "Encre.ico");
 }
 
+/**
+ * Loads the Encre application icon as a NativeImage, falling back to an
+ * inline 16x16 green briefcase data URL when the asset is missing.
+ * @returns A NativeImage usable for windows and the tray.
+ */
 function loadAppIcon(): Electron.NativeImage {
   const iconPath = resolveAppIconPath();
   try {
@@ -486,6 +650,10 @@ function loadAppIcon(): Electron.NativeImage {
   return nativeImage.createFromDataURL(fallbackDataUrl);
 }
 
+/**
+ * Creates the system tray icon and wires its click/right-click handlers.
+ * Left click shows/focuses the main window; right click toggles the popup.
+ */
 function createTray(): void {
   // Use the Encre app icon for the tray — works on Windows (ICO) and macOS/Linux.
   const icon = loadAppIcon();
@@ -511,6 +679,11 @@ function createTray(): void {
 
 /* ── Window creation ───────────────────────────────────────────────────── */
 
+/**
+ * Creates the main application BrowserWindow: a frameless, hidden-by-default
+ * window that loads the renderer, locks zoom to 100%, enables the dev tools,
+ * and hides to the tray on close instead of quitting.
+ */
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -573,10 +746,12 @@ function createWindow(): void {
 
 // ── IPC handlers ──────────────────────────────────────────────────────────
 
+// Returns the backend WebSocket port to the renderer.
 ipcMain.handle("getServerPort", () => {
   return WS_PORT;
 });
 
+// Opens a multi-file picker dialog.
 ipcMain.handle("pickFiles", async () => {
   if (!mainWindow) return [];
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -585,6 +760,7 @@ ipcMain.handle("pickFiles", async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
+// Opens a directory picker dialog.
 ipcMain.handle("pickDirectory", async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -593,6 +769,7 @@ ipcMain.handle("pickDirectory", async () => {
   return result.canceled ? null : result.filePaths[0] || null;
 });
 
+// Reads a file from disk, returning its UTF-8 content and byte size.
 ipcMain.handle("readFile", async (_event, filePath: string) => {
   try {
     const buf = fs.readFileSync(filePath);
@@ -607,6 +784,7 @@ ipcMain.handle("readFile", async (_event, filePath: string) => {
   }
 });
 
+// Writes a UTF-8 file to disk, creating parent directories as needed.
 ipcMain.handle("writeFile", async (_event, filePath: string, data: string) => {
   try {
     const dir = path.dirname(filePath);
@@ -619,12 +797,14 @@ ipcMain.handle("writeFile", async (_event, filePath: string, data: string) => {
   }
 });
 
+// Returns the Encre data directory path.
 ipcMain.handle("getAppPath", () => {
   return getDataDir();
 });
 
 // ── Crypto keyfile access ────────────────────────────────────────────────
 
+// Reads the user's transport-encryption keyfile (~/.encre/keyfile).
 ipcMain.handle("readKeyfile", () => {
   try {
     const keyfilePath = path.join(
@@ -640,6 +820,7 @@ ipcMain.handle("readKeyfile", () => {
   }
 });
 
+// Returns a stable machine identifier (from /etc/machine-id or hostname).
 ipcMain.handle("readMachineId", () => {
   try {
     const mid = fs.readFileSync("/etc/machine-id", "utf-8").trim();
@@ -652,6 +833,7 @@ ipcMain.handle("readMachineId", () => {
 
 // ── Service IPC ──────────────────────────────────────────────────────────
 
+// Reports whether the backend service is running (via PID file).
 ipcMain.handle("getServiceStatus", () => {
   const pid = readPidFile();
   let running = false;
@@ -661,6 +843,7 @@ ipcMain.handle("getServiceStatus", () => {
   return { running, pid, port: WS_PORT };
 });
 
+// Restarts the backend service on demand.
 ipcMain.handle("restartService", async () => {
   await restartService();
   return { success: true };
@@ -668,6 +851,7 @@ ipcMain.handle("restartService", async () => {
 
 // ── Logs & Diagnostics IPC ──────────────────────────────────────────────────
 
+// Opens the active log file (or its folder) in the system file manager.
 ipcMain.handle("openLogs", async () => {
   const dataDir = getDataDir();
   if (!fs.existsSync(dataDir)) {
@@ -683,6 +867,7 @@ ipcMain.handle("openLogs", async () => {
   }
 });
 
+// Collects app/agent versions, data dir, log path and the last 200 log lines.
 ipcMain.handle("getDiagnostics", async () => {
   const pkgPath = path.join(__dirname, "..", "package.json");
   const desktopVersion = JSON.parse(fs.readFileSync(pkgPath, "utf-8")).version || "0.0.0";
@@ -734,8 +919,13 @@ ipcMain.handle("getDiagnostics", async () => {
 
 // ── Auto-start IPC ──────────────────────────────────────────────────────
 
+// Path to the persisted auto-start preference file.
 const AUTOSTART_FILE = path.join(DATA_DIR, "autostart.json");
 
+/**
+ * Reads the persisted auto-start preference.
+ * @returns True when the app should launch at login.
+ */
 function readAutoStartFile(): boolean {
   try {
     if (fs.existsSync(AUTOSTART_FILE)) {
@@ -746,6 +936,10 @@ function readAutoStartFile(): boolean {
   return false;
 }
 
+/**
+ * Persists the auto-start preference to disk.
+ * @param enabled - Whether to enable launch-at-login.
+ */
 function writeAutoStartFile(enabled: boolean): void {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -755,6 +949,7 @@ function writeAutoStartFile(enabled: boolean): void {
   }
 }
 
+// Returns the persisted auto-start setting, coercing the OS login item if needed.
 ipcMain.handle("getAutoStart", () => {
   const fileSetting = readAutoStartFile();
   const loginItemSettings = app.getLoginItemSettings();
@@ -764,6 +959,7 @@ ipcMain.handle("getAutoStart", () => {
   return fileSetting;
 });
 
+// Sets the auto-start (launch-at-login) preference in the OS and on disk.
 ipcMain.handle("setAutoStart", async (_event, enabled: boolean) => {
   try {
     app.setLoginItemSettings({ openAtLogin: enabled });
@@ -777,6 +973,7 @@ ipcMain.handle("setAutoStart", async (_event, enabled: boolean) => {
 
 // ── Tray popup IPC ──────────────────────────────────────────────────────────
 
+// Updates the tray locale from the renderer.
 ipcMain.on("tray-locale", (_event, locale: string) => {
   currentTrayLocale = locale;
   const labels = getTrayLabels();
@@ -785,6 +982,7 @@ ipcMain.on("tray-locale", (_event, locale: string) => {
   sendTrayDataToPopup();
 });
 
+// Updates the tray theme (and popup background) from the renderer.
 ipcMain.on("tray-theme", (_event, themePreference: string) => {
   currentTrayTheme = resolveTrayTheme(themePreference);
   // Update existing popup background color
@@ -798,6 +996,7 @@ ipcMain.on("tray-theme", (_event, themePreference: string) => {
   sendTrayDataToPopup();
 });
 
+// Handles a tray popup action: open a session (switching to it) or quit.
 ipcMain.on("tray-popup-action", (_event, payload: { action?: string; sessionId?: string }) => {
   closeTrayPopup();
   const { action, sessionId } = payload;
@@ -832,11 +1031,13 @@ ipcMain.on("tray-popup-action", (_event, payload: { action?: string; sessionId?:
   }
 });
 
+// Receives the full session list from the renderer for the tray popup.
 ipcMain.on("tray-sessions-update", (_event, sessions: any[]) => {
   traySessionsCache = sessions;
   sendTrayDataToPopup();
 });
 
+// Receives the split normal/iwork session lists for the tray popup.
 ipcMain.on("tray-sessions-both", (_event, payload: { normal: any[]; iwork: any[] }) => {
   traySessionsBothCache = {
     normal: payload.normal || [],
@@ -845,6 +1046,7 @@ ipcMain.on("tray-sessions-both", (_event, payload: { normal: any[]; iwork: any[]
   sendTrayDataToPopup();
 });
 
+// Updates the active session mode ("normal"/"iwork") for the tray popup.
 ipcMain.on("tray-mode", (_event, mode: string) => {
   currentTrayMode = mode === "iwork" ? "iwork" : "normal";
   sendTrayDataToPopup();
@@ -875,6 +1077,7 @@ nativeTheme.on("updated", () => {
 
 // ── Terminal IPC ──────────────────────────────────────────────────────────
 
+// Spawns a new pseudo-terminal (pty) session for the in-app terminal.
 ipcMain.handle("terminal:spawn", async (_event, shell?: string, shellArgs?: string[]) => {
   const pty = getNodePty();
   if (!pty) return { error: "node-pty not available" };
@@ -911,6 +1114,7 @@ ipcMain.handle("terminal:spawn", async (_event, shell?: string, shellArgs?: stri
   }
 });
 
+// Enumerates available shells (Windows: cmd/PowerShell/Git Bash/WSL; else POSIX).
 ipcMain.handle("terminal:listShells", async () => {
   const shells: Array<{ name: string; path: string; args?: string[] }> = [];
   if (process.platform === "win32") {
@@ -960,16 +1164,19 @@ ipcMain.handle("terminal:listShells", async () => {
   return shells;
 });
 
+// Writes input data to a running terminal session.
 ipcMain.handle("terminal:write", (_event, id: number, data: string) => {
   const t = terminals.get(id);
   if (t) t.pty.write(data);
 });
 
+// Resizes a running terminal session to the given columns/rows.
 ipcMain.handle("terminal:resize", (_event, id: number, cols: number, rows: number) => {
   const t = terminals.get(id);
   if (t && cols > 0 && rows > 0) t.pty.resize(cols, rows);
 });
 
+// Kills a running terminal session and removes it from the registry.
 ipcMain.handle("terminal:kill", (_event, id: number) => {
   const t = terminals.get(id);
   if (t) { t.pty.kill(); terminals.delete(id); }
@@ -977,6 +1184,7 @@ ipcMain.handle("terminal:kill", (_event, id: number) => {
 
 // ── Files IPC ─────────────────────────────────────────────────────────────
 
+// Lists directory entries (directories first, then alphabetical).
 ipcMain.handle("listDirectory", async (_event, dirPath: string) => {
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -993,6 +1201,7 @@ ipcMain.handle("listDirectory", async (_event, dirPath: string) => {
   }
 });
 
+// Returns metadata for a single directory path (or null if not a directory).
 ipcMain.handle("readDirectory", async (_event, dirPath: string) => {
   try {
     const stats = fs.statSync(dirPath);
@@ -1003,6 +1212,7 @@ ipcMain.handle("readDirectory", async (_event, dirPath: string) => {
   }
 });
 
+// Returns the list of available drives/roots (Windows letters, else "/").
 ipcMain.handle("getDrives", async () => {
   if (process.platform === "win32") {
     try {
@@ -1015,6 +1225,7 @@ ipcMain.handle("getDrives", async () => {
 
 // ── Git IPC ───────────────────────────────────────────────────────────────
 
+// Runs `git status` for a repo with a short TTL cache and output truncation.
 ipcMain.handle("gitStatus", async (_event, repoPath: string) => {
   const now = Date.now();
   const cached = GIT_STATUS_CACHE.get(repoPath);
@@ -1050,6 +1261,7 @@ ipcMain.handle("gitStatus", async (_event, repoPath: string) => {
   });
 });
 
+// Runs `git diff` (summary or per-file) with cache + cancel of prior run.
 ipcMain.handle("gitDiff", async (_event, repoPath: string, filePath?: string) => {
   const cacheKey = `${repoPath}::${filePath || "__summary__"}`;
   const now = Date.now();
@@ -1097,10 +1309,12 @@ ipcMain.handle("gitDiff", async (_event, repoPath: string, filePath?: string) =>
 });
 
 // Window controls
+// Minimizes the window that sent the request.
 ipcMain.handle("window-minimize", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 
+// Toggles maximize state of the requesting window.
 ipcMain.handle("window-maximize", (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win?.isMaximized()) {
@@ -1110,18 +1324,22 @@ ipcMain.handle("window-maximize", (event) => {
   }
 });
 
+// Closes the requesting window.
 ipcMain.handle("window-close", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.close();
 });
 
+// Reports whether the requesting window is currently maximized.
 ipcMain.handle("window-is-maximized", (event) => {
   return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
 });
 
+// Toggles the dev tools for the requesting window.
 ipcMain.handle("toggle-devtools", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
 });
 
+// Opens an external URL in the OS browser (http/https/mailto only).
 ipcMain.handle("open-external", async (_event, url: string) => {
   // Only allow http/https URLs for security
   if (typeof url !== "string") return false;
@@ -1152,6 +1370,7 @@ ipcMain.handle("open-external", async (_event, url: string) => {
   }
 });
 
+// Returns desktop (npm) and agent (pyproject) version strings.
 ipcMain.handle("getAppVersions", () => {
   const rootDir = path.resolve(__dirname, "..", "..");
   const pkgPath = path.join(__dirname, "..", "package.json");
@@ -1166,6 +1385,7 @@ ipcMain.handle("getAppVersions", () => {
   return { desktop: desktopVersion, agent: agentVersion };
 });
 
+// Returns the license text from the repository docs.
 ipcMain.handle("getLicenseContent", async () => {
   const rootDir = path.resolve(__dirname, "..", "..");
   const candidates = ["docs/LICENSE", "docs/LICENSE.txt", "docs/LICENSE.md", "LICENSE", "LICENSE.txt", "LICENSE.md"];
@@ -1186,6 +1406,7 @@ const DOCUMENT_FILES: Record<string, string> = {
   minors: "docs/MINORS_PRIVACY.md",
 };
 
+// Returns the text of a policy/legal document (with optional CN region variant).
 ipcMain.handle("getDocumentContent", async (_event, docId: string, region: string = "intl") => {
   const rootDir = path.resolve(__dirname, "..", "..");
   let fileName = DOCUMENT_FILES[docId];
@@ -1208,6 +1429,7 @@ ipcMain.handle("getDocumentContent", async (_event, docId: string, region: strin
   }
 });
 
+// Opens (or reuses and tabs into) a child window for a given view/label.
 ipcMain.handle("openChildWindow", (_event, view: string, label: string) => {
   // Find existing child window, or create one
   let child: BrowserWindow | null = null;
@@ -1264,6 +1486,7 @@ ipcMain.handle("openChildWindow", (_event, view: string, label: string) => {
 
 // Forward arbitrary events from main renderer to all child windows
 // (used for streaming to the ESD child window).
+// Forwards an arbitrary event from the main renderer to all child windows.
 ipcMain.on("forward-to-child", (_event, channel: string, ...args: any[]) => {
   for (const child of childWindows) {
     if (!child.isDestroyed()) {
@@ -1274,6 +1497,10 @@ ipcMain.on("forward-to-child", (_event, channel: string, ...args: any[]) => {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────
 
+/**
+ * Pings the backend `/health` endpoint to verify it is responsive.
+ * @returns True when the service answers with an OK status.
+ */
 async function healthCheck(): Promise<boolean> {
   try {
     const response = await fetch(`http://localhost:${WS_PORT}/health`);
@@ -1283,6 +1510,7 @@ async function healthCheck(): Promise<boolean> {
   }
 }
 
+// Application entry: runs once Electron is ready.
 app.whenReady().then(async () => {
   // Pin the AppUserModelID so Windows taskbar/notification icons attach to Encre
   // (and not the generic electron.exe icon).
@@ -1335,6 +1563,7 @@ app.whenReady().then(async () => {
   }
 });
 
+// Keep the app alive (tray) when all windows close; do not quit.
 app.on("window-all-closed", () => {
   // Do NOT quit — service continues running in background.
   // The system tray keeps the app alive on Windows/Linux.
@@ -1347,6 +1576,7 @@ app.on("window-all-closed", () => {
   }
 });
 
+// macOS dock re-activation: recreate/show the main window.
 app.on("activate", () => {
   if (mainWindow === null) {
     createWindow();
@@ -1355,6 +1585,7 @@ app.on("activate", () => {
   }
 });
 
+// Tear down everything (terminals, backend, port) on quit.
 app.on("before-quit", () => {
   console.log("[app] before-quit — cleaning up all child processes");
   // Kill all terminal sessions
@@ -1384,6 +1615,7 @@ app.on("before-quit", () => {
 });
 
 // On exit, make absolutely sure nothing is left running
+// Last-resort cleanup: force-kill stray python/Encre processes on exit.
 process.on("exit", () => {
   try { execSync(`taskkill /F /IM python.exe 2>nul`, { stdio: "ignore" }); } catch {}
   try { execSync(`taskkill /F /IM "Encre.exe" /FI "PID ne ${process.pid}" 2>nul`, { stdio: "ignore" }); } catch {}

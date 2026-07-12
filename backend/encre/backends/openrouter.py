@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 OpenRouter backend -- unified API for 200+ models across providers.
@@ -34,8 +34,6 @@ tracking and model fallback.
 Base URL: https://openrouter.ai/api/v1
 Authentication: OPENROUTER_API_KEY environment variable or explicit api_key.
 """
-
-from __future__ import annotations
 
 from typing import Any
 
@@ -69,8 +67,10 @@ def _detect_context_window_openrouter(model: str) -> int:
     """Guess context window from model name."""
     model_lower = model.lower()
     for prefix, size in _CONTEXT_WINDOW_MAP.items():
+        # Match either an exact prefix or the family substring (e.g. "claude-opus-4-7" -> "claude-opus").
         if model_lower.startswith(prefix) or prefix in model_lower:
             return size
+    # OpenRouter default: most models are at least 200k.
     return 200000  # OpenRouter default: most models are at least 200k
 
 

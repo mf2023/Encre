@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Bridge between :class:`EncreBrowserSession` and the agent's event
 stream, used to surface *engine install* / *driver provisioning*
@@ -51,8 +51,6 @@ get the original "Playwright not installed" ``RuntimeError`` --
 back-compat is preserved for any non-desktop deployment.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import time
@@ -78,6 +76,11 @@ DEFAULT_REQUEST_TIMEOUT_S = 300.0
 
 @dataclass
 class _Pending:
+    """Internal record for one outstanding engine-install request.
+
+    Holds the display text (and i18n codes), the resolvable future the
+    calling coroutine awaits, and an optional progress callback.
+    """
     request_id: str
     engine: str
     title: str
@@ -113,6 +116,14 @@ class EngineRequester:
         on_progress: Any | None = None,
         emit: Any | None = None,
     ) -> None:
+        """Configure timeout and the request/progress/emit hook callbacks.
+
+        Args:
+            timeout_s: Seconds to wait for the user before cancelling.
+            on_request: Optional hook called synchronously on each new request.
+            on_progress: Optional default progress callback.
+            emit: Optional coroutine/callable to push events to the frontend.
+        """
         self._timeout_s = timeout_s
         self._pending: dict[str, _Pending] = {}
         self._on_request = on_request
@@ -175,6 +186,7 @@ class EngineRequester:
 
     @property
     def pending(self) -> dict[str, _Pending]:
+        """Return the mapping of request_id -> outstanding pending request."""
         return self._pending
 
     async def request_install(
@@ -281,10 +293,12 @@ class EngineRequester:
         return n
 
     def close(self) -> None:
+        """Mark the requester closed and cancel all pending requests."""
         self._closed = True
         self.cancel_all()
 
     def make_event(self, request_id: str) -> EngineInstallRequest | None:
+        """Build an :class:`EngineInstallRequest` event for a pending request."""
         pending = self._pending.get(request_id)
         if pending is None:
             return None

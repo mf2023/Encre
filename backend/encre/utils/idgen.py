@@ -21,28 +21,45 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Deterministic, hierarchical id generator for sessions, branches and entities.
 
+Every id produced by :class:`BranchIDGenerator` follows the same colon-delimited
+shape::
+
+    {session_id}:{branch_id}:{entity_type}:{local_id}
+
+where ``entity_type`` is a short tag (``M`` for messages, ``TC`` for tool calls,
+``AF`` for artifacts, ``CP`` for compacted snapshots, ``B`` for branches, ...).
+Keeping ids structured this way lets the rest of the system group, route and
+debug events without an extra lookup table.
+"""
 
 class BranchIDGenerator:
     """Generate IDs in format {session_id}:{branch_id}:{entity_type}:{local_id}"""
 
     @staticmethod
     def branch_id(session_id: str, num: int) -> str:
+        # Branch entity: zero-padded local index plus the "B" entity tag.
         return f"{session_id}:br_{num:04d}:B:0"
 
     @staticmethod
     def message_id(session_id: str, branch_id: str, seq: int) -> str:
+        # Message entity: monotonic per-branch sequence number.
         return f"{session_id}:{branch_id}:M:{seq}"
 
     @staticmethod
     def toolcall_id(session_id: str, branch_id: str, uid: str) -> str:
+        # Tool call entity: uniqueness comes from the caller-supplied uid.
         return f"{session_id}:{branch_id}:TC:{uid[:8]}"
 
     @staticmethod
     def artifact_id(session_id: str, branch_id: str, path_hash: str) -> str:
+        # Artifact entity: keyed by a hash of the referenced file path.
         return f"{session_id}:{branch_id}:AF:{path_hash[:8]}"
 
     @staticmethod
     def compact_id(session_id: str, branch_id: str, seq: int) -> str:
+        # Compacted-snapshot entity: per-branch compaction sequence number.
         return f"{session_id}:{branch_id}:CP:{seq}"

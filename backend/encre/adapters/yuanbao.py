@@ -21,6 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# yuanbao.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - YuanbaoProtocol
+#   - YuanbaoAdapter
+#
 import asyncio
 import hashlib
 import hmac
@@ -83,6 +97,16 @@ class YuanbaoProtocol:
 
     @staticmethod
     def build_auth(app_key: str, app_secret: str) -> dict[str, Any]:
+        """
+        Build auth.
+
+        Args:
+            app_key (str):
+            app_secret (str):
+
+        Returns:
+            dict[str, Any]
+        """
         timestamp = str(int(time.time() * 1000))
         raw = f"{app_key}{timestamp}"
         signature = hmac.new(
@@ -101,6 +125,12 @@ class YuanbaoProtocol:
 
     @staticmethod
     def build_heartbeat() -> dict[str, Any]:
+        """
+        Build heartbeat.
+
+        Returns:
+            dict[str, Any]
+        """
         return {
             "op": YuanbaoProtocol.OP_HEARTBEAT,
             "data": {"timestamp": str(int(time.time() * 1000))},
@@ -108,6 +138,15 @@ class YuanbaoProtocol:
 
     @staticmethod
     def build_typing(chat_id: str) -> dict[str, Any]:
+        """
+        Build typing.
+
+        Args:
+            chat_id (str):
+
+        Returns:
+            dict[str, Any]
+        """
         return {
             "op": YuanbaoProtocol.OP_TYPING,
             "data": {"chat_id": chat_id},
@@ -115,6 +154,15 @@ class YuanbaoProtocol:
 
     @staticmethod
     def build_message_ack(msg_id: str) -> dict[str, Any]:
+        """
+        Build message ack.
+
+        Args:
+            msg_id (str):
+
+        Returns:
+            dict[str, Any]
+        """
         return {
             "op": YuanbaoProtocol.OP_MESSAGE_ACK,
             "data": {"msg_id": msg_id},
@@ -122,6 +170,15 @@ class YuanbaoProtocol:
 
     @staticmethod
     def parse_message(data: dict[str, Any]) -> dict[str, Any] | None:
+        """
+        Parse message.
+
+        Args:
+            data (dict[str, Any]):
+
+        Returns:
+            dict[str, Any] | None
+        """
         op = data.get("op", "")
         if op == YuanbaoProtocol.OP_AUTH_RESP:
             return {"type": "auth", "success": data.get("data", {}).get("success", False), "raw": data}
@@ -154,6 +211,20 @@ class YuanbaoProtocol:
     def build_rest_signature(
         _app_key: str, app_secret: str, method: str, path: str, body: str, timestamp: str
     ) -> str:
+        """
+        Build rest signature.
+
+        Args:
+            _app_key (str):
+            app_secret (str):
+            method (str):
+            path (str):
+            body (str):
+            timestamp (str):
+
+        Returns:
+            str
+        """
         raw = f"{method}\n{path}\n{timestamp}\n{body}"
         return hmac.new(
             app_secret.encode("utf-8"),
@@ -193,6 +264,20 @@ class YuanbaoAdapter(BaseAdapter):
         ws_url: str = YUANBAO_WS_URL,
         api_domain: str = YUANBAO_API_DOMAIN,
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            app_key (str):
+            app_secret (str):
+            bot_id (str):
+            gateway_url (str):
+            ws_url (str):
+            api_domain (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text", "markdown", "image"])
         self._app_key = app_key
         self._app_secret = app_secret
@@ -500,6 +585,12 @@ class YuanbaoAdapter(BaseAdapter):
     # ── Reconnection backoff ──────────────────────────────────────────────
 
     def _get_reconnect_delay(self) -> float:
+        """
+        Get reconnect delay.
+
+        Returns:
+            float
+        """
         idx = min(self._reconnect_count, len(RECONNECT_BACKOFF) - 1)
         return RECONNECT_BACKOFF[idx]
 

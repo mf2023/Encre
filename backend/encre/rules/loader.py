@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import logging
 import os
@@ -34,12 +34,14 @@ from encre.config import get_data_dir
 
 @dataclass
 class RuleFile:
+    """A single loaded rule document with its source label and priority."""
     source: str
     content: str
     priority: int = 0
 
 
 _GLOBAL_RULES_DIR = "rules"
+# Name of the subdirectory (under the Encre data dir) that holds global rules.
 
 _PROJECT_RULE_PATTERNS: list[tuple[str, int, str]] = [
     (".encre/rules.md", 100, "encre"),
@@ -58,16 +60,22 @@ _CODEX_RULE_PRIORITY = 65
 
 
 class RulesLoader:
+    """Loads and caches project, global, and Codex rule files."""
+
     def __init__(self) -> None:
+        """Initialise an empty signature-based cache."""
         self._cache: dict[str, tuple[tuple[Any, ...], list[RuleFile]]] = {}
 
     def clear_cache(self) -> None:
+        """Drop all cached rule results."""
         self._cache.clear()
 
     def _project_signature(self, workspace_path: str) -> tuple[Any, ...]:
+        """Build a cache signature from project rule file mtimes/sizes."""
         if not workspace_path or not os.path.isdir(workspace_path):
             return ()
         sig: list[Any] = []
+        # Record mtime/size for each candidate file so changes invalidate cache.
         for rel_path, priority, name in _PROJECT_RULE_PATTERNS:
             full_path = os.path.join(workspace_path, rel_path)
             try:
@@ -78,6 +86,7 @@ class RulesLoader:
         return tuple(sig)
 
     def _global_signature(self) -> tuple[Any, ...]:
+        """Build a cache signature from global rule markdown file mtimes/sizes."""
         rules_dir = get_data_dir() / _GLOBAL_RULES_DIR
         if not rules_dir.is_dir():
             return ()
@@ -97,6 +106,7 @@ class RulesLoader:
         return tuple(sig)
 
     def load_project_rules(self, workspace_path: str) -> list[RuleFile]:
+        """Load workspace rule files, sorted by descending priority (cached)."""
         cache_key = f"project:{workspace_path}"
         if not workspace_path or not os.path.isdir(workspace_path):
             return []
@@ -106,17 +116,20 @@ class RulesLoader:
             return cached[1]
 
         rules: list[RuleFile] = []
+        # Read every candidate file; absent files simply yield no rule.
         for rel_path, priority, name in _PROJECT_RULE_PATTERNS:
             full_path = os.path.join(workspace_path, rel_path)
             content = self._read_file(full_path)
             if content:
                 rules.append(RuleFile(source=name, content=content, priority=priority))
 
+        # Higher-priority rules come first so they appear earlier in the prompt.
         rules.sort(key=lambda r: -r.priority)
         self._cache[cache_key] = (signature, rules)
         return rules
 
     def load_global_rules(self) -> list[RuleFile]:
+        """Load global rule files from the data dir (cached); priority 50."""
         cache_key = "global"
         rules_dir = get_data_dir() / _GLOBAL_RULES_DIR
         signature = self._global_signature()
@@ -128,6 +141,7 @@ class RulesLoader:
             return []
 
         rules: list[RuleFile] = []
+        # Collect every top-level *.md file in the global rules directory.
         try:
             for entry in sorted(rules_dir.iterdir()):
                 if entry.suffix.lower() == ".md" and entry.is_file():
@@ -165,7 +179,21 @@ class RulesLoader:
         return rules
 
     def build_rules_prompt(self, workspace_path: str, enable_project: bool = True, enable_global: bool = True) -> str:
+        """Assemble all enabled rules into one prompt string.
+
+        Global rules are emitted first, then project rules, then Codex
+        instructions, with each block separated by a horizontal divider.
+
+        Args:
+            workspace_path: Workspace root used to find project rules.
+            enable_project: Whether to include project/Codex rules.
+            enable_global: Whether to include global rules.
+
+        Returns:
+            The concatenated rules prompt, or ``""`` when no rules exist.
+        """
         blocks: list[str] = []
+        # Assemble each enabled rule group into its own labelled block.
 
         if enable_global:
             global_rules = self.load_global_rules()
@@ -185,13 +213,17 @@ class RulesLoader:
                 label = rule.source
                 blocks.append(f"[Project Rule: {label}]\n{rule.content}")
 
+        # Nothing to include: return an empty prompt.
         if not blocks:
             return ""
 
+        # Separate rule blocks with a visual divider for the model.
         joined = "\n\n---\n\n".join(blocks)
         return joined
 
     def _read_file(self, path: str) -> str:
+        """Read and strip a rule file, returning "" on any I/O error."""
+        # Swallow common I/O errors so a missing/unreadable rule is simply empty.
         try:
             with open(path, encoding="utf-8") as f:
                 return f.read().strip()

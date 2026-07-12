@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Volcengine Ark (火山方舟) backend -- Doubao and partner models via Ark API.
@@ -72,5 +72,6 @@ class VolcengineArkBackend(OpenAICompatibleBackend):
     DEFAULT_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
 
     def __init__(self, **kwargs: Any) -> None:
+        # Ensure the Ark base URL is set unless the caller overrode it.
         kwargs.setdefault("base_url", self.DEFAULT_BASE_URL)
         super().__init__(**kwargs)

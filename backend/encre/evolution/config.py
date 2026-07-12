@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Configuration object that wires together the evolution subsystems.
+
+:class:`EvolutionConfig` is a plain dataclass holding the learner,
+optimizer, reflex loop and metacognition components plus boolean flags that
+enable or disable each one.  The :meth:`create_default` and
+:meth:`create_disabled` factories build fully-wired or fully-disabled
+instances respectively.
+"""
 
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +38,11 @@ from typing import Any
 
 @dataclass
 class EvolutionConfig:
+    """Aggregate configuration for the evolution subsystem.
+
+    Holds the four evolution components and a per-component enable flag so
+    callers can selectively activate only the parts they need.
+    """
     learner: Any = None
     optimizer: Any = None
     reflex: Any = None
@@ -40,6 +54,7 @@ class EvolutionConfig:
 
     @classmethod
     def create_default(cls) -> "EvolutionConfig":
+        """Build a fully-enabled config with components wired to disk storage."""
         from encre.config import get_data_dir
         from encre.evolution.learner import EncreEvolutionLearner
         from encre.evolution.meta import EncreMetaCognition
@@ -55,6 +70,7 @@ class EvolutionConfig:
 
     @classmethod
     def create_disabled(cls) -> "EvolutionConfig":
+        """Build a config where every evolution component is disabled."""
         from encre.config import get_data_dir
         from encre.evolution.learner import EncreEvolutionLearner
         from encre.evolution.meta import EncreMetaCognition

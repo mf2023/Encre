@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-# Copyright (c) 2025-2026 Wenze Wei. All Rights Reserved.
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
 # This file is part of Encre.
 # The Encre project belongs to the Dunimd Team.
@@ -20,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Keyboard shortcut configuration.
 
@@ -30,8 +31,6 @@ Follows the same pattern as ``settings_manager.py``:
 - First use auto-creates the encrypted file from defaults.
 - Future: users can edit the file to customize shortcuts.
 """
-
-from __future__ import annotations
 
 import json
 from pathlib import Path

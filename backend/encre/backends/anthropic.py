@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Anthropic backend -- Claude Opus 4.6/4.7, Sonnet 4.5/4.6, Haiku 4.5 (2026 lineup).
@@ -220,8 +220,10 @@ class AnthropicBackend(BaseBackend):
             :class:`BackendFinish`, or :class:`BackendError`.
         """
         if enable_caching:
+            # Annotate system + last user message with cache breakpoints.
             messages = self._apply_prompt_caching(messages)
 
+        # Assemble the Anthropic Messages API request body.
         body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -241,11 +243,14 @@ class AnthropicBackend(BaseBackend):
 
         thinking_param = self._build_thinking_param(max_tokens)
         if thinking_param is not None:
+            # Enable extended thinking when the model/config supports it.
             body["thinking"] = thinking_param
 
         try:
 
             async def _make_request() -> httpx.Response:
+                # Build per-request headers so the active (possibly rotated)
+                # API key from the auth manager is always used.
                 _req_headers: dict[str, str] = {}
                 if self.auth_manager is not None:
                     _req_headers["x-api-key"] = self.auth_manager.api_key
@@ -291,6 +296,8 @@ class AnthropicBackend(BaseBackend):
                 current_tool_index: int = 0
                 finish_reason: str = "stop"
 
+                # Anthropic SSE emits paired lines: "event: <type>" followed
+                # by "data: <json>". Parse them into BackendEvent objects.
                 async for line in resp.aiter_lines():
                     if not line.startswith("event: "):
                         continue
@@ -301,6 +308,7 @@ class AnthropicBackend(BaseBackend):
                     data = json.loads(data_line[6:].strip())
 
                     if event_type == "content_block_start":
+                        # A new content block begins (text, thinking, tool_use).
                         block = data.get("content_block", {})
                         if block.get("type") == "text":
                             text = block.get("text", "")
@@ -324,6 +332,7 @@ class AnthropicBackend(BaseBackend):
                             )
 
                     elif event_type == "content_block_delta":
+                        # Incremental update to the current block.
                         delta = data.get("delta", {})
                         if delta.get("type") == "text_delta":
                             text = delta.get("text", "")
@@ -346,6 +355,7 @@ class AnthropicBackend(BaseBackend):
                             )
 
                     elif event_type == "content_block_stop":
+                        # Block finished; flush any pending tool call.
                         if current_tool_use is not None:
                             yield create_backend_tool_call(
                                 id=current_tool_use["id"],
@@ -355,8 +365,10 @@ class AnthropicBackend(BaseBackend):
                             current_tool_use = None
 
                     elif event_type == "message_delta":
+                        # Message-level update carrying the stop reason.
                         delta = data.get("delta", {})
                         stop_reason = delta.get("stop_reason", "")
+                        # Map Anthropic stop reasons to our finish reasons.
                         if stop_reason == "end_turn":
                             finish_reason = "stop"
                         elif stop_reason == "tool_use":

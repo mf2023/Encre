@@ -1,8 +1,35 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Rust-backed semantic code embedding index wrapper."""
 
-from __future__ import annotations
+# This module implements semantic ("vector") search over code.  It splits the
+# workspace into embedding slices (often one per symbol) and stores vectors
+# produced by an OpenAI-compatible embedding model.  At query time it asks the
+# native index (Rust) for the nearest slices.  When no embedding backend is
+# configured the index degrades to storing zero vectors.
 
 import json
 import logging
@@ -26,6 +53,7 @@ EmbeddingFn = Callable[[list[str]], list[list[float]]]
 
 @dataclass
 class EmbeddingSlice:
+    """A contiguous chunk of code (often one symbol) queued for embedding."""
     file: str
     start_line: int
     end_line: int
@@ -34,10 +62,12 @@ class EmbeddingSlice:
     text: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the embedding slice to a plain dictionary."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EmbeddingSlice:
+        """Reconstruct an :class:`EmbeddingSlice` from a dictionary."""
         return cls(
             file=str(data["file"]),
             start_line=int(data["start_line"]),
@@ -50,6 +80,7 @@ class EmbeddingSlice:
 
 @dataclass
 class EmbeddingHit:
+    """A search result slice with its similarity ``score`` to the query."""
     file: str
     start_line: int
     end_line: int
@@ -59,10 +90,12 @@ class EmbeddingHit:
     text: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the search hit to a plain dictionary."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EmbeddingHit:
+        """Reconstruct an :class:`EmbeddingHit` from a dictionary."""
         return cls(
             file=str(data["file"]),
             start_line=int(data["start_line"]),
@@ -75,6 +108,7 @@ class EmbeddingHit:
 
 
 class OpenAICompatibleEmbedding:
+    """Thin client for an OpenAI-compatible embeddings API (used to vectorise text)."""
     def __init__(
         self,
         api_key: str | None = None,
@@ -82,6 +116,7 @@ class OpenAICompatibleEmbedding:
         model: str = "text-embedding-3-small",
         timeout: float = 60.0,
     ) -> None:
+        """Validate the API key and store endpoint/model configuration."""
         self.api_key: str = api_key or os.environ.get("OPENAI_API_KEY", "")
         if not self.api_key:
             raise ValueError(
@@ -93,6 +128,7 @@ class OpenAICompatibleEmbedding:
         self.timeout: float = timeout
 
     def __call__(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts into a list of float vectors via the API."""
         if not texts:
             return []
         import httpx
@@ -117,6 +153,7 @@ class OpenAICompatibleEmbedding:
 
 
 class EncreEmbeddingIndex:
+    """Semantic embedding index over a workspace's code slices."""
     _META_NAME: str = "embedding_index.json"
 
     def __init__(
@@ -127,6 +164,7 @@ class EncreEmbeddingIndex:
         embedding_dim: int | None = None,
         max_text_chars: int = 4000,
     ) -> None:
+        """Create the embedding index, loading any cached state from disk."""
         self.workspace: str = workspace
         self._ast: EncreASTIndex = ast_index if ast_index is not None else EncreASTIndex(workspace)
         self._embedding_fn: EmbeddingFn | None = embedding_fn
@@ -141,13 +179,16 @@ class EncreEmbeddingIndex:
 
     @property
     def available(self) -> bool:
+        """``True`` once at least one slice has been embedded."""
         return len(self._slices) > 0 and len(self._vectors) > 0
 
     @property
     def slice_count(self) -> int:
+        """Number of embedding slices currently held in the index."""
         return len(self._slices)
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed *texts* using the configured backend (zero-vectors if none)."""
         if not texts:
             return []
         if self._embedding_fn is None:
@@ -161,6 +202,7 @@ class EncreEmbeddingIndex:
         return [list(map(float, row)) for row in raw]
 
     def scan(self) -> None:
+        """Build the embedding index from scratch and persist it."""
         if not self._ast._indexed:
             self._ast.scan()
         payload = json.loads(native_build_embedding_slices(self.workspace, self._max_text_chars))
@@ -182,6 +224,7 @@ class EncreEmbeddingIndex:
         )
 
     def scan_incremental(self) -> None:
+        """Update the embedding index, re-embedding only changed/deleted files."""
         if not self._indexed:
             self.scan()
             return
@@ -224,6 +267,7 @@ class EncreEmbeddingIndex:
         self.save()
 
     def search(self, query: str, k: int = 10) -> list[EmbeddingHit]:
+        """Return the *k* most semantically similar slices for *query*."""
         if not query:
             return []
         if not self._indexed:
@@ -235,9 +279,11 @@ class EncreEmbeddingIndex:
         return [EmbeddingHit.from_dict(item) for item in raw]
 
     def _meta_path(self) -> Path:
+        """Return the on-disk location of the cached embedding index."""
         return Path(self.workspace) / ".encre" / self._META_NAME
 
     def save(self) -> None:
+        """Persist slices, vectors, mtimes and dim to the native index on disk."""
         native_save_embedding_index(
             self.workspace,
             json.dumps([sl.to_dict() for sl in self._slices], ensure_ascii=False),
@@ -247,6 +293,7 @@ class EncreEmbeddingIndex:
         )
 
     def load(self) -> bool:
+        """Load a cached embedding index from disk, returning ``True`` on success."""
         meta = self._meta_path()
         if not meta.exists():
             return False

@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Predefined agent roles for the swarm.
+#
+# A role bundles a name, description, system-prompt override, allowed-tool
+# list, permission mode, specialty, and priority.  ``RoleRegistry`` holds the
+# built-in roles and can select one heuristically from a task description via
+# keyword matching.  The orchestrator assigns these roles to planner-generated
+# tasks so each task is handled by a suitably specialised agent.
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,6 +37,17 @@ from typing import Any
 
 @dataclass
 class AgentRole:
+    """Configuration describing one specialisation of swarm agent.
+
+    Attributes:
+        name: Stable role identifier (e.g. ``"coder"``).
+        description: Human-readable purpose.
+        system_prompt_override: Prepended system prompt for the role.
+        allowed_tools: Tool names the role may invoke.
+        permission_mode: Permission policy applied to the role's agent.
+        specialty: Coarse capability tag (``general`` / ``coding`` / ...).
+        priority: Higher numbers are scheduled first among ready tasks.
+    """
     name: str
     description: str
     system_prompt_override: str = ""
@@ -156,6 +175,13 @@ ROLE_GENERAL = AgentRole(
 # ── Registry ─────────────────────────────────────────────────────
 
 class RoleRegistry:
+    """In-memory registry of available agent roles.
+
+    Seeds itself with the built-in roles on construction.  Provides lookup by
+    name (falling back to ``ROLE_GENERAL``) and a keyword-based
+    ``get_for_task`` selector used to map a free-text task description onto the
+    most appropriate predefined role.
+    """
     def __init__(self) -> None:
         self._roles: dict[str, AgentRole] = {}
         self._register_defaults()

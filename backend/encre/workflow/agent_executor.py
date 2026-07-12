@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Agent-integrated DAG workflow executor.
 
@@ -33,8 +33,6 @@ frontend for real-time workflow visualisation.
 Independent tasks run in parallel, with each task's events tagged by
 ``task_id`` so the frontend can group them correctly.
 """
-
-from __future__ import annotations
 
 import asyncio
 import time
@@ -111,9 +109,11 @@ class WorkflowAgentExecutor:
             return
 
         workflow_id = workflow_id or f"wf_{uuid.uuid4().hex[:10]}"
+        # Track lifecycle outcomes so we can emit an accurate summary event.
         failed_ids: set[str] = set()
         skipped_ids: set[str] = set()
         completed_count = 0
+        # enqueued = nodes we have scheduled at least once.
         enqueued: set[str] = set()
         completed: set[str] = set()
         in_flight: set[str] = set()
@@ -130,6 +130,7 @@ class WorkflowAgentExecutor:
         started_at = time.monotonic()
 
         while True:
+            # Gather the next batch of runnable nodes for this round.
             executable = self._collect_executable(
                 tree, ready, enqueued, completed, failed_ids, skipped_ids,
             )
@@ -160,6 +161,7 @@ class WorkflowAgentExecutor:
 
             # Run all executable nodes in parallel
             tasks_map: dict[str, asyncio.Task[str]] = {}
+            # Spawn one asyncio task per ready node; each calls the agent factory.
             for nid in executable:
                 node = tree.nodes[nid]
                 prompt = _build_task_prompt(node)
@@ -181,6 +183,7 @@ class WorkflowAgentExecutor:
 
                 if outcome.startswith("FAILED: "):
                     node.status = "failed"
+                    # Strip the "FAILED: " tag and keep the raw error text.
                     node.error = outcome[7:]
                     failed_ids.add(nid)
                     yield WorkflowTaskEvent(
@@ -247,6 +250,7 @@ class WorkflowAgentExecutor:
         """Run the agent factory for *task_id* with retry support."""
         for attempt in range(self._max_retries + 1):
             try:
+                # Hand the task to the user-supplied agent factory.
                 return await self._agent_factory(task_id, prompt)
             except Exception as exc:
                 logger.info(
@@ -270,6 +274,7 @@ class WorkflowAgentExecutor:
     ) -> list[str]:
         """Filter *candidates* down to nodes ready for execution."""
         executable: list[str] = []
+        # Keep candidates that are not yet enqueued and have met dependencies.
         for nid in candidates:
             if nid in enqueued or nid in completed or nid in failed_ids or nid in skipped_ids:
                 continue
@@ -311,6 +316,7 @@ class WorkflowAgentExecutor:
 def _build_task_prompt(node: TaskNode) -> str:
     """Build a focused agent prompt for a single task node."""
     parts = [f"## Task: {node.name}"]
+    # Include the richer description when the planner provided one.
     if node.description:
         parts.append(f"\n{node.description}")
     parts.append("\n\nComplete this task thoroughly. Report your results clearly.\n")

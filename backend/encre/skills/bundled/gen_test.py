@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Test-generation skill prompt loader.
+
+Loads the ``gen_test`` prompt from the ``skills`` category and substitutes the
+code target supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _gen_test_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the test-generation skill prompt for the given code target."""
     target = args or "the specified code"
     return _loader.load_with_context("gen_test", category="skills", target=target)

@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""User-correction feedback learning for Encre.
+
+Exposes :class:`EncreFeedbackLearner`, which remembers corrections a user
+has applied to tool errors (keyed by tool + error type + context) and
+surfaces the most relevant ones before the agent retries a failing tool.
+"""
 
 from encre.feedback.learner import CorrectionRecord, EncreFeedbackLearner
 

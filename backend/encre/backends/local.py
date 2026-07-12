@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Local backend -- Hugging Face Transformers (CPU/GPU inference).
@@ -193,6 +193,9 @@ class LocalBackend(BaseBackend):
         """
         tool_calls: list[dict[str, Any]] = []
         pos = 0
+        # Scan the generated text for complete, balanced-brace JSON objects.
+        # Brace counting (rather than regex) is used so that nested objects
+        # inside tool-call arguments are handled correctly.
         while pos < len(text):
             brace_start = text.find("{", pos)
             if brace_start == -1:
@@ -201,6 +204,8 @@ class LocalBackend(BaseBackend):
             in_string = False
             escape = False
             end = -1
+            # Walk characters from the opening brace, tracking string/escape
+            # state so braces inside string literals are ignored.
             for i in range(brace_start, len(text)):
                 ch = text[i]
                 if escape:
@@ -397,6 +402,7 @@ class LocalBackend(BaseBackend):
 
         gen_thread.join()
         feed_thread.join()
+        # Persist the complete text so tool-call parsing can run after streaming ends.
         self._last_full_output = full_output
         yield create_backend_finish("stop")
 

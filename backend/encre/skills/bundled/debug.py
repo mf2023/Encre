@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Debugging skill prompt loader.
+
+Loads the ``debug`` prompt from the ``skills`` category and substitutes the
+debug target supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _debug_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the debugging skill prompt for the given target."""
     target = args or "the current project"
     return _loader.load_with_context("debug", category="skills", target=target)

@@ -20,6 +20,15 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Chat view & markdown rendering.
+ *
+ * Renders the conversation message list (markdown + syntax-highlighted code
+ * blocks, tool calls, artifacts and sub-agent views) and owns the composer
+ * send flow. Also exports the shared `renderMarkdown` and `formatAgentLabel`
+ * helpers used across the renderer.
+ */
+
 import { getState, subscribe, showToast, addUserMessage, addAttachments, startAssistantMessage, setRunning, removeBranchMessages, restoreInputModeChip, truncateToUserMessage, setSubAgentView, pushSubAgentBreadcrumb, popSubAgentBreadcrumb, clearSubAgentBreadcrumb, resetToSubAgentBreadcrumbIndex, rememberRollbackEditTarget } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
@@ -72,6 +81,7 @@ md.renderer.rules.code_inline = (tokens: any[], idx: number) => {
   return `<code class="inline-code">${escapeHtml(content)}</code>`;
 };
 
+/** Renders markdown text to HTML (trimming trailing breaks/empty paragraphs). */
 export function renderMarkdown(text: string): string {
   if (!text) return "";
   const trimmed = text.replace(/\n+$/, "");
@@ -140,6 +150,13 @@ function isToolItemTool(name: string): boolean {
          name === "pdf" || name === "deploy" || name === "apply_patch";
 }
 
+function isHiddenTool(name: string): boolean {
+  if (name === "task" || name.startsWith("task_")) return true;
+  if (name === "memory" || name.startsWith("memory_")) return true;
+  if (name.startsWith("cron_")) return true;
+  return name === "todo" || name === "find_tool" || name === "lsp";
+}
+
 function compactText(value: unknown, max = 88): string {
   if (value === undefined || value === null) return "";
   const text = typeof value === "string" ? value : JSON.stringify(value);
@@ -194,8 +211,19 @@ function firstParam(tc: ToolCallState, keys: string[]): string {
   return "";
 }
 
-function getToolIcon(name: string): string {
-  if (isTerminalTool(name)) return "command";
+function getToolIcon(name: string, terminal?: string): string {
+  if (isTerminalTool(name)) {
+    // Map terminal type to Lucide icon name
+    const terminalIcons: Record<string, string> = {
+      powershell: "terminal",
+      cmd: "command",
+      bash: "terminal",
+      python: "code-2",
+      node: "code",
+      auto: "command",
+    };
+    return terminal ? (terminalIcons[terminal] || "command") : "command";
+  }
   if (isFileMutationTool(name)) return "pencil-line";
   if (isFileReadTool(name)) return "eye";
   if (name === "web_search" || name === "web_fetch") return "globe";
@@ -229,7 +257,11 @@ function getToolIcon(name: string): string {
     return "";
 }
 
-function formatToolName(name: string): string {
+function formatToolName(name: string, terminal?: string): string {
+  // Append terminal type for bash tools
+  if (terminal && (name === "bash" || name === "shell" || name === "chat.terminal" || name === "run_command")) {
+    return terminal.charAt(0).toUpperCase() + terminal.slice(1);
+  }
   const labels: Record<string, string> = {
     "chat.terminal": "Bash",
     bash: "Bash", bash_output: "Bash Output", bash_kill: "Bash", bash_list: "Bash",
@@ -342,6 +374,7 @@ function getAgentName(tc: ToolCallState): string {
   return configuredName || t("chat.agent");
 }
 
+/** Normalizes an agent/tool name into a human-friendly display label. */
 export function formatAgentLabel(rawName: string): string {
   // Capitalize first letter, append AGENT label
   const name = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
@@ -672,6 +705,8 @@ type TimelineItem =
   | { kind: "inline_success"; id: string; messageId: string; turnStatusText: string }
   | { kind: "inline_cancelled"; id: string; messageId: string; text: string }
   | { kind: "compact"; id: string }
+  | { kind: "system_message"; id: string; content: string; kindTag: string }
+  | { kind: "spec_card"; id: string; spec: import("./types.js").SpecData }
   | { kind: "workflow"; id: string };
 
 function buildTimeline(msgs: Message[]): TimelineItem[] {
@@ -684,6 +719,16 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
   }
   for (let ci = 0; ci < st.compactEvents.length; ci++) {
     items.push({ kind: "compact", id: `compact-${ci}` });
+  }
+
+  for (let si = 0; si < (st.systemMessages || []).length; si++) {
+    const sm = st.systemMessages[si];
+    items.push({ kind: "system_message", id: `sysmsg-${si}`, content: sm.content, kindTag: sm.kind });
+  }
+
+  // Insert spec card when spec data is available
+  if (st.spec) {
+    items.push({ kind: "spec_card", id: "spec-card", spec: st.spec });
   }
 
   // Insert workflow progress card when active
@@ -931,6 +976,9 @@ function pickRandomQuote(): StatusQuote {
   return STATUS_QUOTES[Math.floor(Math.random() * STATUS_QUOTES.length)];
 }
 
+/**
+ * The chat view controller: message list rendering and composer send flow.
+ */
 export class Chat {
   private ml: HTMLElement;
   private welcomeScreen: HTMLElement;
@@ -947,6 +995,9 @@ export class Chat {
   /** Callback invoked when the user clicks "View Changes" on an artifact file. */
   public onViewChanges: ((path: string) => void) | null = null;
 
+  /**
+   * Constructor: resolves DOM nodes and wires the scroll indicator + bridges.
+   */
   constructor() {
     this.ml = document.getElementById("message-list")!;
     this.welcomeScreen = document.getElementById("welcome-screen")!;
@@ -1170,6 +1221,7 @@ export class Chat {
     this.render();
   }
 
+  /** Re-renders the message list from current state (RAF-throttled). */
   render(): void {
     if (this.liveLoader) {
       this.liveLoader.destroy();
@@ -1253,14 +1305,14 @@ export class Chat {
         const id = item.id;
         if (autoExpand && !this.userCollapsedItems.has(id)) {
           this.expandedItems.add(id);
-        } else {
+        } else if (this.userCollapsedItems.has(id)) {
           this.expandedItems.delete(id);
         }
       } else if (item.kind === "tool" && item.tc.name === "agent") {
         const id = item.id;
         if (autoExpand && !this.userCollapsedItems.has(id)) {
           this.expandedItems.add(id);
-        } else {
+        } else if (this.userCollapsedItems.has(id)) {
           this.expandedItems.delete(id);
         }
       }
@@ -1437,7 +1489,7 @@ export class Chat {
           if (shouldExpand && !userCollapsed && !el.classList.contains("expanded")) {
             el.classList.add("expanded");
             this.expandedItems.add(item.id);
-          } else if (!shouldExpand && el.classList.contains("expanded")) {
+          } else if (!shouldExpand && this.userCollapsedItems.has(item.id) && el.classList.contains("expanded")) {
             el.classList.remove("expanded");
             this.expandedItems.delete(item.id);
           }
@@ -1595,6 +1647,8 @@ export class Chat {
       case "error_card": return this.renderErrorCard(item);
       case "warning_card": return this.renderWarningCard(item);
       case "compact": return this.renderCompactCard(item);
+      case "system_message": return this.renderSystemMessage(item);
+      case "spec_card": return this.renderSpecCard(item);
       case "workflow": return this.renderWorkflowCard(item);
     }
     return "";
@@ -1648,10 +1702,10 @@ export class Chat {
     }
     const contentHtml = isSubAgent
       ? escapeHtml(item.content)
-      : (item.content.includes("<attach ") || item.content.includes("<terminal>")) ? "" : escapeHtml(item.content);
+      : (item.content.includes("<attach ") || item.content.includes("<terminal>") || item.content.includes("<mode>")) ? "" : escapeHtml(item.content);
     return `<div class="user-item" data-user-idx="${item.index}">
       <div class="user-bubble">
-        ${termCard}${fileCards}${contentHtml}</div>
+        ${modeBadge}${termCard}${fileCards}${contentHtml}</div>
       <div class="user-actions">
         <button class="btn-icon btn-icon--msg msg-copy-btn" title="${t("chat.copy")}">
           <i data-lucide="copy" class="lucide lucide-sm"></i>
@@ -1684,6 +1738,7 @@ export class Chat {
   private renderToolCall(item: Extract<TimelineItem, { kind: "tool" }>): string {
     const tc = item.tc;
     const name = tc.name;
+    if (isHiddenTool(name)) return "";
     if (name === "agent") return this.renderAgent(tc, item.id);
     if (name === "question") return this.renderQuestionCard(tc, item.id);
     if (isFileMutationTool(name)) {
@@ -1805,16 +1860,18 @@ export class Chat {
   private renderTerminalCard(tc: ToolCallState, itemId: string): string {
     const id = `tc-${tc.id}`;
     const expanded = this.expandedItems.has(id);
+    const term = tc.params.terminal as string | undefined;
+    const termIcon = term ? getToolIcon("bash", term) : "command";
     const summary = getToolSummary(tc);
     const hasResult = !!tc.result;
     const bodyHtml = hasResult ? getToolBodyText(tc) : "";
     return `<div class="terminal-card${expanded ? " expanded" : ""}" data-id="${id}">
       <div class="terminal-card-header" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
         <span class="icon-wrap">
-          <i data-lucide="command" class="semantic"></i>
+          <i data-lucide="${termIcon}" class="semantic"></i>
           <i data-lucide="chevron-down" class="arrow"></i>
         </span>
-        <span class="strip-name">${formatToolName(tc.name)}</span>
+        <span class="strip-name">${formatToolName(tc.name, term)}</span>
         <span class="strip-summary">${summary ? `<code>${escapeHtml(summary)}</code>` : ""}</span>
       </div>
       <div class="terminal-body-slot" data-has-body="${hasResult ? "1" : "0"}">${bodyHtml ? `<div class="terminal-body">${bodyHtml}</div>` : ""}</div>
@@ -1824,8 +1881,9 @@ export class Chat {
   private renderExpandableStrip(tc: ToolCallState, itemId: string): string {
     const id = `tc-${tc.id}`;
     const expanded = this.expandedItems.has(id);
-    const icon = getToolIcon(tc.name);
-    const name = formatToolName(tc.name);
+    const term = tc.params.terminal as string | undefined;
+    const icon = getToolIcon(tc.name, term);
+    const name = formatToolName(tc.name, term);
     const summary = getToolSummary(tc);
     const statusHtml = _toolStatusHtml(tc.status);
     const hasResult = !!tc.result;
@@ -1845,8 +1903,9 @@ export class Chat {
 
   private renderToolItemSimple(tc: ToolCallState): string {
     const id = `tc-${tc.id}`;
-    const icon = getToolIcon(tc.name);
-    const name = formatToolName(tc.name);
+    const term = tc.params.terminal as string | undefined;
+    const icon = getToolIcon(tc.name, term);
+    const name = formatToolName(tc.name, term);
     const summary = getToolInlineSummary(tc);
     const statusHtml = _toolStatusHtml(tc.status);
     const iconHtml = icon ? `<i data-lucide="${icon}" class="tool-item-icon"></i>` : "";
@@ -1960,6 +2019,58 @@ export class Chat {
         <span class="strip-summary">${escapeHtml(summary)}</span>
       </div>
       <div class="strip-body">${escapeHtml(bodyLines.join("\n"))}</div>
+    </div>`;
+  }
+
+  private renderSystemMessage(item: Extract<TimelineItem, { kind: "system_message" }>): string {
+    const id = item.id;
+    const expanded = this.expandedItems.has(id);
+    const icon = item.kindTag === "error" ? "alert-circle" : "info";
+    const label = item.kindTag === "error" ? "System notice" : "System message";
+    return `<div class="strip-item system-message-strip${expanded ? " expanded" : ""}" data-id="${id}">
+      <div class="strip">
+        <i data-lucide="${icon}" class="strip-icon"></i>
+        <span class="strip-name">${escapeHtml(label)}</span>
+        <span class="strip-summary">${escapeHtml(item.content.slice(0, 80))}</span>
+      </div>
+      <div class="strip-body">${escapeHtml(item.content)}</div>
+    </div>`;
+  }
+
+  private renderSpecCard(item: Extract<TimelineItem, { kind: "spec_card" }>): string {
+    const spec = item.spec;
+    const status = spec.status;
+    const isApproved = status === "approved";
+    const isRejected = status === "rejected";
+    const isReview = status === "review" || status === "draft";
+    const sessionId = getState().sessionId;
+    const id = "spec-card";
+    const expanded = this.expandedItems.has(id);
+    const sectionsHtml = spec.sections.map(s => `
+      <div class="spec-section">
+        <div class="spec-section-title">${escapeHtml(s.title)}</div>
+        <div class="spec-section-content">${escapeHtml(s.content)}</div>
+      </div>
+    `).join("");
+    const feedbackHtml = spec.feedback ? `<div class="spec-feedback"><strong>Feedback:</strong> ${escapeHtml(spec.feedback)}</div>` : "";
+    const reviewActions = isReview ? `
+      <div class="spec-footer">
+        <button class="spec-btn spec-btn-approve" data-spec-approve="${sessionId}">Approve</button>
+        <button class="spec-btn spec-btn-reject" data-spec-reject="${sessionId}">Reject</button>
+      </div>
+    ` : isApproved ? `<div class="spec-footer"><span class="spec-approved-label"><i data-lucide="check-circle"></i> Approved</span></div>`
+    : isRejected ? `<div class="spec-footer"><span class="spec-rejected-label"><i data-lucide="x-circle"></i> Rejected</span></div>`
+    : "";
+    return `<div class="strip-item${expanded ? " expanded" : ""}" data-id="${id}">
+      <div class="strip">
+        <i data-lucide="file-text" class="strip-icon" style="color:var(--chip-accent,#8b5cf6)"></i>
+        <span class="strip-name">${escapeHtml(spec.title)}</span>
+        <span class="strip-summary">${status}</span>
+        <i data-lucide="chevron-down" class="strip-arrow"></i>
+      </div>
+      <div class="strip-body-slot" data-has-body="1">
+        <div class="strip-body spec-body">${sectionsHtml}${feedbackHtml}${reviewActions}</div>
+      </div>
     </div>`;
   }
 
@@ -2080,7 +2191,7 @@ export class Chat {
       if (isNaN(idx) || !userMsgs[idx]) return;
       const targetMsg = userMsgs[idx];
       let origContent = targetMsg.content;
-      if (origContent.includes("<terminal>") || origContent.includes("<attach ")) origContent = "";
+      if (origContent.includes("<terminal>") || origContent.includes("<attach ") || origContent.includes("<mode>")) origContent = "";
       Dialog.confirm(t("chat.rollbackEdit"), t("chat.rollbackEditDesc")).then((confirmed) => {
         if (confirmed) {
           const sid = targetMsg.serverId;
@@ -2262,6 +2373,23 @@ export class Chat {
       }
       return;
     }
+
+    // Spec approve/reject buttons
+    const approveBtn = target.closest("[data-spec-approve]") as HTMLElement | null;
+    if (approveBtn) {
+      e.stopPropagation();
+      const sessionId = approveBtn.getAttribute("data-spec-approve") || "";
+      send({ type: "spec_approve", session_id: sessionId } as any);
+      return;
+    }
+    const rejectBtn = target.closest("[data-spec-reject]") as HTMLElement | null;
+    if (rejectBtn) {
+      e.stopPropagation();
+      const sessionId = rejectBtn.getAttribute("data-spec-reject") || "";
+      const feedback = prompt("Feedback (optional):") || "";
+      send({ type: "spec_reject", session_id: sessionId, feedback } as any);
+      return;
+    }
   }
 
   private toggleItem(id: string, el: HTMLElement): void {
@@ -2289,6 +2417,7 @@ export class Chat {
     else { this.welcomeScreen.classList.add("hidden"); this.ml.classList.remove("hidden"); }
   }
 
+  /** Scrolls the message list to the bottom (unless the user scrolled up). */
   scrollToBottom(): void {
     const c = document.getElementById("chat-container");
     if (c) c.scrollTop = c.scrollHeight;

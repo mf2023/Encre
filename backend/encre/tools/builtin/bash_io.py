@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/bash_io.py
 
+Bash io implementation for the Encre tool system.
+"""
 import asyncio
 import json
 from typing import Any
@@ -32,6 +36,11 @@ from encre.tools.builtin._shell_manager import BackgroundShellManager
 
 
 async def _bash_output_execute(**kwargs: Any) -> str:
+    """Bash output execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     shell_id = str(kwargs.get("id", "")).strip()
     if not shell_id:
         return "Error: id is required"
@@ -59,6 +68,11 @@ async def _bash_output_execute(**kwargs: Any) -> str:
 
 
 async def _bash_kill_execute(**kwargs: Any) -> str:
+    """Bash kill execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     shell_id = str(kwargs.get("id", "")).strip()
     if not shell_id:
         return "Error: id is required"
@@ -70,6 +84,11 @@ async def _bash_kill_execute(**kwargs: Any) -> str:
 
 
 async def _bash_list_execute(**_kwargs: Any) -> str:
+    """Bash list execute.
+
+    Args:
+        _kwargs: Description of the _kwargs parameter.
+    """
     shells = BackgroundShellManager.instance().list_shells()
     return json.dumps(shells, ensure_ascii=False)
 
@@ -103,6 +122,8 @@ EncreBashOutputTool = build_tool(
     execute=_bash_output_execute,
     intents=["general", "coding"],
     is_concurrency_safe=lambda _: True,
+    category="system",
+    semantic_type="exec",
 )
 
 EncreBashKillTool = build_tool(
@@ -129,6 +150,8 @@ EncreBashKillTool = build_tool(
     execute=_bash_kill_execute,
     intents=["general", "coding"],
     is_concurrency_safe=lambda _: True,
+    category="system",
+    semantic_type="exec",
 )
 
 EncreBashListTool = build_tool(
@@ -144,4 +167,7 @@ EncreBashListTool = build_tool(
     execute=_bash_list_execute,
     intents=["general", "coding"],
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
+    category="system",
+    semantic_type="exec",
 )

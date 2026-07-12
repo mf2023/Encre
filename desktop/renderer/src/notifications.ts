@@ -20,6 +20,15 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Notification center (bell, panel & toasts).
+ *
+ * Manages the in-app notifications surfaced through the bell button: an
+ * unread-count badge, a slide-out panel grouping unread/read items, and
+ * transient toasts for newly-arrived notifications. Reactive to global state
+ * via a subscription.
+ */
+
 import {
   getState,
   subscribe,
@@ -34,6 +43,7 @@ import type { NotificationItem } from "./types.js";
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Formats a timestamp as a localized relative time ("just now", "3m ago", …). */
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const secs = Math.floor(diff / 1000);
@@ -46,6 +56,7 @@ function relativeTime(ts: number): string {
   return t("notifications.daysAgo", { n: days });
 }
 
+/** Returns the lucide icon name for a notification type. */
 function typeIcon(type: string): string {
   switch (type) {
     case "error": return "alert-circle";
@@ -55,12 +66,18 @@ function typeIcon(type: string): string {
   }
 }
 
+/**
+ * The notifications controller: badge, panel and toast lifecycle.
+ */
 export class Notifications {
   private bell: HTMLElement | null;
   private panel: HTMLElement | null = null;
   private toastContainer: HTMLElement | null = null;
   private lastNotificationIds: Set<string> = new Set();
 
+  /**
+   * Constructor: wires the bell button, outside-click dismissal and state subscription.
+   */
   constructor() {
     this.bell = document.getElementById("btn-bell");
     if (this.bell) {
@@ -83,10 +100,12 @@ export class Notifications {
     }
   }
 
+  /** Snapshots the current notification ids as "already seen". */
   syncSeenIds(): void {
     this.lastNotificationIds = new Set(getState().notifications.map((n) => n.id));
   }
 
+  /** Re-renders the badge/panel and pops toasts for any new notifications. */
   render(): void {
     const notifications = getState().notifications;
 
@@ -127,6 +146,7 @@ export class Notifications {
     document.body.appendChild(this.toastContainer);
   }
 
+  /** Renders and shows a transient toast for a single notification. */
   showToast(item: NotificationItem): void {
     this.ensureToastContainer();
     const toast = document.createElement("div");
@@ -184,6 +204,7 @@ export class Notifications {
     else this.openPanel();
   }
 
+  /** Opens the slide-out notification panel anchored to the bell. */
   openPanel(): void {
     if (!this.bell) return;
     this.panel = document.createElement("div");
@@ -196,6 +217,7 @@ export class Notifications {
     this.panel.style.right = `${window.innerWidth - rect.right}px`;
   }
 
+  /** Closes the slide-out notification panel. */
   private closePanel(): void {
     if (this.panel) {
       this.panel.remove();
@@ -204,6 +226,7 @@ export class Notifications {
     }
   }
 
+  /** Builds the panel's inner HTML from unread/read notification lists. */
   private renderPanel(): void {
     if (!this.panel) return;
     const all = getState().notifications;

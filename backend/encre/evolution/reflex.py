@@ -23,6 +23,14 @@
 
 
 
+"""Lightweight reflexion loop for the evolution subsystem.
+
+:class:`EncreReflexLoop` runs a *heuristic* (no-LLM) self-reflection after
+every turn, turning tool outcomes into a :class:`ReflexResult` carrying a
+quality score, detected issues and improvement suggestions.  The result is
+surfaced to the agent as prompt context and as a retry signal.
+"""
+
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -30,6 +38,7 @@ from typing import Any
 
 @dataclass
 class ReflexResult:
+    """Outcome of a single reflexion pass for one turn."""
     turn_number: int
     score: float  # 0.0 - 1.0
     issues: list[str] = field(default_factory=list)
@@ -48,6 +57,7 @@ class EncreReflexLoop:
     MAX_HISTORY = 50
 
     def __init__(self, enabled: bool = True) -> None:
+        """Initialise history, failure and score trackers."""
         self.enabled = enabled
         self._history: list[ReflexResult] = []
         self._consecutive_failures: dict[str, int] = {}
@@ -59,6 +69,7 @@ class EncreReflexLoop:
         tool_results: list[dict[str, Any]],
         turn_latency_ms: float,
     ) -> ReflexResult:
+        """Run one reflexion pass and return its scored result."""
         if not self.enabled:
             return ReflexResult(turn_number=turn_number, score=1.0)
 
@@ -125,6 +136,7 @@ class EncreReflexLoop:
         return result
 
     def get_improvement_context(self) -> str:
+        """Return recent suggestions formatted as a prompt hint block."""
         if not self._history:
             return ""
         recent = self._history[-3:]
@@ -137,6 +149,7 @@ class EncreReflexLoop:
         return "**Self-reflection hints (recent turns):**\n" + "\n".join(f"  - {h}" for h in hints)
 
     def get_trend(self) -> str:
+        """Return 'improving' / 'declining' / 'stable' for recent scores."""
         if len(self._turn_scores) < 3:
             return "stable"
         recent = self._turn_scores[-3:]
@@ -147,11 +160,13 @@ class EncreReflexLoop:
         return "stable"
 
     def get_average_score(self) -> float:
+        """Mean reflexion score across recorded turns (1.0 if none)."""
         if not self._turn_scores:
             return 1.0
         return sum(self._turn_scores) / len(self._turn_scores)
 
     def reset(self) -> None:
+        """Clear history, failure counts and score history."""
         self._history.clear()
         self._consecutive_failures.clear()
         self._turn_scores.clear()

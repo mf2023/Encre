@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Coding prompt template.
+
+Defines :class:`EncreCodingPrompt`, a
+:class:`~encre.prompts.base.EncrePromptTemplate` specialized for software
+engineering tasks.  It delegates assembly to the shared
+:class:`~encre.prompts.system.EncrePromptBuilder` with the ``"coding"``
+specialty so the coding block and tool guidance are included.
+"""
 
 from typing import Any
 
@@ -31,7 +40,22 @@ from encre.utils.types import PermissionMode
 
 
 class EncreCodingPrompt(EncrePromptTemplate):
+    """Coding prompt template.
+
+    Builds the system prompt for software-engineering conversations by
+    delegating to the layered
+    :class:`~encre.prompts.system.EncrePromptBuilder` with the ``"coding"``
+    specialty.
+    """
+
     def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "coding") -> None:
+        """Initialize the template.
+
+        Args:
+            builder: Optional pre-configured prompt builder.  A new one is
+                created when omitted.
+            specialty: Specialty label forwarded to the builder (``"coding"``).
+        """
         super().__init__(builder=builder, specialty=specialty)
 
     def build_system_prompt(
@@ -49,6 +73,12 @@ class EncreCodingPrompt(EncrePromptTemplate):
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> str:
+        """Build the coding system prompt from session context.
+
+        Forwards every argument to
+        :meth:`~encre.prompts.system.EncrePromptBuilder.build` with the
+        ``"coding"`` specialty so the shared block-assembly logic is reused.
+        """
         return self._builder.build(
             mode=mode,
             tools=tools,

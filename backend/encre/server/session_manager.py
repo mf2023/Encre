@@ -21,7 +21,27 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre session manager.
+
+The :class:`SessionManager` is the single source of truth for agent sessions.
+It keeps sessions in memory (so the agent's async task runs against a live
+:class:`~encre.agent.EncreAgent`) and persists them to disk under the
+Encre data directory (``~/.dunimd/encre/sessions`` by default, or a
+per-workspace / per-iClaw subdirectory).
+
+Key responsibilities:
+
+    * create / get / load-or-create / delete sessions
+    * an encrypted ``index.json`` for fast sidebar listing across modes
+    * a concurrency semaphore (``acquire_slot`` / ``release_slot``)
+    * debounced, executor-based async persistence (``_save_session_async``)
+    * idle cleanup and graceful shutdown
+
+A session is represented by the :class:`SessionInfo` dataclass, which
+links a session id, its agent, the running task, and metadata.
+"""
 
 import asyncio
 import contextlib
@@ -45,6 +65,13 @@ from encre.tools.registry import ToolRegistry
 
 @dataclass
 class SessionInfo:
+    """In-memory record for one agent session.
+
+    Links the session id to its :class:`~encre.agent.EncreAgent`, the
+    running asyncio task (if any), and bookkeeping fields used for idle
+    cleanup, persistence and channel tagging.
+    """
+
     session_id: str
     agent: EncreAgent
     agent_task: asyncio.Task[None] | None = None
@@ -57,6 +84,7 @@ class SessionInfo:
 
 
 def _create_default_tool_registry() -> ToolRegistry:
+    """Build a fresh ToolRegistry populated with the built-in tools."""
     registry = ToolRegistry()
     return register_default_tools(registry)
 
@@ -72,12 +100,24 @@ def _get_shared_default_tool_registry() -> ToolRegistry:
 
 
 def _clone_tool_registry() -> ToolRegistry:
+    """Clone the shared default tool registry for a new session.
+
+    Each session gets its own copy so per-session tool state (unlocks,
+    overrides) does not leak between conversations.
+    """
     registry = ToolRegistry()
     registry._tools = dict(_get_shared_default_tool_registry()._tools)
     return registry
 
 
 class SessionManager:
+    """In-memory + on-disk store for all agent sessions.
+
+    See the module docstring (:mod:`encre.server.session_manager`) for the
+    full responsibility overview.  Instances are shared by the WebSocket
+    handler, the channel EventRouter, and the gateway adapters.
+    """
+
     def __init__(self, max_concurrent: int = 20, idle_timeout: float = 3600.0, sessions_dir: str | None = None) -> None:
         self._sessions: dict[str, SessionInfo] = {}
         self._max_concurrent = max_concurrent
@@ -370,6 +410,7 @@ class SessionManager:
             _log.exception("Failed to save session %s", info.session_id)
 
     def create_session(self, config: EncreConfig | None = None) -> SessionInfo:
+        """Create a brand-new in-memory session with a cloned tool registry."""
         config = replace(config) if config is not None else EncreConfig()
         session_id = str(uuid.uuid4())
         tool_registry = _clone_tool_registry()
@@ -397,6 +438,12 @@ class SessionManager:
         return info.is_running or (info.agent_task is not None and not info.agent_task.done())
 
     def load_or_create_session(self, session_id: str, config: EncreConfig | None = None) -> SessionInfo:
+        """Return the live session for *session_id*, loading it from disk if needed.
+
+        Looks up the active pool first (to preserve running agent state), then
+        any stashed per-directory pools, then the on-disk session directory.
+        Falls back to a fresh session when nothing is found.
+        """
         # First search the active pool so we hand back the live in-memory
         # instance (which preserves the running agent's session object).
         existing = self._sessions.get(session_id)
@@ -538,6 +585,7 @@ class SessionManager:
         return True
 
     def try_resume_most_recent(self, config: EncreConfig | None = None) -> SessionInfo | None:
+        """Return the most-recently-active session, or None if the store is empty."""
         self._get_sessions_dir()  # ensures index loaded
         if not self._index:
             self._bootstrap_index_from_disk()
@@ -615,6 +663,11 @@ class SessionManager:
         return entries
 
     async def cleanup_idle(self) -> int:
+        """Drop in-memory sessions that have been idle past the timeout.
+
+        Returns the number of sessions removed.  Running sessions are never
+        evicted from memory.
+        """
         now = time.time()
         to_remove: list[str] = []
         for sid, info in self._sessions.items():
@@ -625,6 +678,11 @@ class SessionManager:
         return len(to_remove)
 
     async def acquire_slot(self) -> bool:
+        """Acquire a concurrency slot, waiting up to 30s.
+
+        Returns True if a slot was obtained (the caller must later call
+        :meth:`release_slot`), False on timeout (server at capacity).
+        """
         try:
             await asyncio.wait_for(self._semaphore.acquire(), timeout=30.0)
             return True
@@ -632,6 +690,7 @@ class SessionManager:
             return False
 
     def release_slot(self) -> None:
+        """Release a previously acquired concurrency slot."""
         with contextlib.suppress(ValueError):
             self._semaphore.release()
 
@@ -663,6 +722,7 @@ class SessionManager:
             pass  # A newer save request superseded this one
 
     async def shutdown(self) -> None:
+        """Flush pending saves and persist every session (active + stashed)."""
         # Flush any pending saves
         pending = [t for t in self._save_tasks.values() if not t.done()]
         if pending:

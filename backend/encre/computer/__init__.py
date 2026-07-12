@@ -21,9 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
-
+# Public API for the "computer" package: browser automation, computer-use
+# (mouse/keyboard/screenshot) control loops, and desktop interaction sessions.
+# Re-export the browser session primitives (state, viewport, session handle).
 from encre.computer.browser import BrowserState, BrowserViewport, EncreBrowserSession
+# Re-export computer-use action/step/trajectory models and the session driver.
 from encre.computer.computer_use import (
     VALID_ACTIONS,
     ComputerUseAction,
@@ -31,6 +35,7 @@ from encre.computer.computer_use import (
     ComputerUseTrajectory,
     EncreComputerUseSession,
 )
+# Re-export desktop screen state and locate results plus the desktop session.
 from encre.computer.desktop import (
     DesktopLocateResult,
     DesktopScreenState,

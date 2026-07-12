@@ -20,6 +20,16 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Server-event stream handling.
+ *
+ * The bridge between the WebSocket transport and the renderer UI. Registers
+ * per-event-type callbacks (adapter tests, automation jobs/history, …), routes
+ * every decoded {@link ServerEvent} through `handleEvent` into the state store
+ * and the chat view, and owns the "requested session" handshake used to match
+ * resume/open responses to the right session.
+ */
+
 import { ServerEvent, WorkspaceEntry, BranchUpdated, BranchSwitched, BranchRolledBack, TranscriptionResult, UsageStatsEvent } from "./types.js";
 import * as state from "./state.js";
 import { send } from "./ws.js";
@@ -39,34 +49,42 @@ let _automationJobCancelledCallback: ((jobId: string) => void) | null = null;
 let _automationJobUpdatedCallback: (() => void) | null = null;
 let _automationShowResultCallback: ((data: any) => void) | null = null;
 let _automationStreamCallback: ((event: import("./types.js").AutomationStreamEvent) => void) | null = null;
+/** Registers a callback for adapter-test results. */
 export function onAdapterTestResult(cb: (event: AdapterTestResultEvent) => void): void {
   _adapterTestCallback = cb;
 }
 
+/** Registers a callback invoked whenever the automation jobs list arrives. */
 export function onAutomationJobs(cb: (jobs: any[]) => void): void {
   _automationJobsCallback = cb;
 }
 
+/** Registers a callback for automation run-history updates. */
 export function onAutomationHistory(cb: (history: any[]) => void): void {
   _automationHistoryCallback = cb;
 }
 
+/** Registers a callback fired when a new automation job is created. */
 export function onAutomationJobCreated(cb: (job: any) => void): void {
   _automationJobCreatedCallback = cb;
 }
 
+/** Registers a callback fired when an automation job is updated. */
 export function onAutomationJobUpdated(cb: () => void): void {
   _automationJobUpdatedCallback = cb;
 }
 
+/** Registers a callback to show a job's result detail. */
 export function onAutomationShowResult(cb: (data: any) => void): void {
   _automationShowResultCallback = cb;
 }
 
+/** Registers a callback fired when an automation job is cancelled. */
 export function onAutomationJobCancelled(cb: (jobId: string) => void): void {
   _automationJobCancelledCallback = cb;
 }
 
+/** Registers a callback for live automation stream events. */
 export function onAutomationStreamEvent(cb: (event: import("./types.js").AutomationStreamEvent) => void): void {
   _automationStreamCallback = cb;
 }
@@ -200,11 +218,13 @@ function _eventSessionId(event: { session_id?: string }): string {
   return event.session_id || state.getState().sessionId || "";
 }
 
+/** Records the requested session id and its matching request id. */
 export function setRequestedSessionId(sid: string, requestId = ""): void {
   _requestedSessionId = sid;
   _requestedSessionRequestId = requestId;
 }
 
+/** Initializes the stream layer with the chat/tools/permissions/settings controllers. */
 export function init(c: Chat, t: Tools, p: Permissions, s?: Settings): void {
   chat = c;
   tools = t;
@@ -212,6 +232,7 @@ export function init(c: Chat, t: Tools, p: Permissions, s?: Settings): void {
   _settings = s ?? null;
 }
 
+/** Resolves once model validation has completed. */
 export function waitForModelValidation(): Promise<void> {
   return new Promise((resolve, reject) => {
     _validationResolve = resolve;
@@ -226,10 +247,12 @@ export function waitForModelValidation(): Promise<void> {
   });
 }
 
+/** Sets the callback invoked when a voice transcription arrives. */
 export function setOnTranscription(cb: (text: string) => void): void {
   _onTranscription = cb;
 }
 
+/** Routes a single server event into the state store and chat view. */
 export function handleEvent(event: ServerEvent): void {
   if (_requiresExplicitSessionId(event.type) && !_hasSessionId(event as { session_id?: string | null })) {
     return;
@@ -971,6 +994,25 @@ export function handleEvent(event: ServerEvent): void {
       }, _eventSessionId(event as any));
       break;
 
+    case "system_message":
+      {
+        const sev = event as any;
+        state.addSystemMessage({
+          content: sev.content || "",
+          kind: sev.kind || "info",
+          sessionId: _eventSessionId(sev),
+        });
+      }
+      break;
+
+    case "spec_update":
+      {
+        const sev = event as any;
+        state.updateSpec(sev.spec || null, _eventSessionId(sev));
+        (window as any).__sessionInner?.render?.();
+      }
+      break;
+
     case "context_usage":
       if (!_hasSessionId(event as any)) break;
       state.updateContextUsage(
@@ -1054,7 +1096,7 @@ export function handleEvent(event: ServerEvent): void {
       // Restore the last user message into the input box for re-editing
       let userInput = (event as any).user_input as string | undefined;
       if (userInput) {
-        if (userInput.includes("<terminal>") || userInput.includes("<attach ")) userInput = "";
+        if (userInput.includes("<terminal>") || userInput.includes("<attach ") || userInput.includes("<mode>")) userInput = "";
         const input = document.getElementById("prompt-input") as HTMLElement | null;
         if (input) { input.textContent = userInput; input.focus(); }
       }
@@ -1416,6 +1458,7 @@ function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getSta
   state.setSessionsList(updated);
 }
 
+/** Triggers a markdown file download in the browser. */
 export function downloadMarkdownFile(markdown: string, filename: string): void {
   const sanitized = filename.replace(/[<>:"/\\|?*]/g, "_");
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });

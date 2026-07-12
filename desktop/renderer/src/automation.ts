@@ -15,9 +15,18 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * 
  * DISCLAIMER: Users must comply with applicable AI regulations.
  * Non-compliance may result in service termination or legal liability.
+ */
+
+/**
+ * Automation (scheduled tasks) panel.
+ *
+ * Implements the "Automation" view: a tabbed UI for viewing configured
+ * scheduled jobs and their run history, creating new jobs from templates,
+ * filtering history, viewing a job's result, and cancelling runs. It talks to
+ * the backend through the stream-layer automation callbacks and the WebSocket.
  */
 
 import { t, getLocale, onLocaleChange } from "./i18n.js";
@@ -207,6 +216,9 @@ function formatDate(unixTs: number): string {
     : `${Number(mm)}月${Number(dd)}日`;
 }
 
+/**
+ * Controller for the automation/scheduled-task panel.
+ */
 export class Automation {
   private el: HTMLElement;
   private tabsEl: HTMLElement;
@@ -230,6 +242,9 @@ export class Automation {
   // Cached filtered history for export (set by renderHistory)
   private currentFilteredHistory: HistoryEntry[] = [];
 
+  /**
+   * Constructor: resolves DOM nodes and wires tabs, create button and filters.
+   */
   constructor() {
     this.el = document.getElementById("automation-view")!;
     this.tabsEl = this.el.querySelector(".automation-tabs")! as HTMLElement;
@@ -257,6 +272,7 @@ export class Automation {
     });
   }
 
+  /** Refreshes the panel by requesting the jobs list and run history. */
   render(): void {
     this.requestJobsList();
     this.requestHistory();
@@ -292,14 +308,17 @@ export class Automation {
     });
   }
 
+  /** Requests the list of configured automation jobs from the backend. */
   private requestJobsList(): void {
     send({ type: "automation_list_jobs" });
   }
 
+  /** Requests the automation run history from the backend. */
   private requestHistory(): void {
     send({ type: "automation_get_history" });
   }
 
+  /** Wires the history/top tab switching. */
   private bindTabs(): void {
     this.tabsEl.addEventListener("click", (e) => {
       const btn = (e.target as HTMLElement).closest(".automation-tab") as HTMLElement | null;
@@ -688,6 +707,7 @@ export class Automation {
     });
   }
 
+  /** Renders the list of configured jobs. */
   private renderConfigured(): void {
     const wrap = this.configuredListEl;
 
@@ -1019,6 +1039,7 @@ export class Automation {
     };
   }
 
+  /** Renders the run-history timeline (with active filters applied). */
   private renderHistory(): void {
     const filtersEl = document.getElementById("history-filters")!;
 

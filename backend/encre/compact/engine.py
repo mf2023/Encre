@@ -1,4 +1,27 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Model-driven context compaction -- Claude Code style.
 
@@ -45,8 +68,6 @@ Messages carry an ``is_compact_boundary`` marker so the frontend can
 render a visual divider, and ``is_compact_summary`` so the model can
 distinguish the summary from real user input.
 """
-
-from __future__ import annotations
 
 from typing import Any
 
@@ -142,6 +163,13 @@ class CompactEngine:
     """
 
     def __init__(self) -> None:
+        """Initialise the compaction engine.
+
+        Sets up the consecutive-failure counter used by the circuit
+        breaker and the pre-compact message cache that backs the archive
+        fallback (so the model can recall original context if a summary
+        drops critical details).
+        """
         self._failure_count = 0
         self._last_compact_turn = -1
         # Pre-compact message cache: maps session_id → list of original messages
@@ -193,6 +221,8 @@ class CompactEngine:
     ) -> bool:
         """Return True if microcompact could free meaningful space."""
         est = count_message_tokens(messages)
+        # Trigger only once we cross 40% of the window -- microcompact is
+        # cheap but pointless when there is still plenty of headroom.
         return est > context_window * 0.40
 
     # ── Microcompact (no API call) ─────────────────────────────────────
@@ -521,20 +551,22 @@ def _sanitize_tool_groups(
     """Remove orphaned tool messages that lack their assistant.
 
     Compaction can leave tool results without their parent assistant
-    tool_calls block, which causes backend API 400 errors.
+    tool_calls block, which causes backend API 400 errors.  This also
+    drops assistant messages whose tool_calls carry no usable id, because
+    such a block can never be matched to tool results and would make the
+    next request fail with "insufficient tool messages".
     """
     if not messages:
         return messages
 
-    # Strip leading orphan tools
-    while messages and messages[0].get("role") == "tool":
-        messages.pop(0)
-    if not messages:
-        return messages
+    # Skip leading orphan tools instead of mutating the input list.
+    start = 0
+    while start < len(messages) and messages[start].get("role") == "tool":
+        start += 1
 
     # Pair each assistant tool_calls with its completed tool_results
     result: list[dict[str, Any]] = []
-    i = 0
+    i = start
     while i < len(messages):
         msg = messages[i]
         role = msg.get("role", "")
@@ -543,13 +575,18 @@ def _sanitize_tool_groups(
         if role == "assistant" and tool_calls:
             expected = {tc.get("id", "") for tc in tool_calls if tc.get("id")}
             if not expected:
-                result.append(msg)
-                i += 1
+                # Assistant claims tool_calls but none have an id.  Drop the
+                # invalid assistant and any immediately following tool
+                # messages so the API never sees an unmatched tool_call block.
+                j = i + 1
+                while j < len(messages) and messages[j].get("role") == "tool":
+                    j += 1
+                i = j
                 continue
 
             # Collect following tool results
             j = i + 1
-            found = set()
+            found: set[str] = set()
             while j < len(messages) and messages[j].get("role") == "tool":
                 tid = messages[j].get("tool_call_id", "")
                 if tid:
@@ -557,15 +594,16 @@ def _sanitize_tool_groups(
                 j += 1
 
             if expected.issubset(found):
-                result.append(msg)
-                while i + 1 < j:
-                    i += 1
-                    result.append(messages[i])
-            # else: skip this assistant -- it's incomplete
+                result.append(dict(msg))
+                k = i + 1
+                while k < j:
+                    result.append(dict(messages[k]))
+                    k += 1
+            # else: skip this assistant and its orphaned tools -- incomplete
             i = j
             continue
 
-        result.append(msg)
+        result.append(dict(msg))
         i += 1
 
     return result

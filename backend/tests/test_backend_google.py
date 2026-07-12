@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for GoogleBackend -- construction, capabilities, context window,
 grounding, message conversion, and token counting."""
@@ -40,13 +40,17 @@ class TestGoogleBackendConstruction:
     def test_create_default(self):
         """Default model is gemini-2.5-pro, default base URL is Google AI Studio."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be.model == "gemini-2.5-pro"
         assert be.model == "gemini-2.5-pro"
+        # Verify: be.api_key == "fake-key"
         assert be.api_key == "fake-key"
+        # Verify: "generativelanguage.googleapis.com" in be.base_url
         assert "generativelanguage.googleapis.com" in be.base_url
 
     def test_create_with_flash_model(self):
         """Gemini 2.5 Flash model."""
         be = GoogleBackend(api_key="fake-key", model="gemini-2.5-flash")
+        # Verify: be.model == "gemini-2.5-flash"
         assert be.model == "gemini-2.5-flash"
 
     def test_create_with_custom_base_url(self):
@@ -55,27 +59,33 @@ class TestGoogleBackendConstruction:
             api_key="fake-key",
             base_url="https://custom-google.example.com/v1beta",
         )
+        # Verify: be.base_url == "https://custom-google.example.com/v1beta"
         assert be.base_url == "https://custom-google.example.com/v1beta"
 
     def test_create_with_grounding_enabled(self):
         """Google Search grounding can be enabled at construction."""
         be = GoogleBackend(api_key="fake-key", enable_grounding=True)
+        # Verify: be.enable_grounding is True
         assert be.enable_grounding is True
 
     def test_create_grounding_disabled_by_default(self):
         """Grounding is disabled by default."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be.enable_grounding is False
         assert be.enable_grounding is False
 
     def test_create_with_empty_api_key(self):
         """Empty API key is allowed."""
         be = GoogleBackend()
+        # Verify: be.api_key == ""
         assert be.api_key == ""
+        # Verify: be.model == "gemini-2.5-pro"
         assert be.model == "gemini-2.5-pro"
 
     def test_create_initializes_http_client(self):
         """GoogleBackend creates its own httpx.AsyncClient."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be._client is not None
         assert be._client is not None
 
 
@@ -89,6 +99,7 @@ class TestGoogleBackendCapabilities:
     def test_supports_tool_calling(self):
         """Gemini models support function calling."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be.supports_tool_calling() is True
         assert be.supports_tool_calling() is True
 
     def test_supports_tool_calling_different_models(self):
@@ -96,22 +107,26 @@ class TestGoogleBackendCapabilities:
         models = ["gemini-2.5-pro", "gemini-2.5-flash"]
         for m in models:
             be = GoogleBackend(api_key="fake-key", model=m)
+            # Verify: be.supports_tool_calling() is True, f"model={m}"
             assert be.supports_tool_calling() is True, f"model={m}"
 
     def test_supports_thinking(self):
         """Gemini 2.5 models support thinking/reasoning."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be.supports_thinking() is True
         assert be.supports_thinking() is True
 
     def test_supports_grounding(self):
         """Gemini models support Google Search grounding."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be.supports_grounding() is True
         assert be.supports_grounding() is True
 
     def test_supports_prompt_caching_returns_bool(self):
         """Prompt caching flag is a boolean (inherited default)."""
         be = GoogleBackend(api_key="fake-key")
         result = be.supports_prompt_caching()
+        # Verify: isinstance(result, bool)
         assert isinstance(result, bool)
 
 
@@ -125,17 +140,21 @@ class TestGoogleBackendContextWindow:
     def test_context_window_size_default(self):
         """Gemini 2.5 Pro: 1,048,576 tokens (1M)."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be.context_window_size() == 1048576
         assert be.context_window_size() == 1048576
 
     def test_context_window_size_flash(self):
         """Gemini 2.5 Flash: 1M tokens."""
         be = GoogleBackend(api_key="fake-key", model="gemini-2.5-flash")
+        # Verify: be.context_window_size() == 1048576
         assert be.context_window_size() == 1048576
 
     def test_context_window_positive(self):
         """Context window is always positive."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be.context_window_size() > 0
         assert be.context_window_size() > 0
+        # Verify: isinstance(be.context_window_size(), int)
         assert isinstance(be.context_window_size(), int)
 
 
@@ -150,24 +169,29 @@ class TestGoogleBackendTokens:
         """count_tokens returns an integer."""
         be = GoogleBackend(api_key="fake-key")
         result = be.count_tokens("hello world")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_empty_string(self):
         """Empty string should not crash."""
         be = GoogleBackend(api_key="fake-key")
         result = be.count_tokens("")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_long_text(self):
         """Long text should not crash."""
         be = GoogleBackend(api_key="fake-key")
         result = be.count_tokens("Google Gemini token counting. " * 300)
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_model_attribute(self):
         """model attribute matches constructor argument."""
         be = GoogleBackend(api_key="fake-key", model="gemini-2.5-flash")
+        # Verify: be.model == "gemini-2.5-flash"
         assert be.model == "gemini-2.5-flash"
+        # Verify: isinstance(be.model, str)
         assert isinstance(be.model, str)
 
 
@@ -183,9 +207,13 @@ class TestGoogleBackendMessageConversion:
         be = GoogleBackend(api_key="fake-key")
         messages = [{"role": "user", "content": "Hello, Gemini!"}]
         contents, _system_instruction = be._convert_messages(messages)
+        # Verify: len(contents) == 1
         assert len(contents) == 1
+        # Verify: contents[0]["role"] == "user"
         assert contents[0]["role"] == "user"
+        # Verify: len(contents[0]["parts"]) == 1
         assert len(contents[0]["parts"]) == 1
+        # Verify: contents[0]["parts"][0]["text"] == "Hello, Gemini!"
         assert contents[0]["parts"][0]["text"] == "Hello, Gemini!"
 
     def test_convert_system_message_to_instruction(self):
@@ -196,8 +224,11 @@ class TestGoogleBackendMessageConversion:
             {"role": "user", "content": "Help me."},
         ]
         contents, system_instruction = be._convert_messages(messages)
+        # Verify: len(contents) == 1  # Only the user message
         assert len(contents) == 1  # Only the user message
+        # Verify: system_instruction is not None
         assert system_instruction is not None
+        # Verify: system_instruction["parts"][0]["text"] == "You are a helpful bot."
         assert system_instruction["parts"][0]["text"] == "You are a helpful bot."
 
     def test_convert_assistant_message(self):
@@ -205,14 +236,18 @@ class TestGoogleBackendMessageConversion:
         be = GoogleBackend(api_key="fake-key")
         messages = [{"role": "assistant", "content": "I can help with that."}]
         contents, _ = be._convert_messages(messages)
+        # Verify: len(contents) == 1
         assert len(contents) == 1
+        # Verify: contents[0]["role"] == "model"
         assert contents[0]["role"] == "model"
 
     def test_convert_empty_messages(self):
         """Empty message list produces empty contents."""
         be = GoogleBackend(api_key="fake-key")
         contents, system_instruction = be._convert_messages([])
+        # Verify: contents == []
         assert contents == []
+        # Verify: system_instruction is None
         assert system_instruction is None
 
     def test_convert_tools_openai_to_google_format(self):
@@ -229,11 +264,16 @@ class TestGoogleBackendMessageConversion:
             }
         ]
         result = be._convert_tools(tools)
+        # Verify: len(result) == 1
         assert len(result) == 1
+        # Verify: "functionDeclarations" in result[0]
         assert "functionDeclarations" in result[0]
         decls = result[0]["functionDeclarations"]
+        # Verify: len(decls) == 1
         assert len(decls) == 1
+        # Verify: decls[0]["name"] == "get_weather"
         assert decls[0]["name"] == "get_weather"
+        # Verify: decls[0]["description"] == "Get current weather"
         assert decls[0]["description"] == "Get current weather"
 
     def test_convert_tools_skips_non_function_types(self):
@@ -244,16 +284,21 @@ class TestGoogleBackendMessageConversion:
             {"type": "function", "function": {"name": "calc"}},
         ]
         result = be._convert_tools(tools)
+        # Verify: len(result) > 0
         assert len(result) > 0
         decls = result[0]["functionDeclarations"]
+        # Verify: len(decls) == 1  # Only the function tool
         assert len(decls) == 1  # Only the function tool
+        # Verify: decls[0]["name"] == "calc"
         assert decls[0]["name"] == "calc"
 
     def test_convert_tools_empty_list(self):
         """Empty tool list produces empty declaration list."""
         be = GoogleBackend(api_key="fake-key")
         result = be._convert_tools([])
+        # Verify: len(result) == 1
         assert len(result) == 1
+        # Verify: result[0]["functionDeclarations"] == []
         assert result[0]["functionDeclarations"] == []
 
     def test_convert_tools_without_description(self):
@@ -267,8 +312,11 @@ class TestGoogleBackendMessageConversion:
         ]
         result = be._convert_tools(tools)
         decls = result[0]["functionDeclarations"]
+        # Verify: len(decls) == 1
         assert len(decls) == 1
+        # Verify: decls[0]["name"] == "simple_tool"
         assert decls[0]["name"] == "simple_tool"
+        # Verify: "description" not in decls[0]
         assert "description" not in decls[0]
 
 
@@ -280,23 +328,33 @@ class TestGoogleBackendFinishReason:
     """Test _map_finish_reason for Google-to-unified mapping."""
 
     def test_map_stop(self):
+        """Test: Map stop."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be._map_finish_reason("STOP") == "stop"
         assert be._map_finish_reason("STOP") == "stop"
 
     def test_map_max_tokens(self):
+        """Test: Map max tokens."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be._map_finish_reason("MAX_TOKENS") == "max_tokens"
         assert be._map_finish_reason("MAX_TOKENS") == "max_tokens"
 
     def test_map_safety(self):
+        """Test: Map safety."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be._map_finish_reason("SAFETY") == "error"
         assert be._map_finish_reason("SAFETY") == "error"
 
     def test_map_recitation(self):
+        """Test: Map recitation."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be._map_finish_reason("RECITATION") == "error"
         assert be._map_finish_reason("RECITATION") == "error"
 
     def test_map_unknown_fallback(self):
+        """Test: Map unknown fallback."""
         be = GoogleBackend(api_key="fake-key")
+        # Verify: be._map_finish_reason("UNKNOWN_REASON") == "stop"
         assert be._map_finish_reason("UNKNOWN_REASON") == "stop"
 
 
@@ -311,9 +369,12 @@ class TestGoogleBackendLifecycle:
         """aclose() closes the httpx client."""
 
         async def _close():
+            """Helper: Close."""
             be = GoogleBackend(api_key="fake-key")
+            # Verify: be._client is not None
             assert be._client is not None
             await be.aclose()
+            # Verify: be._client.is_closed
             assert be._client.is_closed
 
         asyncio.run(_close())
@@ -322,6 +383,7 @@ class TestGoogleBackendLifecycle:
         """aclose() called twice should not raise."""
 
         async def _double_close():
+            """Helper: Double close."""
             be = GoogleBackend(api_key="fake-key")
             await be.aclose()
             await be.aclose()

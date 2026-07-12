@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/spreadsheet.py
 
+Spreadsheet implementation for the Encre tool system.
+"""
 import csv
 import json
 import os
@@ -32,6 +36,11 @@ from encre.tools.base import build_tool
 
 
 async def _spreadsheet_execute(**kwargs: Any) -> str:
+    """Spreadsheet execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     action = kwargs.get("action", "read")
     file_path = kwargs.get("file_path", "")
     sheet_name = kwargs.get("sheet_name", "")
@@ -54,6 +63,13 @@ async def _spreadsheet_execute(**kwargs: Any) -> str:
 
 
 async def _handle_csv(action: str, file_path: str, data: str) -> str:
+    """Handle csv.
+
+    Args:
+        action: Description of the action parameter.
+        file_path: Description of the file_path parameter.
+        data: Description of the data parameter.
+    """
     if action == "read":
         with open(file_path, newline="", encoding="utf-8") as f:
             reader = csv.reader(f)
@@ -76,6 +92,15 @@ async def _handle_csv(action: str, file_path: str, data: str) -> str:
 
 
 async def _handle_excel(action: str, file_path: str, sheet_name: str, data: str, _range: str) -> str:
+    """Handle excel.
+
+    Args:
+        action: Description of the action parameter.
+        file_path: Description of the file_path parameter.
+        sheet_name: Description of the sheet_name parameter.
+        data: Description of the data parameter.
+        _range: Description of the _range parameter.
+    """
     try:
         import openpyxl
     except ImportError:
@@ -149,5 +174,8 @@ EncreSpreadsheetTool = build_tool(
     },
     execute=_spreadsheet_execute,
     intents=["data", "research"],
+    category="data",
+    semantic_type="read",
+    is_destructive=lambda args: args.get("action", "") == "write",
     is_concurrency_safe=lambda _: True,
 )

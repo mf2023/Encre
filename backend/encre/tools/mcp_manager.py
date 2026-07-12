@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """MCP server lifecycle manager.
 
@@ -44,8 +44,6 @@ the same JSON shape Claude Desktop / Claude Code uses for ``mcpServers``::
         }
     }
 """
-
-from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -97,6 +95,12 @@ class MCPServerSpec:
 
     @classmethod
     def from_dict(cls, name: str, raw: dict[str, Any]) -> MCPServerSpec:
+        """Create an MCPServerSpec from a config dict.
+
+        Args:
+            name: Server name identifier.
+            raw: Configuration dict (may contain command/args/url/env/headers/cwd/timeout/enabled/prefix).
+        """
         if not isinstance(raw, dict):
             raise ValueError(f"Server {name!r} entry must be an object")
         command = str(raw.get("command", "")).strip()
@@ -139,6 +143,7 @@ class MCPServerSpec:
         )
 
     def build_transport(self) -> MCPTransport:
+        """Build transport."""
         if self.command:
             cmd_line = [self.command, *list(self.args)] if self.args else self.command
             return StdioTransport(cmd_line, env=self.env, cwd=self.cwd)
@@ -146,6 +151,7 @@ class MCPServerSpec:
 
     @property
     def resolved_prefix(self) -> str:
+        """Resolved prefix."""
         return self.prefix if self.prefix is not None else f"mcp__{self.name}__"
 
 
@@ -156,6 +162,7 @@ class MCPServerSpec:
 
 @dataclass
 class _ServerRecord:
+    """ServerRecord."""
     spec: MCPServerSpec
     client: MCPClient
     transport: MCPTransport
@@ -171,6 +178,11 @@ class MCPManager:
     """
 
     def __init__(self, registry: ToolRegistry) -> None:
+        """Init.
+
+        Args:
+            registry: Description of the registry parameter.
+        """
         self._registry = registry
         self._servers: dict[str, _ServerRecord] = {}
         self._lock = asyncio.Lock()
@@ -194,6 +206,14 @@ class MCPManager:
 
     @staticmethod
     def load_config_file(path: str) -> list[MCPServerSpec]:
+        """Load MCP server specs from a JSON config file.
+
+        Args:
+            path: Filesystem path to the JSON config file.
+
+        Returns:
+            A list of MCPServerSpec instances parsed from the file.
+        """
         p = pathlib.Path(path)
         if not p.is_file():
             return []
@@ -262,12 +282,20 @@ class MCPManager:
         return rec
 
     async def stop_server(self, name: str) -> bool:
+        """Stop an MCP server and unregister its tools.
+
+        Args:
+            name: Server name to stop.
+
+        Returns:
+            True if the server was running and was stopped, False if not found.
+        """
         rec = self._servers.pop(name, None)
         if rec is None:
             return False
         # Remove tools from the registry
         for n in rec.registered_names:
-            self._registry._tools.pop(n, None)  # type: ignore[attr-defined]
+            self._registry.unregister(n)
         with contextlib.suppress(Exception):
             await rec.client.close()
         logger.info("MCP server %r stopped; unregistered %d tools",
@@ -275,6 +303,14 @@ class MCPManager:
         return True
 
     async def restart_server(self, name: str) -> _ServerRecord:
+        """Restart an MCP server (stop then start with its current spec).
+
+        Args:
+            name: Server name to restart.
+
+        Returns:
+            The new server record after restart.
+        """
         rec = self._servers.get(name)
         if rec is None:
             raise ValueError(f"No such MCP server: {name}")
@@ -298,6 +334,7 @@ class MCPManager:
         return results
 
     async def stop_all(self) -> None:
+        """Stop all."""
         for name in list(self._servers.keys()):
             await self.stop_server(name)
 
@@ -357,6 +394,7 @@ class MCPManager:
     # ------------------------------------------------------------------
 
     def status(self) -> list[dict[str, Any]]:
+        """Status."""
         out: list[dict[str, Any]] = []
         for name, rec in self._servers.items():
             out.append({
@@ -373,6 +411,14 @@ class MCPManager:
         return out
 
     def list_tool_names(self, server: str | None = None) -> list[str]:
+        """List registered tool names, optionally filtered by server.
+
+        Args:
+            server: Optional server name to filter tools by.
+
+        Returns:
+            List of registered tool names for the given server, or all tools.
+        """
         if server is not None:
             rec = self._servers.get(server)
             return list(rec.registered_names) if rec else []
@@ -396,12 +442,26 @@ class _ManagedClientProxy:
     """
 
     def __init__(self, client: MCPClient) -> None:
+        """Initialize the proxy with a shared MCPClient instance.
+
+        Args:
+            client: The MCPClient instance to proxy tool calls through.
+        """
         self._client = client
         # _MCPDiscoveredTool's is_concurrency_safe() asks the proxy; SSE/HTTP
         # transports are safe for parallel calls under the client lock.
         self._transport = client._transport  # type: ignore[attr-defined]
 
     async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> str:
+        """Call an MCP tool via the proxied client.
+
+        Args:
+            name: Tool name on the MCP server.
+            arguments: Tool call arguments.
+
+        Returns:
+            The tool's text output as a single string.
+        """
         content = await self._client.call_tool(name, arguments)
         parts: list[str] = []
         for item in content:
@@ -422,7 +482,12 @@ class _ManagedClientProxy:
                 parts.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(parts)
 
-    def is_concurrency_safe(self, _input_data: dict[str, Any]) -> bool:
+    def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
+        """Whether this tool may run concurrently (HTTP transport only).
+
+        Args:
+            input_data: Tool call arguments (unused, for interface compatibility).
+        """
         return isinstance(self._transport, HttpTransport)
 
 

@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Hierarchical task decomposition for swarms.
+#
+# ``EncreTaskPlanner`` turns a high-level goal into a ``TaskTree`` (a DAG of
+# ``TaskNode``s with dependencies and role assignments).  Simple/recognised
+# goals use a fast rule-based path (known workflow patterns or a single task);
+# richer goals can be driven by an LLM via ``plan_with_llm`` /
+# ``plan_from_json``.  The produced tree is consumed by ``EncreOrchestrator``.
 
 import json
 import uuid
@@ -33,6 +41,20 @@ from encre.prompts.loader import PromptLoader
 
 @dataclass
 class TaskNode:
+    """A single node in a swarm ``TaskTree`` (one unit of planned work).
+
+    Attributes:
+        id: Unique node identifier within the tree.
+        name: Short task title.
+        description: Detailed instruction for the assigned agent.
+        assigned_role: Role name (see ``encre.swarm.roles``) that should run it.
+        dependencies: Ids of nodes that must complete first.
+        priority: Scheduling priority among ready nodes (higher = sooner).
+        status: Lifecycle state (``pending``/``ready``/``running``/
+            ``completed``/``failed``/``skipped``).
+        result / error: Captured output / failure detail after execution.
+        metadata: Free-form caller bag.
+    """
     id: str
     name: str
     description: str
@@ -118,6 +140,13 @@ class EncreTaskPlanner:
         return self.plan(goal)
 
     def plan(self, goal: str, _context: str = "") -> TaskTree:
+        """Choose a decomposition strategy and build the task tree.
+
+        Recognised patterns (``build``/``debug``/``research``/``refactor``) map
+        to canned multi-step DAGs; everything else falls back to a single
+        ``Execute`` node.  ``_context`` is reserved for future LLM-based
+        planning and is currently unused by the rule-based path.
+        """
         pattern_key = _detect_pattern(goal)
         if pattern_key and pattern_key in self._known_patterns:
             return self._build_from_pattern(goal, pattern_key)
@@ -191,6 +220,7 @@ class EncreTaskPlanner:
 
     @staticmethod
     def _simple_decompose(goal: str) -> TaskTree:
+        """Fallback: wrap the whole goal in one ``general`` role task node."""
         nid = str(uuid.uuid4())[:8]
         node = TaskNode(
             id=nid,
@@ -207,6 +237,12 @@ class EncreTaskPlanner:
 
 
 def _detect_pattern(goal: str) -> str | None:
+    """Map a goal string to a known workflow pattern key, or ``None``.
+
+    Uses keyword matching (lower-cased) for ``build``, ``debug``, ``research``,
+    and ``refactor`` families so the planner can pick a pre-baked
+    ``_known_patterns`` DAG instead of invoking the LLM.
+    """
     g = goal.lower()
     if any(kw in g for kw in ("build", "create", "make", "implement", "write a", "develop")):
         return "build"

@@ -20,6 +20,16 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Shared type definitions for the renderer.
+ *
+ * The single source of truth for every TypeScript type used across the
+ * renderer: the server→client {@link ServerEvent} union, the client→server
+ * {@link ClientMessage} union, the global {@link AppState}, message/tool-call
+ * shapes, settings/config payloads, and all entity records (sessions,
+ * workspaces, models, MCP, skills, memories, notifications, …).
+ */
+
 export type ServerEvent =
   | TextDelta
   | ThinkingDelta
@@ -41,6 +51,7 @@ export type ServerEvent =
   | ArtifactsUpdate
   | AssistantBoundaryEvent
   | CompactEvent
+  | SystemMessageEvent
   | ModelsList
   | SessionsList
   | SessionsAll
@@ -56,6 +67,7 @@ export type ServerEvent =
   | SkillUninstalled
   | McpUpdated
   | AgentUpdated
+  | AgentStateEvent
   | SearchResults
   | RollbackLogEvent
   | RollbackCheckoutEvent
@@ -109,7 +121,8 @@ export type ServerEvent =
   | WorkflowTask
   | WorkflowCompleted
   | ContextUsageEvent
-  | ReferencesUpdateEvent;
+  | ReferencesUpdateEvent
+  | SpecUpdateEvent;
 
 export interface RunQueued {
   type: "run_queued";
@@ -167,6 +180,7 @@ export interface SearchResults {
   results: SearchResultEntry[];
 }
 
+/** A streaming delta of assistant text content. */
 export interface TextDelta {
   type: "text_delta";
   text: string;
@@ -186,6 +200,7 @@ export interface ToolCallStart {
   session_id?: string;
 }
 
+/** A streaming delta for an in-flight tool call (partial JSON arguments). */
 export interface ToolCallDelta {
   type: "tool_call_delta";
   id: string;
@@ -371,6 +386,7 @@ export interface AutomationStreamEvent {
 
 // ── Client → Server message types ─────────────────────────────────────────
 
+/** The client→server message union sent over the WebSocket. */
 export type ClientMessage =
   | ClientRun
   | ClientCancel
@@ -432,7 +448,14 @@ export type ClientMessage =
   | ClientAutomationUpdateJob
   | ClientAutomationCreateJob
   | ClientAutomationDeleteJob
-  | ClientAutomationToggleJob;
+  | ClientAutomationToggleJob
+  | ClientSteer;
+
+export interface ClientSteer {
+  type: "steer";
+  session_id?: string;
+  prompt: string;
+}
 
 export interface ClientTranscribeAudio {
   type: "transcribe_audio";
@@ -1277,6 +1300,7 @@ export interface ClientRollback {
 
 // ── Attachment ────────────────────────────────────────────────────────────
 
+/** An attachment (file/folder) attached to a composer message. */
 export interface AttachmentMeta {
   name: string;
   path: string;
@@ -1294,6 +1318,7 @@ export interface TimelineSegment {
   text?: string;  // accumulated text content for text segments
 }
 
+/** A single chat message (user or assistant) with its timeline segments. */
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
@@ -1319,6 +1344,7 @@ export interface Message {
   parentId?: string;
 }
 
+/** The resolved state of a single tool call (status, params, result). */
 export interface ToolCallState {
   id: string;
   name: string;
@@ -1351,6 +1377,7 @@ export interface CustomCommand {
   prompt?: string;
 }
 
+/** Per-session snapshot of all session-scoped state. */
 export interface SessionSnapshot {
   messages: Message[];
   tokenUsage: TokenUsage | null;
@@ -1361,12 +1388,15 @@ export interface SessionSnapshot {
   artifacts: ArtifactItem[];
   references: ReferenceItem[];
   compactEvents: CompactInfo[];
+  systemMessages: SystemMessageInfo[];
   branches: BranchMeta[];
   activeBranchId: string;
+  spec: SpecData | null;
   running: boolean;
   agentState?: AgentStateSnapshot | null;
 }
 
+/** The complete global application state held by the state store. */
 export interface AppState {
   messages: Message[];
   attachments: AttachmentMeta[];
@@ -1419,6 +1449,7 @@ export interface AppState {
   artifacts: ArtifactItem[];
   references: ReferenceItem[];
   compactEvents: CompactInfo[];
+  systemMessages: SystemMessageInfo[];
   memoryList: MemoryEntry[];
   memoryDetail: { path: string; content: string; error?: string } | null;
   globalRules: GlobalRuleEntry[];
@@ -1440,6 +1471,7 @@ export interface AppState {
   contextTokens: number;
   contextWindow: number;
   agentState: AgentStateSnapshot | null;
+  spec: SpecData | null;
 }
 
 export interface WorkflowTaskInfo {
@@ -1643,11 +1675,46 @@ export interface CompactEvent {
   new_tokens: number;
 }
 
+export interface SystemMessageEvent {
+  type: "system_message";
+  content: string;
+  kind: string;
+  session_id: string;
+}
+
 export interface CompactInfo {
   old_count: number;
   new_count: number;
   old_tokens: number;
   new_tokens: number;
+}
+
+export interface SystemMessageInfo {
+  content: string;
+  kind: string;
+  timestamp: number;
+}
+
+export interface SpecSection {
+  title: string;
+  content: string;
+}
+
+export interface SpecData {
+  title: string;
+  sections: SpecSection[];
+  status: string;
+  feedback: string;
+  raw_text: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SpecUpdateEvent {
+  type: "spec_update";
+  spec: SpecData | null;
+  status: string;
+  feedback?: string;
+  session_id: string;
 }
 
 // ── Edit proposal (Codex-style inline diff / accept-reject) ─────────────
@@ -1692,8 +1759,10 @@ export function createEmptySessionSnapshot(): SessionSnapshot {
     artifacts: [],
     references: [],
     compactEvents: [],
+    systemMessages: [],
     branches: [],
     activeBranchId: "",
+    spec: null,
     running: false,
     agentState: null,
   };
@@ -1701,6 +1770,7 @@ export function createEmptySessionSnapshot(): SessionSnapshot {
 
 // ── Notification ──────────────────────────────────────────────────────────
 
+/** A notification item shown in the bell panel / toasts. */
 export interface NotificationItem {
   id: string;
   type: "error" | "success" | "info" | "warning";
@@ -1746,6 +1816,8 @@ export function createEmptyState(): AppState {
     artifacts: sessionSnapshot.artifacts,
     references: sessionSnapshot.references,
     compactEvents: sessionSnapshot.compactEvents,
+    systemMessages: sessionSnapshot.systemMessages || [],
+    spec: null,
     memoryList: [],
     memoryDetail: null,
     globalRules: [],

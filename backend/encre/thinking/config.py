@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Thinking configuration resolution.
+
+Decides whether a model should use native "thinking"/reasoning tokens based on
+the model name and backend type, and computes the reasoning budget.  Explicit
+user configuration always wins; otherwise support is inferred from the
+``_THINKING_MODEL_PATTERNS`` and ``_THINKING_BACKEND_TYPES`` tables.
+"""
 
 from encre.utils.types import (
     AdaptiveThinking,
@@ -93,6 +101,11 @@ def resolve_thinking_config(
 
 
 def get_thinking_budget_tokens(config: ThinkingConfig) -> int:
+    """Return the reasoning token budget for *config*.
+
+    Returns the configured max tokens for adaptive thinking, the explicit
+    budget for enabled thinking, or ``0`` when thinking is disabled.
+    """
     if isinstance(config, AdaptiveThinking):
         return config.max_tokens
     if isinstance(config, EnabledThinking):

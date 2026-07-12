@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for the prompt system: base classes, builder, templates, and specializations."""
 
@@ -29,51 +29,73 @@ import pytest
 
 
 class TestEncreBasePrompt:
+    """Test cases covering encre base prompt.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_base_prompt_is_abstract(self):
+        """Verifies that base prompt is abstract."""
         from encre.prompts.base import EncreBasePrompt
         with pytest.raises(TypeError):
             EncreBasePrompt()  # Cannot instantiate ABC
 
     def test_base_prompt_has_abstract_methods(self):
+        """Verifies that base prompt has abstract methods."""
         from encre.prompts.base import EncreBasePrompt
+        # Confirm the expected result for this scenario: base prompt has abstract methods.
         assert hasattr(EncreBasePrompt, "build_system_prompt")
         assert hasattr(EncreBasePrompt, "build_tool_instructions")
 
 
 class TestEncrePromptTemplate:
+    """Test cases covering encre prompt template.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_construction_defaults(self):
+        """Verifies that construction defaults."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate()
+        # Confirm the expected result for this scenario: construction defaults.
         assert tmpl is not None
         assert tmpl._specialty == "general"
         assert tmpl._builder is not None
 
     def test_construction_with_specialty(self):
+        """Verifies that construction with specialty."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate(specialty="coding")
+        # Confirm the expected result for this scenario: construction with specialty.
         assert tmpl._specialty == "coding"
 
     def test_construction_with_custom_builder(self):
+        """Verifies that construction with custom builder."""
         from encre.prompts.base import EncrePromptTemplate
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         tmpl = EncrePromptTemplate(builder=builder, specialty="research")
+        # Confirm the expected result for this scenario: construction with custom builder.
         assert tmpl._builder is builder
         assert tmpl._specialty == "research"
 
     def test_builder_property(self):
+        """Verifies that builder property."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate(specialty="data")
+        # Confirm the expected result for this scenario: builder property.
         assert tmpl.builder is tmpl._builder
 
     def test_build_system_prompt_returns_string(self):
+        """Verifies that build system prompt returns string."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate(specialty="general")
         result = tmpl.build_system_prompt(mode="default")
+        # Confirm the expected result for this scenario: build system prompt returns string.
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_build_system_prompt_with_tools(self):
+        """Verifies that build system prompt with tools."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate()
         tools = [
@@ -81,19 +103,23 @@ class TestEncrePromptTemplate:
             {"function": {"name": "read", "description": "Read files"}},
         ]
         result = tmpl.build_system_prompt(mode="default", tools=tools)
+        # Confirm the expected result for this scenario: build system prompt with tools.
         assert "bash" in result
         assert "read" in result
 
     def test_build_system_prompt_with_custom_instructions(self):
+        """Verifies that build system prompt with custom instructions."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate()
         result = tmpl.build_system_prompt(
             mode="default",
             custom_instructions="Always use Python 3.12 syntax.",
         )
+        # Confirm the expected result for this scenario: build system prompt with custom instructions.
         assert "Python 3.12" in result
 
     def test_build_system_prompt_reflects_specialty(self):
+        """Verifies that build system prompt reflects specialty."""
         from encre.prompts.base import EncrePromptTemplate
         coding_tmpl = EncrePromptTemplate(specialty="coding")
         research_tmpl = EncrePromptTemplate(specialty="research")
@@ -102,30 +128,37 @@ class TestEncrePromptTemplate:
         research_result = research_tmpl.build_system_prompt(mode="default")
 
         # Different specialties produce different prompts
+        # Confirm the expected result for this scenario: build system prompt reflects specialty.
         assert coding_result != research_result
         assert "Software Engineering" in coding_result
         assert "Research" in research_result
 
     def test_build_system_prompt_reflects_permission_mode(self):
+        """Verifies that build system prompt reflects permission mode."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate()
 
         bypass_result = tmpl.build_system_prompt(mode="bypass")
         plan_result = tmpl.build_system_prompt(mode="plan")
 
+        # Confirm the expected result for this scenario: build system prompt reflects permission mode.
         assert "bypass" in bypass_result.lower()
         assert "plan" in plan_result.lower()
 
     def test_build_tool_instructions_empty_list(self):
+        """Verifies that build tool instructions empty list."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate()
         result = tmpl.build_tool_instructions([])
+        # Confirm the expected result for this scenario: build tool instructions empty list.
         assert "do not have access" in result.lower()
 
     def test_build_tool_instructions_with_names(self):
+        """Verifies that build tool instructions with names."""
         from encre.prompts.base import EncrePromptTemplate
         tmpl = EncrePromptTemplate()
         result = tmpl.build_tool_instructions(["bash", "grep", "glob"])
+        # Confirm the expected result for this scenario: build tool instructions with names.
         assert "bash" in result
         assert "grep" in result
         assert "glob" in result
@@ -133,14 +166,21 @@ class TestEncrePromptTemplate:
 
 
 class TestPromptBlock:
+    """Test cases covering prompt block.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_prompt_block_construction(self):
+        """Verifies that prompt block construction."""
         from encre.prompts.system import PromptBlock
         block = PromptBlock(priority=10, name="test_block", content="Test content")
+        # Confirm the expected result for this scenario: prompt block construction.
         assert block.priority == 10
         assert block.name == "test_block"
         assert block.content == "Test content"
 
     def test_prompt_block_with_context(self):
+        """Verifies that prompt block with context."""
         from encre.prompts.system import PromptBlock
         block = PromptBlock(
             priority=50,
@@ -149,6 +189,7 @@ class TestPromptBlock:
         )
         ctx = {"username": "Alice", "project": "Encre"}
         filled = block.with_context(ctx)
+        # Confirm the expected result for this scenario: prompt block with context.
         assert "Hello Alice" in filled.content
         assert "welcome to Encre" in filled.content
         assert filled.name == "templated"
@@ -156,100 +197,130 @@ class TestPromptBlock:
 
 
 class TestEncrePromptBuilder:
+    """Test cases covering encre prompt builder.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_builder_construction(self):
+        """Verifies that builder construction."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
+        # Confirm the expected result for this scenario: builder construction.
         assert builder is not None
         assert builder._blocks == {}
 
     def test_add_block(self):
+        """Verifies that add block."""
         from encre.prompts.system import EncrePromptBuilder, PromptBlock
         builder = EncrePromptBuilder()
         block = PromptBlock(priority=100, name="extra", content="Extra instructions")
         builder.add_block(block)
+        # Confirm the expected result for this scenario: add block.
         assert "extra" in builder._blocks
         assert builder._blocks["extra"].content == "Extra instructions"
 
     def test_remove_block(self):
+        """Verifies that remove block."""
         from encre.prompts.system import EncrePromptBuilder, PromptBlock
         builder = EncrePromptBuilder()
         block = PromptBlock(priority=100, name="temporary", content="Temp")
         builder.add_block(block)
+        # Confirm the expected result for this scenario: remove block.
         assert "temporary" in builder._blocks
         builder.remove_block("temporary")
         assert "temporary" not in builder._blocks
 
     def test_remove_nonexistent_block_does_not_raise(self):
+        """Verifies that remove nonexistent block does not raise."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         builder.remove_block("nonexistent")  # Should not raise
 
     def test_add_custom_instructions(self):
+        """Verifies that add custom instructions."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         builder.add_custom_instructions("Focus on testing.")
+        # Confirm the expected result for this scenario: add custom instructions.
         assert "custom" in builder._blocks
         assert "Focus on testing" in builder._blocks["custom"].content
         assert builder._blocks["custom"].priority == 200
 
     def test_build_default(self):
+        """Verifies that build default."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         result = builder.build()
+        # Confirm the expected result for this scenario: build default.
         assert isinstance(result, str)
         assert len(result) > 0
         # Should contain default blocks
         assert "identity" in result.lower() or "helpful" in result.lower()
 
     def test_build_coding_specialty(self):
+        """Verifies that build coding specialty."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         result = builder.build(specialty="coding")
+        # Confirm the expected result for this scenario: build coding specialty.
         assert "Software Engineering" in result
 
     def test_build_research_specialty(self):
+        """Verifies that build research specialty."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         result = builder.build(specialty="research")
+        # Confirm the expected result for this scenario: build research specialty.
         assert "Research" in result
 
     def test_build_data_specialty(self):
+        """Verifies that build data specialty."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         result = builder.build(specialty="data")
+        # Confirm the expected result for this scenario: build data specialty.
         assert "Data Analysis" in result
 
     def test_build_unknown_specialty_falls_back_to_general(self):
+        """Verifies that build unknown specialty falls back to general."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         result = builder.build(specialty="unknown_specialty")
+        # Confirm the expected result for this scenario: build unknown specialty falls back to general.
         assert "General Assistant" in result
 
     def test_build_with_permission_mode(self):
+        """Verifies that build with permission mode."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
 
         bypass = builder.build(mode="bypass")
         default = builder.build(mode="default")
 
+        # Confirm the expected result for this scenario: build with permission mode.
         assert "full autonomy" in bypass.lower()
         assert "Ask for permission" in default
 
     def test_build_with_tools(self):
+        """Verifies that build with tools."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         tools = [{"function": {"name": "test_tool", "description": "A test tool"}}]
         result = builder.build(tools=tools)
+        # Confirm the expected result for this scenario: build with tools.
         assert "test_tool" in result
         assert "A test tool" in result
 
     def test_build_with_custom_instructions(self):
+        """Verifies that build with custom instructions."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         result = builder.build(custom_instructions="ALWAYS validate input first.")
+        # Confirm the expected result for this scenario: build with custom instructions.
         assert "ALWAYS validate input first" in result
 
     def test_build_with_context(self):
+        """Verifies that build with context."""
         from encre.prompts.system import EncrePromptBuilder
         builder = EncrePromptBuilder()
         result = builder.build_with_context(
@@ -258,10 +329,12 @@ class TestEncrePromptBuilder:
         )
         # The identity block doesn't have {{username}} but the method
         # should still work without errors
+        # Confirm the expected result for this scenario: build with context.
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_build_with_context_variable_substitution(self):
+        """Verifies that build with context variable substitution."""
         from encre.prompts.system import EncrePromptBuilder, PromptBlock
         builder = EncrePromptBuilder()
         builder.add_block(PromptBlock(
@@ -273,10 +346,12 @@ class TestEncrePromptBuilder:
             ctx={"user": "Alice", "version": "1.0.0"},
             specialty="general",
         )
+        # Confirm the expected result for this scenario: build with context variable substitution.
         assert "User Alice" in result
         assert "version 1.0.0" in result
 
     def test_custom_block_can_override_default(self):
+        """Verifies that custom block can override default."""
         from encre.prompts.system import EncrePromptBuilder, PromptBlock
         builder = EncrePromptBuilder()
         # Override the identity block
@@ -286,40 +361,54 @@ class TestEncrePromptBuilder:
             content="You are a friendly assistant.",
         ))
         result = builder.build()
+        # Confirm the expected result for this scenario: custom block can override default.
         assert "friendly assistant" in result
 
 
 class TestSpecializationPrompts:
+    """Test cases covering specialization prompts.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_coding_prompt_specialty(self):
+        """Verifies that coding prompt specialty."""
         from encre.prompts.coding import EncreCodingPrompt
         cp = EncreCodingPrompt()
+        # Confirm the expected result for this scenario: coding prompt specialty.
         assert cp._specialty == "coding"
         result = cp.build_system_prompt(mode="default")
         assert "Software Engineering" in result
 
     def test_general_prompt_specialty(self):
+        """Verifies that general prompt specialty."""
         from encre.prompts.general import EncreGeneralPrompt
         gp = EncreGeneralPrompt()
+        # Confirm the expected result for this scenario: general prompt specialty.
         assert gp._specialty == "general"
         result = gp.build_system_prompt(mode="default")
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_research_prompt_specialty(self):
+        """Verifies that research prompt specialty."""
         from encre.prompts.research import EncreResearchPrompt
         rp = EncreResearchPrompt()
+        # Confirm the expected result for this scenario: research prompt specialty.
         assert rp._specialty == "research"
         result = rp.build_system_prompt(mode="default")
         assert "Research" in result
 
     def test_data_prompt_specialty(self):
+        """Verifies that data prompt specialty."""
         from encre.prompts.data import EncreDataPrompt
         dp = EncreDataPrompt()
+        # Confirm the expected result for this scenario: data prompt specialty.
         assert dp._specialty == "data"
         result = dp.build_system_prompt(mode="default")
         assert "Data Analysis" in result
 
     def test_specialization_build_with_tools_and_custom_instructions(self):
+        """Verifies that specialization build with tools and custom instructions."""
         from encre.prompts.coding import EncreCodingPrompt
         cp = EncreCodingPrompt()
         tools = [{"function": {"name": "bash", "description": "Run bash commands"}}]
@@ -328,6 +417,7 @@ class TestSpecializationPrompts:
             tools=tools,
             custom_instructions="Always write docstrings.",
         )
+        # Confirm the expected result for this scenario: specialization build with tools and custom instructions.
         assert "bash" in result
         assert "Always write docstrings" in result
         assert "Software Engineering" in result

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 OpenAI-compatible backend -- generic adapter for any OpenAI-compatible API.
@@ -43,8 +43,6 @@ This backend extends :class:`OpenAISSEBackend` and supports:
 - Context window sizing from the model config (defaults to 1M for large models)
 - Automatic URL normalisation (appends ``/v1`` if missing)
 """
-
-from __future__ import annotations
 
 import re
 from typing import Any
@@ -113,6 +111,7 @@ class OpenAICompatibleBackend(OpenAISSEBackend):
         # request layer appends ``/chat/completions`` itself); only then decide
         # whether ``/v1`` needs to be added.
         base_url = (base_url or "").rstrip("/")
+        # Strip a pasted full chat-completions path so it is not doubled later.
         base_url = base_url.removesuffix("/chat/completions").rstrip("/")
         if base_url and not base_url.endswith("/v1") and not re.search(r"/v\d+$", base_url):
             base_url = base_url + "/v1"

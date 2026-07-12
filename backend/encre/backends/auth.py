@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Auth management for LLM API calls.
@@ -101,10 +101,21 @@ class AuthManager:
         fallback_keys: list[str] | None = None,
         max_consecutive_auth_failures: int = 5,
     ) -> None:
+        """Initialize the auth manager.
+
+        Args:
+            provider: Provider name (used for logging/diagnostics).
+            api_key: The primary API key.
+            fallback_keys: Optional list of backup keys to rotate through
+                when the primary key fails authentication.
+            max_consecutive_auth_failures: Threshold above which the
+                credential source is considered degraded.
+        """
         self.provider = provider
         self._primary_key: str = api_key
         self._fallback_keys: list[str] = list(fallback_keys or [])
         self._current_fallback_index: int = -1  # -1 = using primary
+        # Lock guarding credential swaps during async refreshes.
         self._lock = asyncio.Lock()
         self._health = AuthHealth()
         self._max_consecutive = max_consecutive_auth_failures
@@ -112,9 +123,11 @@ class AuthManager:
     @property
     def api_key(self) -> str:
         """Return the currently active API key."""
+        # A negative index means the primary key is in use.
         if self._current_fallback_index < 0:
             return self._primary_key
         idx = self._current_fallback_index
+        # Guard against an out-of-range index; fall back to the primary.
         if idx < len(self._fallback_keys):
             return self._fallback_keys[idx]
         return self._primary_key
@@ -142,7 +155,9 @@ class AuthManager:
 
     def _rotate_to_next_key(self) -> None:
         """Advance to the next key in the rotation."""
+        # Total credentials = the primary plus every registered fallback.
         total_keys = 1 + len(self._fallback_keys)
+        # Wrap around so rotation cycles back to the primary after the last.
         self._current_fallback_index = (self._current_fallback_index + 1) % total_keys
         logger.info(
             "Auth failure for %s, rotating to key %d/%d",

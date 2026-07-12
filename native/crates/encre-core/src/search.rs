@@ -18,6 +18,7 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Recursive codebase search: substring, regex, and glob utilities.
 use serde::{Deserialize, Serialize};
 
 /// Directories to skip entirely during codebase search.
@@ -27,22 +28,34 @@ const SKIP_DIRS: &[&str] = &[
     ".ruff_cache", ".tox", ".eggs", ".svn", ".hg",
 ];
 
+/// Skip a directory whose name is dotted or listed in `SKIP_DIRS`.
 fn should_skip_dir(name: &str) -> bool {
     name.starts_with('.') || SKIP_DIRS.contains(&name)
 }
 
+/// Heuristic binary detection: any NUL byte in the first 8 KiB.
 fn is_binary(content: &[u8]) -> bool {
     content[..content.len().min(8192)].contains(&0x00)
 }
 
+/// A single matching line returned by codebase search.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SearchResult {
+    /// Path of the file containing the match.
     pub file_path: String,
+    /// 1-based line number of the match (0 for multiline).
     pub line_number: usize,
+    /// Full text of the matched line.
     pub line_content: String,
+    /// Relevance score (number of query terms found).
     pub score: f64,
+    /// Lines before the match (for context display), each is (line_number, content).
+    pub context_before: Vec<(usize, String)>,
+    /// Lines after the match (for context display), each is (line_number, content).
+    pub context_after: Vec<(usize, String)>,
 }
 
+/// Walk the workspace and rank every line containing all query terms.
 pub fn search_codebase(query: &str, path: &str) -> Vec<SearchResult> {
     let mut results = Vec::new();
     let walker = walkdir::WalkDir::new(path)
@@ -56,7 +69,6 @@ pub fn search_codebase(query: &str, path: &str) -> Vec<SearchResult> {
                     .map(|s| !should_skip_dir(s))
                     .unwrap_or(false);
             }
-            // Skip dot-files
             if e.file_name().to_str().map_or(false, |s| s.starts_with('.')) {
                 return false;
             }
@@ -69,24 +81,32 @@ pub fn search_codebase(query: &str, path: &str) -> Vec<SearchResult> {
         return results;
     }
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(err) => {
+                eprintln!("[encre] search_codebase: walk error: {err}");
+                continue;
+            }
+        };
         if !entry.file_type().is_file() {
             continue;
         }
 
-        // Check file size before reading
         if let Ok(meta) = entry.metadata() {
             if meta.len() > 2 * 1024 * 1024 {
-                continue; // skip files > 2 MB
+                continue;
             }
         }
 
         let content = match std::fs::read(entry.path()) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(err) => {
+                eprintln!("[encre] search_codebase: read error {}: {err}", entry.path().display());
+                continue;
+            }
         };
 
-        // Skip binary files
         if is_binary(&content) {
             continue;
         }
@@ -111,6 +131,8 @@ pub fn search_codebase(query: &str, path: &str) -> Vec<SearchResult> {
                     line_number: i + 1,
                     line_content: line.to_string(),
                     score,
+                    context_before: Vec::new(),
+                    context_after: Vec::new(),
                 });
             }
         }
@@ -125,25 +147,33 @@ pub fn search_codebase(query: &str, path: &str) -> Vec<SearchResult> {
     results
 }
 
+/// Regex search across a workspace with optional case-insensitivity,
+/// glob filtering, context capture, multiline mode, and result cap.
 pub fn grep(
     pattern: &str,
     path: &str,
     case_insensitive: bool,
     glob_filter: Option<&str>,
+    multiline: bool,
+    head_limit: Option<usize>,
+    context_before: usize,
+    context_after: usize,
 ) -> Vec<SearchResult> {
     let mut results = Vec::new();
-    let re = if case_insensitive {
-        regex::RegexBuilder::new(pattern)
-            .case_insensitive(true)
-            .build()
-            .ok()
-    } else {
-        regex::Regex::new(pattern).ok()
-    };
-
-    let re = match re {
-        Some(r) => r,
-        None => return results,
+    let mut re_builder = regex::RegexBuilder::new(pattern);
+    re_builder.multi_line(true);
+    if case_insensitive {
+        re_builder.case_insensitive(true);
+    }
+    if multiline {
+        re_builder.dot_matches_new_line(true);
+    }
+    let re = match re_builder.build() {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!("[encre] grep: invalid regex: {err}");
+            return results;
+        }
     };
 
     let glob_matcher = glob_filter.and_then(|g| glob::Pattern::new(g).ok());
@@ -165,7 +195,14 @@ pub fn grep(
             true
         });
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(err) => {
+                eprintln!("[encre] grep: walk error: {err}");
+                continue;
+            }
+        };
         if !entry.file_type().is_file() {
             continue;
         }
@@ -176,9 +213,18 @@ pub fn grep(
             }
         }
 
+        if let Ok(meta) = entry.metadata() {
+            if meta.len() > 2 * 1024 * 1024 {
+                continue;
+            }
+        }
+
         let content = match std::fs::read(entry.path()) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(err) => {
+                eprintln!("[encre] grep: read error {}: {err}", entry.path().display());
+                continue;
+            }
         };
         if is_binary(&content) {
             continue;
@@ -187,16 +233,58 @@ pub fn grep(
             Ok(s) => s,
             Err(_) => continue,
         };
-
+        let lines: Vec<&str> = content_str.lines().collect();
         let file_path = entry.path().to_string_lossy().to_string();
-        for (i, line) in content_str.lines().enumerate() {
-            if re.is_match(line) {
+
+        if multiline {
+            for m in re.find_iter(&content_str) {
                 results.push(SearchResult {
                     file_path: file_path.clone(),
-                    line_number: i + 1,
-                    line_content: line.to_string(),
+                    line_number: 0,
+                    line_content: m.as_str().to_string(),
                     score: 1.0,
+                    context_before: Vec::new(),
+                    context_after: Vec::new(),
                 });
+                if let Some(limit) = head_limit {
+                    if results.len() >= limit {
+                        return results;
+                    }
+                }
+            }
+        } else {
+            for (i, line) in lines.iter().enumerate() {
+                if re.is_match(line) {
+                    // Capture context before
+                    let lo = i.saturating_sub(context_before);
+                    let before: Vec<(usize, String)> = lines[lo..i]
+                        .iter()
+                        .enumerate()
+                        .map(|(j, l)| (lo + j + 1, l.to_string()))
+                        .collect();
+
+                    // Capture context after
+                    let hi = lines.len().min(i + 1 + context_after);
+                    let after: Vec<(usize, String)> = lines[i + 1..hi]
+                        .iter()
+                        .enumerate()
+                        .map(|(j, l)| (i + j + 2, l.to_string()))
+                        .collect();
+
+                    results.push(SearchResult {
+                        file_path: file_path.clone(),
+                        line_number: i + 1,
+                        line_content: line.to_string(),
+                        score: 1.0,
+                        context_before: before,
+                        context_after: after,
+                    });
+                    if let Some(limit) = head_limit {
+                        if results.len() >= limit {
+                            return results;
+                        }
+                    }
+                }
             }
         }
     }
@@ -204,15 +292,39 @@ pub fn grep(
     results
 }
 
+/// Return all files under `path` matching a glob pattern.
 pub fn glob(pattern: &str, path: &str) -> Vec<String> {
     let mut results = Vec::new();
-    let walker = walkdir::WalkDir::new(path).follow_links(true).into_iter();
     let glob_pattern = match glob::Pattern::new(pattern) {
         Ok(p) => p,
         Err(_) => return results,
     };
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    let walker = walkdir::WalkDir::new(path)
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(|e| {
+            if e.file_type().is_dir() {
+                return e
+                    .file_name()
+                    .to_str()
+                    .map(|s| !should_skip_dir(s))
+                    .unwrap_or(false);
+            }
+            if e.file_name().to_str().map_or(false, |s| s.starts_with('.')) {
+                return false;
+            }
+            true
+        });
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(err) => {
+                eprintln!("[encre] glob: walk error: {err}");
+                continue;
+            }
+        };
         if !entry.file_type().is_file() {
             continue;
         }
@@ -222,6 +334,7 @@ pub fn glob(pattern: &str, path: &str) -> Vec<String> {
         }
     }
 
+    results.sort();
     results
 
 }

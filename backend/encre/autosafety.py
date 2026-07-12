@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import json
 import time
@@ -175,6 +175,7 @@ class EncreAutoSafetyClassifier:
         self,
         tool_name: str,
         tool_args: dict[str, Any],
+        tool: Any = None,
     ) -> ClassificationResult:
         """Classify a tool action's safety level."""
         self._total_classifications += 1
@@ -195,8 +196,10 @@ class EncreAutoSafetyClassifier:
         user_pattern = self.get_user_pattern(tool_name)
 
         # For clearly safe tools, skip LLM call
-        if tool_name in ("file_read", "grep", "glob", "web_search",
-                         "task_list", "task_get", "cron_list", "task_output"):
+        if (tool is not None and tool.is_readonly(tool_args)) or tool_name in (
+            "file_read", "grep", "glob", "web_search",
+            "task_list", "task_get", "cron_list", "task_output",
+        ):
             result = ClassificationResult(
                 decision=AutoDecision.SAFE,
                 confidence=0.99,

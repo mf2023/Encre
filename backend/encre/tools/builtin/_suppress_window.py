@@ -21,16 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Reusable subprocess window-suppression helpers.
 
 Use :func:`hidden_subprocess_kwargs` to get the platform-specific kwargs
 that guarantee no visible terminal window when spawning a child process.
 """
-
-from __future__ import annotations
-
 import os
 import subprocess
 from typing import Any

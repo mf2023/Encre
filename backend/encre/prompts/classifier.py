@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Lightweight intent classifier for dynamic prompt assembly.
@@ -30,6 +30,8 @@ Classifies user queries into intent categories (coding, research, data, etc.)
 to drive conditional prompt block inclusion and tool filtering.
 """
 
+# Keyword sets used to recognise each intent domain.  A query is classified
+# into a domain when any of its keywords appears (case-insensitive substring).
 _DOMAIN_KEYWORDS: dict[str, list[str]] = {
     "coding": [
         "code", "function", "class", "import", "def ", "async ", "await ",

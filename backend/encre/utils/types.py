@@ -21,36 +21,71 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Shared dataclass and type definitions for the Encre agent/backend.
+
+This module is the single source of truth for the value types passed between
+the agent loop, the backend adapters and the frontend:
+
+* :data:`FinishReason`, :data:`PermissionMode`, :data:`PermissionBehavior`,
+  :data:`TaskType`, :data:`TaskStatus` -- string-literal enums.
+* The ``AgentEvent`` union -- every event the agent may stream to the UI
+  (text deltas, tool calls, permissions, plan proposals, workflow progress,
+  ...).
+* The ``BackendEvent`` union -- the normalised events returned by a backend
+  adapter.
+* The ``ContentBlock`` union -- multimodal message content (text / image /
+  file / tool use / tool result).
+* Permission decisions, thinking configs, branch-protocol events and the
+  provider capability result wrappers (images, audio, embeddings, ...).
+
+Prefer the ``create_*`` factory functions at the bottom of the module over
+constructing the dataclasses directly so call sites stay terse.
+"""
 
 from dataclasses import dataclass, field
 from typing import Any, Literal, Union
 
+# ── String-literal enumerations ────────────────────────────────────────
+# Why Literal unions instead of Enum: these values are (de)serialised to/from
+# JSON across the agent<->backend<->UI boundary, so plain strings avoid any
+# encoding/decoding ceremony.
+
+# How a model turn ended.
 FinishReason = Literal["stop", "tool_calls", "error", "max_tokens", "cancelled"]
+# Frontend permission mode selected for the session.
 PermissionMode = Literal["default", "accept_edits", "bypass", "dont_ask", "plan", "spec", "auto", "blacklist"]
+# Outcome of a single permission decision.
 PermissionBehavior = Literal["allow", "deny", "ask"]
+# Kind of sub-task dispatched to a worker.
 TaskType = Literal["bash", "agent", "workflow"]
+# Lifecycle state of a (sub-)task.
 TaskStatus = Literal["pending", "running", "completed", "failed", "killed"]
 
 
 @dataclass
 class TextDelta:
+    """A chunk of streamed assistant text output."""
     text: str
 
 
 @dataclass
 class ThinkingDelta:
+    """A chunk of streamed model reasoning / "thinking" text."""
     text: str
 
 
 @dataclass
 class ToolCallStart:
+    """Marks the beginning of a tool invocation (name + unique id)."""
     name: str
     id: str
 
 
 @dataclass
 class ToolCallDelta:
+    """One key/value fragment of a tool call's streaming arguments."""
     id: str
     key: str
     value: str
@@ -58,11 +93,13 @@ class ToolCallDelta:
 
 @dataclass
 class ToolCallEnd:
+    """Marks the end of a streamed tool call identified by *id*."""
     id: str
 
 
 @dataclass
 class ToolProgress:
+    """Progress/status update for a long-running tool (or sub-agent)."""
     id: str
     tool_name: str
     status: str
@@ -71,6 +108,7 @@ class ToolProgress:
 
 @dataclass
 class ToolResult:
+    """Final result of a tool call, with an error flag and sub-agent context."""
     id: str
     content: str
     is_error: bool
@@ -80,6 +118,7 @@ class ToolResult:
 
 @dataclass
 class PermissionRequest:
+    """Asks the frontend/user whether a tool may run and why."""
     tool_name: str
     reason: str
 
@@ -159,16 +198,19 @@ class Finish:
 
 @dataclass
 class Artifact:
+    """A structured artifact produced by the agent (attached file/resource)."""
     artifact: dict[str, Any]
 
 
 @dataclass
 class Reference:
+    """A reference (link/citation) surfaced by the agent."""
     reference: dict[str, Any]
 
 
 @dataclass
 class PlanUpdate:
+    """Incremental update to the agent's plan/outline items."""
     plan_items: list[dict[str, Any]]
 
 
@@ -230,10 +272,24 @@ class PlanResolved:
 
 @dataclass
 class CompactNotification:
+    """Reports the before/after message and token counts of a compaction."""
     old_count: int
     new_count: int
     old_tokens: int
     new_tokens: int
+
+
+@dataclass
+class SystemMessage:
+    """A system-level notification to be rendered in the conversation.
+
+    Used for model fallback announcements, slot escalation hints,
+    max-tokens recovery messages, and other non-error system events
+    that should be visible to the user but not attributed to the
+    assistant.
+    """
+    content: str
+    kind: str = "info"  # "info" | "warning" | "recovery"
 
 
 @dataclass
@@ -294,11 +350,13 @@ def create_edit_proposal(
 
 @dataclass
 class AssistantBoundary:
+    """Marker event separating two assistant turns (no payload)."""
     pass
 
 
 @dataclass
 class WorkflowStartedEvent:
+    """Emitted when a multi-task workflow begins executing."""
     workflow_id: str
     goal: str
     total_tasks: int
@@ -307,6 +365,7 @@ class WorkflowStartedEvent:
 
 @dataclass
 class WorkflowTaskEvent:
+    """Per-task status change inside a running workflow."""
     workflow_id: str
     task_id: str
     task_name: str
@@ -315,6 +374,7 @@ class WorkflowTaskEvent:
 
 @dataclass
 class WorkflowCompletedEvent:
+    """Summary emitted when a workflow finishes (success + counts + duration)."""
     workflow_id: str
     goal: str
     success: bool
@@ -324,7 +384,7 @@ class WorkflowCompletedEvent:
     total_duration: float = 0.0
 
 
-AgentEvent = TextDelta | ThinkingDelta | ToolCallStart | ToolCallDelta | ToolCallEnd | ToolProgress | ToolResult | PermissionRequest | QuestionRequest | Finish | Artifact | PlanUpdate | CompactNotification | EditProposal | AssistantBoundary | WorkflowStartedEvent | WorkflowTaskEvent | WorkflowCompletedEvent
+AgentEvent = TextDelta | ThinkingDelta | ToolCallStart | ToolCallDelta | ToolCallEnd | ToolProgress | ToolResult | PermissionRequest | QuestionRequest | Finish | Artifact | PlanUpdate | CompactNotification | EditProposal | AssistantBoundary | WorkflowStartedEvent | WorkflowTaskEvent | WorkflowCompletedEvent | SystemMessage
 
 
 # ── Multimodal Content Blocks ──────────────────────────────────────
@@ -332,12 +392,14 @@ AgentEvent = TextDelta | ThinkingDelta | ToolCallStart | ToolCallDelta | ToolCal
 
 @dataclass
 class TextContent:
+    """A plain text content block for multimodal messages."""
     type: str = "text"
     text: str = ""
 
 
 @dataclass
 class ImageContent:
+    """An inline image (base64 data or remote URL) content block."""
     type: str = "image"
     data: str = ""           # base64 encoded
     mime_type: str = "image/png"
@@ -346,6 +408,7 @@ class ImageContent:
 
 @dataclass
 class FileContent:
+    """An inline file (base64) content block."""
     type: str = "file"
     data: str = ""           # base64 encoded
     filename: str = ""
@@ -354,6 +417,7 @@ class FileContent:
 
 @dataclass
 class ToolUseContent:
+    """A tool invocation request carried inside a content block."""
     type: str = "tool_use"
     id: str = ""
     name: str = ""
@@ -362,28 +426,33 @@ class ToolUseContent:
 
 @dataclass
 class ToolResultContent:
+    """The result of a tool use, embedded as a content block."""
     type: str = "tool_result"
     tool_use_id: str = ""
     content: str = ""
     is_error: bool = False
 
 
+# Union of every message-content shape the agent can send/receive.
 ContentBlock = TextContent | ImageContent | FileContent | ToolUseContent | ToolResultContent
 
 
 @dataclass
 class BackendText:
+    """Normalised text chunk emitted by a backend adapter."""
     text: str
 
 
 @dataclass
 class BackendThinking:
+    """Normalised reasoning chunk emitted by a backend adapter."""
     text: str
     signature_delta: str | None = None
 
 
 @dataclass
 class BackendToolCall:
+    """Normalised tool call (full arguments) from a backend adapter."""
     id: str
     name: str
     arguments: str
@@ -391,6 +460,7 @@ class BackendToolCall:
 
 @dataclass
 class BackendToolCallDelta:
+    """Normalised streaming fragment of a backend tool call."""
     index: int
     key: str
     value: str
@@ -398,42 +468,50 @@ class BackendToolCallDelta:
 
 @dataclass
 class BackendFinish:
+    """Normalised finish event from a backend adapter."""
     reason: str
     usage: dict[str, Any] | None = None
 
 
 @dataclass
 class BackendError:
+    """Normalised error event from a backend adapter."""
     error: str
 
 
+# Union of every normalised event a backend adapter may emit.
 BackendEvent = BackendText | BackendThinking | BackendToolCall | BackendToolCallDelta | BackendFinish | BackendError
 
 
 @dataclass
 class PermissionAllow:
+    """Decision: permit the tool call to run."""
     behavior: PermissionBehavior = "allow"
     reason: str = ""
 
 
 @dataclass
 class PermissionDeny:
+    """Decision: reject the tool call."""
     behavior: PermissionBehavior = "deny"
     reason: str = ""
 
 
 @dataclass
 class PermissionAsk:
+    """Decision: ask the user before running, bound to a rule id."""
     behavior: PermissionBehavior = "ask"
     reason: str = ""
     rule: str = ""
 
 
+# One of the three possible permission outcomes.
 PermissionDecision = PermissionAllow | PermissionDeny | PermissionAsk
 
 
 @dataclass
 class AdaptiveThinking:
+    """Budgeted "thinking" that scales with the model's token budget."""
     enabled: bool = True
     min_tokens: int = 1024
     max_tokens: int = 8192
@@ -442,15 +520,18 @@ class AdaptiveThinking:
 
 @dataclass
 class EnabledThinking:
+    """Fixed-budget thinking mode."""
     enabled: bool = True
     budget_tokens: int = 4096
 
 
 @dataclass
 class DisabledThinking:
+    """Thinking turned off entirely."""
     enabled: bool = False
 
 
+# Selectable thinking/Reasoning configuration variants.
 ThinkingConfig = AdaptiveThinking | EnabledThinking | DisabledThinking
 
 
@@ -514,6 +595,10 @@ def create_question_request(tool_call_id: str, questions: list[dict[str, Any]]) 
 
 def create_finish(reason: FinishReason, usage: dict[str, Any] | None = None, error: str | None = None) -> Finish:
     return Finish(reason=reason, usage=usage, error=error)
+
+
+def create_system_message(content: str, kind: str = "info") -> SystemMessage:
+    return SystemMessage(content=content, kind=kind)
 
 
 def create_backend_text(text: str) -> BackendText:
@@ -620,6 +705,7 @@ class BranchRolledBack:
     removed_message_ids: list[str]
 
 
+# Union of every branch-protocol event emitted by the session store.
 BranchEvent = BranchUpdated | BranchSwitched | BranchRolledBack
 
 
@@ -915,6 +1001,7 @@ class ResponseObject:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+# Union of every provider capability result wrapper exposed by the backend.
 BackendMultimodalResult = (
     ImageGenerationResponse
     | AudioResult

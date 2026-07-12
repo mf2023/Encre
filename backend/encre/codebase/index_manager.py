@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Background index manager -- owns workspace code indices independently of
 any WebSocket connection.  Lives at the EncreServer level and survives
@@ -48,14 +48,17 @@ _INDEXER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _get_data_dir() -> str:
+    """Return the Encre data directory (from env or the default ``~/.dunimd``)."""
     return os.environ.get("ENCRE_DATA_DIR", os.path.join(os.path.expanduser("~"), ".dunimd", "encre"))
 
 
 def _progress_path(ws_id: str) -> str:
+    """Return the path of the JSON progress file for workspace *ws_id*."""
     return os.path.join(_get_data_dir(), "iwork", ws_id, "index_progress.json")
 
 
 def _metadata_path(ws_id: str) -> str:
+    """Return the path of the cached index metadata file for *ws_id*."""
     return os.path.join(_get_data_dir(), "iwork", ws_id, "index_metadata.json")
 
 
@@ -68,6 +71,7 @@ class IndexManager:
     """
 
     def __init__(self) -> None:
+        """Initialise per-workspace index registries and synchronisation state."""
         self._lock = threading.Lock()
         self._indices: dict[str, dict[str, Any]] = {}
         self._poll_tasks: dict[str, asyncio.Task] = {}

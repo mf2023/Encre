@@ -18,8 +18,10 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! PyO3 bindings exposing the `encre` native core to Python as `_native`.
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use pyo3::types::PyList;
 use encre::ast;
 use encre::codebase;
 use encre::diff;
@@ -43,10 +45,29 @@ fn search_results_to_py(py: Python, results: &[search::SearchResult]) -> PyResul
     let mut out = Vec::with_capacity(results.len());
     for r in results {
         let d = PyDict::new(py);
+
+        let before_py = PyList::empty(py);
+        for (ln, lc) in &r.context_before {
+            let pair = PyList::empty(py);
+            pair.append(ln)?;
+            pair.append(lc)?;
+            before_py.append(pair)?;
+        }
+
+        let after_py = PyList::empty(py);
+        for (ln, lc) in &r.context_after {
+            let pair = PyList::empty(py);
+            pair.append(ln)?;
+            pair.append(lc)?;
+            after_py.append(pair)?;
+        }
+
         d.set_item("file_path", &r.file_path)?;
         d.set_item("line_number", r.line_number)?;
         d.set_item("line_content", &r.line_content)?;
         d.set_item("score", r.score)?;
+        d.set_item("context_before", before_py)?;
+        d.set_item("context_after", after_py)?;
         out.push(d.into());
     }
     Ok(out)
@@ -260,15 +281,31 @@ fn write_file(path: &str, content: &str) -> PyResult<bool> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (pattern, path, case_insensitive=false, glob_filter=None))]
+#[pyo3(signature = (pattern, path, case_insensitive=false, glob_filter=None, multiline=false, head_limit=None, context_before=0, context_after=0))]
 fn grep(
     py: Python,
     pattern: &str,
     path: &str,
     case_insensitive: bool,
     glob_filter: Option<&str>,
+    multiline: bool,
+    head_limit: Option<usize>,
+    context_before: usize,
+    context_after: usize,
 ) -> PyResult<Vec<PyObject>> {
-    let results = search::grep(pattern, path, case_insensitive, glob_filter);
+    let mut re_builder = regex::RegexBuilder::new(pattern);
+    re_builder.multi_line(true);
+    if case_insensitive {
+        re_builder.case_insensitive(true);
+    }
+    if multiline {
+        re_builder.dot_matches_new_line(true);
+    }
+    re_builder.build().map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PySyntaxError, _>(format!("Invalid regex: {}", e))
+    })?;
+
+    let results = search::grep(pattern, path, case_insensitive, glob_filter, multiline, head_limit, context_before, context_after);
     search_results_to_py(py, &results)
 }
 

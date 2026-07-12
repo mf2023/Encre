@@ -21,6 +21,17 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+# Built-in sub-agent role templates for Encre's multi-agent workflows.
+#
+# Each entry is an ``encre.config.SubAgentConfig`` that pairs a name and a
+# short description with a system prompt loaded from the "skills" category of
+# the prompt library.  Most roles are ``hidden`` (not directly invocable by the
+# user) and exist so the planner / orchestrator / advisor logic can spawn a
+# focused agent on demand.  A handful expose a ``tool_policy`` (e.g.
+# ``readonly`` / ``no_writes``) that restricts the sub-agent's tool set.
+
 from encre.config import SubAgentConfig
 from encre.prompts.loader import PromptLoader
 
@@ -28,6 +39,14 @@ _loader = PromptLoader()
 
 
 def get_builtin_sub_agents() -> list[SubAgentConfig]:
+    """Return the list of predefined sub-agent templates.
+
+    The roster is grouped (by comment) into general-mode workers, workspace
+    architects/planners, plan/spec writers, the auto-agent (lobster) family
+    (automation / monitor / executor / scheduler), and Claude Code-style role
+    templates (Explore / Plan / general-purpose).  The returned configs are
+    deep enough to be handed straight to ``EncreAgent`` construction.
+    """
     return [
         # ── General mode ──────────────────────────────────────
         SubAgentConfig(

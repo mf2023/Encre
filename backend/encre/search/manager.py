@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Hidden MCP-powered search engine.
 
@@ -31,8 +31,6 @@ first use, so users -- and the model -- cannot discover the endpoint address.
 
 Encrypted config on disk: ``<data_dir>/dsp_cache.bin``
 """
-
-from __future__ import annotations
 
 import asyncio
 import json

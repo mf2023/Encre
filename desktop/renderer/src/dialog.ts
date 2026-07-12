@@ -20,10 +20,25 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Modal dialog system.
+ *
+ * A small, dependency-free modal framework used across the renderer for
+ * confirm/prompt/alert prompts, engine-install confirmation, progress dialogs
+ * and arbitrary HTML content. All dialogs share a single overlay/card visual
+ * language and resolve via Promises; at most one overlay exists at a time.
+ */
+
 import { t } from "./i18n.js";
 
 type Resolve<T> = (value: T) => void;
 
+/**
+ * Static collection of modal dialog builders.
+ *
+ * Every method returns a Promise that resolves when the user dismisses the
+ * dialog. A single shared overlay element backs all instances.
+ */
 export class Dialog {
   private static overlay: HTMLElement | null = null;
 
@@ -84,6 +99,7 @@ export class Dialog {
     return { primaryBtn: pri, secondaryBtn: sec, footer };
   }
 
+  /** Shows a confirm dialog; resolves `true` for the primary button, `false` otherwise. */
   static confirm(title: string, message: string): Promise<boolean> {
     return new Promise((resolve) => {
       const overlay = this.createOverlay();
@@ -108,6 +124,7 @@ export class Dialog {
     });
   }
 
+  /** Shows a text-input prompt; resolves the entered value, or `null` on cancel. */
   static prompt(title: string, message: string, defaultValue = ""): Promise<string | null> {
     return new Promise((resolve) => {
       const overlay = this.createOverlay();
@@ -142,6 +159,7 @@ export class Dialog {
     });
   }
 
+  /** Shows an informational alert with a single OK button. */
   static alert(title: string, message: string): Promise<void> {
     return new Promise((resolve) => {
       const overlay = this.createOverlay();
@@ -174,6 +192,14 @@ export class Dialog {
   // ("下载引擎" / "暂不下载"), and an optional third line can be
   // added via ``hint`` to show download size / current state.
 
+  /**
+   * Confirm dialog variant used for engine/driver install prompts.
+   *
+   * @param title   - Dialog title.
+   * @param body    - Body message.
+   * @param options - Optional custom primary/secondary labels and an extra hint line.
+   * @returns `true` if confirmed, `false` on cancel/Escape.
+   */
   static confirmInstall(
     title: string,
     body: string,
@@ -219,6 +245,14 @@ export class Dialog {
   // the returned handle.  Reuses .encre-dialog-overlay and card so
   // the modal looks the same as every other dialog.
 
+  /**
+   * Shows a progress dialog and returns a handle to drive it.
+   *
+   * @param title           - Dialog title.
+   * @param initialMessage  - Initial status text.
+   * @param options         - Cancellable flag, cancel callback and indeterminate flag.
+   * @returns A handle with `update/setMessage/setSubMessage/succeed/fail/cancel`.
+   */
   static progress(
     title: string,
     initialMessage: string,
@@ -374,6 +408,7 @@ export class Dialog {
     return handle;
   }
 
+  /** Shows a dialog whose body is an arbitrary HTML element; resolves on close. */
   static showHtmlDialog(title: string, contentEl: HTMLElement): Promise<void> {
     return new Promise((resolve) => {
       const overlay = this.createOverlay();

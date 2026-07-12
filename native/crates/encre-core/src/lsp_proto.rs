@@ -18,6 +18,7 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Minimal Language Server Protocol (LSP) message parsing and construction.
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------

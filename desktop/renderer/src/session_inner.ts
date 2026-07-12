@@ -1,11 +1,11 @@
 /**
- * Copyright (c) 2025-2026 Wenze Wei. All Rights Reserved.
+ * Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
  *
  * This file is part of Encre.
  * The Encre project belongs to the Dunimd Team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -15,9 +15,18 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * 
  * DISCLAIMER: Users must comply with applicable AI regulations.
  * Non-compliance may result in service termination or legal liability.
+ */
+
+/**
+ * Session-inner sidebar.
+ *
+ * The resizable right-hand sidebar shown inside a session: a draggable tab bar
+ * hosting an info/summary panel plus dynamically-opened panels (terminal,
+ * code editor, file review, agent, …), each with its own embedded xterm
+ * terminal instances. Width is persisted to `localStorage`.
  */
 
 import { getState, subscribe, addAttachments } from "./state.js";
@@ -28,6 +37,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 
+/** Definition of a sidebar tab (id + whether it can be closed). */
 export interface TabDef {
   id: string;
   closable: boolean;
@@ -42,19 +52,15 @@ const NEW_TAB_OPTIONS: NewTabOption[] = [
   { id: "terminal", icon: "terminal" },
   { id: "editor", icon: "code-2" },
   { id: "review", icon: "eye" },
-  { id: "agent", icon: "bot" },
-  { id: "info", icon: "file-text" },
+  { id: "files", icon: "folder-open" },
 ];
 
 function tabLabel(id: string): string {
   switch (id) {
-    case "info": return t("sessionInner.tabInfo");
     case "terminal": return t("sessionInner.tabTerminal");
     case "files": return t("sessionInner.tabFiles");
-    case "code": return t("sessionInner.tabCode");
     case "editor": return t("sessionInner.tabEditor");
     case "review": return t("sessionInner.tabReview");
-    case "agent": return t("sessionInner.tabAgent");
     default: return id;
   }
 }
@@ -74,6 +80,9 @@ function getTerminalAllText(term: any): string {
   } catch { return ""; }
 }
 
+/**
+ * Manages the session-inner sidebar tabs, panels and embedded terminals.
+ */
 export class SessionInner {
   private el: HTMLElement;
   private tabBar: HTMLElement;
@@ -110,6 +119,9 @@ export class SessionInner {
   private panelShellPath = new Map<string, string>();
   private panelShellArgs = new Map<string, string[]>();
 
+  /**
+   * Constructor: resolves DOM nodes, restores width and wires tabs/resize.
+   */
   constructor() {
     this.el = document.getElementById("session-inner-sidebar")!;
     this.tabBar = this.el.querySelector(".tab-bar")!;
@@ -118,8 +130,8 @@ export class SessionInner {
     this.tabBody = this.el.querySelector(".tab-body")!;
 
     // Default tabs �?only summary by default, others via +
-    this.tabs = [{ id: "info", closable: false }];
-    this.activeTab = "info";
+    this.tabs = [];
+    this.activeTab = "";
 
     try {
       const saved = localStorage.getItem("session-sidebar-width");
@@ -135,8 +147,12 @@ export class SessionInner {
     this.bindResize();
   }
 
+  /** Re-renders the active tab's content (reactive to state/locale). */
   render(): void {
-    this.renderContent();
+    if (this.tabs.length === 0) {
+      this.renderHomePage();
+    }
+    if (this.activeTab === "info") this.renderContent();
     const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]') as HTMLElement | null;
     if (agentPanel) {
       this.renderAgentPanel(agentPanel);
@@ -144,7 +160,10 @@ export class SessionInner {
   }
 
   renderForce(): void {
-    this.renderContent();
+    if (this.tabs.length === 0) {
+      this.renderHomePage();
+    }
+    if (this.activeTab === "info") this.renderContent();
     const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]') as HTMLElement | null;
     if (agentPanel) {
       this.renderAgentPanel(agentPanel);
@@ -169,7 +188,11 @@ export class SessionInner {
     }
 
     this.bindTabEvents();
-    await this.renderPanels();
+    if (this.tabs.length === 0) {
+      this.renderHomePage();
+    } else {
+      await this.renderPanels();
+    }
     this.refreshLucide();
   }
 
@@ -299,11 +322,45 @@ export class SessionInner {
     // "info" tab from scratch on the next render cycle.
     this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
 
-    // Reset the in-memory tab list to the default.
-    this.tabs = [{ id: "info", closable: false }];
-    this.activeTab = "info";
+    // Reset the in-memory tab list to default (empty).
+    this.tabs = [];
+    this.activeTab = "";
     await this.renderTabs();
     this.bindAddButton();
+  }
+
+  private renderHomePage(): void {
+    // Remove any leftover panels
+    this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
+
+    const cards = [
+      { id: "terminal", icon: "terminal", label: t("sessionInner.tabTerminal"), desc: t("sessionInner.tabTerminalDesc") },
+      { id: "files", icon: "folder-open", label: t("sessionInner.tabFiles"), desc: t("sessionInner.tabFilesDesc") },
+      { id: "editor", icon: "code-2", label: t("sessionInner.tabEditor"), desc: t("sessionInner.tabEditorDesc") },
+      { id: "review", icon: "eye", label: t("sessionInner.tabReview"), desc: t("sessionInner.tabReviewDesc") },
+    ];
+
+    this.tabBody.innerHTML = `<div class="si-home">${cards.map((c) => `
+      <div class="si-home-card" data-tab="${c.id}">
+        <i data-lucide="${c.icon}" class="lucide si-home-icon"></i>
+        <div class="si-home-info">
+          <div class="si-home-label">${this.esc(c.label)}</div>
+          <div class="si-home-desc">${this.esc(c.desc)}</div>
+        </div>
+        <i data-lucide="chevron-right" class="lucide si-home-arrow"></i>
+      </div>
+    `).join("")}</div>`;
+
+    this.tabBody.querySelectorAll(".si-home-card").forEach((el) => {
+      el.addEventListener("click", () => {
+        const id = (el as HTMLElement).dataset.tab!;
+        this.createTab(id);
+      });
+    });
+
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.tabBody });
+    }
   }
 
   public async createTab(id: string): Promise<void> {
@@ -326,12 +383,7 @@ export class SessionInner {
       panel.className = "tab-panel" + (t.id === this.activeTab ? " active" : "");
       panel.dataset.panel = t.id;
 
-      if (t.id === "info") {
-        const body = document.createElement("div");
-        body.className = "session-inner-sidebar-body";
-        panel.appendChild(body);
-        this.infoBody = body;
-      } else if (t.id === "terminal") {
+      if (t.id === "terminal") {
         await this.setupTerminalPanel(panel);
       } else if (t.id === "files") {
         this.setupFilesPanel(panel);
@@ -339,8 +391,6 @@ export class SessionInner {
         this.setupEditorPanel(panel);
       } else if (t.id === "review") {
         this.setupReviewPanel(panel);
-      } else if (t.id === "agent") {
-        this.setupAgentPanel(panel);
       }
 
       this.tabBody.appendChild(panel);
@@ -2261,8 +2311,8 @@ export class SessionInner {
     }
     this.tabs.splice(idx, 1);
     if (this.tabs.length === 0) {
-      this.tabs = [{ id: "info", closable: true }];
-      this.activeTab = "info";
+      this.tabs = [];
+      this.activeTab = "";
     } else if (this.activeTab === id) {
       this.activeTab = this.tabs[0].id;
     }

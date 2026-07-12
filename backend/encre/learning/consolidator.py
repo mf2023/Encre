@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Periodic memory consolidation for the learning subsystem.
+
+:class:`MemoryConsolidator` wraps the agent's ``memory_system`` and, on a
+fixed interval, triggers its ``consolidate()`` coroutine so short-term
+memories are merged into long-term storage without blocking the agent loop.
+"""
 
 import asyncio
 import contextlib
@@ -33,18 +40,22 @@ logger = logging.getLogger("encre.learning.consolidator")
 
 
 class MemoryConsolidator:
+    """Runs memory consolidation on a background timer."""
     def __init__(self, agent: EncreAgent, interval: int = 3600) -> None:
+        """Wire up the agent and the consolidation interval (seconds)."""
         self._agent = agent
         self._interval = interval
         self._running = False
         self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
+        """Launch the background consolidation loop."""
         self._running = True
         self._task = asyncio.create_task(self._loop())
         logger.info("Memory consolidator started (interval=%ds)", self._interval)
 
     async def stop(self) -> None:
+        """Stop the loop and await its cancellation."""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -54,6 +65,7 @@ class MemoryConsolidator:
         logger.info("Memory consolidator stopped")
 
     async def _loop(self) -> None:
+        """Sleep for the interval, then consolidate, while running."""
         while self._running:
             await asyncio.sleep(self._interval)
             if not self._running:
@@ -61,9 +73,11 @@ class MemoryConsolidator:
             await self._consolidate()
 
     async def consolidate_now(self) -> None:
+        """Force a single consolidation pass immediately."""
         await self._consolidate()
 
     async def _consolidate(self) -> None:
+        """Call the agent's memory_system.consolidate() if available."""
         memory_system = getattr(self._agent, "memory_system", None)
         if memory_system is None:
             return

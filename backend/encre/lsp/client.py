@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -31,12 +31,34 @@ from threading import Lock
 from typing import Any
 
 
+"""Low-level JSON-RPC 2.0 client for a single Language Server Protocol server.
+
+This module implements the ``stdio`` transport used to talk to an LSP server:
+it spawns the server as a subprocess, frames every message with an HTTP-style
+``Content-Length`` header, and correlates responses back to their requests
+using a monotonic request id.  A background reader task continuously drains
+the subprocess stdout, deframes incoming messages and resolves the pending
+futures registered in :attr:`EncreLSPClient._pending_requests`.
+
+Only the blocking ``stdout.read`` call is off-loaded to a thread-pool executor
+so that the rest of the class stays ``async``-friendly.
+"""
+
 class EncreLSPClient:
+    """Low-level JSON-RPC client for a single Language Server Protocol server.
+
+    Spawns the server as a subprocess using the stdio transport, frames
+    messages with ``Content-Length`` headers, and matches responses to
+    requests by id via a background reader task.
+    """
+
     def __init__(self, server_name: str) -> None:
+        """Create a client wrapper for the named server (used in logs)."""
         self._process: subprocess.Popen[bytes] | None = None
         self._initialized = False
         self._request_id = 0
         self._lock = Lock()
+        # Human-readable server name, used only for log lines.
         self._server_name = server_name
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._response_buffer: bytearray = bytearray()
@@ -44,7 +66,9 @@ class EncreLSPClient:
         self._shutdown_event: asyncio.Event | None = None
 
     async def start(self, command: str, args: list[str], cwd: str) -> None:
+        """Spawn the server subprocess and launch the response reader task."""
         self._shutdown_event = asyncio.Event()
+        # On Windows, hide the spawned server's console window if possible.
         from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
         popen_kwargs = hidden_subprocess_kwargs()
         self._process = subprocess.Popen(
@@ -58,6 +82,7 @@ class EncreLSPClient:
         self._reader_task = asyncio.create_task(self._read_responses())
 
     async def initialize(self, root_uri: str) -> dict[str, Any]:
+        """Send the ``initialize`` request and the ``initialized`` notification."""
         params = {
             "processId": None,
             "rootUri": root_uri,
@@ -78,6 +103,9 @@ class EncreLSPClient:
         return result
 
     async def send_request(self, method: str, params: dict[str, Any]) -> Any:
+        """Send a JSON-RPC request and await its matching response (30s timeout)."""
+        # Allocate the next request id under the lock so concurrent callers
+        # never hand out the same id.
         with self._lock:
             self._request_id += 1
             request_id = self._request_id
@@ -96,12 +124,15 @@ class EncreLSPClient:
         self._write_message(message)
 
         try:
+            # Block until the reader task resolves the matching future,
+            # giving up after 30 seconds to avoid hanging on dead servers.
             return await asyncio.wait_for(future, timeout=30.0)
         except TimeoutError:
             self._pending_requests.pop(request_id, None)
             raise
 
     async def send_notification(self, method: str, params: dict[str, Any]) -> None:
+        """Send a JSON-RPC notification (no response expected)."""
         message = {
             "jsonrpc": "2.0",
             "method": method,
@@ -148,16 +179,20 @@ class EncreLSPClient:
                 self._process.stderr.close()
 
     def _write_message(self, message: dict[str, Any]) -> None:
+        """Serialise and write a framed LSP message to the server stdin."""
         if not self._process or self._process.stdin is None:
             return
         content = json.dumps(message, ensure_ascii=False)
         content_bytes = content.encode("utf-8")
+        # LSP framing: a single "Content-Length: N" header terminated by a
+        # blank line, immediately followed by the raw JSON body.
         header = f"Content-Length: {len(content_bytes)}\r\n\r\n".encode()
         with self._lock:
             self._process.stdin.write(header + content_bytes)
             self._process.stdin.flush()
 
     async def _read_responses(self) -> None:
+        """Background loop that reads, frames, and dispatches server messages."""
         if not self._process or self._process.stdout is None:
             return
 
@@ -170,11 +205,14 @@ class EncreLSPClient:
                 break
 
             try:
+                # Blocking read off the event loop; 4096-byte chunks.
                 chunk = await loop.run_in_executor(None, lambda: stdout.read(4096))
             except (ValueError, OSError):
                 break
 
             if not chunk:
+                # EOF or no progress yet: if the process is gone, stop,
+                # otherwise yield briefly and try again.
                 if self._process.poll() is not None:
                     break
                 await asyncio.sleep(0.01)
@@ -214,6 +252,8 @@ class EncreLSPClient:
                 self._handle_message(message)
 
     def _handle_message(self, message: dict[str, Any]) -> None:
+        """Resolve a pending request future from a result/error response."""
+        # Success response: fulfil the future registered for this id.
         if "id" in message and "result" in message:
             future = self._pending_requests.pop(message["id"], None)
             if future and not future.done():

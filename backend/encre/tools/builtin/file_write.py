@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/file_write.py
 
+File write implementation for the Encre tool system.
+"""
 import re
 from typing import Any
 
@@ -37,6 +41,7 @@ _DIFF_DEL_RE = re.compile(r"^-(?!--)", re.MULTILINE)
 
 
 async def _file_write_execute(**kwargs: Any) -> str:
+    """Write content to a file, overwriting if it exists. Returns a diff summary."""
     file_path = kwargs.get("file_path", "")
     content = kwargs.get("content", "")
     file_path = remap_tool_path(file_path)
@@ -50,6 +55,24 @@ async def _file_write_execute(**kwargs: Any) -> str:
             before = ""
         if not _native_write(file_path, content):
             return f"Error: Failed to write file: {file_path}"
+
+        # Skip expensive diff for large files.
+        large_file = len(before) > 100_000 or len(content) > 100_000
+        if large_file:
+            before_lines = before.splitlines()
+            content_lines = content.splitlines()
+            line_delta = len(content_lines) - len(before_lines)
+            add_count = max(line_delta, 0)
+            del_count = max(-line_delta, 0)
+            if line_delta == 0 and before != content:
+                changed = sum(1 for o, c in zip(before_lines, content_lines) if o != c)
+                add_count = del_count = changed
+            return (
+                f"Successfully wrote {len(content)} characters to {file_path}\n"
+                f"{add_count} insertions(+), {del_count} deletions(-)\n"
+                f"(large file \u2014 diff omitted)"
+            )
+
         diff_text = _native_diff(before, content)
         add_count = len(_DIFF_ADD_RE.findall(diff_text))
         del_count = len(_DIFF_DEL_RE.findall(diff_text))
@@ -67,17 +90,11 @@ async def _file_write_execute(**kwargs: Any) -> str:
 EncreFileWriteTool = build_tool(
     name="file_write",
     description=(
-        "Writes a file to the local filesystem.\n\n"
-        "Usage:\n"
-        "- This tool will overwrite the existing file if there is one at the provided path.\n"
-        "- If this is an existing file, you MUST use the file_read tool first to read the "
-        "file's contents. This tool will fail if you did not read the file first.\n"
-        "- Prefer the file_edit tool for modifying existing files — it only sends the diff. "
-        "Only use this tool to create new files or for complete rewrites.\n"
-        "- NEVER create documentation files (*.md) or README files unless explicitly "
-        "requested by the user.\n"
-        "- Only use emojis if the user explicitly requests it. Avoid writing emojis to "
-        "files unless asked."
+        "Create a new file or overwrite an existing one entirely. "
+        "No need to read the file first — this tool accepts the full content.\n\n"
+        "Use this for: new files, complete rewrites, generating output files.\n"
+        "Use file_edit instead for targeted modifications to existing files.\n\n"
+        "Returns a unified diff showing what changed, with insertion/deletion counts."
     ),
     input_schema={
         "type": "object",
@@ -95,4 +112,11 @@ EncreFileWriteTool = build_tool(
     },
     execute=_file_write_execute,
     intents=["general", "coding", "data"],
+    category="filesystem",
+    triggers=["write file", "create file", "save file", "overwrite", "put"],
+    semantic_type="write",
+    cost_level="medium",
+    retryability="guarded",
+    safe_fallback="Check the file path and content before retrying. For small changes, prefer file_edit instead.",
+    is_destructive=True,
 )

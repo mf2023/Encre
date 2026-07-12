@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/cron_delete.py
 
+Cron delete implementation for the Encre tool system.
+"""
 import json
 from typing import Any
 
@@ -32,11 +36,21 @@ _scheduler: Any = None  # Set by agent during initialization
 
 
 def set_scheduler(scheduler: Any) -> None:
+    """Set scheduler.
+
+    Args:
+        scheduler: Description of the scheduler parameter.
+    """
     global _scheduler
     _scheduler = scheduler
 
 
 async def _cron_delete_execute(**kwargs: Any) -> str:
+    """Cron delete execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     job_id = kwargs.get("job_id", "")
     if not job_id:
         return "Error: job_id is required."
@@ -67,6 +81,9 @@ EncreCronDeleteTool = build_tool(
     execute=_cron_delete_execute,
     intents=["system"],
     is_concurrency_safe=lambda _: True,
+    category="task",
+    semantic_type="write",
+    is_destructive=True,
 )
 # Backward-compat: keep ``.set_scheduler()`` callable on the tool object.
 EncreCronDeleteTool.set_scheduler = set_scheduler

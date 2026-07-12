@@ -21,9 +21,17 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
+
+"""Encre agent channels: WebSocket transport.
+
+Implements :class:`WebSocketChannel`, the primary interactive channel.  It
+serves a raw RFC 6455 WebSocket (using the ``websockets`` library), creates
+one agent session per connection, and translates the agent's
+:class:`~encre.utils.types.AgentEvent` stream into JSON frames understood by
+the desktop client (``session_ready``, ``text_delta``, ``tool_call_*``,
+``finish`` ...).
+"""
 
 import asyncio
 import contextlib
@@ -154,6 +162,12 @@ class WebSocketChannel(Channel):
         action: str,
         data: dict[str, Any],
     ) -> None:
+        """Route a parsed client action to the right agent behaviour.
+
+        Supports ``chat`` (run a prompt, streaming events back),
+        ``cancel``, ``engine_install_response``, ``list_sessions``,
+        ``new_session``, ``delete_session`` and ``get_config``.
+        """
         router = self._router
         if router is None:
             return

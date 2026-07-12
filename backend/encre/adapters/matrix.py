@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# matrix.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - MatrixAdapter
+#
 import asyncio
 import logging
 import mimetypes
@@ -104,6 +117,19 @@ class MatrixAdapter(BaseAdapter):
         device_id: str = "",
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            homeserver (str):
+            user_id (str):
+            password (str):
+            device_id (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text", "image"])
         self._homeserver = homeserver.rstrip("/")
         self._user_id = user_id
@@ -535,6 +561,12 @@ class MatrixAdapter(BaseAdapter):
 
     @property
     def _auth_headers(self) -> dict[str, str]:
+        """
+        Auth headers.
+
+        Returns:
+            dict[str, str]
+        """
         return {
             "Authorization": f"Bearer {self._access_token}",
         }

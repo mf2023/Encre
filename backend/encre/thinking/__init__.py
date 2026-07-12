@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Thinking/reasoning configuration package.
+
+Exposes the thinking-config types (:class:`AdaptiveThinking`,
+:class:`DisabledThinking`, :class:`EnabledThinking`, :class:`ThinkingConfig`)
+used to control native chain-of-thought reasoning for supported models.
+"""
 
 from encre.utils.types import AdaptiveThinking, DisabledThinking, EnabledThinking, ThinkingConfig
 

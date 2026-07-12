@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
 
 import time
@@ -194,6 +192,7 @@ class WorkflowScheduler:
         the workflow fires once immediately (one second from now).
         """
         workflow_id = uuid.uuid4().hex[:12]
+        # Build the persistent record and stash the graph for later execution.
 
         record = WorkflowRecord(
             id=workflow_id,
@@ -233,6 +232,7 @@ class WorkflowScheduler:
 
         if record.state == WorkflowState.RUNNING:
             # Cancel the engine
+            # Request the engine to stop accepting new tasks mid-run.
             import asyncio
             self._background_tasks.add(asyncio.create_task(self._engine.cancel()))
 
@@ -304,6 +304,7 @@ class WorkflowScheduler:
                     task.execute = executor  # type: ignore[assignment]
 
         try:
+            # Drive the DAG to completion, forwarding live events to the record.
             await self._engine.run_workflow(
                 graph,
                 workflow_id=workflow_id,
@@ -348,6 +349,7 @@ class WorkflowScheduler:
         """
         # The cron scheduler needs an agent factory; we provide a minimal
         # one that will discover and execute the right workflow.
+        # Hand our stub agent factory to the cron loop so jobs can fire.
         await self._cron_scheduler.start(self._make_agent_factory())
 
     async def stop(self) -> None:

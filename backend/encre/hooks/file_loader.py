@@ -21,7 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre hook system: YAML / JSON loader.
+
+Turns user-authored hook files (``.encre/hooks.yaml``, ``.claude/settings.json``)
+into registered handlers on an :class:`~encre.hooks.system.EncreHookSystem`.
+A :class:`HookEntry` pairs an event type with a regex ``matcher``, a
+``command`` / ``python`` hook body, a timeout, and its source path.
+
+The executor (:func:`_run_command_entry`) follows the Claude Code exit-code
+contract: exit ``0`` + JSON stdout => structured decision, exit ``2`` =>
+block, anything else => non-blocking.  This lets Encre reuse existing
+Claude Code hook configs unchanged.
+"""
 
 import asyncio
 import contextlib

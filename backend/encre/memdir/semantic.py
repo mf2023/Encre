@@ -1,4 +1,27 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 import math
 import os
@@ -8,26 +31,72 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+"""Local, dependency-free semantic memory retrieval and consolidation.
+
+Retrieval is intentionally modelled with classical TF-IDF weighting plus a
+Jaccard-similarity fallback instead of downloading an embedding model. The
+higher-level prompt construction (see :mod:`encre.memdir.system`) may still
+ask the active session backend to rerank results, but no internal model is
+initialised here. This module also provides a lightweight :class:`WorkingMemory`
+scratchpad and a :class:`MemoryConsolidator` that detects duplicate,
+conflicting, and stale memory files.
+"""
+
 
 def _tokenize(text: str) -> list[str]:
+    """Split text into normalised tokens for similarity scoring.
+
+    Lowercases the input and extracts runs of at least two alphanumeric or
+    CJK characters (Unicode range U+4E00-U+9FFF), so both English and
+    Chinese memory content contribute to the vocabulary.
+
+    Args:
+        text: Raw text to tokenize.
+
+    Returns:
+        List of lowercased token strings.
+    """
     return re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{2,}", text.lower())
 
 
 def _build_idf(corpus: list[str]) -> dict[str, float]:
+    """Compute smoothed inverse-document-frequency weights for a corpus.
+
+    Uses the smoothed formula ``log((n+1)/(df+1)) + 1`` so terms that
+    appear in every document still retain a small positive weight.
+
+    Args:
+        corpus: List of document strings.
+
+    Returns:
+        Mapping from term to its IDF weight. Empty for an empty corpus.
+    """
     n = len(corpus)
     if n == 0:
         return {}
     df: dict[str, int] = {}
     for doc in corpus:
         seen: set[str] = set()
+        # Count document frequency: each term counts at most once per doc
         for token in _tokenize(doc):
             if token not in seen:
                 df[token] = df.get(token, 0) + 1
                 seen.add(token)
+    # Smoothed IDF keeps a small positive weight for ubiquitous terms
     return {term: math.log((n + 1) / (count + 1)) + 1.0 for term, count in df.items()}
 
 
 def _tf_idf_vectorize(doc: str, idf: dict[str, float], vocabulary: set[str]) -> dict[str, float]:
+    """Convert a document into a TF-IDF term vector restricted to a vocabulary.
+
+    Args:
+        doc: Document text.
+        idf: Pre-computed IDF weights from :func:`_build_idf`.
+        vocabulary: Set of terms to keep; others are ignored.
+
+    Returns:
+        Sparse mapping from term to its TF-IDF weight.
+    """
     tokens = _tokenize(doc)
     if not tokens:
         return {}
@@ -41,6 +110,16 @@ def _tf_idf_vectorize(doc: str, idf: dict[str, float], vocabulary: set[str]) -> 
 
 
 def _cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float:
+    """Return the cosine similarity between two sparse term vectors.
+
+    Args:
+        a: First term-weight vector.
+        b: Second term-weight vector.
+
+    Returns:
+        Cosine similarity in ``[0, 1]``; ``0.0`` if either vector is empty
+        or has zero magnitude.
+    """
     if not a or not b:
         return 0.0
     keys = set(a) & set(b)
@@ -53,6 +132,17 @@ def _cosine_similarity(a: dict[str, float], b: dict[str, float]) -> float:
 
 
 def _jaccard_similarity(a: str, b: str) -> float:
+    """Return the Jaccard similarity of the token sets of two texts.
+
+    Useful as a fallback when TF-IDF vectors are too sparse to overlap.
+
+    Args:
+        a: First text.
+        b: Second text.
+
+    Returns:
+        Jaccard coefficient in ``[0, 1]``; ``0.0`` if either side is empty.
+    """
     sa = set(_tokenize(a))
     sb = set(_tokenize(b))
     if not sa or not sb:
@@ -62,6 +152,7 @@ def _jaccard_similarity(a: str, b: str) -> float:
 
 @dataclass
 class SearchResult:
+    """A single memory retrieval hit returned by :class:`SemanticMemorySearch`."""
     file_name: str
     score: float
     snippet: str = ""
@@ -79,6 +170,7 @@ class SemanticMemorySearch:
     """
 
     def __init__(self, memory_dir: str) -> None:
+        """Create a searcher bound to a memory directory on disk."""
         self._memory_dir = memory_dir
         self._corpus: dict[str, str] = {}
         self._idf: dict[str, float] = {}
@@ -86,13 +178,32 @@ class SemanticMemorySearch:
         self._dirty = True
 
     def index(self, files: dict[str, str]) -> None:
+        """Build the in-memory corpus, IDF weights, and vocabulary.
+
+        Args:
+            files: Mapping of filename to file content to index.
+        """
         self._corpus = dict(files)
         self._idf = _build_idf(list(files.values()))
         self._vocabulary = set(self._idf)
         self._dirty = False
 
     def search(self, query: str, top_k: int = 5, min_score: float = 0.05) -> list[SearchResult]:
+        """Search memory files for the given query.
+
+        First ranks files by cosine similarity of TF-IDF vectors; if no
+        file clears ``min_score``, falls back to Jaccard token overlap.
+
+        Args:
+            query: Free-text query string.
+            top_k: Maximum number of results to return.
+            min_score: Minimum similarity threshold for inclusion.
+
+        Returns:
+            Up to ``top_k`` :class:`SearchResult` objects, highest first.
+        """
         if self._dirty:
+            # Lazy (re)index when files on disk may have changed
             self._rebuild_from_disk()
         if not self._corpus:
             return []
@@ -107,18 +218,26 @@ class SemanticMemorySearch:
                     results.append(SearchResult(file_name=name, score=score, snippet=text[:200]))
 
         if not results:
+            # Fall back to token-overlap similarity when TF-IDF finds nothing
             for name, text in self._corpus.items():
                 score = _jaccard_similarity(query, text)
                 if score >= min_score:
                     results.append(SearchResult(file_name=name, score=score, snippet=text[:200]))
 
         results.sort(key=lambda r: r.score, reverse=True)
+        # Return only the top_k highest-scoring results
         return results[:top_k]
 
     def search_relevant(self, query: str, top_k: int = 5) -> list[SearchResult]:
+        """Search using a stricter relevance threshold (0.10)."""
         return self.search(query, top_k=top_k, min_score=0.10)
 
     def _rebuild_from_disk(self) -> None:
+        """Scan the memory directory and (re)index every ``.md`` file.
+
+        Skips ``MEMORY.md``, dotfiles, underscore-prefixed internals, and
+        non-markdown files, then delegates to :meth:`index`.
+        """
         files: dict[str, str] = {}
         try:
             with os.scandir(self._memory_dir) as entries:
@@ -139,6 +258,12 @@ class SemanticMemorySearch:
 
 @dataclass
 class WorkingMemory:
+    """A lightweight scratchpad tracking the agent's active reasoning state.
+
+    Holds the current goal, subgoals, hypotheses (with confirm/reject
+    outcomes), findings, open questions, and a free-form scratchpad. It can
+    be serialised to/from a plain dict for persistence between turns.
+    """
     current_goal: str = ""
     subgoals: list[str] = field(default_factory=list)
     hypotheses: list[str] = field(default_factory=list)
@@ -148,40 +273,49 @@ class WorkingMemory:
     _created_at: float = field(default_factory=time.time)
 
     def set_goal(self, goal: str) -> None:
+        """Replace the current goal with a new one."""
         self.current_goal = goal
 
     def add_subgoal(self, subgoal: str) -> None:
+        """Record a subgoal, avoiding duplicates."""
         if subgoal not in self.subgoals:
             self.subgoals.append(subgoal)
 
     def complete_subgoal(self, subgoal: str) -> None:
+        """Remove a subgoal once it has been accomplished."""
         if subgoal in self.subgoals:
             self.subgoals.remove(subgoal)
 
     def add_hypothesis(self, hypothesis: str) -> None:
+        """Register a working hypothesis (deduplicated)."""
         if hypothesis not in self.hypotheses:
             self.hypotheses.append(hypothesis)
 
     def confirm_hypothesis(self, hypothesis: str) -> None:
+        """Mark a hypothesis confirmed, moving it to findings."""
         if hypothesis in self.hypotheses:
             self.hypotheses.remove(hypothesis)
         if hypothesis not in self.findings:
             self.findings.append(f"[CONFIRMED] {hypothesis}")
 
     def reject_hypothesis(self, hypothesis: str) -> None:
+        """Mark a hypothesis rejected, recording it in findings."""
         if hypothesis in self.hypotheses:
             self.hypotheses.remove(hypothesis)
         self.findings.append(f"[REJECTED] {hypothesis}")
 
     def add_finding(self, finding: str) -> None:
+        """Append a finding (deduplicated)."""
         if finding not in self.findings:
             self.findings.append(finding)
 
     def add_question(self, question: str) -> None:
+        """Record an open question (deduplicated)."""
         if question not in self.open_questions:
             self.open_questions.append(question)
 
     def resolve_question(self, question: str, answer: str = "") -> None:
+        """Resolve an open question, recording it as a finding."""
         if question in self.open_questions:
             self.open_questions.remove(question)
         entry = f"Q: {question}"
@@ -190,9 +324,15 @@ class WorkingMemory:
         self.findings.append(entry)
 
     def note(self, text: str) -> None:
+        """Append a free-form note to the scratchpad."""
         self.scratchpad.append(text)
 
     def summarize(self) -> str:
+        """Render the working memory as a readable Markdown-ish summary.
+
+        Returns:
+            A multi-line summary, or ``"(empty working memory)"`` if empty.
+        """
         parts: list[str] = []
         if self.current_goal:
             parts.append(f"Goal: {self.current_goal}")
@@ -214,6 +354,7 @@ class WorkingMemory:
         return "\n".join(parts) if parts else "(empty working memory)"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the working memory to a plain dict for persistence."""
         return {
             "current_goal": self.current_goal,
             "subgoals": list(self.subgoals),
@@ -225,6 +366,7 @@ class WorkingMemory:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "WorkingMemory":
+        """Reconstruct a :class:`WorkingMemory` from a dict (see :meth:`to_dict`)."""
         wm = cls()
         wm.current_goal = d.get("current_goal", "")
         wm.subgoals = d.get("subgoals", [])
@@ -237,6 +379,7 @@ class WorkingMemory:
 
 @dataclass
 class ConsolidationAction:
+    """A proposed change to the memory set produced by the consolidator."""
     action: str
     file_a: str
     file_b: str = ""
@@ -245,6 +388,13 @@ class ConsolidationAction:
 
 
 class MemoryConsolidator:
+    """Detect duplicate, conflicting, and stale memory files and propose fixes.
+
+    The consolidator scans pairs of memory files for high textual overlap
+    (duplicates), opposing claims (conflicts), and dangling file:line
+    references (staleness), returning :class:`ConsolidationAction` objects
+    that an operator or higher-level routine can apply or review.
+    """
     SIMILARITY_THRESHOLD = 0.75
     CONFLICT_PATTERNS: ClassVar[list[tuple[str, str]]] = [
         (r"\b(?:do not|don't|never|should not|must not|avoid|forbidden|prohibited)\b",
@@ -254,9 +404,22 @@ class MemoryConsolidator:
     ]
 
     def __init__(self, memory_dir: str) -> None:
+        """Create a consolidator bound to a memory directory."""
         self._memory_dir = memory_dir
 
     def find_duplicates(self, files: dict[str, str]) -> list[ConsolidationAction]:
+        """Find near-duplicate memory pairs and propose merging them.
+
+        Any pair whose Jaccard similarity meets ``SIMILARITY_THRESHOLD``
+        yields a ``merge`` action whose ``merged_content`` pre-computes the
+        union of unique lines.
+
+        Args:
+            files: Mapping of filename to content.
+
+        Returns:
+            List of ``merge`` :class:`ConsolidationAction` objects.
+        """
         actions: list[ConsolidationAction] = []
         names = list(files.keys())
         for i in range(len(names)):
@@ -273,6 +436,17 @@ class MemoryConsolidator:
         return actions
 
     def find_conflicts(self, files: dict[str, str]) -> list[ConsolidationAction]:
+        """Detect pairs of memories that make opposing claims.
+
+        Only considers pairs with moderate textual overlap (Jaccard >= 0.30)
+        and flags those whose phrasing matches :attr:`CONFLICT_PATTERNS`.
+
+        Args:
+            files: Mapping of filename to content.
+
+        Returns:
+            List of ``flag_conflict`` actions.
+        """
         actions: list[ConsolidationAction] = []
         names = list(files.keys())
         for i in range(len(names)):
@@ -291,6 +465,16 @@ class MemoryConsolidator:
         return actions
 
     def find_stale(self, files: dict[str, str], age_days: dict[str, int], stale_threshold_days: int = 30) -> list[ConsolidationAction]:
+        """Flag old memories whose file:line references no longer resolve.
+
+        Args:
+            files: Mapping of filename to content.
+            age_days: Mapping of filename to age in days.
+            stale_threshold_days: Minimum age before references are checked.
+
+        Returns:
+            List of ``mark_stale`` actions listing missing referenced paths.
+        """
         actions: list[ConsolidationAction] = []
         for name, text in files.items():
             days = age_days.get(name, 0)
@@ -311,17 +495,37 @@ class MemoryConsolidator:
         return actions
 
     def consolidate(self, files: dict[str, str], age_days: dict[str, int] | None = None) -> list[ConsolidationAction]:
+        """Run all checks and return prioritised consolidation actions.
+
+        Combines duplicates, conflicts, and (optionally) staleness results,
+        then sorts them by action priority (merge < conflict < stale).
+
+        Args:
+            files: Mapping of filename to content.
+            age_days: Optional filename-to-age mapping enabling staleness.
+
+        Returns:
+            A prioritised list of :class:`ConsolidationAction` objects.
+        """
         actions = self.find_duplicates(files) + self.find_conflicts(files)
         if age_days:
             actions.extend(self.find_stale(files, age_days))
         priority = {"merge": 0, "flag_conflict": 1, "mark_stale": 2}
         actions.sort(key=lambda a: priority.get(a.action, 99))
+        # Stale/conflict issues surface after duplicates for review order
         return actions
 
     @staticmethod
     def _merge_pair(text_a: str, text_b: str) -> str:
+        """Merge two duplicate texts, keeping lines unique to the shorter one.
+
+        The longer document is treated as primary; lines from the other that
+        are not already present and longer than ten characters are appended
+        under a "Merged from duplicate" heading.
+        """
         primary = text_a if len(text_a) >= len(text_b) else text_b
         secondary = text_b if primary == text_a else text_a
+        # Use the longer document as the base to minimise information loss
         pri_lines = set(primary.strip().split("\n"))
         unique = [line for line in secondary.strip().split("\n") if line not in pri_lines and len(line.strip()) > 10]
         if unique:
@@ -329,6 +533,7 @@ class MemoryConsolidator:
         return primary
 
     def _has_opposing_claims(self, text_a: str, text_b: str) -> bool:
+        """Return True if the two texts match any conflicting claim pattern."""
         for pos_pat, neg_pat in self.CONFLICT_PATTERNS:
             a_pos = bool(re.search(pos_pat, text_a, re.IGNORECASE))
             a_neg = bool(re.search(neg_pat, text_a, re.IGNORECASE))
@@ -339,5 +544,6 @@ class MemoryConsolidator:
         return False
 
     def _path_exists(self, rel_path: str) -> bool:
+        """Check whether a memory-referenced path resolves from the CWD."""
         return os.path.exists(os.path.join(os.getcwd(), rel_path))
 

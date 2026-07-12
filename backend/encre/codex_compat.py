@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Compatibility layer for OpenAI Codex CLI configuration.
 
@@ -43,8 +43,6 @@ introducing parallel systems:
 * ``approval_policy`` is translated into Encre permission settings.
 * ``mcp_servers`` entries are merged into ``EncreConfig.mcp_servers``.
 """
-
-from __future__ import annotations
 
 import logging
 import os

@@ -20,6 +20,15 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Internationalization (i18n) subsystem.
+ *
+ * Provides the translation core for the renderer: a `t()` string getter with
+ * `{placeholder}` interpolation and a two-tier locale fallback (current locale
+ * then English), cached lookups, plus DOM binding helpers that refresh text,
+ * placeholders and titles on any element carrying `data-i18n*` attributes.
+ */
+
 import { getState, subscribe, setSettings } from "./state.js";
 import { zh } from "./locales/zh.js";
 import { en } from "./locales/en.js";
@@ -40,6 +49,7 @@ let currentLocale: Locale = "zh";
 type LocaleChangeCallback = (locale: Locale) => void;
 const localeChangeCallbacks: Set<LocaleChangeCallback> = new Set();
 
+/** Sets the active locale, persists it and notifies subscribers. */
 export function setLocale(locale: Locale): void {
   currentLocale = locale;
   localStorage.setItem("encre-locale", locale);
@@ -48,15 +58,18 @@ export function setLocale(locale: Locale): void {
   localeChangeCallbacks.forEach((cb) => cb(locale));
 }
 
+/** Registers a callback fired whenever the locale changes; returns an unsubscribe fn. */
 export function onLocaleChange(cb: LocaleChangeCallback): () => void {
   localeChangeCallbacks.add(cb);
   return () => localeChangeCallbacks.delete(cb);
 }
 
+/** Returns the currently active locale. */
 export function getLocale(): Locale {
   return currentLocale;
 }
 
+/** Initializes the locale from storage/settings, falling back to `"zh"`. */
 export function initLocale(): void {
   const stored = localStorage.getItem("encre-locale") as Locale | null;
   if (stored === "en" || stored === "zh") {
@@ -81,6 +94,13 @@ type StringGetter = () => string;
 const pendingSubscribers: Set<StringGetter> = new Set();
 const stringCache: Map<string, string> = new Map();
 
+/**
+ * Translates a dotted key (e.g. `chat.send`) with optional `{param}` interpolation.
+ *
+ * @param key    - Dotted translation key.
+ * @param params - Optional map of placeholder name → value.
+ * @returns The translated string, or the key itself when no translation exists.
+ */
 export function t(key: string, params?: Record<string, string | number>): string {
   const cacheKey = params ? `${currentLocale}:${key}:${JSON.stringify(params)}` : `${currentLocale}:${key}`;
   if (stringCache.has(cacheKey)) {
@@ -117,16 +137,19 @@ export function t(key: string, params?: Record<string, string | number>): string
   return result;
 }
 
+/** Registers a getter invoked whenever the locale cache is cleared. */
 export function subscribeLocale(fn: StringGetter): () => void {
   pendingSubscribers.add(fn);
   return () => pendingSubscribers.delete(fn);
 }
 
+/** Clears the translation cache and re-runs all pending locale subscribers. */
 export function clearLocaleCache(): void {
   stringCache.clear();
   pendingSubscribers.forEach((fn) => fn());
 }
 
+/** Applies translations to all `data-i18n*` elements in the document. */
 export function applyI18n(): void {
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.getAttribute("data-i18n");
@@ -148,17 +171,20 @@ export function applyI18n(): void {
   });
 }
 
+/** Replaces the translation table for a single locale and clears the cache. */
 export function loadTranslations(locale: Locale, messages: LocaleMessages): void {
   translations[locale] = messages;
   clearLocaleCache();
 }
 
+/** Loads both locale tables at once and clears the cache. */
 export function loadAllTranslations(zhMessages: LocaleMessages, enMessages: LocaleMessages): void {
   translations.zh = zhMessages;
   translations.en = enMessages;
   clearLocaleCache();
 }
 
+/** Creates a cached string getter bound to a fixed translation key. */
 export function createLocaleGetter(key: string): StringGetter {
   return () => t(key);
 }

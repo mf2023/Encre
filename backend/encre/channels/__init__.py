@@ -21,7 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre agent channels package.
+
+A *channel* is a transport surface that connects a client (or adapter) to the
+shared agent runtime via :class:`encre.channels.base.EventRouter`.  This
+package re-exports the channel implementations and the routing base:
+
+    * :class:`Channel`        -- abstract channel interface.
+    * :class:`EventRouter`     -- multi-session router backed by the SessionManager.
+    * :class:`WebSocketChannel` -- RFC 6455 WebSocket channel (primary).
+    * :class:`HTTPChannel`     -- REST / NDJSON channel (headless / CI).
+    * :class:`TerminalChannel`  -- interactive stdin/stdout REPL (deprecated).
+"""
 
 from encre.channels.base import Channel, EventRouter
 from encre.channels.http_api import HTTPChannel

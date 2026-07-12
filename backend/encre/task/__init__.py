@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Public surface of the task package.
+#
+# A "task" is a single unit of work (a bash command, an agent subtask, or a
+# multi-step workflow) tracked by an in-memory ``EncreTaskManager`` and run by
+# ``EncreTaskExecutor``.  The lightweight task layer is used by workflow /
+# automation features that do not need the full swarm/DAG machinery.
 
 from encre.task.executor import EncreTaskExecutor
 from encre.task.manager import EncreTaskManager

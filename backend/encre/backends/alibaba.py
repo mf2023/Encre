@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Alibaba DashScope backend -- Qwen series models (2026 lineup).
@@ -66,7 +66,18 @@ class AlibabaBackend(OpenAISSEBackend):
         model: str = "qwen-plus",
         **kwargs: Any,
     ) -> None:
+        """Initialize the Alibaba DashScope backend.
+
+        Args:
+            api_key: DashScope API key. Falls back to the DASHSCOPE_API_KEY
+                environment variable when empty.
+            base_url: API endpoint; defaults to the DashScope
+                OpenAI-compatible endpoint.
+            model: Default Qwen model identifier.
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the DashScope compatible URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
@@ -92,10 +103,13 @@ class AlibabaBackend(OpenAISSEBackend):
         2026: Qwen3.6: 256K, Qwen-Long: 10M, Qwen3: 131K, Qwen-Max: 131K.
         """
         m = self.model.lower()
+        # Qwen-Long is optimized for extremely long documents (up to 10M).
         if "qwen-long" in m or "qwenlong" in m:
             return 10_000_000
+        # Qwen3.6 / Qwen-Coder generation uses a 256K window.
         if "qwen3.6" in m or "qwen3-6" in m or "qwen-coder" in m:
             return 256_000
+        # Qwen3.5 / Qwen-Max / Qwen-Plus also expose 256K windows.
         if "qwen3.5" in m or "qwen-max" in m or "qwen-plus" in m:
             return 256_000
         return 256_000  # Qwen3.6 default

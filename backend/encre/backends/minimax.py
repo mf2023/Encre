@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 MiniMax backend -- MiniMax-M2.1, M2.5, M2.7 (2026 lineup).
@@ -64,8 +64,10 @@ class MiniMaxBackend(OpenAISSEBackend):
         **kwargs: Any,
     ) -> None:
         if not base_url:
+            # Fall back to MiniMax's OpenAI-compatible endpoint default when no URL is supplied.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        # MiniMax M2.x models expose a 200K (204800) context window.
         return 204_800

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """MCP server provider catalog.
 
@@ -473,6 +473,7 @@ MCP_PROVIDERS: list[dict[str, Any]] = [
 def get_mcp_provider(provider_id: str) -> dict[str, Any] | None:
     """Return the provider entry for ``provider_id`` or None if unknown."""
     for p in MCP_PROVIDERS:
+        # Linear scan is fine: the catalog is a small, fixed list.
         if p["id"] == provider_id:
             return p
     return None

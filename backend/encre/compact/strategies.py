@@ -21,6 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+"""Legacy, rule-based context compaction strategies.
+
+These :class:`EncreCompactStrategy` implementations predate the
+model-driven :class:`~encre.compact.engine.CompactEngine` and are kept for
+backward compatibility.  Each strategy exposes ``compact`` (produce a
+reduced message list) and ``should_compact`` (decide whether to run).
+
+:class:`EncreMultiStagePipeline` chains them from cheapest to most
+expensive -- budget reduction -> snip -> micro compact -> semantic compact
+-> context collapse -> auto (LLM) compact -- escalating only as needed and
+protecting the task anchor and recent turns.
+"""
 
 
 from abc import ABC, abstractmethod
@@ -36,6 +50,12 @@ def _estimate_message_tokens(message: dict[str, Any]) -> int:
 
 
 class EncreCompactStrategy(ABC):
+    """Abstract base class for all compaction strategies.
+
+    Subclasses implement :meth:`compact` (return a reduced copy of the
+    message list) and :meth:`should_compact` (decide whether compaction is
+    warranted for the current token budget).
+    """
     @abstractmethod
     async def compact(
         self,
@@ -54,11 +74,17 @@ class EncreCompactStrategy(ABC):
 
 
 class EncreAlwaysCompactStrategy(EncreCompactStrategy):
+    """Aggressive strategy that always keeps only the first and last turns.
+
+    Useful as a guaranteed fallback: it never relies on token estimates,
+    merely retaining the first two and last two non-system messages.
+    """
     async def compact(
         self,
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Keep system messages plus the first and last two turns."""
         if len(messages) <= 2:
             return messages
         system_messages = [m for m in messages if m.get("role") == "system"]
@@ -73,11 +99,14 @@ class EncreAlwaysCompactStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> bool:
+        """Compact once the conversation exceeds ten messages."""
         return len(messages) > 10
 
 
 class EncreTokenBudgetStrategy(EncreCompactStrategy):
+    """Keep messages until a fraction of the token budget is consumed."""
     def __init__(self, budget_ratio: float = 0.5) -> None:
+        """Configure the fraction of the token budget to retain."""
         self._budget_ratio = budget_ratio
 
     async def compact(
@@ -85,6 +114,7 @@ class EncreTokenBudgetStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Greedily keep messages (system, then first and last turns) under budget."""
         budget = int(_max_tokens * self._budget_ratio)
         system_messages = [m for m in messages if m.get("role") == "system"]
         non_system = [m for m in messages if m.get("role") != "system"]
@@ -117,17 +147,20 @@ class EncreTokenBudgetStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> bool:
+        """Compact when total tokens exceed the configured budget ratio."""
         total = sum(self._estimate_tokens(m) for m in messages)
         return total > _max_tokens * self._budget_ratio
 
     @staticmethod
     def _estimate_tokens(message: dict[str, Any]) -> int:
+        """Estimate a single message's token count."""
         return _estimate_message_tokens(message)
 class EncreBudgetReductionStrategy(EncreCompactStrategy):
     """Stage 1: Cap per-message size. Always active, cheapest.
     Truncates individual messages that exceed per-message limits."""
 
     def __init__(self, max_chars_per_message: int = 40000) -> None:
+        """Configure the maximum characters retained per message."""
         self._max_chars = max_chars_per_message
 
     async def compact(
@@ -135,6 +168,7 @@ class EncreBudgetReductionStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Truncate every message that exceeds the per-message character cap."""
         result: list[dict[str, Any]] = []
         for msg in messages:
             content = msg.get("content", "")
@@ -165,6 +199,7 @@ class EncreBudgetReductionStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> bool:
+        """Trigger when any single message exceeds the per-message cap."""
         for msg in messages:
             content = msg.get("content", "")
             if isinstance(content, str) and len(content) > self._max_chars:
@@ -181,6 +216,7 @@ class EncreSnipStrategy(EncreCompactStrategy):
     """
 
     def __init__(self, keep_recent_turns: int = 6) -> None:
+        """Configure how many recent turns to retain when snipping."""
         self._keep_turns = keep_recent_turns
         self._min_turns = 3
 
@@ -189,6 +225,7 @@ class EncreSnipStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Keep system + the most recent turns that fit within 60% of budget."""
         system = [m for m in messages if m.get("role") == "system"]
         non_system = [m for m in messages if m.get("role") != "system"]
         if len(non_system) <= self._min_turns * 2:
@@ -208,6 +245,7 @@ class EncreSnipStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         max_tokens: int = 128000,
     ) -> bool:
+        """Snip only once the token budget is actually threatened (>=50%)."""
         non_system = [m for m in messages if m.get("role") != "system"]
         if len(non_system) <= self._min_turns * 2 + 2:
             return False
@@ -225,6 +263,7 @@ class EncreMicroCompactStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Merge consecutive user messages and trim verbose tool outputs."""
         result: list[dict[str, Any]] = []
         for msg in messages:
             content = msg.get("content", "")
@@ -254,6 +293,7 @@ class EncreMicroCompactStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> bool:
+        """Trigger when a message exceeds 2000 chars or history is very long."""
         # Check if any message has large content
         for msg in messages:
             content = msg.get("content", "")
@@ -267,6 +307,7 @@ class EncreContextCollapseStrategy(EncreCompactStrategy):
     Preserves the fact that a tool was called but not the full output."""
 
     def __init__(self, collapse_before_turn: int = 5) -> None:
+        """Configure how many recent turns are protected from collapsing."""
         self._collapse_before = collapse_before_turn
 
     async def compact(
@@ -274,6 +315,7 @@ class EncreContextCollapseStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Collapse tool outputs older than the protected turn window."""
         if len(messages) <= self._collapse_before * 2:
             return messages
 
@@ -311,6 +353,7 @@ class EncreContextCollapseStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> bool:
+        """Collapse when total tokens exceed 60% of the budget."""
         if len(messages) <= self._collapse_before * 3:
             return False
         total = sum(_estimate_message_tokens(m) for m in messages)
@@ -331,6 +374,7 @@ class EncreSemanticCompactStrategy(EncreCompactStrategy):
     """
 
     def __init__(self, max_tool_output_chars: int = 8000) -> None:
+        """Wire up the shared :class:`SemanticToolOutputCompactor`."""
         from encre.compact.semantic import SemanticToolOutputCompactor
         self._compactor = SemanticToolOutputCompactor()
         self._compactor.MAX_TOOL_OUTPUT_CHARS = max_tool_output_chars
@@ -340,6 +384,7 @@ class EncreSemanticCompactStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Replace oversized tool outputs with semantic summaries."""
         result: list[dict[str, Any]] = []
         for msg in messages:
             role = msg.get("role", "")
@@ -361,6 +406,7 @@ class EncreSemanticCompactStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         _max_tokens: int = 128000,
     ) -> bool:
+        """Trigger when any tool output exceeds 8000 characters."""
         for msg in messages:
             if msg.get("role") in ("tool",):
                 content = msg.get("content", "")
@@ -387,11 +433,13 @@ class EncreAutoCompactStrategy(EncreCompactStrategy):
         backend: Any = None,
         summarizer_model: str = "",
     ) -> None:
+        """Configure threshold ratio, optional summarisation backend/model."""
         self._threshold_ratio = threshold_ratio
         self._backend = backend
         self._summarizer_model = summarizer_model
 
     def set_backend(self, backend: Any) -> None:
+        """Attach a backend used for LLM-based summarisation."""
         self._backend = backend
 
     async def compact(
@@ -399,6 +447,7 @@ class EncreAutoCompactStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Run budget truncation, then LLM summary if a backend is available."""
         should = await self.should_compact(messages, max_tokens)
         if not should:
             return messages
@@ -471,11 +520,13 @@ class EncreAutoCompactStrategy(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         max_tokens: int = 128000,
     ) -> bool:
+        """Compact when total tokens exceed the configured threshold ratio."""
         total = sum(self._estimate_tokens(m) for m in messages)
         return total > max_tokens * self._threshold_ratio
 
     @staticmethod
     def _estimate_tokens(message: dict[str, Any]) -> int:
+        """Estimate a single message's token count."""
         return _estimate_message_tokens(message)
 class EncreMultiStagePipeline(EncreCompactStrategy):
     """6-stage compaction pipeline -- cheapest first, only escalates when needed.
@@ -498,6 +549,7 @@ class EncreMultiStagePipeline(EncreCompactStrategy):
         collapse_before_turn: int = 4,
         max_messages: int = 15,
     ) -> None:
+        """Build the ordered list of compaction stages."""
         self._context_threshold = context_threshold
         self._max_messages = max_messages
         self._stages: list[EncreCompactStrategy] = [
@@ -584,6 +636,7 @@ class EncreMultiStagePipeline(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         max_tokens: int = 128000,
     ) -> list[dict[str, Any]]:
+        """Run all stages (multi-pass) then sanitise and anchor-protect."""
         current = messages
         # Multi-pass: run the full pipeline up to 3 times so that
         # information-dense outputs (web_search results, large diffs)
@@ -615,6 +668,7 @@ class EncreMultiStagePipeline(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         max_tokens: int = 128000,
     ) -> bool:
+        """Compact when message count or token total crosses the threshold."""
         if len(messages) > self._max_messages:
             return True
         return await self._is_over_threshold(messages, max_tokens)
@@ -624,6 +678,7 @@ class EncreMultiStagePipeline(EncreCompactStrategy):
         messages: list[dict[str, Any]],
         max_tokens: int,
     ) -> bool:
+        """Return True while total tokens exceed the context threshold."""
         total = sum(self._estimate_tokens(m) for m in messages)
         return total > max_tokens * self._context_threshold
 
@@ -683,4 +738,5 @@ class EncreMultiStagePipeline(EncreCompactStrategy):
 
     @staticmethod
     def _estimate_tokens(message: dict[str, Any]) -> int:
+        """Estimate a single message's token count."""
         return _estimate_message_tokens(message)

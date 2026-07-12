@@ -18,6 +18,8 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Core crate for Encre: AST/code indexing, search, sandboxing,
+//! permissions, LSP, embeddings, and SIMD text search, exposed to Python.
 pub mod ast;
 pub mod codebase;
 pub mod diff;

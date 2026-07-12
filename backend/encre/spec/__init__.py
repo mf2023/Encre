@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Specification (spec) engine package.
+
+Exposes :class:`EncreSpecEngine` and its data structures
+(:class:`SpecDocument`, :class:`SpecSection`, :class:`SpecStatus`) used to
+generate, review, approve, and track implementation specifications.
+"""
 
 from encre.spec.engine import EncreSpecEngine, SpecDocument, SpecSection, SpecStatus
 

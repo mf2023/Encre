@@ -21,6 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# qqbot.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - QQCloseError
+#   - QQBotAdapter
+#
 import asyncio
 import contextlib
 import json
@@ -64,7 +78,31 @@ MAX_QUICK_DISCONNECT_COUNT = 3
 
 
 class QQCloseError(Exception):
+    """
+    QQCloseError adapter component.
+    
+    Inherits from Exception and integrates an external platform or
+    channel into the Encre adapter framework. It implements the standard
+    adapter contract used by the manager to connect, send and receive
+    messages, and to dispatch normalized events into the agent runtime.
+    
+    Responsibilities:
+        * Establish and maintain a connection/session to the platform.
+        * Translate inbound platform events into normalized messages.
+        * Translate outbound messages into platform-specific API calls.
+        * Expose lifecycle hooks (connect/disconnect, start/stop).
+    """
     def __init__(self, code: int | None = None, reason: str = "") -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            code (int | None):
+            reason (str):
+
+        Returns:
+            None
+        """
         self.code = int(code) if code is not None else None
         self.reason = str(reason) if reason else ""
         super().__init__(f"WebSocket closed (code={self.code}, reason={self.reason})")
@@ -83,6 +121,15 @@ class QQBotAdapter(BaseAdapter):
 
     @classmethod
     async def validate_config(cls, config: dict[str, Any]) -> tuple[bool, str]:
+        """
+        Validate config.
+
+        Args:
+            config (dict[str, Any]):
+
+        Returns:
+            tuple[bool, str]
+        """
         app_id = config.get("app_id", "")
         client_secret = config.get("client_secret", "")
         if not app_id:
@@ -117,6 +164,17 @@ class QQBotAdapter(BaseAdapter):
         *,
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            app_id (str):
+            client_secret (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         if not QQ_AVAILABLE:
             raise ImportError(
@@ -267,6 +325,15 @@ class QQBotAdapter(BaseAdapter):
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
         def _log_error(t: asyncio.Task) -> None:
+            """
+            Log error.
+
+            Args:
+                t (asyncio.Task):
+
+            Returns:
+                None
+            """
             self._background_tasks.discard(t)
             exc = t.exception()
             if exc:
@@ -572,6 +639,15 @@ class QQBotAdapter(BaseAdapter):
 
     @staticmethod
     def _parse_json(raw: Any) -> dict | None:
+        """
+        Parse json.
+
+        Args:
+            raw (Any):
+
+        Returns:
+            dict | None
+        """
         try:
             payload = json.loads(raw)
         except Exception:
@@ -631,6 +707,15 @@ class QQBotAdapter(BaseAdapter):
             return
 
     def _handle_ready(self, d: Any) -> None:
+        """
+        Handle ready.
+
+        Args:
+            d (Any):
+
+        Returns:
+            None
+        """
         if isinstance(d, dict):
             self._session_id = d.get("session_id")
             logger.info("[qqbot] Ready, session_id=%s", self._session_id)
@@ -834,6 +919,12 @@ class QQBotAdapter(BaseAdapter):
 
     @staticmethod
     def _build_user_agent() -> str:
+        """
+        Build user agent.
+
+        Returns:
+            str
+        """
         return "Encre/1.0.0 (QQ Bot Adapter)"
 
     @staticmethod

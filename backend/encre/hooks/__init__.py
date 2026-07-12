@@ -21,7 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre hook system package.
+
+Hooks let external command / python scripts observe and (optionally) block or
+modify agent behaviour across the full lifecycle -- before/after tool execution,
+session start/end, model calls, permission requests, compaction, sub-agents,
+and more.
+
+This package re-exports the public surface:
+    * :class:`EncreHookSystem` -- registry + emit API (see :mod:`encre.hooks.system`).
+    * :class:`HookEntry` / :func:`load_hooks_file` / :func:`load_project_hooks` -- YAML/JSON loading (see :mod:`encre.hooks.file_loader`).
+    * Event/result types -- :data:`HookEventType`, :data:`HookHandler`, :class:`HookStartedEvent`, :class:`HookProgressEvent`, :class:`HookResponseEvent`, :data:`HookResult` (see :mod:`encre.hooks.types`).
+"""
 
 from encre.hooks.file_loader import (
     HookEntry,

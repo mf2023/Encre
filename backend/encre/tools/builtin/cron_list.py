@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/cron_list.py
 
+Cron list implementation for the Encre tool system.
+"""
 import json
 import time
 from typing import Any
@@ -33,11 +37,21 @@ _scheduler: Any = None  # Set by agent during initialization
 
 
 def set_scheduler(scheduler: Any) -> None:
+    """Set scheduler.
+
+    Args:
+        scheduler: Description of the scheduler parameter.
+    """
     global _scheduler
     _scheduler = scheduler
 
 
 async def _cron_list_execute(**_kwargs: Any) -> str:
+    """Cron list execute.
+
+    Args:
+        _kwargs: Description of the _kwargs parameter.
+    """
     if _scheduler is None:
         return json.dumps({"jobs": [], "message": "Scheduler not available."}, ensure_ascii=False)
 
@@ -83,6 +97,9 @@ EncreCronListTool = build_tool(
     execute=_cron_list_execute,
     intents=["system"],
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
+    category="task",
+    semantic_type="read",
 )
 # Backward-compat: keep ``.set_scheduler()`` callable on the tool object.
 EncreCronListTool.set_scheduler = set_scheduler

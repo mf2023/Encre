@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 import base64
 import importlib
 import io
@@ -68,6 +70,11 @@ _enable_windows_dpi_awareness()
 
 @dataclass
 class DesktopScreenState:
+    """Snapshot of the desktop: screenshot, dimensions, DPI and cursor pos.
+
+    Tracks both physical (raw pixel) and logical (DPI-scaled) sizes so
+    coordinates from screenshots and from the input backend line up.
+    """
     width: int = 0
     height: int = 0
     screenshot_b64: str = ""
@@ -99,6 +106,7 @@ class ActiveWindowCapture:
 
 @dataclass
 class DesktopLocateResult:
+    """Result of a template/image match search on the screen."""
     found: bool = False
     x: int = 0
     y: int = 0
@@ -108,22 +116,29 @@ class DesktopLocateResult:
 
 
 class EncreDesktopSession:
+    """Desktop automation session: screenshots, mouse/keyboard, OCR, UIA."""
+
     def __init__(self):
+        """Initialise idle tracking, cached screen state and DPI scale cache."""
         self._last_used = time.time()
         self._state = DesktopScreenState()
         self._dpi_x: float | None = None
         self._dpi_y: float | None = None
 
     def _check_mss(self) -> bool:
+        """Return True if the ``mss`` screen-capture library is importable."""
         return importlib.util.find_spec("mss") is not None
 
     def _check_pyautogui(self) -> bool:
+        """Return True if the ``pyautogui`` input library is importable."""
         return importlib.util.find_spec("pyautogui") is not None
 
     def _check_pillow(self) -> bool:
+        """Return True if the ``PIL`` (Pillow) imaging library is importable."""
         return importlib.util.find_spec("PIL") is not None
 
     def screenshot(self) -> DesktopScreenState:
+        """Capture the primary monitor and update/return cached screen state."""
         if not self._check_mss():
             raise RuntimeError(
                 "mss not installed. Run: pip install mss pillow"
@@ -173,6 +188,7 @@ class EncreDesktopSession:
 
     def _compute_scale(self, phys_w: int, phys_h: int,
                        log_w: int, log_h: int) -> tuple[float, float]:
+        """Compute and cache physical/logical DPI scale factors."""
         sx = phys_w / log_w if log_w else 1.0
         sy = phys_h / log_h if log_h else 1.0
         self._dpi_x, self._dpi_y = sx, sy
@@ -204,6 +220,7 @@ class EncreDesktopSession:
         return x, y
 
     def get_screen_size(self) -> dict[str, int]:
+        """Return the screen size as ``{"width": w, "height": h}``."""
         if self._check_pyautogui():
             import pyautogui
             w, h = pyautogui.size()
@@ -218,6 +235,7 @@ class EncreDesktopSession:
         return {"width": self._state.width, "height": self._state.height}
 
     def get_cursor_position(self) -> dict[str, int]:
+        """Return the current mouse cursor position as ``{"x": x, "y": y}``."""
         if not self._check_pyautogui():
             return {"x": 0, "y": 0}
         import pyautogui
@@ -228,6 +246,7 @@ class EncreDesktopSession:
         return {"x": x, "y": y}
 
     def move_mouse(self, x: int, y: int, coord_space: str = "auto") -> dict[str, int]:
+        """Move the mouse to (x, y), converting from the given coord space."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -244,6 +263,7 @@ class EncreDesktopSession:
         self, x: int | None = None, y: int | None = None, button: str = "left",
         coord_space: str = "auto",
     ) -> dict[str, Any]:
+        """Click at (x, y) with the given button, or at the current position."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -262,6 +282,7 @@ class EncreDesktopSession:
 
     def double_click(self, x: int | None = None, y: int | None = None,
                      coord_space: str = "auto") -> dict[str, Any]:
+        """Double-click at (x, y), or at the current cursor position."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -280,6 +301,7 @@ class EncreDesktopSession:
 
     def right_click(self, x: int | None = None, y: int | None = None,
                     coord_space: str = "auto") -> dict[str, Any]:
+        """Right-click at (x, y), or at the current cursor position."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -298,6 +320,7 @@ class EncreDesktopSession:
 
     def drag(self, x1: int, y1: int, x2: int, y2: int, duration: float = 0.5,
              coord_space: str = "auto") -> dict[str, Any]:
+        """Press at (x1, y1) and drag to (x2, y2) over ``duration`` seconds."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -314,6 +337,7 @@ class EncreDesktopSession:
         return {"action": "drag", "from": {"x": lx1, "y": ly1}, "to": {"x": lx2, "y": ly2}}
 
     def type_text(self, text: str, interval: float = 0.02) -> dict[str, Any]:
+        """Type ``text`` character by character with an inter-key ``interval``."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -324,6 +348,7 @@ class EncreDesktopSession:
         return {"action": "type", "text": text[:200]}
 
     def press_key(self, key: str) -> dict[str, Any]:
+        """Press and release a single named key (e.g. "enter", "tab")."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -334,6 +359,7 @@ class EncreDesktopSession:
         return {"action": "press_key", "key": key}
 
     def hotkey(self, keys: list[str]) -> dict[str, Any]:
+        """Press a key combination (e.g. ``["ctrl", "c"]``) simultaneously."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -344,6 +370,7 @@ class EncreDesktopSession:
         return {"action": "hotkey", "keys": "+".join(keys)}
 
     def scroll(self, clicks: int, x: int | None = None, y: int | None = None) -> dict[str, Any]:
+        """Scroll ``clicks`` notches (positive=up), optionally at (x, y)."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -357,6 +384,7 @@ class EncreDesktopSession:
         return {"action": "scroll", "clicks": clicks}
 
     def locate_on_screen(self, image_b64: str, confidence: float = 0.9) -> DesktopLocateResult:
+        """Locate a base64 PNG template on screen and return its match result."""
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -400,6 +428,7 @@ class EncreDesktopSession:
                     os.unlink(needle_path)
 
     def screenshot_with_cursor(self) -> DesktopScreenState:
+        """Capture a screenshot and annotate the current cursor position."""
         state = self.screenshot()
         if self._check_pyautogui():
             import pyautogui
@@ -833,6 +862,7 @@ class EncreDesktopSession:
 
     @staticmethod
     def _text_matches(haystack: str, needle: str, fuzzy: bool) -> bool:
+        """Return True if ``needle`` matches ``haystack`` (substring or fuzzy)."""
         if not fuzzy:
             return needle in haystack.lower()
         # Cheap fuzzy: every whitespace-separated token of ``needle`` must
@@ -848,6 +878,7 @@ class EncreDesktopSession:
         return True
 
     def is_idle(self, max_idle_seconds: int = 600) -> bool:
+        """Return True if the session hasn't been used within the idle window."""
         return (time.time() - self._last_used) > max_idle_seconds
 
     # ------------------------------------------------------------------
@@ -889,6 +920,7 @@ class EncreDesktopSession:
     @staticmethod
     def _walk_uia(node, depth: int, max_depth: int, max_nodes: int,
                   out: list[dict[str, Any]], uia) -> None:
+        """Recursively flatten a UIA control subtree into ``out`` (bounded)."""
         if len(out) >= max_nodes or node is None or depth > max_depth:
             return
         try:
@@ -948,6 +980,7 @@ class EncreDesktopSession:
 
     @staticmethod
     def _ensure_pillow() -> None:
+        """Raise a helpful error if Pillow is not installed."""
         if importlib.util.find_spec("PIL") is None:
             raise RuntimeError(
                 "Pillow not installed. Run: pip install pillow"

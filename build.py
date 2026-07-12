@@ -21,6 +21,23 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Module summary
+# ---------------------------------------------------------------------------
+# Top-level build orchestrator for the Encre project.
+#
+# This script builds the native Rust extension, compiles the desktop TypeScript
+# front-end, marks the prebuilt ``node-pty`` binary so Electron's rebuild is
+# skipped, packages the desktop installer, and finally copies the produced
+# installer artifacts to the repository root.
+#
+# Usage (run from the repository root):
+#     python build.py          # full build
+#     python build.py clean    # remove build artifacts
+# ---------------------------------------------------------------------------
+
 import os, platform, shutil, subprocess, sys
 from pathlib import Path
 
@@ -33,36 +50,62 @@ IS_WIN = platform.system() == "Windows"
 EXT = ".pyd" if IS_WIN else ".dylib" if platform.system() == "Darwin" else ".so"
 
 def run(cmd, **kw):
+    """Run a shell command from the repository root, echoing it first.
+
+    Args:
+        cmd: The shell command string to execute.
+        **kw: Extra keyword arguments forwarded to :func:`subprocess.run`.
+    """
     print(f"$ {cmd}")
     subprocess.run(cmd, shell=True, check=True, cwd=ROOT, **kw)
 
 def build():
+    """Run the full Encre build pipeline.
+
+    Steps performed (in order):
+      1. Compile the Rust native extension and copy it into the Python package.
+      2. Build the desktop TypeScript front-end.
+      3. Stamp a prebuilt ``node-pty`` marker so Electron source rebuild is skipped.
+      4. Package the desktop installer via ``electron-builder``.
+      5. Copy the resulting installer(s) to the repository root.
+    """
     env = os.environ.copy()
     if sys.version_info >= (3, 14):
         env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
     # 1. Rust 原生模块
+    # Compile the Rust native extension in release mode for the encre-py crate.
     run(f"cd native && cargo build --release -p encre-py", env=env)
     src = next(iter(sorted((NATIVE/"target"/"release").glob("_native*"))), None)
     if src: shutil.copy2(src, PY_PKG / f"_native{EXT}")
 
     # 2. 桌面端 TypeScript 编译
+    # Build the desktop TypeScript front-end via the project's build script.
     run("cd desktop && node build.js")
 
     # 3. 标记 node-pty 已编译（跳过 @electron/rebuild 源码编译）
+    # Stamp the prebuilt node-pty binary so Electron's source rebuild is skipped.
     meta = DESKTOP / "node_modules" / "node-pty" / "build" / "Release" / ".forge-meta"
     meta.parent.mkdir(parents=True, exist_ok=True)
     meta.write_text("x64--146")
 
     # 4. 打包安装程序
+    # Package the desktop app into an installer (no publishing).
     run("cd desktop && npx electron-builder --publish never")
 
     # 5. 复制安装包到根目录
+    # Copy the produced installer(s) up to the repository root for easy access.
     for f in (DESKTOP/"release").glob("Encre*"):
         shutil.copy2(f, ROOT / f.name)
         print(f"  >>> {f.name}")
 
 def clean():
+    """Remove all build artifacts produced by :func:`build`.
+
+    Deletes the Rust ``target`` directory, the compiled native extension inside
+    the Python package, desktop build outputs (``dist``, renderer assets,
+    ``release``), and any installer artifacts at the repository root.
+    """
     for d in [NATIVE/"target"]:
         if d.exists(): shutil.rmtree(d)
     for f in PY_PKG.glob("_native.*"): f.unlink()

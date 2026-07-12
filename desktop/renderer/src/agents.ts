@@ -20,16 +20,44 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Agents view module.
+ *
+ * Renders the read-only "active agents" panel of the Encre desktop client.
+ * The view is currently a static placeholder that explains how to spawn and
+ * manage agents; it is mounted once and re-rendered by the {@link Agents}
+ * class whenever the view is (re)opened.
+ */
+
 import { t } from "./i18n.js";
 
+/**
+ * Renders and manages the "Active Agents" view inside the renderer.
+ *
+ * The component owns the `#agents-view` container and paints a localized
+ * placeholder describing how agents work. It is intentionally simple and does
+ * not yet bind to a live agent registry.
+ */
 export class Agents {
   private el: HTMLElement;
 
+  /**
+   * Creates the Agents view and performs the initial render.
+   *
+   * Looks up the `#agents-view` container from the DOM and immediately draws
+   * the placeholder content.
+   */
   constructor() {
     this.el = document.getElementById("agents-view")!;
     this.render();
   }
 
+  /**
+   * Renders the localized "active agents" placeholder into the container.
+   *
+   * Injects the static markup (header, count badge and empty-state hint) and
+   * refreshes any lucide icons that were injected as inline SVG.
+   */
   render(): void {
     this.el.innerHTML = `
       <div class="agents-container">

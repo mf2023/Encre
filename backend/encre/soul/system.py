@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 EncreSoulSystem -- Agent identity, personality, and user relationship files.
@@ -37,8 +37,6 @@ These files are stored in the data directory alongside memory/ and are
 encrypted on disk using AES-256-GCM (via encre.crypto). They are loaded
 at startup and injected into the agent's system prompt.
 """
-
-from __future__ import annotations
 
 import os
 import time
@@ -160,6 +158,7 @@ class EncreSoulSystem:
         return self._files
 
     def get_soul_dir(self) -> str:
+        """Return the directory where the soul files are stored."""
         return self._soul_dir
 
     def build_prompt(self) -> str:
@@ -226,6 +225,7 @@ class EncreSoulSystem:
 
     @staticmethod
     def _default_soul() -> str:
+        """Default contents for SOUL.md when no file exists yet."""
         return """I am Encre, an autonomous AI agent built for thoughtful, thorough work.
 
 My core principles:
@@ -239,6 +239,7 @@ I approach every task with curiosity, precision, and a commitment to delivering 
 
     @staticmethod
     def _default_identity() -> str:
+        """Default contents for IDENTITY.md when no file exists yet."""
         return """I am a general-purpose AI agent with expertise across software engineering, data analysis, research, and creative problem-solving.  # noqa: E501
 
 My capabilities include:
@@ -256,6 +257,7 @@ I work best when given clear goals and the autonomy to figure out the best path 
 
     @staticmethod
     def _default_user() -> str:
+        """Default contents for USER.md when no file exists yet."""
         return """I am learning about the user's preferences over time.
 
 This file will be automatically updated as I observe:

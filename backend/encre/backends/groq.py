@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Groq backend -- Llama 3.3 70B, Llama 4 Scout, GPT-OSS 120B (2026 lineup).
@@ -92,6 +92,7 @@ class GroqBackend(OpenAISSEBackend):
             **kwargs: Additional arguments passed to :class:`OpenAISSEBackend`.
         """
         if not base_url:
+            # No explicit endpoint given: use Groq's OpenAI-compatible URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 

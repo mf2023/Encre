@@ -1,8 +1,34 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Rust-backed AST workspace index wrapper."""
 
-from __future__ import annotations
+# This module wraps the native (Rust) tree-sitter based AST index exposed by
+# ``encre.native``.  It provides a pure-Python API for symbol lookup, reference
+# finding, outline generation, "go to definition" and relevance search, while
+# caching parsed data on disk under ``.encre/ast_index.json``.
 
 import json
 import logging
@@ -28,6 +54,11 @@ logger = logging.getLogger("encre.codebase.ast_index")
 
 @dataclass
 class Symbol:
+    """A named code definition located in the workspace.
+
+    Represents a function, class, method, variable, etc., along with its
+    source location span and optional signature/docstring metadata.
+    """
     name: str
     kind: str
     file: str
@@ -40,10 +71,13 @@ class Symbol:
     docstring: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the symbol to a plain dictionary (for JSON storage)."""
         return asdict(self)
+
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Symbol:
+        """Reconstruct a :class:`Symbol` from a dictionary produced by :meth:`to_dict`."""
         return cls(
             name=str(data["name"]),
             kind=str(data["kind"]),
@@ -60,6 +94,7 @@ class Symbol:
 
 @dataclass
 class Reference:
+    """A single usage site of a symbol at a specific source location."""
     file: str
     line: int
     col: int
@@ -67,10 +102,13 @@ class Reference:
     kind: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the reference to a plain dictionary (for JSON storage)."""
         return asdict(self)
+
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Reference:
+        """Reconstruct a :class:`Reference` from a dictionary produced by :meth:`to_dict`."""
         return cls(
             file=str(data["file"]),
             line=int(data["line"]),
@@ -84,6 +122,7 @@ class EncreASTIndex:
     """Compatibility wrapper around the native Rust AST index."""
 
     def __init__(self, workspace: str) -> None:
+        """Create the index, loading any cached index from ``.encre/`` on disk."""
         self.workspace: str = workspace
         self._symbols_by_file: dict[str, list[Symbol]] = {}
         self._global_index: dict[str, list[Symbol]] = {}
@@ -93,13 +132,16 @@ class EncreASTIndex:
 
     @property
     def available(self) -> bool:
+        """``True`` when the native AST backend (e.g. tree-sitter) is usable."""
         return bool(native_ast_available())
 
     @property
     def backend(self) -> str | None:
+        """Return the name of the active native AST backend (e.g. ``tree-sitter``)."""
         return str(native_ast_backend_name())
 
     def _load_from_native_payload(self, data: dict[str, Any]) -> None:
+        """Populate the in-memory caches from a native index payload dict."""
         self._file_mtimes = {
             str(path): float(mtime) for path, mtime in data.get("file_mtimes", {}).items()
         }
@@ -114,6 +156,7 @@ class EncreASTIndex:
         self._indexed = True
 
     def scan(self, progress_cb: Callable[[str, int], None] | None = None) -> None:
+        """Build the AST index from scratch for the whole workspace."""
         ws = Path(self.workspace).resolve()
         if not ws.exists():
             self._indexed = True
@@ -128,6 +171,7 @@ class EncreASTIndex:
     def scan_incremental(
         self, progress_cb: Callable[[str, int], None] | None = None
     ) -> None:
+        """Update the index re-using prior state (full scan on first run)."""
         ws = Path(self.workspace).resolve()
         if not ws.exists():
             self._indexed = True
@@ -143,9 +187,11 @@ class EncreASTIndex:
             progress_cb("_done", len(self._file_mtimes))
 
     def _storage_path(self) -> Path:
+        """Return the on-disk location of the cached AST index (``.encre/ast_index.json``)."""
         return Path(self.workspace) / ".encre" / "ast_index.json"
 
     def save(self) -> None:
+        """Persist the current index to ``.encre/ast_index.json`` on disk."""
         data: dict[str, Any] = {
             "workspace": self.workspace,
             "file_mtimes": self._file_mtimes,
@@ -162,6 +208,7 @@ class EncreASTIndex:
         )
 
     def load(self) -> bool:
+        """Load a cached index from disk, returning ``True`` on success."""
         storage = self._storage_path()
         if not storage.exists():
             return False
@@ -185,6 +232,7 @@ class EncreASTIndex:
                 return False
 
     def get_symbol(self, name: str) -> list[Symbol]:
+        """Return all symbols in the workspace that match *name*."""
         if not self._indexed:
             self.scan()
         try:
@@ -193,6 +241,7 @@ class EncreASTIndex:
             return list(self._global_index.get(name, []))
 
     def get_outline(self, file: str) -> list[Symbol]:
+        """Return the symbol outline (top-level definitions) for *file*."""
         if not self._indexed:
             self.scan()
         try:
@@ -201,6 +250,7 @@ class EncreASTIndex:
             return list(self._symbols_by_file.get(file, []))
 
     def list_files(self) -> list[str]:
+        """Return the list of indexed source file paths."""
         if not self._indexed:
             self.scan()
         try:
@@ -209,6 +259,7 @@ class EncreASTIndex:
             return list(self._file_mtimes.keys())
 
     def find_references(self, name: str) -> list[Reference]:
+        """Return all references (usages) of the symbol named *name*."""
         if not self._indexed:
             self.scan()
         try:
@@ -220,6 +271,7 @@ class EncreASTIndex:
             return []
 
     def goto_definition(self, file: str, line: int, col: int) -> Symbol | None:
+        """Resolve the symbol definition at a (file, line, col) position."""
         if not self._indexed:
             self.scan()
         try:
@@ -231,6 +283,7 @@ class EncreASTIndex:
         return Symbol.from_dict(raw)
 
     def find_relevant(self, name: str, limit: int = 10) -> list[Symbol]:
+        """Return symbols most relevant to *name*, capped at *limit* results."""
         if not self._indexed:
             self.scan()
         if not name:

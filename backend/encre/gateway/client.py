@@ -21,7 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre channel-adapter gateway: client side.
+
+Implements :class:`GatewayClient`, the WebSocket client used by channel adapters
+(QQ, Telegram, ...) to talk to :class:`encre.gateway.server.GatewayServer`.
+It manages the connection lifecycle (connect / reconnect with exponential backoff,
+heartbeats) and exposes :meth:`submit` (request/response) and
+:meth:`submit_stream` (async generator of agent events).
+
+Incoming frames are read by :meth:`_read_loop` and funnelled into a single
+``_msg_queue`` so multiple callers can consume by op-code without racing on the
+underlying WebSocket.
+"""
 
 import asyncio
 import contextlib

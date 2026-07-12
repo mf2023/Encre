@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Unified high-level "computer-use" abstraction over browser and desktop.
 
 Codex / Manus / Claude Code all expose a *single* curated action schema
@@ -45,8 +47,6 @@ build vision-language-model prompts.  That is the responsibility of the
 agent / tool layer above; here we just provide the action dispatcher,
 the trajectory, and a small validation layer.
 """
-
-from __future__ import annotations
 
 import base64
 import contextlib
@@ -185,6 +185,7 @@ class MacroEntry:
     tags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise this macro entry to a JSON-friendly dictionary."""
         return {
             "name": self.name,
             "actions": list(self.actions),
@@ -199,6 +200,7 @@ class MacroEntry:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> MacroEntry:
+        """Build a :class:`MacroEntry` from a dict, validating required keys."""
         if not isinstance(payload, dict):
             raise TypeError("MacroEntry.from_dict: payload must be a dict")
         if not isinstance(payload.get("name"), str) or not payload["name"]:
@@ -230,6 +232,7 @@ class MacroLibrary:
     SCHEMA_VERSION = 1
 
     def __init__(self, path: str | None = None) -> None:
+        """Open the library at ``path`` (or the default), eager-loading it."""
         self._path = path or DEFAULT_MACRO_LIBRARY_PATH
         self._entries: dict[str, MacroEntry] = {}
         self._dirty = False
@@ -241,9 +244,11 @@ class MacroLibrary:
 
     @property
     def path(self) -> str:
+        """Return the on-disk path backing this macro library."""
         return self._path
 
     def _atomic_write(self, payload: dict[str, Any]) -> None:
+        """Write ``payload`` to disk via a temp file + atomic rename."""
         target = Path(self._path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_suffix(target.suffix + ".tmp")
@@ -396,26 +401,31 @@ class MacroLibrary:
         return entry
 
     def get(self, name: str) -> MacroEntry:
+        """Return the macro named ``name`` or raise ``KeyError``."""
         if name not in self._entries:
             raise KeyError(f"MacroLibrary.get: macro {name!r} not found")
         return self._entries[name]
 
     def has(self, name: str) -> bool:
+        """Return True if a macro named ``name`` exists."""
         return name in self._entries
 
     def remove(self, name: str) -> bool:
+        """Remove the named macro; return True if it existed."""
         existed = self._entries.pop(name, None) is not None
         if existed:
             self._dirty = True
         return existed
 
     def list(self) -> list[MacroEntry]:
+        """Return all macros sorted by (category, name)."""
         return sorted(
             self._entries.values(),
             key=lambda e: (e.category, e.name),
         )
 
     def names(self) -> list[str]:
+        """Return all macro names, sorted alphabetically."""
         return sorted(self._entries.keys())
 
     def search(
@@ -914,10 +924,12 @@ class ComputerUseTrajectory:
     """Append-only log of ``ComputerUseStep`` with a few conveniences."""
 
     def __init__(self, max_steps: int = 200) -> None:
+        """Create an empty trajectory bounded to ``max_steps`` entries."""
         self.max_steps = max_steps
         self._steps: list[ComputerUseStep] = []
 
     def append(self, step: ComputerUseStep) -> None:
+        """Append a step, evicting the oldest entries past ``max_steps``."""
         self._steps.append(step)
         if len(self._steps) > self.max_steps:
             # Drop oldest (they're rarely useful after the first few).
@@ -930,9 +942,11 @@ class ComputerUseTrajectory:
         return len(self._steps)
 
     def last(self) -> ComputerUseStep | None:
+        """Return the most recent step, or None if empty."""
         return self._steps[-1] if self._steps else None
 
     def last_n(self, n: int) -> list[ComputerUseStep]:
+        """Return the last ``n`` steps."""
         return self._steps[-n:]
 
     def recent_summary(self, n: int = 10) -> str:
@@ -946,6 +960,7 @@ class ComputerUseTrajectory:
         )
 
     def to_dict(self) -> list[dict[str, Any]]:
+        """Serialise every step to a list of JSON-friendly dictionaries."""
         return [
             {
                 "action": s.action.to_dict(),
@@ -1032,9 +1047,11 @@ class ComputerUseTrajectory:
     # ----- statistics -----
 
     def success_count(self) -> int:
+        """Return the number of successful steps."""
         return sum(1 for s in self._steps if s.success)
 
     def failure_count(self) -> int:
+        """Return the number of failed steps."""
         return sum(1 for s in self._steps if not s.success)
 
     def success_rate(self) -> float:
@@ -1312,6 +1329,7 @@ class EncreComputerUseSession:
     # ----- backend resolution -----
 
     def _ensure_browser(self) -> Any:
+        """Return the browser backend, lazily creating it on first use."""
         if self._browser is None:
             from encre.computer.browser import EncreBrowserSession
             self._browser = EncreBrowserSession()
@@ -1322,6 +1340,7 @@ class EncreComputerUseSession:
         return self._browser
 
     def _ensure_desktop(self) -> Any:
+        """Return the desktop backend, lazily creating it on first use."""
         if self._desktop is None:
             from encre.computer.desktop import EncreDesktopSession
             self._desktop = EncreDesktopSession()
@@ -1677,6 +1696,11 @@ class EncreComputerUseSession:
     # ----- browser backend -----
 
     async def _dispatch_browser(self, a: ComputerUseAction) -> tuple[Any, str]:
+        """Route a normalised action to the browser backend.
+
+        Returns a ``(result, screenshot_b64)`` tuple. Raises ``ValueError``
+        for missing arguments or unsupported browser actions.
+        """
         s = self._ensure_browser()
         act = a.action
         if act == "navigate":
@@ -1844,6 +1868,11 @@ class EncreComputerUseSession:
     # ----- desktop backend -----
 
     async def _dispatch_desktop(self, a: ComputerUseAction) -> tuple[Any, str]:
+        """Route a normalised action to the desktop backend.
+
+        Returns a ``(result, screenshot_b64)`` tuple. Raises ``ValueError``
+        for missing arguments or unsupported desktop actions.
+        """
         s = self._ensure_desktop()
         act = a.action
         # Map cross-target actions to their desktop equivalent.
@@ -2008,6 +2037,7 @@ class EncreComputerUseSession:
     # ----- session lifecycle -----
 
     async def close(self) -> None:
+        """Close the session and its browser backend (idempotent)."""
         if self._closed:
             return
         self._closed = True
@@ -2019,6 +2049,7 @@ class EncreComputerUseSession:
         # desktop has no close; nothing to do.
 
     def trajectory_dict(self) -> list[dict[str, Any]]:
+        """Return the trajectory serialised as a list of step dictionaries."""
         return self.trajectory.to_dict()
 
     # ----- state checkpoint / restore -----

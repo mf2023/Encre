@@ -20,6 +20,15 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * File & attachment handling for the composer.
+ *
+ * Owns the composer's attachment surface: drag-and-drop, paste and file/folder
+ * pickers feed into base64-backed `AttachmentMeta` records stored in app state.
+ * Attachments are rendered as read-only "chips" inserted at the caret or
+ * appended to the input, and kept in sync with state via a subscription.
+ */
+
 import { AttachmentMeta } from "./types.js";
 import { addAttachments, removeAttachment, getState, subscribe } from "./state.js";
 
@@ -38,9 +47,17 @@ function readBatch<T, R>(items: T[], fn: (item: T) => Promise<R>, size: number):
   return run();
 }
 
+/**
+ * Manages composer attachments (drag/drop, paste, picker) and their chips.
+ */
 export class Files {
   private input: HTMLElement;
 
+  /**
+   * Constructor: wires drag/drop/paste listeners and a state subscription.
+   *
+   * @param input - The content-editable composer element that hosts chips.
+   */
   constructor(input: HTMLElement) {
     this.input = input;
 
@@ -114,6 +131,7 @@ export class Files {
     });
   }
 
+  /** Opens the native file picker and reads the selected files. */
   async promptForFiles(): Promise<void> {
     if (!window.electronAPI) return;
     const paths = await window.electronAPI.pickFiles();
@@ -121,6 +139,7 @@ export class Files {
     await this.readPaths(paths);
   }
 
+  /** Opens the native folder picker and attaches the chosen directory. */
   async promptForFolder(): Promise<void> {
     if (!window.electronAPI) return;
     const dirPath = await window.electronAPI.pickDirectory();
@@ -128,6 +147,7 @@ export class Files {
     await this.readDirectory(dirPath);
   }
 
+  /** Reads dropped File objects, converting each to a base64 attachment. */
   private async readDroppedFiles(files: FileList | File[]): Promise<void> {
     const arr = Array.from(files).filter(f => f.size <= MAX_SINGLE_SIZE);
     const attachments = await readBatch(arr, async (file) => {
@@ -147,6 +167,7 @@ export class Files {
     this.batchInsertChips(attachments);
   }
 
+  /** Reads files from absolute paths via the Electron bridge. */
   private async readPaths(paths: string[]): Promise<void> {
     const attachments = await readBatch(paths, async (fp) => {
       if (!window.electronAPI) return null;
@@ -168,6 +189,7 @@ export class Files {
     this.batchInsertChips(valid);
   }
 
+  /** Attaches a directory (represented as a special attachment) to the composer. */
   async readDirectory(dirPath: string): Promise<void> {
     const api = window.electronAPI;
     if (!api) return;
@@ -224,6 +246,7 @@ export class Files {
     }
   }
 
+  /** Returns the lucide icon name for a file based on its extension. */
   fileIcon(name: string): string {
     const ext = name.split(".").pop()?.toLowerCase();
     const icons: Record<string, string> = {
@@ -251,6 +274,7 @@ export class Files {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  /** Builds a read-only attachment chip element and wires its remove button. */
   private makeChip(att: AttachmentMeta): HTMLSpanElement {
     const chip = document.createElement("span");
     chip.contentEditable = "false";

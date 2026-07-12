@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# High-level orchestration entry point for multi-agent swarms.
+#
+# ``EncreSwarmSession`` is the user-facing API: given a goal it plans a task
+# tree, runs it through ``EncreOrchestrator``, optionally performs a consensus
+# vote over the results, and returns a consolidated ``SwarmResult``.  Progress
+# and lifecycle events are surfaced through ``SwarmEvent`` callbacks / a
+# streaming generator.
 
 import time
 from collections.abc import AsyncGenerator, Callable
@@ -41,6 +49,7 @@ from encre.swarm.roles import (
     ROLE_TESTER,
     RoleRegistry,
 )
+from encre.swarm.teammate import EncreTeammate
 
 logger = get_logger("encre.swarm")
 
@@ -111,6 +120,15 @@ class EncreSwarmSession:
         max_concurrent: int = 0,
         on_event: Callable[[SwarmEvent], None] | None = None,
     ) -> SwarmResult:
+        """Run the full swarm workflow for *goal*.
+
+        Three phases: (1) plan the goal into a ``TaskTree``; (2) execute the
+        tree via the orchestrator, feeding ``SwarmEvent``s to *on_event* and
+        accumulating per-task results; (3) if two or more results were produced,
+        run a proposal-vote ``consensus`` step.  Returns a consolidated
+        ``SwarmResult`` with counts, the blackboard snapshot, and a summary.
+        Raises ``ValueError`` when no goal is supplied.
+        """
         goal = goal or self._goal
         max_concurrent = max_concurrent or self._max_concurrent
 
@@ -185,17 +203,37 @@ class EncreSwarmSession:
                 options=["APPROVED", "NEEDS_REVISION"],
                 proposed_by=primary_id,
             )
-            # Collect votes from other results as simple yes/no
-            for task_id, output in results_list[1:
-                ]:
-                choice = "APPROVED" if "error" not in output.lower() else "NEEDS_REVISION"
-                consensus.cast_vote(
-                    proposal_id=proposal.id,
-                    voter_id=task_id,
-                    choice=choice,
-                    reasoning=output[:500],
+            # Run a real LLM vote: each non-primary result becomes a voter
+            # teammate that independently evaluates the proposal.  Falls back
+            # to the legacy string-match vote if the voting agents cannot run
+            # (e.g. missing backend config), so consensus never blocks the
+            # swarm from completing.
+            voters = [
+                EncreTeammate(name=f"voter-{task_id}", task="vote")
+                for task_id, _ in results_list[1:]
+            ]
+            try:
+                consensus_result = await consensus.run_proposal_vote(
+                    proposal, voters, timeout=60.0,
                 )
-            consensus_result = consensus.tally(proposal)
+                # run_proposal_vote tallies internally; if no votes came back
+                # (total == 0), fall through to the legacy heuristic below.
+                if sum(consensus_result.vote_counts.values()) == 0:
+                    raise RuntimeError("no votes returned")
+            except Exception as vote_exc:
+                logger.warning(
+                    "[swarm] LLM vote failed (%s); falling back to heuristic",
+                    vote_exc,
+                )
+                for task_id, output in results_list[1:]:
+                    choice = "APPROVED" if "error" not in output.lower() else "NEEDS_REVISION"
+                    consensus.cast_vote(
+                        proposal_id=proposal.id,
+                        voter_id=task_id,
+                        choice=choice,
+                        reasoning=output[:500],
+                    )
+                consensus_result = consensus.tally(proposal)
             result.consensus = consensus_result
             if on_event:
                 on_event(SwarmEvent(type="consensus", consensus=consensus_result))

@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Skill registry.
+
+Loads, stores, and resolves :class:`BundledSkillDefinition` entries.  Skills
+may be registered programmatically or discovered from ``SKILL.md`` files on
+disk (with YAML/legacy frontmatter).  Name and alias lookups honour a
+source-priority scheme so that higher-precedence definitions win on conflict.
+"""
 
 import os
 import re
@@ -50,11 +58,15 @@ _ALIASES_SEPARATOR = re.compile(r",\s*")
 
 
 class EncreSkillRegistry:
+    """In-memory registry of skills keyed by name and alias."""
+
     def __init__(self) -> None:
+        """Initialize empty name and alias maps."""
         self._skills: dict[str, BundledSkillDefinition] = {}
         self._aliases: dict[str, str] = {}
 
     def register(self, skill: BundledSkillDefinition) -> None:
+        """Register a skill, resolving name/alias conflicts by source priority."""
         existing = self._skills.get(skill.name)
         if existing is not None:
             new_priority = _PRIORITY_ORDER.get(skill.source, 3)
@@ -74,6 +86,7 @@ class EncreSkillRegistry:
             self._aliases[alias] = skill.name
 
     def lookup(self, name: str) -> BundledSkillDefinition | None:
+        """Resolve a skill by exact name or by alias."""
         skill = self._skills.get(name)
         if skill is not None:
             return skill
@@ -88,6 +101,11 @@ class EncreSkillRegistry:
         args: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> str:
+        """Activate a skill by name and return its rendered prompt.
+
+        Looks the skill up, calls its ``get_prompt_for_command`` coroutine with
+        the provided args/context, and returns an error string on failure.
+        """
         skill = self.lookup(name)
         if skill is None:
             return f"Error: skill '{name}' not found."
@@ -99,6 +117,7 @@ class EncreSkillRegistry:
             return f"Error activating skill '{name}': {e}"
 
     async def activate_for_paths(self, file_paths: list[str]) -> list[str]:
+        """Return names of skills whose ``when_to_use`` matches given file extensions."""
         prompts: list[str] = []
         seen: set[str] = set()
         for file_path in file_paths:
@@ -117,6 +136,11 @@ class EncreSkillRegistry:
         skills_dir: str,
         source: SkillSource = SkillSource.PROJECT,
     ) -> None:
+        """Walk a directory and load every ``SKILL.md`` (or frontmatter) file.
+
+        Hidden directories are skipped.  Each discovered file is parsed and
+        registered with the supplied :class:`SkillSource`.
+        """
         if not os.path.isdir(skills_dir):
             return
         for root, dirs, files in os.walk(skills_dir):
@@ -138,6 +162,7 @@ class EncreSkillRegistry:
                     continue
 
     def _load_skill_md(self, filepath: str, source: SkillSource) -> None:
+        """Parse a SKILL.md file's frontmatter and register it as a skill."""
         try:
             with open(filepath, encoding="utf-8") as f:
                 content = f.read()
@@ -239,10 +264,16 @@ class EncreSkillRegistry:
         self.register(skill)
 
     def list_all(self) -> list[BundledSkillDefinition]:
+        """Return all registered skills."""
         return list(self._skills.values())
 
 
 def _parse_yaml_frontmatter(content: str) -> tuple[dict[str, Any], str]:
+    """Split YAML/legacy frontmatter from a SKILL.md body.
+
+    Returns a ``(metadata, body)`` tuple.  When no frontmatter is present the
+    metadata is empty and the whole content is returned as the body.
+    """
     match = _FRONTMATTER_PATTERN.match(content)
     if match is None:
         return {}, content
@@ -263,4 +294,5 @@ parse_yaml_frontmatter = _parse_yaml_frontmatter
 
 
 def _parse_bool(value: str) -> bool:
+    """Parse a truthy string ("true"/"1"/"yes"/"on") into a boolean."""
     return value.strip().lower() in ("true", "1", "yes", "on")

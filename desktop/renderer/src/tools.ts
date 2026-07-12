@@ -20,14 +20,36 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Tool-call detail panel.
+ *
+ * Manages the right-hand "detail" panel that shows the parameters and result of
+ * the currently selected tool call in a chat message. Rendering is throttled via
+ * `requestAnimationFrame` so that dense `tool_call_delta` streams do not thrash
+ * the layout, and the panel reacts to state changes through a global subscription.
+ */
+
 import { getState, subscribe } from "./state.js";
 import { t } from "./i18n.js";
 
+/**
+ * Renders and manages the tool-call detail panel.
+ *
+ * The panel is shown only when a tool call is "active" (selected by the user).
+ * It displays the tool name, execution status, parameters and — once available —
+ * the tool result, escaping all content to avoid HTML injection.
+ */
 export class Tools {
   private panel: HTMLElement;
   private content: HTMLElement;
   private rafPending = false;
 
+  /**
+   * Constructor: grabs the panel/container elements and subscribes to state.
+   *
+   * Registers a subscription so the panel re-renders (throttled) whenever the
+   * global chat state changes.
+   */
   constructor() {
     this.panel = document.getElementById("detail-panel")!;
     this.content = document.getElementById("detail-content")!;
@@ -44,6 +66,12 @@ export class Tools {
     });
   }
 
+  /**
+   * Renders the detail panel for the currently active tool call.
+   *
+   * Hides the panel when no tool is active or the referenced tool call cannot be
+   * found, otherwise shows the name, status icon, parameters and result.
+   */
   render(): void {
     const state = getState();
     if (!state.activeToolId) {
@@ -86,6 +114,12 @@ export class Tools {
     });
   }
 
+  /**
+   * Searches the message list for a tool call with the given id.
+   *
+   * @param id - The unique tool-call identifier to look up.
+   * @returns The matching tool call, or `null` if not found.
+   */
   private findToolCall(id: string) {
     const state = getState();
     for (const msg of state.messages) {
@@ -96,6 +130,7 @@ export class Tools {
     return null;
   }
 
+  /** Escapes a string for safe insertion into `innerHTML` by using the DOM. */
   private escapeHtml(s: string): string {
     const el = document.createElement("span");
     el.textContent = s;

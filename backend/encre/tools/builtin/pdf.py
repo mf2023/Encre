@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/pdf.py
 
+Pdf implementation for the Encre tool system.
+"""
 import contextlib
 from typing import Any
 
@@ -30,6 +34,11 @@ from encre.tools.base import build_tool
 
 
 async def _pdf_execute(**kwargs: Any) -> str:
+    """Pdf execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     action = kwargs.get("action", "read")
     file_path = kwargs.get("file_path", "")
     pages = kwargs.get("pages", "")
@@ -89,6 +98,12 @@ async def _pdf_execute(**kwargs: Any) -> str:
 
 
 def _parse_pages(pages: str, num_pages: int) -> list[int]:
+    """Parse pages.
+
+    Args:
+        pages: Description of the pages parameter.
+        num_pages: Description of the num_pages parameter.
+    """
     if not pages:
         end = min(num_pages, 50)
         return list(range(1, end + 1))
@@ -127,5 +142,8 @@ EncrePDFTool = build_tool(
     },
     execute=_pdf_execute,
     intents=["data", "research"],
+    category="docs",
+    semantic_type="read",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

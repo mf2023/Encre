@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/task_update.py
 
+Task update implementation for the Encre tool system.
+"""
 from typing import Any
 
 from encre.task.manager import EncreTaskManager
@@ -30,6 +34,11 @@ from encre.tools.base import build_tool
 
 
 async def _task_update_execute(**kwargs: Any) -> str:
+    """Task update execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     task_id = kwargs.get("task_id", "")
     status = kwargs.get("status")
     result = kwargs.get("result")
@@ -65,4 +74,7 @@ EncreTaskUpdateTool = build_tool(
     },
     execute=_task_update_execute,
     intents=["general", "coding", "data", "research"],
+    category="task",
+    semantic_type="write",
+    is_destructive=True,
 )

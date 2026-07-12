@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/file_edit.py
 
+File edit implementation for the Encre tool system.
+"""
 import re
 from typing import Any
 
@@ -168,6 +172,7 @@ def _apply_one_edit(
 
 
 async def _file_edit_execute(**kwargs: Any) -> str:
+    """Apply search-and-replace edits to an existing file. Supports single and multi-hunk edits."""
     file_path = kwargs.get("file_path", "")
     if not file_path:
         return "Error: 缺少 file_path 参数 (file_path is required)"
@@ -221,30 +226,39 @@ async def _file_edit_execute(**kwargs: Any) -> str:
     if content == original:
         return "No-op: edits produced no change."
 
-    diff_text = _native_diff(original, content)
-    add_count = len(_DIFF_ADD_RE.findall(diff_text))
-    del_count = len(_DIFF_DEL_RE.findall(diff_text))
+    summary = "; ".join(report)
+    add_count = del_count = 0
+
+    # Skip expensive full diff for large files — it can take 20+ seconds.
+    # For dry_run (UI preview) we still compute it so the user can review.
+    compute_full_diff = dry_run or len(original) <= 100_000
+    if compute_full_diff:
+        diff_text = _native_diff(original, content)
+        add_count = len(_DIFF_ADD_RE.findall(diff_text))
+        del_count = len(_DIFF_DEL_RE.findall(diff_text))
+    else:
+        orig_lines = original.splitlines()
+        new_lines = content.splitlines()
+        line_delta = len(new_lines) - len(orig_lines)
+        add_count = max(line_delta, 0)
+        del_count = max(-line_delta, 0)
+        if line_delta == 0 and original != content:
+            changed = sum(1 for o, n in zip(orig_lines, new_lines) if o != n)
+            add_count = del_count = changed
 
     if dry_run:
-        # When ``dry_run`` is true the tool computes the diff but does
-        # **not** write the file.  Instead it returns a JSON-encoded
-        # ``EditProposal`` that the loop and the desktop UI use to
-        # render an inline diff and let the user accept or reject the
-        # change.  ``apply_edit`` is exposed by the desktop IPC layer
-        # so a UI button can commit the change without re-running the
-        # tool.
         import json
 
         proposal = {
             "kind": "edit_proposal",
             "tool_call_id": tool_call_id,
             "file_path": file_path,
-            "diff_text": diff_text,
+            "diff_text": diff_text if compute_full_diff else None,
             "original": original,
             "proposed": content,
             "added": add_count,
             "removed": del_count,
-            "summary": "; ".join(report),
+            "summary": summary,
         }
         return "```json\n" + json.dumps(proposal, ensure_ascii=False) + "\n```"
 
@@ -255,22 +269,29 @@ async def _file_edit_execute(**kwargs: Any) -> str:
     except Exception as e:
         return f"Error: 写入文件出错 (Error writing file): {e}"
 
-    return (
+    out = (
         f"Applied {len(edits)} edit(s) to {file_path}.\n"
-        + f"{add_count} insertions(+), {del_count} deletions(-)\n"
+        f"{add_count} insertions(+), {del_count} deletions(-)\n"
         + "\n".join(report)
-        + f"\n```diff\n{diff_text}\n```"
     )
+    if compute_full_diff:
+        out += f"\n```diff\n{diff_text}\n```"
+    else:
+        out += "\n(large file \u2014 diff omitted)"
+    return out
 
 
 EncreFileEditTool = build_tool(
     name="file_edit",
     description=(
-        "Apply one or more search-and-replace edits to an existing file. "
-        "Supports unique single-match edits (default), replace_all mode, "
-        "multi-hunk edits in one call via the 'edits' array, and a "
-        "whitespace-normalized fallback when the exact text isn't found. "
-        "Each edit is applied sequentially in the order provided."
+        "Apply search-and-replace edits to an existing file. "
+        "The file must already exist — use file_write to create new files.\n\n"
+        "**IMPORTANT**: You must read the file first via file_read before editing it. "
+        "If you haven't read it yet, call file_read first. If you already read it, "
+        "the content is in context — do not re-read.\n\n"
+        "Supports: unique single-match (default), replace_all for multiple matches, "
+        "multi-hunk via the 'edits' array, and whitespace-tolerant fallback. "
+        "Edits apply sequentially in the order given."
     ),
     input_schema={
         "type": "object",
@@ -344,7 +365,10 @@ EncreFileEditTool = build_tool(
     },
     execute=_file_edit_execute,
     intents=["general", "coding", "data"],
+    category="filesystem",
+    triggers=["edit file", "replace text", "search replace", "modify file", "sed", "patch"],
     semantic_type="write",
+    is_destructive=True,
     cost_level="high",
     retryability="guarded",
     safe_fallback="Re-read the file, make the target text more unique, or switch to dry_run to inspect the proposed diff first.",

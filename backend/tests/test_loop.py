@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for encre.loop -- the agent execution loop."""
 
@@ -49,9 +49,14 @@ from encre.tools.builtin.web_search import EncreWebSearchTool
 
 
 class TestEncreLoopConstruction:
+    """Test cases covering encre loop construction.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Test EncreLoop construction and attribute initialization."""
 
     def setup_method(self):
+        """Verifies that setup method."""
         self.config = EncreConfig(
             model="gpt-4o",
             backend_type="openai",
@@ -65,6 +70,7 @@ class TestEncreLoopConstruction:
 
     @patch("encre.loop.create_backend")
     def test_basic_construction(self, mock_create_backend):
+        """Verifies that basic construction."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -72,12 +78,14 @@ class TestEncreLoopConstruction:
         mock_create_backend.return_value = mock_backend
 
         loop = EncreLoop(config=self.config, session=self.session)
+        # Confirm the expected result for this scenario: basic construction.
         assert loop.config is self.config
         assert loop.session is self.session
         assert loop.backend is not None
 
     @patch("encre.loop.create_backend")
     def test_custom_tool_registry(self, mock_create_backend):
+        """Verifies that custom tool registry."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -86,10 +94,12 @@ class TestEncreLoopConstruction:
 
         tools = ToolRegistry()
         loop = EncreLoop(config=self.config, session=self.session, tool_registry=tools)
+        # Confirm the expected result for this scenario: custom tool registry.
         assert loop.tool_registry is tools
 
     @patch("encre.loop.create_backend")
     def test_default_tool_registry_created(self, mock_create_backend):
+        """Verifies that default tool registry created."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -97,10 +107,12 @@ class TestEncreLoopConstruction:
         mock_create_backend.return_value = mock_backend
 
         loop = EncreLoop(config=self.config, session=self.session)
+        # Confirm the expected result for this scenario: default tool registry created.
         assert isinstance(loop.tool_registry, ToolRegistry)
 
     @patch("encre.loop.create_backend")
     def test_custom_hook_system(self, mock_create_backend):
+        """Verifies that custom hook system."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -109,10 +121,12 @@ class TestEncreLoopConstruction:
 
         hooks = EncreHookSystem()
         loop = EncreLoop(config=self.config, session=self.session, hook_system=hooks)
+        # Confirm the expected result for this scenario: custom hook system.
         assert loop.hook_system is hooks
 
     @patch("encre.loop.create_backend")
     def test_default_hook_system_created(self, mock_create_backend):
+        """Verifies that default hook system created."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -120,10 +134,12 @@ class TestEncreLoopConstruction:
         mock_create_backend.return_value = mock_backend
 
         loop = EncreLoop(config=self.config, session=self.session)
+        # Confirm the expected result for this scenario: default hook system created.
         assert isinstance(loop.hook_system, EncreHookSystem)
 
     @patch("encre.loop.create_backend")
     def test_custom_safety_engine(self, mock_create_backend):
+        """Verifies that custom safety engine."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -132,10 +148,12 @@ class TestEncreLoopConstruction:
 
         safety = EncreSafetyEngine(self.config)
         loop = EncreLoop(config=self.config, session=self.session, safety=safety)
+        # Confirm the expected result for this scenario: custom safety engine.
         assert loop.safety is safety
 
     @patch("encre.loop.create_backend")
     def test_default_safety_created(self, mock_create_backend):
+        """Verifies that default safety created."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -143,10 +161,12 @@ class TestEncreLoopConstruction:
         mock_create_backend.return_value = mock_backend
 
         loop = EncreLoop(config=self.config, session=self.session)
+        # Confirm the expected result for this scenario: default safety created.
         assert isinstance(loop.safety, EncreSafetyEngine)
 
     @patch("encre.loop.create_backend")
     def test_custom_telemetry(self, mock_create_backend):
+        """Verifies that custom telemetry."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -155,10 +175,12 @@ class TestEncreLoopConstruction:
 
         tel = EncreTelemetry(enabled=True)
         loop = EncreLoop(config=self.config, session=self.session, telemetry=tel)
+        # Confirm the expected result for this scenario: custom telemetry.
         assert loop.telemetry is tel
 
     @patch("encre.loop.create_backend")
     def test_default_telemetry_disabled(self, mock_create_backend):
+        """Verifies that default telemetry disabled."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -166,10 +188,12 @@ class TestEncreLoopConstruction:
         mock_create_backend.return_value = mock_backend
 
         loop = EncreLoop(config=self.config, session=self.session)
+        # Confirm the expected result for this scenario: default telemetry disabled.
         assert loop.telemetry.enabled is False
 
     @patch("encre.loop.create_backend")
     def test_all_attributes_initialized(self, mock_create_backend):
+        """Verifies that all attributes initialized."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -178,6 +202,7 @@ class TestEncreLoopConstruction:
 
         loop = EncreLoop(config=self.config, session=self.session)
         # Ensure all core attributes exist
+        # Confirm the expected result for this scenario: all attributes initialized.
         assert hasattr(loop, "config")
         assert hasattr(loop, "session")
         assert hasattr(loop, "backend")
@@ -197,9 +222,14 @@ class TestEncreLoopConstruction:
 
 
 class TestEncreLoopAttributes:
+    """Test cases covering encre loop attributes.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Test loop attribute behavior beyond construction."""
 
     def setup_method(self):
+        """Verifies that setup method."""
         self.config = EncreConfig(
             model="gpt-4o",
             backend_type="openai",
@@ -212,6 +242,7 @@ class TestEncreLoopAttributes:
 
     @patch("encre.loop.create_backend")
     def test_resolve_permission(self, mock_create_backend):
+        """Verifies that resolve permission."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -224,10 +255,12 @@ class TestEncreLoopAttributes:
         loop._pending_tool_name = "test_tool"
 
         loop.resolve_permission(True)
+        # Confirm the expected result for this scenario: resolve permission.
         assert loop._permission_decision is True
 
     @patch("encre.loop.create_backend")
     def test_resolve_permission_deny(self, mock_create_backend):
+        """Verifies that resolve permission deny."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -239,6 +272,7 @@ class TestEncreLoopAttributes:
         loop._permission_decision = True
 
         loop.resolve_permission(False)
+        # Confirm the expected result for this scenario: resolve permission deny.
         assert loop._permission_decision is False
 
     @patch("encre.loop.create_backend")
@@ -253,13 +287,19 @@ class TestEncreLoopAttributes:
         loop = EncreLoop(config=self.config, session=self.session)
         # _permission_event is None initially
         loop.resolve_permission(True)
+        # Confirm the expected result for this scenario: resolve permission no event.
         assert loop._permission_decision is True
 
 
 class TestEncreLoopAclose:
+    """Test cases covering encre loop aclose.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Test the async close method."""
 
     def setup_method(self):
+        """Verifies that setup method."""
         self.config = EncreConfig(
             model="gpt-4o",
             backend_type="openai",
@@ -273,6 +313,7 @@ class TestEncreLoopAclose:
     @patch("encre.loop.create_backend")
     @pytest.mark.asyncio
     async def test_aclose_calls_backend_aclose(self, mock_create_backend):
+        """Verifies that aclose calls backend aclose."""
         mock_backend = MagicMock()
         mock_backend.aclose = AsyncMock()
         mock_backend.supports_tool_calling.return_value = True
@@ -299,13 +340,19 @@ class TestEncreLoopAclose:
         loop = EncreLoop(config=self.config, session=self.session)
         # aclose has try/except AttributeError pattern
         # This tests graceful handling
+        # Confirm the expected result for this scenario: aclose graceful on backend without aclose.
         assert loop.backend is not None
 
 
 class TestEncreLoopMemorySystem:
     """Test optional memory system integration."""
+    """Test cases covering encre loop memory system.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
 
     def setup_method(self):
+        """Verifies that setup method."""
         self.config = EncreConfig(
             model="gpt-4o",
             backend_type="openai",
@@ -318,6 +365,7 @@ class TestEncreLoopMemorySystem:
 
     @patch("encre.loop.create_backend")
     def test_memory_system_none_by_default(self, mock_create_backend):
+        """Verifies that memory system none by default."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False
@@ -325,10 +373,12 @@ class TestEncreLoopMemorySystem:
         mock_create_backend.return_value = mock_backend
 
         loop = EncreLoop(config=self.config, session=self.session)
+        # Confirm the expected result for this scenario: memory system none by default.
         assert loop.memory_system is None
 
     @patch("encre.loop.create_backend")
     def test_memory_system_can_be_injected(self, mock_create_backend, tmp_path):
+        """Verifies that memory system can be injected."""
         mock_backend = MagicMock()
         mock_backend.supports_tool_calling.return_value = True
         mock_backend.supports_prompt_caching.return_value = False

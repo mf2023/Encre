@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Memory tools -- create, read, update, delete persistent encrypted memories."""
 
@@ -34,6 +34,7 @@ from encre.tools.base import build_tool
 
 
 def _get_memory_dir() -> str:
+    """Get memory dir."""
     from encre.config import get_data_dir
     return str(get_data_dir() / "memory")
 
@@ -45,6 +46,12 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _write_encrypted(filepath: str, content: str) -> None:
+    """Write encrypted.
+
+    Args:
+        filepath: Description of the filepath parameter.
+        content: Description of the content parameter.
+    """
     from encre.crypto import encrypt
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w", encoding="utf-8") as f:
@@ -52,6 +59,11 @@ def _write_encrypted(filepath: str, content: str) -> None:
 
 
 def _read_encrypted(filepath: str) -> str | None:
+    """Read encrypted.
+
+    Args:
+        filepath: Description of the filepath parameter.
+    """
     from encre.crypto import decrypt
     if not os.path.isfile(filepath):
         return None
@@ -71,6 +83,11 @@ def _read_encrypted(filepath: str) -> str | None:
 
 
 async def _memory_create_execute(**kwargs: Any) -> str:
+    """Memory create execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     filename = kwargs.get("filename", "")
     content = kwargs.get("content", "")
     if not filename.endswith(".md"):
@@ -97,6 +114,11 @@ async def _memory_create_execute(**kwargs: Any) -> str:
 
 
 async def _memory_read_execute(**kwargs: Any) -> str:
+    """Memory read execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     filename = kwargs.get("filename", "")
     if not filename.endswith(".md"):
         filename += ".md"
@@ -113,6 +135,11 @@ async def _memory_read_execute(**kwargs: Any) -> str:
 
 
 async def _memory_update_execute(**kwargs: Any) -> str:
+    """Memory update execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     filename = kwargs.get("filename", "")
     content = kwargs.get("content", "")
     if not filename.endswith(".md"):
@@ -132,6 +159,11 @@ async def _memory_update_execute(**kwargs: Any) -> str:
 
 
 async def _memory_delete_execute(**kwargs: Any) -> str:
+    """Memory delete execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     filename = kwargs.get("filename", "")
     if not filename.endswith(".md"):
         filename += ".md"
@@ -150,6 +182,11 @@ async def _memory_delete_execute(**kwargs: Any) -> str:
 
 
 async def _memory_search_execute(**kwargs: Any) -> str:
+    """Memory search execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     query = kwargs.get("query", "")
     top_k = kwargs.get("top_k", 5)
 
@@ -170,6 +207,11 @@ async def _memory_search_execute(**kwargs: Any) -> str:
 
 
 async def _memory_profile_execute(**kwargs: Any) -> str:
+    """Memory profile execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     field = kwargs.get("field", "")
     value = kwargs.get("value")
     confidence = float(kwargs.get("confidence", 0.7))
@@ -276,6 +318,9 @@ EncreMemoryCreateTool = build_tool(
     },
     execute=_memory_create_execute,
     intents=["general", "coding"],
+    category="memory",
+    semantic_type="write",
+    is_destructive=True,
 )
 
 EncreMemoryReadTool = build_tool(
@@ -296,7 +341,10 @@ EncreMemoryReadTool = build_tool(
     },
     execute=_memory_read_execute,
     intents=["general", "coding", "research"],
+    category="memory",
+    semantic_type="read",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )
 
 EncreMemoryUpdateTool = build_tool(
@@ -321,6 +369,9 @@ EncreMemoryUpdateTool = build_tool(
     },
     execute=_memory_update_execute,
     intents=["general", "coding"],
+    category="memory",
+    semantic_type="write",
+    is_destructive=True,
 )
 
 EncreMemoryDeleteTool = build_tool(
@@ -340,6 +391,9 @@ EncreMemoryDeleteTool = build_tool(
     },
     execute=_memory_delete_execute,
     intents=["general", "coding"],
+    category="memory",
+    semantic_type="write",
+    is_destructive=True,
 )
 
 EncreMemorySearchTool = build_tool(
@@ -364,7 +418,10 @@ EncreMemorySearchTool = build_tool(
     },
     execute=_memory_search_execute,
     intents=["general", "coding", "research"],
+    category="memory",
+    semantic_type="search",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )
 
 EncreMemoryProfileTool = build_tool(
@@ -408,5 +465,8 @@ EncreMemoryProfileTool = build_tool(
     },
     execute=_memory_profile_execute,
     intents=["general", "coding", "research"],
+    category="memory",
+    semantic_type="read",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

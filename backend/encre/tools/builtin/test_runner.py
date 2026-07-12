@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Real test runner that drives pytest, vitest, jest and cargo test.
@@ -79,8 +79,6 @@ The tool returns a JSON string with the following fields:
     }
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import json
@@ -100,6 +98,7 @@ from encre.tools.base import build_tool
 
 
 def _popen_kwargs() -> dict[str, Any]:
+    """Popen kwargs."""
     from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
     return hidden_subprocess_kwargs()
 
@@ -169,6 +168,7 @@ def _detect_framework(workspace: str, hint: str | None) -> str:
 
 @dataclass
 class TestRecord:
+    """TestRecord."""
     name: str
     status: str
     duration_s: float
@@ -180,6 +180,7 @@ class TestRecord:
 
 @dataclass
 class TestReport:
+    """TestReport."""
     framework: str
     passed: int = 0
     failed: int = 0
@@ -190,11 +191,19 @@ class TestReport:
     raw_output: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        """To dict."""
         d = asdict(self)
         return d
 
 
 async def _run_pytest(workspace: str, test_filter: str | None, timeout: float) -> TestReport:
+    """Run pytest.
+
+    Args:
+        workspace: Description of the workspace parameter.
+        test_filter: Description of the test_filter parameter.
+        timeout: Description of the timeout parameter.
+    """
     report = TestReport(framework="pytest")
     junit_path = Path(workspace) / ".encre" / "pytest-junit.xml"
     junit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -374,6 +383,13 @@ async def _run_npm_test(
 
 
 async def _run_cargo(workspace: str, test_filter: str | None, timeout: float) -> TestReport:
+    """Run cargo.
+
+    Args:
+        workspace: Description of the workspace parameter.
+        test_filter: Description of the test_filter parameter.
+        timeout: Description of the timeout parameter.
+    """
     report = TestReport(framework="cargo")
     cmd = ["cargo", "test", "--no-fail-fast", "--message-format=json"]
     if test_filter:
@@ -455,6 +471,11 @@ async def _run_cargo(workspace: str, test_filter: str | None, timeout: float) ->
 
 
 async def _test_run_execute(**kwargs: Any) -> str:
+    """Test run execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     workspace = str(kwargs.get("workspace") or kwargs.get("path") or "").strip()
     if not workspace:
         return "Error: workspace is required"
@@ -534,5 +555,6 @@ EncreTestRunTool = build_tool(
     cost_level="high",
     retryability="guarded",
     safe_fallback="Scope the test filter, inspect raw failures, or verify the workspace and dependencies before rerunning tests.",
+    category="code_intel",
     is_concurrency_safe=lambda _: True,
 )

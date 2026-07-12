@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Entry point for ``python -m encre.iclaw``.
@@ -66,6 +66,8 @@ from encre.iclaw import _data_dir, _log_path, is_running, run_iclaw, stop_daemon
 
 
 def main() -> None:
+    """Parse CLI arguments and run (or signal) the iClaw daemon."""
+    # Configure the argument parser with all daemon tunables.
     parser = argparse.ArgumentParser(
         description="iClaw -- Encre background daemon",
     )
@@ -114,6 +116,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # --stop / --status bypass normal startup and act on the running daemon.
     if args.stop:
         if is_running():
             stop_daemon()
@@ -138,6 +141,7 @@ def main() -> None:
     )
 
     config = EncreConfig()
+    # Build the agent and launch the daemon lifecycle under asyncio.
     agent = EncreAgent(config=config)
 
     with contextlib.suppress(KeyboardInterrupt):

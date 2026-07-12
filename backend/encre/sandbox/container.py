@@ -159,12 +159,25 @@ class EncreContainerSandbox:
         workspace: str,
         config: SandboxConfig | None = None,
     ) -> None:
+        """Initialise sandbox state for a workspace.
+
+        Args:
+            workspace: Host directory to expose inside the container.
+            config: Optional sandbox configuration; defaults are used if None.
+        """
+        # Absolute host path that is bind-mounted into the container.
         self.workspace = os.path.abspath(workspace)
+        # Effective configuration governing isolation and limits.
         self.config = config or SandboxConfig()
+        # ID of the persistent session container, if one is running.
         self._container_id: str | None = None
+        # Whether a persistent container is currently active.
         self._active: bool = False
+        # Path to the temp seccomp profile file, cleaned up later.
         self._temp_seccomp: str | None = None
+        # In-memory ring buffer of security audit entries.
         self._audit_log: list[SecurityAuditEntry] = []
+        # Temp directories created during execution, removed on cleanup.
         self._created_temp_dirs: list[str] = []
 
     # ── Public API ────────────────────────────────────────────────
@@ -819,9 +832,11 @@ class EncreContainerSandbox:
     # ── Context manager support ──────────────────────────────────
 
     def __enter__(self) -> EncreContainerSandbox:
+        """Enter the runtime context, returning this sandbox instance."""
         return self
 
     def __exit__(self, *args: object) -> None:
+        """Exit the runtime context, cleaning up all sandbox resources."""
         self.cleanup()
 
 

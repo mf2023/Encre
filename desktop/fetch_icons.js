@@ -20,11 +20,22 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * One-off utility to probe icon availability on simpleicons.org.
+ *
+ * For each name in `icons`, it issues an HTTPS GET to the simple-icons CDN
+ * and prints the status code plus a short prefix of the response body. Useful
+ * for quickly checking which integration icons resolve before downloading
+ * them into the renderer assets.
+ */
+
 const https = require('https');
 const fs = require('fs');
 
+// Integration icon names to check against the simple-icons CDN.
 const icons = ['slack','microsoft','dingtalk','feishu','bluebubbles','webhook'];
 
+// Request each icon and log its status + a snippet of the body.
 for (const name of icons) {
   https.get('https://cdn.simpleicons.org/' + name, (r) => {
     let d = '';

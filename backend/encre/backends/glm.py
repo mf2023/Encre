@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 GLM (Zhipu AI) backend -- GLM-4.5, GLM-4.6, GLM-4.7 (2026 lineup).
@@ -60,7 +60,17 @@ class GLMBackend(OpenAISSEBackend):
         model: str = "glm-4.7",
         **kwargs: Any,
     ) -> None:
+        """Initialize the GLM (Zhipu AI) backend.
+
+        Args:
+            api_key: GLM API key. Falls back to the GLM_API_KEY environment
+                variable when empty.
+            base_url: API endpoint; defaults to the Zhipu AI open API URL.
+            model: Default GLM model identifier.
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the Zhipu AI open API URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
@@ -76,7 +86,9 @@ class GLMBackend(OpenAISSEBackend):
             return {"thinking": {"type": "enabled"}}
         m = self.model.lower()
         # GLM-4.5+ and GLM-5.x are reasoning-capable.
+        # Unknown/older SKUs skip the thinking toggle to avoid a 400.
         if "glm-4.5" in m or "glm-4.6" in m or "glm-4.7" in m or "glm-5" in m:
+            # GLM-4.5+ and GLM-5.x expose the DeepSeek-style thinking toggle.
             return {"thinking": {"type": "enabled"}}
         return None
 
@@ -86,6 +98,8 @@ class GLMBackend(OpenAISSEBackend):
         2026: GLM-5.x: 200K, GLM-4.x: 128K.
         """
         m = self.model.lower()
+        # GLM-5.x flagships expose a 200K token context window.
         if "glm-5" in m or "glm5" in m:
             return 200_000
+        # Older GLM-4.x models default to a 128K (131072) window.
         return 131_072

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Authoritative model catalog.
 
@@ -513,6 +513,7 @@ PROVIDERS: list[dict[str, Any]] = [
 
 def get_provider(provider_id: str) -> dict[str, Any] | None:
     """Return the catalog entry for ``provider_id`` or None if unknown."""
+    # Linear scan over the (small) provider list for a matching id.
     for p in PROVIDERS:
         if p["id"] == provider_id:
             return p
@@ -521,6 +522,7 @@ def get_provider(provider_id: str) -> dict[str, Any] | None:
 
 def get_model(provider_id: str, model_id: str) -> dict[str, Any] | None:
     """Return the model entry, or None if the model isn't in the catalog."""
+    # First resolve the provider, then search its curated model list.
     provider = get_provider(provider_id)
     if not provider:
         return None
@@ -532,6 +534,7 @@ def get_model(provider_id: str, model_id: str) -> dict[str, Any] | None:
 
 def default_output_tokens(provider_id: str) -> int:
     """Return a safe default for the per-turn output token budget."""
+    # Fall back to a conservative 8192 tokens for unlisted providers.
     return DEFAULT_MAX_OUTPUT_TOKENS.get(provider_id, 8192)
 
 

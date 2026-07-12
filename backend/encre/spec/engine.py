@@ -21,9 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
+
+"""Specification engine.
+
+Implements a generate -> review -> approve/reject -> execute workflow for
+implementation specifications.  A spec is produced by an LLM from a context
+prompt, parsed into a structured :class:`SpecDocument` of
+:class:`SpecSection` blocks, and tracked through lifecycle states defined by
+:class:`SpecStatus`.
+"""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -36,6 +43,8 @@ _DEFAULT_SPEC_PROMPT = _loader.load("spec_generator", category="spec")
 
 
 class SpecStatus(str, Enum):
+    """Lifecycle state of a specification document."""
+
     DRAFT = "draft"
     REVIEW = "review"
     APPROVED = "approved"
@@ -44,12 +53,20 @@ class SpecStatus(str, Enum):
 
 @dataclass
 class SpecSection:
+    """A single titled section of a specification document."""
+
     title: str
     content: str
 
 
 @dataclass
 class SpecDocument:
+    """A structured specification produced by the spec engine.
+
+    Holds an ordered list of :class:`SpecSection` blocks plus lifecycle
+    metadata (status, reviewer feedback, raw LLM text, and arbitrary metadata).
+    """
+
     title: str
     sections: list[SpecSection] = field(default_factory=list)
     status: SpecStatus = SpecStatus.DRAFT
@@ -108,11 +125,18 @@ class EncreSpecEngine:
     """
 
     def __init__(self, spec_prompt: str | None = None) -> None:
+        """Initialize the engine.
+
+        Args:
+            spec_prompt: Optional custom spec-generation prompt.  When omitted,
+                the bundled ``spec_generator`` prompt is loaded.
+        """
         self._spec_prompt = spec_prompt or _DEFAULT_SPEC_PROMPT
         self._current_spec: SpecDocument | None = None
 
     @property
     def current_spec(self) -> SpecDocument | None:
+        """The most recently parsed/approved spec, or ``None``."""
         return self._current_spec
 
     def build_spec_prompt(self, context: str) -> str:
@@ -168,4 +192,5 @@ class EncreSpecEngine:
         return self._current_spec
 
     def reset(self) -> None:
+        """Discard the current spec so a new one can be generated."""
         self._current_spec = None

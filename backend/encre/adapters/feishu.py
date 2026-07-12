@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# feishu.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - FeishuAdapter
+#
 import asyncio
 import contextlib
 import hashlib
@@ -67,6 +80,20 @@ class FeishuAdapter(BaseAdapter):
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
         port: int = 18794,
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            webhook_url (str | None):
+            app_id (str | None):
+            app_secret (str | None):
+            verify_token (str | None):
+            gateway_url (str):
+            port (int):
+
+        Returns:
+            None
+        """
         caps = ["text"]
         if app_id and app_secret:
             caps.append("api")
@@ -87,6 +114,12 @@ class FeishuAdapter(BaseAdapter):
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
     async def connect(self) -> bool:
+        """
+        Connect.
+
+        Returns:
+            bool
+        """
         if self._app_id and self._app_secret:
             logger.info("[feishu] Step 1/2: Obtaining tenant access token...")
             await self._refresh_token()
@@ -105,13 +138,31 @@ class FeishuAdapter(BaseAdapter):
         return await super().connect()
 
     async def disconnect(self) -> None:
+        """
+        Disconnect.
+
+        Returns:
+            None
+        """
         await self._stop_webhook_server()
         await super().disconnect()
 
     async def _on_connected(self) -> None:
+        """
+        On connected.
+
+        Returns:
+            None
+        """
         logger.info("[feishu] Gateway connected")
 
     async def _on_disconnected(self) -> None:
+        """
+        On disconnected.
+
+        Returns:
+            None
+        """
         logger.info("[feishu] Gateway disconnected")
 
     # ── Token Management ──────────────────────────────────────────────────

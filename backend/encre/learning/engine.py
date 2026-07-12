@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Learning engine that crystallises tool patterns into skills.
+
+:class:`LearningEngine` observes each run; once enough tool calls occur it
+spawns a background task that asks :class:`SkillGenerator` to turn the
+repeated tool pattern into an auto-generated, registered skill.
+"""
 
 import asyncio
 import logging
@@ -32,18 +39,22 @@ logger = logging.getLogger("encre.learning")
 
 
 class LearningEngine:
+    """Spawns skill-crystallisation tasks from frequent tool use."""
     TOOL_CALL_THRESHOLD = 5
 
     def __init__(self, agent: EncreAgent) -> None:
+        """Store the agent and initialise the task tracker."""
         self._agent = agent
         self._running = False
         self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
+        """Mark the engine running."""
         self._running = True
         logger.info("Learning engine started")
 
     async def stop(self) -> None:
+        """Cancel all in-flight crystallisation tasks."""
         self._running = False
         for task in self._tasks:
             task.cancel()
@@ -52,6 +63,7 @@ class LearningEngine:
         logger.info("Learning engine stopped")
 
     async def analyze_run(self, tool_names: list[str], prompt: str) -> None:
+        """Queue a skill-crystallisation task once the call count is high."""
         if not self._running:
             return
         if len(tool_names) < self.TOOL_CALL_THRESHOLD:
@@ -61,6 +73,7 @@ class LearningEngine:
         task.add_done_callback(lambda t: self._tasks.remove(t) if t in self._tasks else None)
 
     async def _crystallize(self, tool_names: list[str], prompt: str) -> None:
+        """Generate and register a skill from the observed tool pattern."""
         from encre.learning.skill_generator import SkillGenerator
         generator = SkillGenerator(self._agent)
         skill_def = generator.generate(tool_names, prompt)

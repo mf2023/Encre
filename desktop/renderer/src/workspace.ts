@@ -20,6 +20,16 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Workspace (iWork) sidebar & mode management.
+ *
+ * Implements the "workspace mode" experience: a slide-in tree of workspace
+ * folders and their sessions alongside the normal session list. Handles
+ * entering/exiting workspace mode (with the shared slide transition), folder
+ * open/remove, per-folder expansion state, and batch selection for bulk
+ * export/delete. Also exposes `syncFirstNavActive` for sidebar nav state.
+ */
+
 import { getState, subscribe, setActiveWorkspace, setSessionId, clearMessages, setWorkspaceMode } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
@@ -28,6 +38,9 @@ import { Dialog } from "./dialog.js";
 import { TransitionHelper } from "./transition-helper.js";
 import type { WorkspaceEntry, SessionEntryData } from "./types.js";
 
+/**
+ * Manages the workspace tree and iWork mode transitions.
+ */
 export class Workspace {
   private treeSectionEl: HTMLElement | null = null;
   private treeListEl: HTMLElement | null = null;
@@ -82,6 +95,9 @@ export class Workspace {
     setTimeout(() => { this._exiting = false; }, 100);
   }
 
+  /**
+   * Constructor: resolves DOM nodes, wires buttons and subscribes to state.
+   */
   constructor() {
     this._sessionSectionEl = document.getElementById("session-section");
     // The top-bar #mode-seg switch (wired in app.ts) is now the single
@@ -326,6 +342,7 @@ export class Workspace {
     }
   }
 
+  /** Renders the workspace tree (folders + sessions) for the active mode. */
   private renderTree(): void {
     if (!this.isInWorkspaceMode || !this.treeListEl || this._exiting) return;
 
@@ -555,6 +572,7 @@ export class Workspace {
     this.toggleBatchMode();
   }
 
+  /** Opens a folder picker and requests the backend to open it as a workspace. */
   async openFolder(): Promise<void> {
     const folderPath = await window.electronAPI?.pickDirectory();
     if (!folderPath) return;
@@ -620,6 +638,9 @@ export class Workspace {
   }
 }
 
+/**
+ * Marks the first visible sidebar nav item as active.
+ */
 export function syncFirstNavActive(): void {
   const nav = document.getElementById("sidebar-main-nav");
   if (!nav) return;

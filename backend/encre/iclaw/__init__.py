@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 iClaw -- Encre headless background daemon for autonomous agent execution.
@@ -91,8 +91,6 @@ Or programmatically::
     await daemon.wait()
     await daemon.stop()
 """
-
-from __future__ import annotations
 
 import asyncio
 import atexit
@@ -169,28 +167,35 @@ _LOG_FILE = "iclaw.log"
 
 
 def _data_dir() -> Path:
+    """Return the Encre data directory used for daemon state files."""
+    # Centralise all pid/log/state files under the Encre data directory.
     return get_data_dir()
 
 
 def _pid_path() -> Path:
+    """Return the path to the daemon PID file."""
     return _data_dir() / _PID_FILE
 
 
 def _log_path() -> Path:
+    """Return the path to the daemon log file."""
     return _data_dir() / _LOG_FILE
 
 
 def _write_pid(pid: int) -> None:
+    """Persist the running daemon's process id to the PID file."""
     _data_dir().mkdir(parents=True, exist_ok=True)
     _pid_path().write_text(str(pid))
 
 
 def _clear_pid() -> None:
+    """Remove the PID file, ignoring any error (e.g. already gone)."""
     with contextlib.suppress(Exception):
         _pid_path().unlink(missing_ok=True)
 
 
 def _read_pid() -> int | None:
+    """Read the daemon PID from disk, or ``None`` if absent/unreadable."""
     try:
         return int(_pid_path().read_text().strip())
     except Exception:
@@ -198,6 +203,7 @@ def _read_pid() -> int | None:
 
 
 def is_running() -> bool:
+    """Return ``True`` if a daemon PID file points to a live process."""
     pid = _read_pid()
     if pid is None:
         return False
@@ -210,6 +216,7 @@ def is_running() -> bool:
 
 
 def stop_daemon() -> bool:
+    """Send SIGTERM to the running daemon; return ``True`` if signalled."""
     pid = _read_pid()
     if pid is None:
         return False
@@ -238,6 +245,7 @@ class DaemonStats:
 
 
 def _create_default_agent(config: EncreConfig | None = None) -> EncreAgent:
+    """Build an :class:`EncreAgent` with the given or a default config."""
     if config is None:
         config = EncreConfig()
     agent = EncreAgent(config=config)
@@ -332,78 +340,97 @@ class IClawEngine:
 
     @property
     def session_manager(self) -> SessionManager | None:
+        """The active session manager, or ``None`` before start."""
         return self._session_manager
 
     @property
     def router(self) -> EventRouter | None:
+        """The event router that dispatches channel submissions."""
         return self._router
 
     @property
     def scheduler(self) -> EncreScheduler | None:
+        """The cron-based job scheduler, or ``None`` before start."""
         return self._scheduler
 
     @property
     def hook_system(self) -> EncreHookSystem | None:
+        """The hook system, or ``None`` if hooks are disabled."""
         return self._hook_system
 
     @property
     def safety_engine(self) -> EncreSafetyEngine | None:
+        """The safety engine guarding tool execution."""
         return self._safety_engine
 
     @property
     def compact_engine(self) -> EncreCompactEngine | None:
+        """The context compaction engine, or ``None`` if disabled."""
         return self._compact_engine
 
     @property
     def evolution_learner(self) -> EncreEvolutionLearner | None:
+        """The evolution learning subsystem, or ``None`` if disabled."""
         return self._evolution_learner
 
     @property
     def reflex_loop(self) -> EncreReflexLoop | None:
+        """The reflex evaluation loop, or ``None`` if disabled."""
         return self._reflex_loop
 
     @property
     def meta_cognition(self) -> EncreMetaCognition | None:
+        """The metacognition subsystem, or ``None`` if disabled."""
         return self._meta_cognition
 
     @property
     def feedback_learner(self) -> EncreFeedbackLearner | None:
+        """The feedback learning subsystem, or ``None`` if disabled."""
         return self._feedback_learner
 
     @property
     def swarm_session(self) -> EncreSwarmSession | None:
+        """The multi-agent swarm session, or ``None`` if disabled."""
         return self._swarm_session
 
     @property
     def consensus(self) -> EncreConsensus | None:
+        """The swarm consensus proposer, or ``None`` if disabled."""
         return self._consensus
 
     @property
     def blackboard(self) -> EncreBlackboard | None:
+        """The swarm shared blackboard, or ``None`` if disabled."""
         return self._blackboard
 
     @property
     def orchestrator(self) -> EncreOrchestrator | None:
+        """The swarm orchestrator, or ``None`` if disabled."""
         return self._orchestrator
 
     @property
     def task_planner(self) -> EncreTaskPlanner | None:
+        """The swarm task planner, or ``None`` if disabled."""
         return self._task_planner
 
     @property
     def role_registry(self) -> RoleRegistry | None:
+        """The swarm agent role registry, or ``None`` if disabled."""
         return self._role_registry
 
     @property
     def plugin_registry(self) -> PluginRegistry | None:
+        """The plugin registry, or ``None`` before start."""
         return self._plugin_registry
 
     @property
     def learning_engine(self) -> LearningEngine | None:
+        """The learning engine, or ``None`` before start."""
         return self._learning_engine
 
     @property
     def is_running(self) -> bool:
+        """Return ``True`` while the engine is running."""
         return self._running
 
     # ── Start / Stop ───────────────────────────────────────────────────
@@ -413,9 +440,18 @@ class IClawEngine:
         ws_host: str = "127.0.0.1",
         ws_port: int = 18791,
     ) -> None:
+        """Initialise and start every subsystem, then open the WS/gateway.
+
+        Idempotent: returns immediately if already running. Wires up the
+        safety engine, hooks, plugins, learning/evolution/reflex/feedback
+        subsystems, compaction, sessions, event router, WebSocket channel,
+        gateway, scheduler, memory consolidator, goal runner, swarm, and the
+        post-run self-improvement pipeline.
+        """
         if self._running:
             return
         self._running = True
+        # Record start time for uptime/heartbeat calculations.
         self.stats.started_at = time.time()
 
         agent = self._agent
@@ -565,6 +601,7 @@ class IClawEngine:
         )
 
     async def stop(self) -> None:
+        """Shut down all subsystems and cancel background tasks."""
         if not self._running:
             return
         self._running = False
@@ -606,6 +643,7 @@ class IClawEngine:
     # ── Default hooks ──────────────────────────────────────────────────
 
     def _register_default_hooks(self) -> None:
+        """Register the engine's built-in post-tool and post-turn hooks."""
         hs = self._hook_system
         if hs is None:
             return
@@ -632,8 +670,14 @@ class IClawEngine:
         session_id: str | None = None,
         system_prompt: str | None = None,
     ) -> str:
+        """Submit a one-shot prompt to a channel and return a session id.
+
+        Increments the sessions-created stat. Requires the engine to be
+        started (a ready router); otherwise returns an error string.
+        """
         if self._router is None:
             return "Error: Engine not ready"
+        # Delegate the one-shot submission to the event router.
         result = await self._router.submit(
             channel_name, prompt,
             session_id=session_id,
@@ -650,6 +694,12 @@ class IClawEngine:
         session_id: str | None = None,
         system_prompt: str | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
+        """Stream an agent run for a prompt, yielding model/tool events.
+
+        Runs pre-turn hooks, optionally compacts oversized prompts, streams
+        events (while feeding the learning engine), then runs the post-run
+        self-improvement pipeline and post-turn hooks.
+        """
         if self._router is None:
             yield Finish(reason="error", error="Engine not ready")
             return
@@ -657,6 +707,7 @@ class IClawEngine:
         self.stats.sessions_created += 1
 
         # ── Hook: pre-turn ──────────────────────────────────────────
+        # Fire the pre-turn hook (best effort) before any model work.
         if self._hook_system:
             with contextlib.suppress(Exception):
                 await self._hook_system.emit_turn_start(turn=0, prompt=prompt)
@@ -728,6 +779,7 @@ class IClawEngine:
         timeout_seconds: int = 3600,
         on_progress: Callable[[GoalEvent], None] | None = None,
     ) -> GoalResult:
+        """Run a goal-driven autonomous session via the goal runner."""
         if self._goal_runner is None:
             return GoalResult(
                 status=GoalStatus.FAILED,
@@ -752,6 +804,7 @@ class IClawEngine:
         _timeout_seconds: float = 3600.0,
         on_event: Callable[[Any], None] | None = None,
     ) -> Any:
+        """Execute a goal across the swarm, returning its result dict."""
         if self._swarm_session is None:
             return {"error": "Swarm session not available"}
         from encre.swarm.session import SwarmResult
@@ -767,6 +820,7 @@ class IClawEngine:
         self,
         goal: str,
     ) -> AsyncGenerator[Any, None]:
+        """Stream a swarm goal execution, yielding swarm events."""
         if self._swarm_session is None:
             return
         from encre.swarm.session import SwarmEvent
@@ -781,16 +835,19 @@ class IClawEngine:
         options: list[str],
         proposed_by: str = "",
     ) -> Any:
+        """Create a swarm consensus proposal if the consensus subsystem is on."""
         if self._consensus is None:
             return None
         return self._consensus.create_proposal(title, description, options, proposed_by)
 
     def blackboard_put(self, namespace: str, key: str, value: Any, owner: str = "") -> int | None:
+        """Write a value to the swarm blackboard; return its slot id."""
         if self._blackboard is None:
             return None
         return self._blackboard.put(namespace, key, value, owner)
 
     def blackboard_get(self, namespace: str, key: str) -> Any:
+        """Read the first value stored for a blackboard key, or ``None``."""
         if self._blackboard is None:
             return None
         result = self._blackboard.get(namespace, key)
@@ -801,6 +858,7 @@ class IClawEngine:
     # ── Plugin operations ──────────────────────────────────────────────
 
     def plugin_list(self) -> list[str]:
+        """Return the names of all registered plugins."""
         if self._plugin_registry is None:
             return []
         try:
@@ -809,6 +867,7 @@ class IClawEngine:
             return []
 
     def plugin_load(self, path: str) -> bool:
+        """Activate the plugin at *path*; return ``True`` on success."""
         if self._plugin_registry is None:
             return False
         try:
@@ -828,6 +887,7 @@ class IClawEngine:
         max_failures: int = 3,
         metadata: dict[str, Any] | None = None,
     ) -> str:
+        """Schedule a recurring/one-shot job via the cron scheduler."""
         if self._scheduler is None:
             return ""
         job_id = self._scheduler.schedule(
@@ -842,11 +902,13 @@ class IClawEngine:
         return job_id
 
     def cancel_job(self, job_id: str) -> bool:
+        """Cancel a scheduled job by id; return ``True`` if handled."""
         if self._scheduler is None:
             return False
         return self._scheduler.cancel(job_id)
 
     def list_jobs(self) -> list[ScheduledJob]:
+        """Return all currently scheduled jobs."""
         if self._scheduler is None:
             return []
         return self._scheduler.list_jobs()
@@ -854,11 +916,13 @@ class IClawEngine:
     # ── Stats / Health ─────────────────────────────────────────────────
 
     def get_gateway_status(self) -> dict[str, Any]:
+        """Return the gateway server status, or ``{"running": False}``."""
         if self._gateway is None:
             return {"running": False}
         return self._gateway.get_status()
 
     def get_stats(self) -> dict[str, Any]:
+        """Return a snapshot of running counters and uptime/health stats."""
         now = time.time()
         uptime = now - self.stats.started_at if self.stats.started_at > 0 else 0
         return {
@@ -886,6 +950,7 @@ class IClawEngine:
         }
 
     def get_health(self) -> dict[str, Any]:
+        """Return a lightweight health/status summary of the daemon."""
         return {
             "status": "ok" if self._running else "stopped",
             "running": self._running,
@@ -912,10 +977,12 @@ class IClawEngine:
     # ── Internal callbacks ─────────────────────────────────────────────
 
     def _on_job_complete(self, job: ScheduledJob) -> None:
+        """Callback fired by the scheduler when a job finishes."""
         self.stats.sessions_completed += 1
         logger.info("Scheduled job completed: %s (state=%s)", job.name, job.state.name)
 
     def _make_agent_factory(self) -> Callable[[dict[str, Any] | None], EncreAgent]:
+        """Build a factory that spawns agents sharing the main agent's config."""
         main_agent = self._agent
 
         def _factory(agent_config: dict[str, Any] | None = None) -> EncreAgent:
@@ -951,6 +1018,7 @@ class IClawEngine:
         return _factory
 
     async def _reflex_scan_loop(self) -> None:
+        """Background loop that periodically marks reflex evaluation runs."""
         while self._running and self._reflex_loop:
             await asyncio.sleep(900)
             if not self._running:
@@ -959,6 +1027,7 @@ class IClawEngine:
                 self.stats.reflex_evaluations += 1
 
     async def _cleanup_loop(self) -> None:
+        """Background loop that periodically evicts idle sessions."""
         while self._running:
             await asyncio.sleep(600)
             if not self._running:
@@ -972,6 +1041,7 @@ class IClawEngine:
                     self.stats.errors += 1
 
     async def _heartbeat_loop(self) -> None:
+        """Background loop that logs periodic daemon heartbeat stats."""
         while self._running:
             await asyncio.sleep(300)
             if not self._running:
@@ -987,6 +1057,7 @@ class IClawEngine:
 
     @staticmethod
     def _format_duration(seconds: float) -> str:
+        """Format a duration in seconds as a compact ``Nh Mm Ss`` string."""
         hours, remainder = divmod(int(seconds), 3600)
         minutes, secs = divmod(remainder, 60)
         parts = []
@@ -1000,6 +1071,7 @@ class IClawEngine:
     # ── LLM-powered run analysis ─────────────────────────────────
 
     def _make_analyze_fn(self) -> Callable[[RunSummary], Awaitable[dict[str, Any]]]:
+        """Build the LLM-powered run-analysis callable for the post-run pipeline."""
         agent = self._agent
 
         async def _analyze(summary: RunSummary) -> dict[str, Any]:
@@ -1106,6 +1178,12 @@ class IClawDaemon:
         enable_hooks: bool = True,
         compact_max_tokens: int = 128000,
     ) -> None:
+        """Construct the daemon wrapper around an :class:`IClawEngine`.
+
+        Stores configuration flags and creates the engine lazily on
+        :meth:`start`. The daemon is managed by the desktop app via PID file
+        and the ``ICLAW_READY`` stdout line.
+        """
         self._agent = agent
         self._host = host
         self._port = port
@@ -1129,17 +1207,21 @@ class IClawDaemon:
 
     @property
     def engine(self) -> IClawEngine | None:
+        """The underlying engine instance, or ``None`` before start."""
         return self._engine
 
     @property
     def ws_url(self) -> str:
+        """Return the WebSocket URL the daemon listens on."""
         return f"ws://{self._host}:{self._port}"
 
     @property
     def is_running(self) -> bool:
+        """Return ``True`` while the daemon is running."""
         return self._running
 
     async def start(self) -> None:
+        """Create and start the engine, write the PID file, print ready line."""
         if self._running:
             return
         self._running = True
@@ -1178,6 +1260,7 @@ class IClawDaemon:
         )
 
     async def wait(self) -> None:
+        """Block until a SIGINT/SIGTERM sets the shutdown event."""
         self._shutdown_event = asyncio.Event()
         loop = asyncio.get_event_loop()
 
@@ -1192,6 +1275,7 @@ class IClawDaemon:
         await self._shutdown_event.wait()
 
     async def stop(self) -> None:
+        """Stop the engine, clear the PID file, and exit."""
         if not self._running:
             return
         self._running = False
@@ -1222,6 +1306,7 @@ async def run_iclaw(
     enable_hooks: bool = True,
     compact_max_tokens: int = 128000,
 ) -> None:
+    # Build a default agent when the caller did not supply one.
     if agent is None:
         agent = _create_default_agent()
 

@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Loop-execution skill prompt loader.
+
+Parses a ``[interval] <prompt>`` command and loads the ``loop`` prompt from the
+``skills`` category, substituting the prompt text and resolved interval.
+"""
 
 import re
 from typing import Any
@@ -29,10 +35,16 @@ from typing import Any
 from encre.prompts.loader import PromptLoader
 
 _loader = PromptLoader()
+# Matches the "[interval] <prompt>" syntax where interval is a number of seconds.
 _LOOP_PATTERN = re.compile(r"^\s*\[(\d+(?:\.\d+)?)\]\s*(.+)", re.DOTALL)
 
 
 async def _loop_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the loop-execution skill prompt.
+
+    Parses the ``[interval] <prompt>`` syntax from *args*.  When the syntax is
+    missing or malformed, returns usage guidance instead of a loop prompt.
+    """
     if args is None:
         args = ""
     match = _LOOP_PATTERN.match(args)

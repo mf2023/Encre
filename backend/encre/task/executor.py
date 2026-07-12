@@ -21,18 +21,39 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
-
+# Executor for the simple task layer.
+#
+# ``EncreTaskExecutor`` runs an ``EncreTask`` created via ``EncreTaskManager``.
+# Depending on ``task_type`` it shells out to bash, spins up a nested
+# ``EncreLoop`` sub-agent, or interprets the prompt as a newline-separated list
+# of shell commands (a mini-workflow).  Status and results are written back
+# through the manager.
 
 from encre.task.manager import EncreTaskManager
 from encre.task.types import EncreTask
 
 
 class EncreTaskExecutor:
+    """Runs individual ``EncreTask`` records to completion.
+
+    The executor is a thin async dispatcher: it marks the task ``running``,
+    selects an execution strategy based on ``task.task_type`` (``bash``,
+    ``agent``, or ``workflow``), records the outcome, and returns the textual
+    result.  Unexpected exceptions are captured into the task's ``error`` field
+    rather than propagated.
+    """
     def __init__(self) -> None:
         self._manager = EncreTaskManager()
 
     async def execute_task(self, task_id: str) -> str:
+        """Execute the task identified by *task_id*.
+
+        Returns the task's output on success or an error string on failure /
+        when the task does not exist.  Side effects: updates the task's
+        status/result/error via the manager.
+        """
         task = self._manager.get_task(task_id)
         if task is None:
             return f"Error: Task not found: {task_id}"
@@ -57,6 +78,12 @@ class EncreTaskExecutor:
             return f"Error: {error_msg}"
 
     async def _execute_bash(self, task: EncreTask) -> str:
+        """Run the task prompt as a shell command via ``asyncio`` subprocess.
+
+        Captures combined stdout/stderr (decoded with replacement for invalid
+        bytes) and returns it as the task result.  A 120s communication timeout
+        bounds runaway commands.
+        """
         import asyncio
         import subprocess
 
@@ -78,6 +105,13 @@ class EncreTaskExecutor:
         return output
 
     async def _execute_agent(self, task: EncreTask) -> str:
+        """Execute the task prompt inside a fresh ``EncreLoop`` sub-agent.
+
+        Builds an ``EncreConfig`` (optionally overridden from ``task.metadata``
+        keys ``model``/``api_key``/``base_url``/``max_tokens``), seeds a system
+        message describing the subtask, and delegates to the loop's internal
+        sub-agent runner.  Returns the sub-agent's final text.
+        """
         from encre.config import EncreConfig
         from encre.loop import EncreLoop
         from encre.session import EncreSession
@@ -97,6 +131,12 @@ class EncreTaskExecutor:
         return await loop._run_sub_agent(task.prompt, [])
 
     async def _execute_workflow(self, task: EncreTask) -> str:
+        """Treat the prompt as a newline-separated shell script.
+
+        Each non-empty line is executed as a separate bash step (via
+        ``_execute_bash`` over a throwaway ``EncreTask``) and the per-step
+        output is joined with separators, producing a single combined result.
+        """
         steps = task.prompt.split("\n")
         results: list[str] = []
         for step in steps:

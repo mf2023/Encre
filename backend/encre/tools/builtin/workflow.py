@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Workflow tool -- plans and executes a DAG of sub-tasks.
 
@@ -30,8 +30,6 @@ to decompose the goal into a task tree and execute each task as an
 independent sub-agent run. Tasks with satisfied dependencies run in
 parallel, and progress is streamed to the frontend in real time.
 """
-
-from __future__ import annotations
 
 import asyncio
 import uuid
@@ -149,6 +147,12 @@ async def _workflow_execute(**kwargs: Any) -> Any:
         async def _run_task_node(
             nid: str, node: TaskNode
         ) -> tuple[str, str, dict[str, Any] | None]:
+            """Run task node.
+
+            Args:
+                nid: Description of the nid parameter.
+                node: Description of the node parameter.
+            """
             prompt = f"## Task: {node.name}\n\n{node.description}\n\nComplete this task thoroughly. Report results clearly."
             try:
                 sub_result = await loop._run_sub_agent(
@@ -254,4 +258,6 @@ EncreWorkflowTool = build_tool(
     },
     execute=_workflow_execute,
     intents=["general", "coding", "system"],
+    category="delegation",
+    semantic_type="orchestrate",
 )

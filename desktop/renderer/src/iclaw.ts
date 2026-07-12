@@ -23,6 +23,15 @@
 import { TransitionHelper } from "./transition-helper.js";
 
 /**
+ * Automation panel controller.
+ *
+ * Manages the full-screen "Automation" view that slides in over the main chat
+ * area. (This module originated from the now-removed "iClaw" mode.) It handles
+ * the sidebar collapse/expand choreography and the slide transition when
+ * entering and leaving the automation view.
+ */
+
+/**
  * AutomationPanel — controls the automation panel visibility.
  * Previously part of the now-removed iClaw mode, this panel is directly
  * accessible from the sidebar "Automation" button.
@@ -56,11 +65,15 @@ export class AutomationPanel {
     this._backBtn?.addEventListener("click", () => this.hideAutomationView());
   }
 
+  /**
+   * Whether the automation view is currently visible.
+   */
   get isActive(): boolean {
     return !!(this._automationView && !this._automationView.classList.contains("hidden"));
   }
 
   /** Public: hide automation view if active */
+  /** Hides the automation view if it is currently active. */
   hide(): void {
     if (this.isActive) {
       this.hideAutomationView();
@@ -68,6 +81,7 @@ export class AutomationPanel {
   }
 
   /** Toggle automation panel visibility */
+  /** Toggles automation panel visibility (show when hidden, hide when shown). */
   toggleAutomationView(): void {
     if (this.isActive) {
       this.hideAutomationView();
@@ -76,6 +90,7 @@ export class AutomationPanel {
     }
   }
 
+  /** Slides the automation view in over the main content (collapsing the sidebar). */
   private async showAutomationView(): Promise<void> {
     if (!this._mainContent || !this._automationView || this._transitioning) return;
     this._transitioning = true;
@@ -128,6 +143,7 @@ export class AutomationPanel {
     this._transitioning = false;
   }
 
+  /** Slides the automation view out and restores the main content and sidebar. */
   private async hideAutomationView(): Promise<void> {
     if (!this._mainContent || !this._automationView || this._transitioning) return;
     this._transitioning = true;

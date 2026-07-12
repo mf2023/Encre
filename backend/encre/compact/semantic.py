@@ -21,6 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+"""Semantic, pattern-aware context compaction utilities.
+
+This module complements the model-driven compaction in :mod:`encre.compact.engine`
+with cheaper, deterministic heuristics:
+
+* :class:`SemanticToolOutputCompactor` recognises the shape of common tool
+  outputs (grep, glob, bash, file_read, web_fetch, task lists) and replaces
+  them with concise, structured summaries instead of blunt truncation.
+* :class:`ContextPartitioner` splits a flat message list into ``hot`` (most
+  recent, kept verbatim), ``warm`` (lightly trimmed), ``cold`` (summarised)
+  and ``reference`` tiers so information density can be managed per tier.
+"""
 
 
 import re
@@ -56,6 +70,7 @@ class ContextTier:
     max_tokens: int = 0
 
     def token_count(self) -> int:
+        """Total token count of all messages in this tier."""
         return sum(_estimate_message_tokens(m) for m in self.messages)
 
 
@@ -69,9 +84,15 @@ class ContextPartition:
     reference: list[dict[str, Any]] = field(default_factory=list) # On-demand, indexed
 
     def to_messages(self) -> list[dict[str, Any]]:
+        """Flatten the partition back into a single message list.
+
+        Reference material (on-demand, indexed) is appended last so that
+        hot context stays closest to the model's attention window.
+        """
         return self.system + self.cold + self.warm + self.hot + self.reference
 
     def total_tokens(self) -> int:
+        """Total token count across every tier in the partition."""
         return sum(
             _estimate_message_tokens(m)
             for tier in [self.system, self.hot, self.warm, self.cold, self.reference]
@@ -92,6 +113,13 @@ class SemanticToolOutputCompactor:
     MAX_TOOL_OUTPUT_CHARS = 8000
 
     def compact_tool_output(self, tool_name: str, output: str) -> str:
+        """Summarise a tool output, dispatching by tool name.
+
+        Outputs shorter than :attr:`MAX_TOOL_OUTPUT_CHARS` are returned
+        unchanged.  Larger outputs are routed to a tool-specific handler
+        that extracts only the essential information (errors, file paths,
+        signatures, links, ...).  Falls back to head/tail truncation.
+        """
         if len(output) <= self.MAX_TOOL_OUTPUT_CHARS:
             return output
 
@@ -112,6 +140,7 @@ class SemanticToolOutputCompactor:
         return self._compact_default(output)
 
     def _compact_grep(self, output: str) -> str:
+        """Group grep matches by file and keep only the first few per file."""
         matches_by_file: dict[str, list[str]] = {}
         for match in _RE_GREP_MATCH.finditer(output):
             filepath = match.group(1)
@@ -134,6 +163,7 @@ class SemanticToolOutputCompactor:
         return "\n".join(lines)[:self.MAX_TOOL_OUTPUT_CHARS]
 
     def _compact_glob(self, output: str) -> str:
+        """Group discovered files by directory for a compact listing."""
         files: list[str] = []
         for match in _RE_FILE_LIST.finditer(output):
             f = match.group(1).strip()
@@ -158,6 +188,7 @@ class SemanticToolOutputCompactor:
         return "\n".join(lines)[:self.MAX_TOOL_OUTPUT_CHARS]
 
     def _compact_bash(self, output: str) -> str:
+        """Extract error lines, referenced paths and trailing output."""
         error_lines = _RE_ERROR_LINE.findall(output)
         path_lines = list(set(_RE_PATH_LINE.findall(output)))
 
@@ -181,6 +212,7 @@ class SemanticToolOutputCompactor:
         return "\n".join(parts)[:self.MAX_TOOL_OUTPUT_CHARS]
 
     def _compact_file_read(self, output: str) -> str:
+        """Keep only function/class signatures, imports and comments."""
         func_sigs: list[str] = []
         for line in output.split("\n"):
             stripped = line.strip()
@@ -191,6 +223,7 @@ class SemanticToolOutputCompactor:
         return output[:self.MAX_TOOL_OUTPUT_CHARS]
 
     def _compact_web_fetch(self, output: str) -> str:
+        """Extract the page title and a handful of unique links."""
         title_match = re.search(r'<title[^>]*>([^<]+)</title>', output, re.IGNORECASE)
         links = re.findall(r'https?://[^\s<>"]+', output)
 
@@ -207,6 +240,7 @@ class SemanticToolOutputCompactor:
         return "\n".join(parts)[:self.MAX_TOOL_OUTPUT_CHARS]
 
     def _compact_task_output(self, output: str) -> str:
+        """Summarise task-list / task-get JSON entries."""
         matches = list(re.finditer(r'\{[^}]+\}', output))
         if matches:
             return f"[{len(matches)} task entries]\n" + "\n".join(
@@ -215,6 +249,7 @@ class SemanticToolOutputCompactor:
         return output[:self.MAX_TOOL_OUTPUT_CHARS]
 
     def _compact_default(self, output: str) -> str:
+        """Fallback: keep the head and tail, omit the middle."""
         half = self.MAX_TOOL_OUTPUT_CHARS // 2
         return output[:half] + f"\n\n... [{len(output) - self.MAX_TOOL_OUTPUT_CHARS} chars omitted]\n\n" + output[-half:]
 
@@ -234,12 +269,19 @@ class ContextPartitioner:
         warm_turns: int = 7,
         compact_cold: bool = True,
     ) -> None:
+        """Configure the partitioner's tier boundaries.
+
+        ``hot_turns`` / ``warm_turns`` define how many recent assistant
+        turns stay at full / light compression; ``compact_cold`` toggles
+        whether older turns are summarised.
+        """
         self.hot_turns = hot_turns
         self.warm_turns = warm_turns
         self.compact_cold = compact_cold
         self._tool_compactor = SemanticToolOutputCompactor()
 
     def partition(self, messages: list[dict[str, Any]]) -> ContextPartition:
+        """Partition a flat message list into hot/warm/cold/reference tiers."""
         result = ContextPartition()
 
         # Separate system from rest
@@ -281,6 +323,7 @@ class ContextPartitioner:
         return result
 
     def _summarize_message(self, msg: dict[str, Any]) -> dict[str, Any]:
+        """Lightly compress a single message for the cold tier."""
         role = msg.get("role", "")
         content = msg.get("content", "")
 
@@ -297,6 +340,7 @@ class ContextPartitioner:
 
 
 def _estimate_message_tokens(msg: dict[str, Any]) -> int:
+    """Estimate the token count of a single message (text or multimodal)."""
     content = msg.get("content", "")
     if isinstance(content, str):
         return estimate_tokens(content)

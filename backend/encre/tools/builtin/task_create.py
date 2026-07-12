@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/task_create.py
 
+Task create implementation for the Encre tool system.
+"""
 from typing import Any
 
 from encre.task.manager import EncreTaskManager
@@ -30,6 +34,11 @@ from encre.tools.base import build_tool
 
 
 async def _task_create_execute(**kwargs: Any) -> str:
+    """Task create execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     name = kwargs.get("name", "")
     description = kwargs.get("description", "")
     task_type = kwargs.get("task_type", "bash")
@@ -66,4 +75,7 @@ EncreTaskCreateTool = build_tool(
     },
     execute=_task_create_execute,
     intents=["general", "coding", "data", "research"],
+    category="task",
+    semantic_type="write",
+    is_destructive=True,
 )

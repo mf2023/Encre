@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Tencent TokenHub backend -- Hunyuan and third-party model access.
@@ -76,7 +76,11 @@ class TencentBackend(OpenAISSEBackend):
         """
         if self.model:
             m = self.model.lower()
+            # Heuristic: send the thinking toggle for Hunyuan reasoning
+            # variants (``-think``/``-t1``/``-a13b``).  Other SKUs reject the
+            # parameter, so we omit it for them.
             if "think" in m or "t1" in m or "a13b" in m:
+                # Only Hunyuan reasoning-capable SKUs accept this parameter.
                 return {"enable_thinking": True}
         return None
 

@@ -21,7 +21,18 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre hook system: runtime registry & emit API.
+
+Implements :class:`EncreHookSystem`, which holds the registered
+:data:`~encre.hooks.types.HookHandler` callables (keyed by
+:data:`~encre.hooks.types.HookEventType`) and provides ``emit_*`` methods
+the agent runtime calls at each lifecycle point.  Handlers may block an
+operation or modify its input; the system merges their results in priority
+order.  File-backed hooks are loaded into it via
+:mod:`encre.hooks.file_loader`.
+"""
 
 import contextlib
 import uuid

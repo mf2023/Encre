@@ -21,5 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+"""Internal utility helpers for the Encre backend.
+
+This package bundles small, dependency-light building blocks reused across
+the codebase: id generation (:mod:`encre.utils.idgen`), a tiny pub-sub
+state store (:mod:`encre.utils.store`), token estimation
+(:mod:`encre.utils.tokens`) and the shared event/dataclass protocol types
+(:mod:`encre.utils.types`).
+"""
 
 

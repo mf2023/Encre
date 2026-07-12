@@ -31,4 +31,5 @@ crate-type = ["cdylib"]
 [dependencies]
 encre = { path = "../encre-core", package = "encre" }
 pyo3 = { version = "0.24", features = ["extension-module", "abi3-py39"] }
+regex = "1"
 serde_json = "1"

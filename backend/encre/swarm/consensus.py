@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Multi-agent decision making: proposals, votes, and debate.
+#
+# ``EncreConsensus`` implements two collaboration protocols: proposal-vote (one
+# agent proposes, others vote, a >2/3 supermajority declares consensus) and
+# debate-mediation (agents argue opposing positions, a mediator adjudicates).
+# ``Proposal``/``Vote``/``ConsensusResult`` are the data records; a shared
+# ``EncreMailbox`` carries the exchange.
 
 import asyncio
 import time
@@ -37,6 +45,11 @@ if TYPE_CHECKING:
 
 @dataclass
 class Proposal:
+    """A proposal put to a vote: a title, description, and option list.
+
+    ``proposed_by`` identifies the originating agent/voter.  ``to_dict``
+    serialises it for logging or persistence.
+    """
     id: str
     title: str
     description: str
@@ -55,6 +68,7 @@ class Proposal:
 
 @dataclass
 class Vote:
+    """A single cast vote: who voted, which option, and optional reasoning."""
     voter_id: str
     choice: str
     reasoning: str = ""
@@ -63,6 +77,12 @@ class Vote:
 
 @dataclass
 class ConsensusResult:
+    """Outcome of a consensus round.
+
+    ``winner`` is the chosen option, ``vote_counts`` maps option -> tally,
+    ``is_consensus`` is True when the winner cleared the 2/3 threshold, and
+    ``votes`` preserves the raw ballots for inspection.
+    """
     proposal_id: str
     winner: str
     vote_counts: dict[str, int]
@@ -145,12 +165,17 @@ class EncreConsensus:
         proposal: Proposal,
         voters: list["EncreTeammate"],
         timeout: float = 60.0,
+        permission_mode: str = "dont_ask",
     ) -> ConsensusResult:
         """Send proposal to all voters, collect responses, tally.
 
         Each voter's agent evaluates the proposal independently and sends a
         vote back through the mailbox.  Results are tallied and consensus is
         declared when a > 2/3 supermajority is reached.
+
+        Voters only cast a vote -- they don't need tools, so the permission
+        mode defaults to ``dont_ask`` rather than ``bypass`` to avoid
+        granting unrestricted execution to a voting-only agent.
         """
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
@@ -183,7 +208,7 @@ class EncreConsensus:
                     f"Choose exactly ONE option from the list. "
                     f"Reply with ONLY the exact option text, nothing else."
                 )
-                config = EncreConfig(max_turns=3, permission_mode="bypass")
+                config = EncreConfig(max_turns=3, permission_mode=permission_mode)
                 agent = EncreAgent(config=config)
                 parts: list[str] = []
                 async for event in agent.run(vote_prompt):

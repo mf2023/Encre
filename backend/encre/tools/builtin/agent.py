@@ -21,10 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/agent.py
+
+Agent implementation for the Encre tool system.
+"""
 
 import asyncio
-import types
 from contextvars import ContextVar
 from typing import Any
 
@@ -41,19 +45,23 @@ _parent_loop: Any = None
 
 
 def set_parent_loop(loop: Any) -> None:
+    """Set the fallback parent loop reference for sub-agent resolution."""
     global _parent_loop
     _parent_loop = loop
 
 
 def set_active_loop(loop: Any) -> Any:
+    """Set the active loop for this turn via ContextVar. Returns the previous value's token."""
     return _current_loop.set(loop)
 
 
 def reset_active_loop(token: Any) -> None:
+    """Restore the active loop to its previous value using a token from set_active_loop()."""
     _current_loop.reset(token)
 
 
 def _resolve_loop() -> Any:
+    """Resolve loop."""
     ctx_loop = _current_loop.get()
     if ctx_loop is not None:
         return ctx_loop
@@ -99,7 +107,7 @@ def _resolve_sub_agent_config(agent_name: str) -> Any:
     return None
 
 
-def _enforce_tool_policy(tool_name: str) -> str | None:
+def _enforce_tool_policy(tool_name: str, tool_input: dict[str, Any] | None = None) -> str | None:
     """Return an error string if the current sub-agent's tool policy
     forbids ``tool_name``; return ``None`` when the call is allowed.
 
@@ -126,6 +134,12 @@ def _enforce_tool_policy(tool_name: str) -> str | None:
         )
     if not isinstance(policy, str) or policy == "all":
         return None
+    # Check tool's is_readonly declaration
+    tool_obj = loop.tool_registry.get(tool_name) if hasattr(loop, "tool_registry") else None
+    if tool_obj is not None:
+        args = tool_input or {}
+        if tool_obj.is_readonly(args):
+            return None
     write_tools = {"file_write", "file_edit", "write_file", "writeFile", "apply_patch"}
     if policy == "readonly" and tool_name in write_tools:
         return f"Tool {tool_name} is forbidden in readonly sub-agent policy."
@@ -225,6 +239,7 @@ async def _agent_execute(**kwargs: Any) -> Any:
             return {"content": "Error: 'tasks' must be an array of {prompt, agent_name} objects.", "messages": []}
         # Build coroutines for each task
         async def _runner(t: dict[str, Any]) -> dict[str, Any]:
+            """Run one parallel sub-agent task."""
             if not isinstance(t, dict):
                 return {"content": "Error: each task must be a dict", "messages": []}
             return await _run_one_sub_agent(
@@ -260,17 +275,38 @@ async def _agent_execute(**kwargs: Any) -> Any:
     )
 
 
+def _agent_to_openai_format(self) -> dict[str, Any]:
+    """Convert to OpenAI tool format, appending available sub-agents to the description."""
+    agents_block = _build_agents_list()
+    description = self.description
+    if agents_block:
+        description += f"\n\n{agents_block}"
+    return {
+        "type": "function",
+        "function": {
+            "name": self.name,
+            "description": description,
+            "parameters": self.input_schema,
+        },
+    }
+
+
+def _agent_to_anthropic_format(self) -> dict[str, Any]:
+    """Convert to Anthropic tool format, appending available sub-agents to the description."""
+    agents_block = _build_agents_list()
+    description = self.description
+    if agents_block:
+        description += f"\n\n{agents_block}"
+    return {
+        "name": self.name,
+        "description": description,
+        "input_schema": self.input_schema,
+    }
+
+
 EncreAgentTool = build_tool(
     name="agent",
-    description="Spawn one or more sub-agents for parallel fan-out ONLY. This is NOT a default "
-                "way to get work done -- most tasks should be handled directly with your own tools. "
-                "Use it only when a goal cleanly splits into independent workstreams that can run "
-                "concurrently and be merged afterwards. Pass a `tasks` array to run multiple "
-                "sub-agents in parallel (asyncio.gather); the results are aggregated into a single "
-                "response. Be specific in each prompt -- it is the complete instruction for the "
-                "sub-agent. Do NOT call this tool from a sub-agent (no nested agent calls) -- if "
-                "you are already a delegated sub-agent, complete the assigned task with your own "
-                "tools and return a final answer.",
+    description="Spawn sub-agents for parallel work. Use this when a goal splits into independent workstreams that can run concurrently. Pass a `tasks` array to run multiple sub-agents in parallel; results are aggregated into a single response. Be specific in each prompt -- it is the complete instruction for the sub-agent. Sub-agents cannot spawn further sub-agents (single level of delegation only).",
     input_schema={
         "type": "object",
         "properties": {
@@ -307,40 +343,12 @@ EncreAgentTool = build_tool(
     },
     execute=_agent_execute,
     intents=["general", "coding", "system"],
+    category="delegation",
+    triggers=["sub-agent", "spawn agent", "delegate", "parallel task", "subagent"],
     semantic_type="orchestrate",
     cost_level="high",
     retryability="manual",
     safe_fallback="If delegation is not clearly splitting independent work, continue in the main thread and summarize the next concrete step.",
+    to_openai_format=_agent_to_openai_format,
+    to_anthropic_format=_agent_to_anthropic_format,
 )
-
-
-def _agent_to_openai_format(self) -> dict[str, Any]:
-    agents_block = _build_agents_list()
-    description = self.description
-    if agents_block:
-        description += f"\n\n{agents_block}"
-    return {
-        "type": "function",
-        "function": {
-            "name": self.name,
-            "description": description,
-            "parameters": self.input_schema,
-        },
-    }
-
-
-def _agent_to_anthropic_format(self) -> dict[str, Any]:
-    agents_block = _build_agents_list()
-    description = self.description
-    if agents_block:
-        description += f"\n\n{agents_block}"
-    return {
-        "name": self.name,
-        "description": description,
-        "input_schema": self.input_schema,
-    }
-
-
-# Monkey-patch the format methods to include dynamic agents list
-EncreAgentTool.to_openai_format = types.MethodType(_agent_to_openai_format, EncreAgentTool)
-EncreAgentTool.to_anthropic_format = types.MethodType(_agent_to_anthropic_format, EncreAgentTool)

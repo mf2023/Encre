@@ -18,6 +18,8 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Linux Landlock LSM sandboxing for read-only, network-restricted,
+//! and workspace-isolated process confinement.
 // ---------------------------------------------------------------------------
 // Linux implementation
 // ---------------------------------------------------------------------------

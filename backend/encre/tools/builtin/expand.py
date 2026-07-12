@@ -1,4 +1,32 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
 from __future__ import annotations
+
+"""Module: builtin/expand.py
+
+Expand implementation for the Encre tool system.
+"""
 
 import json
 from contextvars import ContextVar
@@ -13,20 +41,24 @@ _parent_loop: Any = None
 
 
 def set_parent_loop(loop: Any) -> None:
+    """Set the fallback parent loop reference for the expand context."""
     global _parent_loop
     _parent_loop = loop
 
 
 def set_active_loop(loop: Any) -> Any:
+    """Set the loop that expand should consult during this turn."""
     token = _current_loop.set(loop)
     return token
 
 
 def reset_active_loop(token: Any) -> None:
+    """Restore the active loop to its previous value using a token from set_active_loop()."""
     _current_loop.reset(token)
 
 
 def _resolve_loop() -> Any:
+    """Resolve loop."""
     ctx_loop = _current_loop.get()
     if ctx_loop is not None:
         return ctx_loop
@@ -34,6 +66,7 @@ def _resolve_loop() -> Any:
 
 
 async def _expand_execute(**kwargs: Any) -> str:
+    """Restore or preview compacted conversation history from the session archive."""
     loop = _resolve_loop()
     if loop is None:
         return "Error: expand requires a parent loop reference."
@@ -83,23 +116,14 @@ async def _expand_execute(**kwargs: Any) -> str:
 
 EncreExpandTool = build_tool(
     name="expand",
-    description=(
-        "Retrieve or restore the full pre-compact conversation history. "
-        "When context compaction has occurred, the original messages "
-        "are archived. Call this tool with mode='summary' to preview "
-        "what was archived, or mode='restore' to restore the full "
-        "conversation into the session."
-    ),
+    description="Preview or restore compacted conversation history.",
     input_schema={
         "type": "object",
         "properties": {
             "mode": {
                 "type": "string",
                 "enum": ["summary", "restore"],
-                "description": (
-                    "'summary' to preview archived content; "
-                    "'restore' to restore full messages."
-                ),
+                "description": "summary to preview archived content; restore to restore full conversation.",
             },
         },
         "required": ["mode"],
@@ -110,4 +134,5 @@ EncreExpandTool = build_tool(
     triggers=["expand", "archive", "restore context", "retrieve compacted"],
     always_available=True,
     is_concurrency_safe=lambda _: True,
+    semantic_type="read",
 )

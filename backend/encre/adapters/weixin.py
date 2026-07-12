@@ -21,6 +21,22 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# weixin.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - WeixinAdapter
+#
+# Module-level helpers:
+#   - _derive_api_base
+#
 import asyncio
 import logging
 import os
@@ -55,6 +71,15 @@ _MESSAGE_DEDUP_TTL_SECONDS = 300
 
 
 def _derive_api_base(gateway_url: str) -> str:
+    """
+    Derive api base.
+
+    Args:
+        gateway_url (str):
+
+    Returns:
+        str
+    """
     gateway_url = gateway_url.strip()
     if gateway_url.startswith("ws://"):
         rest = gateway_url[5:]
@@ -101,6 +126,17 @@ class WeixinAdapter(BaseAdapter):
         token: str = "",
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            app_id (str):
+            token (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         if not HTTPX_AVAILABLE:
             raise ImportError(
@@ -166,6 +202,12 @@ class WeixinAdapter(BaseAdapter):
         logger.info("[%s] Disconnected", self.name)
 
     async def _cleanup_http(self) -> None:
+        """
+        Cleanup http.
+
+        Returns:
+            None
+        """
         if self._http_client:
             await self._http_client.aclose()
             self._http_client = None

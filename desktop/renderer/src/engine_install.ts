@@ -15,7 +15,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * 
  * DISCLAIMER: Users must comply with applicable AI regulations.
  * Non-compliance may result in service termination or legal liability.
  */
@@ -34,6 +34,7 @@ import { Dialog } from "./dialog.js";
 import { send } from "./ws.js";
 import { t } from "./i18n.js";
 
+/** A single selectable engine option presented in the install dialog. */
 type EngineOption = {
   id: string;
   label: string;
@@ -43,6 +44,7 @@ type EngineOption = {
   desc_code?: string;
 };
 
+/** Backend-issued request describing which engine to install and how to present it. */
 type InstallRequest = {
   request_id: string;
   engine: string;
@@ -58,6 +60,7 @@ type InstallRequest = {
   hint_args?: Record<string, string>;
 };
 
+/** Progress update emitted while an engine install is running. */
 type ProgressEvent = {
   request_id: string;
   pct: number;
@@ -130,6 +133,14 @@ async function _askOne(
   return opt.id;
 }
 
+/**
+ * Handles an engine-install request from the backend.
+ *
+ * Presents a cascading choice dialog for each engine option and, once the user
+ * picks one (or cancels), replies to the backend with the chosen option id.
+ *
+ * @param req - The install request describing engine, options and i18n fields.
+ */
 export async function handleEngineInstallRequest(req: InstallRequest): Promise<void> {
   if (!req || !req.request_id) return;
   if (_pendingChoices.has(req.request_id)) return;
@@ -191,6 +202,14 @@ function _progressSubMessage(evt: ProgressEvent): string {
   return evt.sub_message || "";
 }
 
+/**
+ * Handles a progress event for an in-flight engine install.
+ *
+ * Opens the unified progress dialog on the first running event and updates it
+ * in real time; terminal states (success/fail/cancelled) finalize the dialog.
+ *
+ * @param evt - Progress event carrying percent, message and status.
+ */
 export function handleEngineInstallProgress(evt: ProgressEvent): void {
   if (!evt || !evt.request_id) return;
   let handle = _progressHandles.get(evt.request_id);

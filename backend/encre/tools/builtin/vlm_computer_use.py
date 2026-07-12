@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 ``vlm_computer_use`` tool -- vision-guided desktop automation.
@@ -36,8 +36,6 @@ session; this tool is just the model-facing entry point that owns the
 VLM backend lifecycle and a few prompt-engineering concerns (system
 prompt, history injection, action validation).
 """
-
-from __future__ import annotations
 
 import asyncio
 import json
@@ -466,4 +464,6 @@ EncreVLMComputerUseTool = build_tool(
     },
     execute=_vlm_execute,
     intents=["coding", "system"],
+    category="system",
+    semantic_type="exec",
 )

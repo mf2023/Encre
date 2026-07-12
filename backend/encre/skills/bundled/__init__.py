@@ -21,12 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Bundled skills package.
+
+Registers the built-in skills (debug, loop, batch, verify, stuck, web_research,
+code_review, refactor, write_docs, data_viz, gen_test) into a
+:class:`~encre.skills.registry.EncreSkillRegistry`.
+"""
 
 from encre.skills.types import BundledSkillDefinition, SkillContext, SkillSource
 
 
 def create_bundled_skills(registry):
+    """Instantiate every bundled skill and register it on *registry*."""
     from encre.skills.bundled.batch import _batch_prompt
     from encre.skills.bundled.code_review import _code_review_prompt
     from encre.skills.bundled.data_viz import _data_viz_prompt

@@ -21,9 +21,17 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
+
+"""Encre agent channels: base abstractions.
+
+Defines :class:`Channel` (the abstract transport interface every connection
+surface implements) and :class:`EventRouter` (the concurrency-safe bridge
+between channels, the SessionManager and the agent runtime).  The router
+exposes :meth:`EventRouter.submit` / :meth:`EventRouter.submit_stream`,
+which channels call to run prompts, and guarantees each connection gets an
+isolated session with its own conversation history.
+"""
 
 import asyncio
 import logging
@@ -50,6 +58,13 @@ _prompt_loader = PromptLoader()
 
 
 class Channel(ABC):
+    """Abstract transport surface for the agent runtime.
+
+    Subclasses bind a concrete client/adapter to the shared
+    :class:`EventRouter`.  Each channel is responsible for spawning its
+    listening loop in :meth:`start` and tearing it down in :meth:`stop`.
+    """
+
     name: ClassVar[str]
 
     @abstractmethod

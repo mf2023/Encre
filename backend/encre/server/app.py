@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre server orchestrator.
+
+Defines :class:`EncreServer`, the top-level object that wires together the
+session manager, the code-index manager, the adapter (gateway) manager and the
+automation scheduler, and serves both the WebSocket agent channel and the HTTP
+admin endpoints.  :func:`run_server` is the synchronous convenience entry point
+used by the CLI and the background service.
+"""
 
 import asyncio
 import contextlib
@@ -41,6 +50,14 @@ logger = logging.getLogger("encre.server")
 
 
 class EncreServer:
+    """Top-level server that wires the agent runtime to the network.
+
+    Owns the :class:`~encre.server.session_manager.SessionManager`, the
+    code-index manager, the adapter (gateway) manager and the automation
+    scheduler, and serves both the agent WebSocket (via
+    :class:`~encre.server.ws.EncreWSHandler`) and the HTTP admin endpoints.
+    """
+
     def __init__(
         self,
         host: str = "localhost",
@@ -75,6 +92,7 @@ class EncreServer:
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     async def _handle_connection(self, ws) -> None:
+        """Dispatch one WebSocket connection to the message handler."""
         try:
             await self._ws_handler.handle(ws)
         except Exception:

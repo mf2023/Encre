@@ -21,9 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
+
+"""Encre agent channels: REST / NDJSON HTTP transport.
+
+Implements :class:`HTTPChannel`, a lightweight HTTP server exposing the agent
+to headless clients and tests.  ``POST /chat`` either returns the full
+response as JSON or streams server-sent NDJSON events; ``GET /health``,
+``GET /sessions``, ``DELETE /sessions/:id`` and ``POST /sessions/:id/cancel``
+mirror the desktop client's management actions.
+"""
 
 import asyncio
 import json
@@ -124,6 +131,12 @@ class HTTPChannel(Channel):
         headers: dict[str, str],
         writer: asyncio.StreamWriter,
     ) -> None:
+        """Map an HTTP method + path to a channel action.
+
+        Implements ``GET /health``, ``GET /sessions``,
+        ``DELETE /sessions/:id``, ``POST /sessions/:id/cancel`` and
+        ``POST /chat`` (delegating to :meth:`_handle_chat`).
+        """
         router = self._router
 
         # GET /health

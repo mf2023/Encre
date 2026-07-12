@@ -21,28 +21,53 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/web_fetch.py
 
+Web fetch implementation for the Encre tool system.
+"""
 from typing import Any
 
 import httpx
+from markdownify import markdownify as md
 
 from encre.tools.base import build_tool
 
 
 async def _web_fetch_execute(**kwargs: Any) -> str:
+    """Fetch a URL and return content in the requested format."""
     url = kwargs.get("url", "")
+    fmt = (kwargs.get("format") or "text").strip().lower()
+    timeout = kwargs.get("timeout", 30)
+
+    try:
+        timeout = max(5, min(int(timeout), 120))
+    except (TypeError, ValueError):
+        timeout = 30
 
     try:
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=10.0),
+            timeout=httpx.Timeout(timeout, connect=10.0),
             follow_redirects=True,
         ) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             content_type = resp.headers.get("content-type", "")
 
-            if "text/html" in content_type or "html" in content_type:
+            is_html = "text/html" in content_type or "html" in content_type
+
+            if fmt == "html":
+                return resp.text[:50000] + "\n... (truncated)" if len(resp.text) > 50000 else resp.text
+
+            if fmt == "markdown" and is_html:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(resp.text, "lxml")
+                for tag in soup(["script", "style", "nav", "footer", "header"]):
+                    tag.decompose()
+                return md(str(soup), heading_style="ATX")[:50000]
+
+            if is_html:
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(resp.text, "lxml")
                 for tag in soup(["script", "style", "nav", "footer", "header"]):
@@ -50,11 +75,8 @@ async def _web_fetch_execute(**kwargs: Any) -> str:
                 text = soup.get_text(separator="\n", strip=True)
                 lines = [line.strip() for line in text.split("\n") if line.strip()]
                 return "\n".join(lines[:500])
-            else:
-                text = resp.text
-                if len(text) > 50000:
-                    text = text[:50000] + "\n... (truncated)"
-                return text
+
+            return resp.text[:50000] + "\n... (truncated)" if len(resp.text) > 50000 else resp.text
 
     except httpx.TimeoutException:
         return f"Error: Request timed out fetching {url}"
@@ -66,7 +88,7 @@ async def _web_fetch_execute(**kwargs: Any) -> str:
 
 EncreWebFetchTool = build_tool(
     name="web_fetch",
-    description="Fetch a URL and return its content as markdown",
+    description="Fetch a URL and return content in text, markdown, or HTML format.",
     input_schema={
         "type": "object",
         "properties": {
@@ -74,10 +96,22 @@ EncreWebFetchTool = build_tool(
                 "type": "string",
                 "description": "The URL to fetch content from",
             },
+            "format": {
+                "type": "string",
+                "enum": ["text", "markdown", "html"],
+                "description": "Output format: text (plain stripped, default), markdown (HTML→Markdown), html (raw). For HTML pages only.",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Request timeout in seconds (5-120, default 30).",
+            },
         },
         "required": ["url"],
     },
     execute=_web_fetch_execute,
     intents=["general", "research"],
+    category="web",
+    semantic_type="network",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

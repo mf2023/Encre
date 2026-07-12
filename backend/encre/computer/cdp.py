@@ -21,13 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Chrome DevTools Protocol (CDP) transport layer.
 
 Provides low-level WebSocket-based communication with Chromium-based
 browsers (Chrome, Edge, etc.) and Firefox (via Remote Protocol).
 """
-
-from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -57,6 +57,7 @@ class CDPTransport:
     """
 
     def __init__(self) -> None:
+        """Initialise empty connection, pending-request and handler state."""
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._pending: dict[int, asyncio.Future] = {}
         self._msg_id: int = 0
@@ -66,6 +67,7 @@ class CDPTransport:
 
     @property
     def connected(self) -> bool:
+        """Return True while the WebSocket connection is open."""
         return self._connected
 
     async def connect(self, url: str) -> None:
@@ -197,6 +199,7 @@ class CDPSession:
     """
 
     def __init__(self, transport: CDPTransport) -> None:
+        """Bind this session to a shared :class:`CDPTransport` (detached)."""
         self._transport = transport
         self._session_id: str | None = None
         self._target_id: str | None = None
@@ -204,14 +207,17 @@ class CDPSession:
 
     @property
     def transport(self) -> CDPTransport:
+        """Return the underlying CDP transport used by this session."""
         return self._transport
 
     @property
     def target_id(self) -> str | None:
+        """Return the attached target (tab) id, or None if detached."""
         return self._target_id
 
     @property
     def attached(self) -> bool:
+        """Return True while this session is attached to a target."""
         return self._attached
 
     async def attach(self, target_id: str) -> None:

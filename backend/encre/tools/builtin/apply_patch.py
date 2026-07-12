@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Apply a unified diff across multiple files.
 
@@ -38,8 +38,6 @@ Supports:
 
 Returns a JSON-encoded report listing each file touched and the result.
 """
-
-from __future__ import annotations
 
 import json
 import os
@@ -62,6 +60,7 @@ _HUNK_RE = re.compile(
 
 @dataclass
 class _Hunk:
+    """Hunk."""
     old_start: int
     old_count: int
     new_start: int
@@ -72,6 +71,7 @@ class _Hunk:
 
 @dataclass
 class _FileDiff:
+    """FileDiff."""
     old_path: str
     new_path: str
     is_new: bool = False
@@ -81,12 +81,22 @@ class _FileDiff:
 
 
 def _strip_ab_prefix(p: str) -> str:
+    """Strip ab prefix.
+
+    Args:
+        p: Description of the p parameter.
+    """
     if p.startswith("a/") or p.startswith("b/"):
         return p[2:]
     return p
 
 
 def _parse_patch(patch: str) -> list[_FileDiff]:
+    """Parse patch.
+
+    Args:
+        patch: Description of the patch parameter.
+    """
     lines = patch.splitlines(keepends=False)
     files: list[_FileDiff] = []
     i = 0
@@ -199,6 +209,11 @@ def _parse_patch(patch: str) -> list[_FileDiff]:
 
 
 def _count_patch_add_del(fd: _FileDiff) -> tuple[int, int]:
+    """Count patch add del.
+
+    Args:
+        fd: Description of the fd parameter.
+    """
     add_count = 0
     del_count = 0
     for h in fd.hunks:
@@ -326,6 +341,12 @@ def _locate(
 
 
 def _resolve(root: str, rel: str) -> str:
+    """Resolve.
+
+    Args:
+        root: Description of the root parameter.
+        rel: Description of the rel parameter.
+    """
     if os.path.isabs(rel):
         return rel
     return os.path.normpath(os.path.join(root, rel))
@@ -337,6 +358,11 @@ def _resolve(root: str, rel: str) -> str:
 
 
 async def _apply_patch_execute(**kwargs: Any) -> str:
+    """Apply patch execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     patch = kwargs.get("patch", "")
     if not patch:
         return "Error: patch is required"
@@ -462,6 +488,7 @@ EncreApplyPatchTool = build_tool(
     execute=_apply_patch_execute,
     intents=["general", "coding"],
     semantic_type="write",
+    is_destructive=True,
     cost_level="high",
     retryability="guarded",
     safe_fallback="Read the target files again, reduce the patch scope, or run a dry run to inspect failed hunks before retrying.",

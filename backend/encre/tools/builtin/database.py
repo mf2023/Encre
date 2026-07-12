@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/database.py
 
+Database implementation for the Encre tool system.
+"""
 import asyncio
 import json
 import sqlite3
@@ -32,6 +36,11 @@ from encre.tools.base import build_tool
 
 
 async def _database_execute(**kwargs: Any) -> str:
+    """Database execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     sql = kwargs.get("sql", "")
     database_url = kwargs.get("database_url", ":memory:")
     limit = kwargs.get("limit", 100)
@@ -43,6 +52,7 @@ async def _database_execute(**kwargs: Any) -> str:
         cursor = conn.cursor()
 
         def _execute_sql() -> Any:
+            """Execute sql."""
             return cursor.execute(sql)
 
         try:
@@ -98,4 +108,7 @@ EncreDatabaseTool = build_tool(
     execute=_database_execute,
     intents=["coding", "data"],
     is_concurrency_safe=lambda _: True,
+    category="data",
+    semantic_type="exec",
+    is_destructive=lambda args: args.get("action", "").lower() in ("write", "delete", "drop", "exec", "insert", "update", "alter", "create"),
 )

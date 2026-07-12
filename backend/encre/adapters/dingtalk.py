@@ -21,6 +21,20 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# dingtalk.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - DingTalkAdapter
+#   - _IncomingHandler
+#
 import asyncio
 import json
 import logging
@@ -93,6 +107,17 @@ class DingTalkAdapter(BaseAdapter):
         client_secret: str,
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            client_id (str):
+            client_secret (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text", "markdown"])
         self._client_id = client_id
         self._client_secret = client_secret
@@ -507,6 +532,16 @@ class _IncomingHandler(
         adapter: DingTalkAdapter,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            adapter (DingTalkAdapter):
+            loop (asyncio.AbstractEventLoop | None):
+
+        Returns:
+            None
+        """
         if DINGTALK_AVAILABLE:
             super().__init__()
         self._adapter = adapter
@@ -514,6 +549,12 @@ class _IncomingHandler(
         self._dispatch_tasks: set[asyncio.Task] = set()
 
     def pre_start(self) -> None:
+        """
+        Pre start.
+
+        Returns:
+            None
+        """
         return
 
     async def process(self, message: CallbackMessage) -> tuple[int, str]:

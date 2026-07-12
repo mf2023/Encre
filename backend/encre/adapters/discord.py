@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# discord.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - DiscordAdapter
+#
 import asyncio
 import logging
 from typing import Any
@@ -74,6 +87,16 @@ class DiscordAdapter(BaseAdapter):
         token: str,
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            token (str):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         if not DISCORD_AVAILABLE:
             raise ImportError(
@@ -93,11 +116,40 @@ class DiscordAdapter(BaseAdapter):
         intents.message_content = True
 
         class _BotClient(discord.Client):
+            """
+            _BotClient adapter component.
+            
+            Inherits from discord.Client and integrates an external platform or
+            channel into the Encre adapter framework. It implements the standard
+            adapter contract used by the manager to connect, send and receive
+            messages, and to dispatch normalized events into the agent runtime.
+            
+            Responsibilities:
+                * Establish and maintain a connection/session to the platform.
+                * Translate inbound platform events into normalized messages.
+                * Translate outbound messages into platform-specific API calls.
+                * Expose lifecycle hooks (connect/disconnect, start/stop).
+            """
             def __init__(self, adapter: DiscordAdapter) -> None:
+                """
+                Initialize the instance..
+
+                Args:
+                    adapter (DiscordAdapter):
+
+                Returns:
+                    None
+                """
                 super().__init__(intents=intents)
                 self._adapter = adapter
 
             async def on_ready(self) -> None:
+                """
+                On ready.
+
+                Returns:
+                    None
+                """
                 logger.info(
                     "[discord] Bot logged in as %s (id=%s)",
                     self.user,
@@ -106,6 +158,15 @@ class DiscordAdapter(BaseAdapter):
                 self._adapter._ready.set()
 
             async def on_message(self, message: discord.Message) -> None:
+                """
+                On message.
+
+                Args:
+                    message (discord.Message):
+
+                Returns:
+                    None
+                """
                 if message.author == self.user:
                     return
                 await self._adapter._handle_message(message)

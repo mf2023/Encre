@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# A "teammate" is one collaborating agent inside a swarm.
+#
+# ``EncreTeammate`` wraps an ``EncreAgent`` configured with a task, a tool set,
+# and an optional config, and runs it as a background asyncio task.  While
+# running, the teammate streams text into a result string and pushes tool
+# outputs onto its own ``EncreMailbox`` so other agents can read them.  The
+# ``TeammateHandle`` is the awaitable handle observers use to track status and
+# retrieve the finished result.
 
 import asyncio
 import uuid
@@ -37,6 +46,13 @@ if TYPE_CHECKING:
 
 @dataclass
 class TeammateHandle:
+    """Live status record for a running teammate.
+
+    Created when a teammate starts and mutated as the run progresses; observers
+    read ``status`` (``pending``/``running``/``completed``/``failed``/
+    ``cancelled``) and ``result`` once finished.  The bound ``_task`` lets the
+    manager await completion.
+    """
     teammate_id: str
     name: str
     status: str = "pending"
@@ -47,6 +63,13 @@ class TeammateHandle:
 
 
 class EncreTeammate:
+    """One agent participant in a swarm.
+
+    Construction only records configuration; ``run`` actually launches the
+    underlying ``EncreAgent`` in a background task and returns a handle.  The
+    agent's text deltas are accumulated into ``handle.result`` and its tool
+    results are forwarded to the teammate's mailbox for cross-agent visibility.
+    """
     def __init__(
         self,
         name: str,
@@ -66,6 +89,7 @@ class EncreTeammate:
         self._run_handle: TeammateHandle | None = None
 
     async def run(self) -> TeammateHandle:
+        """Start the teammate's agent as a background task and return its handle."""
         handle = TeammateHandle(
             teammate_id=self.teammate_id,
             name=self.name,
@@ -78,6 +102,13 @@ class EncreTeammate:
         return handle
 
     async def _run(self, handle: TeammateHandle) -> None:
+        """Background coroutine driving the wrapped agent.
+
+        Streams ``TextDelta``/``ToolResult`` events, accumulating text into
+        ``handle.result`` and posting tool outputs to the mailbox.  Translates
+        ``CancelledError`` into a ``cancelled`` status (re-raising so callers
+        can detect cancellation) and any other exception into ``failed``.
+        """
         try:
             from encre.agent import EncreAgent
             from encre.config import EncreConfig

@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Auto-generation of skills from repeated tool-use patterns.
+
+:class:`SkillGenerator` counts which tools were used in a run, picks the top
+ones, and emits a skill definition (markdown body + metadata).  The skill
+can be optionally enriched by a caller-supplied ``enrich_fn`` and is then
+:meth:`register`ed both in-memory and on disk under the auto-generated
+skills directory.
+"""
 
 import contextlib
 import hashlib
@@ -37,16 +46,19 @@ logger = logging.getLogger("encre.learning.skill_generator")
 
 
 class SkillGenerator:
+    """Builds and registers skills from a detected tool pattern."""
     def __init__(
         self,
         agent: EncreAgent,
         *,
         enrich_fn: Callable[[list[str], str], dict[str, Any]] | None = None,
     ) -> None:
+        """Store the agent and optional metadata-enrichment callback."""
         self._agent = agent
         self._enrich_fn = enrich_fn
 
     def generate(self, tool_names: list[str], prompt: str) -> dict[str, Any] | None:
+        """Produce a skill definition dict from the tool-frequency pattern."""
         tool_counts: dict[str, int] = {}
         for name in tool_names:
             tool_counts[name] = tool_counts.get(name, 0) + 1
@@ -101,11 +113,13 @@ class SkillGenerator:
         }
 
     def _build_description(self, prompt: str, top_tools: list[tuple[str, int]]) -> str:
+        """Construct a human-readable skill description."""
         tools_str = ", ".join(f"{name}" for name, _ in top_tools[:3])
         prompt_preview = prompt[:80].replace("\n", " ")
         return f"Automatically generated skill for task involving {tools_str}. Prompt: {prompt_preview}"
 
     def _build_when_to_use(self, top_tools: list[tuple[str, int]]) -> str:
+        """Construct a 'when to use' hint from the top tools."""
         patterns = []
         for name, _ in top_tools[:
             3]:
@@ -120,6 +134,7 @@ class SkillGenerator:
         return ", ".join(patterns)
 
     def _build_steps(self, top_tools: list[tuple[str, int]]) -> list[str]:
+        """Construct the ordered step list for the skill body."""
         steps: list[str] = []
         for name, count in top_tools:
             if name in ("bash", "run_command", "execute"):
@@ -137,6 +152,7 @@ class SkillGenerator:
         return steps
 
     async def register(self, skill_def: dict[str, Any]) -> None:
+        """Register the skill in-memory and write its markdown to disk."""
         skill_registry = getattr(self._agent, "skill_registry", None)
         if skill_registry is None:
             return
@@ -163,10 +179,12 @@ class SkillGenerator:
         )
 
     def _get_auto_skills_dir(self) -> Path:
+        """Return the on-disk directory for auto-generated skills."""
         from encre.config import get_data_dir
         return get_data_dir() / "skills" / "auto_generated"
 
     def _format_skill_md(self, skill_def: dict[str, Any]) -> str:
+        """Render the skill definition as a YAML-frontmatter markdown file."""
         lines = ["---"]
         lines.append(f"name: {skill_def['name']}")
         lines.append(f"description: {skill_def['description']}")

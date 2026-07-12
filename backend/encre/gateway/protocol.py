@@ -21,7 +21,18 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre channel-adapter gateway: wire protocol.
+
+Defines the :class:`GatewayOp` operation enum and the :class:`GatewayMessage`
+container used on the wire between :class:`encre.gateway.server.GatewayServer`
+and :class:`encre.gateway.client.GatewayClient`.  Messages are JSON objects of
+the shape ``{"op": <str>, "d": <dict>, "seq": <int>}``.
+
+Helper constructors (``hello``, ``submit``, ``text_delta``, ``finish`` ...)
+build typed messages; ``to_dict`` / ``from_dict`` handle (de)serialization.
+"""
 
 import enum
 from dataclasses import dataclass, field
@@ -29,6 +40,8 @@ from typing import Any
 
 
 class GatewayOp(enum.Enum):
+    """Operation codes for the gateway wire protocol."""
+
     HELLO = "hello"
     HEARTBEAT = "heartbeat"
     HEARTBEAT_ACK = "heartbeat_ack"

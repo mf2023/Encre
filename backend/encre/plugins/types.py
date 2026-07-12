@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -29,6 +29,7 @@ from typing import Any
 
 
 class PluginSource(Enum):
+    """Where a plugin is loaded from, also driving discovery priority."""
     BUNDLED = "bundled"       # Ships with encre
     INSTALLED = "installed"   # pip-installed third-party
     PROJECT = "project"       # Project-local plugin
@@ -57,6 +58,7 @@ class PluginManifest:
     provides_backends: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the manifest to a JSON-friendly dict (source as string)."""
         return {
             "name": self.name,
             "version": self.version,
@@ -64,6 +66,7 @@ class PluginManifest:
             "author": self.author,
             "license": self.license,
             "homepage": self.homepage,
+            # Serialise the enum as its string value for portability
             "source": self.source.value,
             "dependencies": self.dependencies,
             "min_yim_version": self.min_yim_version,

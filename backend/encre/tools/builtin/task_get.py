@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/task_get.py
 
+Task get implementation for the Encre tool system.
+"""
 from typing import Any
 
 from encre.task.manager import EncreTaskManager
@@ -30,6 +34,11 @@ from encre.tools.base import build_tool
 
 
 async def _task_get_execute(**kwargs: Any) -> str:
+    """Task get execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     task_id = kwargs.get("task_id", "")
     task = EncreTaskManager.get_task(task_id)
     if task is None:
@@ -66,5 +75,8 @@ EncreTaskGetTool = build_tool(
     },
     execute=_task_get_execute,
     intents=["general", "coding", "data", "research"],
+    category="task",
+    semantic_type="read",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

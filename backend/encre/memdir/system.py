@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import os
 import re
@@ -43,6 +43,7 @@ MAX_ENTRYPOINT_BYTES = 25_000
 
 @dataclass
 class MemoryHeader:
+    """Metadata extracted from a memory file's front matter and mtime."""
     filename: str
     file_path: str
     mtime_ms: float
@@ -54,6 +55,7 @@ class MemoryHeader:
 
 @dataclass
 class EntrypointResult:
+    """Holds the loaded MEMORY.md entrypoint plus size/truncation metadata."""
     content: str
     line_count: int
     byte_count: int
@@ -65,6 +67,14 @@ _loader = PromptLoader()
 
 
 class EncreMemorySystem:
+    """Façade orchestrating all memory-directory operations for an agent.
+
+    Wraps the entrypoint loader, manifest formatter, :class:`SemanticMemorySearch`,
+    :class:`WorkingMemory`, and :class:`MemoryConsolidator`. Callers typically
+    construct it with the agent's ``auto_memory_path`` and then use
+    :meth:`build_prompt` / :meth:`build_prompt_with_context` to inject memory
+    into a model prompt.
+    """
     MAX_ENTRYPOINT_LINES = MAX_ENTRYPOINT_LINES
     MAX_ENTRYPOINT_BYTES = MAX_ENTRYPOINT_BYTES
     FRONTMATTER_MAX_LINES = FRONTMATTER_MAX_LINES
@@ -78,9 +88,21 @@ class EncreMemorySystem:
         self._working: WorkingMemory = WorkingMemory()
 
     def _ensure_dir(self) -> None:
+        """Create the memory directory if it does not already exist."""
         os.makedirs(self.auto_memory_path, exist_ok=True)
 
     def scan(self) -> list[MemoryHeader]:
+        """Enumerate memory files and extract their headers.
+
+        Walks the memory directory, skips the entrypoint, dotfiles, internal
+        underscore-prefixed files, and non-markdown files, then parses each
+        remaining file's front matter for description/type/tags and computes
+        a human-readable age. Results are sorted newest-first and capped at
+        ``MAX_MEMORY_FILES``.
+
+        Returns:
+            List of :class:`MemoryHeader` objects (empty on OS errors).
+        """
         memories: list[MemoryHeader] = []
         try:
             with os.scandir(self.auto_memory_path) as entries:
@@ -100,6 +122,7 @@ class EncreMemorySystem:
                         stat = entry.stat(follow_symlinks=False)
                     except OSError:
                         continue
+                    # st_mtime_ns is nanoseconds; convert to milliseconds
                     mtime_ms = stat.st_mtime_ns / 1_000_000.0
                     header = MemoryHeader(
                         filename=entry.name,
@@ -139,14 +162,34 @@ class EncreMemorySystem:
         return memories
 
     def _parse_frontmatter(self, content: str) -> dict[str, Any] | None:
+        """Extract a YAML front-matter block delimited by ``---`` lines.
+
+        Args:
+            content: Raw (possibly decrypted) file content.
+
+        Returns:
+            Parsed mapping, or ``None`` when no front matter is present.
+        """
         pattern = r"^---\s*\n(.*?)\n---"
         match = re.search(pattern, content, re.DOTALL)
         if not match:
             return None
+        # Pull the text between the opening and closing '---' delimiters
         yaml_block = match.group(1)
         return self._parse_simple_yaml(yaml_block)
 
     def _parse_simple_yaml(self, yaml_block: str) -> dict[str, Any]:
+        """Parse a minimal subset of YAML used in memory front matter.
+
+        Supports ``key: value`` scalars and ``key:\\n  - item`` lists; it is
+        intentionally not a full YAML parser to avoid extra dependencies.
+
+        Args:
+            yaml_block: Text between the ``---`` delimiters.
+
+        Returns:
+            Mapping of front-matter keys to string or list values.
+        """
         result: dict[str, Any] = {}
         current_key: str | None = None
         current_list: list[str] = []
@@ -183,11 +226,13 @@ class EncreMemorySystem:
         return result
 
     def format_manifest(self, memories: list[MemoryHeader] | None = None) -> str:
+        """Render the Markdown manifest, scanning if no list is supplied."""
         if memories is None:
             memories = self.scan()
         return format_memory_manifest(memories)
 
     def load_entrypoint(self) -> EntrypointResult:
+        """Load and size-limit the MEMORY.md entrypoint for prompts."""
         raw = load_entrypoint_raw(self.auto_memory_path)
         return EntrypointResult(
             content=raw["content"],
@@ -198,9 +243,19 @@ class EncreMemorySystem:
         )
 
     def build_prompt(self) -> str:
+        """Assemble the full memory prompt shown to the model.
+
+        Combines the base memory-system template, the MEMORY.md entrypoint,
+        the Markdown manifest of available memories, and usage hints into a
+        single string ready to be injected into a system prompt.
+
+        Returns:
+            The assembled memory prompt text.
+        """
         entrypoint = self.load_entrypoint()
         memories = self.scan()
 
+        # Load the base memory-system template shared across all agents
         base = _loader.load("memory_system", category="memdir")
 
         parts = [base, ""]
@@ -240,22 +295,27 @@ class EncreMemorySystem:
         return "\n".join(parts)
 
     def write_entrypoint(self, content: str) -> None:
+        """Encrypt and persist the MEMORY.md entrypoint, with plaintext fallback."""
         from encre.crypto import encrypt
         file_path = os.path.join(self.auto_memory_path, ENTRYPOINT_NAME)
         os.makedirs(self.auto_memory_path, exist_ok=True)
         try:
             with open(file_path, "w", encoding="utf-8") as f:
+                # Encrypt before persisting so memory stays confidential at rest
                 f.write(encrypt(content))
         except Exception:
             write_entrypoint(self.auto_memory_path, content)
 
     def _get_file_age(self, mtime_ms: float) -> str:
+        """Return the human-readable age string for a timestamp."""
         return memory_age_text(mtime_ms)
 
     def _get_freshness_text(self, mtime_ms: float) -> str:
+        """Return the staleness reminder snippet for a timestamp."""
         return memory_freshness_text(mtime_ms)
 
     def get_memory_path(self) -> str:
+        """Return the underlying memory directory path."""
         return self.auto_memory_path
 
     # ---- semantic search -------------------------------------------------

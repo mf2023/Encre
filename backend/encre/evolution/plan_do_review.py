@@ -21,11 +21,11 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-"""
-Plan-Do-Review 自主循环引擎 -- 旗舰级 AI Agent 的核心能力。
-"""
-
 from __future__ import annotations
+
+# Plan-Do-Review engine: decompose a complex task into a step graph,
+# execute it turn-by-turn, and review each step (lightweight + periodic
+# deep review) so the agent can self-correct before continuing.
 
 import json
 import re
@@ -39,6 +39,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 class StepStatus(Enum):
+    # Lifecycle status of a single plan step.
     PENDING = auto()
     IN_PROGRESS = auto()
     COMPLETED = auto()
@@ -48,6 +49,7 @@ class StepStatus(Enum):
 
 
 class ReviewGrade(Enum):
+    # Outcome grade assigned to a step by the review phase.
     PASS = auto()
     PASS_WITH_ISSUES = auto()
     FAIL = auto()
@@ -56,7 +58,8 @@ class ReviewGrade(Enum):
 
 @dataclass
 class ToolCallRecord:
-    """每次工具调用的记录"""
+    # English: one recorded tool invocation inside a step (name, args/result
+    # summaries, error flag and latency).
     turn: int
     tool_name: str
     args_summary: str
@@ -68,7 +71,8 @@ class ToolCallRecord:
 
 @dataclass
 class StepNode:
-    """Plan 中的一个步骤"""
+    # English: a single node in the plan graph with its success criteria,
+    # execution status, recorded tool calls, retry budget and dependencies.
     id: str
     description: str
     success_criteria: str
@@ -82,6 +86,7 @@ class StepNode:
     notes: list[str] = field(default_factory=list)
 
     def summary_line(self) -> str:
+        # Render a one-line status summary (icon + description + status name).
         icon = {
             StepStatus.PENDING: "--",
             StepStatus.IN_PROGRESS: ">>",
@@ -96,6 +101,8 @@ class StepNode:
 @dataclass
 class RuntimePlan:
     """当前会话的运行中计划"""
+    # English: the live plan for the current session -- its steps, the index
+    # of the step in progress, and aggregate progress counters.
     original_task: str = ""
     steps: list[StepNode] = field(default_factory=list)
     current_step_index: int = -1
@@ -108,16 +115,19 @@ class RuntimePlan:
 
     @property
     def current_step(self) -> StepNode | None:
+        # Return the step currently in progress, or None.
         if 0 <= self.current_step_index < len(self.steps):
             return self.steps[self.current_step_index]
         return None
 
     @property
     def is_complete(self) -> bool:
+        # True once every step is completed or skipped.
         return all(s.status in (StepStatus.COMPLETED, StepStatus.SKIPPED) for s in self.steps)
 
     def to_prompt_context(self) -> str:
         """生成注入 system prompt 的上下文块"""
+        # English: build the progress block injected into the system prompt.
         if not self.steps:
             return ""
         lines = ["## Plan-Do-Review 进度", ""]
@@ -162,18 +172,21 @@ class RuntimePlan:
 # ---------------------------------------------------------------------------
 
 _PLAN_TRIGGER_KEYWORDS = [
+    # Keywords that signal a task is complex enough to warrant a plan.
     "build", "create", "implement", "develop", "write a", "make a",
     "refactor", "migrate", "convert", "multi-step", "pipeline", "workflow",
     "analyze", "research", "investigate",
 ]
 
 _SIMPLE_KEYWORDS = [
+    # Keywords that signal a trivial / single-shot question (no plan needed).
     "what is", "what's", "how do i", "how to", "explain",
     "hello", "hi", "help",
 ]
 
 
 def _estimate_complexity(task: str, max_turns: int = 0) -> float:
+    # Score task complexity in 0.0-1.0 from keywords, length, turn count.
     text = task.lower()
     for kw in _SIMPLE_KEYWORDS:
         if text.startswith(kw) or text.strip().startswith(kw):
@@ -190,6 +203,7 @@ def _estimate_complexity(task: str, max_turns: int = 0) -> float:
 
 
 def should_plan(task: str, max_turns: int = 0) -> bool:
+    # Plan when estimated complexity reaches the activation threshold.
     return _estimate_complexity(task, max_turns) >= 0.45
 
 
@@ -198,6 +212,8 @@ def should_plan(task: str, max_turns: int = 0) -> bool:
 # ---------------------------------------------------------------------------
 
 def decompose_task(task: str) -> list[dict[str, str]]:
+    # Turn a free-form task into an ordered list of step dicts (id/description/
+    # success_criteria), trying numbered list, bullet list, then heuristics.
     text = task.strip()
     steps = _parse_numbered_list(text)
     if steps and len(steps) >= 2:
@@ -209,6 +225,7 @@ def decompose_task(task: str) -> list[dict[str, str]]:
 
 
 def _parse_numbered_list(text: str) -> list[dict[str, str]]:
+    # Parse "1. ..." / "Step N: ..." style numbered step lists.
     pattern = re.compile(
         r'(?:^|\n)\s*(?:\d+[\.\)]|Step\s+\d+[:\-])\s*(.+?)(?=\n\s*(?:\d+[\.\)]|Step\s+\d+[:\-]|\Z))',
         re.DOTALL,
@@ -224,6 +241,7 @@ def _parse_numbered_list(text: str) -> list[dict[str, str]]:
 
 
 def _parse_bullet_list(text: str) -> list[dict[str, str]]:
+    # Parse "- item" / "* item" bullet step lists.
     items = []
     for line in text.split("\n"):
         stripped = line.strip()
@@ -239,6 +257,7 @@ def _parse_bullet_list(text: str) -> list[dict[str, str]]:
 
 
 def _heuristic_decompose(text: str) -> list[dict[str, str]]:
+    # Fallback decomposition using blank-line blocks or sequencing keywords.
     key_phrases = [
         r'\bfirst\b', r'\bfirstly\b', r'\bfirst of all\b',
         r'\bnext\b', r'\bthen\b', r'\bafter that\b',
@@ -284,6 +303,7 @@ def _heuristic_decompose(text: str) -> list[dict[str, str]]:
 
 
 def _infer_criteria(text: str) -> str:
+    # Guess a sensible success criterion for a step from its wording.
     t = text.lower()
     if "test" in t:
         return "All tests pass without errors"
@@ -304,17 +324,22 @@ def _infer_criteria(text: str) -> str:
 # Main engine
 # ---------------------------------------------------------------------------
 
+
 class PlanDoReviewEngine:
     """Plan-Do-Review 自主循环引擎。"""
 
+    # English: drives the plan lifecycle -- builds the step graph from a task,
+    # advances through steps, records tool calls and applies light/deep review.
     MAX_STEPS = 12
     DEEP_REVIEW_INTERVAL = 3
 
     def __init__(self) -> None:
+        # Fresh plan + inactive until initialize() is called.
         self.plan = RuntimePlan()
         self._is_active = False
 
     def initialize(self, task: str) -> None:
+        # Build the step graph (capped at MAX_STEPS) and activate the engine.
         self.plan = RuntimePlan(original_task=task[:2000])
         raw_steps = decompose_task(task)
         for i, s in enumerate(raw_steps[:self.MAX_STEPS]):
@@ -328,6 +353,7 @@ class PlanDoReviewEngine:
         self.plan.current_step_index = -1
 
     def start_next_step(self) -> StepNode | None:
+        # Promote the next PENDING step (deps met => IN_PROGRESS, else BLOCKED).
         for i, step in enumerate(self.plan.steps):
             if step.status == StepStatus.PENDING:
                 deps_met = all(
@@ -342,6 +368,7 @@ class PlanDoReviewEngine:
         return None
 
     def mark_step_complete(self, summary: str = "") -> None:
+        # Mark the current step completed and record a short result summary.
         step = self.plan.current_step
         if step is None:
             return
@@ -350,6 +377,7 @@ class PlanDoReviewEngine:
         self.plan.completed_steps += 1
 
     def mark_step_failed(self, error: str = "") -> None:
+        # Retry while under budget, otherwise mark the step FAILED.
         step = self.plan.current_step
         if step is None:
             return
@@ -363,6 +391,7 @@ class PlanDoReviewEngine:
             self.plan.failed_steps += 1
 
     def skip_current_step(self, reason: str = "") -> None:
+        # Skip the in-progress step, recording the reason as a note.
         step = self.plan.current_step
         if step is None:
             return
@@ -374,6 +403,7 @@ class PlanDoReviewEngine:
         self, turn: int, tool_name: str, args: dict[str, Any],
         result: str, is_error: bool, latency_ms: float = 0.0,
     ) -> None:
+        # Append a tool-call record to the current step and bump the counter.
         step = self.plan.current_step
         if step is None:
             return
@@ -386,6 +416,7 @@ class PlanDoReviewEngine:
         self.plan.total_tool_calls += 1
 
     def lightweight_review(self) -> ReviewGrade:
+        # Cheap per-step review from tool-call errors / repetition / empties.
         step = self.plan.current_step
         if step is None:
             return ReviewGrade.PASS
@@ -413,6 +444,7 @@ class PlanDoReviewEngine:
         return ReviewGrade.PASS
 
     def needs_deep_review(self) -> bool:
+        # Trigger a deep review every DEEP_REVIEW_INTERVAL steps or on 2 fails.
         if self.plan.completed_steps > 0 and self.plan.completed_steps % self.DEEP_REVIEW_INTERVAL == 0:
             self.plan.deep_reviews_done += 1
             return True
@@ -423,14 +455,17 @@ class PlanDoReviewEngine:
         return False
 
     def should_plan(self, task: str, max_turns: int = 0) -> bool:
+        # Delegate to the module-level complexity heuristic.
         return should_plan(task, max_turns)
 
     def get_context(self) -> str:
+        # Return the prompt-context block for the active plan (or empty).
         if not self._is_active or not self.plan.steps:
             return ""
         return self.plan.to_prompt_context()
 
     def reset(self) -> None:
+        # Discard the plan and deactivate the engine.
         self.plan = RuntimePlan()
         self._is_active = False
 
@@ -440,6 +475,7 @@ class PlanDoReviewEngine:
 # ---------------------------------------------------------------------------
 
 def _summarize_args(args: dict[str, Any]) -> str:
+    # JSON-summarise args, redacting obvious secret keys.
     if not args:
         return ""
     skip_keys = {"api_key", "password", "secret", "token", "key"}
@@ -451,6 +487,7 @@ def _summarize_args(args: dict[str, Any]) -> str:
 
 
 def _truncate(s: str, max_len: int) -> str:
+    # Truncate a string to max_len characters with an ellipsis.
     if len(s) <= max_len:
         return s
     return s[:max_len - 3] + "..."

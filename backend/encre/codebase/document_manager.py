@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import json
 import re
@@ -30,14 +30,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
+import httpx
 
-try:
-    import httpx
-except ImportError:
-    httpx = None
+# This module implements the reference-document store used by Encre to attach
+# local files and web pages to a workspace.  Documents are persisted under
+# ``<data_dir>/documents`` (an ``index.json`` manifest plus the raw content in
+# ``files/``) and can be rendered into a single context string for the model.
 
 
 class EncreDocument:
+    """In-memory model describing a single reference document (local file or URL)."""
     id: str
     name: str
     source: str
@@ -62,6 +64,7 @@ class EncreDocument:
         size: int = 0,
         added_at: float = 0.0,
     ) -> None:
+        """Create a document with the given metadata (fields default to empty)."""
         self.id = id
         self.name = name
         self.source = source
@@ -74,6 +77,7 @@ class EncreDocument:
         self.added_at = added_at
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the document metadata to a plain dictionary."""
         return {
             "id": self.id,
             "name": self.name,
@@ -89,6 +93,7 @@ class EncreDocument:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "EncreDocument":
+        """Reconstruct an :class:`EncreDocument` from a metadata dictionary."""
         return cls(
             id=d.get("id", ""),
             name=d.get("name", ""),
@@ -107,6 +112,7 @@ _MAX_CRAWL_PAGES = 30
 
 
 def _strip_html(html: str) -> str:
+    """Strip scripts/styles/nav/footer and tags from HTML, returning plain text."""
     text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<nav[^>]*>.*?</nav>", "", text, flags=re.DOTALL | re.IGNORECASE)
@@ -117,6 +123,7 @@ def _strip_html(html: str) -> str:
 
 
 def _extract_same_domain_links(html: str, base_url: str, domain: str) -> set[str]:
+    """Extract same-domain HTTP(S) links from an HTML page (for crawling)."""
     links: set[str] = set()
     for m in re.finditer(r'href=["\']([^"\']+)["\']', html, re.IGNORECASE):
         href = m.group(1).strip()
@@ -131,6 +138,10 @@ def _extract_same_domain_links(html: str, base_url: str, domain: str) -> set[str
 
 
 def crawl_url_to_text(name: str, url: str) -> str:
+    """Fetch a web page and crawl up to ``_MAX_CRAWL_PAGES`` same-domain links.
+
+    Returns a Markdown-ish concatenation of each page's stripped text.
+    """
     if httpx is None:
         raise RuntimeError("httpx is required for URL documents. Install with: pip install httpx")
     parsed = urlparse(url)
@@ -166,7 +177,9 @@ def crawl_url_to_text(name: str, url: str) -> str:
 
 
 class EncreDocumentManager:
+    """Manage CRUD and persistence of reference documents for a workspace."""
     def __init__(self, data_dir: str) -> None:
+        """Initialise storage directories and load any persisted document index."""
         self._base_dir = Path(data_dir) / "documents"
         self._files_dir = self._base_dir / "files"
         self._index_path = self._base_dir / "index.json"
@@ -174,9 +187,11 @@ class EncreDocumentManager:
         self._load()
 
     def _ensure_dirs(self) -> None:
+        """Create the ``files/`` storage directory if it does not exist."""
         self._files_dir.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> None:
+        """Load the document index manifest from disk into memory."""
         if not self._index_path.exists():
             return
         try:
@@ -188,6 +203,7 @@ class EncreDocumentManager:
             self._documents.clear()
 
     def _save(self) -> None:
+        """Persist the current document manifest to ``index.json``."""
         self._ensure_dirs()
         data = {
             "documents": [doc.to_dict() for doc in self._documents.values()],
@@ -198,6 +214,7 @@ class EncreDocumentManager:
         )
 
     def _read_content(self, doc: EncreDocument) -> str:
+        """Read a document's textual content from its stored file (or original path)."""
         if not doc.content_path:
             if doc.source == "local" and doc.original_path:
                 try:
@@ -216,6 +233,7 @@ class EncreDocumentManager:
         return ""
 
     def add_from_local(self, name: str, file_path: str) -> EncreDocument:
+        """Add a local file as a document, copying its bytes into storage."""
         src = Path(file_path)
         if not src.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -248,6 +266,7 @@ class EncreDocumentManager:
         return doc
 
     def add_from_url(self, name: str, url: str) -> EncreDocument:
+        """Crawl a URL (and same-domain links) to text and store it as a document."""
         full_text = crawl_url_to_text(name, url)
         doc_id = uuid.uuid4().hex[:12]
         parsed = urlparse(url)
@@ -270,6 +289,7 @@ class EncreDocumentManager:
         return doc
 
     def add_pending_url(self, name: str, url: str) -> EncreDocument:
+        """Create a placeholder document with ``status="loading"`` for async crawl."""
         doc_id = uuid.uuid4().hex[:12]
         parsed = urlparse(url)
         domain = parsed.netloc
@@ -288,6 +308,7 @@ class EncreDocumentManager:
         return doc
 
     def finish_url_crawl(self, doc_id: str, full_text: str) -> EncreDocument | None:
+        """Finalise a pending URL document once crawling completes."""
         doc = self._documents.get(doc_id)
         if doc is None:
             return None
@@ -301,6 +322,7 @@ class EncreDocumentManager:
         return doc
 
     def remove(self, doc_id: str) -> bool:
+        """Remove a document (and its stored content file) from the manager."""
         doc = self._documents.pop(doc_id, None)
         if doc is None:
             return False
@@ -312,13 +334,16 @@ class EncreDocumentManager:
         return True
 
     def list_all(self) -> list[dict[str, Any]]:
+        """Return metadata dictionaries for all stored documents."""
         return [doc.to_dict() for doc in self._documents.values()]
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
+        """Return a single document's metadata dict, or ``None`` if not found."""
         doc = self._documents.get(doc_id)
         return doc.to_dict() if doc else None
 
     def build_context(self) -> str:
+        """Render all documents into a single reference-context string for the model."""
         parts: list[str] = []
         for doc in self._documents.values():
             content = self._read_content(doc)

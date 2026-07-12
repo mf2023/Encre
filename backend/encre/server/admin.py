@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Lightweight HTTP admin endpoints for the Encre server.
+
+These endpoints are served alongside the WebSocket upgrade by
+:func:`encre.server.app.EncreServer.start` via the ``process_request`` hook.
+They expose read-only operational data (health, config, session counts, stats)
+and a single control action (cancel a running session).  All responses are JSON
+with permissive CORS headers so local tooling can consume them.
+"""
 
 import json
 import os

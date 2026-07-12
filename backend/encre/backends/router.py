@@ -21,7 +21,21 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""
+Router backend -- task-aware routing across multiple backends.
+
+:class:`RouterBackend` inspects the last user message and classifies it into
+a :class:`TaskCategory` (coding, reasoning, research, writing, ...) using a
+set of regex patterns.  Each category is mapped to a dedicated backend; if no
+category matches (or matches below ``min_confidence``), a default backend is
+used.  Connection-degraded routes are transparently redirected to the next
+best candidate.
+
+A :class:`CostTracker` records per-model token usage and cost (using registry
+pricing) so callers can observe spend across the routed backends.
+"""
 
 import contextlib
 import logging
@@ -253,6 +267,7 @@ class RouterBackend(BaseBackend):
 
     def _select_backend(self, prompt: str) -> tuple[BaseBackend, str]:
         if not prompt:
+            # No user text to classify -- use the configured default backend.
             return self._default, "default"
 
         best: tuple[Route, float] | None = None

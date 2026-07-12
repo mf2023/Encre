@@ -21,7 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Learning subsystem for Encre.
+
+Turns repeated tool-use into durable, reusable knowledge:
+
+* :class:`LearningEngine` -- watches a run and crystallises frequent
+  tool patterns into skills.
+* :class:`SkillGenerator` -- builds (and registers) a skill definition
+  from the detected tool pattern.
+* :class:`MemoryConsolidator` -- periodically asks the agent's memory
+  system to consolidate stored memories.
+"""
 
 from encre.learning.consolidator import MemoryConsolidator
 from encre.learning.engine import LearningEngine

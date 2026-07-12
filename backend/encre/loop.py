@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 import asyncio
 import builtins
 import contextlib
@@ -29,6 +31,7 @@ import os
 import re
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -48,7 +51,39 @@ from encre.profile.system import EncreProfileSystem
 from encre.prompts.base import EncrePromptTemplate
 from encre.prompts.classifier import classify_intents
 from encre.recovery import ErrorRecoveryEngine, RetryableExecutor
+from encre.loop_stability import (
+    BudgetState,
+    SteerQueue,
+    WithheldError,
+    build_empty_retry_message,
+    build_grace_message,
+    build_steer_injection,
+    build_thinking_prefill,
+    build_tombstone_messages,
+    build_truncated_retry_message,
+    check_interrupt,
+    check_token_pressure,
+    classify_error,
+    is_empty_response,
+    is_truncated_tool_call,
+    repair_messages,
+    should_post_tool_compact,
+)
+from encre.recovery_loop import (
+    MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
+    ESCALATED_MAX_TOKENS,
+    build_fallback_system_message,
+    build_max_tokens_recovery_message,
+    build_slot_escalation_message,
+    can_fallback,
+    is_context_overflow,
+    is_prompt_too_long_error,
+    is_rate_limit_or_overload,
+    is_withheld_max_output_tokens,
+    yield_missing_tool_result_blocks,
+)
 from encre.rollback import EncreRollbackGit
+from encre.tools.builtin._terminal_manager import TerminalSessionManager
 from encre.rules.loader import RulesLoader
 from encre.safety import EncreSafetyEngine
 from encre.session import EncreSession
@@ -92,6 +127,7 @@ from encre.utils.types import (
     WorkflowTaskEvent,
     create_assistant_boundary,
     create_finish,
+    create_system_message,
     create_permission_request,
     create_plan_mode_changed,
     create_plan_proposal,
@@ -133,16 +169,18 @@ _CONTEXT_OVERFLOW_PATTERN = re.compile(
     r"(?:context|overflow|too\s+large|too\s+long|prompt|input\s+length|max_tokens)", re.IGNORECASE
 )
 
-def _is_context_overflow(exc: Exception) -> bool:
-    """Detect whether *exc* is a context-overflow / prompt-too-long error (413)."""
-    msg = str(exc)
-    return bool(_CONTEXT_OVERFLOW_PATTERN.search(msg)) and "413" in msg
+# ── Context overflow detection ────────────────────────────────────────
+# Legacy local re-export of the authoritative impl in encre.recovery_loop.
+# Used by this module for backward compatibility; new code should import
+# is_context_overflow directly from encre.recovery_loop.
+_is_context_overflow = is_context_overflow
 
 
 def _apply_result_budget(
     result: str,
     tool: Any,
     max_chars: int = 100_000,
+    context_ratio: float = 1.0,
 ) -> str:
     """Truncate a tool result if it exceeds the tool's size budget.
 
@@ -151,6 +189,11 @@ def _apply_result_budget(
     truncated with a count of removed characters.
     """
     budget = getattr(tool, "max_result_size_chars", max_chars) or max_chars
+    if context_ratio < 0.5:
+        # Context is nearly full: scale the budget down so the result leaves
+        # more room, but never below a minimum usable preview size.
+        scaled = int(budget * context_ratio)
+        budget = max(500, min(budget, scaled))
     if len(result) > budget:
         excess = len(result) - budget
         return result[:budget] + f"\n... (truncated {excess} characters)"
@@ -530,7 +573,38 @@ class EncreLoop:
         self._streaming_tool_results: dict[str, dict[str, Any]] = {}
         # Read-before-write tracking: maps resolved file_path -> {mtime, read_time}.
         # Populated by file_read results; checked before file_write/file_edit.
-        self._read_file_state: dict[str, dict[str, float]] = {}
+        # Bounded LRU so long sessions do not grow this without limit.
+        self._read_file_state: OrderedDict[str, dict[str, float]] = OrderedDict()
+        self._read_file_state_limit: int = 1000
+        # ── Recovery state ─────────────────────────────────────────
+        # Max output tokens recovery: escalates from default_slot_tokens
+        # to max_tokens, then retries up to MAX_OUTPUT_TOKENS_RECOVERY_LIMIT.
+        self._max_output_tokens_recovery_count: int = 0
+        self._max_output_tokens_override: int | None = None
+        self._has_attempted_reactive_compact: bool = False
+        self._slot_escalated: bool = False
+        # Fallback model tracking: set when a fallback switch occurs.
+        self._active_fallback_model: str = ""
+        self._active_fallback_backend_type: str = ""
+        # Spec engine: set externally by ws.py so the loop can parse specs
+        # and enforce the approval gate in spec mode.
+        self.spec_engine: Any = None
+        # ── Loop stability state ────────────────────────────────────
+        # Empty response retry counter (resets each user turn)
+        self._empty_response_retry_count: int = 0
+        # Truncated tool call retry counter
+        self._truncated_tool_call_retry_count: int = 0
+        # Steer queue for mid-conversation user instructions
+        self._steer_queue: SteerQueue = SteerQueue()
+        # Budget state for grace call support
+        self._budget_state: BudgetState = BudgetState(
+            max_tokens=getattr(self.config, "token_budget", 0),
+            grace_enabled=True,
+        )
+        # Thinking prefill toggle
+        self._thinking_prefill_enabled: bool = getattr(
+            self.config, "thinking_prefill_enabled", False
+        )
         self.session.metadata.setdefault("task_stage", "discover")
         self.session.metadata.setdefault("task_stage_history", [])
         self.session.metadata.setdefault("working_set", {})
@@ -547,10 +621,14 @@ class EncreLoop:
             return
         try:
             st = os.stat(file_path)
-            self._read_file_state[os.path.abspath(file_path)] = {
+            resolved = os.path.abspath(file_path)
+            self._read_file_state[resolved] = {
                 "mtime": st.st_mtime_ns,
                 "read_time": time.time(),
             }
+            self._read_file_state.move_to_end(resolved)
+            while len(self._read_file_state) > self._read_file_state_limit:
+                self._read_file_state.popitem(last=False)
         except (OSError, ValueError):
             pass
 
@@ -562,6 +640,8 @@ class EncreLoop:
             return None
         resolved = os.path.abspath(fp)
         entry = self._read_file_state.get(resolved)
+        if entry is not None:
+            self._read_file_state.move_to_end(resolved)
 
         if entry is None:
             return (
@@ -832,6 +912,54 @@ class EncreLoop:
                 await self.backend.aclose()
             except Exception as e:
                 logger.warning(f"Error closing backend: {e}", extra={"backend": type(self.backend).__name__})
+
+    async def _wait_for_permission_decision(self, tool_name: str) -> bool:
+        """Wait for a permission decision, cancel signal, or timeout.
+
+        Returns True only when the user explicitly allows the request.
+        Cancellation and timeout are treated as denials so the loop never
+        leaves an unresolved permission request behind.
+        """
+        if self._permission_event is None:
+            return False
+
+        permission_waiter = asyncio.create_task(self._permission_event.wait())
+        cancel_waiter = asyncio.create_task(self._cancel_event.wait())
+
+        async def _drain(tasks: list[asyncio.Task[Any]]) -> None:
+            for task in tasks:
+                if task.done():
+                    continue
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
+
+        try:
+            done, pending = await asyncio.wait(
+                [permission_waiter, cancel_waiter],
+                return_when=asyncio.FIRST_COMPLETED,
+                timeout=120.0,
+            )
+            await _drain(pending)
+
+            if cancel_waiter in done:
+                logger.info(
+                    "Permission request cancelled for tool '%s'", tool_name,
+                )
+                return False
+            if permission_waiter in done:
+                return self._permission_decision
+            logger.warning(
+                "Permission request timed out for tool '%s'", tool_name,
+            )
+            return False
+        except asyncio.CancelledError:
+            await _drain([permission_waiter, cancel_waiter])
+            raise
 
     def resolve_permission(self, decision: bool) -> None:
         """Called by the agent owner to approve or deny a pending permission request."""
@@ -1248,6 +1376,10 @@ class EncreLoop:
                     summary_lines.append(f"  changed: {', '.join(state.changed_files[:20])}")
                 if state.untracked_files:
                     summary_lines.append(f"  untracked: {', '.join(state.untracked_files[:10])}")
+                if state.recent_commits:
+                    summary_lines.append("  recent commits:")
+                    for commit in state.recent_commits[:5]:
+                        summary_lines.append(f"    {commit}")
         except Exception:
             pass
 
@@ -1373,8 +1505,8 @@ class EncreLoop:
                                 ws_path,
                             )
                         break
-        logger.info("[codebase] injected ready index workspace={idx_workspace}",
-                    idx_workspace=getattr(idx, "workspace", "?"))
+        logger.info("[codebase] injected ready index workspace=%s",
+                    getattr(idx, "workspace", "?"))
 
     async def _build_codebase_context(self) -> str:
         """Build codebase context from the workspace index when available.
@@ -1591,17 +1723,46 @@ class EncreLoop:
         try:
             args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
         except (json.JSONDecodeError, TypeError):
-            return
-
-        permission = await self.safety.check_tool_permission(tool_name, args)
-        if permission.behavior != "allow":
-            return
-
-        tool = self.tool_registry.get(tool_name)
-        if tool is None:
+            logger.debug(
+                "[pre_execute] skipping %s for %s -- arguments not yet valid JSON",
+                tool_name, client_id,
+            )
             return
 
         try:
+            permission = await self.safety.check_tool_permission(tool_name, args)
+            if permission.behavior != "allow":
+                logger.debug(
+                    "[pre_execute] skipping %s for %s -- permission=%s",
+                    tool_name, client_id, permission.behavior,
+                )
+                return
+
+            tool = self.tool_registry.get(tool_name)
+            if tool is None:
+                logger.warning(
+                    "[pre_execute] unknown tool %s for %s", tool_name, client_id,
+                )
+                return
+
+            # Streaming pre-execution only applies to read-only tools:
+            # write/destructive tools must wait for the normal post-streaming
+            # permission gate so the user can still deny them.
+            try:
+                readonly_attr = getattr(tool, "is_readonly", None)
+                if callable(readonly_attr):
+                    is_readonly = bool(readonly_attr(args))
+                else:
+                    is_readonly = bool(readonly_attr)
+            except Exception:
+                is_readonly = False
+            if not is_readonly:
+                logger.debug(
+                    "[pre_execute] skipping %s for %s -- not read-only",
+                    tool_name, client_id,
+                )
+                return
+
             executor = RetryableExecutor(self.recovery_engine)
             state = await executor.execute(
                 tool_name=tool_name,
@@ -1609,7 +1770,11 @@ class EncreLoop:
                 execute_fn=lambda a: tool.execute(**a),
             )
             result = state.final_result
+            sub_agent_messages = None
+            sub_agent_references: list[dict[str, Any]] = []
             if isinstance(result, dict):
+                sub_agent_messages = result.get("messages")
+                sub_agent_references = result.get("references", [])
                 result = str(result.get("content", ""))
             result = self.safety.validate_tool_output(tool_name, result)
 
@@ -1619,9 +1784,21 @@ class EncreLoop:
                 "latency_ms": getattr(state, "latency_ms", 0.0),
                 "recovery_history": list(getattr(state, "recovery_history", [])),
                 "tool": tool,
+                "sub_agent_messages": sub_agent_messages,
+                "sub_agent_references": sub_agent_references,
             }
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[pre_execute] %s for %s failed: %s", tool_name, client_id, exc,
+                exc_info=True,
+            )
+            self._streaming_tool_results[client_id] = {
+                "result": f"Tool pre-execution crashed: {type(exc).__name__}: {exc}",
+                "is_error": True,
+                "latency_ms": 0.0,
+                "recovery_history": [],
+                "tool": self.tool_registry.get(tool_name),
+            }
 
     async def run(
         self,
@@ -1675,6 +1852,11 @@ class EncreLoop:
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
+        # Reset per-run counters so state doesn't leak across runs
+        self._empty_response_retry_count = 0
+        self._truncated_tool_call_retry_count = 0
+        self._max_output_tokens_recovery_count = 0
+        self._unknown_error_retry_count = 0
         # Log effective max_turns so we can diagnose unexpected session stops
         logger.info("[run] _run_impl start turn={turn} max_turns={max_turns} backend={backend_type} model={model}",
                      turn=self.session.turn_count, max_turns=self.config.max_turns,
@@ -1985,6 +2167,30 @@ class EncreLoop:
                         len(micro), est_tokens // 1000,
                     )
 
+            # Step 1b: multi-stage pipeline -- pure message-transform
+            # reductions (budget/snip/semantic/collapse) that run before the
+            # model-driven compact, so the expensive summarisation is only a
+            # last resort.  Gated off by default; enable via config.
+            if getattr(self.config, "enable_multi_stage_compact", False):
+                try:
+                    from encre.compact.strategies import EncreMultiStagePipeline
+                    if not hasattr(self, "_multi_stage_pipeline"):
+                        self._multi_stage_pipeline = EncreMultiStagePipeline()
+                    if await self._multi_stage_pipeline.should_compact(context_msgs, window):
+                        reduced = await self._multi_stage_pipeline.compact(context_msgs, window)
+                        if len(reduced) != len(context_msgs):
+                            self.session.replace_branch_messages(self.session.active_branch_id, reduced)
+                            ctx_msgs = self.session.get_context_messages()
+                            context_msgs = ctx_msgs
+                            est_tokens = count_message_tokens(context_msgs)
+                            logger.info(
+                                "[multi_stage] done turn=%d msgs %d->%d tokens %dk",
+                                self.session.turn_count, len(context_msgs),
+                                len(reduced), est_tokens // 1000,
+                            )
+                except Exception as _pe:
+                    logger.warning("[multi_stage] pipeline failed: %s", _pe)
+
             # Step 2: full compaction -- model-driven summarisation
             # Runs asynchronously in background; result applies to next turn
             if self.compact_engine.should_compact(context_msgs, window):
@@ -2125,6 +2331,60 @@ class EncreLoop:
                             return
                 _merge_advisor(backend_messages, f"[SUB-AGENT ADVICE]\n{advisor_note}")
 
+            # ── Pre-API stability checks ────────────────────────────────
+            # 1. Interrupt check: abort if the user cancelled
+            if check_interrupt(self):
+                logger.info("[run] interrupt detected before API call turn=%d", self.session.turn_count)
+                yield create_finish("cancelled")
+                return
+
+            # 2. Steer injection: drain any queued /steer instructions
+            _steer_msgs = self._steer_queue.drain()
+            if _steer_msgs:
+                _steer_text = build_steer_injection(_steer_msgs)
+                backend_messages.append({"role": "user", "content": _steer_text})
+                logger.info("[run] injected %d steer instruction(s) turn=%d",
+                            len(_steer_msgs), self.session.turn_count)
+
+            # 3. Message repair: fix role alternation, surrogates, whitespace
+            backend_messages = repair_messages(backend_messages)
+            # 3b. Re-pair tool_call groups after repair so an assistant message
+            # with tool_calls is always followed by matching tool results.
+            backend_messages = self.compact_engine.sanitize(backend_messages)
+
+            # 4. Pre-API token pressure check
+            _context_window = getattr(self.backend, "context_window", 128000)
+            _pressure = check_token_pressure(
+                backend_messages, _context_window, _slot_budget if '_slot_budget' in dir() else self.config.max_tokens,
+            )
+            if _pressure > 0.85:
+                logger.warning(
+                    "[run] token pressure %.1f%% before API call turn=%d -- compacting",
+                    _pressure * 100, self.session.turn_count,
+                )
+                try:
+                    _context_msgs = self.session.get_context_messages()
+                    self.session.set_compact_archive(_context_msgs)
+                    _compacted = await self.compact_engine.compact(
+                        _context_msgs, backend=self.backend,
+                        turn_count=self.session.turn_count,
+                        system_prompt=system_prompt or "",
+                        session_id=self.session.id or "",
+                    )
+                    if _compacted is not None:
+                        self.session.replace_branch_messages(
+                            self.session.active_branch_id, _compacted
+                        )
+                        backend_messages = self.session.get_context_messages()
+                        logger.info("[run] pre-API compact succeeded turn=%d", self.session.turn_count)
+                except Exception as _pc_err:
+                    logger.warning("[run] pre-API compact failed: %s", _pc_err)
+
+            # 5. Thinking prefill (if enabled)
+            _thinking_prefill = build_thinking_prefill(
+                prompt, enabled=self._thinking_prefill_enabled,
+            )
+
             response_text = ""
             _backend_usage: dict[str, Any] | None = None
             _t_chat = time.time()
@@ -2140,308 +2400,530 @@ class EncreLoop:
             )
             _llm_span.set_attribute("llm.turn", self.session.turn_count)
             _reactive_compacted = False
-            try:
-                # Wrap the chat generator with a 120s timeout on the first event,
-                # so a hanging API call (wrong key, no network, etc.) surfaces an
-                # error rather than freezing the UI indefinitely.
-                _chat_gen = self.backend.chat(
-                    messages=backend_messages,
-                    tools=backend_tools,
-                    max_tokens=self.config.max_tokens,
-                    enable_caching=self.config.enable_prompt_caching and self.backend.supports_prompt_caching(),
-                )
-                async for event in self._chat_with_timeout(_chat_gen, timeout=120.0):
-                    if _chat_first_event:
-                        logger.info("[run] backend.chat() first event after {elapsed:.1f}s turn={turn}",
-                                    elapsed=time.time() - _t_chat, turn=self.session.turn_count)
-                        _chat_first_event = False
-                    if isinstance(event, BackendText):
-                        text = event.text
-                        # Inline community thinking-tag extraction.
-                        # Splits text into text_delta (outside tags) and
-                        # thinking_delta (inside tags), handling cross-event
-                        # tags via _think_buf / _in_think state.
+            # Slot reservation: start with a small output budget and
+            # escalate to the full budget only when the model hits the
+            # limit ("max_tokens" or "length" finish reason).  This
+            # encourages concise responses (~70% fit in 4K) while
+            # allowing long outputs on demand.
+            _slot_budget: int
+            if self._max_output_tokens_override:
+                _slot_budget = self._max_output_tokens_override
+                self._max_output_tokens_override = None
+            elif self.config.default_slot_tokens and self.config.default_slot_tokens < self.config.max_tokens:
+                _slot_budget = self.config.default_slot_tokens
+            else:
+                _slot_budget = self.config.max_tokens
+            _slot_escalated = self._slot_escalated
+            _slot_finish_reason = "stop"
+            # Fallback loop: retry with fallback model on rate-limit/overload
+            _attempt_fallback = True
+            _error_consumed = False
+            while _attempt_fallback:
+                _attempt_fallback = False
+                try:
+                    # Wrap the chat generator with a 120s timeout on the first event,
+                    # so a hanging API call (wrong key, no network, etc.) surfaces an
+                    # error rather than freezing the UI indefinitely.
+                    _chat_gen = self.backend.chat(
+                        messages=backend_messages,
+                        tools=backend_tools,
+                        max_tokens=_slot_budget,
+                        enable_caching=self.config.enable_prompt_caching and self.backend.supports_prompt_caching(),
+                    )
+                    async for event in self._chat_with_timeout(_chat_gen, timeout=120.0):
+                        if _chat_first_event:
+                            logger.info("[run] backend.chat() first event after {elapsed:.1f}s turn={turn}",
+                                        elapsed=time.time() - _t_chat, turn=self.session.turn_count)
+                            _chat_first_event = False
+                        if isinstance(event, BackendText):
+                            text = event.text
+                            # Inline community thinking-tag extraction.
+                            # Splits text into text_delta (outside tags) and
+                            # thinking_delta (inside tags), handling cross-event
+                            # tags via _think_buf / _in_think state.
 
-                        if _in_think:
-                            cm = _THINK_CLOSE.search(text)
-                            if cm:
-                                _think_buf += text[:cm.start()]
-                                if _think_buf:
-                                    if _tool_seen:
-                                        _extra_thinking.append(_think_buf)
-                                    else:
-                                        thinking_parts.append(_think_buf)
-                                    yield create_thinking_delta(_think_buf)
-                                _think_buf = ''
-                                _in_think = False
-                                text = text[cm.end():]
-                            else:
-                                _think_buf += text
-                                text = ''
-                        while text:
-                            om = _THINK_OPEN.search(text)
-                            if om:
-                                before = text[:om.start()]
-                                if before:
-                                    if _tool_seen:
-                                        if not _in_extra:
-                                            _in_extra = True
-                                            yield create_assistant_boundary()
-                                        _extra_text.append(before)
-                                        yield create_text_delta(before)
-                                    else:
-                                        text_parts.append(before)
-                                        yield create_text_delta(before)
-                                _in_think = True
-                                _think_buf = ''
-                                text = text[om.end():]
+                            if _in_think:
                                 cm = _THINK_CLOSE.search(text)
                                 if cm:
-                                    think = text[:cm.start()]
-                                    if think:
+                                    _think_buf += text[:cm.start()]
+                                    if _think_buf:
                                         if _tool_seen:
-                                            _extra_thinking.append(think)
+                                            _extra_thinking.append(_think_buf)
                                         else:
-                                            thinking_parts.append(think)
-                                        yield create_thinking_delta(think)
+                                            thinking_parts.append(_think_buf)
+                                        yield create_thinking_delta(_think_buf)
+                                    _think_buf = ''
                                     _in_think = False
                                     text = text[cm.end():]
                                 else:
-                                    _think_buf = text
+                                    _think_buf += text
                                     text = ''
-                            else:
-                                if text:
-                                    if _tool_seen:
-                                        if not _in_extra:
-                                            _in_extra = True
-                                            yield create_assistant_boundary()
-                                        _extra_text.append(text)
-                                        yield create_text_delta(text)
+                            while text:
+                                om = _THINK_OPEN.search(text)
+                                if om:
+                                    before = text[:om.start()]
+                                    if before:
+                                        if _tool_seen:
+                                            if not _in_extra:
+                                                _in_extra = True
+                                                yield create_assistant_boundary()
+                                            _extra_text.append(before)
+                                            yield create_text_delta(before)
+                                        else:
+                                            text_parts.append(before)
+                                            yield create_text_delta(before)
+                                    _in_think = True
+                                    _think_buf = ''
+                                    text = text[om.end():]
+                                    cm = _THINK_CLOSE.search(text)
+                                    if cm:
+                                        think = text[:cm.start()]
+                                        if think:
+                                            if _tool_seen:
+                                                _extra_thinking.append(think)
+                                            else:
+                                                thinking_parts.append(think)
+                                            yield create_thinking_delta(think)
+                                        _in_think = False
+                                        text = text[cm.end():]
                                     else:
-                                        text_parts.append(text)
-                                        yield create_text_delta(text)
-                                text = ''
-                        turn_events += 1
+                                        _think_buf = text
+                                        text = ''
+                                else:
+                                    if text:
+                                        if _tool_seen:
+                                            if not _in_extra:
+                                                _in_extra = True
+                                                yield create_assistant_boundary()
+                                            _extra_text.append(text)
+                                            yield create_text_delta(text)
+                                        else:
+                                            text_parts.append(text)
+                                            yield create_text_delta(text)
+                                    text = ''
+                            turn_events += 1
 
-                    elif isinstance(event, BackendThinking):
-                        if _tool_seen:
-                            if not _in_extra:
-                                _in_extra = True
-                                yield create_assistant_boundary()
-                            _extra_thinking.append(event.text)
-                            yield create_thinking_delta(event.text)
-                        else:
-                            thinking_parts.append(event.text)
-                            yield create_thinking_delta(event.text)
-                        turn_events += 1
+                        elif isinstance(event, BackendThinking):
+                            if _tool_seen:
+                                if not _in_extra:
+                                    _in_extra = True
+                                    yield create_assistant_boundary()
+                                _extra_thinking.append(event.text)
+                                yield create_thinking_delta(event.text)
+                            else:
+                                thinking_parts.append(event.text)
+                                yield create_thinking_delta(event.text)
+                            turn_events += 1
 
-                    elif isinstance(event, BackendToolCallDelta):
-                        _tool_seen = True
-                        if _in_extra:
-                            idx = event.index
-                            # If this tool index was already being accumulated
-                            # in tool_call_buffers before _in_extra, keep
-                            # appending there instead of creating a duplicate
-                            # in _extra_buffers.
-                            if idx in tool_call_buffers:
+                        elif isinstance(event, BackendToolCallDelta):
+                            _tool_seen = True
+                            if _in_extra:
+                                idx = event.index
+                                # If this tool index was already being accumulated
+                                # in tool_call_buffers before _in_extra, keep
+                                # appending there instead of creating a duplicate
+                                # in _extra_buffers.
+                                if idx in tool_call_buffers:
+                                    buf = tool_call_buffers[idx]
+                                    if event.key == "name":
+                                        buf["name"] += event.value
+                                    elif event.key == "arguments":
+                                        buf["arguments"] += event.value
+                                else:
+                                    if idx not in _extra_buffers:
+                                        _extra_buffers[idx] = {"id": "", "name": "", "arguments": ""}
+                                    buf = _extra_buffers[idx]
+                                    if event.key == "name":
+                                        buf["name"] += event.value
+                                    elif event.key == "arguments":
+                                        buf["arguments"] += event.value
+                            else:
+                                idx = event.index
+                                if idx not in tool_call_buffers:
+                                    tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
                                 buf = tool_call_buffers[idx]
                                 if event.key == "name":
                                     buf["name"] += event.value
                                 elif event.key == "arguments":
                                     buf["arguments"] += event.value
-                            else:
-                                if idx not in _extra_buffers:
-                                    _extra_buffers[idx] = {"id": "", "name": "", "arguments": ""}
-                                buf = _extra_buffers[idx]
-                                if event.key == "name":
-                                    buf["name"] += event.value
-                                elif event.key == "arguments":
-                                    buf["arguments"] += event.value
-                        else:
-                            idx = event.index
-                            if idx not in tool_call_buffers:
-                                tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
-                            buf = tool_call_buffers[idx]
-                            if event.key == "name":
-                                buf["name"] += event.value
-                            elif event.key == "arguments":
-                                buf["arguments"] += event.value
-                            yield create_tool_call_delta(
-                                id=f"call_{self.session.turn_count}_{idx}",
-                                key=event.key,
-                                value=event.value,
-                            )
-                        turn_events += 1
+                                yield create_tool_call_delta(
+                                    id=f"call_{self.session.turn_count}_{idx}",
+                                    key=event.key,
+                                    value=event.value,
+                                )
+                            turn_events += 1
 
-                    elif isinstance(event, BackendToolCall):
-                        _tool_seen = True
-                        if _in_extra:
-                            # Check if this tool already exists in tool_call_buffers
-                            # (accumulated from deltas before _in_extra) and update
-                            # in-place to avoid duplicates.
-                            found = False
-                            for _existing_idx, buf in tool_call_buffers.items():
-                                if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
-                                    buf["id"] = event.id or buf["id"]
-                                    buf["name"] = event.name
-                                    buf["arguments"] = event.arguments
-                                    found = True
-                                    break
-                            if not found:
-                                for _existing_idx, buf in _extra_buffers.items():
+                        elif isinstance(event, BackendToolCall):
+                            _tool_seen = True
+                            if _in_extra:
+                                # Check if this tool already exists in tool_call_buffers
+                                # (accumulated from deltas before _in_extra) and update
+                                # in-place to avoid duplicates.
+                                found = False
+                                for _existing_idx, buf in tool_call_buffers.items():
                                     if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
                                         buf["id"] = event.id or buf["id"]
                                         buf["name"] = event.name
                                         buf["arguments"] = event.arguments
                                         found = True
                                         break
-                            if not found:
-                                idx = len(_extra_buffers)
-                                _extra_buffers[idx] = {
-                                    "id": event.id,
-                                    "name": event.name,
-                                    "arguments": event.arguments,
-                                }
-                        else:
-                            # Update existing buffer entry (from deltas) if present;
-                            # otherwise create a new one.
-                            found = False
-                            _streaming_call_idx = -1
-                            for _existing_idx, buf in tool_call_buffers.items():
-                                if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
-                                    buf["id"] = event.id or buf["id"]
-                                    buf["name"] = event.name
-                                    buf["arguments"] = event.arguments
-                                    found = True
-                                    _streaming_call_idx = _existing_idx
-                                    break
-                            if not found:
-                                _streaming_call_idx = len(tool_call_buffers)
-                                tool_call_buffers[_streaming_call_idx] = {
-                                    "id": event.id,
-                                    "name": event.name,
-                                    "arguments": event.arguments,
-                                }
-                            # Streaming tool execution: pre-execute allowed tools in
-                            # background while the model continues generating output.
-                            if (self.config.enable_streaming_tool_execution
-                                and not self.plan_mode_active
-                                and event.name not in ("question", "agent", "workflow")
-                                and event.name not in _WRITE_TOOL_NAMES):
-                                _sc_client = f"call_{self.session.turn_count}_{_streaming_call_idx}"
-                                if _sc_client not in self._streaming_tool_results:
-                                    asyncio.create_task(
-                                        self._pre_execute_in_background(
-                                            _sc_client, event.name, event.arguments,
+                                if not found:
+                                    for _existing_idx, buf in _extra_buffers.items():
+                                        if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
+                                            buf["id"] = event.id or buf["id"]
+                                            buf["name"] = event.name
+                                            buf["arguments"] = event.arguments
+                                            found = True
+                                            break
+                                if not found:
+                                    idx = len(_extra_buffers)
+                                    _extra_buffers[idx] = {
+                                        "id": event.id,
+                                        "name": event.name,
+                                        "arguments": event.arguments,
+                                    }
+                            else:
+                                # Update existing buffer entry (from deltas) if present;
+                                # otherwise create a new one.
+                                found = False
+                                _streaming_call_idx = -1
+                                for _existing_idx, buf in tool_call_buffers.items():
+                                    if buf["id"] == event.id or (not buf["id"] and buf["name"] == event.name):
+                                        buf["id"] = event.id or buf["id"]
+                                        buf["name"] = event.name
+                                        buf["arguments"] = event.arguments
+                                        found = True
+                                        _streaming_call_idx = _existing_idx
+                                        break
+                                if not found:
+                                    _streaming_call_idx = len(tool_call_buffers)
+                                    tool_call_buffers[_streaming_call_idx] = {
+                                        "id": event.id,
+                                        "name": event.name,
+                                        "arguments": event.arguments,
+                                    }
+                                # Streaming tool execution: pre-execute allowed tools in
+                                # background while the model continues generating output.
+                                if (self.config.enable_streaming_tool_execution
+                                    and not self.plan_mode_active
+                                    and event.name not in ("question", "agent", "workflow")
+                                    and event.name not in _WRITE_TOOL_NAMES):
+                                    _sc_client = f"call_{self.session.turn_count}_{_streaming_call_idx}"
+                                    if _sc_client not in self._streaming_tool_results:
+                                        asyncio.create_task(
+                                            self._pre_execute_in_background(
+                                                _sc_client, event.name, event.arguments,
+                                            )
                                         )
-                                    )
 
-                    elif isinstance(event, BackendFinish):
-                        # Capture token usage from the backend
-                        if event.usage:
-                            _backend_usage = event.usage
-                            _last_backend_usage = event.usage
+                        elif isinstance(event, BackendFinish):
+                            # Capture token usage from the backend
+                            if event.usage:
+                                _backend_usage = event.usage
+                                _last_backend_usage = event.usage
+                            _slot_finish_reason = event.reason
 
-                    elif isinstance(event, BackendError):
-                        await self.hook_system.emit_error(
-                            Exception(event.error),
-                            "backend_error"
-                        )
-                        await self.hook_system.emit_backend_error(
-                            event.error, self.config.backend_type
-                        )
-                        # Raise so the generic except handler below catches this
-                        # and continues the session instead of killing it.
-                        raise RuntimeError(event.error)
+                        elif isinstance(event, BackendError):
+                            await self.hook_system.emit_error(
+                                Exception(event.error),
+                                "backend_error"
+                            )
+                            await self.hook_system.emit_backend_error(
+                                event.error, self.config.backend_type
+                            )
+                            # Raise so the generic except handler below catches this
+                            # and continues the session instead of killing it.
+                            raise RuntimeError(event.error)
 
-            except Exception as exc:
-                # Reactive compact: on context overflow (413), compact the session
-                # synchronously so the next turn has room and retries naturally
-                # instead of showing the user an error card.
-                if not _reactive_compacted and _is_context_overflow(exc):
-                    try:
-                        context_msgs = self.session.get_context_messages()
-                        est = count_message_tokens(context_msgs)
-                        self.session.set_compact_archive(context_msgs)
-                        compacted = await self.compact_engine.compact(
-                            context_msgs, backend=self.backend,
-                            turn_count=self.session.turn_count,
-                            system_prompt=system_prompt or "",
-                            session_id=self.session.id or "",
+                except Exception as exc:
+                    # Reactive compact: on context overflow (413), compact the session
+                    # synchronously so the next turn has room and retries naturally
+                    # instead of showing the user an error card.
+                    if not _reactive_compacted and _is_context_overflow(exc):
+                        try:
+                            context_msgs = self.session.get_context_messages()
+                            est = count_message_tokens(context_msgs)
+                            self.session.set_compact_archive(context_msgs)
+                            compacted = await self.compact_engine.compact(
+                                context_msgs, backend=self.backend,
+                                turn_count=self.session.turn_count,
+                                system_prompt=system_prompt or "",
+                                session_id=self.session.id or "",
+                            )
+                            if compacted is not None:
+                                self.session.replace_branch_messages(self.session.active_branch_id, compacted)
+                                logger.info("[reactive] compact succeeded turn=%d, continuing without error",
+                                            self.session.turn_count)
+                                _reactive_compacted = True
+                                self._has_attempted_reactive_compact = True
+                                _llm_span.set_attribute("llm.reactive_compact", "succeeded")
+                                _llm_span.end()
+                                # Don't yield error -- next turn picks up compacted messages
+                                continue
+                        except Exception as _ce:
+                            logger.warning("[reactive] compact failed turn=%d: %s",
+                                           self.session.turn_count, _ce)
+
+                    # Model fallback: on rate-limit / overload, switch to
+                    # fallback model and retry once.  Mirrors Claude Code's
+                    # FallbackTriggeredError in query.ts.
+                    if can_fallback(self.config) and is_rate_limit_or_overload(exc):
+                        original_model = self.config.model
+                        fallback_model = self.config.fallback_model
+                        logger.info(
+                            "[fallback] switching from %s to %s due to: %s",
+                            original_model, fallback_model, exc,
                         )
-                        if compacted is not None:
-                            self.session.replace_branch_messages(self.session.active_branch_id, compacted)
-                            logger.info("[reactive] compact succeeded turn=%d, continuing without error",
-                                        self.session.turn_count)
-                            _reactive_compacted = True
-                            _llm_span.set_attribute("llm.reactive_compact", "succeeded")
-                            _llm_span.end()
-                            # Don't yield error -- next turn picks up compacted messages
+                        self._active_fallback_model = fallback_model
+                        self._active_fallback_backend_type = self.config.fallback_backend_type or self.config.backend_type
+                        _llm_span.set_attribute("llm.fallback", f"{original_model}->{fallback_model}")
+                        _llm_span.end()
+                        # Yield system message so the user sees the switch
+                        yield create_system_message(
+                            build_fallback_system_message(original_model, fallback_model)
+                        )
+                        # Tombstone: yield placeholder messages for any
+                        # tool calls that were in-flight when the API failed.
+                        # This ensures the conversation history stays valid
+                        # and the API won't reject the next request.
+                        if tool_call_buffers:
+                            _tombstones = build_tombstone_messages(
+                                tool_call_buffers, f"model fallback: {exc}"
+                            )
+                            for _ts in _tombstones:
+                                self.session.add_message(
+                                    _ts["role"], _ts.get("content", ""),
+                                    tool_call_id=_ts.get("tool_call_id"),
+                                    name=_ts.get("name"),
+                                    is_error=_ts.get("is_error", False),
+                                )
+                            tool_call_buffers.clear()
+                        # Build and switch to fallback backend
+                        fallback_backend = create_backend(
+                            fallback_model,
+                            self.config.fallback_base_url or self.config.base_url,
+                            self.config.fallback_api_key or self.config.api_key,
+                            backend_type=self._active_fallback_backend_type,
+                        )
+                        self.backend = fallback_backend
+                        _attempt_fallback = True
+                        _reactive_compacted = False
+                        continue
+
+                    # ── Withheld error pattern ───────────────────────────
+                    # Classify the error and try recovery before showing
+                    # it to the user.  Mirrors Claude Code's withheld error
+                    # pattern in query.ts.
+                    _error_kind = classify_error(exc)
+                    _withheld = WithheldError(exc, kind=_error_kind)
+
+                    # For network errors, retry once with a short delay
+                    if _withheld.should_withhold and _error_kind == "network":
+                        try:
+                            import asyncio as _aio
+                            await _aio.sleep(1.0)
+                            _withheld.consume()
+                            logger.info("[run] network error -- retried after 1s delay turn=%d", self.session.turn_count)
                             continue
-                    except Exception as _ce:
-                        logger.warning("[reactive] compact failed turn=%d: %s",
-                                       self.session.turn_count, _ce)
+                        except Exception:
+                            _withheld.release()
 
-                logger.error("[run] backend.chat() raised exception after {elapsed:.1f}s turn={turn}: {exc}",
-                            elapsed=time.time() - _t_chat, turn=self.session.turn_count, exc=exc)
-                _llm_span.set_attribute("llm.error", str(exc))
-                _llm_span.end()
-                await self.hook_system.emit_error(exc, "backend_chat_exception")
-                await self.hook_system.emit_backend_error(str(exc), type(self.backend).__name__ if self.backend else "unknown")
-                # Notify the frontend with a finish(error) event so the red error
-                # card renders in the conversation, rather than silently swallowing
-                # the error as a plain user message.
-                err_msg = format_backend_error(exc)
-                yield create_finish("error", error=err_msg)
-                # Store the error on the CURRENT turn's assistant message (the
-                # one after the last user message) so it persists across session
-                # reloads.  The frontend picks up these fields and renders the
-                # red error card on the correct turn.
-                _last_ui = -1
-                for _j in range(len(self.session.messages) - 1, -1, -1):
-                    if self.session.messages[_j].get("role") == "user":
-                        _last_ui = _j
-                        break
-                _cur_asst = None
-                for _j in range(_last_ui + 1, len(self.session.messages)):
-                    if self.session.messages[_j].get("role") == "assistant":
-                        _cur_asst = self.session.messages[_j]
-                        break
-                if _cur_asst is not None:
-                    _cur_asst["errorMessage"] = err_msg
-                    _cur_asst["errorCode"] = "execution_error"
-                    _c = _cur_asst.get("content", "")
-                    if isinstance(_c, str):
-                        _cur_asst["content"] = _c + f"\n\n[Backend API Error]\n{err_msg}"
+                    # For auth errors, surface immediately
+                    if _error_kind == "auth":
+                        _withheld.release()
+
+                    # For unknown errors, try one retry
+                    if _withheld.should_withhold and _error_kind == "unknown":
+                        try:
+                            _withheld.consume()
+                            if self._unknown_error_retry_count < 1:
+                                self._unknown_error_retry_count += 1
+                                _attempt_fallback = True
+                                logger.warning(
+                                    "[run] unknown error -- retry {}/1 turn={} error={}",
+                                    self._unknown_error_retry_count,
+                                    self.session.turn_count,
+                                    format_backend_error(exc),
+                                    exc_info=True,
+                                )
+                                continue
+                            _withheld.release()
+                            logger.warning(
+                                "[run] unknown error retries exhausted turn={} error={}",
+                                self.session.turn_count,
+                                format_backend_error(exc),
+                                exc_info=True,
+                            )
+                        except Exception:
+                            _withheld.release()
+
+                    # If still withheld (recovery succeeded via continue),
+                    # don't show the error
+                    if not _withheld.should_withhold:
+                        _error_consumed = True
+                        continue
+
+                    _released_err = _withheld.release()
+                    logger.error("[run] backend.chat() raised exception after {elapsed:.1f}s turn={turn}: {exc}",
+                                elapsed=time.time() - _t_chat, turn=self.session.turn_count, exc=_released_err)
+                    _llm_span.set_attribute("llm.error", str(exc))
+                    _llm_span.end()
+                    await self.hook_system.emit_error(exc, "backend_chat_exception")
+                    await self.hook_system.emit_backend_error(str(exc), type(self.backend).__name__ if self.backend else "unknown")
+                    # Notify the frontend with a finish(error) event so the red error
+                    # card renders in the conversation, rather than silently swallowing
+                    # the error as a plain user message.
+                    err_msg = format_backend_error(exc)
+                    yield create_finish("error", error=err_msg)
+                    # Store the error on the CURRENT turn's assistant message (the
+                    # one after the last user message) so it persists across session
+                    # reloads.  The frontend picks up these fields and renders the
+                    # red error card on the correct turn.
+                    _last_ui = -1
+                    for _j in range(len(self.session.messages) - 1, -1, -1):
+                        if self.session.messages[_j].get("role") == "user":
+                            _last_ui = _j
+                            break
+                    _cur_asst = None
+                    for _j in range(_last_ui + 1, len(self.session.messages)):
+                        if self.session.messages[_j].get("role") == "assistant":
+                            _cur_asst = self.session.messages[_j]
+                            break
+                    if _cur_asst is not None:
+                        _cur_asst["errorMessage"] = err_msg
+                        _cur_asst["errorCode"] = "execution_error"
+                        _c = _cur_asst.get("content", "")
+                        if isinstance(_c, str):
+                            _cur_asst["content"] = _c + f"\n\n[Backend API Error]\n{err_msg}"
+                    else:
+                        # No assistant message in the current turn (API failed
+                        # immediately).  Create a placeholder so the error persists
+                        # across reloads.  Must use add_message() to set branch_id /
+                        # seq / id etc. so get_context_messages() includes it.
+                        self.session.add_message("assistant",
+                            f"[Backend API Error]\n{err_msg}",
+                            errorMessage=err_msg,
+                            errorCode="execution_error",
+                            segments=[{"kind": "text", "text": f"[Backend API Error]\n{err_msg}"}],
+                        )
+                    logger.info("[run] stored backend error on assistant msg turn={turn}, exiting", turn=self.session.turn_count)
+                    return
                 else:
-                    # No assistant message in the current turn (API failed
-                    # immediately).  Create a placeholder so the error persists
-                    # across reloads.  Must use add_message() to set branch_id /
-                    # seq / id etc. so get_context_messages() includes it.
-                    self.session.add_message("assistant",
-                        f"[Backend API Error]\n{err_msg}",
-                        errorMessage=err_msg,
-                        errorCode="execution_error",
-                        segments=[{"kind": "text", "text": f"[Backend API Error]\n{err_msg}"}],
-                    )
-                logger.info("[run] stored backend error on assistant msg turn={turn}, exiting", turn=self.session.turn_count)
-                return
-            else:
-                logger.info("[run] backend.chat() completed in {elapsed:.1f}s turn={turn} events={events}",
-                            elapsed=time.time() - _t_chat, turn=self.session.turn_count, events=turn_events)
-                # Record token usage on the LLM span when the backend provided it
-                if _backend_usage:
-                    _llm_span.set_attribute("llm.token_count.prompt",
-                                            _backend_usage.get("input_tokens", 0))
-                    _llm_span.set_attribute("llm.token_count.completion",
-                                            _backend_usage.get("output_tokens", 0))
-                _llm_span.end()
+                    logger.info("[run] backend.chat() completed in {elapsed:.1f}s turn={turn} events={events}",
+                                elapsed=time.time() - _t_chat, turn=self.session.turn_count, events=turn_events)
+                    # Record token usage on the LLM span when the backend provided it
+                    if _backend_usage:
+                        _llm_span.set_attribute("llm.token_count.prompt",
+                                                _backend_usage.get("input_tokens", 0))
+                        _llm_span.set_attribute("llm.token_count.completion",
+                                                _backend_usage.get("output_tokens", 0))
+                    _llm_span.end()
 
             # Post-model hook
             response_text = "".join(text_parts)
             await self.hook_system.emit_post_model_response(
                 response_text, len(tool_call_buffers)
             )
+
+            # ── Max output tokens recovery ──────────────────────────
+            # When the model hits the output token limit (finish_reason =
+            # "max_tokens" or "length"), recover by escalating the
+            # slot budget or retrying with a continuation message.
+            # Mirrors Claude Code's maxOutputTokensRecovery in query.ts.
+            if _slot_finish_reason in ("max_tokens", "length"):
+                if not _slot_escalated and self.config.default_slot_tokens and self.config.default_slot_tokens < self.config.max_tokens:
+                    # First escalation: go from default_slot_tokens to
+                    # full max_tokens.  No retry needed — just bump the
+                    # budget for the next turn.
+                    _slot_escalated = True
+                    self._slot_escalated = True
+                    logger.info(
+                        "[slot] escalating from %d -> %d turn=%d",
+                        self.config.default_slot_tokens, self.config.max_tokens,
+                        self.session.turn_count,
+                    )
+                    # Inject a continuation message so the next chunk
+                    # reads naturally
+                    yield create_system_message(
+                        build_slot_escalation_message()
+                    )
+                elif self._max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT:
+                    # Already at max_tokens, but still hitting the
+                    # limit.  Retry with the recovery message.
+                    self._max_output_tokens_recovery_count += 1
+                    self._max_output_tokens_override = ESCALATED_MAX_TOKENS
+                    logger.info(
+                        "[max_tokens] recovery attempt %d/%d turn=%d",
+                        self._max_output_tokens_recovery_count,
+                        MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
+                        self.session.turn_count,
+                    )
+                    yield create_system_message(
+                        build_max_tokens_recovery_message()
+                    )
+                    continue
+                else:
+                    # Exhausted retries — let the text-only exit logic
+                    # decide whether to stop
+                    logger.warning(
+                        "[max_tokens] recovery exhausted after %d attempts turn=%d",
+                        self._max_output_tokens_recovery_count,
+                        self.session.turn_count,
+                    )
+
+            # ── Empty response retry ─────────────────────────────────
+            # When the model returns no content and no tool calls, retry
+            # with a prompt to respond.  Mirrors Hermes agent's empty
+            # response retry in conversation_loop.py.
+            if _error_consumed:
+                yield create_finish("stop")
+                return
+            if is_empty_response(text_parts, tool_call_buffers, thinking_parts):
+                if self._empty_response_retry_count < 2:
+                    self._empty_response_retry_count += 1
+                    logger.warning(
+                        "[run] empty response, retry %d/2 turn=%d",
+                        self._empty_response_retry_count,
+                        self.session.turn_count,
+                    )
+                    self.session.add_message("user", build_empty_retry_message(
+                        self._empty_response_retry_count
+                    ))
+                    continue
+                else:
+                    logger.warning("[run] empty response retries exhausted turn=%d", self.session.turn_count)
+                    self.session.add_message("assistant",
+                        "(No response generated. Please try rephrasing your request.)",
+                    )
+                    yield create_finish("stop")
+                    return
+
+            # ── Truncated tool call repair ───────────────────────────
+            # When tool call arguments are truncated/invalid JSON, retry
+            # with a hint to re-issue.  Mirrors Hermes agent's truncated
+            # tool call retry in conversation_loop.py.
+            if tool_call_buffers and is_truncated_tool_call(tool_call_buffers):
+                if self._truncated_tool_call_retry_count < 2:
+                    self._truncated_tool_call_retry_count += 1
+                    _first_tc = next(iter(tool_call_buffers.values()))
+                    _args_preview = str(_first_tc.get("arguments", ""))[:200]
+                    _tc_name = _first_tc.get("name", "unknown")
+                    logger.warning(
+                        "[run] truncated tool call '%s', retry %d/2 turn=%d",
+                        _tc_name, self._truncated_tool_call_retry_count,
+                        self.session.turn_count,
+                    )
+                    # Clear the broken buffers and inject a repair message
+                    tool_call_buffers.clear()
+                    self.session.add_message("user", build_truncated_retry_message(
+                        _tc_name, _args_preview
+                    ))
+                    continue
+                else:
+                    logger.warning(
+                        "[run] truncated tool call retries exhausted turn=%d",
+                        self.session.turn_count,
+                    )
 
             if text_parts and not tool_call_buffers:
                 full_text = "".join(text_parts)
@@ -2493,7 +2975,35 @@ class EncreLoop:
                     self.session.add_message("assistant", full_text, **txt_kwargs)
 
                 await self.hook_system.emit_session_end()
+                await _cleanup_terminal_sessions()
                 logger.debug("Agent finished (text-only response, {chars} chars)", chars=len(full_text))
+
+                # ── Spec parsing ───────────────────────────────────
+                # In spec mode, when the model produces a text-only response
+                # (no tool calls), it likely generated a specification.
+                # Parse it into the spec engine and emit a system message
+                # so the frontend can show the spec card with approve/reject.
+                if slash_command_mode == "spec" and self.spec_engine and full_text.strip():
+                    try:
+                        from encre.spec.engine import SpecStatus as _SpecStatus
+                        spec_doc = self.spec_engine.parse_spec(
+                            title=prompt[:80] if prompt else "Specification",
+                            llm_output=full_text,
+                        )
+                        spec_doc.status = _SpecStatus.REVIEW
+                        spec_data = spec_doc.to_dict()
+                        yield create_system_message(
+                            f"Specification generated with {len(spec_doc.sections)} sections. "
+                            f"Review and approve before implementation.",
+                            kind="spec",
+                        )
+                        from encre.utils.types import SystemMessage as _SM
+                        import json as _json
+                        yield _SM(content=f"__spec_data__:{_json.dumps(spec_data)}", kind="spec")
+                        logger.info("[spec] parsed spec with %d sections, status=review", len(spec_doc.sections))
+                    except Exception as e:
+                        logger.warning("[spec] failed to parse spec: %s", e)
+
                 yield create_finish("stop", usage=_backend_usage)
                 # Main session: text-only ends this run. User sends next message.
                 # Sub-agent: text-only completes the sub-agent task.
@@ -2514,8 +3024,10 @@ class EncreLoop:
             for idx in sorted(tool_call_buffers.keys()):
                 tc = tool_call_buffers[idx]
                 client_id = f"call_{self.session.turn_count}_{idx}"
+                protocol_id = tc["id"] or client_id
+                tc["id"] = protocol_id
                 entry: dict[str, Any] = {
-                    "id": tc["id"] or f"call_{idx}",
+                    "id": protocol_id,
                     "type": "function",
                     "function": {
                         "name": tc["name"],
@@ -2555,6 +3067,24 @@ class EncreLoop:
             # backend id (tc["id"]). Without this split, the UI would create
             # one stub entry from the deltas (call_N) and a second entry from
             # tool_call_start (real id), rendering each tool call twice.
+
+            # ── Spec approval gate ───────────────────────────────────
+            # In spec mode, block write tools until the spec is approved.
+            # Read-only tools (file_read, grep, glob, etc.) are allowed.
+            _spec_approved = True
+            if slash_command_mode == "spec" and self.spec_engine is not None:
+                _current = self.spec_engine.current_spec
+                _spec_approved = _current is not None and (
+                    hasattr(_current, "status") and getattr(_current.status, "value", None) == "approved"
+                )
+                if not _spec_approved:
+                    # Override the spec mode instruction so the model knows to
+                    # wait for approval before implementing.
+                    yield create_system_message(
+                        "Specification is pending approval. Write tools are blocked. "
+                        "Wait for user to approve the spec before implementing.",
+                        kind="spec",
+                    )
             prepared: list[dict[str, Any]] = []
             for idx in sorted(tool_call_buffers.keys()):
                 tc = tool_call_buffers[idx]
@@ -2600,6 +3130,37 @@ class EncreLoop:
                     prepared.append({"id": tc["id"], "client_id": client_id,
                                      "name": tc["name"], "args": args,
                                      "tool": None, "skip": True, "error": err_msg})
+                    continue
+
+                # ── Spec approval gate: block write tools ───────────
+                # In spec mode, if the spec hasn't been approved yet,
+                # block all write-class tools (file_write, file_edit,
+                # apply_patch, bash, etc.).  Read-only tools are allowed
+                # so the model can still gather context.
+                _spec_block = False
+                if slash_command_mode == "spec" and self.spec_engine is not None and tc["name"] in _WRITE_TOOL_NAMES:
+                    _current = self.spec_engine.current_spec
+                    _spec_approved = _current is not None and (
+                        hasattr(_current, "status") and getattr(_current.status, "value", None) == "approved"
+                    )
+                    _spec_block = not _spec_approved
+                if _spec_block:
+                    _spec_msg = (
+                        "Blocked: Spec mode is active and the specification has not been "
+                        "approved yet. Write tools are disabled. Present the specification "
+                        "for user review first."
+                    )
+                    yield create_tool_result(id=client_id, content=_spec_msg, is_error=True)
+                    self.session.add_tool_result(tc["id"], _spec_msg, is_error=True, client_id=client_id)
+                    turn_events += 1
+                    self.telemetry.record_tool_call(
+                        tool_name=tc["name"], latency_ms=0, success=False, error_message=_spec_msg,
+                    )
+                    yield create_tool_call_end(id=client_id)
+                    turn_events += 1
+                    prepared.append({"id": tc["id"], "client_id": client_id,
+                                     "name": tc["name"], "args": args,
+                                     "tool": tool, "skip": True, "error": _spec_msg})
                     continue
 
                 is_safe = tool.is_concurrency_safe(args)
@@ -2691,32 +3252,12 @@ class EncreLoop:
                     self._pending_tool_name = p["name"]
                     self._permission_event = asyncio.Event()
                     self._permission_decision = False
-                    permission_waiter = asyncio.create_task(self._permission_event.wait())
-                    cancel_waiter = asyncio.create_task(self._cancel_event.wait())
-                    try:
-                        done, pending = await asyncio.wait(
-                            [permission_waiter, cancel_waiter],
-                            return_when=asyncio.FIRST_COMPLETED,
-                            timeout=120.0,
-                        )
-                        for t in pending:
-                            t.cancel()
-                        if cancel_waiter in done:
-                            logger.info(
-                                "Permission request cancelled for tool '%s'",
-                                p["name"],
-                            )
-                    except Exception:
-                        logger.warning(
-                            "Permission request interrupted for tool '%s'",
-                            p["name"],
-                            exc_info=True,
-                        )
+                    permission_granted = await self._wait_for_permission_decision(p["name"])
                     self._permission_event = None
                     await self.hook_system.emit_permission_response(
-                        p["name"], self._permission_decision
+                        p["name"], permission_granted
                     )
-                    if not self._permission_decision:
+                    if not permission_granted:
                         err_msg = "Permission denied by user."
                         yield create_tool_result(id=p["client_id"], content=err_msg, is_error=True)
                         self.session.add_tool_result(p["id"], err_msg, is_error=True, client_id=p["client_id"])
@@ -3405,12 +3946,39 @@ class EncreLoop:
                         turn_events += 1
                         continue
 
+                    # ── Spec approval gate for secondary tools ──────────
+                    _spec_block = False
+                    if slash_command_mode == "spec" and self.spec_engine is not None and tc["name"] in _WRITE_TOOL_NAMES:
+                        _current = self.spec_engine.current_spec
+                        _spec_approved = _current is not None and (
+                            hasattr(_current, "status") and getattr(_current.status, "value", None) == "approved"
+                        )
+                        _spec_block = not _spec_approved
+                    if _spec_block:
+                        _spec_msg = (
+                            "Blocked: Spec mode is active and the specification has not been "
+                            "approved yet. Write tools are disabled. Present the specification "
+                            "for user review first."
+                        )
+                        yield create_tool_result(id=client_id, content=_spec_msg, is_error=True)
+                        self.session.add_tool_result(tc["id"], _spec_msg, is_error=True, client_id=client_id)
+                        turn_events += 1
+                        self.telemetry.record_tool_call(
+                            tool_name=tc["name"], latency_ms=0, success=False, error_message=_spec_msg,
+                        )
+                        yield create_tool_call_end(id=client_id)
+                        turn_events += 1
+                        continue
+
+                    is_safe = tool.is_concurrency_safe(args)
+                    semantics = _infer_tool_semantics(tc["name"], tool)
+                    self.session.metadata.setdefault("tool_semantics", {})[tc["name"]] = semantics
                     extra_prepared.append({
                         "id": tc["id"], "client_id": client_id,
                         "name": tc["name"], "args": args,
-                        "tool": tool,
+                        "tool": tool, "skip": False, "safe": is_safe,
                         "args_summary": _args_summary(args),
-                        "semantics": _infer_tool_semantics(tc["name"], tool),
+                        "semantics": semantics,
                     })
 
                 # Permission & hooks for secondary tools
@@ -3418,6 +3986,23 @@ class EncreLoop:
                     for p in extra_prepared:
                         if self._cancelled():
                             break
+                        if not _tool_retry_allowed(p, self._recent_tool_names):
+                            retry_msg = (
+                                "Blocked repeated high-risk tool retry. "
+                                + p.get("semantics", {}).get("safe_fallback", "Gather more context before retrying.")
+                            )
+                            yield create_tool_result(id=p["client_id"], content=retry_msg, is_error=True)
+                            self.session.add_tool_result(p["id"], retry_msg, is_error=True, client_id=p["client_id"])
+                            turn_events += 1
+                            self.telemetry.record_tool_call(
+                                tool_name=p["name"], latency_ms=0,
+                                success=False, error_message=retry_msg,
+                            )
+                            yield create_tool_call_end(id=p["client_id"])
+                            turn_events += 1
+                            p["skip"] = True
+                            p["error"] = retry_msg
+                            continue
                         permission = await self.safety.check_tool_permission(p["name"], p["args"])
                         if permission.behavior == "deny":
                             deny_reason = (
@@ -3434,6 +4019,8 @@ class EncreLoop:
                             )
                             yield create_tool_call_end(id=p["client_id"])
                             turn_events += 1
+                            p["skip"] = True
+                            p["error"] = deny_reason
                             continue
 
                         if permission.behavior == "ask":
@@ -3451,32 +4038,12 @@ class EncreLoop:
                             self._pending_tool_name = p["name"]
                             self._permission_event = asyncio.Event()
                             self._permission_decision = False
-                            permission_waiter = asyncio.create_task(self._permission_event.wait())
-                            cancel_waiter = asyncio.create_task(self._cancel_event.wait())
-                            try:
-                                done, pending = await asyncio.wait(
-                                    [permission_waiter, cancel_waiter],
-                                    return_when=asyncio.FIRST_COMPLETED,
-                                    timeout=120.0,
-                                )
-                                for t in pending:
-                                    t.cancel()
-                                if cancel_waiter in done:
-                                    logger.info(
-                                        "Permission request cancelled for tool '%s'",
-                                        p["name"],
-                                    )
-                            except Exception:
-                                logger.warning(
-                                    "Permission request interrupted for tool '%s'",
-                                    p["name"],
-                                    exc_info=True,
-                                )
+                            permission_granted = await self._wait_for_permission_decision(p["name"])
                             self._permission_event = None
                             await self.hook_system.emit_permission_response(
-                                p["name"], self._permission_decision
+                                p["name"], permission_granted
                             )
-                            if not self._permission_decision:
+                            if not permission_granted:
                                 err_msg = "Permission denied by user."
                                 yield create_tool_result(id=p["client_id"], content=err_msg, is_error=True)
                                 self.session.add_tool_result(p["id"], err_msg, is_error=True, client_id=p["client_id"])
@@ -3487,6 +4054,8 @@ class EncreLoop:
                                 )
                                 yield create_tool_call_end(id=p["client_id"])
                                 turn_events += 1
+                                p["skip"] = True
+                                p["error"] = err_msg
                                 continue
 
                         pre_hook = await self.hook_system.emit_pre_tool(p["name"], p["args"])
@@ -3501,6 +4070,8 @@ class EncreLoop:
                             )
                             yield create_tool_call_end(id=p["client_id"])
                             turn_events += 1
+                            p["skip"] = True
+                            p["error"] = block_reason
                             continue
                         if pre_hook and pre_hook.get("modified_input"):
                             p["args"] = pre_hook["modified_input"]
@@ -3529,10 +4100,14 @@ class EncreLoop:
                                 )
                                 yield create_tool_call_end(id=p["client_id"])
                                 turn_events += 1
+                                p["skip"] = True
+                                p["error"] = plan_err
                                 continue
 
                 # Execute secondary tools sequentially
                 for p in extra_prepared:
+                    if p.get("skip"):
+                        continue
                     yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
                     tool_start = time.time()
                     tool_error = False
@@ -3611,6 +4186,49 @@ class EncreLoop:
                             yield PlanUpdate(plan_items=plan_items)
                             self.session.plan_items = plan_items
 
+            # ── Post-tool compression check ──────────────────────────
+            # After tool execution, check if the context has grown too large
+            # and compact before the next iteration.  Mirrors Hermes agent's
+            # post-response compression in conversation_loop.py.
+            _post_tool_msgs = self.session.get_context_messages()
+            if should_post_tool_compact(
+                _post_tool_msgs,
+                getattr(self.backend, "context_window", 128000),
+                self.config.max_tokens,
+            ):
+                logger.info(
+                    "[run] post-tool compression triggered turn=%d msgs=%d",
+                    self.session.turn_count, len(_post_tool_msgs),
+                )
+                try:
+                    self.session.set_compact_archive(_post_tool_msgs)
+                    _post_compacted = await self.compact_engine.compact(
+                        _post_tool_msgs, backend=self.backend,
+                        turn_count=self.session.turn_count,
+                        system_prompt=system_prompt or "",
+                        session_id=self.session.id or "",
+                    )
+                    if _post_compacted is not None:
+                        self.session.replace_branch_messages(
+                            self.session.active_branch_id, _post_compacted
+                        )
+                        logger.info("[run] post-tool compact succeeded turn=%d", self.session.turn_count)
+                except Exception as _ptc_err:
+                    logger.warning("[run] post-tool compact failed: %s", _ptc_err)
+
+            # ── Budget grace call ─────────────────────────────────────
+            # When the token budget is exhausted, give the model one final
+            # call to wrap up.  Mirrors Hermes agent's budget grace call.
+            if _backend_usage:
+                self._budget_state.add_usage(
+                    _backend_usage.get("output_tokens", 0)
+                )
+            if self._budget_state.is_exhausted and self._budget_state.can_grace:
+                self._budget_state.use_grace()
+                logger.info("[run] budget exhausted, using grace call turn=%d", self.session.turn_count)
+                self.session.add_message("user", build_grace_message())
+                self._budget_state.grace_enabled = False
+
             # Don't yield an assistant_boundary here -- doing so makes the frontend
             # split the response into separate bubbles after every tool-calling
             # turn.  All model output within a single user turn (including post-tool
@@ -3676,6 +4294,9 @@ class EncreLoop:
 
             await self.hook_system.emit_turn_end(self.session.turn_count)
             self.rollback.commit(self.session, f"turn_{self.session.turn_count}")
+
+            # Clean up persistent terminal sessions from this turn.
+            await _cleanup_terminal_sessions()
 
         reason = "cancelled" if self._cancelled() else "max_tokens"
         logger.warning("[run] session ending turn={turn} max_turns={max_turns} reason={reason}",
@@ -3793,7 +4414,7 @@ class EncreLoop:
                 # ``tool_input`` is part of the pre-tool hook signature
                 # for future context-aware policies; current policy
                 # decisions only depend on ``tool_name``.
-                err = _agent_enforce_policy(tool_name)
+                err = _agent_enforce_policy(tool_name, _tool_input)
                 if err is not None:
                     return {"block": True, "block_reason": err}
                 return None
@@ -4052,3 +4673,14 @@ class EncreLoop:
             }
         finally:
             self._child_loops.discard(sub_agent.loop)
+
+
+# ── Terminal session cleanup (called at end of each turn) ──────────
+
+
+async def _cleanup_terminal_sessions() -> None:
+    """Kill all persistent terminal sessions from the finished turn."""
+    try:
+        await TerminalSessionManager.instance().cleanup_all()
+    except Exception:
+        pass

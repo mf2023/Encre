@@ -21,9 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
+
+# Concurrency-bounded manager for spawning a swarm of teammates.
+#
+# ``EncreSwarmManager`` owns a collection of ``EncreTeammate`` instances and
+# their ``TeammateHandle``s, launching them through an ``asyncio.Semaphore`` so
+# only ``max_concurrent`` run at once.  It offers bulk spawn, await-any/all,
+# cancellation, and live progress snapshots.
 
 import asyncio
 from dataclasses import dataclass, field
@@ -45,6 +50,13 @@ class SwarmProgress:
 
 
 class EncreSwarmManager:
+    """Coordinates the lifecycle of many concurrently-running teammates.
+
+    Tracks every spawned teammate in ``_teammates`` and ``_handles`` keyed by
+    id.  The semaphore bounds real concurrency; ``await_all``/``await_any`` wait
+    on the underlying asyncio tasks; ``get_progress`` derives a live
+    ``SwarmProgress`` snapshot from the handles' statuses.
+    """
     def __init__(self, max_concurrent: int = 30):
         self.max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)

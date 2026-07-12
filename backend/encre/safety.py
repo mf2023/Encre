@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import json
 import re
@@ -84,6 +84,117 @@ class BashAnalysis:
     write_targets: list[str] = field(default_factory=list)
     network_targets: list[str] = field(default_factory=list)
     subcommands: list[str] = field(default_factory=list)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Immune paths -- always-deny for destructive ops even in bypass mode
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Path fragments (normalized forward-slash, lowercased) that must never be
+# touched by a destructive tool call, regardless of permission mode.  These
+# cover agent/runtime config (``.git/``, ``.claude/``), shell init files
+# (``~/.bashrc`` etc., hijackable on next shell spawn), and SSH credentials
+# (``~/.ssh/``, exfiltration / forgery risk).  Read access to these is left
+# to the Rust engine; this layer only guards writes/deletes.
+IMMUNE_PATH_FRAGMENTS: tuple[str, ...] = (
+    "/.git/",          # git internal dir (HEAD/refs/objects/config)
+    "/.claude/",       # agent config dir
+    "/.ssh/",          # SSH keys / known_hosts
+    "/.bashrc",
+    "/.zshrc",
+    "/.bash_profile",
+    "/.zprofile",
+    "/.gitconfig",
+)
+
+# Bare filenames (no slash) matched at the path tail, for home-relative files
+# when the path is exactly ``~/.bashrc`` etc.
+IMMUNE_PATH_BASENAMES: tuple[str, ...] = (
+    ".bashrc",
+    ".zshrc",
+    ".bash_profile",
+    ".zprofile",
+    ".gitconfig",
+)
+
+# Tool names whose primary effect is mutating the filesystem; used as a
+# fallback when the tool object is unavailable and ``is_destructive`` cannot
+# be probed directly.
+_WRITE_TOOL_NAMES: frozenset[str] = frozenset({
+    "file_write", "write_file", "file_edit", "edit_file", "file_delete",
+    "delete_file", "apply_patch", "patch", "bash", "shell", "execute",
+    "git_tool", "git", "mv", "cp", "rm", "sed", "tee",
+})
+
+
+def _normalize_path_for_immune_check(raw: str) -> str:
+    """Expand ``~`` / strip quotes / forward-slash-normalize a path fragment."""
+    import os
+
+    norm = os.path.expanduser(raw.strip().strip("'\""))
+    return norm.replace("\\", "/").lower()
+
+
+def _extract_tool_target_paths(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
+    """Pull path-like strings out of a tool call for immune-path matching.
+
+    Covers direct path fields used by the file family, ``+++ b/...`` markers
+    from unified diffs (``apply_patch``), and bash redirect / mv / cp / rm /
+    tee targets.  Not exhaustive -- false negatives simply fall through to the
+    normal permission path, never a false allow.
+    """
+    out: list[str] = []
+    for key in ("path", "file_path", "filename", "filepath", "target", "dest", "destination"):
+        val = tool_input.get(key)
+        if isinstance(val, str) and val.strip():
+            out.append(val)
+
+    patch = tool_input.get("patch") or tool_input.get("diff")
+    if isinstance(patch, str):
+        for m in re.finditer(r"^\+\+\+\s+b/(.+)$", patch, re.MULTILINE):
+            out.append(m.group(1).strip())
+        for m in re.finditer(r"^---\s+a/(.+)$", patch, re.MULTILINE):
+            out.append(m.group(1).strip())
+
+    cmd = tool_input.get("command") or tool_input.get("cmd")
+    if isinstance(cmd, str) and cmd.strip():
+        # Redirect targets:  >foo  >>foo  (write/append)
+        for m in re.finditer(r"(?:>>?|tee(?:\s+-a)?)\s*([^\s|;&<>]+)", cmd):
+            out.append(m.group(1))
+        # mv / cp destination (second path argument).
+        for m in re.finditer(r"\b(?:mv|cp)\s+(?:-[rRfv]+\s+)?(\S+)\s+(\S+)", cmd):
+            out.append(m.group(2))
+        # rm / rmdir target.
+        for m in re.finditer(r"\b(?:rm|rmdir)\s+(?:-[rRfv]+\s+)?(\S+)", cmd):
+            out.append(m.group(1))
+        # sed -i edits its target argument.
+        for m in re.finditer(r"\bsed\s+.*?-i\b\s*\S*\s+(\S+)", cmd):
+            out.append(m.group(1))
+        # Raw tokens that visibly reference an immune dir (defensive catch-all).
+        for tok in re.split(r"\s+", cmd):
+            if any(frag in tok for frag in (".git/", ".ssh/", ".claude/", ".bashrc", ".zshrc", ".gitconfig")):
+                out.append(tok)
+    return out
+
+
+def matches_immune_path(raw_path: str) -> str | None:
+    """Return the matched immune fragment, or ``None`` if the path is clean."""
+    if not raw_path or not raw_path.strip():
+        return None
+    norm = _normalize_path_for_immune_check(raw_path)
+    if not norm:
+        return None
+    # Ensure a leading slash so fragment matching is unambiguous when the
+    # caller passes a bare relative path like ".git/config".
+    probe = norm if norm.startswith("/") else "/" + norm
+    for frag in IMMUNE_PATH_FRAGMENTS:
+        if frag in probe:
+            return frag.strip("/")
+    # Basename match at tail (e.g. "~/x/.bashrc" or "~/.bashrc").
+    tail = norm.rsplit("/", 1)[-1]
+    if tail in IMMUNE_PATH_BASENAMES:
+        return tail
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -491,20 +602,53 @@ class EncreSafetyEngine:
         except Exception:
             # Defensive fallback: never let a permission-engine failure
             # crash the agent loop.  Default to allow and let downstream
-            # OS-level sandboxes (Landlock / Job Object) take over.
-            return PermissionAllow()
+            # OS-level sandboxes (Landlock / Job Object) take over -- but
+            # still run the immune-path guard below before returning.
+            decision = None
 
-        if not isinstance(decision, dict):
-            return PermissionAllow()
+        if isinstance(decision, dict):
+            behavior = decision.get("behavior")
+            reason = str(decision.get("reason") or "")
+            rule = str(decision.get("rule") or "")
+        else:
+            behavior, reason, rule = None, "", ""
 
-        behavior = decision.get("behavior")
-        reason = str(decision.get("reason") or "")
-        rule = str(decision.get("rule") or "")
+        # Immune-path hard deny (always-on, even in bypass mode).  The Rust
+        # engine has an ALWAYS_ALLOW list but no symmetric always-deny, so a
+        # bypass-mode session would auto-allow writes to ``.git/config``,
+        # ``~/.ssh/authorized_keys``, ``~/.bashrc`` etc.  We block write-
+        # capable tools whose target touches an immune path.  Read access is
+        # left untouched (file_read of ``.git/HEAD`` stays allowed).
+        immune_hit = self.check_immune_path(tool_name, tool_input)
+        if immune_hit and tool_name in _WRITE_TOOL_NAMES and behavior != "deny":
+            return PermissionDeny(
+                reason=(
+                    f"Refused: target path '{immune_hit}' is immune "
+                    f"(system-sensitive: .git/.claude/.ssh/shell-init). "
+                    f"Cannot be modified by the agent, even in bypass mode."
+                )
+            )
+
         if behavior == "deny":
             return PermissionDeny(reason=reason)
         if behavior == "ask":
             return PermissionAsk(reason=reason, rule=rule)
         return PermissionAllow()
+
+    def check_immune_path(self, tool_name: str, tool_input: dict[str, Any]) -> str | None:
+        """Return an immune-path fragment the tool call would mutate, or None.
+
+        Extracts candidate target paths from the tool input and checks each
+        against the immune set.  Pure path matching -- the caller (the
+        executor gate or ``check_tool_permission``) decides whether an immune
+        hit warrants a hard deny based on whether the operation is destructive.
+        """
+        candidates = _extract_tool_target_paths(tool_name, tool_input or {})
+        for cand in candidates:
+            hit = matches_immune_path(cand)
+            if hit:
+                return hit
+        return None
 
     def record_permission_decision(self, tool_name: str, allowed: bool) -> None:
         """Persist the user's answer to a previous ``Ask`` decision.
@@ -597,6 +741,31 @@ class EncreSafetyEngine:
         if self._is_sensitive(tool_input):
             return PermissionAsk()
         return PermissionAllow()
+
+    async def check_yolo_permission(
+        self,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        conversation_context: str = "",
+        tool: Any = None,
+    ) -> PermissionDecision:
+        if self._auto_classifier is None or not conversation_context:
+            return await self.check_tool_permission(tool_name, tool_input)
+
+        from encre.autosafety import AutoDecision
+
+        if self._auto_classifier is not None:
+            result = await self._auto_classifier.classify_with_context(
+                tool_name, tool_input, conversation_context, tool=tool,
+            )
+            if result.decision in (AutoDecision.SAFE, AutoDecision.LOW_RISK):
+                return PermissionAllow(reason=result.reasoning)
+            if result.decision == AutoDecision.BLOCK:
+                return PermissionDeny(reason=result.reasoning)
+            if result.decision == AutoDecision.HIGH_RISK:
+                return PermissionDeny(reason=result.reasoning)
+
+        return PermissionAsk(reason=result.reasoning if result else "")
 
     def _validate_url_safe(self, url: str) -> bool:
         if not url:

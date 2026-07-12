@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for encre.lsp -- LSP protocol dataclasses and EncreLSPClient."""
 
@@ -32,37 +32,51 @@
 # ===========================================================================
 
 class TestPosition:
+    """Test cases covering position.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the LSP Position dataclass."""
 
     def test_creation(self):
+        """Verifies that creation."""
         from encre.lsp.protocol import Position
         p = Position(line=10, character=5)
+        # Confirm the expected result for this scenario: creation.
         assert p.line == 10
         assert p.character == 5
 
     def test_zero_position(self):
+        """Verifies that zero position."""
         from encre.lsp.protocol import Position
         p = Position(line=0, character=0)
+        # Confirm the expected result for this scenario: zero position.
         assert p.line == 0
         assert p.character == 0
 
     def test_large_values(self):
+        """Verifies that large values."""
         from encre.lsp.protocol import Position
         p = Position(line=99999, character=999)
+        # Confirm the expected result for this scenario: large values.
         assert p.line == 99999
         assert p.character == 999
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
 
         from encre.lsp.protocol import Position
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(Position)
 
     def test_equality(self):
+        """Verifies that equality."""
         from encre.lsp.protocol import Position
         p1 = Position(line=5, character=10)
         p2 = Position(line=5, character=10)
         p3 = Position(line=5, character=11)
+        # Confirm the expected result for this scenario: equality.
         assert p1 == p2
         assert p1 != p3
 
@@ -72,30 +86,40 @@ class TestPosition:
 # ===========================================================================
 
 class TestRange:
+    """Test cases covering range.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the LSP Range dataclass."""
 
     def test_creation(self):
+        """Verifies that creation."""
         from encre.lsp.protocol import Position, Range
         start = Position(line=0, character=0)
         end = Position(line=10, character=20)
         r = Range(start=start, end=end)
+        # Confirm the expected result for this scenario: creation.
         assert r.start.line == 0
         assert r.start.character == 0
         assert r.end.line == 10
         assert r.end.character == 20
 
     def test_single_line_range(self):
+        """Verifies that single line range."""
         from encre.lsp.protocol import Position, Range
         start = Position(line=5, character=3)
         end = Position(line=5, character=15)
         r = Range(start=start, end=end)
+        # Confirm the expected result for this scenario: single line range.
         assert r.start.line == r.end.line
         assert r.end.character > r.start.character
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
 
         from encre.lsp.protocol import Range
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(Range)
 
 
@@ -104,25 +128,35 @@ class TestRange:
 # ===========================================================================
 
 class TestLocation:
+    """Test cases covering location.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the LSP Location dataclass."""
 
     def test_creation(self):
+        """Verifies that creation."""
         from encre.lsp.protocol import Location, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         loc = Location(uri="file:///test.py", range=r)
+        # Confirm the expected result for this scenario: creation.
         assert loc.uri == "file:///test.py"
         assert loc.range.start.line == 1
 
     def test_file_uri(self):
+        """Verifies that file uri."""
         from encre.lsp.protocol import Location, Position, Range
         r = Range(start=Position(line=0, character=0), end=Position(line=0, character=5))
         loc = Location(uri="file:///home/user/project/main.py", range=r)
+        # Confirm the expected result for this scenario: file uri.
         assert loc.uri.startswith("file:///")
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
 
         from encre.lsp.protocol import Location
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(Location)
 
 
@@ -131,9 +165,14 @@ class TestLocation:
 # ===========================================================================
 
 class TestDiagnostic:
+    """Test cases covering diagnostic.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the LSP Diagnostic dataclass."""
 
     def test_creation(self):
+        """Verifies that creation."""
         from encre.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=5, character=0), end=Position(line=5, character=10))
         diag = Diagnostic(
@@ -142,27 +181,34 @@ class TestDiagnostic:
             severity=2,
             source="pyright",
         )
+        # Confirm the expected result for this scenario: creation.
         assert diag.message == "Unused variable 'x'"
         assert diag.severity == 2
         assert diag.source == "pyright"
 
     def test_default_source(self):
+        """Verifies that default source."""
         from encre.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=5))
         diag = Diagnostic(range=r, message="Error", severity=1)
+        # Confirm the expected result for this scenario: default source.
         assert diag.source == ""
 
     def test_severity_levels(self):
+        """Verifies that severity levels."""
         from encre.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=0, character=0), end=Position(line=0, character=1))
         for sev in [1, 2, 3, 4]:
             diag = Diagnostic(range=r, message=f"Level {sev}", severity=sev)
+            # Confirm the expected result for this scenario: severity levels.
             assert diag.severity == sev
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
 
         from encre.lsp.protocol import Diagnostic
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(Diagnostic)
 
 
@@ -171,32 +217,44 @@ class TestDiagnostic:
 # ===========================================================================
 
 class TestHoverResult:
+    """Test cases covering hover result.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the LSP HoverResult dataclass."""
 
     def test_creation_without_range(self):
+        """Verifies that creation without range."""
         from encre.lsp.protocol import HoverResult
         hr = HoverResult(contents="def foo(x: int) -> str")
+        # Confirm the expected result for this scenario: creation without range.
         assert hr.contents == "def foo(x: int) -> str"
         assert hr.range is None
 
     def test_creation_with_range(self):
+        """Verifies that creation with range."""
         from encre.lsp.protocol import HoverResult, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         hr = HoverResult(contents="A string value", range=r)
+        # Confirm the expected result for this scenario: creation with range.
         assert hr.contents == "A string value"
         assert hr.range is not None
         assert hr.range.start.line == 1
 
     def test_markdown_contents(self):
+        """Verifies that markdown contents."""
         from encre.lsp.protocol import HoverResult
         md = "```python\ndef foo() -> int: ...\n```"
         hr = HoverResult(contents=md)
+        # Confirm the expected result for this scenario: markdown contents.
         assert "```" in hr.contents
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
 
         from encre.lsp.protocol import HoverResult
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(HoverResult)
 
 
@@ -205,30 +263,42 @@ class TestHoverResult:
 # ===========================================================================
 
 class TestLSPState:
+    """Test cases covering l s p state.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the LSPState dataclass."""
 
     def test_creation_running(self):
+        """Verifies that creation running."""
         from encre.lsp.protocol import LSPState
         state = LSPState(status="running")
+        # Confirm the expected result for this scenario: creation running.
         assert state.status == "running"
         assert state.error is None
 
     def test_creation_with_error(self):
+        """Verifies that creation with error."""
         from encre.lsp.protocol import LSPState
         state = LSPState(status="stopped", error="connection refused")
+        # Confirm the expected result for this scenario: creation with error.
         assert state.status == "stopped"
         assert state.error == "connection refused"
 
     def test_status_values(self):
+        """Verifies that status values."""
         from encre.lsp.protocol import LSPState
         for status in ["starting", "running", "stopped", "error"]:
             s = LSPState(status=status)
+            # Confirm the expected result for this scenario: status values.
             assert s.status == status
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
 
         from encre.lsp.protocol import LSPState
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(LSPState)
 
 
@@ -237,41 +307,54 @@ class TestLSPState:
 # ===========================================================================
 
 class TestEncreLSPClient:
+    """Test cases covering encre l s p client.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the EncreLSPClient class."""
 
     def test_construction(self):
+        """Verifies that construction."""
         from encre.lsp.client import EncreLSPClient
         client = EncreLSPClient(server_name="pylsp")
+        # Confirm the expected result for this scenario: construction.
         assert client is not None
         assert client._server_name == "pylsp"
         assert client._initialized is False
         assert client._request_id == 0
 
     def test_construction_different_server_names(self):
+        """Verifies that construction different server names."""
         from encre.lsp.client import EncreLSPClient
         for name in ["pylsp", "pyright", "rust-analyzer", "gopls", "typescript-language-server"]:
             client = EncreLSPClient(server_name=name)
+            # Confirm the expected result for this scenario: construction different server names.
             assert client._server_name == name
 
     def test_initial_state(self):
+        """Verifies that initial state."""
         from encre.lsp.client import EncreLSPClient
         client = EncreLSPClient(server_name="test")
+        # Confirm the expected result for this scenario: initial state.
         assert client._process is None
         assert client._initialized is False
         assert client._reader_task is None
 
     def test_close_before_start_does_not_raise(self):
+        """Verifies that close before start does not raise."""
         import asyncio
 
         from encre.lsp.client import EncreLSPClient
 
         async def _test():
+            """Verifies that test."""
             client = EncreLSPClient(server_name="test")
             await client.close()
 
         asyncio.run(_test())
 
     def test_public_api_exports(self):
+        """Verifies that public api exports."""
         from encre.lsp import (
             Diagnostic,
             EncreLSPClient,
@@ -283,6 +366,7 @@ class TestEncreLSPClient:
             Range,
         )
         # Verify all public symbols are importable
+        # Confirm the expected result for this scenario: public api exports.
         assert EncreLSPClient is not None
         assert EncreLSPManager is not None
         assert Position is not None
@@ -298,9 +382,15 @@ class TestEncreLSPClient:
 # ===========================================================================
 
 class TestEncreLSPManager:
+    """Test cases covering encre l s p manager.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     """Tests for the EncreLSPManager class."""
 
     def test_construction(self):
+        """Verifies that construction."""
         from encre.lsp.manager import EncreLSPManager
         manager = EncreLSPManager()
+        # Confirm the expected result for this scenario: construction.
         assert manager is not None

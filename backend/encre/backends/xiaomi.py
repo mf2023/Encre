@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Xiaomi MiMo backend -- MiMo-V2-Flash, MiMo-V2.5, MiMo-V2.5-Pro (2026 lineup).
@@ -78,8 +78,10 @@ class XiaomiBackend(OpenAISSEBackend):
         **kwargs: Any,
     ) -> None:
         if not base_url:
+            # Fall back to Xiaomi MiMo's OpenAI-compatible endpoint default when no URL is supplied.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        # MiMo V2.x models expose a 256K (262144) context window.
         return 262144

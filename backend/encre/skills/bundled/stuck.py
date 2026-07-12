@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Stuck / self-recovery skill prompt loader.
+
+Loads the ``stuck`` prompt from the ``skills`` category and substitutes the
+context description supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _stuck_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the self-recovery skill prompt for the given context."""
     context_desc = args or "the current conversation"
     return _loader.load_with_context("stuck", category="skills", context_desc=context_desc)

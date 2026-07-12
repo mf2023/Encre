@@ -21,7 +21,21 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Experience-learning component of the evolution subsystem.
+
+:class:`EncreEvolutionLearner` accumulates two kinds of records --
+
+* :class:`SuccessRecord` -- a proven (tool, intent, params) -> outcome triple
+  that can be reused later, and
+* :class:`ErrorRecord` -- a past failure together with the correction that
+  fixed it.
+
+Recorded experience is indexed by tool name and queried by token similarity
+so the agent can be reminded of past mistakes and proven approaches before
+it acts.  State is persisted to an (optionally encrypted) JSON file.
+"""
 
 import contextlib
 import json
@@ -36,6 +50,12 @@ from encre.crypto import decrypt, encrypt
 
 @dataclass
 class SuccessRecord:
+    """A proven successful tool invocation, keyed by intent and params.
+
+    Captures the tool used, a normalised intent signature, the serialised
+    parameter pattern, the outcome text, latency and how often the pattern
+    has been reused.  Used to suggest known-good parameters later.
+    """
     tool_name: str
     intent_signature: str
     param_pattern: str
@@ -45,6 +65,7 @@ class SuccessRecord:
     reuse_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the record to a plain dictionary for persistence."""
         return {
             "tool_name": self.tool_name,
             "intent_signature": self.intent_signature,
@@ -57,6 +78,7 @@ class SuccessRecord:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "SuccessRecord":
+        """Reconstruct a record from a dictionary produced by :meth:`to_dict`."""
         return cls(
             tool_name=d["tool_name"],
             intent_signature=d.get("intent_signature", ""),
@@ -70,6 +92,12 @@ class SuccessRecord:
 
 @dataclass
 class ErrorRecord:
+    """A past tool failure together with the correction that fixed it.
+
+    Tracks the error type, the surrounding context, the corrective action,
+    how often it has recurred (``trigger_count``) and whether it has since
+    been resolved.
+    """
     tool_name: str
     error_type: str
     error_context: str
@@ -79,6 +107,7 @@ class ErrorRecord:
     resolved: bool = False
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the record to a plain dictionary for persistence."""
         return {
             "tool_name": self.tool_name,
             "error_type": self.error_type,
@@ -91,6 +120,7 @@ class ErrorRecord:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ErrorRecord":
+        """Reconstruct a record from a dictionary produced by :meth:`to_dict`."""
         return cls(
             tool_name=d["tool_name"],
             error_type=d.get("error_type", ""),
@@ -103,11 +133,19 @@ class ErrorRecord:
 
 
 class EncreEvolutionLearner:
+    """Learns from past tool successes and failures.
+
+    Maintains bounded lists of :class:`SuccessRecord` and :class:`ErrorRecord`
+    indexed per tool.  Callers record outcomes; the learner returns guidance
+    strings (past mistakes + proven approaches) and best-known parameters
+    for a tool/intent, and persists its state to an optional encrypted file.
+    """
     MAX_SUCCESS = 200
     MAX_ERRORS = 200
     SIMILARITY_THRESHOLD = 0.45
 
     def __init__(self, storage_path: str | None = None) -> None:
+        """Initialise the learner and resolve where state is persisted."""
         self._successes: list[SuccessRecord] = []
         self._errors: list[ErrorRecord] = []
         if storage_path is None:
@@ -129,6 +167,7 @@ class EncreEvolutionLearner:
         outcome: str,
         latency_ms: float = 0.0,
     ) -> None:
+        """Record a successful tool use, merging with a similar past one."""
         sig = _extract_signature(intent)
         param_str = _serialize_params(params)
         existing = self._find_similar_success(tool_name, sig, param_str)
@@ -157,6 +196,7 @@ class EncreEvolutionLearner:
         context: str,
         correction: str,
     ) -> None:
+        """Record a tool error, merging with a similar past one."""
         existing = self._find_similar_error(tool_name, error_type, context)
         if existing >= 0:
             rec = self._errors[existing]
@@ -177,6 +217,7 @@ class EncreEvolutionLearner:
             self._prune_errors()
 
     def mark_error_resolved(self, tool_name: str, context: str) -> None:
+        """Mark the most similar open error for this tool as resolved."""
         idx = self._find_similar_error(tool_name, "", context)
         if idx >= 0:
             self._errors[idx].resolved = True
@@ -203,6 +244,7 @@ class EncreEvolutionLearner:
     # ── Retrieval ──────────────────────────────────────────────
 
     def get_guidance(self, tool_name: str, context: str) -> str:
+        """Build a guidance string of past mistakes and proven approaches."""
         parts: list[str] = []
         # Errors first (critical)
         error_msgs = self._get_relevant_errors(tool_name, context)
@@ -217,6 +259,7 @@ class EncreEvolutionLearner:
         return "\n".join(parts)
 
     def get_tool_best_params(self, tool_name: str, intent: str) -> dict[str, Any] | None:
+        """Return the best-known params for a tool/intent, or ``None``."""
         sig = _extract_signature(intent)
         indices = self._tool_success_index.get(tool_name, [])
         best: SuccessRecord | None = None
@@ -236,6 +279,7 @@ class EncreEvolutionLearner:
         return None
 
     def get_statistics(self) -> dict[str, Any]:
+        """Return aggregate counts and per-tool success/error rankings."""
         return {
             "total_successes": len(self._successes),
             "total_errors": len(self._errors),
@@ -248,6 +292,7 @@ class EncreEvolutionLearner:
     # ── Internal ───────────────────────────────────────────────
 
     def _get_relevant_errors(self, tool_name: str, context: str) -> list[str]:
+        """Return the most relevant open errors for this tool/context."""
         indices = self._tool_error_index.get(tool_name, [])
         candidates: list[tuple[float, ErrorRecord]] = []
         for idx in indices:
@@ -266,6 +311,7 @@ class EncreEvolutionLearner:
         ]
 
     def _get_relevant_successes(self, tool_name: str, context: str) -> list[str]:
+        """Return the most relevant past successes for this tool/context."""
         indices = self._tool_success_index.get(tool_name, [])
         candidates: list[tuple[float, SuccessRecord]] = []
         for idx in indices:
@@ -282,6 +328,7 @@ class EncreEvolutionLearner:
         ]
 
     def _find_similar_success(self, tool_name: str, sig: str, params: str) -> int:
+        """Index lookup for an existing success matching sig + params."""
         indices = self._tool_success_index.get(tool_name, [])
         for idx in indices:
             rec = self._successes[idx]
@@ -290,6 +337,7 @@ class EncreEvolutionLearner:
         return -1
 
     def _find_similar_error(self, tool_name: str, error_type: str, context: str) -> int:
+        """Index lookup for an existing error matching type + context."""
         indices = self._tool_error_index.get(tool_name, [])
         for idx in indices:
             rec = self._errors[idx]
@@ -300,6 +348,7 @@ class EncreEvolutionLearner:
         return -1
 
     def _prune_successes(self) -> None:
+        """Drop the least-reused / oldest successes beyond the cap."""
         if len(self._successes) > self.MAX_SUCCESS:
             sorted_idx = sorted(
                 range(len(self._successes)),
@@ -310,6 +359,7 @@ class EncreEvolutionLearner:
             self._rebuild_success_index()
 
     def _prune_errors(self) -> None:
+        """Drop the least-triggered / oldest errors beyond the cap."""
         if len(self._errors) > self.MAX_ERRORS:
             sorted_idx = sorted(
                 range(len(self._errors)),
@@ -320,17 +370,20 @@ class EncreEvolutionLearner:
             self._rebuild_error_index()
 
     def _rebuild_success_index(self) -> None:
+        """Rebuild the per-tool index of success records from scratch."""
         self._tool_success_index.clear()
         for i, rec in enumerate(self._successes):
             self._tool_success_index.setdefault(rec.tool_name, []).append(i)
 
     def _rebuild_error_index(self) -> None:
+        """Rebuild the per-tool index of error records from scratch."""
         self._tool_error_index.clear()
         for i, rec in enumerate(self._errors):
             self._tool_error_index.setdefault(rec.tool_name, []).append(i)
 
     @staticmethod
     def _top_tools(index: dict[str, list[int]], n: int) -> list[dict[str, Any]]:
+        """Return the ``n`` tools with the most recorded entries."""
         counts = [(name, len(indices)) for name, indices in index.items()]
         counts.sort(key=lambda x: x[1], reverse=True)
         return [{"tool_name": name, "count": c} for name, c in counts[:n]]
@@ -338,6 +391,7 @@ class EncreEvolutionLearner:
     # ── Persistence ────────────────────────────────────────────
 
     def save(self) -> None:
+        """Persist successes and errors (encrypted when available)."""
         data = {
             "successes": [r.to_dict() for r in self._successes],
             "errors": [r.to_dict() for r in self._errors],
@@ -350,6 +404,7 @@ class EncreEvolutionLearner:
             f.write(payload)
 
     def load(self) -> bool:
+        """Load persisted state; returns ``True`` on success."""
         if not os.path.exists(self._storage_path):
             return False
         try:
@@ -368,6 +423,7 @@ class EncreEvolutionLearner:
             return False
 
     def reset(self) -> None:
+        """Clear all in-memory records and indexes."""
         self._successes.clear()
         self._errors.clear()
         self._tool_success_index.clear()
@@ -377,11 +433,13 @@ class EncreEvolutionLearner:
 # ── Helpers ─────────────────────────────────────────────────────
 
 def _extract_signature(text: str) -> str:
+    """Normalise text into a whitespace-joined token signature."""
     tokens = re.findall(r'[a-zA-Z_]\w*', text.lower())
     return " ".join(tokens[:60])
 
 
 def _serialize_params(params: dict[str, Any]) -> str:
+    """JSON-serialise params, truncating overly long string values."""
     safe: dict[str, Any] = {}
     for k, v in params.items():
         if isinstance(v, str) and len(v) > 300:
@@ -392,6 +450,7 @@ def _serialize_params(params: dict[str, Any]) -> str:
 
 
 def _token_similarity(a: str, b: str) -> float:
+    """Jaccard similarity between the token sets of two strings."""
     if not a or not b:
         return 0.0
     tokens_a = set(re.findall(r'[a-zA-Z_]\w*', a.lower()))
@@ -404,6 +463,7 @@ def _token_similarity(a: str, b: str) -> float:
 
 
 def _truncate(s: str, max_len: int) -> str:
+    """Truncate a string to ``max_len`` characters with an ellipsis."""
     if len(s) <= max_len:
         return s
     return s[:max_len - 3] + "..."

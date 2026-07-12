@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 PostRunProcessor -- Self-improving loop for the iClaw daemon.
@@ -37,8 +37,6 @@ Runs after every agent session to:
 This is the core "self-improving" mechanism that makes iClaw
 get better over time without manual intervention.
 """
-
-from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -129,6 +127,7 @@ class PostRunPipeline:
         """
         results: dict[str, Any] = {"stages": {}}
 
+        # First, turn the raw event stream into a structured summary.
         summary = self._build_summary(prompt, events, duration_seconds)
         results["summary"] = {
             "tool_call_count": summary.tool_call_count,
@@ -146,6 +145,7 @@ class PostRunPipeline:
                 logger.warning("LLM analysis failed: %s", e)
                 results["analyzed"] = False
 
+        # Run all learning stages concurrently; capture individual failures.
         stage_results = await asyncio.gather(
             self._stage_evolution(summary),
             self._stage_learning(summary, enrichments),
@@ -171,6 +171,7 @@ class PostRunPipeline:
         events: list[AgentEvent],
         duration_seconds: float,
     ) -> RunSummary:
+        """Aggregate streamed events into a structured :class:`RunSummary`."""
         summary = RunSummary(
             prompt=prompt,
             duration_seconds=duration_seconds,
@@ -197,7 +198,9 @@ class PostRunPipeline:
         return summary
 
     def _detect_patterns(self, summary: RunSummary) -> None:
+        """Detect frequently repeated adjacent tool-call pairs in the run."""
         tool_names = [tc["name"] for tc in summary.tool_calls]
+        # Need enough calls to make pattern detection meaningful.
         if len(tool_names) < 3:
             return
         from collections import Counter
@@ -212,10 +215,12 @@ class PostRunPipeline:
             ]
 
     async def _stage_evolution(self, summary: RunSummary) -> dict[str, Any]:
+        """Feed success/error tool observations into the evolution learner."""
         if self._evolution_learner is None:
             return {"enabled": False}
         stage: dict[str, Any] = {"enabled": True, "records": 0}
         for tc in summary.tool_calls:
+            # Feed each tool outcome back to the evolution learner.
             if tc.get("success", True):
                 self._evolution_learner.record_success(tc["name"], summary.prompt[:200])
                 stage["records"] = stage.get("records", 0) + 1
@@ -225,6 +230,7 @@ class PostRunPipeline:
         return stage
 
     async def _stage_learning(self, summary: RunSummary, _enrichments: dict[str, Any]) -> dict[str, Any]:
+        """Run the learning engine's pattern/skill analysis on the run."""
         if self._learning_engine is None:
             return {"enabled": False}
         tool_names = [tc["name"] for tc in summary.tool_calls]
@@ -236,6 +242,7 @@ class PostRunPipeline:
         }
 
     async def _stage_memory(self, summary: RunSummary, enrichments: dict[str, Any]) -> dict[str, Any]:
+        """Write a session note to memory and trigger consolidation if able."""
         memory_system = getattr(self._agent, "memory_system", None)
         if memory_system is None:
             return {"enabled": False}
@@ -255,6 +262,7 @@ class PostRunPipeline:
             return {"enabled": True, "error": str(e)}
 
     async def _stage_soul(self, _summary: RunSummary, enrichments: dict[str, Any]) -> dict[str, Any]:
+        """Append discovered user preferences to the soul USER.md."""
         if self._soul_system is None:
             return {"enabled": False}
         user_notes = enrichments.get("user_preferences", [])
@@ -268,6 +276,7 @@ class PostRunPipeline:
         }
 
     def _build_memory_note(self, summary: RunSummary) -> str:
+        """Render a Markdown session-summary note for the memory system."""
         parts: list[str] = []
         parts.append("## Session Summary")
         parts.append(f"**Goal:** {summary.prompt[:300]}")
@@ -312,6 +321,7 @@ class PostRunOrchestrator:
         duration_seconds: float = 0.0,
     ) -> dict[str, Any]:
         """Collect events from a completed streaming run and process them."""
+        # Count real tool invocations to decide whether analysis is worthwhile.
         tool_call_count = sum(
             1 for e in events if isinstance(e, ToolResult)
         )
@@ -323,4 +333,5 @@ class PostRunOrchestrator:
 
     @property
     def pipeline(self) -> PostRunPipeline:
+        """The wrapped post-run pipeline instance."""
         return self._pipeline

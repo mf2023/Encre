@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/git_tool.py
 
+Git tool implementation for the Encre tool system.
+"""
 import asyncio
 from typing import Any
 
@@ -30,6 +34,11 @@ from encre.tools.base import build_tool
 
 
 async def _git_execute(**kwargs: Any) -> str:
+    """Git execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     command = kwargs.get("command", "status")
     repo_path = kwargs.get("repo_path", ".")
     args = kwargs.get("args", "")
@@ -95,5 +104,8 @@ EncreGitTool = build_tool(
     },
     execute=_git_execute,
     intents=["coding"],
+    category="code_intel",
+    semantic_type="exec",
+    is_destructive=True,
     is_concurrency_safe=lambda data: data.get("command") in ("status", "diff", "log", "branch", "stash"),
 )

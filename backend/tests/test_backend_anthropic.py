@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Tests for AnthropicBackend -- construction, capabilities, context window,
 thinking config, prompt caching, and token counting."""
@@ -40,7 +40,9 @@ class TestAnthropicBackendConstruction:
     def test_create_default(self):
         """Default model is claude-sonnet-4-20250514."""
         be = AnthropicBackend(api_key="sk-ant-test")
+        # Verify: be.model == "claude-sonnet-4-20250514"
         assert be.model == "claude-sonnet-4-20250514"
+        # Verify: be.api_key == "sk-ant-test"
         assert be.api_key == "sk-ant-test"
 
     def test_create_with_custom_model(self):
@@ -49,6 +51,7 @@ class TestAnthropicBackendConstruction:
             api_key="sk-ant-test",
             model="claude-opus-4-20250514",
         )
+        # Verify: be.model == "claude-opus-4-20250514"
         assert be.model == "claude-opus-4-20250514"
 
     def test_create_with_haiku_model(self):
@@ -57,18 +60,23 @@ class TestAnthropicBackendConstruction:
             api_key="sk-ant-test",
             model="claude-haiku-4-20250514",
         )
+        # Verify: be.model == "claude-haiku-4-20250514"
         assert be.model == "claude-haiku-4-20250514"
 
     def test_create_with_empty_api_key(self):
         """Empty API key is allowed for construction."""
         be = AnthropicBackend()
+        # Verify: be.api_key == ""
         assert be.api_key == ""
+        # Verify: be.model == "claude-sonnet-4-20250514"
         assert be.model == "claude-sonnet-4-20250514"
 
     def test_create_initializes_http_client(self):
         """AnthropicBackend creates its own httpx.AsyncClient."""
         be = AnthropicBackend(api_key="sk-ant-test")
+        # Verify: be._client is not None
         assert be._client is not None
+        # Verify: hasattr(be._client, "base_url")
         assert hasattr(be._client, "base_url")
 
 
@@ -82,6 +90,7 @@ class TestAnthropicBackendCapabilities:
     def test_supports_tool_calling(self):
         """All Claude models support native tool_use."""
         be = AnthropicBackend(api_key="sk-ant-test")
+        # Verify: be.supports_tool_calling() is True
         assert be.supports_tool_calling() is True
 
     def test_supports_tool_calling_different_models(self):
@@ -93,26 +102,31 @@ class TestAnthropicBackendCapabilities:
         ]
         for m in models:
             be = AnthropicBackend(api_key="sk-ant-test", model=m)
+            # Verify: be.supports_tool_calling() is True, f"model={m}"
             assert be.supports_tool_calling() is True, f"model={m}"
 
     def test_supports_thinking_opus(self):
         """Claude Opus supports thinking."""
         be = AnthropicBackend(api_key="sk-ant-test", model="claude-opus-4-20250514")
+        # Verify: be.supports_thinking() is True
         assert be.supports_thinking() is True
 
     def test_supports_thinking_sonnet(self):
         """Claude Sonnet supports thinking."""
         be = AnthropicBackend(api_key="sk-ant-test", model="claude-sonnet-4-20250514")
+        # Verify: be.supports_thinking() is True
         assert be.supports_thinking() is True
 
     def test_supports_thinking_haiku(self):
         """Claude Haiku also returns True for supports_thinking (all Claude do)."""
         be = AnthropicBackend(api_key="sk-ant-test", model="claude-haiku-4-20250514")
+        # Verify: be.supports_thinking() is True
         assert be.supports_thinking() is True
 
     def test_supports_prompt_caching(self):
         """All Claude models support prompt caching at 90% discount."""
         be = AnthropicBackend(api_key="sk-ant-test")
+        # Verify: be.supports_prompt_caching() is True
         assert be.supports_prompt_caching() is True
 
     def test_supports_prompt_caching_different_models(self):
@@ -124,6 +138,7 @@ class TestAnthropicBackendCapabilities:
         ]
         for m in models:
             be = AnthropicBackend(api_key="sk-ant-test", model=m)
+            # Verify: be.supports_prompt_caching() is True, f"model={m}"
             assert be.supports_prompt_caching() is True, f"model={m}"
 
 
@@ -137,22 +152,27 @@ class TestAnthropicBackendContextWindow:
     def test_context_window_size_opus(self):
         """Claude Opus: 200,000 tokens."""
         be = AnthropicBackend(api_key="sk-ant-test", model="claude-opus-4-20250514")
+        # Verify: be.context_window_size() == 200000
         assert be.context_window_size() == 200000
 
     def test_context_window_size_sonnet(self):
         """Claude Sonnet: 200,000 tokens."""
         be = AnthropicBackend(api_key="sk-ant-test", model="claude-sonnet-4-20250514")
+        # Verify: be.context_window_size() == 200000
         assert be.context_window_size() == 200000
 
     def test_context_window_size_haiku(self):
         """Claude Haiku: 200,000 tokens."""
         be = AnthropicBackend(api_key="sk-ant-test", model="claude-haiku-4-20250514")
+        # Verify: be.context_window_size() == 200000
         assert be.context_window_size() == 200000
 
     def test_context_window_positive(self):
         """Context window is always positive."""
         be = AnthropicBackend(api_key="sk-ant-test")
+        # Verify: be.context_window_size() > 0
         assert be.context_window_size() > 0
+        # Verify: isinstance(be.context_window_size(), int)
         assert isinstance(be.context_window_size(), int)
 
 
@@ -167,18 +187,21 @@ class TestAnthropicBackendTokens:
         """count_tokens returns an integer."""
         be = AnthropicBackend(api_key="sk-ant-test")
         result = be.count_tokens("hello world")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_empty_string(self):
         """Empty string should not crash."""
         be = AnthropicBackend(api_key="sk-ant-test")
         result = be.count_tokens("")
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
     def test_count_tokens_long_text(self):
         """Long text should not crash."""
         be = AnthropicBackend(api_key="sk-ant-test")
         result = be.count_tokens("Testing token counting. " * 200)
+        # Verify: isinstance(result, int)
         assert isinstance(result, int)
 
 
@@ -196,10 +219,13 @@ class TestAnthropicBackendPromptCaching:
             {"role": "user", "content": "Hello"},
         ]
         result = AnthropicBackend._apply_prompt_caching(messages)
+        # Verify: len(result) == 2
         assert len(result) == 2
         # System message (index 0) should have cache_control.
         sys_content = result[0]["content"]
+        # Verify: isinstance(sys_content, list)
         assert isinstance(sys_content, list)
+        # Verify: "cache_control" in sys_content[-1]
         assert "cache_control" in sys_content[-1]
 
     def test_caches_last_user_message(self):
@@ -209,15 +235,19 @@ class TestAnthropicBackendPromptCaching:
             {"role": "user", "content": "Second question"},
         ]
         result = AnthropicBackend._apply_prompt_caching(messages)
+        # Verify: len(result) == 2
         assert len(result) == 2
         # First user message should NOT be cached (not last).
         content0 = result[0]["content"]
         if isinstance(content0, list):
             has_cache_0 = any("cache_control" in str(b) for b in content0)
+            # Verify: not has_cache_0
             assert not has_cache_0
         # Last user message SHOULD be cached.
         content1 = result[1]["content"]
+        # Verify: isinstance(content1, list)
         assert isinstance(content1, list)
+        # Verify: "cache_control" in content1[-1]
         assert "cache_control" in content1[-1]
 
     def test_caches_system_and_last_user(self):
@@ -231,18 +261,23 @@ class TestAnthropicBackendPromptCaching:
         result = AnthropicBackend._apply_prompt_caching(messages)
         # System (idx 0): cached.
         sys_content = result[0]["content"]
+        # Verify: isinstance(sys_content, list)
         assert isinstance(sys_content, list)
+        # Verify: "cache_control" in sys_content[-1]
         assert "cache_control" in sys_content[-1]
         # Assistant (idx 2): NOT cached.
         asst_content = result[2]["content"]
         if isinstance(asst_content, list):
             has_cache = any("cache_control" in str(b) for b in asst_content)
+            # Verify: not has_cache
             assert not has_cache
         elif isinstance(asst_content, str):
             pass  # string content won't have cache_control
         # Last user (idx 3): cached.
         last_user_content = result[3]["content"]
+        # Verify: isinstance(last_user_content, list)
         assert isinstance(last_user_content, list)
+        # Verify: "cache_control" in last_user_content[-1]
         assert "cache_control" in last_user_content[-1]
 
     def test_handles_content_list_with_images(self):
@@ -262,6 +297,7 @@ class TestAnthropicBackendPromptCaching:
         assert "cache_control" not in blocks[0]
         # The text block (index 1, last cacheable) SHOULD have cache_control.
         assert "cache_control" in blocks[1]
+        # Verify: blocks[1]["cache_control"] == {"type": "ephemeral"}
         assert blocks[1]["cache_control"] == {"type": "ephemeral"}
 
     def test_does_not_cache_assistant_messages(self):
@@ -276,6 +312,7 @@ class TestAnthropicBackendPromptCaching:
     def test_no_messages_returns_empty(self):
         """Empty message list returns empty list."""
         result = AnthropicBackend._apply_prompt_caching([])
+        # Verify: result == []
         assert result == []
 
 
@@ -289,6 +326,7 @@ class TestAnthropicBackendChatSignature:
     def test_chat_is_async_generator(self):
         """Chat method should be an async generator function."""
         import inspect
+        # Verify: inspect.iscoroutinefunction(AnthropicBackend.chat) or \
         assert inspect.iscoroutinefunction(AnthropicBackend.chat) or \
             inspect.isasyncgenfunction(AnthropicBackend.chat)
 
@@ -297,6 +335,7 @@ class TestAnthropicBackendChatSignature:
         import inspect
         sig = inspect.signature(AnthropicBackend.chat)
         params = sig.parameters
+        # Verify: "enable_caching" in params
         assert "enable_caching" in params
 
     def test_chat_accepts_max_tokens(self):
@@ -304,13 +343,16 @@ class TestAnthropicBackendChatSignature:
         import inspect
         sig = inspect.signature(AnthropicBackend.chat)
         params = sig.parameters
+        # Verify: "max_tokens" in params
         assert "max_tokens" in params
+        # Verify: params["max_tokens"].default == 4096
         assert params["max_tokens"].default == 4096
 
     def test_chat_accepts_tools(self):
         """Chat method accepts optional tool definitions."""
         import inspect
         sig = inspect.signature(AnthropicBackend.chat)
+        # Verify: "tools" in sig.parameters
         assert "tools" in sig.parameters
 
 
@@ -325,7 +367,9 @@ class TestAnthropicBackendLifecycle:
         """aclose() closes the httpx client."""
 
         async def _close():
+            """Helper: Close."""
             be = AnthropicBackend(api_key="sk-ant-test")
+            # Verify: be._client is not None
             assert be._client is not None
             await be.aclose()
             # After close, the client should be closed.
@@ -337,6 +381,7 @@ class TestAnthropicBackendLifecycle:
         """aclose() does not raise on repeated calls."""
 
         async def _double_close():
+            """Helper: Double close."""
             be = AnthropicBackend(api_key="sk-ant-test")
             await be.aclose()
             await be.aclose()  # Idempotent.

@@ -15,6 +15,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * 
+ * DISCLAIMER: Users must comply with applicable AI regulations.
+ * Non-compliance may result in service termination or legal liability.
  */
 
 import type { LocaleMessages } from "../i18n.js";
@@ -117,6 +120,7 @@ export const zh: LocaleMessages = {
     tempChatActive: "临时对话中",
     tempChatHint: "退出后将自动清除",
     toggleSidebar: "切换会话侧边栏",
+    toggleSummary: "摘要",
     channelAutomation: "自动",
   },
   notifications: {
@@ -615,13 +619,14 @@ export const zh: LocaleMessages = {
     attached: "已附加",
   },
   sessionInner: {
-    tabInfo: "摘要",
     tabTerminal: "终端",
     tabFiles: "文件",
     tabReview: "审查",
-    tabCode: "代码",
     tabEditor: "编辑器",
-    tabAgent: "Agent 状态",
+    tabTerminalDesc: "终端模拟器",
+    tabFilesDesc: "文件浏览器",
+    tabEditorDesc: "代码编辑器",
+    tabReviewDesc: "审查更改",
     closeTab: "关闭标签页",
     newTab: "新建标签页",
     newTabEmpty: "所有标签页均已打开",
@@ -773,6 +778,13 @@ export const zh: LocaleMessages = {
     think: "深度思考",
     voiceStart: "开始录音",
     voiceStop: "停止录音",
+    disclaimer: "AI 生成内容仅供参考，不代表我们的立场",
+  },
+  summary: {
+    progress: "进展",
+    artifacts: "产物",
+    references: "引用",
+    viewAll: "查看全部",
   },
   toolsPanel: {
     parameters: "参数",
@@ -784,6 +796,44 @@ export const zh: LocaleMessages = {
     allow: "允许",
     deny: "拒绝",
     noReason: "（未提供原因）",
+    settings: {
+      title: "权限",
+      subtitle: "管理工具和能力的允许/拒绝/询问策略。",
+      tools: "工具",
+      capabilities: "能力",
+      default: "默认（允许）",
+      allow: "允许",
+      deny: "拒绝",
+      ask: "询问",
+      saveChanges: "保存修改",
+      resetDefaults: "恢复默认",
+      saved: "权限设置已保存",
+      reset: "权限设置已重置",
+      resetConfirmTitle: "重置权限？",
+      resetConfirmDesc: "将所有工具和能力恢复为默认（允许）策略。",
+      defaultNoteTitle: "默认策略",
+      defaultNoteDesc: "设为「默认」的项遵循内置行为。大多数工具默认允许，但危险工具（如 bash）仍会要求确认。",
+      noItems: "暂无权限配置。",
+      desc: {
+        bash: "执行 Shell 命令",
+        bash_output: "读取后台 Shell 输出",
+        file_write: "创建或覆盖文件",
+        file_edit: "编辑已有文件",
+        apply_patch: "应用多文件补丁",
+        docker: "Docker 容器操作",
+        deploy: "部署到远程环境",
+        database: "数据库查询",
+        browser: "浏览器自动化",
+        desktop: "桌面控制",
+        bash_io: "Shell 输入 / 输出",
+        network: "出站网络请求",
+        file: "文件系统读 / 写",
+        workflow: "工作流执行",
+        git: "Git 仓库操作",
+        misc: "其他能力",
+        mcp: "MCP 工具调用",
+      },
+    },
   },
   agents: {
     activeAgents: "活跃智能体",

@@ -21,11 +21,9 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Shared token estimation using native Rust tokenizer, tiktoken, or fallback."""
-
-from __future__ import annotations
 
 import importlib
 from typing import Any
@@ -153,6 +151,7 @@ def _get_encoding(model: str) -> Any:
     model_lower = model.lower()
     encoding_name = _DEFAULT_ENCODING
     for prefix, enc_name in _MODEL_ENCODING_PREFIXES:
+        # First matching prefix wins because longer prefixes are listed first.
         if model_lower.startswith(prefix):
             encoding_name = enc_name
             break
@@ -160,6 +159,7 @@ def _get_encoding(model: str) -> Any:
     if encoding_name not in _ENCODING_CACHE:
         try:
             import tiktoken
+            # Cache the Encoding object per encoding name to avoid rebuild cost.
             _ENCODING_CACHE[encoding_name] = tiktoken.get_encoding(encoding_name)
         except Exception:
             return None
@@ -177,6 +177,7 @@ def estimate_tokens(text: str, model: str = "gpt-4o") -> int:
 
     if _HAS_NATIVE:
         try:
+            # Fastest path: the compiled Rust extension counts tokens natively.
             return _native_count_tokens(text)
         except Exception:
             pass
@@ -189,6 +190,7 @@ def estimate_tokens(text: str, model: str = "gpt-4o") -> int:
             except Exception:
                 pass
 
+    # Final fallback: ~4 characters per token is a reasonable English heuristic.
     return len(text) // 4
 
 
@@ -211,12 +213,14 @@ def count_message_tokens(
         if isinstance(content, str):
             total += estimate_tokens(content, model)
         elif isinstance(content, list):
+            # Multi-part content blocks (vision / tool results, etc.).
             for block in content:
                 if isinstance(block, dict):
                     text = block.get("text", "")
                     total += estimate_tokens(text, model)
         tool_calls = msg.get("tool_calls")
         if tool_calls:
+            # Account for the serialised tool name and arguments.
             for tc in tool_calls:
                 total += estimate_tokens(tc.get("name", ""), model)
                 total += estimate_tokens(tc.get("arguments", ""), model)

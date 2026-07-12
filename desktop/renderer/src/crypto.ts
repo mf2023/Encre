@@ -15,7 +15,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * 
  * DISCLAIMER: Users must comply with applicable AI regulations.
  * Non-compliance may result in service termination or legal liability.
  */
@@ -46,6 +46,7 @@ let _ready = false;
 
 // ── Machine identity for key wrapping ────────────────────────────
 
+/** Reads the machine identity used to derive the per-machine key-wrapping key. */
 async function getMachineId(): Promise<Uint8Array> {
   const raw = await window.electronAPI?.readMachineId();
   if (raw && raw !== "uninitialized") {
@@ -54,6 +55,7 @@ async function getMachineId(): Promise<Uint8Array> {
   throw new Error("Unable to determine machine identity for key wrapping");
 }
 
+/** Derives the raw AES-GCM wrapping key from the machine id (HKDF-extract-like). */
 async function deriveWrappingKeyRaw(): Promise<Uint8Array> {
   const ikm = await getMachineId();
   // SHA-256(salt || ikm) — matches Python _hkdf_extract
@@ -65,6 +67,7 @@ async function deriveWrappingKeyRaw(): Promise<Uint8Array> {
   return new Uint8Array(hash);
 }
 
+/** Imports a raw byte array as an AES-GCM CryptoKey usable for wrap/unwrap. */
 async function importWrappingKey(rawKey: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
@@ -77,6 +80,7 @@ async function importWrappingKey(rawKey: Uint8Array): Promise<CryptoKey> {
 
 // ── Master key management ────────────────────────────────────────
 
+/** Unwraps the on-disk keyfile (nonce || ciphertext+tag) into the master CryptoKey. */
 async function unwrapMasterKey(keyfileBytes: Uint8Array): Promise<CryptoKey> {
   const nonce = keyfileBytes.slice(0, NONCE_LENGTH);
   const ct = keyfileBytes.slice(NONCE_LENGTH);  // ciphertext + tag
@@ -127,6 +131,7 @@ export async function initCrypto(): Promise<void> {
 
 // ── Encryption / decryption ──────────────────────────────────────
 
+/** Generates a fresh random 12-byte GCM nonce. */
 function getRandomNonce(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(NONCE_LENGTH));
 }

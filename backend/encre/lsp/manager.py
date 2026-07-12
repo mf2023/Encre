@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Multi-language LSP manager with auto-discovery of installed servers.
 
@@ -53,6 +53,9 @@ logger = logging.getLogger("encre.lsp.manager")
 # Arranged by language for readability -- auto-discovery picks them up
 # by checking if `command` is on PATH.
 
+# Table of every language we know how to serve, mapped to the candidate
+# LSP binaries (command, default args, display name).  Auto-discovery simply
+# checks whether ``command`` is on PATH and tries each candidate in order.
 LANGUAGE_SERVER_REGISTRY: dict[str, list[tuple[str, list[str], str]]] = {
     "python": [
         ("pyright-langserver", ["--stdio"], "Pyright"),
@@ -168,6 +171,7 @@ class EncreLSPManager:
     """
 
     def __init__(self) -> None:
+        """Create a manager with no active clients or documents."""
         self._clients: dict[str, EncreLSPClient] = {}
         self._status = LSPState(status="not_started")
         self._workspace: str = ""
@@ -235,6 +239,7 @@ class EncreLSPManager:
     # ── LSP query methods ──────────────────────────────────────────────
 
     async def get_diagnostics(self, file_path: str) -> list[Diagnostic]:
+        """Return diagnostics for a file from its language's LSP server."""
         client = self._get_client(file_path)
         if client is None:
             return []
@@ -252,18 +257,22 @@ class EncreLSPManager:
     async def go_to_definition(
         self, file_path: str, line: int, char: int
     ) -> list[Location]:
+        """Query the definition of the symbol at the given position."""
         return await self._send_position_request(file_path, line, char, "textDocument/definition")
 
     async def find_references(
         self, file_path: str, line: int, char: int
     ) -> list[Location]:
+        """Query all references to the symbol at the given position."""
         return await self._send_position_request(file_path, line, char, "textDocument/references")
 
     async def hover(self, file_path: str, line: int, char: int) -> HoverResult | None:
+        """Return hover information (docs/type) at the given position."""
         result = await self._send_position_request_raw(file_path, line, char, "textDocument/hover")
         return self._parse_hover(result) if result else None
 
     async def document_symbols(self, file_path: str) -> list[dict[str, Any]]:
+        """Return the document-symbol outline for a file."""
         client = self._get_client(file_path)
         if client is None:
             return []
@@ -279,9 +288,11 @@ class EncreLSPManager:
         return result if isinstance(result, list) else []
 
     async def shutdown(self) -> None:
+        """Shut down all active LSP clients (deprecated alias for close)."""
         await self.close()
 
     async def close(self) -> None:
+        """Close every active client and reset the manager state."""
         for client in self._clients.values():
             with contextlib.suppress(Exception):
                 await client.close()
@@ -291,6 +302,8 @@ class EncreLSPManager:
     # ── Helpers ────────────────────────────────────────────────────────
 
     def _get_client(self, file_path: str) -> EncreLSPClient | None:
+        """Pick the active LSP client matching *file_path*'s language."""
+        # Map the file extension to a language, then to a running client.
         ext = os.path.splitext(file_path)[1].lower()
         lang = EXTENSION_MAP.get(ext)
         if lang is None or lang not in self._clients:
@@ -337,6 +350,7 @@ class EncreLSPManager:
         prev = self._open_documents.get(file_uri, 0)
         self._open_documents[file_uri] = prev + 1
         if prev > 0:
+            # Already opened by a previous query; keep it open and skip didOpen.
             return
         try:
             with open(file_path, encoding="utf-8", errors="replace") as f:
@@ -354,6 +368,8 @@ class EncreLSPManager:
             for root, _dirs, files in os.walk(workspace):
                 # Skip common non-source directories
                 base = os.path.basename(root)
+                # Ignore dot-directories and heavy build/cache folders so we
+                # don't spawn LSP servers for vendored or generated code.
                 if base.startswith(".") or base in (
                     "node_modules", "__pycache__", "target", "build", "dist",
                     "venv", ".venv", ".git",

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Real linter / formatter that drives ruff, eslint, prettier and cargo fmt.
@@ -74,8 +74,6 @@ The tool returns a JSON string with the following fields::
     }
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import json
@@ -96,6 +94,7 @@ from encre.tools.base import build_tool
 
 
 def _popen_kwargs() -> dict[str, Any]:
+    """Popen kwargs."""
     from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
     return hidden_subprocess_kwargs()
 
@@ -163,6 +162,7 @@ def _detect_toolchain(workspace: str, hint: str | None) -> str:
 
 @dataclass
 class LintDiagnostic:
+    """LintDiagnostic."""
     file: str
     line: int = 0
     column: int = 0
@@ -174,6 +174,7 @@ class LintDiagnostic:
 
 @dataclass
 class LintReport:
+    """LintReport."""
     linter: str
     mode: str
     ok: bool
@@ -184,6 +185,7 @@ class LintReport:
     raw_output: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        """To dict."""
         return asdict(self)
 
 
@@ -475,6 +477,11 @@ def _summarise_diagnostics(
 
 
 async def _lint_format_execute(**kwargs: Any) -> str:
+    """Lint format execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     workspace = str(kwargs.get("workspace") or kwargs.get("path") or "").strip()
     if not workspace:
         return "Error: workspace is required"
@@ -577,5 +584,8 @@ EncreLintFormatTool = build_tool(
     },
     execute=_lint_format_execute,
     intents=["coding", "data", "general"],
+    category="code_intel",
+    semantic_type="exec",
+    is_destructive=lambda args: args.get("action", "") in ("fix", "format"),
     is_concurrency_safe=lambda data: data.get("mode") == "check",
 )

@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/__init__.py
 
+Init implementation for the Encre tool system.
+"""
 from encre.tools.builtin.agent import EncreAgentTool
 from encre.tools.builtin.apply_patch import EncreApplyPatchTool
 from encre.tools.builtin.bash import EncreBashTool

@@ -15,6 +15,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * 
+ * DISCLAIMER: Users must comply with applicable AI regulations.
+ * Non-compliance may result in service termination or legal liability.
  */
 
 import type { LocaleMessages } from "../i18n.js";
@@ -111,6 +114,7 @@ export const en: LocaleMessages = {
     tempChatActive: "Temporary chat",
     tempChatHint: "Will be cleared on exit",
     toggleSidebar: "Toggle session sidebar",
+    toggleSummary: "Summary",
     // Channel / mode badge labels (shown in the session sidebar)
     channelAutomation: "Auto",
   },
@@ -776,13 +780,14 @@ export const en: LocaleMessages = {
     attached: "Attached",
   },
   sessionInner: {
-    tabInfo: "Summary",
     tabTerminal: "Terminal",
     tabFiles: "Files",
     tabReview: "Review",
-    tabCode: "Code",
     tabEditor: "Editor",
-    tabAgent: "Agent State",
+    tabTerminalDesc: "Terminal emulator",
+    tabFilesDesc: "File explorer",
+    tabEditorDesc: "Code editor",
+    tabReviewDesc: "Review changes",
     closeTab: "Close tab",
     newTab: "New tab",
     newTabEmpty: "All tabs are open",
@@ -935,6 +940,13 @@ export const en: LocaleMessages = {
     think: "Deep Thinking",
     voiceStart: "Start recording",
     voiceStop: "Stop recording",
+    disclaimer: "AI-generated content is for reference only",
+  },
+  summary: {
+    progress: "Progress",
+    artifacts: "Artifacts",
+    references: "References",
+    viewAll: "View all",
   },
   toolsPanel: {
     parameters: "Parameters",

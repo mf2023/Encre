@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Arcee AI backend -- domain-adapted LLM API.
@@ -50,9 +50,21 @@ class ArceeBackend(OpenAISSEBackend):
         model: str = "arcee-v2",
         **kwargs: Any,
     ) -> None:
+        """Initialize the Arcee AI backend.
+
+        Args:
+            api_key: Arcee AI API key. Falls back to the ARCEEAI_API_KEY
+                environment variable when empty.
+            base_url: API endpoint; defaults to the Arcee v2 endpoint.
+            model: Default domain-adapted model identifier.
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the canonical Arcee v2 URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        """Return the context window size (in tokens) for Arcee models."""
+        # Arcee's domain-adapted models use a 128K context window.
         return 128000

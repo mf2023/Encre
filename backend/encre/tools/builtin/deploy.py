@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/deploy.py
 
+Deploy implementation for the Encre tool system.
+"""
 import json
 import subprocess
 from typing import Any
@@ -31,6 +35,14 @@ from encre.tools.base import build_tool
 
 
 def _build_command(target: str, action: str, config_file: str, project_name: str) -> list[str]:
+    """Build command.
+
+    Args:
+        target: Description of the target parameter.
+        action: Description of the action parameter.
+        config_file: Description of the config_file parameter.
+        project_name: Description of the project_name parameter.
+    """
     if target == "docker":
         if action == "build":
             cmd = ["docker", "build"]
@@ -89,6 +101,11 @@ def _build_command(target: str, action: str, config_file: str, project_name: str
 
 
 async def _deploy_execute(**kwargs: Any) -> str:
+    """Deploy execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     target = kwargs.get("target", "docker")
     action = kwargs.get("action", "build")
     config_file = kwargs.get("config_file", "")
@@ -161,4 +178,7 @@ EncreDeployTool = build_tool(
     },
     execute=_deploy_execute,
     intents=["coding"],
+    category="infra",
+    semantic_type="exec",
+    is_destructive=True,
 )

@@ -21,6 +21,25 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# wecom.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - WeComCryptoError
+#   - PKCS7Encoder
+#   - WXBizMsgCrypt
+#   - WeComAdapter
+#
+# Module-level helpers:
+#   - _sha1_signature
+#
 import asyncio
 import base64
 import hashlib
@@ -69,14 +88,51 @@ MESSAGE_DEDUP_TTL_SECONDS = 300
 
 
 class WeComCryptoError(Exception):
+    """
+    WeComCryptoError adapter component.
+    
+    Inherits from Exception and integrates an external platform or
+    channel into the Encre adapter framework. It implements the standard
+    adapter contract used by the manager to connect, send and receive
+    messages, and to dispatch normalized events into the agent runtime.
+    
+    Responsibilities:
+        * Establish and maintain a connection/session to the platform.
+        * Translate inbound platform events into normalized messages.
+        * Translate outbound messages into platform-specific API calls.
+        * Expose lifecycle hooks (connect/disconnect, start/stop).
+    """
     pass
 
 
 class PKCS7Encoder:
+    """
+    PKCS7Encoder adapter component.
+    
+    Inherits from object and integrates an external platform or
+    channel into the Encre adapter framework. It implements the standard
+    adapter contract used by the manager to connect, send and receive
+    messages, and to dispatch normalized events into the agent runtime.
+    
+    Responsibilities:
+        * Establish and maintain a connection/session to the platform.
+        * Translate inbound platform events into normalized messages.
+        * Translate outbound messages into platform-specific API calls.
+        * Expose lifecycle hooks (connect/disconnect, start/stop).
+    """
     block_size = 32
 
     @classmethod
     def encode(cls, text: bytes) -> bytes:
+        """
+        Encode.
+
+        Args:
+            text (bytes):
+
+        Returns:
+            bytes
+        """
         amount_to_pad = cls.block_size - (len(text) % cls.block_size)
         if amount_to_pad == 0:
             amount_to_pad = cls.block_size
@@ -85,6 +141,15 @@ class PKCS7Encoder:
 
     @classmethod
     def decode(cls, decrypted: bytes) -> bytes:
+        """
+        Decode.
+
+        Args:
+            decrypted (bytes):
+
+        Returns:
+            bytes
+        """
         if not decrypted:
             raise WeComCryptoError("empty decrypted payload")
         pad = decrypted[-1]
@@ -97,6 +162,18 @@ class PKCS7Encoder:
 
 
 def _sha1_signature(token: str, timestamp: str, nonce: str, encrypt: str) -> str:
+    """
+    Sha1 signature.
+
+    Args:
+        token (str):
+        timestamp (str):
+        nonce (str):
+        encrypt (str):
+
+    Returns:
+        str
+    """
     parts = sorted([token, timestamp, nonce, encrypt])
     return hashlib.sha1("".join(parts).encode("utf-8")).hexdigest()
 
@@ -105,6 +182,17 @@ class WXBizMsgCrypt:
     """Minimal WeCom callback crypto helper compatible with BizMsgCrypt semantics."""
 
     def __init__(self, token: str, encoding_aes_key: str, receive_id: str) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            token (str):
+            encoding_aes_key (str):
+            receive_id (str):
+
+        Returns:
+            None
+        """
         if not token:
             raise ValueError("token is required")
         if not encoding_aes_key:
@@ -120,10 +208,34 @@ class WXBizMsgCrypt:
         self.iv = self.key[:16]
 
     def verify_url(self, msg_signature: str, timestamp: str, nonce: str, echostr: str) -> str:
+        """
+        Verify url.
+
+        Args:
+            msg_signature (str):
+            timestamp (str):
+            nonce (str):
+            echostr (str):
+
+        Returns:
+            str
+        """
         plain = self.decrypt(msg_signature, timestamp, nonce, echostr)
         return plain.decode("utf-8")
 
     def decrypt(self, msg_signature: str, timestamp: str, nonce: str, encrypt: str) -> bytes:
+        """
+        Decrypt.
+
+        Args:
+            msg_signature (str):
+            timestamp (str):
+            nonce (str):
+            encrypt (str):
+
+        Returns:
+            bytes
+        """
         expected = _sha1_signature(self.token, timestamp, nonce, encrypt)
         if expected != msg_signature:
             raise WeComCryptoError("signature mismatch")
@@ -150,6 +262,17 @@ class WXBizMsgCrypt:
         return xml_content
 
     def encrypt(self, plaintext: str, nonce: str | None = None, timestamp: str | None = None) -> str:
+        """
+        Encrypt.
+
+        Args:
+            plaintext (str):
+            nonce (str | None):
+            timestamp (str | None):
+
+        Returns:
+            str
+        """
         nonce = nonce or self._random_nonce()
         timestamp = timestamp or str(int(time.time()))
         encrypt = self._encrypt_bytes(plaintext.encode("utf-8"))
@@ -162,6 +285,15 @@ class WXBizMsgCrypt:
         return ET.tostring(root, encoding="unicode")
 
     def _encrypt_bytes(self, raw: bytes) -> str:
+        """
+        Encrypt bytes.
+
+        Args:
+            raw (bytes):
+
+        Returns:
+            str
+        """
         try:
             random_prefix = os.urandom(16)
             msg_len = struct.pack("I", _socket.htonl(len(raw)))
@@ -176,6 +308,15 @@ class WXBizMsgCrypt:
 
     @staticmethod
     def _random_nonce(length: int = 10) -> str:
+        """
+        Random nonce.
+
+        Args:
+            length (int):
+
+        Returns:
+            str
+        """
         alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
         return "".join(secrets.choice(alphabet) for _ in range(length))
 
@@ -229,6 +370,21 @@ class WeComAdapter(BaseAdapter):
         gateway_url: str = DEFAULT_GATEWAY_URL,
         port: int = DEFAULT_PORT,
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            corp_id (str):
+            agent_id (int):
+            secret (str):
+            token (str):
+            encoding_aes_key (str):
+            gateway_url (str):
+            port (int):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text", "markdown", "image"])
         self._corp_id = corp_id
         self._agent_id = agent_id
@@ -255,6 +411,12 @@ class WeComAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     async def connect(self) -> bool:
+        """
+        Connect.
+
+        Returns:
+            bool
+        """
         if not AIOHTTP_AVAILABLE:
             logger.error("[%s] aiohttp not installed. Run: pip install aiohttp", self.name)
             return False
@@ -302,6 +464,12 @@ class WeComAdapter(BaseAdapter):
             return False
 
     async def disconnect(self) -> None:
+        """
+        Disconnect.
+
+        Returns:
+            None
+        """
         self._running = False
         await self._cleanup()
         await self._client.disconnect()
@@ -309,6 +477,12 @@ class WeComAdapter(BaseAdapter):
         logger.info("[%s] Disconnected", self.name)
 
     async def _cleanup(self) -> None:
+        """
+        Cleanup.
+
+        Returns:
+            None
+        """
         if self._site:
             await self._site.stop()
             self._site = None
@@ -332,6 +506,18 @@ class WeComAdapter(BaseAdapter):
         reply_to: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> SendResult:
+        """
+        Send.
+
+        Args:
+            chat_id (str):
+            content (str):
+            reply_to (str | None):
+            metadata (dict[str, Any] | None):
+
+        Returns:
+            SendResult
+        """
         msg_type = "text"
         if metadata and metadata.get("msgtype") == "markdown":
             msg_type = "markdown"
@@ -356,6 +542,17 @@ class WeComAdapter(BaseAdapter):
         *,
         _caption: str | None = None,
     ) -> SendResult:
+        """
+        Send image.
+
+        Args:
+            chat_id (str):
+            file_path (str):
+            _caption (str | None):
+
+        Returns:
+            SendResult
+        """
         if not self._http_client:
             return SendResult(success=False, error="adapter not connected")
 
@@ -382,6 +579,17 @@ class WeComAdapter(BaseAdapter):
             return SendResult(success=False, error=str(exc))
 
     async def _upload_media(self, file_path: str, media_type: str, token: str) -> str | None:
+        """
+        Upload media.
+
+        Args:
+            file_path (str):
+            media_type (str):
+            token (str):
+
+        Returns:
+            str | None
+        """
         if not self._http_client:
             return None
         try:
@@ -402,6 +610,15 @@ class WeComAdapter(BaseAdapter):
             return None
 
     async def _do_send(self, payload: dict[str, Any]) -> SendResult:
+        """
+        Do send.
+
+        Args:
+            payload (dict[str, Any]):
+
+        Returns:
+            SendResult
+        """
         if not self._http_client:
             return SendResult(success=False, error="adapter not connected")
 
@@ -442,12 +659,24 @@ class WeComAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     async def _get_valid_token(self) -> str | None:
+        """
+        Get valid token.
+
+        Returns:
+            str | None
+        """
         if self._access_token and time.time() < self._access_token_expires_at - 60:
             return self._access_token
         await self._refresh_token()
         return self._access_token
 
     async def _refresh_token(self) -> None:
+        """
+        Refresh token.
+
+        Returns:
+            None
+        """
         if not self._http_client:
             logger.warning("[%s] No HTTP client for token refresh", self.name)
             return
@@ -525,6 +754,15 @@ class WeComAdapter(BaseAdapter):
         return b"success"
 
     def _build_event(self, xml_text: str) -> MessageEvent | None:
+        """
+        Build event.
+
+        Args:
+            xml_text (str):
+
+        Returns:
+            MessageEvent | None
+        """
         root = ET.fromstring(xml_text)
         msg_type = (root.findtext("MsgType") or "").lower()
 
@@ -576,6 +814,15 @@ class WeComAdapter(BaseAdapter):
         )
 
     async def _dispatch_event(self, event: MessageEvent) -> None:
+        """
+        Dispatch event.
+
+        Args:
+            event (MessageEvent):
+
+        Returns:
+            None
+        """
         try:
             self.dispatch_message(event)
             _t = asyncio.ensure_future(self._process_chat(
@@ -598,6 +845,15 @@ class WeComAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     async def _handle_verify(self, request: "web.Request") -> "web.Response":
+        """
+        Handle verify.
+
+        Args:
+            request ('web.Request'):
+
+        Returns:
+            'web.Response'
+        """
         msg_signature = request.query.get("msg_signature", "")
         timestamp = request.query.get("timestamp", "")
         nonce = request.query.get("nonce", "")
@@ -611,6 +867,15 @@ class WeComAdapter(BaseAdapter):
             return web.Response(status=403, text="signature verification failed")
 
     async def _handle_callback(self, request: "web.Request") -> "web.Response":
+        """
+        Handle callback.
+
+        Args:
+            request ('web.Request'):
+
+        Returns:
+            'web.Response'
+        """
         msg_signature = request.query.get("msg_signature", "")
         timestamp = request.query.get("timestamp", "")
         nonce = request.query.get("nonce", "")

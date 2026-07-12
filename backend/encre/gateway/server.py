@@ -21,7 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Encre channel-adapter gateway: server side.
+
+Implements :class:`GatewayServer`, a localhost WebSocket server that accepts
+connections from channel adapters and routes their requests to the iClaw engine
+(EventRouter).  It tracks connected adapters, performs heartbeat/reconnection
+bookkeeping, and bridges adapter-submitted prompts to
+:meth:`EventRouter.submit` / :meth:`EventRouter.submit_stream`.
+
+See :mod:`encre.gateway` for the package overview and
+:mod:`encre.gateway.protocol` for the wire format.
+"""
 
 import asyncio
 import contextlib

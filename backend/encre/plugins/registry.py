@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 import importlib
 import importlib.metadata
@@ -68,6 +68,7 @@ class PluginRegistry:
         name = plugin.manifest.name
         existing = self._plugins.get(name)
         if existing is not None:
+            # Respect discovery priority: never downgrade a higher-priority source
             existing_source_priority = _source_priority(existing.manifest.source)
             new_source_priority = _source_priority(plugin.manifest.source)
             if new_source_priority >= existing_source_priority:
@@ -76,6 +77,7 @@ class PluginRegistry:
         self._manifests[name] = plugin.manifest
 
     def unregister(self, name: str) -> bool:
+        """Remove a plugin from the registry and deactivate it if needed."""
         if name in self._activated:
             self.deactivate(name)
         removed = self._plugins.pop(name, None) is not None
@@ -84,18 +86,23 @@ class PluginRegistry:
         return removed
 
     def get(self, name: str) -> EncrePlugin | None:
+        """Return the registered plugin with the given name, or None."""
         return self._plugins.get(name)
 
     def get_manifest(self, name: str) -> PluginManifest | None:
+        """Return the manifest for a registered plugin, or None."""
         return self._manifests.get(name)
 
     def list_all(self) -> list[PluginManifest]:
+        """Return manifests for every registered plugin."""
         return list(self._manifests.values())
 
     def list_activated(self) -> list[str]:
+        """Return the sorted names of currently activated plugins."""
         return sorted(self._activated)
 
     def list_failed(self) -> dict[str, str]:
+        """Return a mapping of plugin name to the error that caused load failure."""
         return dict(self._failed)
 
     # ── Discovery ────────────────────────────────────────────────
@@ -103,6 +110,7 @@ class PluginRegistry:
     def discover_all(self) -> int:
         """Run all discovery mechanisms. Returns count of newly found plugins."""
         before = len(self._plugins)
+        # Order matters: later sources can override earlier, lower-priority ones
         self._discover_entry_points()
         self._discover_directory("./.encre/plugins/", PluginSource.PROJECT)
         self._discover_directory("~/.dunimd/encre/plugins/", PluginSource.USER)
@@ -126,6 +134,7 @@ class PluginRegistry:
                 plugin_factory = ep.load()
                 plugin = plugin_factory()
                 if not isinstance(plugin, EncrePlugin):
+                    # Skip entry points that don't yield a valid plugin object
                     logger.warning(f"Entry point '{ep.name}' did not return a EncrePlugin instance")
                     continue
                 plugin.manifest.source = PluginSource.INSTALLED
@@ -136,6 +145,7 @@ class PluginRegistry:
                 self._failed[ep.name] = str(e)
 
     def _discover_directory(self, dir_path: str, source: PluginSource) -> None:
+        """Scan a directory for plugin packages and single-file plugins."""
         path = Path(dir_path).expanduser().resolve()
         if not path.is_dir():
             return
@@ -149,6 +159,7 @@ class PluginRegistry:
                 self._load_plugin_from_file(entry, source)
 
     def _load_plugin_from_dir(self, path: Path, source: PluginSource) -> None:
+        """Load a plugin from a directory, preferring plugin.py then __init__.py."""
         init_file = path / "__init__.py"
         plugin_file = path / "plugin.py"
         if plugin_file.exists():
@@ -157,9 +168,11 @@ class PluginRegistry:
             self._load_plugin_package(str(path), source)
 
     def _load_plugin_from_file(self, path: Path, source: PluginSource) -> None:
+        """Load a single-file plugin module from ``path``."""
         self._load_module_from_file(str(path), path.stem, source)
 
     def _load_plugin_package(self, package_path: str, source: PluginSource) -> None:
+        """Import a plugin package via its ``__init__.py`` and extract the plugin."""
         try:
             spec = importlib.util.spec_from_file_location(
                 f"yim_plugin_{Path(package_path).stem}",
@@ -176,6 +189,7 @@ class PluginRegistry:
             self._failed[Path(package_path).stem] = str(e)
 
     def _load_module_from_file(self, filepath: str, name: str, source: PluginSource) -> None:
+        """Load an arbitrary module file and extract any plugin it defines."""
         try:
             spec = importlib.util.spec_from_file_location(f"yim_plugin_{name}", filepath)
             if spec is None or spec.loader is None:
@@ -189,6 +203,11 @@ class PluginRegistry:
             self._failed[name] = str(e)
 
     def _extract_plugin(self, module: Any, name: str, source: PluginSource) -> None:
+        """Find a plugin inside a loaded module and register it.
+
+        Tries, in order: a subclass of :class:`EncrePlugin`, a plugin
+        instance attribute, and finally a ``create_plugin()`` factory.
+        """
         # Look for a class that extends EncrePlugin
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
@@ -219,6 +238,7 @@ class PluginRegistry:
     # ── Lifecycle ────────────────────────────────────────────────
 
     def activate(self, name: str) -> bool:
+        """Activate a registered plugin, invoking its ``on_activate`` hook."""
         plugin = self._plugins.get(name)
         if plugin is None:
             return False
@@ -234,6 +254,7 @@ class PluginRegistry:
             return False
 
     def deactivate(self, name: str) -> bool:
+        """Deactivate a plugin, invoking its ``on_deactivate`` hook."""
         plugin = self._plugins.get(name)
         if plugin is None:
             return False
@@ -248,18 +269,21 @@ class PluginRegistry:
             return False
 
     def activate_all(self) -> dict[str, bool]:
+        """Activate every registered plugin; return per-name success flags."""
         results: dict[str, bool] = {}
         for name in self._plugins:
             results[name] = self.activate(name)
         return results
 
     def deactivate_all(self) -> None:
+        """Deactivate all currently active plugins."""
         for name in list(self._activated):
             self.deactivate(name)
 
     # ── Tool/Skill/Hook aggregation ──────────────────────────────
 
     def get_all_tools(self) -> list[Any]:
+        """Return deduplicated tools from every activated plugin."""
         tools: list[Any] = []
         seen: set[str] = set()
         for name in self._activated:
@@ -272,6 +296,7 @@ class PluginRegistry:
         return tools
 
     def get_all_skills(self) -> list[Any]:
+        """Return deduplicated skills from every activated plugin."""
         skills: list[Any] = []
         seen: set[str] = set()
         for name in self._activated:
@@ -284,14 +309,17 @@ class PluginRegistry:
         return skills
 
     def get_all_hooks(self) -> dict[str, list[Any]]:
+        """Return event_type -> list of handlers across activated plugins."""
         hooks: dict[str, list[Any]] = {}
         for name in self._activated:
             plugin = self._plugins[name]
             for event_type, handler in plugin.get_hooks():
+                # Accumulate every handler registered for the same event type
                 hooks.setdefault(event_type, []).append(handler)
         return hooks
 
     def get_all_backends(self) -> dict[str, type[Any]]:
+        """Return name -> backend class mappings from activated plugins."""
         backends: dict[str, type[Any]] = {}
         for name in self._activated:
             plugin = self._plugins[name]
@@ -299,6 +327,7 @@ class PluginRegistry:
         return backends
 
     def reset(self) -> None:
+        """Deactivate everything and clear all registry state."""
         self.deactivate_all()
         self._plugins.clear()
         self._manifests.clear()
@@ -307,10 +336,12 @@ class PluginRegistry:
 
 
 def _source_priority(source: PluginSource) -> int:
+    """Return the discovery priority of a plugin source (higher overrides)."""
     _order = {
         PluginSource.BUNDLED: 0,
         PluginSource.INSTALLED: 1,
         PluginSource.PROJECT: 2,
         PluginSource.USER: 3,
     }
+    # Higher number => discovered later => higher precedence on collision
     return _order.get(source, 1)

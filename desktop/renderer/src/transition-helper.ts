@@ -20,6 +20,14 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * View transition helper.
+ *
+ * Provides a single, centralized slide-in/slide-out animation used when
+ * switching between primary views (chat ↔ automation, etc.). Keeps all views in
+ * sync with the same easing/duration as the sidebar collapse animation.
+ */
+
 export class TransitionHelper {
   /** 默认动画时长（与侧边栏折叠动画 0.28s 同步） */
   static readonly DEFAULT_DURATION = 280;
@@ -102,6 +110,7 @@ export class TransitionHelper {
     });
   }
 
+  /** Resolves after `ms` milliseconds. */
   static wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

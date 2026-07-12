@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# homeassistant.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - HomeAssistantAdapter
+#
 import asyncio
 import json
 import logging
@@ -97,6 +110,22 @@ class HomeAssistantAdapter(BaseAdapter):
         watch_all: bool = False,
         cooldown_seconds: int = _HA_DEFAULT_COOLDOWN,
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            url (str):
+            token (str):
+            gateway_url (str):
+            watch_domains (list[str] | None):
+            watch_entities (list[str] | None):
+            ignore_entities (list[str] | None):
+            watch_all (bool):
+            cooldown_seconds (int):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         self._hass_url = url.rstrip("/")
         self._hass_token = token
@@ -114,6 +143,12 @@ class HomeAssistantAdapter(BaseAdapter):
         self._last_event_time: dict[str, float] = {}
 
     def _next_id(self) -> int:
+        """
+        Next id.
+
+        Returns:
+            int
+        """
         self._msg_id += 1
         return self._msg_id
 
@@ -466,4 +501,13 @@ class HomeAssistantAdapter(BaseAdapter):
             return SendResult(success=False, error=str(e), retryable=True)
 
     async def send_typing(self, chat_id: str) -> None:
+        """
+        Send typing.
+
+        Args:
+            chat_id (str):
+
+        Returns:
+            None
+        """
         pass

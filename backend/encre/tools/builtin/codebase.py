@@ -1,6 +1,32 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
 
 from __future__ import annotations
+
+"""Module: builtin/codebase.py
+
+Codebase implementation for the Encre tool system.
+"""
 
 import os
 from typing import Any
@@ -12,15 +38,22 @@ _parent_loop: Any = None
 
 
 def set_parent_loop(loop: Any) -> None:
+    """Set parent loop.
+
+    Args:
+        loop: Description of the loop parameter.
+    """
     global _parent_loop
     _parent_loop = loop
 
 
 def _resolve_loop() -> Any:
+    """Resolve loop."""
     return _parent_loop
 
 
 def _workspace_and_index() -> tuple[str, Any | None]:
+    """Workspace and index."""
     loop = _resolve_loop()
     if loop is None:
         return "", None
@@ -30,6 +63,12 @@ def _workspace_and_index() -> tuple[str, Any | None]:
 
 
 def _resolve_rel_path(ws_path: str, file_path: str) -> str:
+    """Resolve rel path.
+
+    Args:
+        ws_path: Description of the ws_path parameter.
+        file_path: Description of the file_path parameter.
+    """
     if not file_path:
         return ""
     if os.path.isabs(file_path):
@@ -41,6 +80,11 @@ def _resolve_rel_path(ws_path: str, file_path: str) -> str:
 
 
 async def _codebase_search_execute(**kwargs: Any) -> str:
+    """Codebase search execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     query = str(kwargs.get("query") or "").strip()
     limit = int(kwargs.get("limit") or 10)
     ws_path, idx = _workspace_and_index()
@@ -86,6 +130,11 @@ async def _codebase_search_execute(**kwargs: Any) -> str:
 
 
 async def _codebase_context_execute(**kwargs: Any) -> str:
+    """Codebase context execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     file_path = str(kwargs.get("file_path") or "").strip()
     ws_path, idx = _workspace_and_index()
     if not file_path:
@@ -130,8 +179,10 @@ EncreCodebaseSearchTool = build_tool(
     execute=_codebase_search_execute,
     intents=["coding"],
     category="search",
+    semantic_type="search",
     triggers=["codebase search", "find relevant code", "search workspace code", "search project"],
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )
 
 
@@ -154,6 +205,8 @@ EncreCodebaseContextTool = build_tool(
     execute=_codebase_context_execute,
     intents=["coding"],
     category="search",
+    semantic_type="search",
     triggers=["codebase context", "file context", "show indexed file details"],
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

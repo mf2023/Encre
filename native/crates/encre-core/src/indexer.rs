@@ -18,6 +18,7 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Code-aware tokenizer and a BM25 inverted index for code search.
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------

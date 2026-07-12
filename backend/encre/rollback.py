@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Git‑style conversation rollback with SHA‑256 content‑addressable commits.
 
@@ -55,8 +55,6 @@ Usage::
     log_entries = rb.log(session_id)      # list the chain
     rb.checkout(session, "a1b2c3d4...")  # restore session state
 """
-
-from __future__ import annotations
 
 import contextlib
 import hashlib

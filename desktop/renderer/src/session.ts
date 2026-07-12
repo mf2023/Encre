@@ -20,6 +20,16 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Session sidebar & management.
+ *
+ * Renders the conversation session list in the sidebar and provides
+ * rename/export/delete via a context menu and a rename dialog. Also supports a
+ * batch-selection mode for bulk export/delete. The standalone helpers
+ * `showSessionContextMenu` / `showRenameDialogForSession` reuse the same DOM
+ * overlays for sessions shown inside the workspace tree.
+ */
+
 import { getState, subscribe, setSessionId, clearMessages, setRunning, setSubAgentView, clearSubAgentBreadcrumb, setTempChat, removeSessionById } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
@@ -27,6 +37,9 @@ import { t, onLocaleChange } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import type { SessionEntryData } from "./types.js";
 
+/**
+ * Renders and manages the sidebar session list.
+ */
 export class Session {
   private el: HTMLElement;
   private lastListJson: string = "";
@@ -36,6 +49,9 @@ export class Session {
   private batchMode: boolean = false;
   private selectedIds: Set<string> = new Set();
   private batchBar: HTMLElement;
+  /**
+   * Constructor: grabs sidebar DOM nodes and subscribes to state/locale changes.
+   */
   constructor() {
     this.el = document.getElementById("session-list")!;
     this.contextMenuEl = document.getElementById("session-context-menu")!;
@@ -140,6 +156,7 @@ export class Session {
     this.exitBatchMode();
   }
 
+  /** Renders the session list (or empty state) and (re)binds all interactions. */
   render(): void {
     const st = getState();
     const sessions = st.sessionsList;
@@ -399,6 +416,14 @@ export class Session {
   }
 }
 
+/**
+ * Shows the session context menu (rename/export/delete) at the given coordinates.
+ *
+ * @param sid     - The session id the menu acts on.
+ * @param x       - Screen X for menu placement.
+ * @param y       - Screen Y for menu placement.
+ * @param noRename - When `true`, hide the rename item (e.g. for workspace sessions).
+ */
 export function showSessionContextMenu(sid: string, x: number, y: number, noRename?: boolean): void {
   const menuEl = document.getElementById("session-context-menu")!;
   const currentSid = sid;
@@ -463,6 +488,11 @@ export function showSessionContextMenu(sid: string, x: number, y: number, noRena
   }
 }
 
+/**
+ * Shows the rename dialog for a session and wires confirm/cancel handlers.
+ *
+ * @param sid - The session id to rename.
+ */
 export function showRenameDialogForSession(sid: string): void {
   const overlayEl = document.getElementById("rename-dialog-overlay")!;
   const sessions = getState().sessionsList;

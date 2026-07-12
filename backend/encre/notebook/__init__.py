@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Notebook / code-cell execution session for Encre.
+
+Exposes :class:`EncreNotebookSession`, a lightweight Jupyter-like session
+that runs user code in a persistent out-of-process Python kernel and tracks
+per-cell outputs, errors and execution times.
+"""
 
 from encre.notebook.session import EncreNotebookSession
 

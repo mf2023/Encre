@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Prompt file loader.
@@ -36,12 +36,12 @@ Usage::
     content = loader.load_with_context("permission", mode="bypass", guidance="...")
 """
 
-from __future__ import annotations
-
 import os
 from typing import Any
 
+# Absolute path to the directory that contains the ``.prompt`` block files.
 _PROMPTS_ROOT: str = os.path.abspath(os.path.dirname(__file__))
+# Process-wide cache mapping "<category>/<name>" -> prompt text.
 _CACHE: dict[str, str] = {}
 
 
@@ -93,8 +93,10 @@ class PromptLoader:
         return os.path.join(self._root, category, f"{name}.prompt")
 
     def clear_cache(self) -> None:
+        """Drop all cached prompt files (useful for tests or hot-reload)."""
         _CACHE.clear()
 
     @property
     def root(self) -> str:
+        """Absolute path to the prompts root directory."""
         return self._root

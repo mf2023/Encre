@@ -21,6 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+#
+# msgraph.py
+#
+# Adapter integration module for the Encre agent framework.
+# Provides classes and helpers that connect an external
+# platform/channel to the Encre message adapter pipeline,
+# enabling inbound event handling and outbound message delivery.
+#
+# Exported classes:
+#   - MSGraphAdapter
+#
 import asyncio
 import contextlib
 import json
@@ -50,6 +63,20 @@ MSGRAPH_SUBSCRIPTIONS_URL = f"{MSGRAPH_API_BASE}/subscriptions"
 
 
 class MSGraphAdapter(BaseAdapter):
+    """
+    MSGraphAdapter adapter component.
+    
+    Inherits from BaseAdapter and integrates an external platform or
+    channel into the Encre adapter framework. It implements the standard
+    adapter contract used by the manager to connect, send and receive
+    messages, and to dispatch normalized events into the agent runtime.
+    
+    Responsibilities:
+        * Establish and maintain a connection/session to the platform.
+        * Translate inbound platform events into normalized messages.
+        * Translate outbound messages into platform-specific API calls.
+        * Expose lifecycle hooks (connect/disconnect, start/stop).
+    """
     name = "msgraph"
 
     MAX_MESSAGE_LENGTH = 28000
@@ -64,6 +91,20 @@ class MSGraphAdapter(BaseAdapter):
         port: int = 8646,
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
+        """
+        Initialize the instance..
+
+        Args:
+            tenant_id (str):
+            client_id (str):
+            client_secret (str):
+            host (str):
+            port (int):
+            gateway_url (str):
+
+        Returns:
+            None
+        """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         self._tenant_id = tenant_id or os.getenv("MSGRAPH_TENANT_ID", "")
         self._client_id = client_id or os.getenv("MSGRAPH_CLIENT_ID", "")
@@ -82,6 +123,12 @@ class MSGraphAdapter(BaseAdapter):
     # ── Token Management ──────────────────────────────────────────────────
 
     async def _get_access_token(self) -> str | None:
+        """
+        Get access token.
+
+        Returns:
+            str | None
+        """
         if self._access_token and time.time() < self._token_expires_at:
             return self._access_token
 
@@ -123,6 +170,12 @@ class MSGraphAdapter(BaseAdapter):
     # ── Subscription Management ───────────────────────────────────────────
 
     async def _create_subscription(self) -> str | None:
+        """
+        Create subscription.
+
+        Returns:
+            str | None
+        """
         client = self._get_http_client()
         if client is None:
             return None
@@ -171,6 +224,12 @@ class MSGraphAdapter(BaseAdapter):
             return None
 
     async def _delete_subscription(self) -> bool:
+        """
+        Delete subscription.
+
+        Returns:
+            bool
+        """
         if not self._subscription_id:
             return True
 
@@ -208,6 +267,12 @@ class MSGraphAdapter(BaseAdapter):
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
     async def connect(self) -> bool:
+        """
+        Connect.
+
+        Returns:
+            bool
+        """
         if not HTTPX_AVAILABLE:
             logger.error(
                 "[msgraph] httpx is required. Install with: pip install httpx"
@@ -240,6 +305,12 @@ class MSGraphAdapter(BaseAdapter):
         return result
 
     async def disconnect(self) -> None:
+        """
+        Disconnect.
+
+        Returns:
+            None
+        """
         self._running = False
         for task in list(self._background_tasks):
             task.cancel()
@@ -248,9 +319,21 @@ class MSGraphAdapter(BaseAdapter):
         await super().disconnect()
 
     async def _on_connected(self) -> None:
+        """
+        On connected.
+
+        Returns:
+            None
+        """
         logger.info("[msgraph] Gateway connected")
 
     async def _on_disconnected(self) -> None:
+        """
+        On disconnected.
+
+        Returns:
+            None
+        """
         logger.info("[msgraph] Gateway disconnected")
 
     # ── Messaging ─────────────────────────────────────────────────────────
@@ -263,6 +346,18 @@ class MSGraphAdapter(BaseAdapter):
         reply_to: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> SendResult:
+        """
+        Send.
+
+        Args:
+            chat_id (str):
+            content (str):
+            reply_to (str | None):
+            metadata (dict[str, Any] | None):
+
+        Returns:
+            SendResult
+        """
         client = self._get_http_client()
         if client is None:
             return SendResult(success=False, error="httpx not available")
@@ -295,6 +390,20 @@ class MSGraphAdapter(BaseAdapter):
         content: str,
         reply_to: str | None = None,
     ) -> SendResult:
+        """
+        Send teams channel message.
+
+        Args:
+            client (Any):
+            token (str):
+            team_id (str):
+            channel_id (str):
+            content (str):
+            reply_to (str | None):
+
+        Returns:
+            SendResult
+        """
         url = f"{MSGRAPH_API_BASE}/teams/{team_id}/channels/{channel_id}/messages"
         body: dict[str, Any] = {
             "body": {
@@ -338,6 +447,19 @@ class MSGraphAdapter(BaseAdapter):
         content: str,
         reply_to: str | None = None,
     ) -> SendResult:
+        """
+        Send chat message.
+
+        Args:
+            client (Any):
+            token (str):
+            chat_id (str):
+            content (str):
+            reply_to (str | None):
+
+        Returns:
+            SendResult
+        """
         url = f"{MSGRAPH_API_BASE}/chats/{chat_id}/messages"
         body: dict[str, Any] = {
             "body": {
@@ -381,6 +503,19 @@ class MSGraphAdapter(BaseAdapter):
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> SendResult:
+        """
+        Send email.
+
+        Args:
+            client (Any):
+            token (str):
+            recipient (str):
+            content (str):
+            metadata (dict[str, Any] | None):
+
+        Returns:
+            SendResult
+        """
         url = f"{MSGRAPH_API_BASE}/me/sendMail"
         subject = "Message from Encre AI"
         if metadata and "subject" in metadata:
@@ -434,6 +569,12 @@ class MSGraphAdapter(BaseAdapter):
     # ── Webhook Server ────────────────────────────────────────────────────
 
     async def _start_webhook_server(self) -> None:
+        """
+        Start webhook server.
+
+        Returns:
+            None
+        """
         try:
             self._server = await asyncio.start_server(
                 self._handle_http_connection,
@@ -450,6 +591,12 @@ class MSGraphAdapter(BaseAdapter):
             self._server = None
 
     async def _stop_webhook_server(self) -> None:
+        """
+        Stop webhook server.
+
+        Returns:
+            None
+        """
         if self._server:
             self._server.close()
             await self._server.wait_closed()
@@ -461,6 +608,16 @@ class MSGraphAdapter(BaseAdapter):
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
+        """
+        Handle http connection.
+
+        Args:
+            reader (asyncio.StreamReader):
+            writer (asyncio.StreamWriter):
+
+        Returns:
+            None
+        """
         try:
             request_line = await asyncio.wait_for(reader.readline(), timeout=10)
             if not request_line:
@@ -534,6 +691,15 @@ class MSGraphAdapter(BaseAdapter):
         self,
         path: str,
     ) -> tuple[bytes, int]:
+        """
+        Handle validation.
+
+        Args:
+            path (str):
+
+        Returns:
+            tuple[bytes, int]
+        """
         query_string = ""
         if "?" in path:
             query_string = path.split("?", 1)[1]
@@ -551,6 +717,15 @@ class MSGraphAdapter(BaseAdapter):
         self,
         body: bytes,
     ) -> tuple[bytes, int]:
+        """
+        Handle notification.
+
+        Args:
+            body (bytes):
+
+        Returns:
+            tuple[bytes, int]
+        """
         try:
             payload = json.loads(body)
         except json.JSONDecodeError:
@@ -588,6 +763,17 @@ class MSGraphAdapter(BaseAdapter):
         resource_data: dict[str, Any],
         raw_notification: dict[str, Any],
     ) -> None:
+        """
+        Process notification.
+
+        Args:
+            resource (str):
+            resource_data (dict[str, Any]):
+            raw_notification (dict[str, Any]):
+
+        Returns:
+            None
+        """
         client = self._get_http_client()
         if client is None:
             return
@@ -627,6 +813,18 @@ class MSGraphAdapter(BaseAdapter):
         resource_data: dict[str, Any],
         raw_notification: dict[str, Any],
     ) -> None:
+        """
+        Dispatch from message data.
+
+        Args:
+            message_data (dict[str, Any]):
+            resource (str):
+            resource_data (dict[str, Any]):
+            raw_notification (dict[str, Any]):
+
+        Returns:
+            None
+        """
         try:
             message_id = message_data.get("id", "") or resource_data.get("id", "")
             content_body = message_data.get("body", {})
@@ -684,6 +882,16 @@ class MSGraphAdapter(BaseAdapter):
         resource: str,
         message_data: dict[str, Any],
     ) -> str:
+        """
+        Extract chat id.
+
+        Args:
+            resource (str):
+            message_data (dict[str, Any]):
+
+        Returns:
+            str
+        """
         chat_id = message_data.get("chatId", "")
         if chat_id:
             return chat_id
@@ -709,12 +917,28 @@ class MSGraphAdapter(BaseAdapter):
         return resource
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
+        """
+        Process chat.
+
+        Args:
+            chat_id (str):
+            content (str):
+
+        Returns:
+            None
+        """
         session_id = self.get_session(chat_id)
         await self.process_with_stream(content, chat_id, session_id=session_id)
 
     # ── HTTP Client ───────────────────────────────────────────────────────
 
     def _get_http_client(self) -> Any | None:
+        """
+        Get http client.
+
+        Returns:
+            Any | None
+        """
         if self._http is not None:
             return self._http
         if not HTTPX_AVAILABLE:

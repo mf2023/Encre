@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/task_output.py
 
+Task output implementation for the Encre tool system.
+"""
 import asyncio
 import json
 from typing import Any
@@ -32,6 +36,11 @@ from encre.utils.types import TaskStatus
 
 
 async def _task_output_execute(**kwargs: Any) -> str:
+    """Task output execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     from encre.task.manager import EncreTaskManager
 
     task_id = kwargs.get("task_id", "")
@@ -112,5 +121,8 @@ EncreTaskOutputTool = build_tool(
     },
     execute=_task_output_execute,
     intents=["general", "coding", "data"],
+    category="task",
+    semantic_type="read",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

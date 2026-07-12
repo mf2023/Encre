@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Standalone indexing worker -- runs in a separate process so the main server
@@ -43,20 +43,31 @@ from encre.native import count_code_index_candidates
 
 
 def _progress_path(data_dir: str, ws_id: str) -> str:
+    """Return the JSON progress-file path for workspace *ws_id*."""
     return os.path.join(data_dir, "iwork", ws_id, "index_progress.json")
 
 
 def _metadata_path(data_dir: str, ws_id: str) -> str:
+    """Return the cached metadata-file path for workspace *ws_id*."""
     return os.path.join(data_dir, "iwork", ws_id, "index_metadata.json")
 
 
 def _write_progress(filepath: str, progress: int, status: str, files: int = 0) -> None:
+    """Atomically write the current indexing progress to *filepath* as JSON.
+
+    Args:
+        filepath: Destination progress file path.
+        progress: Completion percentage (0-100).
+        status: Human-readable status string (e.g. "indexing", "ready").
+        files: Number of files indexed so far.
+    """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump({"progress": progress, "status": status, "files": files}, f)
 
 
 def main() -> None:
+    """CLI entry point: build/update a workspace index and report progress."""
     parser = argparse.ArgumentParser(description="Encre codebase indexing worker")
     parser.add_argument("--ws-id", required=True)
     parser.add_argument("--ws-path", required=True)
@@ -75,6 +86,7 @@ def main() -> None:
     meta_file = _metadata_path(args.data_dir, args.ws_id)
 
     def progress_cb(_rel_path: str, total: int, estimated_total: int = 0) -> None:
+        """Progress callback that converts file counts into a percentage."""
         # Map file index to percentage using the pre-counted total
         pct = 0
         if estimated_total > 0:

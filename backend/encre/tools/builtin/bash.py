@@ -21,6 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
 """Bash execution — ALL commands go through Rust ``sandbox_execute``.
 
@@ -41,17 +42,17 @@ loop injects the workspace path into the contextvar below.  The Rust
 layer picks it up automatically and applies Landlock when available.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextvars
 import functools
 import json
 import sys
+import time
 from typing import Any
 
 from encre.tools.base import build_tool
 from encre.tools.builtin._shell_manager import BackgroundShellManager
+from encre.tools.builtin._terminal_manager import TerminalSessionManager, SHELL_LAUNCH
 
 # ── Workspace injection (set by the loop per turn) ────────────────
 # The active loop injects its workspace path here before each turn.
@@ -72,10 +73,12 @@ def set_workspace(ws: str | None) -> contextvars.Token:
 
 
 def reset_workspace(token: contextvars.Token) -> None:
+    """Restore the workspace path to its previous value using a token from set_workspace()."""
     _current_workspace.reset(token)
 
 
 def _get_workspace() -> str | None:
+    """Return the current sandbox workspace path (set by the loop per turn)."""
     return _current_workspace.get()
 
 
@@ -110,6 +113,7 @@ def _decode_for_model(value: Any) -> tuple[str, dict[str, Any]]:
 
 
 def _decode_bytes(raw: bytes) -> str:
+    """Decode raw bytes to str, trying common encodings in order (utf-8, gbk, gb18030, big5, shift_jis, cp1252)."""
     for enc in ("utf-8", "gbk", "gb18030", "big5", "shift_jis", "cp1252"):
         try:
             return raw.decode(enc)
@@ -119,10 +123,11 @@ def _decode_bytes(raw: bytes) -> str:
 
 
 def _truncate(text: str, limit: int) -> tuple[str, bool, int]:
+    """Truncate text to limit chars, returning (truncated_text, was_truncated, omitted_count)."""
     if limit <= 0 or len(text) <= limit:
         return text, False, 0
     return (
-        text[:limit] + f"\n...(truncated, {len(text) - limit} bytes omitted)",
+        text[:limit] + f"\n...(truncated, {len(text) - limit} chars omitted)",
         True,
         len(text) - limit,
     )
@@ -152,7 +157,7 @@ def _envelope(
     )
     if stdout_truncated or stderr_truncated:
         summary += (
-            f" (output truncated: {stdout_saved + stderr_saved} bytes omitted; "
+            f" (output truncated: {stdout_saved + stderr_saved} chars omitted; "
             "raise max_output_chars to see more)"
         )
     if stdout_meta.get("binary") or stderr_meta.get("binary"):
@@ -179,6 +184,7 @@ def _envelope(
 # ── Main execute function ─────────────────────────────────────────
 
 async def _bash_execute(**kwargs: Any) -> str:
+    """Execute a shell command. Returns a JSON envelope with stdout/stderr/exit_code."""
     command = kwargs.get("command", "")
     if not command:
         return json.dumps({
@@ -187,9 +193,13 @@ async def _bash_execute(**kwargs: Any) -> str:
             "summary": "no command provided",
         }, ensure_ascii=False)
 
+    terminal = str(kwargs.get("terminal", "auto")).lower()
+    cwd = kwargs.get("cwd") or None
+    timeout = int(kwargs.get("timeout", 120))
+    max_chars = _resolve_max_chars(kwargs)
+
     # Background shells still use BackgroundShellManager (Python async)
     if bool(kwargs.get("run_in_background", False)):
-        cwd = kwargs.get("cwd") or None
         mgr = BackgroundShellManager.instance()
         try:
             rec = await mgr.spawn(command, cwd=cwd)
@@ -206,17 +216,46 @@ async def _bash_execute(**kwargs: Any) -> str:
             "command": rec.command,
             "cwd": rec.cwd,
             "started_at": rec.started_at,
+            "terminal": terminal,
             "summary": f"background shell started as {rec.id}",
             "hint": "Use bash_output with this id to read output, bash_kill to stop.",
         }, ensure_ascii=False)
 
-    timeout = int(kwargs.get("timeout", 120))
-    cwd = kwargs.get("cwd") or None
-    max_chars = _resolve_max_chars(kwargs)
+    # ── Persistent terminal session path ─────────────────────────
+    # When a specific terminal type is given, use the session manager
+    # so state (cwd, env, shell state) carries across calls.
+    if terminal != "auto":
+        started = time.monotonic()
+        mgr = TerminalSessionManager.instance()
+        try:
+            result = await mgr.execute(terminal, command, cwd=cwd, timeout=timeout)
+        except Exception as exc:
+            return json.dumps({
+                "success": False,
+                "error": f"terminal execution failed: {exc}",
+                "command": command,
+                "terminal": terminal,
+                "cwd": cwd or "",
+                "summary": "terminal execution error",
+            }, ensure_ascii=False)
 
-    # ── UNIFIED: Rust sandbox_execute for ALL platforms ──────────
-    # One function.  One call.  Landlock on Linux, clean subprocess
-    # everywhere else.  No Python fallback chain.
+        elapsed_ms = result.get("elapsed_ms", 0)
+        stdout_text, stdout_meta = _decode_for_model(result.get("stdout", ""))
+        stderr_text, stderr_meta = _decode_for_model(result.get("stderr", ""))
+
+        return _envelope(
+            command=command,
+            stdout=stdout_text,
+            stderr=stderr_text,
+            exit_code=result.get("exit_code", 0),
+            cwd=cwd,
+            elapsed_ms=elapsed_ms,
+            stdout_meta=stdout_meta,
+            stderr_meta=stderr_meta,
+            max_chars=max_chars,
+        )
+
+    # ── Legacy one-shot path (auto terminal) via Rust sandbox ───
     from encre import native as _native
 
     started = asyncio.get_running_loop().time()
@@ -259,6 +298,7 @@ async def _bash_execute(**kwargs: Any) -> str:
 
 
 def _resolve_max_chars(kwargs: dict[str, Any]) -> int:
+    """Extract and validate max_output_chars from kwargs, returning the default (30000) if absent or invalid."""
     raw = kwargs.get("max_output_chars")
     if raw is None:
         return DEFAULT_MAX_OUTPUT_CHARS
@@ -274,44 +314,42 @@ def _resolve_max_chars(kwargs: dict[str, Any]) -> int:
 EncreBashTool = build_tool(
     name="bash",
     description=(
-        "Execute a shell command. **LAST RESORT ONLY** -- use a dedicated tool "
-        "if one exists for your task.\n\n"
-        "| Instead of bash | Use this dedicated tool |\n"
-        "|-----------------|-------------------------|\n"
-        "| cat, head, tail, read file content | file_read |\n"
-        "| write file, redirect >, tee | file_write, file_edit |\n"
-        "| grep, rg, find, locate | grep, glob |\n"
-        "| ls, dir, tree, stat | glob |\n"
-        "| curl, wget (fetch URL) | web_fetch |\n"
-        "| web search queries | web_search |\n"
+        "Execute a shell command. First check if a dedicated tool exists:\n\n"
+        "| Instead of bash | Use this |\n"
+        "|---|---|\n"
+        "| cat / read a file | file_read |\n"
+        "| write &#8594; file (new/overwrite) | file_write |\n"
+        "| edit / modify a file | file_edit |\n"
+        "| grep / search code | grep |\n"
+        "| ls / find a file | glob |\n"
+        "| curl / fetch URL | web_fetch |\n"
+        "| web search | web_search |\n"
         "| git commands | git |\n"
-        "| npm install, pip, cargo | use their native args; bash for build scripts only |\n"
-        "| docker commands | docker |\n"
-        "| python scripts, pytest | test_runner |\n"
-        "| lint, format, fmt | lint_format |\n"
+        "| npm install / pip | native args; bash only for build scripts |\n"
+        "| docker | docker |\n"
+        "| pytest / run tests | test_runner |\n"
+        "| lint / format | lint_format |\n"
         "| database queries | database |\n"
-        "| spawning sub-agents | agent |\n"
         "| multi-step workflows | workflow |\n"
         "| cron / scheduled tasks | cron_create |\n"
-        "| memory management | memory_* |\n"
-        "| PDF processing | pdf |\n"
-        "| spreadsheet, CSV | spreadsheet |\n"
-        "| image processing | image |\n"
+        "| PDF | pdf |\n"
+        "| CSV / spreadsheets | spreadsheet |\n"
+        "| images | image |\n"
         "| browser automation | browser |\n"
         "| Jupyter notebooks | notebook |\n"
         "\n"
-        "Only use bash for: running build tools (npm build, cargo build), "
-        "dev servers (npm run dev), custom scripts, or operations with "
-        "NO dedicated tool available. By default runs synchronously. "
-        "Set run_in_background=true for dev servers or watchers.\n\n"
-        "Returns a JSON envelope: {success, exit_code, stdout, stderr, "
-        "stdout_truncated, stderr_truncated, stdout_bytes, stderr_bytes, "
-        "stdout_binary, stderr_binary, elapsed_ms, summary}.  Output is "
-        "UTF-8 decoded with errors=replace (handles Chinese / cp1252 / "
-        "mixed encodings from cmd.exe).  Each stream is capped at "
-        "max_output_chars (default 30000); set to 0 for unlimited.  "
-        "Binary streams are detected and flagged so you don't see a "
-        "wall of garbled glyphs."
+        "**terminal** — choose which shell to run in (required):\n"
+        "- **auto** — platform default (cmd on Windows, bash on Unix; one-shot)\n"
+        "- **powershell** — persistent PowerShell session\n"
+        "- **cmd** — persistent cmd.exe session (Windows)\n"
+        "- **bash** — persistent Bash session (Git Bash on Windows)\n"
+        "- **python** — persistent Python interactive REPL\n"
+        "- **node** — persistent Node.js REPL\n"
+        "\n"
+        "Persistent terminals keep state (cwd, env) across calls until the "
+        "turn ends. Use run_in_background=true for dev servers / watchers. "
+        "Returns JSON: {success, exit_code, stdout, stderr, stdout_truncated, "
+        "stderr_truncated, elapsed_ms, summary}."
     ),
     input_schema={
         "type": "object",
@@ -320,9 +358,18 @@ EncreBashTool = build_tool(
                 "type": "string",
                 "description": "The shell command to execute",
             },
+            "terminal": {
+                "type": "string",
+                "description": (
+                    "Which terminal to run in: auto, powershell, cmd, bash, "
+                    "python, node. 'auto' uses Rust sandbox (one-shot). "
+                    "Specific terminals create persistent sessions that "
+                    "preserve state across calls."
+                ),
+            },
             "timeout": {
                 "type": "integer",
-                "description": "Timeout in seconds for foreground execution (default: 120). Ignored in background mode.",
+                "description": "Timeout in seconds (default: 120). Ignored in background mode.",
             },
             "cwd": {
                 "type": "string",
@@ -331,8 +378,8 @@ EncreBashTool = build_tool(
             "run_in_background": {
                 "type": "boolean",
                 "description": (
-                    "If true, spawn the command as a backgrounded shell and "
-                    "return a shell id. Use bash_output to read its output "
+                    "If true, spawn as a backgrounded shell and "
+                    "return a shell id. Use bash_output to read output "
                     "and bash_kill to stop it."
                 ),
             },
@@ -343,20 +390,21 @@ EncreBashTool = build_tool(
             "max_output_chars": {
                 "type": "integer",
                 "description": (
-                    "Per-stream (stdout / stderr) truncation cap.  "
-                    "Output longer than this is truncated with a "
-                    "'...(truncated, N bytes omitted)' marker and "
-                    "stdout_truncated / stderr_truncated set to true.  "
-                    "Default 30000 (~7500 tokens).  Use 0 to disable "
-                    "truncation."
+                    "Max chars per stream (stdout/stderr).  Truncated "
+                    "output gets a '...(truncated, N chars omitted)' "
+                    "marker + stdout_truncated/stderr_truncated flags.  "
+                    "Default 30000.  Set 0 for unlimited."
                 ),
             },
         },
-        "required": ["command"],
+        "required": ["command", "terminal"],
     },
     execute=_bash_execute,
     intents=["general", "coding", "data"],
+    category="shell",
+    triggers=["shell", "terminal", "command", "run", "execute", "cmd", "powershell", "npm", "pip", "cargo", "bash"],
     semantic_type="exec",
+    is_destructive=True,
     cost_level="high",
     retryability="guarded",
     safe_fallback="Prefer a dedicated tool, or inspect command preconditions and the current workspace state before retrying bash.",

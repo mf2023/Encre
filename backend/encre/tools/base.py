@@ -21,16 +21,17 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Tool definitions for encre.
 
-Two ways to create a tool -- both produce objects with the same duck-typed
-interface so they are fully interchangeable in the registry, discovery
-system, and agent loop.
+All tools are created via the ``build_tool()`` factory, which produces an
+``EncreTool`` subclass instance using ``type()``.  The factory handles
+schema minification, concurrency safety predicates, and format conversion
+(OpenAI / Anthropic) automatically.
 
-**Recommended -- ``build_tool()``**::
+Usage::
 
     EncreGlobTool = build_tool(
         name="glob",
@@ -40,17 +41,9 @@ system, and agent loop.
         intents=["general", "coding"],
         is_concurrency_safe=lambda _: True,
     )
-
-**Legacy -- subclass ``EncreTool``**::
-
-    class EncreGlobTool(EncreTool):
-        name = "glob"
-        description = "..."
-        input_schema = {...}
-        async def execute(self, **kwargs): ...
 """
 
-from __future__ import annotations
+from abc import ABC, abstractmethod
 
 from collections.abc import Callable
 from typing import Any, ClassVar
@@ -72,7 +65,7 @@ _TOOL_DEFAULTS = {
 
 # ── EncreTool (legacy base -- NOT abstract) ─────────────────────────────
 
-class EncreTool:
+class EncreTool(ABC):
     """Base class for tool definitions.
 
     Legacy API kept for backward compatibility.  New tools should use the
@@ -95,30 +88,72 @@ class EncreTool:
     retryability: str = "auto"
     safe_fallback: str = ""
 
-    async def execute(self, **kwargs: Any) -> str:
-        raise NotImplementedError
+    _minified_schema: dict[str, Any] = {}
 
-    def is_concurrency_safe(self, _input_data: dict[str, Any]) -> bool:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.input_schema:
+            cls._minified_schema = _minify_schema(cls.input_schema)
+
+    @abstractmethod
+    async def execute(self, **kwargs: Any) -> str:
+        ...
+
+    def is_concurrency_safe(self, input_data: dict[str, Any]) -> bool:
+        """Whether this tool may run in parallel with other concurrency-safe tools.
+
+        Args:
+            input_data: The tool call arguments dict.
+
+        Returns:
+            True if the tool can execute concurrently, False if it requires
+            exclusive sequential execution.
+        """
+        return False
+
+    def is_readonly(self, input_data: dict[str, Any]) -> bool:
+        """Whether this tool performs only read operations.
+
+        Args:
+            input_data: The tool call arguments dict.
+
+        Returns:
+            True if the tool is read-only, False if it may write.
+        """
+        return False
+
+    def is_destructive(self, input_data: dict[str, Any]) -> bool:
+        """Whether this tool performs destructive operations.
+
+        Args:
+            input_data: The tool call arguments dict.
+
+        Returns:
+            True if the tool may destroy data, False otherwise.
+        """
         return False
 
     def to_openai_format(self) -> dict[str, Any]:
+        """Convert this tool definition to the OpenAI tool format."""
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": _minify_schema(self.input_schema),
+                "parameters": self._minified_schema or _minify_schema(self.input_schema),
             },
         }
 
     def to_anthropic_format(self) -> dict[str, Any]:
+        """Convert this tool definition to the Anthropic tool format."""
         return {
             "name": self.name,
             "description": self.description,
-            "input_schema": _minify_schema(self.input_schema),
+            "input_schema": self._minified_schema or _minify_schema(self.input_schema),
         }
 
     def discovery_card(self) -> dict[str, Any]:
+        """Return a discovery card for this tool, used by the find_tool system."""
         return {
             "name": self.name,
             "category": self.category,
@@ -149,6 +184,10 @@ def build_tool(
     retryability: str | None = None,
     safe_fallback: str | None = None,
     is_concurrency_safe: Callable[[dict[str, Any]], bool] | None = None,
+    is_readonly: bool | Callable[[dict[str, Any]], bool] | None = None,
+    is_destructive: bool | Callable[[dict[str, Any]], bool] | None = None,
+    to_openai_format: Callable[..., dict[str, Any]] | None = None,
+    to_anthropic_format: Callable[..., dict[str, Any]] | None = None,
 ) -> EncreTool:
     """Create a tool object without subclassing ``EncreTool``.
 
@@ -187,11 +226,61 @@ def build_tool(
     if not name or not callable(execute):
         raise ValueError("build_tool: 'name' and 'execute' callable are required")
 
+    minified = _minify_schema(input_schema)
+
     # Build a tool instance from attributes, mimicking a EncreTool subclass.
+    async def _execute(self, **kwargs: Any) -> str:
+        return await execute(**kwargs)
+
+    def _concurrency_check(self, input_data: dict[str, Any]) -> bool:
+        if is_concurrency_safe is None:
+            return False
+        return is_concurrency_safe(input_data)
+
+    def _readonly_check(self, input_data: dict[str, Any]) -> bool:
+        if is_readonly is None:
+            return False
+        if isinstance(is_readonly, bool):
+            return is_readonly
+        return is_readonly(input_data)
+
+    def _destructive_check(self, input_data: dict[str, Any]) -> bool:
+        if is_destructive is None:
+            return False
+        if isinstance(is_destructive, bool):
+            return is_destructive
+        return is_destructive(input_data)
+
+    def _openai_format(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": minified,
+            },
+        }
+
+    def _anthropic_format(self) -> dict[str, Any]:
+        return {
+            "name": name,
+            "description": description,
+            "input_schema": minified,
+        }
+
+    def _discovery(self) -> dict[str, Any]:
+        return {
+            "name": name,
+            "category": category or "general",
+            "description": description,
+            "parameters": input_schema,
+        }
+
     attrs = {
         "name": name,
         "description": description,
         "input_schema": input_schema,
+        "_minified_schema": minified,
         "intents": intents if intents is not None else _TOOL_DEFAULTS["intents"],
         "category": category if category is not None else _TOOL_DEFAULTS["category"],
         "triggers": triggers if triggers is not None else _TOOL_DEFAULTS["triggers"],
@@ -201,13 +290,13 @@ def build_tool(
         "cost_level": cost_level if cost_level is not None else _TOOL_DEFAULTS["cost_level"],
         "retryability": retryability if retryability is not None else _TOOL_DEFAULTS["retryability"],
         "safe_fallback": safe_fallback if safe_fallback is not None else _TOOL_DEFAULTS["safe_fallback"],
-        "_concurrency_check": is_concurrency_safe or (lambda _: False),
-        "_execute_fn": execute,
-        "execute": _make_execute(execute),
-        "is_concurrency_safe": _make_concurrency_check(is_concurrency_safe),
-        "to_openai_format": _make_to_openai_format(name, description, input_schema),
-        "to_anthropic_format": _make_to_anthropic_format(name, description, input_schema),
-        "discovery_card": _make_discovery_card(name, category or "general", description, input_schema),
+        "execute": _execute,
+        "is_concurrency_safe": _concurrency_check,
+        "is_readonly": _readonly_check,
+        "is_destructive": _destructive_check,
+        "to_openai_format": to_openai_format if to_openai_format is not None else _openai_format,
+        "to_anthropic_format": to_anthropic_format if to_anthropic_format is not None else _anthropic_format,
+        "discovery_card": _discovery,
         "__call__": lambda self: self,
     }
     tool_cls = type(name.title().replace("_", "") + "Tool", (EncreTool,), attrs)
@@ -251,55 +340,3 @@ def _minify_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-# ── Factory helpers (closures to avoid lambda pitfalls) ───────────────
-
-def _make_execute(fn: Callable[..., Any]) -> Callable[..., Any]:
-    async def _execute(_, **kwargs: Any) -> str:
-        return await fn(**kwargs)
-    return _execute
-
-
-def _make_concurrency_check(fn: Callable[[dict[str, Any]], bool] | None) -> Callable[..., bool]:
-    if fn is None:
-        def _noop(_self: Any, _input_data: dict[str, Any]) -> bool:
-            return False
-        return _noop
-    def _check(_, input_data: dict[str, Any]) -> bool:
-        return fn(input_data)
-    return _check
-
-
-def _make_to_openai_format(name: str, description: str, input_schema: dict) -> Callable[..., dict]:
-    minified = _minify_schema(input_schema)
-    def _fmt(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": description,
-                "parameters": minified,
-            },
-        }
-    return _fmt
-
-
-def _make_to_anthropic_format(name: str, description: str, input_schema: dict) -> Callable[..., dict]:
-    minified = _minify_schema(input_schema)
-    def _fmt(self) -> dict[str, Any]:
-        return {
-            "name": name,
-            "description": description,
-            "input_schema": minified,
-        }
-    return _fmt
-
-
-def _make_discovery_card(name: str, category: str, description: str, input_schema: dict) -> Callable[..., dict]:
-    def _card() -> dict[str, Any]:
-        return {
-            "name": name,
-            "category": category,
-            "description": description,
-            "parameters": input_schema,
-        }
-    return _card

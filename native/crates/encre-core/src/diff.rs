@@ -18,12 +18,16 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! Unified line-based diffing utilities built on the `similar` crate.
 use similar::{ChangeTag, TextDiff};
 
+/// Produce a unified, line-based diff between `old` and `new` text.
+/// Deleted lines are prefixed `-`, insertions `+`, context ` `.
 pub fn compute_diff(old: &str, new: &str) -> String {
     let diff = TextDiff::from_lines(old, new);
     let mut result = String::new();
 
+    // Emit one annotated line per change (- delete, + insert, space equal).
     for change in diff.iter_all_changes() {
         let sign = match change.tag() {
             ChangeTag::Delete => "-",
@@ -36,11 +40,14 @@ pub fn compute_diff(old: &str, new: &str) -> String {
     result
 }
 
+/// Apply a previously generated diff back onto the original `content`,
+/// reconstructing the patched file.
 pub fn apply_diff(content: &str, diff: &str) -> Result<String, String> {
     let mut result = String::new();
     let content_lines: Vec<&str> = content.lines().collect();
     let mut content_idx = 0;
 
+    // Replay each diff line, rebuilding the patched output.
     for line in diff.lines() {
         if line.is_empty() {
             continue;

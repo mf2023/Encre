@@ -21,15 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Screen OCR -- extract visible text with bounding boxes from the desktop.
 
 Uses Windows.Media.Ocr on Windows 10+ (no external dependencies).
 Falls back to pytesseract (optional) for cross-platform support.
 """
-
-from __future__ import annotations
 
 import io
 import logging

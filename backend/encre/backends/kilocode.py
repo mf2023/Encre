@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Kilo Code backend -- unified API gateway for multi-model access.
@@ -55,9 +55,22 @@ class KiloCodeBackend(OpenAISSEBackend):
         model: str = "kilocode/kilo/auto",
         **kwargs: Any,
     ) -> None:
+        """Initialize the Kilo Code Gateway backend.
+
+        Args:
+            api_key: Kilo Code API key. Falls back to the KILOCODE_API_KEY
+                environment variable when empty.
+            base_url: Gateway endpoint; defaults to the Kilo Code gateway.
+            model: Default routed model identifier (supports auto-routing).
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the Kilo Code gateway URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        """Return the largest context window (tokens) the gateway supports."""
+        # The gateway routes to many models; 1M covers the largest
+        # (Claude/GPT-5.5/Gemini) so downstream compaction is conservative.
         return 1000000

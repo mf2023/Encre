@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 LM Studio backend -- local model server with OpenAI-compatible API.
@@ -56,8 +56,11 @@ class LMStudioBackend(OpenAISSEBackend):
         **kwargs: Any,
     ) -> None:
         if not base_url:
+            # Fall back to LM Studio's local server default when no URL is supplied.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
+        # LM Studio serves whatever local model is loaded; 8K is the
+        # conservative default before dynamic detection.
         return 8192

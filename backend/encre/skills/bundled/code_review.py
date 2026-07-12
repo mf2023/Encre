@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Code-review skill prompt loader.
+
+Loads the ``code_review`` prompt from the ``skills`` category and substitutes
+the code target supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _code_review_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the code-review skill prompt for the given code target."""
     target = args or "the specified code"
     return _loader.load_with_context("code_review", category="skills", target=target)

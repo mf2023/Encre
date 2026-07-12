@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""General-purpose prompt template.
+
+Defines :class:`EncreGeneralPrompt`, a
+:class:`~encre.prompts.base.EncrePromptTemplate` specialized for generic,
+non-domain conversations.  It delegates assembly to the shared
+:class:`~encre.prompts.system.EncrePromptBuilder` with the ``"general"``
+specialty.
+"""
 
 from typing import Any
 
@@ -31,7 +40,20 @@ from encre.utils.types import PermissionMode
 
 
 class EncreGeneralPrompt(EncrePromptTemplate):
+    """General-purpose prompt template.
+
+    Builds the system prompt for non-specialized conversations by delegating
+    to the layered :class:`~encre.prompts.system.EncrePromptBuilder`.
+    """
+
     def __init__(self, builder: EncrePromptBuilder | None = None, specialty: str = "general") -> None:
+        """Initialize the template.
+
+        Args:
+            builder: Optional pre-configured prompt builder.  A new one is
+                created when omitted.
+            specialty: Specialty label forwarded to the builder (``"general"``).
+        """
         super().__init__(builder=builder, specialty=specialty)
 
     def build_system_prompt(
@@ -49,6 +71,12 @@ class EncreGeneralPrompt(EncrePromptTemplate):
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> str:
+        """Build the general system prompt from session context.
+
+        Forwards every argument to
+        :meth:`~encre.prompts.system.EncrePromptBuilder.build` with the
+        ``"general"`` specialty so the shared block-assembly logic is reused.
+        """
         return self._builder.build(
             mode=mode,
             tools=tools,

@@ -739,14 +739,16 @@ export class Settings {
 
   close(): void {
     document.getElementById("app")?.classList.remove("settings-mode");
-    // After settings close, the chat-view is shown again.  Any widgets
-    // the user opened in the settings panels (e.g. confirm overlays,
-    // dropdowns, document-name dialogs) may still be sitting on top of
-    // the document tree.  Clear those and force a chat re-render so
-    // any visible state corruption is wiped.
     this._cleanupTransientOverlays();
     if (typeof (window as any).__appCleanupContentArea === "function") {
       (window as any).__appCleanupContentArea();
+    }
+    // Force a chat render to restore the message list after cleanup
+    // emptied it.  Without this the chat view stays blank after leaving
+    // settings.
+    import("./chat.js").then(m => m.Chat?.render?.());
+    if (typeof (window as any).__chatRender === "function") {
+      (window as any).__chatRender();
     }
   }
 
@@ -2993,7 +2995,7 @@ private _bindModelSelect(): void {
     ]);
 
     const knownTools = [
-      "bash", "bash_output", "file_write", "file_edit", "apply_patch",
+      "bash", "file_write", "file_edit", "apply_patch",
       "docker", "deploy", "database", "browser", "desktop",
     ];
     const knownCapabilities = Array.from(capabilityKeys);
@@ -3046,15 +3048,6 @@ private _bindModelSelect(): void {
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${t("permissions.settings.subtitle")}</div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn-add-model-top" id="btn-permissions-reset">
-              <span>${t("permissions.settings.resetDefaults")}</span>
-            </button>
-            <button class="btn-add-model-top" id="btn-permissions-save">
-              <i data-lucide="save" class="lucide"></i>
-              <span>${t("permissions.settings.saveChanges")}</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -3063,67 +3056,41 @@ private _bindModelSelect(): void {
 
       <div class="settings-section-title"><i data-lucide="zap" class="lucide section-title-icon"></i> ${t("permissions.settings.capabilities")}</div>
       <div class="settings-card">${capsHtml}</div>
-
-      <div class="perm-hint-block" style="margin-top:12px;">
-        <div class="perm-hint-title">${t("permissions.settings.defaultNoteTitle")}</div>
-        <div class="perm-hint-desc">${t("permissions.settings.defaultNoteDesc")}</div>
-      </div>
     `;
 
-    // Bind dropdowns and capture changes into a local draft.
-    const draft: Record<string, string> = {};
+    // Auto-save on every dropdown change.
     for (const group of ["tools", "capabilities"] as const) {
       const entries = group === "tools" ? toolEntries : capEntries;
-      for (const [name] of entries) {
+      for (const [name, policy] of entries) {
         this.bindDropdown(`perm-dd-${group}-${name}`, (val) => {
-          draft[name] = val;
+          const payload: Record<string, string> = {};
+          for (const g of ["tools", "capabilities"] as const) {
+            const es = g === "tools" ? toolEntries : capEntries;
+            for (const [n, p] of es) {
+              const key = `perm-dd-${g}-${n}`;
+              const wrap = document.getElementById(`${key}-wrap`);
+              const trigger = wrap?.querySelector(".settings-dropdown-trigger span");
+              const selectedOption = options.find(o => o.label === trigger?.textContent);
+              payload[n] = selectedOption?.id ?? p.value ?? "default";
+            }
+          }
+          // Update the changed value
+          payload[name] = val;
+          send({ type: "configure", config: { permission_settings: payload } });
+          const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
+          for (const [n, p] of toolEntries) {
+            next.tools[n] = { value: (payload[n] as any) || p.value || "default", source: "user" };
+          }
+          for (const [n, p] of capEntries) {
+            if (capabilityKeys.has(n)) {
+              next.capabilities[n] = { value: (payload[n] as any) || p.value || "default", source: "user" };
+            }
+          }
+          setPermissionPolicies(next);
+          showToast(t("permissions.settings.saved"), "");
         });
       }
     }
-
-    document.getElementById("btn-permissions-save")?.addEventListener("click", () => {
-      const payload: Record<string, string> = {};
-      for (const group of ["tools", "capabilities"] as const) {
-        const entries = group === "tools" ? toolEntries : capEntries;
-        for (const [name, policy] of entries) {
-          const key = `perm-dd-${group}-${name}`;
-          const wrap = document.getElementById(`${key}-wrap`);
-          const trigger = wrap?.querySelector(".settings-dropdown-trigger span");
-          const selectedOption = options.find(o => o.label === trigger?.textContent);
-          const value = draft[name] ?? selectedOption?.id ?? policy.value ?? "default";
-          payload[name] = value;
-        }
-      }
-      send({ type: "configure", config: { permission_settings: payload } });
-      // Optimistically update local state so the panel does not flicker.
-      const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
-      for (const [name, policy] of toolEntries) {
-        next.tools[name] = { value: (payload[name] as any) || policy.value || "default", source: "user" };
-      }
-      for (const [name, policy] of capEntries) {
-        if (capabilityKeys.has(name)) {
-          next.capabilities[name] = { value: (payload[name] as any) || policy.value || "default", source: "user" };
-        }
-      }
-      setPermissionPolicies(next);
-      showToast(t("permissions.settings.saved"), "");
-    });
-
-    document.getElementById("btn-permissions-reset")?.addEventListener("click", async () => {
-      if (await Dialog.confirm(t("permissions.settings.resetConfirmTitle"), t("permissions.settings.resetConfirmDesc"))) {
-        const payload: Record<string, string> = {};
-        for (const group of ["tools", "capabilities"] as const) {
-          const entries = group === "tools" ? toolEntries : capEntries;
-          for (const [name] of entries) payload[name] = "default";
-        }
-        send({ type: "configure", config: { permission_settings: payload } });
-        const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
-        for (const [name] of toolEntries) next.tools[name] = { value: "default", source: "default" };
-        for (const [name] of capEntries) next.capabilities[name] = { value: "default", source: "default" };
-        setPermissionPolicies(next);
-        showToast(t("permissions.settings.reset"), "");
-      }
-    });
 
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: this.panels.permissions });
@@ -3812,7 +3779,7 @@ private _bindModelSelect(): void {
     return `
       <div class="usage-chart-box usage-chart-box--compact">
         <div class="usage-chart-title">
-          <i data-lucide="calendar-heatmap" class="lucide"></i>
+          <i data-lucide="calendar-days" class="lucide"></i>
           ${t("settings.activityHeatmap") || "Activity heatmap"}
         </div>
         <div class="usage-heatmap-stats usage-heatmap-stats--compact">${captionHtml}</div>

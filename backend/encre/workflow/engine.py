@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
 
 import asyncio
@@ -163,6 +161,7 @@ class WorkflowEngine:
             RuntimeError: If the engine is already running a workflow.
         """
         if self._running:
+            # Prevent overlapping runs which would corrupt shared state.
             raise RuntimeError("WorkflowEngine is already running a workflow")
 
         self._running = True
@@ -192,10 +191,12 @@ class WorkflowEngine:
 
     @property
     def is_running(self) -> bool:
+        """Return ``True`` while a workflow is executing."""
         return self._running
 
     @property
     def workflow_id(self) -> str:
+        """Return the ID of the currently (or last) running workflow."""
         return self._workflow_id
 
     # ── Internal execution loop ────────────────────────────────────────
@@ -212,6 +213,7 @@ class WorkflowEngine:
 
         # Seed the ready queue with root tasks (no dependencies)
         for task in graph:
+            # Root tasks (no dependencies) can start immediately.
             if not task.dependencies:
                 task.status = WorkflowTaskStatus.READY
                 ready_queue.append(task)
@@ -273,6 +275,7 @@ class WorkflowEngine:
         ))
 
         attempt = 0
+        # Total attempts = one initial try plus the configured retry count.
         max_attempts = task.max_retries + 1
 
         while attempt < max_attempts:
@@ -291,6 +294,7 @@ class WorkflowEngine:
                 # Success
                 task.status = WorkflowTaskStatus.COMPLETED
                 task.completed_at = time.time()
+                # retry_count reflects how many retries were needed.
                 task.retry_count = attempt - 1
                 completed_ids.add(task.id)
                 duration = task.completed_at - (task.started_at or task.completed_at)
@@ -325,6 +329,7 @@ class WorkflowEngine:
 
                 if attempt < max_attempts:
                     # Schedule retry with exponential back-off
+                    # Cap the wait at 60s to avoid very long sleeps.
                     delay = min(2.0 ** attempt, 60.0)
                     self._emit(TaskRetrying(
                         workflow_id=self._workflow_id,
@@ -370,6 +375,7 @@ class WorkflowEngine:
         for task in graph:
             if task.status != WorkflowTaskStatus.PENDING:
                 continue
+            # A task is ready when PENDING and every dependency has completed.
             if not task.dependencies or all(
                 dep_id in completed_ids for dep_id in task.dependencies
             ):

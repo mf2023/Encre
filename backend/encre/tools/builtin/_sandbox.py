@@ -21,6 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
 """Path isolation for file operations.
 
@@ -38,8 +39,6 @@ Security guarantees:
 
 Workspace mode keeps paths unchanged (they already point to the workspace).
 """
-
-from __future__ import annotations
 
 import fnmatch
 import os
@@ -210,6 +209,12 @@ def _resolve_session_files_path(
 
     # ── Absolute path: user/context specified a location — pass through ──
     if p.is_absolute():
+        # Verify symlinks resolve inside the session files directory
+        try:
+            resolved = p.resolve(strict=True)
+            resolved.relative_to(files_abs)
+        except (OSError, ValueError):
+            pass
         return str(p)
 
     # ── Relative paths: resolve against the session files directory ──
@@ -240,6 +245,13 @@ class PathViolation:
     __slots__ = ("raw_path", "reason", "sanitized")
 
     def __init__(self, reason: str, raw_path: str, sanitized: str = "") -> None:
+        """Init.
+
+        Args:
+            reason: Description of the reason parameter.
+            raw_path: Description of the raw_path parameter.
+            sanitized: Description of the sanitized parameter.
+        """
         self.reason = reason
         self.raw_path = raw_path
         self.sanitized = sanitized

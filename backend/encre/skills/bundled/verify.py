@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Code-verification skill prompt loader.
+
+Loads the ``verify`` prompt from the ``skills`` category and substitutes the
+verification scope supplied by the caller.
+"""
 
 from typing import Any
 
@@ -31,5 +37,6 @@ _loader = PromptLoader()
 
 
 async def _verify_prompt(args: str | None, _ctx: dict[str, Any]) -> str:
+    """Render the verification skill prompt for the given scope."""
     scope = args or "all modified files in the current workspace"
     return _loader.load_with_context("verify", category="skills", scope=scope)

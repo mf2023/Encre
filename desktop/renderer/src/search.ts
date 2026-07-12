@@ -20,6 +20,16 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * Global command palette / search.
+ *
+ * Implements the ⌘K-style search overlay. It merges server-side search results
+ * with locally-indexed entities (skills, workspaces, models, settings nav, app
+ * actions, slash commands, …) via Fuse.js fuzzy matching, groups them into
+ * labeled sections, and dispatches the appropriate action when a result is
+ * activated.
+ */
+
 import Fuse from "fuse.js";
 import { getState, subscribe, setSearchResults, addAttachments } from "./state.js";
 import { send } from "./ws.js";
@@ -28,8 +38,12 @@ import type { SearchResultEntry } from "./types.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { matchingSlashCommands, SLASH_COMMANDS } from "./slash_commands.js";
 
+/**
+ * Registry of app-action callbacks invokable from search results.
+ */
 export const commandActions: Record<string, () => void> = {};
 
+/** A locally-indexed item fed into the Fuse fuzzy index. */
 interface LocalItem {
   kind: string;
   name: string;
@@ -38,12 +52,14 @@ interface LocalItem {
   path?: string;
 }
 
+/** Template describing how a search section is labeled/iconed. */
 interface SectionTemplate {
   getLabel: () => string;
   icon: string;
   kindLabel: (r: SearchResultEntry) => string;
 }
 
+/** A concrete search section: template plus its matched items. */
 interface SectionDef extends SectionTemplate {
   items: SearchResultEntry[];
 }
@@ -152,6 +168,7 @@ const SETTINGS_NAV_ITEMS: { panel: string; nameEn: string; nameZh: string }[] = 
   { panel: "about", nameEn: "About", nameZh: "关于" },
 ];
 
+/** Definition of an application action exposed in search (id + i18n labels). */
 interface AppActionDef {
   id: string;
   nameEn: string;
@@ -172,6 +189,9 @@ const SECTION_ORDER = [
   "notification", "custom_command", "file",
 ];
 
+/**
+ * The search command palette controller.
+ */
 export class Search {
   private input: HTMLInputElement;
   private resultsEl: HTMLElement;
@@ -180,6 +200,9 @@ export class Search {
   private fuse: Fuse<LocalItem>;
   private currentResults: SearchResultEntry[] = [];
 
+  /**
+   * Constructor: resolves DOM elements, builds the Fuse index and wires input/keys.
+   */
   constructor() {
     this.input = document.getElementById("search-input") as HTMLInputElement;
     this.resultsEl = document.getElementById("search-results")!;
@@ -201,6 +224,7 @@ export class Search {
     onLocaleChange(() => this.renderResults());
   }
 
+  /** Opens the search overlay and clears previous state/results. */
   open(): void {
     const overlay = document.getElementById("search-overlay")!;
     overlay.classList.remove("hidden");
@@ -212,6 +236,7 @@ export class Search {
     setTimeout(() => this.input.focus(), 10);
   }
 
+  /** Closes the search overlay and clears state/results. */
   close(): void {
     document.getElementById("search-overlay")?.classList.add("hidden");
     this.input.value = "";
@@ -263,6 +288,7 @@ export class Search {
     }
   }
 
+  /** Handles an activated result, dispatching by its `kind`. */
   private activateResult(r: SearchResultEntry): void {
     this.close();
     switch (r.kind) {
@@ -395,6 +421,7 @@ export class Search {
     this.insertPromptText(t("search.readFile", { path }));
   }
 
+  /** Renders the merged backend + local results grouped into sections. */
   private renderResults(): void {
     const q = this.input.value.trim();
     const backendResults = getState().searchResults;
@@ -440,6 +467,7 @@ export class Search {
     }
   }
 
+  /** Builds the local Fuse-indexed items from current app state. */
   private searchLocal(q: string): SearchResultEntry[] {
     if (!q || q.length < 2) return [];
     const st = getState();
@@ -494,6 +522,7 @@ export class Search {
     } as SearchResultEntry));
   }
 
+  /** Merges backend and local results, de-duplicated by kind+identity. */
   private mergeResults(backend: SearchResultEntry[], local: SearchResultEntry[]): SearchResultEntry[] {
     const seen = new Set<string>();
     const merged = [...backend];
@@ -510,6 +539,7 @@ export class Search {
     return merged;
   }
 
+  /** Groups results into ordered, labeled sections for rendering. */
   private buildSections(results: SearchResultEntry[]): SectionDef[] {
     const sections: SectionDef[] = [];
     const seenKinds = new Set<string>();

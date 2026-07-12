@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: defaults.py
 
+Defaults implementation for the Encre tool system.
+"""
 from encre.tools.builtin import (
     EncreAgentTool,
     EncreApplyPatchTool,
@@ -74,10 +78,17 @@ from encre.tools.builtin import (
     EncreWebSearchTool,
     EncreWorkflowTool,
 )
+from encre.tools.builtin.computer_use import EncreComputerUseTool
+from encre.tools.builtin.vlm_computer_use import EncreVLMComputerUseTool
 from encre.tools.registry import ToolRegistry
 
 
 def register_default_tools(registry: ToolRegistry) -> ToolRegistry:
+    """Register default tools.
+
+    Args:
+        registry: Description of the registry parameter.
+    """
     registry.register_many([
         EncreFileReadTool(),
         EncreFileWriteTool(),
@@ -128,6 +139,8 @@ def register_default_tools(registry: ToolRegistry) -> ToolRegistry:
         EncreMemoryProfileTool(),
         EncreQuestionTool(),
         EncreWorkflowTool(),
+        EncreComputerUseTool(),
+        EncreVLMComputerUseTool(),
     ])
     return registry
 

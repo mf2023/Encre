@@ -21,7 +21,23 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""
+Failover backend -- chains multiple backends with automatic failover.
+
+:class:`FailoverBackend` wraps an ordered list of :class:`BaseBackend`
+instances and tries them in turn.  When the active backend raises an
+exception or yields a :class:`BackendError` (including 529/overloaded), the
+partial event stream is discarded and the next healthy backend is attempted.
+Only a complete, successful stream is forwarded to the caller.
+
+Per-backend health is tracked via :class:`BackendHealth`; backends that fail
+consecutively are marked unhealthy and skipped for a recovery grace period.
+Consecutive 529 errors are tracked separately and, once they reach
+``RetryConfig.consecutive_529_threshold``, trigger the
+``on_fallback_triggered`` callback.
+"""
 
 import asyncio
 import contextlib
@@ -73,20 +89,34 @@ class BackendHealth:
     total_failures: int = 0
 
     def record_success(self) -> None:
+        """Reset failure counters after a successful request.
+
+        Marks the backend healthy again and clears both the generic and
+        529-specific consecutive failure counters.
+        """
         self.healthy = True
         self.consecutive_failures = 0
         self.consecutive_529_errors = 0
         self.total_requests += 1
 
     def record_failure(self, error: str, is_overloaded: bool = False) -> None:
+        """Record a failed request and update health state.
+
+        Args:
+            error: A string description of the failure.
+            is_overloaded: True if the failure was a 529/overloaded error,
+                which is tracked separately for model-fallback decisions.
+        """
         self.consecutive_failures += 1
         self.total_failures += 1
         self.total_requests += 1
         self.last_error = error
+        # Track 529/overloaded streaks separately; any other error resets it.
         if is_overloaded:
             self.consecutive_529_errors += 1
         else:
             self.consecutive_529_errors = 0
+        # Trip the health flag once failures accumulate past the threshold.
         if self.consecutive_failures >= 3:
             self.healthy = False
 
@@ -132,14 +162,30 @@ class FailoverBackend(BaseBackend):
         retry_config: RetryConfig = DEFAULT_RETRY_CONFIG,
         connection_monitor: ConnectionHealthMonitor | None = None,
     ) -> None:
+        """Initialize the failover backend.
+
+        Args:
+            backends: Ordered list of ``(name, backend)`` tuples. The first
+                entry is treated as the primary backend and its capabilities
+                are used for capability queries.
+            retry_config: Retry/fallback configuration (thresholds and
+                callbacks) shared across the chain.
+            connection_monitor: Optional connection health monitor; a new
+                one is created when not provided.
+
+        Raises:
+            ValueError: If ``backends`` is empty.
+        """
         if not backends:
             raise ValueError("At least one backend is required")
         self._backends: list[tuple[str, BaseBackend]] = backends
         self._retry_config = retry_config
+        # One health record per backend, keyed by its name.
         self._health: dict[str, BackendHealth] = {
             name: BackendHealth(name=name) for name, _ in backends
         }
         self._connection_monitor = connection_monitor or ConnectionHealthMonitor()
+        # The first backend is the primary used for capability delegation.
         self._primary = backends[0][1]
         self._active_name: str = backends[0][0]
         self._lock = asyncio.Lock()
@@ -313,21 +359,31 @@ class FailoverBackend(BaseBackend):
         return False
 
     def supports_tool_calling(self) -> bool:
+        """Delegate tool-calling capability to the primary backend."""
         return self._primary.supports_tool_calling()
 
     def context_window_size(self) -> int:
+        """Delegate the context window size to the primary backend."""
         return self._primary.context_window_size()
 
     def supports_thinking(self) -> bool:
+        """Delegate thinking-token support to the primary backend."""
         return self._primary.supports_thinking()
 
     def supports_prompt_caching(self) -> bool:
+        """Delegate prompt-caching support to the primary backend."""
         return self._primary.supports_prompt_caching()
 
     def count_tokens(self, text: str) -> int:
+        """Delegate token counting to the primary backend."""
         return self._primary.count_tokens(text)
 
     def get_health(self) -> dict[str, dict[str, Any]]:
+        """Return a per-backend health snapshot for diagnostics.
+
+        Combines the failover chain's health records with the connection
+        monitor's degraded state into a single dictionary keyed by name.
+        """
         conn_health = self._connection_monitor.get_all_health()
         return {
             name: {
@@ -344,9 +400,11 @@ class FailoverBackend(BaseBackend):
 
     @property
     def active_backend_name(self) -> str:
+        """Return the name of the backend most recently attempted/active."""
         return self._active_name
 
     async def aclose(self) -> None:
+        """Close every backend in the chain, ignoring individual errors."""
         for _, backend in self._backends:
             with contextlib.suppress(Exception):
                 await backend.aclose()

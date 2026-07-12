@@ -21,7 +21,16 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Public surface of the multi-agent "swarm" package.
+#
+# A swarm decomposes a high-level goal into a DAG of tasks (``planner``), assigns
+# each task to a role-specialised teammate (``roles``), executes the tasks with
+# dependency-aware concurrency (``orchestrator`` / ``manager`` / ``teammate``),
+# lets agents coordinate via a shared ``blackboard`` and point-to-point
+# ``mailbox``, and optionally resolves disagreements through ``consensus``.
+# ``session`` ties the pieces together into a single ``execute`` call.
 
 from encre.swarm.blackboard import BlackboardEntry, EncreBlackboard
 from encre.swarm.consensus import ConsensusResult, EncreConsensus, Proposal, Vote

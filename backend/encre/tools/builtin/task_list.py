@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/task_list.py
 
+Task list implementation for the Encre tool system.
+"""
 from typing import Any
 
 from encre.task.manager import EncreTaskManager
@@ -30,6 +34,11 @@ from encre.tools.base import build_tool
 
 
 async def _task_list_execute(**kwargs: Any) -> str:
+    """Task list execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     status = kwargs.get("status")
     tasks = EncreTaskManager.list_tasks(status=status)
 
@@ -66,5 +75,8 @@ EncreTaskListTool = build_tool(
     },
     execute=_task_list_execute,
     intents=["general", "coding", "data", "research"],
+    category="task",
+    semantic_type="read",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

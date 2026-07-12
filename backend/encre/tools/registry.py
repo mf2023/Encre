@@ -21,44 +21,115 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
-
-from typing import Any
+from typing import Any, Callable
 
 from encre.tools.base import EncreTool
 
 
 class ToolRegistry:
+    """Central registry for tool definitions.
+
+    Manages tool lifecycle: registration, validation, lookup, and format
+    conversion (OpenAI / Anthropic).  Supports listeners for dynamic
+    tool-set changes and caches converted formats for performance.
+    """
+
     def __init__(self) -> None:
         self._tools: dict[str, EncreTool] = {}
+        self._listeners: list[Callable[[str, EncreTool], None]] = []
+        self._format_cache: dict[str, list[dict[str, Any]]] = {}
+
+    def _validate_tool(self, tool: EncreTool) -> None:
+        """Validate that a tool has all required fields before registration."""
+        if not tool.name:
+            raise ValueError("Tool must have a non-empty 'name'")
+        if not tool.description:
+            raise ValueError(f"Tool '{tool.name}' must have a non-empty 'description'")
+        if not tool.input_schema:
+            raise ValueError(f"Tool '{tool.name}' must have an 'input_schema'")
+        if not hasattr(tool, "execute") or not callable(tool.execute):
+            raise ValueError(f"Tool '{tool.name}' must have a callable 'execute' method")
+
+    def _notify_listeners(self, event: str, tool: EncreTool) -> None:
+        """Notify all registered listeners of a tool registration event."""
+        for cb in self._listeners:
+            try:
+                cb(event, tool)
+            except Exception:
+                pass
+
+    def _invalidate_cache(self) -> None:
+        """Clear all cached format conversions so they are regenerated."""
+        self._format_cache.clear()
 
     def register(self, tool: EncreTool) -> None:
+        """Register a tool. Validates requirements and notifies listeners."""
+        self._validate_tool(tool)
         self._tools[tool.name] = tool
+        self._invalidate_cache()
+        self._notify_listeners("register", tool)
 
     def register_many(self, tools: list[EncreTool]) -> None:
+        """Register multiple tools in sequence."""
         for tool in tools:
             self.register(tool)
 
+    def unregister(self, name: str) -> EncreTool | None:
+        """Remove a tool by name. Returns the removed tool, or None."""
+        tool = self._tools.pop(name, None)
+        if tool is not None:
+            self._invalidate_cache()
+            self._notify_listeners("unregister", tool)
+        return tool
+
     def get(self, name: str) -> EncreTool | None:
+        """Look up a tool by name."""
         return self._tools.get(name)
 
     def list_tools(self) -> dict[str, EncreTool]:
+        """Return a copy of all registered tools keyed by name."""
         return dict(self._tools)
 
+    def all(self) -> list[EncreTool]:
+        """Return a list of all registered tools."""
+        return list(self._tools.values())
+
+    @property
+    def count(self) -> int:
+        """Number of registered tools."""
+        return len(self._tools)
+
+    def get_by_category(self, category: str) -> list[EncreTool]:
+        """Filter tools by their category field."""
+        return [t for t in self._tools.values() if t.category == category]
+
+    def get_by_intents(self, intents: list[str]) -> list[EncreTool]:
+        """Filter tools that match at least one of the given intents."""
+        return [
+            t for t in self._tools.values()
+            if any(i in getattr(t, "intents", ["general"]) for i in intents)
+        ]
+
+    def register_listener(self, callback: Callable[[str, EncreTool], None]) -> None:
+        """Register a callback invoked on tool register/unregister events."""
+        self._listeners.append(callback)
+
     def get_openai_tools(self) -> list[dict[str, Any]]:
-        return [tool.to_openai_format() for tool in self._tools.values()]
+        """Return all tools in OpenAI function-calling format (cached)."""
+        key = "openai"
+        if key not in self._format_cache:
+            self._format_cache[key] = [t.to_openai_format() for t in self._tools.values()]
+        return self._format_cache[key]
 
     def get_openai_tools_for_intents(self, intents: list[str]) -> list[dict[str, Any]]:
-        """Return tools whose intents intersect with the given intent list."""
-        result = []
-        for tool in self._tools.values():
-            tool_intents = getattr(tool, 'intents', ['general'])
-            if any(i in intents for i in tool_intents):
-                result.append(tool.to_openai_format())
-        return result
+        """Return tools matching given intents in OpenAI format."""
+        return [t.to_openai_format() for t in self.get_by_intents(intents)]
 
     def get_anthropic_tools(self) -> list[dict[str, Any]]:
-        return [tool.to_anthropic_format() for tool in self._tools.values()]
-
-    def all(self) -> list[EncreTool]:
-        return list(self._tools.values())
+        """Return all tools in Anthropic tool format (cached)."""
+        key = "anthropic"
+        if key not in self._format_cache:
+            self._format_cache[key] = [t.to_anthropic_format() for t in self._tools.values()]
+        return self._format_cache[key]

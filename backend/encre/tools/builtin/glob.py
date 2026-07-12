@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/glob.py
 
+Glob implementation for the Encre tool system.
+"""
 import os
 from typing import Any
 
@@ -31,10 +35,14 @@ from encre.tools.base import build_tool
 
 
 async def _glob_execute(**kwargs: Any) -> str:
+    """List files matching a glob pattern. Returns paths sorted alphabetically."""
     pattern = kwargs.get("pattern", "")
     root_path = kwargs.get("path", os.getcwd())
 
-    results = _native_glob(pattern, root_path)
+    try:
+        results = _native_glob(pattern, root_path)
+    except Exception as exc:
+        return f"Error: glob failed: {exc}"
     if not results:
         return f"No files match pattern: {pattern}"
     return "\n".join(results)
@@ -43,12 +51,14 @@ async def _glob_execute(**kwargs: Any) -> str:
 EncreGlobTool = build_tool(
     name="glob",
     description=(
-        "- Fast file pattern matching tool that works with any codebase size\n"
-        "- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\"\n"
-        "- Returns matching file paths sorted by modification time\n"
-        "- Use this tool when you need to find files by name patterns\n"
-        "- When you are doing an open ended search that may require multiple "
-        "rounds of globbing and grepping, use the agent tool instead"
+        "Fast file pattern matching using glob patterns. "
+        "Supports patterns like \"**/*.py\", \"src/**/*.ts\", "
+        "or \"data/*.csv\". "
+        "Returns matching file paths sorted alphabetically. "
+        "Skips hidden dirs and common tooling directories.\n\n"
+        "Use for: finding files by name patterns, exploring a directory tree, "
+        "or narrowing a search before using grep.\n"
+        "For open-ended searches that need multiple rounds, consider the agent tool."
     ),
     input_schema={
         "type": "object",
@@ -66,5 +76,12 @@ EncreGlobTool = build_tool(
     },
     execute=_glob_execute,
     intents=["general", "coding", "data"],
+    category="filesystem",
+    triggers=["glob", "ls", "dir", "list files", "find file", "search files", "tree", "stat", "match"],
+    semantic_type="search",
+    cost_level="low",
+    retryability="auto",
+    safe_fallback="Broaden the pattern (use **) or check that the root path exists.",
     is_concurrency_safe=lambda _: True,
+    is_readonly=True,
 )

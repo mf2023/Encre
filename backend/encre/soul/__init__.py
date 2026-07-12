@@ -21,7 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Agent "soul" (identity) system package.
+
+Exposes :class:`EncreSoulSystem` and the :class:`SoulFiles` container that
+manage the agent's encrypted identity, personality, and user-knowledge files.
+"""
 
 from encre.soul.system import EncreSoulSystem, SoulFiles
 

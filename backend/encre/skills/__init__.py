@@ -21,7 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Skills system package.
+
+Exposes the :class:`EncreSkillRegistry` and the
+:class:`BundledSkillDefinition` data structure used to register, resolve, and
+activate agent skills (reusable prompt bundles).
+"""
 
 from encre.skills.registry import EncreSkillRegistry
 from encre.skills.types import BundledSkillDefinition

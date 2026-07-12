@@ -21,6 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
 """Tests for the enhanced sandbox system.
 
@@ -59,8 +60,14 @@ from encre.sandbox.types import (
 
 
 class TestSandboxConfig:
+    """Test cases covering sandbox config.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_default_values(self):
+        """Verifies that default values."""
         cfg = SandboxConfig()
+        # Confirm the expected result for this scenario: default values.
         assert cfg.image == "python:3.11-slim"
         assert cfg.workspace_mount == "/workspace"
         assert cfg.mode == SandboxMode.NONE
@@ -82,6 +89,7 @@ class TestSandboxConfig:
         assert cfg.extra_mounts == {}
 
     def test_custom_values(self):
+        """Verifies that custom values."""
         cfg = SandboxConfig(
             mode=SandboxMode.CONTAINER,
             image="ubuntu:22.04",
@@ -118,6 +126,7 @@ class TestSandboxConfig:
             disable_network_tooling=True,
             extra_mounts={"/data": "/mnt/data"},
         )
+        # Confirm the expected result for this scenario: custom values.
         assert cfg.mode == SandboxMode.CONTAINER
         assert cfg.image == "ubuntu:22.04"
         assert cfg.network.policy == NetworkPolicy.LIMITED
@@ -135,7 +144,9 @@ class TestSandboxConfig:
         assert cfg.extra_mounts == {"/data": "/mnt/data"}
 
     def test_network_policy_values(self):
+        """Verifies that network policy values."""
         none_cfg = SandboxConfig()
+        # Confirm the expected result for this scenario: network policy values.
         assert none_cfg.network.policy == NetworkPolicy.NONE
 
         limited_cfg = SandboxConfig(
@@ -149,27 +160,33 @@ class TestSandboxConfig:
         assert host_cfg.network.policy == NetworkPolicy.HOST
 
     def test_multiple_allowed_domains(self):
+        """Verifies that multiple allowed domains."""
         cfg = SandboxConfig(
             network=NetworkConfig(
                 policy=NetworkPolicy.LIMITED,
                 allowed_domains=["pypi.org", "github.com", "registry.npmjs.org"],
             ),
         )
+        # Confirm the expected result for this scenario: multiple allowed domains.
         assert len(cfg.network.allowed_domains) == 3
         assert "pypi.org" in cfg.network.allowed_domains
 
     def test_multiple_env_vars(self):
+        """Verifies that multiple env vars."""
         cfg = SandboxConfig(
             env=EnvConfig(
                 env_vars={"PYTHONPATH": "/app", "NODE_ENV": "production", "LOG_LEVEL": "debug"},
             ),
         )
+        # Confirm the expected result for this scenario: multiple env vars.
         assert cfg.env.env_vars["PYTHONPATH"] == "/app"
         assert cfg.env.env_vars["NODE_ENV"] == "production"
         assert len(cfg.env.env_vars) == 3
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(SandboxConfig)
         assert is_dataclass(NetworkConfig)
         assert is_dataclass(ResourceConfig)
@@ -178,11 +195,15 @@ class TestSandboxConfig:
         assert is_dataclass(EnvConfig)
 
     def test_sandbox_mode_default(self):
+        """Verifies that sandbox mode default."""
+        # Confirm the expected result for this scenario: sandbox mode default.
         assert SandboxConfig().mode == SandboxMode.NONE
 
     def test_sandbox_mode_explicit(self):
+        """Verifies that sandbox mode explicit."""
         for mode in SandboxMode:
             cfg = SandboxConfig(mode=mode)
+            # Confirm the expected result for this scenario: sandbox mode explicit.
             assert cfg.mode == mode
 
 
@@ -192,8 +213,14 @@ class TestSandboxConfig:
 
 
 class TestSandboxResult:
+    """Test cases covering sandbox result.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_basic_result(self):
+        """Verifies that basic result."""
         result = SandboxResult(stdout="hello world\n", stderr="", exit_code=0)
+        # Confirm the expected result for this scenario: basic result.
         assert result.stdout == "hello world\n"
         assert result.stderr == ""
         assert result.exit_code == 0
@@ -203,17 +230,20 @@ class TestSandboxResult:
         assert result.killed is False
 
     def test_error_result(self):
+        """Verifies that error result."""
         result = SandboxResult(
             stdout="",
             stderr="command not found: xxx",
             exit_code=127,
             duration_ms=150.5,
         )
+        # Confirm the expected result for this scenario: error result.
         assert result.exit_code == 127
         assert "command not found" in result.stderr
         assert result.duration_ms == 150.5
 
     def test_timeout_result(self):
+        """Verifies that timeout result."""
         result = SandboxResult(
             stdout="partial output",
             stderr="Command timed out",
@@ -221,29 +251,35 @@ class TestSandboxResult:
             timed_out=True,
             duration_ms=120000.0,
         )
+        # Confirm the expected result for this scenario: timeout result.
         assert result.timed_out is True
         assert result.exit_code == -1
 
     def test_sandbox_violation(self):
+        """Verifies that sandbox violation."""
         result = SandboxResult(
             stdout="",
             stderr="Blocked: privilege escalation",
             exit_code=-4,
             sandbox_violation="sudo detected",
         )
+        # Confirm the expected result for this scenario: sandbox violation.
         assert result.exit_code == -4
         assert result.sandbox_violation == "sudo detected"
 
     def test_output_truncated(self):
+        """Verifies that output truncated."""
         result = SandboxResult(
             stdout="some output",
             stderr="",
             exit_code=0,
             output_truncated=True,
         )
+        # Confirm the expected result for this scenario: output truncated.
         assert result.output_truncated is True
 
     def test_security_events(self):
+        """Verifies that security events."""
         result = SandboxResult(
             stdout="",
             stderr="",
@@ -252,11 +288,14 @@ class TestSandboxResult:
                 {"event_type": "execution", "timestamp": 1000.0, "details": "command run"},
             ],
         )
+        # Confirm the expected result for this scenario: security events.
         assert len(result.security_events) == 1
         assert result.security_events[0]["event_type"] == "execution"
 
     def test_is_dataclass(self):
+        """Verifies that is dataclass."""
         from dataclasses import is_dataclass
+        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(SandboxResult)
 
 
@@ -266,13 +305,20 @@ class TestSandboxResult:
 
 
 class TestEncreContainerSandbox:
+    """Test cases covering encre container sandbox.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_construction_basic(self):
+        """Verifies that construction basic."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
+        # Confirm the expected result for this scenario: construction basic.
         assert sandbox.workspace == os.path.abspath("/tmp/test")
         assert sandbox._container_id is None
         assert sandbox._active is False
 
     def test_construction_with_config(self):
+        """Verifies that construction with config."""
         cfg = SandboxConfig(
             mode=SandboxMode.CONTAINER,
             image="python:3.11-slim",
@@ -280,39 +326,52 @@ class TestEncreContainerSandbox:
             resource=ResourceConfig(memory_limit="256m", cpu_limit=0.5),
         )
         sandbox = EncreContainerSandbox(workspace="/tmp/test", config=cfg)
+        # Confirm the expected result for this scenario: construction with config.
         assert sandbox.config.image == "python:3.11-slim"
         assert sandbox.config.timeout == 60
         assert sandbox.config.resource.memory_limit == "256m"
         assert sandbox.config.resource.cpu_limit == 0.5
 
     def test_is_available_returns_bool(self):
+        """Verifies that is available returns bool."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         result = sandbox.is_available()
+        # Confirm the expected result for this scenario: is available returns bool.
         assert isinstance(result, bool)
 
     def test_context_manager_interface(self):
+        """Verifies that context manager interface."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
+        # Confirm the expected result for this scenario: context manager interface.
         assert hasattr(sandbox, "__enter__")
         assert hasattr(sandbox, "__exit__")
 
     def test_context_manager_enter_returns_self(self):
+        """Verifies that context manager enter returns self."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         with sandbox as s:
+            # Confirm the expected result for this scenario: context manager enter returns self.
             assert s is sandbox
 
     def test_close_method(self):
+        """Verifies that close method."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
+        # Confirm the expected result for this scenario: close method.
         assert hasattr(sandbox, "close")
         sandbox.close()  # Should not raise even with no active container
 
     def test_cleanup_method(self):
+        """Verifies that cleanup method."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
+        # Confirm the expected result for this scenario: cleanup method.
         assert hasattr(sandbox, "cleanup")
         sandbox.cleanup()  # Should not raise even with no active container
 
     def test_get_audit_log(self):
+        """Verifies that get audit log."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         log = sandbox.get_audit_log()
+        # Confirm the expected result for this scenario: get audit log.
         assert isinstance(log, list)
         # Execute something that gets blocked (no sudo in container, so it'll
         # either pass through or be blocked by _check_command)
@@ -329,6 +388,7 @@ class TestEncreContainerSandbox:
         # Run a simple command
         result = sandbox.execute("echo hello")
         if sandbox.is_available():
+            # Confirm the expected result for this scenario: execute without docker returns file not found.
             assert result.exit_code in (0, -2, -3)
         else:
             assert result.exit_code == -2
@@ -339,6 +399,7 @@ class TestEncreContainerSandbox:
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         if sandbox.is_available():
             result = sandbox.execute("sleep 10", timeout=1)
+            # Confirm the expected result for this scenario: execute timeout handling.
             assert result.timed_out is True
             assert result.exit_code == -1
 
@@ -347,6 +408,7 @@ class TestEncreContainerSandbox:
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         long_cmd = "echo " + "x" * 5000
         result = sandbox.execute(long_cmd)
+        # Confirm the expected result for this scenario: command too long.
         assert result.exit_code == -4
         assert "too long" in result.sandbox_violation.lower() or "too long" in result.stderr.lower()
 
@@ -363,25 +425,31 @@ class TestEncreContainerSandbox:
             result = sandbox.execute(cmd)
             # Should either be blocked (-4) or run with any exit code
             # (depends on whether Docker is available)
+            # Confirm the expected result for this scenario: blocked command pattern.
             assert result.exit_code in (-4, -2, -3) or sandbox.is_available()
 
     def test_stop_container_noop_when_no_container(self):
+        """Verifies that stop container noop when no container."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         sandbox.stop_container()  # Should not raise
+        # Confirm the expected result for this scenario: stop container noop when no container.
         assert sandbox._container_id is None
         assert sandbox._active is False
 
     def test_exec_in_container_requires_active_container(self):
+        """Verifies that exec in container requires active container."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         with pytest.raises(RuntimeError, match="No active container"):
             sandbox.exec_in_container("echo hello")
 
     def test_run_container_requires_docker(self):
+        """Verifies that run container requires docker."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         if not sandbox.is_available():
             pytest.skip("Docker not available")
         container_id = sandbox.run_container()
         try:
+            # Confirm the expected result for this scenario: run container requires docker.
             assert container_id is not None
             assert len(container_id) > 0
             assert sandbox._active is True
@@ -389,12 +457,14 @@ class TestEncreContainerSandbox:
             sandbox.cleanup()
 
     def test_exec_in_running_container(self):
+        """Verifies that exec in running container."""
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         if not sandbox.is_available():
             pytest.skip("Docker not available")
         sandbox.run_container()
         try:
             result = sandbox.exec_in_container("echo hello")
+            # Confirm the expected result for this scenario: exec in running container.
             assert result.exit_code == 0
             assert "hello" in result.stdout
         finally:
@@ -407,6 +477,7 @@ class TestEncreContainerSandbox:
         sandbox.execute("sudo ls")  # will be blocked or fail
         sandbox.execute("echo test")
         log = sandbox.get_audit_log()
+        # Confirm the expected result for this scenario: security audit persistence.
         assert len(log) >= 1
 
 
@@ -416,8 +487,13 @@ class TestEncreContainerSandbox:
 
 
 class TestPathIsolation:
+    """Test cases covering path isolation.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     @pytest.fixture
     def sandbox_dir(self):
+        """Verifies that sandbox dir."""
         with tempfile.TemporaryDirectory() as tmp:
             yield Path(tmp) / "sandbox"
 
@@ -436,6 +512,7 @@ class TestPathIsolation:
 
             # Relative path should resolve inside sandbox
             result = _resolve_sandbox_path("output.txt", sandbox, "test-session")
+            # Confirm the expected result for this scenario: remap path basic.
             assert result.startswith(sandbox)
             assert result.endswith("output.txt")
 
@@ -453,6 +530,7 @@ class TestPathIsolation:
 
             # Absolute path outside sandbox → reject
             result = _resolve_sandbox_path("/etc/passwd", sandbox, "test-session")
+            # Confirm the expected result for this scenario: remap path rejects outside.
             assert result == ""
 
             # Path traversal → reject
@@ -469,6 +547,7 @@ class TestPathIsolation:
             # Safe path
             safe = str(sandbox_root / "valid.txt")
             violation, result = check_path_safety(safe, sandbox_root)
+            # Confirm the expected result for this scenario: check path safety.
             assert violation is None
             assert result == safe
 
@@ -486,6 +565,7 @@ class TestPathIsolation:
         """Test sandbox root directory creation."""
         from encre.tools.builtin._sandbox import get_sandbox_root
         root = get_sandbox_root("test-session")
+        # Confirm the expected result for this scenario: get sandbox root.
         assert root.exists()
         assert root.is_dir()
         assert root.name == "test-session"
@@ -496,6 +576,7 @@ class TestPathIsolation:
         result = remap_tool_path("test.txt")
         # When no loop is active, the path should be returned unchanged or mapped
         # to the sandbox if the session_id came through
+        # Confirm the expected result for this scenario: remap tool path no loop.
         assert result  # Not empty
 
 
@@ -505,10 +586,15 @@ class TestPathIsolation:
 
 
 class TestBashWorkspaceInjection:
+    """Test cases covering bash workspace injection.
+    
+    Covers the expected behavior and relevant edge cases.
+    """
     def test_workspace_context_defaults(self):
         """Test that the workspace context var defaults to None."""
         from encre.tools.builtin.bash import _get_workspace, reset_workspace, set_workspace
 
+        # Confirm the expected result for this scenario: workspace context defaults.
         assert _get_workspace() is None
 
     def test_set_and_reset_workspace(self):
@@ -516,6 +602,7 @@ class TestBashWorkspaceInjection:
         from encre.tools.builtin.bash import _get_workspace, reset_workspace, set_workspace
 
         token = set_workspace("/tmp/test")
+        # Confirm the expected result for this scenario: set and reset workspace.
         assert _get_workspace() == "/tmp/test"
         reset_workspace(token)
         assert _get_workspace() is None
@@ -525,6 +612,7 @@ class TestBashWorkspaceInjection:
         from encre.tools.builtin.bash import _get_workspace, reset_workspace, set_workspace
 
         token = set_workspace("/workspace/a")
+        # Confirm the expected result for this scenario: context isolation.
         assert _get_workspace() == "/workspace/a"
 
         reset_workspace(token)

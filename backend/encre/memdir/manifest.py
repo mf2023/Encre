@@ -21,15 +21,34 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from encre.memdir.system import MemoryHeader
 
+"""Render the Markdown manifest that summarises all memory files.
+
+The manifest is a Markdown table shown to the model so it can discover
+which memories exist, their age, description, type, and tags before
+deciding to read a specific ``.md`` file.
+"""
+
 
 def format_memory_manifest(memories: list[MemoryHeader]) -> str:
+    """Build a Markdown table describing each memory header.
+
+    Renders a pipe-delimited table with index, filename, age, description,
+    type, and tags. Long descriptions and tag lists are truncated with an
+    ellipsis so the manifest stays compact inside the model prompt.
+
+    Args:
+        memories: Sequence of :class:`MemoryHeader` objects to render.
+
+    Returns:
+        A Markdown table string, or ``""`` when no memories are provided.
+    """
     if not memories:
         return ""
 
@@ -41,10 +60,12 @@ def format_memory_manifest(memories: list[MemoryHeader]) -> str:
 
     for i, m in enumerate(memories, 1):
         desc = m.description or "-"
+        # Keep descriptions compact so the table stays readable in prompts
         if len(desc) > 60:
             desc = desc[:57] + "..."
         mtype = m.memory_type or "-"
         tags = ", ".join(m.tags) if m.tags else "-"
+        # Likewise cap the rendered tag list
         if len(tags) > 40:
             tags = tags[:37] + "..."
 

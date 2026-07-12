@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Encre cryptographic layer -- provides encrypt/decrypt for all sensitive data.
 
@@ -47,8 +47,6 @@ Master key
 
 No environment variables are consulted for key material.
 """
-
-from __future__ import annotations
 
 import base64
 import hashlib

@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Metacognitive capability tracking for the evolution subsystem.
+
+:class:`EncreMetaCognition` classifies each turn into skill domains (using
+:data:`_DOMAIN_TAXONOMY`), tracks a rolling :class:`CapabilityProfile`
+per domain, and reports known weaknesses / delegation suggestions so the
+agent can be cautious or hand work off when its capability is low.
+"""
 
 import time
 from dataclasses import dataclass
@@ -30,6 +38,12 @@ from typing import Any
 
 @dataclass
 class CapabilityProfile:
+    """Rolling performance profile for a single skill domain.
+
+    The :meth:`update` method blends a fresh success/failure signal into the
+    running ``score`` (exponential moving average) and raises ``confidence``
+    as more samples accumulate.
+    """
     domain: str
     score: float = 0.5
     confidence: float = 0.0
@@ -38,6 +52,7 @@ class CapabilityProfile:
     last_assessed: float = 0.0
 
     def update(self, success: bool, _difficulty: float = 0.5) -> None:
+        """Blend a new outcome into the running score and confidence."""
         self.sample_count += 1
         if success:
             self.success_count += 1
@@ -47,6 +62,7 @@ class CapabilityProfile:
         self.last_assessed = time.time()
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the profile to a plain dictionary."""
         return {
             "domain": self.domain,
             "score": self.score,
@@ -78,6 +94,7 @@ _DOMAIN_TAXONOMY: dict[str, str] = {
 
 
 class EncreMetaCognition:
+    """Tracks per-domain capability and surfaces self-awareness context."""
     def __init__(self) -> None:
         self._profiles: dict[str, CapabilityProfile] = {}
         self._delegation_history: list[dict[str, Any]] = []
@@ -87,6 +104,7 @@ class EncreMetaCognition:
         prompt: str,
         tool_results: list[dict[str, Any]],
     ) -> None:
+        """Update capability profiles for the domains touched this turn."""
         domains = _classify_domains(prompt)
         total = len(tool_results)
         errors = sum(1 for r in tool_results if r.get("is_error"))
@@ -99,12 +117,14 @@ class EncreMetaCognition:
             self._profiles[domain].update(success, difficulty)
 
     def get_profile(self, domain: str | None = None) -> dict[str, Any] | CapabilityProfile:
+        """Return one domain's profile (dict) or all profiles keyed by domain."""
         if domain:
             p = self._profiles.get(domain)
             return p.to_dict() if p else {"domain": domain, "score": 0.5, "confidence": 0.0}
         return {d: p.to_dict() for d, p in self._profiles.items()}
 
     def get_weakness_report(self) -> list[dict[str, Any]]:
+        """Return low-scoring, sufficiently-confident domains."""
         weak: list[dict[str, Any]] = []
         for domain, profile in self._profiles.items():
             if profile.confidence > 0.3 and profile.score < 0.4:
@@ -118,6 +138,7 @@ class EncreMetaCognition:
         return weak
 
     def should_delegate(self, task_description: str) -> tuple[bool, str]:
+        """Decide whether a task should be delegated (avg capability too low)."""
         domains = _classify_domains(task_description)
         scores: list[float] = []
         for domain in domains:
@@ -132,6 +153,7 @@ class EncreMetaCognition:
         return False, ""
 
     def get_self_awareness_context(self) -> str:
+        """Return a prompt snippet listing known weaknesses, or empty string."""
         weak = self.get_weakness_report()
         if not weak:
             return ""
@@ -143,6 +165,7 @@ class EncreMetaCognition:
         return "\n".join(lines)
 
     def record_delegation(self, task: str, delegate: str, success: bool) -> None:
+        """Record an outsourcing event (bounded to the last 100)."""
         self._delegation_history.append({
             "task": task[:200],
             "delegate": delegate,
@@ -153,11 +176,13 @@ class EncreMetaCognition:
             self._delegation_history.pop(0)
 
     def reset(self) -> None:
+        """Clear all profiles and delegation history."""
         self._profiles.clear()
         self._delegation_history.clear()
 
 
 def _classify_domains(text: str) -> list[str]:
+    """Map free text to one or more skill-domain labels."""
     matched: list[str] = []
     text_lower = text.lower()
     for keywords, domain in _DOMAIN_TAXONOMY.items():
@@ -169,6 +194,7 @@ def _classify_domains(text: str) -> list[str]:
 
 
 def _estimate_difficulty(prompt: str, tool_results: list[dict[str, Any]]) -> float:
+    """Heuristically score task difficulty in the 0.3-0.95 range."""
     score = 0.3
     if len(prompt) > 500:
         score += 0.1

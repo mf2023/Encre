@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 # ── Minimal subprocess.Popen patch (Windows only) ──
 # We only patch Popen.__init__, the single universal entry point for
@@ -351,6 +351,7 @@ from encre.utils.types import (
     EnabledThinking,
     Finish,
     FinishReason,
+    SystemMessage,
     PermissionAllow,
     PermissionAsk,
     PermissionBehavior,
@@ -375,6 +376,7 @@ from encre.utils.types import (
     create_backend_tool_call,
     create_backend_tool_call_delta,
     create_finish,
+    create_system_message,
     create_permission_request,
     create_text_delta,
     create_thinking_delta,
@@ -552,6 +554,7 @@ __all__ = [
     "FeishuAdapter",
     "Finish",
     "FinishReason",
+    "SystemMessage",
     "GatewayClient",
     "GatewayServer",
     "GitDiffResult",
@@ -673,6 +676,7 @@ __all__ = [
     "create_backend_tool_call_delta",
     "create_bundled_skills",
     "create_finish",
+    "create_system_message",
     "create_permission_request",
     "create_text_delta",
     "create_thinking_delta",

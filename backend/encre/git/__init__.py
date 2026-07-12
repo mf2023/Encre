@@ -21,9 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
-
+# Public API for the "git" package: repository state inspection and diffing.
+# Re-export the diff engine and its result container.
 from encre.git.diff import EncreGitDiff, GitDiffResult
+# Re-export the repository wrapper and its snapshot state model.
 from encre.git.repo import EncreGitRepo, GitState
 
 __all__ = ["EncreGitDiff", "EncreGitRepo", "GitDiffResult", "GitState"]

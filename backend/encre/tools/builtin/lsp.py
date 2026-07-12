@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/lsp.py
 
+Lsp implementation for the Encre tool system.
+"""
 from typing import Any
 
 from encre.lsp.manager import EncreLSPManager
@@ -32,6 +36,7 @@ _manager: EncreLSPManager | None = None
 
 
 def _get_manager() -> EncreLSPManager:
+    """Get manager."""
     global _manager
     if _manager is None:
         _manager = EncreLSPManager()
@@ -39,6 +44,12 @@ def _get_manager() -> EncreLSPManager:
 
 
 def _format_symbols(symbols: list[dict[str, Any]], indent: int = 0) -> str:
+    """Format symbols.
+
+    Args:
+        symbols: Description of the symbols parameter.
+        indent: Description of the indent parameter.
+    """
     lines: list[str] = []
     prefix = "  " * indent
     for sym in symbols:
@@ -61,6 +72,11 @@ def _format_symbols(symbols: list[dict[str, Any]], indent: int = 0) -> str:
 
 
 def _symbol_kind_name(kind: int) -> str:
+    """Symbol kind name.
+
+    Args:
+        kind: Description of the kind parameter.
+    """
     names: dict[int, str] = {
         1: "File",
         2: "Module",
@@ -93,6 +109,11 @@ def _symbol_kind_name(kind: int) -> str:
 
 
 async def _lsp_execute(**kwargs: Any) -> str:
+    """Lsp execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     operation = kwargs.get("operation", "")
     file_path = kwargs.get("file_path", "")
     line = kwargs.get("line", 0)
@@ -218,5 +239,8 @@ EncreLSPTool = build_tool(
     },
     execute=_lsp_execute,
     intents=["coding"],
+    category="code_intel",
+    semantic_type="search",
     is_concurrency_safe=lambda _: False,
+    is_readonly=True,
 )

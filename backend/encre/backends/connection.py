@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 Connection health monitoring for LLM API calls.
@@ -370,8 +370,17 @@ class ConnectionHealthMonitor:
         consecutive_threshold: int = 3,
         recovery_grace: float = 300.0,
     ) -> None:
+        """Initialize the connection health monitor.
+
+        Args:
+            consecutive_threshold: Number of consecutive failures before an
+                endpoint is marked degraded (circuit opens).
+            recovery_grace: Seconds a degraded endpoint stays degraded
+                before it is automatically retried.
+        """
         self._consecutive_threshold = consecutive_threshold
         self._recovery_grace = recovery_grace
+        # Per-endpoint health records keyed by base URL.
         self._endpoints: dict[str, EndpointHealth] = {}
 
     def record_success(self, url: str) -> None:
@@ -465,6 +474,16 @@ class HeartbeatSession:
         label: str = "",
         on_heartbeat: Any = None,
     ) -> None:
+        """Initialize a heartbeat session.
+
+        Args:
+            total_delay: Total time (seconds) to wait while emitting
+                heartbeats when used as an async context manager.
+            interval: Seconds between successive heartbeats.
+            label: Optional human-readable label for the wait.
+            on_heartbeat: Optional callback invoked on each heartbeat; it
+                receives the remaining seconds and may be async.
+        """
         self._total_delay = total_delay
         self._interval = interval
         self._label = label

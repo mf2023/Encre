@@ -21,7 +21,15 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+# Shared, namespaced knowledge board for swarm collaboration.
+#
+# ``EncreBlackboard`` is a concurrent key/value store where each agent team gets
+# its own namespace.  Entries carry a monotonically increasing version (for
+# compare-and-swap conflict detection) and an owner; watchers can subscribe to
+# changes on a key.  Old entries are pruned past a per-namespace cap.  It backs
+# the shared context passed between orchestrator tasks.
 
 import asyncio
 import contextlib
@@ -33,6 +41,11 @@ from typing import Any
 
 @dataclass
 class BlackboardEntry:
+    """One stored value on the blackboard.
+
+    Records the key, the value, an incrementing ``version`` (for CAS), the
+    owning ``namespace`` and ``owner``, and a creation ``timestamp``.
+    """
     key: str
     value: Any
     version: int

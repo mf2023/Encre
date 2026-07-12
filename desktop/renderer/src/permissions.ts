@@ -15,9 +15,19 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
+ * 
  * DISCLAIMER: Users must comply with applicable AI regulations.
  * Non-compliance may result in service termination or legal liability.
+ */
+
+/**
+ * Runtime permission prompting.
+ *
+ * Implements the renderer-side "ask the user" branch of Encre's tool-permission
+ * policy. Static allow/deny decisions are resolved once by the Rust backend and
+ * never reach this layer; this module only handles the interactive prompt that
+ * appears when a tool invocation needs explicit user consent, recording the
+ * decision back into the backend policy table so later calls are silent.
  */
 
 import { setPendingPermission } from "./state.js";
@@ -40,6 +50,17 @@ import { Dialog } from "./dialog.js";
 export class Permissions {
   private active = false;
 
+  /**
+   * Shows the permission prompt for a tool invocation.
+   *
+   * @param toolName - Name of the tool requesting access.
+   * @param reason   - Human-readable justification shown to the user.
+   * @param cb       - Callback invoked with `true` when allowed, `false` otherwise.
+   *
+   * Reuses the standard install/confirm dialog shell. If a prompt is already
+   * open the new request is rejected immediately (`false`) so the agent loop is
+   * never blocked.
+   */
   show(
     toolName: string,
     reason: string,
@@ -77,6 +98,12 @@ export class Permissions {
       });
   }
 
+  /**
+   * Dismisses any pending permission prompt and clears the pending state.
+   *
+   * The underlying dialog removes itself on user interaction, so this only
+   * resets the internal `active` flag and the pending-permission record.
+   */
   hide(): void {
     // No persistent overlay to clean up -- Dialog.confirmInstall
     // removes itself when the user clicks a button or presses Esc.

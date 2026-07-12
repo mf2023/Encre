@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """
 GitHub Copilot backend -- uses GitHub Copilot subscription via OpenAI-compatible API.
@@ -65,16 +65,40 @@ class GitHubCopilotBackend(OpenAISSEBackend):
         model: str = "gpt-4o-copilot",
         **kwargs: Any,
     ) -> None:
+        """Initialize the GitHub Copilot backend.
+
+        Args:
+            api_key: Explicit GitHub token. When empty, a token is resolved
+                from environment variables or the ``gh`` CLI.
+            base_url: API endpoint; defaults to the Copilot API URL.
+            model: Default Copilot model identifier.
+            **kwargs: Additional options forwarded to the parent backend.
+        """
         if not base_url:
+            # No explicit endpoint given: use the Copilot API URL.
             base_url = self.DEFAULT_BASE_URL
+        # Resolve the GitHub token from env / CLI when not passed explicitly.
         resolved_key = api_key or self._resolve_github_token()
         super().__init__(api_key=resolved_key, base_url=base_url, model=model, **kwargs)
 
     @staticmethod
     def _resolve_github_token() -> str:
+        """Resolve a GitHub token for Copilot authentication.
+
+        Resolution order:
+            1. ``COPILOT_GITHUB_TOKEN`` environment variable.
+            2. ``GH_TOKEN`` environment variable.
+            3. The output of ``gh auth token`` (GitHub CLI).
+
+        Returns:
+            The resolved token string, or an empty string if none found.
+        """
+        # Prefer explicit environment variables for the token.
         token = os.environ.get("COPILOT_GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
+        # Fall back to the GitHub CLI if no env token is set.
         if not token:
             try:
+                # Ask the gh CLI for the currently authenticated token.
                 result = subprocess.run(
                     ["gh", "auth", "token"],
                     capture_output=True,
@@ -82,10 +106,13 @@ class GitHubCopilotBackend(OpenAISSEBackend):
                     timeout=5,
                 )
                 if result.returncode == 0:
+                    # Strip trailing newline from the CLI output.
                     token = result.stdout.strip()
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                # gh not installed / timed out / other OS error: no token.
                 pass
         return token
 
     def context_window_size(self) -> int:
+        """Return the context window size (in tokens) for Copilot models."""
         return 128000

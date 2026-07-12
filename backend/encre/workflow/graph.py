@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
-
 from __future__ import annotations
 
 from collections import deque
@@ -56,6 +54,7 @@ class DAGGraph:
     def __init__(self) -> None:
         # node_id -> WorkflowTask
         self._nodes: dict[str, WorkflowTask] = {}
+        # Adjacency maps are kept in sync on every edge change.
         # Forward edges: node -> set of successors (dependents)
         self._forward: dict[str, set[str]] = {}
         # Reverse edges: node -> set of predecessors (dependencies)
@@ -159,6 +158,7 @@ class DAGGraph:
         Raises :class:`CycleError` if the graph contains a cycle.
         """
         in_degree: dict[str, int] = {}
+        # Initial in-degree = number of dependencies for each node.
         for node_id in self._nodes:
             in_degree[node_id] = len(self._reverse[node_id])
 
@@ -240,6 +240,7 @@ class DAGGraph:
         *task_id* (direct and indirect downstream nodes)."""
         if task_id not in self._forward:
             return set()
+        # Iterative DFS over forward edges collects every downstream node.
         visited: set[str] = set()
         stack = [task_id]
         while stack:
@@ -325,6 +326,7 @@ class DAGGraph:
         """
         visited: set[str] = set()
         stack = [to_id]
+        # Walk forward edges; if we reach from_id, a back-path exists.
         while stack:
             nid = stack.pop()
             if nid == from_id:

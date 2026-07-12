@@ -20,6 +20,15 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
+/**
+ * WebSocket transport layer.
+ *
+ * Manages the renderer ↔ backend WebSocket connection (default port 7110):
+ * connection lifecycle, auto-reconnect, a keep-alive ping, transparent
+ * AES-GCM encryption of outbound messages, and decryption of inbound events.
+ * Outbound messages are queued until the socket is open.
+ */
+
 import { ClientMessage, ServerEvent } from "./types.js";
 import { initCrypto, encrypt, decrypt, isReady } from "./crypto.js";
 import { setConnected, getState } from "./state.js";
@@ -43,6 +52,11 @@ async function drainQueue(): Promise<void> {
   }
 }
 
+/**
+ * Opens the WebSocket connection and wires up event/lifecycle handlers.
+ *
+ * @param onEvent - Handler invoked for every (decrypted) server event.
+ */
 export async function connect(onEvent: EventHandler): Promise<void> {
   handler = onEvent;
 
@@ -123,6 +137,11 @@ export async function connect(onEvent: EventHandler): Promise<void> {
   }
 }
 
+/**
+ * Sends a client message, encrypting it when the crypto layer is ready.
+ *
+ * @param msg - The client message to transmit. Queued if the socket is not open.
+ */
 export async function send(msg: ClientMessage): Promise<void> {
   if (ws?.readyState !== WebSocket.OPEN) {
     pendingQueue.push(msg);
@@ -141,14 +160,17 @@ export async function send(msg: ClientMessage): Promise<void> {
   }
 }
 
+/** Sends a `retry` request for a given branch/message index. */
 export function sendRetry(branch_id: string, user_message_index: number, mode?: "normal" | "detailed" | "concise"): void {
   send({ type: "retry", branch_id, user_message_index, mode, session_id: getState().sessionId });
 }
 
+/** Sends a `switch_branch` request to change the active branch. */
 export function sendSwitchBranch(branch_id: string): void {
   send({ type: "switch_branch", branch_id, session_id: getState().sessionId });
 }
 
+/** Sends a `rollback` request to revert to an earlier message in a branch. */
 export function sendRollback(branch_id: string, message_id: string): void {
   send({ type: "rollback", branch_id, message_id });
 }
@@ -175,6 +197,7 @@ function scheduleReconnect(): void {
   }, 2000);
 }
 
+/** Closes the connection, stops ping and cancels any pending reconnect. */
 export function disconnect(): void {
   stopPing();
   if (reconnectTimer) {

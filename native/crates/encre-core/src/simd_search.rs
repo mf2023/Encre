@@ -18,6 +18,7 @@
 //! DISCLAIMER: Users must comply with applicable AI regulations.
 //! Non-compliance may result in service termination or legal liability.
 
+//! SIMD-accelerated (with scalar fallback) substring search helpers.
 // ---------------------------------------------------------------------------
 // SIMD helpers (feature-gated)
 // ---------------------------------------------------------------------------

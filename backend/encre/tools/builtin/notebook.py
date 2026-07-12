@@ -21,8 +21,12 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
 
+"""Module: builtin/notebook.py
 
+Notebook implementation for the Encre tool system.
+"""
 import json
 from typing import Any
 
@@ -33,6 +37,7 @@ _session: EncreNotebookSession | None = None
 
 
 def _get_session() -> EncreNotebookSession:
+    """Get session."""
     global _session
     if _session is None:
         _session = EncreNotebookSession()
@@ -40,6 +45,11 @@ def _get_session() -> EncreNotebookSession:
 
 
 async def _notebook_execute(**kwargs: Any) -> str:
+    """Notebook execute.
+
+    Args:
+        kwargs: Description of the kwargs parameter.
+    """
     action = kwargs.get("action", "")
     session = _get_session()
 
@@ -143,4 +153,7 @@ EncreNotebookTool = build_tool(
     },
     execute=_notebook_execute,
     intents=["data"],
+    category="data",
+    semantic_type="exec",
+    is_destructive=lambda args: args.get("action", "") in ("execute", "delete_cell", "delete", "reset"),
 )

@@ -21,7 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-
+from __future__ import annotations
 
 """Structured logging configuration for encre.
 
@@ -37,8 +37,6 @@ Usage::
     logger = get_logger(__name__)
     logger.info("agent started", extra={"turn": 1})
 """
-
-from __future__ import annotations
 
 import logging
 import sys

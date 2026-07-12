@@ -1,6 +1,33 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Rust-backed workspace code index wrapper."""
+# Provides a Python façade over the native (Rust) BM25 code index.  It tracks
+# modules, dependency graphs and an inverted index, supports full and
+# incremental scans, optional file-watching and a range of query helpers
+# (relevance search, dependency lookups, context building).
 
 import asyncio
 import json
@@ -20,6 +47,7 @@ logger = logging.getLogger("encre.codebase.indexer")
 
 @dataclass
 class ModuleInfo:
+    """Metadata for a single indexed source module (imports, exports, loc, ...)."""
     path: str
     name: str
     imports: list[str] = field(default_factory=list)
@@ -48,6 +76,7 @@ class EncreCodeIndex:
     _MAX_FILE_SIZE: int = 2 * 1024 * 1024
 
     def __init__(self, workspace: str) -> None:
+        """Create the code index, initialising all in-memory caches."""
         self.workspace: str = workspace
         self._modules: dict[str, ModuleInfo] = {}
         self._depgraph: dict[str, set[str]] = {}
@@ -64,6 +93,7 @@ class EncreCodeIndex:
         self._query_ready: bool = False
 
     def _load_from_native_payload(self, data: dict) -> None:
+        """Rebuild all in-memory caches from a native index payload dict."""
         self._modules.clear()
         for path, mod_data in data.get("modules", {}).items():
             self._modules[path] = ModuleInfo(**mod_data)
@@ -83,6 +113,7 @@ class EncreCodeIndex:
         self._indexed = True
 
     def scan(self, progress_cb: callable | None = None) -> None:
+        """Build the code index from scratch for the whole workspace."""
         ws = Path(self.workspace).resolve()
         if not ws.exists():
             self._indexed = True
@@ -97,6 +128,7 @@ class EncreCodeIndex:
             progress_cb("_done", total, max(total, 1))
 
     def scan_incremental(self, progress_cb: callable | None = None) -> None:
+        """Update the index re-using prior state (full scan on first run)."""
         ws = Path(self.workspace).resolve()
         if not ws.exists():
             self._indexed = True
@@ -114,6 +146,7 @@ class EncreCodeIndex:
             progress_cb("_done", total, max(total, 1))
 
     async def watch(self) -> asyncio.Task | None:
+        """Start an optional ``watchfiles`` watcher that triggers incremental re-index."""
         try:
             import watchfiles
         except ImportError:
@@ -139,11 +172,13 @@ class EncreCodeIndex:
         return self._watcher_task
 
     def stop_watch(self) -> None:
+        """Cancel the running file-watcher task, if any."""
         if self._watcher_task is not None and not self._watcher_task.done():
             self._watcher_task.cancel()
             self._watcher_task = None
 
     def load(self) -> bool:
+        """Load a cached index from disk, returning ``True`` on success."""
         storage = Path(self.workspace) / ".encre" / "code_index.json"
         if not storage.exists():
             return False
@@ -166,26 +201,31 @@ class EncreCodeIndex:
                 return False
 
     def _ensure_query_ready(self) -> None:
+        """Mark the index as ready for queries (idempotent guard)."""
         if self._query_ready:
             return
         self._query_ready = True
 
     def prepare_query(self) -> None:
+        """Prepare the index for querying (currently a thin readiness marker)."""
         self._ensure_query_ready()
 
     def build_dependency_graph(self) -> dict[str, set[str]]:
+        """Return the forward dependency graph ``{file: {imported files}}``."""
         if not self._indexed:
             self.scan()
         self._ensure_query_ready()
         return dict(self._depgraph)
 
     def get_importers(self, file_path: str) -> list[str]:
+        """Return the files that import *file_path* (reverse dependency graph)."""
         if not self._indexed:
             self.scan()
         self._ensure_query_ready()
         return list(self._reverse_depgraph.get(file_path, set()))
 
     def find_relevant(self, query: str, limit: int = 10) -> list[tuple[str, float]]:
+        """Return the *limit* most relevant files for *query* with BM25 scores."""
         if not self._indexed:
             self.scan()
         if not query.strip():
@@ -194,6 +234,7 @@ class EncreCodeIndex:
         return [(str(path), float(score)) for path, score in raw]
 
     def build_context(self, file_path: str) -> str:
+        """Build a formatted context string (source, imports, deps) for *file_path*."""
         if not self._indexed:
             self.scan()
         try:
@@ -202,16 +243,19 @@ class EncreCodeIndex:
             return ""
 
     def get_module_info(self, file_path: str) -> ModuleInfo | None:
+        """Return the :class:`ModuleInfo` for *file_path*, or ``None``."""
         if not self._indexed:
             self.scan()
         return self._modules.get(file_path)
 
     def list_all_modules(self) -> list[ModuleInfo]:
+        """Return metadata for every indexed module."""
         if not self._indexed:
             self.scan()
         return list(self._modules.values())
 
     def search_by_name(self, query: str, limit: int = 50) -> list[ModuleInfo]:
+        """Return modules whose path or name contains *query* (case-insensitive)."""
         if not self._indexed:
             self.scan()
         q = query.lower().strip()
