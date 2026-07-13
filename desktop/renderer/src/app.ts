@@ -21,7 +21,7 @@
  */
 
 import { connect, send, sendRetry, sendSwitchBranch, sendRollback } from "./ws.js";
-import { handleEvent, init as streamInit, setOnTranscription, onAutomationShowResult, setRequestedSessionId, onAutomationStreamEvent } from "./stream.js";
+import { handleEvent, init as streamInit, onAutomationShowResult, setRequestedSessionId, onAutomationStreamEvent } from "./stream.js";
 import {
   addUserMessage,
   addMessage,
@@ -33,6 +33,7 @@ import {
   setSettings,
   getState,
   subscribe,
+  isEnabled,
   resetChat,
   initNotificationPersistence,
   showToast,
@@ -58,7 +59,7 @@ import { Chat, formatAgentLabel } from "./chat.js";
 import { SplashScreen } from "./splash.js";
 import { Tools } from "./tools.js";
 import { Settings, type PanelId } from "./settings.js";
-import { Files } from "./files.js";
+import { Files, getFileIcon } from "./files.js";
 import { Session, showRenameDialogForSession } from "./session.js";
 import { ViewManager } from "./viewmanager.js";
 import { Search, commandActions } from "./search.js";
@@ -71,6 +72,7 @@ import { Automation } from "./automation.js";
 import { TransitionHelper } from "./transition-helper.js";
 import { SessionInner, TabDef } from "./session_inner.js";
 import { renderMarkdown } from "./chat.js";
+import { EALoader } from "./ealoader.js";
 import { t, onLocaleChange, applyI18n, setLocale } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { lookupShortcut, augmentTitle, formatShortcut, platformLabel } from "./shortcutDisplay.js";
@@ -84,6 +86,8 @@ type ChildTab = {
   title?: string;
   webview?: any;
   _nebulaCleanup?: () => void;
+  _rendered?: boolean;
+  _html?: string;
 };
 
 (window as any).__state_setActiveToolId = setActiveToolId;
@@ -109,7 +113,6 @@ class App {
   private input: HTMLTextAreaElement;
   private btnSend: HTMLButtonElement;
   private btnStop: HTMLButtonElement;
-  private btnVoice: HTMLButtonElement;
   private tokenCountEl: HTMLElement;
   private welcomeScreen: HTMLElement;
   private messageList: HTMLElement;
@@ -119,10 +122,6 @@ class App {
   private _slashActive = false;
   private _currentChipMode = "";
   private _welcomeTitleAnimating = false;
-  private _mediaRecorder: MediaRecorder | null = null;
-  private _audioChunks: Blob[] = [];
-  private _mediaStream: MediaStream | null = null;
-  private _isRecording = false;
   private _isChild = false;
   private _childView = "";
   private _tabs: ChildTab[] = [];
@@ -139,7 +138,6 @@ class App {
     this.input = document.getElementById("prompt-input") as HTMLTextAreaElement;
     this.btnSend = document.getElementById("btn-send") as HTMLButtonElement;
     this.btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
-    this.btnVoice = document.getElementById("btn-voice") as HTMLButtonElement;
     this.tokenCountEl = document.getElementById("token-count")!;
     this.welcomeScreen = document.getElementById("welcome-screen")!;
     this.messageList = document.getElementById("message-list")!;
@@ -271,8 +269,7 @@ class App {
         // from the history.
         const data = event_data as any;
         this._activeAutomationJobId = job_id;
-        const raw = getState().settings?.automation_auto_open_view;
-        const autoOpen = raw === true || raw === "true";
+        const autoOpen = isEnabled(getState().settings?.automation_auto_open_view);
         if (!autoOpen) {
           // Silent tracking: the automation panel badge / history will
           // be updated via the automation_job_update event. The user
@@ -707,8 +704,23 @@ class App {
 
   private switchTab(index: number): void {
     if (index < 0 || index >= this._tabs.length) return;
+    if (index === this._activeTabIndex) return;
     this._activeTabIndex = index;
     this.renderTabBar();
+    if (this._tabs[index].view.startsWith("http") || this._tabs[index].view.startsWith("about:")) {
+      // Webview tabs keep their state – just show/hide the childView wrapper
+      // so the webview is never recreated.
+      this._switchWebviewTab(index);
+    } else {
+      this.renderTabContent(this._tabs[index]);
+    }
+  }
+
+  private _switchWebviewTab(index: number): void {
+    // Tear down the old webview if any, then create the new one.
+    const childViewEl = document.getElementById("child-view");
+    if (!childViewEl) return;
+    childViewEl.innerHTML = "";
     this.renderTabContent(this._tabs[index]);
   }
 
@@ -738,7 +750,7 @@ class App {
       const displayLabel = t.title || t.label;
       return `<button class="tab${i === this._activeTabIndex ? " active" : ""}" data-index="${i}" draggable="true">
         <span class="tab-label">${this.esc(displayLabel)}</span>
-        <span class="tab-close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
+        <span class="tab-close" data-index="${i}"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
       </button>`;
     }).join("");
 
@@ -766,7 +778,8 @@ class App {
       if (closeBtn) {
         closeBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          this.closeTab(idx);
+          const ci = parseInt((closeBtn as HTMLElement).getAttribute("data-index") || "0");
+          this.closeTab(ci);
         });
       }
 
@@ -818,6 +831,19 @@ class App {
     if (!childViewEl) return;
     childViewEl.classList.remove("hidden");
 
+    if (tab._rendered) {
+      childViewEl.innerHTML = tab._html || "";
+      if (tab.webview && tab.view.startsWith("http")) {
+        const wrap = childViewEl.querySelector(".child-webview-wrap");
+        if (wrap && !wrap.contains(tab.webview)) {
+          wrap.insertBefore(tab.webview, wrap.firstChild);
+        }
+      }
+      return;
+    }
+    tab._rendered = true;
+    childViewEl.innerHTML = "";
+
     if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.view === "about:blank") {
       const startUrl = tab.view === "about:blank" ? "" : tab.view;
       childViewEl.innerHTML = `
@@ -827,15 +853,81 @@ class App {
           <button class="child-nav-btn" data-nav="reload"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
           <input type="text" class="child-url-input" value="${startUrl}" placeholder="https://..." spellcheck="false" />
         </div>
-        <webview class="child-webview" src="${startUrl || "about:blank"}" partition="encre-browser"></webview>`;
-      const wv = childViewEl.querySelector("webview") as any;
-      if (wv) {
-        tab.webview = wv;
-        // Track page title
-        wv.addEventListener("page-title-updated", (e: any) => {
-          tab.title = e.title;
-          this.renderTabBar();
-        });
+        <div class="child-webview-wrap">
+          <webview class="child-webview" src="${startUrl || "about:blank"}" partition="encre-browser"></webview>
+          <div class="child-webview-status hidden" id="child-webview-status">
+            <div class="child-status-loading" id="child-status-loading"></div>
+            <div class="child-status-error hidden" id="child-status-error">
+              <div class="child-overlay-content">
+                <div class="child-overlay-icon">
+                  <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                </div>
+                <div class="child-overlay-title" id="child-overlay-title">${t("child.loadFailed")}</div>
+                <div class="child-overlay-desc" id="child-overlay-desc">${t("child.loadFailedDesc")}</div>
+                <button class="child-overlay-retry" id="child-overlay-retry" type="button">${t("child.retry")}</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+        const wv = childViewEl.querySelector("webview") as any;
+        if (wv) {
+          tab.webview = wv;
+          const statusEl = childViewEl.querySelector("#child-webview-status") as HTMLElement | null;
+          const loadingEl = childViewEl.querySelector("#child-status-loading") as HTMLElement | null;
+          const errorEl = childViewEl.querySelector("#child-status-error") as HTMLElement | null;
+          const overlayTitle = childViewEl.querySelector("#child-overlay-title") as HTMLElement | null;
+          const overlayDesc = childViewEl.querySelector("#child-overlay-desc") as HTMLElement | null;
+          const retryBtn = childViewEl.querySelector("#child-overlay-retry") as HTMLButtonElement | null;
+          let loader: EALoader | null = null;
+          let loadTimer: number | null = null;
+          let _showedError = false;
+
+          const showLoading = () => {
+            statusEl?.classList.remove("hidden");
+            loadingEl?.classList.remove("hidden");
+            errorEl?.classList.add("hidden");
+            if (!loader && loadingEl) {
+              loader = new EALoader(loadingEl);
+            }
+          };
+          const showError = (title: string, desc: string) => {
+            _showedError = true;
+            if (loader) { loader.destroy(); loader = null; }
+            statusEl?.classList.remove("hidden");
+            loadingEl?.classList.add("hidden");
+            if (overlayTitle) overlayTitle.textContent = title;
+            if (overlayDesc) overlayDesc.textContent = desc;
+            errorEl?.classList.remove("hidden");
+          };
+          const hideStatus = () => {
+            _showedError = false;
+            if (loader) { loader.destroy(); loader = null; }
+            statusEl?.classList.add("hidden");
+            loadingEl?.classList.add("hidden");
+            errorEl?.classList.add("hidden");
+          };
+          const clearLoadTimer = () => {
+            if (loadTimer !== null) {
+              clearTimeout(loadTimer);
+              loadTimer = null;
+            }
+          };
+          if (retryBtn) {
+            retryBtn.addEventListener("click", () => {
+              _showedError = false;
+              hideStatus();
+              wv.reload();
+            });
+          }
+          // Track page title
+          wv.addEventListener("page-title-updated", (e: any) => {
+            tab.title = e.title;
+            this.renderTabBar();
+          });
         // Intercept new windows (popups, target=_blank) — open as new tab
         wv.addEventListener("new-window", (e: any) => {
           e.preventDefault();
@@ -886,14 +978,56 @@ class App {
         wv.addEventListener("did-navigate", applyZoom);
         // Also set zoom immediately if already loaded
         applyZoom();
+        // ── Load lifecycle: loading spinner, error page, timeout ──────────
+        const LOAD_TIMEOUT_MS = 30000;
+        const isErrorPage = () => {
+          try {
+            const url = wv.getURL();
+            return url && (url.startsWith("chrome-error://") || url === "about:blank" && tab.view !== "about:blank");
+          } catch { return false; }
+        };
+        wv.addEventListener("did-start-loading", () => {
+          if (!_showedError) {
+            showLoading();
+          }
+          clearLoadTimer();
+          loadTimer = window.setTimeout(() => {
+            showError(t("child.loadTimeout"), t("child.loadTimeoutDesc"));
+          }, LOAD_TIMEOUT_MS);
+        });
+        wv.addEventListener("did-stop-loading", () => {
+          clearLoadTimer();
+        });
+        wv.addEventListener("did-finish-load", () => {
+          clearLoadTimer();
+          if (isErrorPage()) {
+            showError(t("child.loadFailed"), t("child.loadFailedDesc"));
+          } else if (!_showedError) {
+            hideStatus();
+          }
+        });
+        wv.addEventListener("did-fail-load", (e: any) => {
+          clearLoadTimer();
+          const desc = (e && (e.errorDescription || e.message)) || t("child.loadFailedDesc");
+          showError(t("child.loadFailed"), String(desc));
+        });
+        wv.addEventListener("did-navigate", (e: any) => {
+          try {
+            const url = e.url || wv.getURL() || "";
+            if (url.startsWith("chrome-error://")) {
+              showError(t("child.loadFailed"), t("child.loadFailedDesc"));
+            }
+          } catch {}
+        });
         // Nav buttons
         childViewEl.querySelectorAll("[data-nav]").forEach(btn => {
           btn.addEventListener("click", () => {
             if (!wv) return;
             const action = btn.getAttribute("data-nav");
+            hideStatus();
             if (action === "back") { explicitNav = true; wv.goBack(); }
             else if (action === "forward") { explicitNav = true; wv.goForward(); }
-            else if (action === "reload") wv.reload();
+            else if (action === "reload") { wv.reload(); }
           });
         });
         // URL input in nav bar
@@ -905,6 +1039,8 @@ class App {
             if (!/^https?:\/\//i.test(url)) {
               url = "https://" + url;
             }
+            _showedError = false;
+            hideStatus();
             explicitNav = true;
             wv.src = url;
           };
@@ -1037,6 +1173,8 @@ class App {
         (window as any).lucide.createIcons({ root: childViewEl });
       }
     }
+    // Save HTML so switching back preserves state without recreating webviews.
+    tab._html = childViewEl.innerHTML;
   }
 
   private bindChildRegionDropdown(id: string, onChange: (val: string) => void): void {
@@ -1229,18 +1367,6 @@ class App {
     await new Promise<void>(r => requestAnimationFrame(() => r()));
 
     await connect(handleEvent);
-    setOnTranscription((text) => {
-      if (!text) return;
-      this.input.focus();
-      const start = this.input.selectionStart ?? this.input.value.length;
-      const end = this.input.selectionEnd ?? start;
-      this.input.value =
-        this.input.value.substring(0, start) + text + this.input.value.substring(end);
-      const newPos = start + text.length;
-      this.input.selectionStart = this.input.selectionEnd = newPos;
-      this.resizeInput();
-      this.updateSendButton();
-    });
     if (getState().connected) {
       // Fetch available models from the provider and server config
       this.fetchModels();
@@ -1260,7 +1386,6 @@ class App {
   private bindInput(): void {
     this.btnSend.addEventListener("click", () => this.submit());
     this.btnStop.addEventListener("click", () => this.cancel());
-    this.btnVoice.addEventListener("click", () => this.toggleVoice());
 
     this.input.addEventListener("keydown", (e) => {
       const sendMode = (getState().settings.shortcut_send_mode as string) || "enter";
@@ -2629,7 +2754,7 @@ class App {
       }
     }
 
-    const fileRefs = st.attachments.length > 0 ? st.attachments.map(a => ({ name: a.name, size: a.size, icon: a.mime_type === "text/x-terminal" ? "terminal" : a.mime_type === "text/x-directory" ? "folder" : this.files.fileIcon(a.name), path: a.path, mime_type: a.mime_type })) : undefined;
+    const fileRefs = st.attachments.length > 0 ? st.attachments.map(a => ({ name: a.name, size: a.size, icon: a.mime_type === "text/x-terminal" ? "terminal" : a.mime_type === "text/x-directory" ? "folder" : getFileIcon(a.name), path: a.path, mime_type: a.mime_type })) : undefined;
 
     if (isQueued) {
       pushQueuedPrompt(text, sendMode);
@@ -2724,86 +2849,6 @@ class App {
 
     // Always remove mode chip regardless of running state
     this.deactivateModeChip();
-  }
-
-  /* ── Voice Input ──────────────────────────────────────────── */
-
-  private toggleVoice(): void {
-    if (this._isRecording) {
-      this.stopVoice();
-    } else {
-      this.startVoice();
-    }
-  }
-
-  private startVoice(): void {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      showToast(t("app.voiceNotSupported"), "error");
-      return;
-    }
-
-    this._audioChunks = [];
-
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => {
-        this._mediaStream = stream;
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "";
-        this._mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-
-        this._mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) this._audioChunks.push(e.data);
-        };
-
-        this._mediaRecorder.onstop = () => {
-          const rec = this._mediaRecorder!;
-          const mt = rec.mimeType || "audio/webm";
-          const ext = mt.includes("mp4") ? "mp4" : "webm";
-          const blob = new Blob(this._audioChunks, { type: mt });
-          this._audioChunks = [];
-
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(",")[1];
-            send({ type: "transcribe_audio", audio_data: base64, format: ext });
-          };
-          reader.onerror = () => showToast(t("app.audioEncodeFailed"), "error");
-          reader.readAsDataURL(blob);
-
-          this.cleanupVoice();
-        };
-
-        this._mediaRecorder.onerror = () => {
-          showToast(t("app.recordingError"), "error");
-          this.cleanupVoice();
-        };
-
-        this._mediaRecorder.start();
-        this._isRecording = true;
-        this.btnVoice.classList.add("recording");
-        this.btnVoice.title = t("input.voiceStop");
-      })
-      .catch(() => showToast(t("app.micAccessDenied"), "error"));
-  }
-
-  private stopVoice(): void {
-    if (this._mediaRecorder && this._mediaRecorder.state !== "inactive") {
-      this._mediaRecorder.stop();
-    }
-    if (this._mediaStream) {
-      this._mediaStream.getTracks().forEach((t) => t.stop());
-      this._mediaStream = null;
-    }
-  }
-
-  private cleanupVoice(): void {
-    this._mediaRecorder = null;
-    this._mediaStream = null;
-    this._audioChunks = [];
-    this._isRecording = false;
-    this.btnVoice.classList.remove("recording");
-    this.btnVoice.title = t("input.voiceStart");
   }
 
   private updateUIState(running: boolean): void {
@@ -3044,7 +3089,6 @@ class App {
     a["toggle_editor"] = () => ensureTab("editor");
     a["toggle_review"] = () => ensureTab("review");
     a["toggle_info"] = () => ensureTab("info");
-    a["toggle_files"] = () => ensureTab("files");
     a["prev_tab"] = () => {
       const tabs = this.sessionInner.getTabs();
       if (tabs.length < 2) return;

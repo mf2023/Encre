@@ -1065,7 +1065,8 @@ body {
 }
 
 /* ── Command Palette ──────────────────────────────────────────── */
-#search-overlay {
+#search-overlay,
+#review-commit-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.35);
@@ -1109,7 +1110,8 @@ body {
   flex-shrink: 0;
 }
 
-#search-input {
+#search-input,
+.palette-input {
   flex: 1;
   background: transparent;
   border: none;
@@ -1120,7 +1122,8 @@ body {
   font-weight: 500;
 }
 
-#search-input::placeholder {
+#search-input::placeholder,
+.palette-input::placeholder {
   color: var(--text-muted);
   font-weight: 400;
 }
@@ -1421,140 +1424,36 @@ body {
 /* ══�?Unified Tab System ════════════════════════════════════════ */
 /* Visual style: background-switching (previously .si-term-tab)   */
 
-/* Tab bar �?container */
+/* Tab bar — container */
 .tab-bar {
   display: flex;
   align-items: stretch;
   gap: 0;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-primary);
-  overflow: hidden;
-  min-height: 28px;
+  background: var(--bg-secondary);
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 40px;
+  scrollbar-width: thin;
 }
 
 /* Session inner sidebar tab bar - independent */
-#session-inner-sidebar > .tab-bar {
-  min-height: 32px;
-  padding: 0 4px;
-  background: var(--bg-primary);
-  border-bottom: none;
-}
-
-#session-inner-sidebar .tab {
-  border-radius: var(--radius-sm);
-  margin: 3px 1px;
-}
-
-#session-inner-sidebar .tab.active {
-  background: var(--bg-hover);
-}
-
-#session-inner-sidebar .tab.active::after {
-  display: none;
-}
-
-/* Tab list �?scrollable area inside bar */
-.tab-list {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  flex: 1;
-  overflow-x: auto;
-  overflow-y: hidden;
-  height: 100%;
-}
-.tab-list::-webkit-scrollbar { height: 0; }
-
-/* Individual tab */
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  user-select: none;
-  position: relative;
-  border-radius: 6px;
-  margin: 2px 1px;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-.tab:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.tab.active {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-.tab.active::after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 1px;
-}
 
 /* Full-width variant (sidebar panel tabs �?was .si-tab) */
-.tab--fill {
-  flex: 1;
-  justify-content: center;
-  padding: 8px 10px 7px;
-  font-size: 12px;
-  font-weight: 500;
-}
 
 /* Tab label */
+/* Tab label shared by sidebar and ESD sub-tabs */
 .tab-label {
   pointer-events: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tab--fill .tab-label {
-  flex: 1;
-  text-align: center;
-}
-
 /* Close button */
-.tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: transparent;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1;
-  flex-shrink: 0;
-  margin-left: 2px;
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-.tab:hover .tab-close {
-  color: var(--text-tertiary);
-}
-.tab-close:hover {
-  color: var(--text-primary) !important;
-  background: var(--bg-danger-tab);
-}
+
+.tab:hover 
 
 /* Dragging states */
-.tab.dragging { opacity: 0.6; z-index: 10; }
-.tab.drop-target { background: var(--bg-hover) !important; border-bottom-color: var(--accent) !important; }
 
 /* Tab action buttons (terminal: shell, new, kill-all) */
 .tab-action-btn {
@@ -1713,54 +1612,79 @@ body {
   display: none;
 }
 
-/* ── Editor Tab Variant ── */
-.tab-bar--editor {
-  height: 35px;
+/* ── Sub-tab variants (editor, terminal) — same style as main tabs ── */
+.tab-bar--editor,
+.tab-bar--term {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--editor-sidebar-border);
   background: var(--editor-sidebar-bg);
-  border-bottom-color: var(--editor-sidebar-border);
-  min-height: 0;
+  overflow: hidden;
+  min-height: 28px;
+  padding: 0 4px;
 }
-.tab-bar--editor::-webkit-scrollbar { height: 3px; }
-.tab-bar--editor::-webkit-scrollbar-track { background: transparent; }
-.tab-bar--editor::-webkit-scrollbar-thumb { background: var(--editor-scrollbar); }
+.tab-bar--editor::-webkit-scrollbar,
+.tab-bar--term::-webkit-scrollbar { height: 3px; }
+.tab-bar--editor::-webkit-scrollbar-track,
+.tab-bar--term::-webkit-scrollbar-track { background: transparent; }
+.tab-bar--editor::-webkit-scrollbar-thumb,
+.tab-bar--term::-webkit-scrollbar-thumb { background: var(--editor-scrollbar); }
 
-.tab--editor {
-  height: 100%;
+.tab--editor,
+.tab--term {
+  margin: 3px 1px;
   padding: 0 10px;
-  background: var(--editor-tab-bg);
-  border-right: 1px solid var(--editor-sidebar-border);
-  color: var(--editor-tab-text);
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
   gap: 4px;
-  min-width: 0;
+  color: var(--editor-tab-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+  position: relative;
+  max-width: 150px;
 }
-.tab--editor:hover {
+.tab--editor:hover,
+.tab--term:hover {
   background: var(--editor-sidebar-hover);
   color: var(--editor-text);
 }
-.tab--editor.active {
+.tab--editor.active,
+.tab--term.active {
   background: var(--bg-tertiary);
   color: var(--editor-tab-active-text);
-  border-bottom: 1px solid var(--bg-tertiary);
-  margin-bottom: -1px;
 }
-.tab--editor .tab-close {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  font-size: 14px;
-  color: inherit;
-  opacity: 0.7;
+.tab--editor .tab-label,
+.tab--term .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  flex: 1;
+  text-align: center;
 }
-.tab--editor:hover .tab-close {
-  opacity: 1;
-  color: inherit;
+.tab--editor .tab-close,
+.tab--term 
+.tab--editor:hover .tab-close,
+.tab--term:hover 
+.tab--editor .tab-close:hover,
+.tab--term 
+
+.tab-action-btn--term {
+  color: var(--editor-tab-text);
 }
-.tab--editor .tab-close:hover {
-  background: #ffffff1a;
-  opacity: 1;
+.tab-action-btn--term:hover {
+  background: var(--editor-sidebar-hover);
+  color: var(--editor-tab-active-text);
 }
-[data-theme="light"] .tab--editor .tab-close:hover {
   background: #0000001a;
 }
 
@@ -2240,8 +2164,8 @@ body {
   color: var(--editor-tab-active-text);
   border-bottom-color: var(--editor-divider-hover);
 }
-.tab--term:hover .tab-close { color: var(--editor-tab-text); }
-.tab--term .tab-close:hover { color: var(--editor-tab-active-text) !important; }
+.tab--term:hover 
+.tab--term 
 
 .tab-action-btn--term {
   color: var(--editor-tab-text);
@@ -2253,8 +2177,6 @@ body {
 .tab-action-btn--term.danger:hover {
   color: #f14c4c;
 }
-
-
 
 .si-term-shell-dropdown {
   position: fixed;
@@ -2344,30 +2266,17 @@ body {
 }
 
 /* Terminal empty state */
+/* Terminal empty state inherits .si-panel-empty layout; this only adds the
+   clickable affordance (click to create a new terminal). */
 .si-term-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: var(--editor-sidebar-bg);
-  color: var(--editor-empty);
-  font-size: 14px;
-  user-select: none;
   cursor: pointer;
-  transition: opacity var(--transition-base);
+  transition: color var(--transition-base);
+  /* Keep full opacity so the background never goes translucent and lets
+     the main UI bleed through on hover. */
 }
 .si-term-empty:hover {
-  opacity: 0.75;
+  color: var(--accent);
 }
-.si-term-empty i {
-  width: 32px;
-  height: 32px;
-  opacity: 0.4;
-}
-
-
 
 .si-empty {
   display: flex;
@@ -2380,136 +2289,6 @@ body {
 }
 
 /* ── Session Inner �?Files Panel (VS Code Tree style) ──────────── */
-.si-files-wrap {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg-primary);
-}
-
-.si-files-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px 8px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  background: var(--bg-secondary);
-}
-
-.si-files-path {
-  flex: 1;
-  background: transparent;
-  border: none;
-  padding: 2px 4px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  outline: none;
-  min-width: 0;
-}
-
-.si-files-path:focus {
-  color: var(--text-primary);
-}
-
-.si-files-tree {
-  flex: 1;
-  overflow-y: auto;
-  padding: 2px 0;
-  font-size: 12px;
-}
-
-.si-files-tree::-webkit-scrollbar {
-  width: 6px;
-}
-.si-files-tree::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-.si-files-tree::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.si-tree-entry {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 8px;
-  height: 24px;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.si-tree-entry:hover {
-  background: var(--bg-hover);
-}
-
-.si-tree-entry.selected {
-  background: var(--accent-light);
-}
-
-.si-tree-chevron {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: transform var(--transition-base);
-}
-
-.si-tree-chevron.expanded {
-  transform: rotate(90deg);
-}
-
-.si-tree-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  margin-right: 2px;
-}
-
-.si-tree-entry[data-dir] .si-tree-icon {
-  color: var(--accent);
-}
-
-.si-tree-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-primary);
-}
-
-
-.si-file-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-
-.si-file-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12.5px;
-  color: var(--text-primary);
-}
-
-.si-file-size {
-  font-size: 11px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
 /* ── Summary Floating Panel ──────────────────────────────────── */
 .summary-panel {
   position: absolute;
@@ -2842,7 +2621,6 @@ body {
   transition: opacity var(--transition-base), transform var(--transition-base);
 }
 
-
 /* ── Message List (Timeline) ─────────────────────────────────────── */
 #message-list {
   flex: 1;
@@ -3066,28 +2844,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 50%;
-}
-
-/* ── Turn Status Inline (success, inside assistant-actions) ── */
-.turn-status-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--success);
-  cursor: default;
-  white-space: nowrap;
-}
-.turn-status-inline .inline-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-.turn-status-cancelled {
-  color: var(--text-tertiary, #888);
 }
 
 .retry-popup {
@@ -3543,8 +3299,6 @@ body {
 .msg-content:hover .msg-actions {
   opacity: 1;
 }
-
-
 
 /* ── Timeline Strips (expandable) ──────────────────────────────── */
 .strip-item { width: 98%; margin: 0 auto; }
@@ -4463,42 +4217,11 @@ body {
   gap: 6px;
 }
 
-/* ── Toolbar Actions (voice + @) ─────────────────────────── */
+/* ── Toolbar Actions ──────────────────────────────────── */
 .toolbar-actions {
   display: flex;
   align-items: center;
   gap: 2px;
-}
-
-/* ── Voice Input Button ──────────────────────────────────── */
-#btn-voice {
-  transition: all var(--transition-base);
-  color: var(--text-muted);
-}
-
-#btn-voice:hover {
-  color: var(--text-secondary);
-  background: transparent;
-}
-
-#btn-voice.recording {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
-  animation: voice-pulse 1.2s ease-in-out infinite;
-}
-
-#btn-voice.recording .lucide {
-  animation: voice-icon-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes voice-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
-  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
-}
-
-@keyframes voice-icon-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
 }
 
 .btn-send {
@@ -5233,8 +4956,8 @@ body.child-mode #header-bar {
 .header-tabs .tab {
   display: flex;
   align-items: center;
-  gap: 0;
-  padding: 2px 4px;
+  gap: 6px;
+  padding: 6px 10px;
   margin: 2px;
   border: none;
   background: transparent;
@@ -5263,23 +4986,7 @@ body.child-mode #header-bar {
   text-align: left;
 }
 
-.header-tabs .tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-left: auto;
-  opacity: 0.4;
-  transition: opacity var(--transition-fast);
-}
+.header-tabs 
 
 .header-tabs .tab:hover {
   background: var(--bg-hover);
@@ -5289,12 +4996,13 @@ body.child-mode #header-bar {
 .header-tabs .tab.active {
   background: var(--bg-primary);
   color: var(--text-primary);
-  box-shadow: 0 -1px 2px rgba(0,0,0,0.08);
+  box-shadow: none;
   z-index: 1;
+  border: 1px solid var(--border);
+  border-bottom: none;
 }
-
 .header-tabs .tab.active::after {
-  content: none;
+  display: none;
 }
 
 .header-tabs .tab-label {
@@ -5306,31 +5014,11 @@ body.child-mode #header-bar {
   pointer-events: none;
 }
 
-.header-tabs .tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-left: auto;
-  opacity: 0.4;
-  transition: opacity var(--transition-fast);
-}
+.header-tabs 
 
-.header-tabs .tab:hover .tab-close {
-  opacity: 0.6;
-}
+.header-tabs .tab:hover 
 
-.header-tabs .tab-close:hover {
-  opacity: 1 !important;
-}
+.header-tabs 
 
 .header-tabs .tab-close svg {
   width: 10px;
@@ -5518,14 +5206,92 @@ body.child-mode #header-bar {
   min-height: 0;
 }
 
+.child-webview-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.child-webview-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  z-index: 5;
+}
+
+.child-status-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.child-status-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  padding: 24px;
+  z-index: 6;
+}
+
+.child-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 420px;
+  gap: 10px;
+}
+
+.child-overlay-icon {
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.child-overlay-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.child-overlay-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.child-overlay-retry {
+  margin-top: 10px;
+  padding: 8px 22px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.child-overlay-retry:hover {
+  border-color: var(--accent);
+  background: var(--bg-input);
+}
+
 .child-nav-bar {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
+  padding: 10px 8px 4px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .child-url-input {
@@ -5539,6 +5305,7 @@ body.child-mode #header-bar {
   font-size: 12px;
   outline: none;
   margin-left: 4px;
+  -webkit-app-region: no-drag;
 }
 
 .child-url-input:focus {
@@ -5557,6 +5324,7 @@ body.child-mode #header-bar {
   cursor: pointer;
   border-radius: 5px;
   transition: background var(--transition-fast), color var(--transition-fast);
+  -webkit-app-region: no-drag;
 }
 
 .child-nav-btn:hover {
@@ -5775,7 +5543,6 @@ body.child-mode #header-bar {
   width: 13px;
   height: 13px;
 }
-
 
 /* ── Document Card (Dropdown) ────────────────────────────────────── */
 .index-card-dropdown {
@@ -6019,7 +5786,6 @@ body.child-mode #header-bar {
   background: var(--border);
   margin: 0 18px;
 }
-
 
 /* ── Settings Dropdown ───────────────────────────────────────────── */
 .settings-dropdown-wrap {
@@ -7011,7 +6777,6 @@ body.child-mode #header-bar {
   color: var(--error);
 }
 
-
 /* ── Search View ─────────────────────────────────────────────────── */
 .search-container {
   flex: 1;
@@ -7586,6 +7351,18 @@ body.child-mode #header-bar {
   line-height: 1.5;
 }
 
+/* Platform adapter icons that are inherently monochrome (Matrix, SMS,
+   Webhook) ship with hardcoded black/dark fills which vanish on a dark
+   background.  Force them to follow the active theme's text color. */
+.adapter-platform-icon.pi-mono {
+  color: var(--text-text-secondary, #9599a6);
+}
+.adapter-platform-icon.pi-mono path,
+.adapter-platform-icon.pi-mono rect,
+.adapter-platform-icon.pi-mono circle {
+  fill: currentColor;
+}
+
 .model-manage-actions {
   display: flex;
   align-items: center;
@@ -7654,12 +7431,10 @@ body.child-mode #header-bar {
   background: var(--bg-hover);
 }
 
-
 .model-table-cell {
   font-size: 13px;
   color: var(--text-primary);
 }
-
 
 .perm-hint-block {
   margin-top: 12px;
@@ -8419,7 +8194,6 @@ body.child-mode #header-bar {
   max-height: 400px;
   overflow-y: auto;
 }
-
 
 /* ── Question card (interactive form) ────────────────────────── */
 .q-step {
@@ -9253,7 +9027,6 @@ body.child-mode #header-bar {
   box-shadow: 0 1px 4px rgba(99, 102, 241, 0.35);
 }
 
-
 .user-cmd-noargs {
   opacity: 0.6;
   font-style: italic;
@@ -9398,6 +9171,10 @@ body.child-mode #header-bar {
 
 #chat-view .strip-body .diff-container {
   max-width: 100%;
+  /* The strip-body uses pre-wrap for terminal text, which would render the
+     newlines/indentation inside the diff-container template as visible blank
+     rows above/below the file name. diff rows keep their own white-space. */
+  white-space: normal;
 }
 
 #chat-view .strip-body .diff-body {
@@ -9796,34 +9573,30 @@ body.child-mode #header-bar {
 }
 
 /* Resizer */
-.si-editor-divider {
+.si-editor-divider,
+.si-review-divider {
   width: 1px;
   cursor: col-resize;
   flex-shrink: 0;
-  background: transparent;
+  background: var(--editor-sidebar-border);
   position: relative;
   z-index: 10;
   transition: background var(--transition-fast);
 }
 
 .si-editor-divider:hover,
-.si-editor-divider.resizing {
-  background: var(--editor-divider-hover);
+.si-editor-divider.resizing,
+.si-review-divider:hover,
+.si-review-divider.resizing {
+  background: var(--accent);
   width: 2px;
 }
 
 /* Empty state */
+/* Editor empty state inherits .si-panel-empty layout (kept for the existing
+   querySelector(".si-editor-empty") selector in setupEditorPanel). */
 .si-editor-empty {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: var(--editor-sidebar-bg);
-  color: var(--editor-empty);
-  font-size: 13px;
-  user-select: none;
 }
 
 /* Code area */
@@ -9842,80 +9615,57 @@ body.child-mode #header-bar {
   overflow: hidden;
 }
 
-/* Monaco overrides */
-.si-code-container .monaco-editor .margin {
-  background-color: var(--editor-sidebar-bg) !important;
+.si-code-container .cm-editor {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100%;
+}
+.si-code-container .cm-editor.cm-focused { outline: none; }
+.si-code-container .cm-scroller {
+  overflow: auto !important;
+}
+.si-code-container .cm-content {
+  white-space: pre !important;
+}
+.si-code-container .cm-editor .cm-scroller::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.si-code-container .cm-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+.si-code-container .cm-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+}
+.si-code-container .cm-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
-.si-code-container .monaco-editor .monaco-editor-background {
-  background-color: var(--editor-sidebar-bg) !important;
+.si-code-container .cm-editor .cm-gutters {
+  background: var(--editor-sidebar-bg) !important;
+  color: var(--text-muted) !important;
+  border-right: 1px solid var(--border);
+}
+.si-code-container .cm-activeLineGutter {
+  background: var(--bg-hover);
+}
+.si-code-container .cm-cursor {
+  border-left-color: var(--text-primary) !important;
+}
+.si-code-container .cm-selectionBackground,
+.si-code-container.cm-focused .cm-selectionBackground {
+  background: var(--accent-light) !important;
 }
 
-.si-code-container .monaco-editor .minimap-slider {
-  background: #79797933;
-}
-
-.si-code-container .monaco-editor .minimap-slider:hover {
-  background: #64646480;
-}
-
-.si-code-container .monaco-editor .decorationsOverviewRuler {
-  display: none;
-}
-
-/* ── Session Inner �?Review Panel (Git Diff) ──────────────────────── */
+/* ── Session Inner — Review Panel (Git Diff) ──────────────────────── */
 
 /* ── Review Commit Bar ─────────────────────────────────── */
-.si-review-commit-bar {
-  display: flex;
-  gap: 6px;
-  padding: 6px 10px;
-  border-top: 1px solid var(--editor-sidebar-border);
-  flex-shrink: 0;
-  background: var(--editor-sidebar-bg);
-}
-
-.si-review-commit-input {
-  flex: 1;
-  padding: 4px 8px;
-  font-size: 12px;
-  border: 1px solid var(--editor-sidebar-border);
-  border-radius: var(--radius-sm);
-  background: var(--editor-sidebar-hover);
-  color: var(--editor-text);
-  outline: none;
-}
-
-.si-review-commit-input:focus {
-  border-color: var(--accent);
-}
-
-.si-review-commit-btn {
-  padding: 4px 12px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #fff;
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: opacity var(--transition-fast);
-}
-
-.si-review-commit-btn:hover {
-  opacity: 0.85;
-}
-
-.si-review-commit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .si-review-wrap {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   background: var(--editor-sidebar-bg);
 }
@@ -9929,12 +9679,21 @@ body.child-mode #header-bar {
   flex-shrink: 0;
   font-size: 11px;
   color: var(--editor-sidebar-text);
+  min-width: 0;
+}
+/* Buttons never shrink - the JS ResizeObserver merges them into the ⋯
+   menu when space is tight, so their size stays constant. */
+.si-review-toolbar > .settings-dropdown-wrap,
+.si-review-toolbar > button,
+.si-review-toolbar > .si-review-actions {
+  flex-shrink: 0;
+}
+/* Dropdowns must escape the toolbar's bounds - never clip them. */
+.si-review-toolbar .settings-dropdown-wrap {
+  overflow: visible;
 }
 
-
-
 .si-review-stats {
-  margin-left: auto;
   display: flex;
   gap: 6px;
   font-family: var(--font-mono);
@@ -9955,9 +9714,8 @@ body.child-mode #header-bar {
 }
 
 .si-review-diff {
-  flex: 2;
+  flex: 1;
   overflow: auto;
-  border-right: 1px solid var(--editor-sidebar-border);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
@@ -9968,6 +9726,22 @@ body.child-mode #header-bar {
   flex: 1;
   overflow: auto;
   padding: 6px 0;
+}
+/* When the panel is narrow, hide the file tree so the diff gets full width. */
+.si-review-body.tree-collapsed .si-review-tree {
+  display: none;
+}
+.si-review-body.tree-collapsed .si-review-divider {
+  display: none;
+}
+.si-review-body.tree-collapsed .si-review-diff {
+  border-right: none;
+}
+/* Draggable divider between diff and file tree (shared style above). */
+/* Auto-collapse editor file tree when the panel is narrow. */
+.si-editor-wrap.tree-collapsed .si-editor-tree,
+.si-editor-wrap.tree-collapsed .si-editor-divider {
+  display: none;
 }
 
 .si-review-diff-loading {
@@ -10059,34 +9833,6 @@ body.child-mode #header-bar {
 .si-review-untracked {
   background: rgba(130, 130, 130, 0.15);
   color: var(--editor-empty);
-}
-
-/* ── Review empty state (terminal-like) ────────────────────────── */
-.si-review-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: var(--editor-sidebar-bg);
-  color: var(--editor-empty);
-  font-size: 13px;
-  user-select: none;
-}
-.si-review-empty i {
-  width: 28px;
-  height: 28px;
-  opacity: 0.35;
-}
-.si-review-empty .si-review-empty-title {
-  font-size: 14px;
-  font-weight: 500;
-  opacity: 0.8;
-}
-.si-review-empty .si-review-empty-sub {
-  font-size: 12px;
-  opacity: 0.5;
 }
 
 /* ── Reusable panel empty state (terminal-like) ────────────────── */
@@ -10917,5 +10663,270 @@ body.child-mode #header-bar {
   padding: 0 10px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── Review action menu (square trigger + icon+label items) ──────── */
+.si-review-actions .si-review-action-trigger {
+  min-width: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.si-review-action-dropdown .review-action-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+}
+.si-review-action-dropdown .review-action-item > i.lucide:first-child {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.si-review-action-dropdown .review-action-item > span {
+  flex: 1;
+  min-width: 0;
+}
+.si-review-action-dropdown .review-action-item .review-check {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0;
+}
+.si-review-action-dropdown .review-action-item.checked .review-check {
+  opacity: 1;
+}
+.settings-dropdown-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 2px;
+}
+
+/* ── Review diff display toggles ─────────────────────────────────── */
+/* Word wrap: long lines wrap instead of horizontal scroll. */
+.si-review-diff .diff-container {
+  overflow: visible;
+}
+.si-review-diff.review-wrap .diff-content {
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.si-review-diff.review-wrap .diff-body {
+  overflow-x: hidden;
+}
+/* Default: allow both horizontal and vertical scroll. The diff-container
+   has overflow:hidden from the border-radius, so diff-body handles scroll. */
+.si-review-diff .diff-body {
+  overflow: auto;
+}
+
+/* Word diff: inline added/removed word highlighting. */
+.diff-content ins {
+  background: rgba(63, 185, 80, 0.25);
+  border-radius: 2px;
+  text-decoration: none;
+  color: var(--success);
+}
+.diff-content del {
+  background: rgba(244, 63, 94, 0.25);
+  border-radius: 2px;
+  text-decoration: none;
+  color: var(--error);
+}
+
+/* Hide whitespace: dim lines whose content is all whitespace. */
+.diff-row-ws-only {
+  opacity: 0.35;
+}
+
+/* Truncation notice row. */
+.diff-row.diff-row-truncated .diff-content {
+  color: var(--text-tertiary);
+  font-style: italic;
+  text-align: center;
+}
+
+/* ── Rich-text summary view ──────────────────────────────────────── */
+.diff-container.diff-rich-text .rt-body {
+  padding: 10px 12px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.diff-rich-text .rt-stat-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.diff-rich-text .rt-stat-add { color: var(--success); font-weight: 600; }
+.diff-rich-text .rt-stat-del { color: var(--error); font-weight: 600; }
+.diff-rich-text .rt-stat-pct { color: var(--text-muted); font-size: 11px; }
+.diff-rich-text .rt-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.diff-rich-text .rt-section-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.diff-rich-text .rt-preview-line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-rich-text .rt-preview-line.rt-add {
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--success);
+}
+.diff-rich-text .rt-preview-line.rt-del {
+  background: rgba(244, 63, 94, 0.12);
+  color: var(--error);
+}
+
+/* ── Review toolbar side buttons (collapse, split, git) ──────────── */
+/* All four buttons share the same size; spacing comes from the toolbar's
+   `gap: 8px` so it's uniform - no per-button margins. */
+.si-review-toolbar .si-review-collapse-btn,
+.si-review-toolbar .si-review-split-btn,
+.si-review-toolbar .si-review-git-wrap .settings-dropdown-trigger {
+  min-width: 0;
+  width: 32px;
+  height: 30px;
+  padding: 0 4px;
+  justify-content: center;
+}
+.si-review-toolbar .si-review-git-wrap .settings-dropdown-trigger {
+  width: auto;
+  gap: 2px;
+}
+.si-review-toolbar .si-review-git-wrap .settings-dropdown-trigger i.lucide:first-child {
+  width: 14px;
+  height: 14px;
+}
+/* When an action cannot be executed (e.g. push without commits), dim it. */
+.si-review-git-dropdown .settings-dropdown-item.si-review-git-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ── Collapsed diff bodies ────────────────────────────────────────── */
+.si-review-diff.review-collapsed .diff-container .diff-body {
+  display: none;
+}
+.si-review-diff.review-collapsed .diff-container {
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* ── Split (two-column) view ──────────────────────────────────────── */
+.diff-row.diff-row-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.diff-row.diff-row-split .diff-split-side {
+  display: flex;
+  min-width: 0;
+}
+.diff-row.diff-row-split .diff-split-side .diff-content {
+  flex: 1;
+}
+.diff-row.diff-row-split .diff-split-side .diff-ln {
+  width: 36px;
+  min-width: 36px;
+}
+.si-review-diff.review-split .diff-row.diff-row-split {
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* ── Commit overlay (matching search-overlay style) ──────────────── */
+.si-review-commit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  z-index: 200;
+}
+.si-review-commit-overlay.hidden { display: none; }
+.si-review-commit-overlay .si-review-commit-input {
+  flex: 1;
+  resize: none;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 15px;
+  outline: none;
+  font-family: inherit;
+  min-height: 40px;
+  line-height: 1.5;
+}
+.si-review-commit-overlay .si-review-commit-input::placeholder {
+  color: var(--text-muted);
+}
+.si-review-commit {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--editor-sidebar-border);
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-tertiary);
+}
+.si-review-commit-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 40px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+}
+.si-review-commit-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.si-review-commit-input:focus {
+  border-color: var(--accent);
+}
+.si-review-commit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.si-review-commit-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.si-review-commit-cancel {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
 }
 

@@ -30,7 +30,7 @@
  * resume/open responses to the right session.
  */
 
-import { ServerEvent, WorkspaceEntry, BranchUpdated, BranchSwitched, BranchRolledBack, TranscriptionResult, UsageStatsEvent } from "./types.js";
+import { ServerEvent, WorkspaceEntry, BranchUpdated, BranchSwitched, BranchRolledBack, UsageStatsEvent } from "./types.js";
 import * as state from "./state.js";
 import { send } from "./ws.js";
 import { Chat } from "./chat.js";
@@ -102,7 +102,6 @@ let _activeStreamSessionId = "";
 let _toolCallGeneration: Record<string, number> = {};
 let _validationResolve: (() => void) | null = null;
 let _validationReject: ((reason: string) => void) | null = null;
-let _onTranscription: ((text: string) => void) | null = null;
 
 function _hasSessionId(event: { session_id?: string | null }): event is { session_id: string } {
   return typeof event.session_id === "string" && event.session_id.length > 0;
@@ -245,11 +244,6 @@ export function waitForModelValidation(): Promise<void> {
       }
     }, 30000);
   });
-}
-
-/** Sets the callback invoked when a voice transcription arrives. */
-export function setOnTranscription(cb: (text: string) => void): void {
-  _onTranscription = cb;
 }
 
 /** Routes a single server event into the state store and chat view. */
@@ -424,7 +418,7 @@ export function handleEvent(event: ServerEvent): void {
         const tcf = state.findToolCall(event.id, _eventSessionId(event));
         if (tcf) {
           const raw = state.getState().settings?.sub_agent_auto_open_view;
-          const autoOpen = raw === true || raw === "true" || raw === undefined;
+          const autoOpen = raw === undefined ? true : state.isEnabled(raw);
           const cur = state.getState().subAgentView;
           // Only auto-open if no view is currently active.  If the user
           // already has a sub-agent open (or another tool_call_start
@@ -823,7 +817,8 @@ export function handleEvent(event: ServerEvent): void {
       const _settingsUpdate: Record<string, unknown> = {};
       const _generalKeys = [
         "shortcut_send_mode", "default_link_behavior",
-        "default_markdown_behavior", "startup_session_mode", "startup_session_behavior",
+        "auto_expand", "sub_agent_auto_open_view", "automation_auto_open_view",
+        "startup_session_mode", "startup_session_behavior",
       ] as const;
       for (const key of _generalKeys) {
         const val = cfg[key];
@@ -1283,12 +1278,6 @@ export function handleEvent(event: ServerEvent): void {
       state.removeBranchMessages(new Set(ev.removed_message_ids), ev.session_id);
       chat?.render();
       (window as any).__sessionInner?.render?.();
-      break;
-    }
-
-    case "transcription_result": {
-      const ev = event as TranscriptionResult;
-      _onTranscription?.(ev.text);
       break;
     }
 

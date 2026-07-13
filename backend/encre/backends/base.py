@@ -332,18 +332,6 @@ class BaseBackend(ABC):
         """Return True if the backend can produce image variations."""
         return False
 
-    def supports_text_to_speech(self) -> bool:
-        """Return True if the backend exposes a TTS endpoint."""
-        return False
-
-    def supports_speech_to_text(self) -> bool:
-        """Return True if the backend exposes a transcription endpoint."""
-        return False
-
-    def supports_audio_translation(self) -> bool:
-        """Return True if the backend exposes an audio translation endpoint."""
-        return False
-
     def supports_embeddings(self) -> bool:
         """Return True if the backend can produce embedding vectors."""
         return False
@@ -481,69 +469,6 @@ class BaseBackend(ABC):
         raise NotImplementedError
 
     # ── Audio ────────────────────────────────────────────────────────────
-
-    async def text_to_speech(
-        self,
-        _text: str,
-        _model: str | None = None,
-        _voice: str = "alloy",
-        _response_format: str = "mp3",
-        _speed: float = 1.0,
-        _extra_params: dict[str, Any] | None = None,
-    ) -> AudioResult:
-        """Synthesise speech from text.
-
-        Args:
-            text: Input text to synthesise.
-            model: Optional provider-specific TTS model override.
-            voice: Voice identifier (OpenAI: ``alloy``, ``echo``, ``fable``,
-                ``onyx``, ``nova``, ``shimmer``; Google: ``en-US-Wavenet-A``;
-                Bedrock: ``Joanna`` etc.).
-            response_format: Audio container (``"mp3"``, ``"opus"``,
-                ``"aac"``, ``"flac"``, ``"wav"``, ``"pcm"``).
-            speed: Playback speed multiplier (0.25 - 4.0).
-            extra_params: Additional provider-specific parameters.
-
-        Returns:
-            An :class:`AudioResult` with the base64-encoded audio.
-        """
-        if not self.supports_text_to_speech():
-            raise NotImplementedError(
-                f"{type(self).__name__} does not support text-to-speech"
-            )
-        raise NotImplementedError
-
-    async def transcribe_audio(
-        self,
-        _audio_b64: str,
-        _model: str | None = None,
-        _language: str | None = None,
-        _response_format: str = "json",
-        _temperature: float = 0.0,
-        _prompt: str | None = None,
-        _extra_params: dict[str, Any] | None = None,
-    ) -> AudioResult:
-        """Transcribe speech from an audio recording.
-
-        Args:
-            audio_b64: Base64-encoded audio bytes.
-            model: Optional provider-specific STT model override.
-            language: ISO-639-1 language code (optional, improves accuracy).
-            response_format: ``"json"``, ``"text"``, ``"srt"``, ``"vtt"`` or
-                ``"verbose_json"``.
-            temperature: Sampling temperature (0.0 = deterministic).
-            prompt: Optional prompt to steer the transcription style.
-            extra_params: Additional provider-specific parameters.
-
-        Returns:
-            An :class:`AudioResult` with ``text`` populated and (optionally)
-            timed ``segments``.
-        """
-        if not self.supports_speech_to_text():
-            raise NotImplementedError(
-                f"{type(self).__name__} does not support speech-to-text"
-            )
-        raise NotImplementedError
 
     async def translate_audio(
         self,

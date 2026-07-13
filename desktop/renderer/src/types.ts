@@ -104,7 +104,6 @@ export type ServerEvent =
   | BranchSwitched
   | BranchRolledBack
   | UsageStatsEvent
-  | TranscriptionResult
   | GatewayStatusEvent
   | RunQueued
   | AdapterTestResultEvent
@@ -157,11 +156,6 @@ export interface WorkflowCompleted {
   skipped_count: number;
   total_duration: number;
   session_id?: string;
-}
-
-export interface TranscriptionResult {
-  type: "transcription_result";
-  text: string;
 }
 
 export interface SearchResultEntry {
@@ -441,7 +435,6 @@ export type ClientMessage =
   | ClientReindexWorkspace
   | ClientDeleteIndex
   | ClientGetUsageStats
-  | ClientTranscribeAudio
   | ClientTestAdapter
   | ClientAutomationListJobs
   | ClientAutomationGetHistory
@@ -455,12 +448,6 @@ export interface ClientSteer {
   type: "steer";
   session_id?: string;
   prompt: string;
-}
-
-export interface ClientTranscribeAudio {
-  type: "transcribe_audio";
-  audio_data: string;
-  format?: string;
 }
 
 export interface ClientGetUsageStats {

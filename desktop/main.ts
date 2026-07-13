@@ -30,7 +30,7 @@
  *  - Provide a system tray icon + popup for quick session switching.
  *  - Expose an encrypted on-disk cookie store for the in-app browser.
  *  - Register a large set of IPC handlers bridging the renderer to the OS
- *    (file system, terminal/pty, git, window controls, auto-start, docs…).
+ *    (file system, terminal/pty, git, window controls, auto-start, docs鈥?.
  *
  * All heavy interaction with the OS happens here; the renderer only talks to
  * the main process through the `electronAPI` exposed by `preload.ts`.
@@ -65,11 +65,8 @@ const GIT_STATUS_CACHE = new Map<string, { ts: number; result: any }>();
 const GIT_DIFF_CACHE = new Map<string, { ts: number; result: any }>();
 // Time-to-live (ms) for the git caches before a fresh command is run.
 const GIT_CACHE_TTL_MS = 5000;
-// Tracks in-flight `git diff` child processes so a duplicate request can
-// cancel the previous one.
-const GIT_RUNNING_DIFFS = new Map<string, ChildProcess>();
 
-/* ── Encrypted browser cookie store ──────────────────────────────────── */
+/* 鈹€鈹€ Encrypted browser cookie store 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 // On-disk path to the static AES-256 key for the cookie store.
 const BROWSER_KEY_FILE = path.join(DATA_DIR, "browser_key");
@@ -174,7 +171,7 @@ function loadBrowserCookies(): string | null {
 function setupBrowserSession(): void {
   const bs = session.fromPartition("encre-browser");
 
-  // In-memory cache of the latest cookie JSON — used for synchronous save on quit
+  // In-memory cache of the latest cookie JSON 鈥?used for synchronous save on quit
   let cookieCache: string | null = null;
 
   // Load encrypted cookies into the session
@@ -224,7 +221,7 @@ function setupBrowserSession(): void {
     }).catch((e: any) => console.error("[browser] cookie save error:", e));
   });
 
-  // Synchronous save on quit — Electron does NOT await async event handlers
+  // Synchronous save on quit 鈥?Electron does NOT await async event handlers
   app.on("before-quit", () => {
     if (saveTimer) clearTimeout(saveTimer);
     if (cookieCache) {
@@ -265,7 +262,7 @@ ipcMain.handle("browser:clear-data", async () => {
   }
 });
 
-/* ── Terminal sessions ──────────────────────────────────────────────────── */
+/* 鈹€鈹€ Terminal sessions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 // A single terminal/pty session tracked by the main process.
 interface PtySession {
@@ -301,7 +298,7 @@ function getDataDir(): string {
   return path.join(home, ".dunimd", "encre");
 }
 
-/* ── Service management helpers ─────────────────────────────────────────── */
+/* 鈹€鈹€ Service management helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 /**
  * Reads the PID recorded in the service PID file.
@@ -344,7 +341,7 @@ function killServiceByPid(pid: number): void {
       // /F = force, /T = tree kill (children too)
       execSync(`taskkill /PID ${pid} /F /T`, { stdio: "ignore" });
     } else {
-      // Kill the full process group — -pid means "process group id"
+      // Kill the full process group 鈥?-pid means "process group id"
       try { process.kill(-pid, "SIGKILL"); } catch { process.kill(pid, "SIGKILL"); }
     }
   } catch { /* process already dead */ }
@@ -393,7 +390,7 @@ function startPythonServer(): Promise<void> {
       windowsHide: isWin ? true : false,
     });
 
-    // Do NOT unref — the before-quit handler needs the reference to kill
+    // Do NOT unref 鈥?the before-quit handler needs the reference to kill
     // this process tree on exit.
     if (isWin && serverProcess) {
       // Log the PID for debugging; Python server writes its own PID file
@@ -655,7 +652,7 @@ function loadAppIcon(): Electron.NativeImage {
  * Left click shows/focuses the main window; right click toggles the popup.
  */
 function createTray(): void {
-  // Use the Encre app icon for the tray — works on Windows (ICO) and macOS/Linux.
+  // Use the Encre app icon for the tray 鈥?works on Windows (ICO) and macOS/Linux.
   const icon = loadAppIcon();
   tray = new Tray(icon);
   const labels = getTrayLabels();
@@ -677,7 +674,7 @@ function createTray(): void {
   });
 }
 
-/* ── Window creation ───────────────────────────────────────────────────── */
+/* 鈹€鈹€ Window creation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 /**
  * Creates the main application BrowserWindow: a frameless, hidden-by-default
@@ -744,7 +741,7 @@ function createWindow(): void {
   });
 }
 
-// ── IPC handlers ──────────────────────────────────────────────────────────
+// 鈹€鈹€ IPC handlers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Returns the backend WebSocket port to the renderer.
 ipcMain.handle("getServerPort", () => {
@@ -802,7 +799,7 @@ ipcMain.handle("getAppPath", () => {
   return getDataDir();
 });
 
-// ── Crypto keyfile access ────────────────────────────────────────────────
+// 鈹€鈹€ Crypto keyfile access 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Reads the user's transport-encryption keyfile (~/.encre/keyfile).
 ipcMain.handle("readKeyfile", () => {
@@ -831,7 +828,7 @@ ipcMain.handle("readMachineId", () => {
   return require("os").hostname();
 });
 
-// ── Service IPC ──────────────────────────────────────────────────────────
+// 鈹€鈹€ Service IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Reports whether the backend service is running (via PID file).
 ipcMain.handle("getServiceStatus", () => {
@@ -849,7 +846,7 @@ ipcMain.handle("restartService", async () => {
   return { success: true };
 });
 
-// ── Logs & Diagnostics IPC ──────────────────────────────────────────────────
+// 鈹€鈹€ Logs & Diagnostics IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Opens the active log file (or its folder) in the system file manager.
 ipcMain.handle("openLogs", async () => {
@@ -917,7 +914,7 @@ ipcMain.handle("getDiagnostics", async () => {
   };
 });
 
-// ── Auto-start IPC ──────────────────────────────────────────────────────
+// 鈹€鈹€ Auto-start IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Path to the persisted auto-start preference file.
 const AUTOSTART_FILE = path.join(DATA_DIR, "autostart.json");
@@ -971,7 +968,7 @@ ipcMain.handle("setAutoStart", async (_event, enabled: boolean) => {
   }
 });
 
-// ── Tray popup IPC ──────────────────────────────────────────────────────────
+// 鈹€鈹€ Tray popup IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Updates the tray locale from the renderer.
 ipcMain.on("tray-locale", (_event, locale: string) => {
@@ -1055,7 +1052,7 @@ ipcMain.on("tray-mode", (_event, mode: string) => {
 // Keep tray theme in sync when OS-level dark mode changes
 nativeTheme.on("updated", () => {
   // We don't know the preference here ("system"/explicit), so read from
-  // localStorage of the main window if possible — otherwise just resolve
+  // localStorage of the main window if possible 鈥?otherwise just resolve
   // with whatever currentTrayTheme already is.
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.executeJavaScript(
@@ -1075,7 +1072,7 @@ nativeTheme.on("updated", () => {
   }
 });
 
-// ── Terminal IPC ──────────────────────────────────────────────────────────
+// 鈹€鈹€ Terminal IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Spawns a new pseudo-terminal (pty) session for the in-app terminal.
 ipcMain.handle("terminal:spawn", async (_event, shell?: string, shellArgs?: string[]) => {
@@ -1182,7 +1179,7 @@ ipcMain.handle("terminal:kill", (_event, id: number) => {
   if (t) { t.pty.kill(); terminals.delete(id); }
 });
 
-// ── Files IPC ─────────────────────────────────────────────────────────────
+// 鈹€鈹€ Files IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Lists directory entries (directories first, then alphabetical).
 ipcMain.handle("listDirectory", async (_event, dirPath: string) => {
@@ -1223,45 +1220,25 @@ ipcMain.handle("getDrives", async () => {
   return ["/"];
 });
 
-// ── Git IPC ───────────────────────────────────────────────────────────────
+// 鈹€鈹€ Git IPC (proxied to Python backend) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// Runs `git status` for a repo with a short TTL cache and output truncation.
 ipcMain.handle("gitStatus", async (_event, repoPath: string) => {
   const now = Date.now();
   const cached = GIT_STATUS_CACHE.get(repoPath);
   if (cached && now - cached.ts < GIT_CACHE_TTL_MS) {
     return cached.result;
   }
-  return new Promise((resolve) => {
-    const git = spawn("git", ["status", "--short", "--branch", "--untracked-files=normal"], { cwd: repoPath, windowsHide: process.platform === "win32" });
-    let out = "";
-    let err = "";
-    let done = false;
-    const MAX_STATUS_BYTES = 256 * 1024;
-    const finish = () => { if (!done) { done = true; resolve({ error: "git status timed out" }); } };
-    const t = setTimeout(() => { git.kill(); finish(); }, 15000);
-    git.stdout.on("data", (d: Buffer) => {
-      if (done) return;
-      out += d.toString();
-      if (Buffer.byteLength(out, "utf-8") > MAX_STATUS_BYTES) {
-        out = out.slice(0, MAX_STATUS_BYTES) + "\n... [status truncated]\n";
-        git.kill();
-      }
-    });
-    git.stderr.on("data", (d: Buffer) => { err += d.toString(); });
-    git.on("error", (e) => { clearTimeout(t); if (!done) { done = true; resolve({ error: e.message }); } });
-    git.on("close", (code) => {
-      clearTimeout(t);
-      if (done) return;
-      done = true;
-      const result = code !== 0 ? { error: err || "git status failed" } : { output: out };
-      GIT_STATUS_CACHE.set(repoPath, { ts: Date.now(), result });
-      resolve(result);
-    });
-  });
+  try {
+    const res = await fetch(`http://localhost:${WS_PORT}/git/status?workspace=${encodeURIComponent(repoPath)}`);
+    const data = await res.json();
+    const result = data.error ? { error: data.error } : { output: data.output || "" };
+    GIT_STATUS_CACHE.set(repoPath, { ts: Date.now(), result });
+    return result;
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
 });
 
-// Runs `git diff` (summary or per-file) with cache + cancel of prior run.
 ipcMain.handle("gitDiff", async (_event, repoPath: string, filePath?: string) => {
   const cacheKey = `${repoPath}::${filePath || "__summary__"}`;
   const now = Date.now();
@@ -1269,64 +1246,96 @@ ipcMain.handle("gitDiff", async (_event, repoPath: string, filePath?: string) =>
   if (cached && now - cached.ts < GIT_CACHE_TTL_MS) {
     return cached.result;
   }
-  return new Promise((resolve) => {
-    const existing = GIT_RUNNING_DIFFS.get(cacheKey);
-    if (existing) {
-      try { existing.kill(); } catch {}
-      GIT_RUNNING_DIFFS.delete(cacheKey);
-    }
-    const args = filePath
-      ? ["diff", "--", filePath]
-      : ["diff", "--stat=200,160,40"];
-    const git = spawn("git", args, { cwd: repoPath, windowsHide: process.platform === "win32" });
-    GIT_RUNNING_DIFFS.set(cacheKey, git);
-    let out = "";
-    let err = "";
-    let done = false;
-    const MAX_DIFF_BYTES = filePath ? 512 * 1024 : 128 * 1024;
-    const finish = () => { if (!done) { done = true; resolve({ error: "git diff timed out" }); } };
-    const t = setTimeout(() => { git.kill(); finish(); }, 30000);
-    git.stdout.on("data", (d: Buffer) => {
-      if (done) return;
-      out += d.toString();
-      if (Buffer.byteLength(out, "utf-8") > MAX_DIFF_BYTES) {
-        out = out.slice(0, MAX_DIFF_BYTES) + "\n... [diff truncated]\n";
-        git.kill();
-      }
-    });
-    git.stderr.on("data", (d: Buffer) => { err += d.toString(); });
-    git.on("error", (e) => { clearTimeout(t); if (!done) { done = true; resolve({ error: e.message }); } });
-    git.on("close", (code) => {
-      clearTimeout(t);
-      if (done) return;
-      done = true;
-      GIT_RUNNING_DIFFS.delete(cacheKey);
-      const result = code !== 0 && !out ? { error: err || "git diff failed" } : { output: out };
-      GIT_DIFF_CACHE.set(cacheKey, { ts: Date.now(), result });
-      resolve(result);
-    });
-  });
+  try {
+    const params = new URLSearchParams({ workspace: repoPath, filter: "all" });
+    if (filePath) params.set("file", filePath);
+    const res = await fetch(`http://localhost:${WS_PORT}/git/diff?${params}`);
+    const data = await res.json();
+    const result = data.error ? { error: data.error } : { output: data.output || "" };
+    GIT_DIFF_CACHE.set(cacheKey, { ts: Date.now(), result });
+    return result;
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
 });
 
-// Runs `git commit` with a message for all staged+unstaged changes.
+ipcMain.handle("gitDiffEx", async (_event, repoPath: string, filter: string, filePath?: string) => {
+  const cacheKey = `${repoPath}::${filter}::${filePath || "__summary__"}`;
+  const now = Date.now();
+  const cached = GIT_DIFF_CACHE.get(cacheKey);
+  if (cached && now - cached.ts < GIT_CACHE_TTL_MS) {
+    return cached.result;
+  }
+  try {
+    const params = new URLSearchParams({ workspace: repoPath, filter });
+    if (filePath) params.set("file", filePath);
+    const res = await fetch(`http://localhost:${WS_PORT}/git/diff?${params}`);
+    const data = await res.json();
+    const result = data.error ? { error: data.error } : { output: data.output || "" };
+    GIT_DIFF_CACHE.set(cacheKey, { ts: Date.now(), result });
+    return result;
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+});
+
 ipcMain.handle("gitCommit", async (_event, repoPath: string, message: string) => {
-  return new Promise((resolve) => {
-    const git = spawn("git", ["commit", "-m", message], { cwd: repoPath, windowsHide: process.platform === "win32" });
-    let out = "";
-    let err = "";
-    let done = false;
-    const finish = () => { if (!done) { done = true; resolve({ error: "git commit timed out" }); } };
-    const t = setTimeout(() => { git.kill(); finish(); }, 15000);
-    git.stdout.on("data", (d: Buffer) => { if (!done) out += d.toString(); });
-    git.stderr.on("data", (d: Buffer) => { if (!done) err += d.toString(); });
-    git.on("error", (e) => { clearTimeout(t); if (!done) { done = true; resolve({ error: e.message }); } });
-    git.on("close", (code) => {
-      clearTimeout(t);
-      if (done) return;
-      done = true;
-      resolve(code === 0 ? { output: out } : { error: err || "git commit failed" });
-    });
-  });
+  try {
+    const params = new URLSearchParams({ workspace: repoPath, message });
+    const res = await fetch(`http://localhost:${WS_PORT}/git/commit?${params}`);
+    const data = await res.json();
+    return data.error ? { error: data.error } : { output: data.output || "" };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+});
+
+ipcMain.handle("gitPush", async (_event, repoPath: string) => {
+  try {
+    const params = new URLSearchParams({ workspace: repoPath });
+    const res = await fetch(`http://localhost:${WS_PORT}/git/push?${params}`);
+    const data = await res.json();
+    return data.error ? { error: data.error } : { output: data.output || "" };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+});
+
+ipcMain.handle("gitCreatePr", async (_event, repoPath: string) => {
+  try {
+    const params = new URLSearchParams({ workspace: repoPath });
+    const res = await fetch(`http://localhost:${WS_PORT}/git/pr?${params}`);
+    const data = await res.json();
+    return {
+      error: data.error || "",
+      output: data.output || "",
+      compare_url: data.compare_url || "",
+    };
+  } catch (e) {
+    return { error: (e as Error).message, output: "", compare_url: "" };
+  }
+});
+
+ipcMain.handle("gitBehind", async (_event, repoPath: string) => {
+  try {
+    const params = new URLSearchParams({ workspace: repoPath });
+    const res = await fetch(`http://localhost:${WS_PORT}/git/behind?${params}`);
+    const data = await res.json();
+    return { behind: data.behind ?? -1, error: data.error || "" };
+  } catch (e) {
+    return { behind: -1, error: (e as Error).message };
+  }
+});
+
+ipcMain.handle("gitPull", async (_event, repoPath: string) => {
+  try {
+    const params = new URLSearchParams({ workspace: repoPath });
+    const res = await fetch(`http://localhost:${WS_PORT}/git/pull?${params}`);
+    const data = await res.json();
+    return data.error ? { error: data.error } : { output: data.output || "" };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
 });
 
 // Window controls
@@ -1464,7 +1473,6 @@ ipcMain.handle("openChildWindow", (_event, view: string, label: string) => {
       minWidth: 600,
       minHeight: 400,
       frame: false,
-      titleBarStyle: "hidden",
       backgroundColor: "#0f0f0f",
       title: "ESD",
       icon: resolveAppIconPath(),
@@ -1516,7 +1524,7 @@ ipcMain.on("forward-to-child", (_event, channel: string, ...args: any[]) => {
   }
 });
 
-// ── App lifecycle ─────────────────────────────────────────────────────────
+// 鈹€鈹€ App lifecycle 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 /**
  * Pings the backend `/health` endpoint to verify it is responsive.
@@ -1553,7 +1561,7 @@ app.whenReady().then(async () => {
       console.log(`Background service already running (PID ${existingPid}), connecting`);
       updateTrayStatus(true);
     } else {
-      // PID is stale/zombie — kill it and restart fresh
+      // PID is stale/zombie 鈥?kill it and restart fresh
       console.log(`Server PID ${existingPid} is unresponsive, restarting`);
       killServiceByPid(existingPid);
       await new Promise(r => setTimeout(r, 1500));
@@ -1586,11 +1594,11 @@ app.whenReady().then(async () => {
 
 // Keep the app alive (tray) when all windows close; do not quit.
 app.on("window-all-closed", () => {
-  // Do NOT quit — service continues running in background.
+  // Do NOT quit 鈥?service continues running in background.
   // The system tray keeps the app alive on Windows/Linux.
   // On macOS, window hiding is the default behavior.
   if (process.platform === "darwin") {
-    // macOS: standard behavior — app stays alive without windows
+    // macOS: standard behavior 鈥?app stays alive without windows
   } else {
     // Windows/Linux: window reference cleared, tray keeps app alive
     mainWindow = null;
@@ -1608,7 +1616,7 @@ app.on("activate", () => {
 
 // Tear down everything (terminals, backend, port) on quit.
 app.on("before-quit", () => {
-  console.log("[app] before-quit — cleaning up all child processes");
+  console.log("[app] before-quit 鈥?cleaning up all child processes");
   // Kill all terminal sessions
   for (const [, t] of terminals) {
     try { t.pty.kill(); } catch {}

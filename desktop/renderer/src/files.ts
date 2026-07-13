@@ -50,6 +50,27 @@ function readBatch<T, R>(items: T[], fn: (item: T) => Promise<R>, size: number):
 /**
  * Manages composer attachments (drag/drop, paste, picker) and their chips.
  */
+/** Returns the lucide icon name for a file based on its extension. */
+export function getFileIcon(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase();
+  const icons: Record<string, string> = {
+    md: "file-text", txt: "file-text",
+    json: "file-json-2",
+    py: "file-code-2", js: "file-code-2", ts: "file-code-2",
+    tsx: "file-code-2", jsx: "file-code-2",
+    html: "file-code-2", css: "palette", scss: "palette",
+    rs: "file-cog", go: "file-code-2", java: "coffee",
+    svg: "file-image", png: "file-image", jpg: "file-image",
+    jpeg: "file-image", gif: "file-image", webp: "file-image",
+    pdf: "file-text",
+    zip: "package", tar: "package", gz: "package",
+    mp3: "music", mp4: "video",
+    toml: "file-cog", yml: "file-cog", yaml: "file-cog",
+    sh: "terminal", bash: "terminal",
+  };
+  return icons[ext ?? ""] || "paperclip";
+}
+
 export class Files {
   private input: HTMLElement;
 
@@ -248,23 +269,7 @@ export class Files {
 
   /** Returns the lucide icon name for a file based on its extension. */
   fileIcon(name: string): string {
-    const ext = name.split(".").pop()?.toLowerCase();
-    const icons: Record<string, string> = {
-      md: "file-text", txt: "file-text",
-      json: "file-json-2",
-      py: "file-code-2", js: "file-code-2", ts: "file-code-2",
-      tsx: "file-code-2", jsx: "file-code-2",
-      html: "file-code-2", css: "palette", scss: "palette",
-      rs: "file-cog", go: "file-code-2", java: "coffee",
-      svg: "file-image", png: "file-image", jpg: "file-image",
-      jpeg: "file-image", gif: "file-image", webp: "file-image",
-      pdf: "file-text",
-      zip: "package", tar: "package", gz: "package",
-      mp3: "music", mp4: "video",
-      toml: "file-cog", yml: "file-cog", yaml: "file-cog",
-      sh: "terminal", bash: "terminal",
-    };
-    return icons[ext ?? ""] || "paperclip";
+    return getFileIcon(name);
   }
 
   private fmtSize(bytes: number): string {

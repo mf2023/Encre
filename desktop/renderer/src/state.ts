@@ -754,6 +754,18 @@ export function setSettings(settings: Record<string, unknown>): void {
   update({ settings });
 }
 
+/**
+ * Normalizes a persisted on/off setting to a boolean.
+ *
+ * Settings are persisted as the strings `"true"`/`"false"` (sent by the
+ * settings panel toggles) but may also arrive as real booleans from the
+ * backend `config_data` payload.  This helper treats both `"true"` and
+ * `true` as enabled so callers don't have to special-case the type.
+ */
+export function isEnabled(value: unknown): boolean {
+  return value === true || value === "true";
+}
+
 /** Replaces the tool-permission policies. */
 export function setPermissionPolicies(policies: import("./types.js").PermissionPolicies): void {
   update({ permissionPolicies: policies });

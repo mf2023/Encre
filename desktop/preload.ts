@@ -100,8 +100,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("gitStatus", repoPath),
   gitDiff: (repoPath: string, filePath?: string): Promise<{ output?: string; error?: string }> =>
     ipcRenderer.invoke("gitDiff", repoPath, filePath),
+  gitDiffEx: (repoPath: string, filter: string, filePath?: string): Promise<{ output?: string; error?: string }> =>
+    ipcRenderer.invoke("gitDiffEx", repoPath, filter, filePath),
   gitCommit: (repoPath: string, message: string): Promise<{ output?: string; error?: string }> =>
     ipcRenderer.invoke("gitCommit", repoPath, message),
+  gitPush: (repoPath: string): Promise<{ output?: string; error?: string }> =>
+    ipcRenderer.invoke("gitPush", repoPath),
+  gitCreatePr: (repoPath: string): Promise<{ output?: string; error?: string; compare_url?: string }> =>
+    ipcRenderer.invoke("gitCreatePr", repoPath),
+  gitPull: (repoPath: string): Promise<{ output?: string; error?: string }> =>
+    ipcRenderer.invoke("gitPull", repoPath),
+  gitBehind: (repoPath: string): Promise<{ behind: number; error?: string }> =>
+    ipcRenderer.invoke("gitBehind", repoPath),
 
   // Service
   getServiceStatus: (): Promise<{ running: boolean; pid: number | null; port: number }> =>

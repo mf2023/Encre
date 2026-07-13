@@ -29,7 +29,7 @@
  * helpers used across the renderer.
  */
 
-import { getState, subscribe, showToast, addUserMessage, addAttachments, startAssistantMessage, setRunning, removeBranchMessages, restoreInputModeChip, truncateToUserMessage, setSubAgentView, pushSubAgentBreadcrumb, popSubAgentBreadcrumb, clearSubAgentBreadcrumb, resetToSubAgentBreadcrumbIndex, rememberRollbackEditTarget } from "./state.js";
+import { getState, subscribe, showToast, addUserMessage, addAttachments, startAssistantMessage, setRunning, removeBranchMessages, restoreInputModeChip, truncateToUserMessage, setSubAgentView, pushSubAgentBreadcrumb, popSubAgentBreadcrumb, clearSubAgentBreadcrumb, resetToSubAgentBreadcrumbIndex, rememberRollbackEditTarget, isEnabled } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
 import type { Message, ToolCallState, BranchMeta, AttachmentMeta } from "./types.js";
@@ -40,6 +40,7 @@ import { Dialog } from "./dialog.js";
 import { findSlashCommand } from "./slash_commands.js";
 import { EALoader } from "./ealoader.js";
 import { renderFlightWidget, renderTrainWidget, renderShipWidget } from "./info-widgets.js";
+import { renderDiffHtml } from "./diff_render.js";
 
 const md = new MarkdownIt({
   html: true,
@@ -464,67 +465,11 @@ function renderDiff(result: string): string {
   const pathMatch = firstLine.match(/(?:to|to:) (.+?)\.?\s*$/);
   if (pathMatch) fileName = pathMatch[1].trim();
 
-  // Extract the diff body from the ```diff ... ``` fence.
+  // Extract the diff body from the ```diff ... ``` fence, then render via the
+  // shared renderer so the chat card and the review panel stay identical.
   const diffMatch = result.match(/```diff\n([\s\S]*?)```/);
   if (!diffMatch) return "";
-  const diffBlock = diffMatch[1].trim();
-  const lines = diffBlock.split("\n");
-
-  let adds = 0;
-  let dels = 0;
-  for (const l of lines) {
-    if (l.startsWith("+")) adds++;
-    else if (l.startsWith("-")) dels++;
-  }
-
-  let html = '<div class="diff-container">';
-  // Header
-  html += '<div class="diff-header">';
-  html += '<span class="diff-file-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg></span>';
-  html += `<span class="diff-file-name">${escapeHtml(fileName)}</span>`;
-  html += `<span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>`;
-  html += '</div>';
-  // Body
-  let oldLn = 0;
-  let newLn = 0;
-  html += '<div class="diff-body">';
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const first = line.charAt(0);
-    let rowClass = "diff-row";
-    let oldLnHtml = "";
-    let newLnHtml = "";
-    let gutter = "";
-    let content = "";
-    if (first === "+") {
-      newLn++;
-      rowClass += " diff-row-add";
-      oldLnHtml = "";
-      newLnHtml = String(newLn);
-      gutter = "+";
-      content = line.slice(1);
-    } else if (first === "-") {
-      oldLn++;
-      rowClass += " diff-row-del";
-      oldLnHtml = String(oldLn);
-      newLnHtml = "";
-      gutter = "−";
-      content = line.slice(1);
-    } else {
-      oldLn++;
-      newLn++;
-      oldLnHtml = String(oldLn);
-      newLnHtml = String(newLn);
-      gutter = " ";
-      content = line;
-    }
-    html += `<div class="${rowClass}">`;
-    html += `<span class="diff-ln">${newLnHtml || "&nbsp;"}</span>`;
-    html += `<span class="diff-content">${escapeHtml(content)}</span>`;
-    html += '</div>';
-  }
-  html += '</div></div>';
-  return html;
+  return renderDiffHtml(diffMatch[1].trim(), fileName);
 }
 
 function renderWebResults(result: string): string {
@@ -1204,7 +1149,7 @@ export class Chat {
     // Track session changes to prevent stale content bleeding
     let _lastSid = getState().sessionId;
     let _lastMsgLen = getState().messages.length;
-    let _lastExpand = getState().settings.auto_expand;
+    let _lastExpand = isEnabled(getState().settings.auto_expand);
     subscribe(() => {
       const st = getState();
       const sid = st.sessionId;
@@ -1255,7 +1200,7 @@ export class Chat {
       }
       // Re-render when auto_expand setting changes (auto-expanded thinking
       // strips depend on it and they are not part of the render key).
-      const curExpand = st.settings.auto_expand;
+      const curExpand = isEnabled(st.settings.auto_expand);
       if (curExpand !== _lastExpand) {
         _lastExpand = curExpand;
         this.requestRender();
@@ -1357,7 +1302,7 @@ export class Chat {
 
   private fullRender(timeline: TimelineItem[], allMsgs?: Message[]): void {
     const st = getState();
-    const autoExpand = st.settings.auto_expand === true;
+    const autoExpand = isEnabled(st.settings.auto_expand);
 
     // Auto-expand based on setting (unless user manually collapsed)
     for (const item of timeline) {
@@ -1383,9 +1328,6 @@ export class Chat {
     let turnActions = false;
     let turnRetry = false;
     let turnBranchSwitcher = false;
-    let turnInlineSuccess = ""; // collected from inline_success items
-    let turnCancelledText = ""; // collected from inline_cancelled items
-
     const _this = this;
 
     function closeTurn() {
@@ -1393,13 +1335,6 @@ export class Chat {
       html += `<div class="turn">${turnMid}`;
       if (turnActions) {
         html += `<div class="assistant-actions turn-actions">`;
-        // Inline success status — green text, first in container, from backend
-        if (turnInlineSuccess) {
-          html += `<span class="turn-status-inline"><i data-lucide="check-circle" class="inline-icon"></i><span>${escapeHtml(turnInlineSuccess)}</span></span>`;
-        }
-        if (turnCancelledText) {
-          html += `<span class="turn-status-inline turn-status-cancelled"><i data-lucide="circle-slash" class="inline-icon"></i><span>${escapeHtml(turnCancelledText)}</span></span>`;
-        }
         html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" title="${t("chat.copy")}">
           <i data-lucide="copy" class="lucide lucide-sm"></i>
         </button>`;
@@ -1418,24 +1353,10 @@ export class Chat {
       turnActions = false;
       turnRetry = false;
       turnBranchSwitcher = false;
-      turnInlineSuccess = "";
-      turnCancelledText = "";
     }
 
     for (let i = 0; i < timeline.length; i++) {
       const item = timeline[i];
-
-      // inline_success: collect text for closeTurn, don't render standalone
-      if (item.kind === "inline_success") {
-        turnInlineSuccess = item.turnStatusText;
-        continue;
-      }
-
-      // inline_cancelled: collect text for closeTurn, don't render standalone
-      if (item.kind === "inline_cancelled") {
-        turnCancelledText = item.text;
-        continue;
-      }
 
       if (item.kind === "compact" || item.kind === "workflow" || (item.kind === "user" && !getState().subAgentView && !(window as any).__parentSessionId)) {
         closeTurn.call(_this);
@@ -1543,13 +1464,15 @@ export class Chat {
           if (bodyEl && bodyEl.textContent !== item.text) {
             bodyEl.textContent = item.text;
           }
-          // Auto-expand based on setting (unless user manually collapsed)
-          const shouldExpand = getState().settings.auto_expand === true;
+          // Auto-expand based on setting (unless user manually collapsed).
+          // Toggling auto_expand OFF collapses expanded strips so the toggle
+          // takes effect in both directions.
+          const shouldExpand = isEnabled(getState().settings.auto_expand);
           const userCollapsed = this.userCollapsedItems.has(item.id);
           if (shouldExpand && !userCollapsed && !el.classList.contains("expanded")) {
             el.classList.add("expanded");
             this.expandedItems.add(item.id);
-          } else if (!shouldExpand && this.userCollapsedItems.has(item.id) && el.classList.contains("expanded")) {
+          } else if (!shouldExpand && !userCollapsed && el.classList.contains("expanded")) {
             el.classList.remove("expanded");
             this.expandedItems.delete(item.id);
           }
@@ -1606,7 +1529,24 @@ export class Chat {
         }
       }
 
-      // 4) Agent card sub-agent preview text.
+      // 4) Auto-expand based on setting (unless user manually collapsed).
+      //    Mirrors the thinking-strip handling above so toggling auto_expand
+      //    takes effect on already-rendered tool/agent cards without a full
+      //    re-render (the subscribe re-render uses the incremental path).
+      const expandTool = toolItem.tc.name === "agent";
+      if (expandTool) {
+        const shouldExpandTool = isEnabled(getState().settings.auto_expand);
+        const userCollapsedTool = this.userCollapsedItems.has(toolItem.id);
+        if (shouldExpandTool && !userCollapsedTool && !el.classList.contains("expanded")) {
+          el.classList.add("expanded");
+          this.expandedItems.add(toolItem.id);
+        } else if (!shouldExpandTool && userCollapsedTool && el.classList.contains("expanded")) {
+          el.classList.remove("expanded");
+          this.expandedItems.delete(toolItem.id);
+        }
+      }
+
+      // 5) Agent card sub-agent preview text.
       if (toolItem.tc.name === "agent") {
         const previewEl = el.querySelector(".agent-card-preview") as HTMLElement | null;
         if (previewEl && toolItem.tc.subAgentMessages) {

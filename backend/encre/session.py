@@ -697,33 +697,31 @@ class EncreSession:
         if branch_id in self.branches:
             self.active_branch_id = branch_id
 
-    def rollback_to(self, branch_id: str, message_id: str) -> list[str]:
+    def rollback_to(self, branch_id: str, message_id: str) -> tuple[list[str], str]:
+        """Cross-branch hard rollback.
+
+        Finds the target message across ALL branches (not just ``branch_id``),
+        removes all messages after it in that branch, wipes every descendant
+        branch entirely, restores file snapshots, rebuilds artifacts, clears
+        plan_items, and switches to the target branch.
+
+        Returns ``(removed_message_ids, actual_target_branch_id)``.
+        """
+        target_msg = None
+        target_branch_id = None
         target_seq = None
         for m in self.messages:
-            if (m.get("id", "").endswith(f":M:{message_id}") or m.get("id") == message_id) and m.get("branch_id") == branch_id:
+            mid = m.get("id", "")
+            if mid.endswith(f":M:{message_id}") or mid == message_id:
+                target_msg = m
+                target_branch_id = m.get("branch_id", branch_id)
                 target_seq = m.get("seq_in_branch", 0)
                 break
-        if target_seq is None:
-            return []
+        if target_msg is None:
+            return [], branch_id
 
-        removed: list[str] = []
-        remaining: list[dict[str, Any]] = []
-        for m in self.messages:
-            if m.get("branch_id") == branch_id and isinstance(m.get("seq_in_branch"), int) and m["seq_in_branch"] > target_seq:
-                removed.append(m.get("id", ""))
-            else:
-                remaining.append(m)
-
-        self.messages = remaining
-
-        # Restore file snapshots captured before each write tool in the
-        # rolled-back turns, reverting file operations (create/modify/delete).
-        restored = self.restore_file_snapshots()
-        if restored:
-            logger.info("[rollback_to] restored %d file(s) from snapshots", restored)
-
-        # Remove child branches (those that fork from this branch or its descendants)
-        descendant_ids = {branch_id}
+        # Collect all descendant branch IDs of the target branch
+        descendant_ids: set[str] = {target_branch_id}
         changed = True
         while changed:
             changed = False
@@ -731,33 +729,74 @@ class EncreSession:
                 if bmeta.parent_branch_id in descendant_ids and bid not in descendant_ids:
                     descendant_ids.add(bid)
                     changed = True
-        for bid in descendant_ids:
-            if bid != branch_id:
-                self.branches.pop(bid, None)
 
-        if branch_id in self.branches:
-            self.active_branch_id = branch_id
-            meta = self.branches[branch_id]
-            meta.messages_count = sum(1 for m in self.messages if m.get("branch_id") == branch_id)
-            branch_msgs = [m for m in self.messages if m.get("branch_id") == branch_id]
+        # Remove:
+        #   - messages after target_seq in the target branch
+        #   - ALL messages in descendant branches (they are wiped entirely)
+        removed: list[str] = []
+        remaining: list[dict[str, Any]] = []
+        for m in self.messages:
+            mbranch = m.get("branch_id", "")
+            mseq = m.get("seq_in_branch", 0)
+            remove = False
+            if mbranch == target_branch_id:
+                if isinstance(mseq, int) and mseq > target_seq:
+                    remove = True
+            elif mbranch in descendant_ids:
+                remove = True
+            if remove:
+                removed.append(m.get("id", ""))
+            else:
+                remaining.append(m)
+        self.messages = remaining
+
+        # Purge descendant branches from the tree
+        for bid in descendant_ids:
+            if bid != target_branch_id:
+                self.branches.pop(bid, None)
+                self._branch_last_seq.pop(bid, None)
+                self._branch_last_message_id.pop(bid, None)
+
+        # Switch to the target branch and update its metadata
+        if target_branch_id in self.branches:
+            self.active_branch_id = target_branch_id
+            meta = self.branches[target_branch_id]
+            meta.messages_count = sum(1 for m in self.messages if m.get("branch_id") == target_branch_id)
+            branch_msgs = [m for m in self.messages if m.get("branch_id") == target_branch_id]
             total = self.count_messages_tokens(branch_msgs)
             meta.tokens = {"input": total, "output": 0, "total": total}
-            meta.artifacts = [a for a in meta.artifacts if a.get("id", "") not in removed]
-            meta.compactions = [c for c in meta.compactions if c.get("id", "") not in removed]
+            meta.artifacts = []
+            meta.references = []
+            meta.compactions = []
 
-        # Recalculate turn_count and tool_call_count from remaining messages
-        # so that is_max_turns_reached() reflects actual conversation state
-        # after rollback rather than the stale pre-rollback counter.
-        branch_msgs = [m for m in self.messages if m.get("branch_id") == branch_id]
+        # Recalculate counters from remaining messages
+        branch_msgs = [m for m in self.messages if m.get("branch_id") == target_branch_id]
         self.turn_count = sum(1 for m in branch_msgs if m.get("role") == "assistant")
         self.tool_call_count = sum(
             1 for m in branch_msgs
             if m.get("role") == "assistant" and m.get("tool_calls")
         )
 
+        # Hard-rollback: revert file operations, rebuild artifacts, clear
+        # plan_items, and remove references that belonged to wiped branches
+        # or were created after the rollback point in the target branch.
+        restored = self.restore_file_snapshots()
+        if restored:
+            logger.info("[rollback_to] restored %d file(s) from snapshots", restored)
+        self.rebuild_artifacts_from_messages()
+        self.plan_items.clear()
+        target_created_at = target_msg.get("created_at", 0) / 1000.0
+        self.references = [
+            r for r in self.references
+            if r.get("branch_id", "") not in descendant_ids
+            and not (r.get("branch_id") == target_branch_id and r.get("timestamp", 0) > target_created_at)
+        ]
         self.mark_messages_dirty()
         self.updated_at = time.time()
-        return removed
+        # Recalculate last_message_at from the newest remaining message
+        timestamps = [m.get("created_at", 0) for m in self.messages]
+        self.last_message_at = max(timestamps) / 1000.0 if timestamps else time.time()
+        return removed, target_branch_id
 
     def checkpoint(self, label: str = "") -> str:
         if self._max_checkpoints <= 0:

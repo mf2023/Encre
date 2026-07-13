@@ -29,13 +29,33 @@
  * terminal instances. Width is persisted to `localStorage`.
  */
 
-import { getState, subscribe, addAttachments } from "./state.js";
+import { getState, subscribe, addAttachments, showToast } from "./state.js";
 import type { ArtifactItem, AttachmentMeta, ReferenceItem } from "./types.js";
+import { getFileIcon } from "./files.js";
 import { t, onLocaleChange } from "./i18n.js";
+import { renderMarkdown } from "./chat.js";
 import { send } from "./ws.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { EditorView, basicSetup } from "codemirror";
+import { EditorState } from "@codemirror/state";
+import { keymap } from "@codemirror/view";
+import { indentWithTab } from "@codemirror/commands";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import { json } from "@codemirror/lang-json";
+import { html } from "@codemirror/lang-html";
+import { css } from "@codemirror/lang-css";
+import { markdown } from "@codemirror/lang-markdown";
+import { rust } from "@codemirror/lang-rust";
+import { java } from "@codemirror/lang-java";
+import { cpp } from "@codemirror/lang-cpp";
+import { php } from "@codemirror/lang-php";
+import { xml } from "@codemirror/lang-xml";
+import { sql } from "@codemirror/lang-sql";
+import { yaml } from "@codemirror/lang-yaml";
+import { renderDiffHtml } from "./diff_render.js";
 
 /** Definition of a sidebar tab (id + whether it can be closed). */
 export interface TabDef {
@@ -52,13 +72,11 @@ const NEW_TAB_OPTIONS: NewTabOption[] = [
   { id: "terminal", icon: "terminal" },
   { id: "editor", icon: "code-2" },
   { id: "review", icon: "eye" },
-  { id: "files", icon: "folder-open" },
 ];
 
 function tabLabel(id: string): string {
   switch (id) {
     case "terminal": return t("sessionInner.tabTerminal");
-    case "files": return t("sessionInner.tabFiles");
     case "editor": return t("sessionInner.tabEditor");
     case "review": return t("sessionInner.tabReview");
     default: return id;
@@ -126,7 +144,7 @@ export class SessionInner {
     this.el = document.getElementById("session-inner-sidebar")!;
     this.tabBar = this.el.querySelector(".tab-bar")!;
     this.tabList = document.createElement("div");
-    this.tabList.className = "tab-list";
+    this.tabList.className = "header-tabs";
     this.tabBody = this.el.querySelector(".tab-body")!;
 
     // Default tabs �?only summary by default, others via +
@@ -176,11 +194,11 @@ export class SessionInner {
     this.tabList.innerHTML = this.tabs.map((tab) => {
       const activeCls = tab.id === this.activeTab ? " active" : "";
       const closeBtn = tab.closable
-        ? `<button class="tab-close" data-close="${tab.id}" title="${t("sessionInner.closeTab")}"><i data-lucide="x" class="lucide lucide-sm"></i></button>`
+        ? `<span class="tab-close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>`
         : "";
-      return `<div class="tab${activeCls} tab--fill" data-tab="${tab.id}" draggable="false">
+      return `<button class="tab${activeCls}" data-tab="${tab.id}" draggable="true">
         <span class="tab-label">${this.esc(tabLabel(tab.id))}</span>${closeBtn}
-      </div>`;
+      </button>`;
     }).join("");
 
     if (!this.tabBar.contains(this.tabList)) {
@@ -335,7 +353,6 @@ export class SessionInner {
 
     const cards = [
       { id: "terminal", icon: "terminal", label: t("sessionInner.tabTerminal"), desc: t("sessionInner.tabTerminalDesc") },
-      { id: "files", icon: "folder-open", label: t("sessionInner.tabFiles"), desc: t("sessionInner.tabFilesDesc") },
       { id: "editor", icon: "code-2", label: t("sessionInner.tabEditor"), desc: t("sessionInner.tabEditorDesc") },
       { id: "review", icon: "eye", label: t("sessionInner.tabReview"), desc: t("sessionInner.tabReviewDesc") },
     ];
@@ -385,8 +402,6 @@ export class SessionInner {
 
       if (t.id === "terminal") {
         await this.setupTerminalPanel(panel);
-      } else if (t.id === "files") {
-        this.setupFilesPanel(panel);
       } else if (t.id === "editor") {
         this.setupEditorPanel(panel);
       } else if (t.id === "review") {
@@ -433,7 +448,7 @@ export class SessionInner {
         <button class="tab-action-btn" title="${t("sessionInner.termNew")}"><i data-lucide="plus" class="lucide lucide-sm"></i></button>
         <button class="tab-action-btn danger" title="${t("sessionInner.termKillAll")}"><i data-lucide="trash-2" class="lucide lucide-sm"></i></button>
       </div>
-      <div class="si-term-empty"><i data-lucide="terminal" class="lucide" style="width:32px;height:32px;opacity:0.4"></i><span>${t("sessionInner.termEmpty")}</span></div>
+      <div class="si-panel-empty si-term-empty" data-action="new"><i data-lucide="terminal" class="lucide"></i><span class="si-panel-empty-title">${t("sessionInner.termEmpty")}</span></div>
       <div class="si-terminal-body" style="display:none"></div>
     </div>`;
 
@@ -596,17 +611,22 @@ export class SessionInner {
         }
       });
 
+      let resizeTimer: any = null;
       const obs = new ResizeObserver(() => {
-        try {
-          fitAddon.fit();
-          const dims = (term as any)._core?._renderService?.dimensions;
-          if (dims && dims.cols > 0 && dims.rows > 0) {
-            api.terminalResize(ptyId, dims.cols, dims.rows);
-          }
-        } catch {}
+        if (resizeTimer) return;
+        resizeTimer = setTimeout(() => {
+          resizeTimer = null;
+          try {
+            fitAddon.fit();
+            const dims = (term as any)._core?._renderService?.dimensions;
+            if (dims && dims.cols > 0 && dims.rows > 0) {
+              api.terminalResize(ptyId, dims.cols, dims.rows);
+            }
+          } catch {}
+        }, 50);
       });
       obs.observe(body);
-      setTimeout(() => { try { fitAddon.fit(); } catch {} }, 50);
+      requestAnimationFrame(() => { try { fitAddon.fit(); } catch {} });
 
       term.focus();
 
@@ -777,9 +797,49 @@ export class SessionInner {
       tabList.querySelectorAll(".tab.tab--term").forEach((el) => {
         el.addEventListener("click", (e) => {
           if ((e.target as HTMLElement).closest(".tab-close")) return;
+          if ((this as any)._termDragMoved) { (this as any)._termDragMoved = false; return; }
           const idx = parseInt((el as HTMLElement).dataset.idx || "0");
           switchTerminal(panelId, idx, body);
           renderTermTabs();
+        });
+        el.addEventListener("mousedown", (e) => {
+          if (e.button !== 0) return;
+          if ((e.target as HTMLElement).closest(".tab-close")) return;
+          const dragEl = el as HTMLElement;
+          const startX = e.clientX;
+          let moved = false;
+          const onMove = (ev: MouseEvent) => {
+            if (!moved && Math.abs(ev.clientX - startX) < 5) return;
+            if (!moved) { moved = true; dragEl.classList.add("dragging"); (this as any)._termDragMoved = true; }
+            tabList.querySelectorAll(".tab.tab--term.drop-target").forEach((t) => t.classList.remove("drop-target"));
+            const over = Array.from(tabList.querySelectorAll(".tab.tab--term")).find((t) => {
+              const r = (t as HTMLElement).getBoundingClientRect();
+              return ev.clientX >= r.left && ev.clientX <= r.right;
+            }) as HTMLElement | undefined;
+            if (over && over !== dragEl) over.classList.add("drop-target");
+          };
+          const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+            dragEl.classList.remove("dragging");
+            const target = tabList.querySelector(".tab.tab--term.drop-target") as HTMLElement | null;
+            if (target) {
+              const fromIdx = parseInt(dragEl.dataset.idx || "0");
+              const toIdx = parseInt(target.dataset.idx || "0");
+              const arr = this.panelTerminals.get(panelId) || [];
+              if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx && fromIdx < arr.length && toIdx < arr.length) {
+                const [m] = arr.splice(fromIdx, 1);
+                arr.splice(toIdx, 0, m);
+                this.panelTerminals.set(panelId, arr);
+                this.panelActiveTermIdx.set(panelId, toIdx);
+                renderTermTabs();
+              }
+            }
+            tabList.querySelectorAll(".tab.tab--term.drop-target").forEach((t) => t.classList.remove("drop-target"));
+          };
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+          e.preventDefault();
         });
       });
       tabList.querySelectorAll(".tab-close").forEach((el) => {
@@ -824,240 +884,89 @@ export class SessionInner {
 
   private killSubTerminal: ((pid: string, idx: number, body: HTMLElement) => void) | undefined;
 
-  /* ── Files ───────────────────────────────────────────────────────── */
-
-  private async setupFilesPanel(panel: HTMLElement): Promise<void> {
-    panel.innerHTML = `<div class="si-panel-empty"><!-- show when no workspace --></div>
-<div class="si-files-wrap" style="display:none">
-      <div class="si-files-toolbar">
-        <button class="btn-icon btn-icon--xs btn-icon--fade si-files-up" title="${t("sessionInner.filesUp")}"><i data-lucide="arrow-up" class="lucide lucide-sm"></i></button>
-        <input type="text" class="si-files-path" spellcheck="false" />
-        <button class="btn-icon btn-icon--xs btn-icon--fade si-files-refresh" title="${t("sessionInner.filesRefresh")}"><i data-lucide="refresh-cw" class="lucide lucide-sm"></i></button>
-      </div>
-      <div class="si-files-tree"></div>
-    </div>`;
-
-    const api = (window as any).electronAPI;
-    if (!api) return;
-
-    const treeEl = panel.querySelector(".si-files-tree")! as HTMLElement;
-    const pathInput = panel.querySelector(".si-files-path")! as HTMLInputElement;
-    const upBtn = panel.querySelector(".si-files-up")!;
-    const refreshBtn = panel.querySelector(".si-files-refresh")!;
-    const emptyEl = panel.querySelector(".si-panel-empty") as HTMLElement;
-    const wrapEl = panel.querySelector(".si-files-wrap") as HTMLElement;
-
-    let rootPath = "";
-    const expandedDirs = new Set<string>();
-    const dirCache = new Map<string, DirEntry[]>();
-
-    const joinPath = (base: string, name: string) => {
-      const sep = base.includes("\\") ? "\\" : "/";
-      return base.replace(/[/\\]+$/, "") + sep + name;
-    };
-
-    const fetchDir = async (dirPath: string): Promise<DirEntry[]> => {
-      if (dirCache.has(dirPath)) return dirCache.get(dirPath)!;
-      try {
-        const entries: DirEntry[] = await api.listDirectory(dirPath);
-        dirCache.set(dirPath, entries);
-        return entries;
-      } catch {
-        return [];
-      }
-    };
-
-    const fileIcon = (name: string): string => {
-      const ext = name.split(".").pop()?.toLowerCase();
-      if (!ext) return "file";
-      const map: Record<string, string> = {
-        py: "file-code-2", ts: "file-code-2", tsx: "file-code-2",
-        js: "file-code-2", jsx: "file-code-2", rs: "file-code-2",
-        go: "file-code-2", java: "file-code-2",
-        md: "file-text", txt: "file-text",
-        json: "file-json-2", yaml: "file-json-2", yml: "file-json-2",
-        toml: "file-json-2",
-        html: "file-text", css: "file-text",
-        svg: "file-image", png: "file-image", jpg: "file-image",
-      };
-      return map[ext] || "file";
-    };
-
-    const renderRecursive = async (dirPath: string, depth: number, out: string[]) => {
-      const entries = await fetchDir(dirPath);
-      const sorted = [...entries].sort((a, b) => {
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
-        return a.name.localeCompare(b.name);
-      });
-
-      const indent = 12 + depth * 16;
-
-      for (const entry of sorted) {
-        const fullPath = joinPath(dirPath, entry.name);
-
-        if (entry.isDirectory) {
-          const isExp = expandedDirs.has(fullPath);
-          out.push(`<div class="si-tree-entry" data-path="${this.esc(fullPath)}" data-dir="true" style="padding-left:${indent}px">
-            <span class="si-tree-chevron${isExp ? " expanded" : ""}"><i data-lucide="chevron-right" class="lucide lucide-xs"></i></span>
-            <i data-lucide="folder" class="lucide lucide-sm si-tree-icon"></i>
-            <span class="si-tree-name">${this.esc(entry.name)}</span>
-          </div>`);
-          if (isExp) {
-            await renderRecursive(fullPath, depth + 1, out);
-          }
-        } else {
-          out.push(`<div class="si-tree-entry" data-path="${this.esc(fullPath)}" data-file="true" style="padding-left:${indent}px">
-            <span class="si-tree-chevron" style="visibility:hidden"><i data-lucide="chevron-right" class="lucide lucide-xs"></i></span>
-            <i data-lucide="${fileIcon(entry.name)}" class="lucide lucide-sm si-tree-icon"></i>
-            <span class="si-tree-name">${this.esc(entry.name)}</span>
-          </div>`);
-        }
-      }
-    };
-
-    const renderTree = async () => {
-      const out: string[] = [];
-      await renderRecursive(rootPath, 0, out);
-      treeEl.innerHTML = out.length ? out.join("") : `<div class="si-empty">${t("sessionInner.filesEmpty")}</div>`;
-
-      treeEl.querySelectorAll(".si-tree-entry[data-dir]").forEach((el) => {
-        el.addEventListener("click", async () => {
-          const path = (el as HTMLElement).dataset.path!;
-          treeEl.querySelectorAll(".si-tree-entry.selected").forEach((s) => s.classList.remove("selected"));
-          (el as HTMLElement).classList.add("selected");
-          await toggleDir(path);
-        });
-      });
-
-      treeEl.querySelectorAll(".si-tree-entry[data-file]").forEach((el) => {
-        el.addEventListener("click", () => {
-          treeEl.querySelectorAll(".si-tree-entry.selected").forEach((s) => s.classList.remove("selected"));
-          (el as HTMLElement).classList.add("selected");
-          const path = (el as HTMLElement).dataset.path!;
-          this.openFileInEditor(path);
-        });
-      });
-
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: treeEl });
-      }
-    };
-
-    const toggleDir = async (path: string) => {
-      if (expandedDirs.has(path)) {
-        expandedDirs.delete(path);
-      } else {
-        await fetchDir(path);
-        expandedDirs.add(path);
-      }
-      await renderTree();
-    };
-
-    const goUp = () => {
-      const p = rootPath.replace(/[/\\]+$/, "").replace(/[/\\][^/\\]+$/, "");
-      if (p) {
-        rootPath = p;
-        pathInput.value = rootPath;
-        expandedDirs.clear();
-        dirCache.clear();
-        renderTree();
-      }
-    };
-
-    upBtn.addEventListener("click", goUp);
-    refreshBtn.addEventListener("click", () => {
-      dirCache.clear();
-      renderTree();
-    });
-    pathInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        rootPath = pathInput.value.trim() || "/";
-        expandedDirs.clear();
-        dirCache.clear();
-        renderTree();
-      }
-    });
-
-    const renderEmpty = () => {
-      wrapEl.style.display = "none";
-      emptyEl.style.display = "flex";
-      emptyEl.innerHTML = `<i data-lucide="folder-open" class="lucide"></i>
-        <div class="si-panel-empty-title">${t("sessionInner.filesEmpty")}</div>
-        <div class="si-panel-empty-sub">${t("workspace.empty")}</div>`;
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: emptyEl });
-      }
-    };
-
-    const renderFiles = () => {
-      emptyEl.style.display = "none";
-      wrapEl.style.display = "flex";
-      renderTree();
-    };
-
-    const home = (window as any).electronAPI?.getAppPath
-      ? (await api.getAppPath()).replace(/[/\\][^/\\]+$/, "")
-      : ".";
-
-    const workspace = getState().activeWorkspace;
-    if (workspace) {
-      rootPath = workspace;
-      renderFiles();
-    } else {
-      rootPath = home;
-      renderEmpty();
-    }
-
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: panel });
-    }
-  }
-
   /* ── Review (Git Diff) ─────────────────────────────────────────── */
 
   private async setupReviewPanel(panel: HTMLElement): Promise<void> {
     panel.innerHTML = `<div class="si-review-toolbar">
       <div class="settings-dropdown-wrap">
-        <button class="settings-dropdown-trigger" type="button" style="width:130px">
-          <span>${this.esc(t("sessionInner.reviewGitChange"))}</span>
+        <button class="settings-dropdown-trigger" type="button">
+          <span>${this.esc(t(getState().activeWorkspace ? "sessionInner.reviewAllChanges" : "sessionInner.reviewLastRound"))}</span>
           <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
         </button>
-        <div class="settings-dropdown">
-          <div class="settings-dropdown-item selected" data-value="git">${this.esc(t("sessionInner.reviewGitChange"))}</div>
-          <div class="settings-dropdown-item" data-value="artifact">${this.esc(t("sessionInner.reviewArtifactChange"))}</div>
-        </div>
+        <div class="settings-dropdown"></div>
       </div>
-      <span class="si-review-stats"></span>
-      <button class="btn-icon btn-icon--xs btn-icon--fade si-review-refresh" title="${t("sessionInner.reviewRefresh")}">
-        <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+      <div class="settings-dropdown-wrap si-review-actions" style="margin-left:auto">
+        <button class="settings-dropdown-trigger si-review-action-trigger" type="button">
+          <i data-lucide="more-horizontal" class="lucide lucide-sm"></i>
+        </button>
+        <div class="settings-dropdown si-review-action-dropdown" style="right:0;left:auto;min-width:210px"></div>
+      </div>
+      <button class="settings-dropdown-trigger si-review-action-trigger si-review-collapse-btn" type="button" title="${t("sessionInner.reviewCollapse")}">
+        <i data-lucide="minus" class="lucide lucide-sm"></i>
       </button>
+      <button class="settings-dropdown-trigger si-review-action-trigger si-review-split-btn" type="button" title="${t("sessionInner.reviewSplitView")}">
+        <i data-lucide="list" class="lucide lucide-sm"></i>
+      </button>
+      <div class="settings-dropdown-wrap si-review-actions si-review-git-wrap">
+        <button class="settings-dropdown-trigger si-review-action-trigger si-review-git-trigger" type="button" title="${t("sessionInner.reviewActionCommit")}">
+          <i data-lucide="git-commit-horizontal" class="lucide lucide-sm si-review-git-icon"></i>
+          <i data-lucide="chevron-down" class="lucide lucide-xs settings-dropdown-chevron"></i>
+        </button>
+        <div class="settings-dropdown si-review-git-dropdown" style="right:0;left:auto;min-width:170px"></div>
+      </div>
 </div>
-<div class="si-review-empty" style="display:none"></div>
+<div class="si-review-commit-overlay hidden">
+  <div class="search-palette">
+    <div class="search-overlay-inner" style="align-items:flex-start">
+      <i data-lucide="git-commit-horizontal" class="search-overlay-icon" style="margin-top:10px"></i>
+      <textarea class="si-review-commit-input" placeholder="${this.esc(t("sessionInner.reviewCommitPrompt"))}" rows="2" style="flex:1;font-size:14px"></textarea>
+      <kbd class="search-esc-hint" style="flex-shrink:0;margin-top:10px">${this.esc(t("sessionInner.reviewCommitBtn"))}</kbd>
+    </div>
+  </div>
+</div>
+<div class="si-panel-empty" style="display:none"></div>
 <div class="si-review-wrap" style="display:none">
       <div class="si-review-body">
         <div class="si-review-diff"></div>
+        <div class="si-review-divider"></div>
         <div class="si-review-tree"></div>
       </div>
-      <div class="si-review-commit-bar hidden">
-        <input class="si-review-commit-input" type="text" placeholder="${this.esc(t("sessionInner.reviewCommitPlaceholder"))}" />
-        <button class="si-review-commit-btn">${this.esc(t("sessionInner.reviewCommitBtn"))}</button>
-      </div>
-</div>`;
+    </div>`;
+
+    // Initialize toolbar icons immediately (before load() completes)
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: panel });
+    }
 
     const diffEl = panel.querySelector(".si-review-diff") as HTMLElement;
     const treeEl = panel.querySelector(".si-review-tree") as HTMLElement;
+    this._reviewDiffEl = diffEl;
     const modeWrap = panel.querySelector(".settings-dropdown-wrap") as HTMLElement;
+    const toolbar = panel.querySelector(".si-review-toolbar") as HTMLElement;
     const modeTrigger = modeWrap.querySelector(".settings-dropdown-trigger") as HTMLElement;
     const modeLabel = modeTrigger.querySelector("span") as HTMLElement;
     const modeDropdown = modeWrap.querySelector(".settings-dropdown") as HTMLElement;
-    const statsEl = panel.querySelector(".si-review-stats") as HTMLElement;
-    const refreshBtn = panel.querySelector(".si-review-refresh") as HTMLElement;
-    const emptyEl = panel.querySelector(".si-review-empty") as HTMLElement;
+    const allDropdownWraps = panel.querySelectorAll(".settings-dropdown-wrap");
+    const actionWrap = allDropdownWraps[1] as HTMLElement;
+    const actionTrigger = actionWrap.querySelector(".settings-dropdown-trigger") as HTMLButtonElement;
+    const actionDropdown = actionWrap.querySelector(".settings-dropdown") as HTMLElement;
+    // Collapse / split / git-action buttons (added after the ⋯ menu).
+    const collapseBtn = panel.querySelector(".si-review-collapse-btn") as HTMLButtonElement;
+    const splitBtn = panel.querySelector(".si-review-split-btn") as HTMLButtonElement;
+    const gitWrap = panel.querySelector(".si-review-git-wrap") as HTMLElement;
+    const gitTrigger = gitWrap.querySelector(".settings-dropdown-trigger") as HTMLButtonElement;
+    const gitDropdown = gitWrap.querySelector(".settings-dropdown") as HTMLElement;
+    const gitIcon = gitWrap.querySelector(".si-review-git-icon") as HTMLElement;
+    // Inline commit input area.
+    const commitWrap = document.getElementById("review-commit-overlay") as HTMLElement;
+    const commitInput = document.getElementById("review-commit-input") as HTMLInputElement;
+    // The toolbar stats element was removed (it duplicated the +/- counts
+    // already shown in the diff header). Keep a no-op stub so the legacy
+    // statsEl.innerHTML = ... assignments don't throw if re-added.
+    const statsEl: { innerHTML: string } = (panel.querySelector(".si-review-stats") as HTMLElement | null)
+      || { innerHTML: "" };
+    const emptyEl = panel.querySelector(".si-panel-empty") as HTMLElement;
     const wrapEl = panel.querySelector(".si-review-wrap") as HTMLElement;
-    const commitBar = panel.querySelector(".si-review-commit-bar") as HTMLElement;
-    const commitInput = panel.querySelector(".si-review-commit-input") as HTMLInputElement;
-    const commitBtn = panel.querySelector(".si-review-commit-btn") as HTMLElement;
 
     const api = (window as any).electronAPI;
     const workspace = getState().activeWorkspace;
@@ -1085,35 +994,22 @@ export class SessionInner {
           const staged = line[0];
           const unstaged = line[1];
           const path = line.slice(3).trim();
-          if (path) entries.push({ path, staged, unstaged });
+          // Skip directory entries (trailing / from git status)
+          if (path && !path.endsWith("/")) entries.push({ path, staged, unstaged });
         }
       }
       return { branch, entries };
     };
 
-    const fileIcon = (name: string): string => {
-      const ext = name.split(".").pop()?.toLowerCase();
-      if (!ext) return "file";
-      const map: Record<string, string> = {
-        py: "file-code-2", ts: "file-code-2", tsx: "file-code-2",
-        js: "file-code-2", jsx: "file-code-2", rs: "file-code-2",
-        go: "file-code-2", java: "file-code-2",
-        md: "file-text", txt: "file-text",
-        json: "file-json-2", yaml: "file-json-2", yml: "file-json-2",
-        toml: "file-json-2",
-        html: "file-text", css: "file-text",
-        svg: "file-image", png: "file-image", jpg: "file-image",
-      };
-      return map[ext] || "file";
-    };
+    const fileIcon = (name: string): string => getFileIcon(name);
 
     const buildTree = (entries: StatusEntry[], activePath?: string): string => {
       const treeCacheKey = `${activePath || ""}\n` + entries.map((e) => `${e.staged}${e.unstaged}:${e.path}`).join("\n");
       const cachedTree = this._reviewTreeCache.get(treeCacheKey);
       if (cachedTree) return cachedTree;
-      if (entries.length === 0) return `<div class="si-review-empty">
+      if (entries.length === 0) return `<div class="si-panel-empty">
         <i data-lucide="check-circle-2" class="lucide"></i>
-        <div class="si-review-empty-title">${t("sessionInner.reviewNoChanges")}</div>
+        <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
       </div>`;
       const groups = new Map<string, StatusEntry[]>();
       for (const e of entries) {
@@ -1129,19 +1025,17 @@ export class SessionInner {
             <span>${this.esc(dir)}</span>
           </div>`;
         for (const item of items) {
-          const statusClass = item.staged !== " " && item.staged !== "?"
-            ? "si-review-staged"
-            : item.unstaged !== " " && item.unstaged !== "?"
-              ? "si-review-unstaged"
-              : "si-review-untracked";
-          const statusLabel = item.staged !== " " && item.staged !== "?"
-            ? t("sessionInner.reviewStaged")
-            : item.unstaged !== " " && item.unstaged !== "?"
-              ? t("sessionInner.reviewUnstaged")
-              : t("sessionInner.reviewUntracked");
+          // Porcelain X column: "?" => untracked, non-space => staged, else unstaged.
+          const isUntracked = item.staged === "?";
+          const isStaged = !isUntracked && item.staged !== " ";
+          const statusClass = isUntracked
+            ? "si-review-untracked"
+            : isStaged ? "si-review-staged" : "si-review-unstaged";
+          // Single-letter badge (locale-independent): U/M/S.
+          const statusLabel = isUntracked ? "U" : isStaged ? "S" : "M";
           const active = item.path === activePath ? " si-review-tree-file--active" : "";
           html += `<div class="si-review-tree-file${active}" data-path="${this.esc(item.path)}">
-            <i data-lucide="${fileIcon(item.path)}" class="lucide lucide-xs"></i>
+            <i data-lucide="${getFileIcon(item.path)}" class="lucide lucide-xs"></i>
             <span class="si-review-tree-name">${this.esc(item.path.split("/").pop() || item.path)}</span>
             <span class="si-review-tree-status ${statusClass}">${statusLabel}</span>
           </div>`;
@@ -1152,12 +1046,13 @@ export class SessionInner {
       return html;
     };
 
-    const parseDiffFn = (cacheKey: string, output: string): string => {
+    const parseDiffFn = (cacheKey: string, output: string, cacheSalt = ""): string => {
       this._reviewDiffCache ??= new Map<string, string>();
-      const cached = this._reviewDiffCache.get(cacheKey);
+      const saltedKey = cacheKey + cacheSalt;
+      const cached = this._reviewDiffCache.get(saltedKey);
       if (cached) return cached;
       const parsed = this.parseDiff(output);
-      this._reviewDiffCache.set(cacheKey, parsed);
+      this._reviewDiffCache.set(saltedKey, parsed);
       return parsed;
     };
 
@@ -1172,12 +1067,17 @@ export class SessionInner {
         return { adds, dels, label: "" };
       }
       const staged = entries.filter((e) => e.staged !== " " && e.staged !== "?").length;
-      const unstaged = entries.filter((e) => e.unstaged !== " " && e.unstaged !== "?").length;
-      const untracked = entries.filter((e) => e.staged === "?" || e.unstaged === "?").length;
+      const untracked = entries.filter((e) => e.staged === "?").length;
+      // Unstaged excludes untracked (X="?") so new files are not double-counted.
+      const unstaged = entries.filter((e) => e.staged !== "?" && e.unstaged !== " ").length;
+      const parts: string[] = [];
+      if (staged) parts.push(`${t("sessionInner.reviewStaged")}: ${staged}`);
+      if (unstaged) parts.push(`${t("sessionInner.reviewUnstaged")}: ${unstaged}`);
+      if (untracked) parts.push(`${t("sessionInner.reviewUntracked")}: ${untracked}`);
       return {
         adds: staged,
         dels: unstaged,
-        label: `${t("sessionInner.reviewStaged")}: ${staged}  ${t("sessionInner.reviewUnstaged")}: ${unstaged}  ${t("sessionInner.reviewUntracked")}: ${untracked}`,
+        label: parts.join("  ") || t("sessionInner.reviewNoChanges"),
       };
     };
 
@@ -1189,64 +1089,90 @@ export class SessionInner {
         wrapEl.style.display = "none";
         emptyEl.style.display = "flex";
         emptyEl.innerHTML = html;
+        // Clear the toolbar stats so the "Loading..." placeholder set before
+        // the async git call doesn't linger next to the mode selector when the
+        // panel resolves to an empty state.
+        statsEl.innerHTML = "";
         if (typeof (window as any).lucide !== "undefined") {
-          (window as any).lucide.createIcons({ root: emptyEl });
+          (window as any).lucide.createIcons({ root: panel });
         }
       };
 
-      // Show/hide commit bar based on mode
-      if (commitBar) commitBar.classList.toggle("hidden", this._reviewMode !== "git");
-      modeLabel.textContent = this._reviewMode === "git"
-        ? t("sessionInner.reviewGitChange")
-        : t("sessionInner.reviewArtifactChange");
+      // Update mode trigger label
+      const labelMap: Record<string, string> = {
+        all: t("sessionInner.reviewAllChanges"),
+        unstaged: t("sessionInner.reviewUnstaged"),
+        staged: t("sessionInner.reviewStaged"),
+        branch: t("sessionInner.reviewBranch"),
+        commit: t("sessionInner.reviewCommitChanges"),
+        lastRound: t("sessionInner.reviewLastRound"),
+      };
+      modeLabel.textContent = labelMap[this._reviewFilter] || t("sessionInner.reviewLastRound");
+      // Sync dropdown selections
       modeDropdown.querySelectorAll(".settings-dropdown-item").forEach((el) => {
-        el.classList.toggle("selected", el.getAttribute("data-value") === this._reviewMode);
+        el.classList.toggle("selected", el.getAttribute("data-filter") === this._reviewFilter);
       });
 
-      // Artifact mode: show stored diff from tool result (non-git).
-      // Build a multi-file tree from all session artifacts; clicking a
-      // tree item loads its diff — just like the git file tree works.
-      if (this._reviewMode === "artifact") {
+      // lastRound filter: show artifacts from the most recent AI round
+      if (this._reviewFilter === "lastRound") {
         const arts = getState().artifacts;
-        // Fall through to git if no artifacts remain (e.g. after session switch)
         if (arts.length === 0) {
-          this._reviewMode = "git";
-        } else {
-          if (requestSeq !== this._reviewRequestSeq) return;
-          wrapEl.style.display = "flex";
-          emptyEl.style.display = "none";
-          const targetPath = filePath || this._reviewArtifact?.path || arts[0].path;
-          const currentArtifact = arts.find(a => a.path === targetPath) || null;
-          diffEl.innerHTML = currentArtifact
-            ? this.parseArtifactDiff(currentArtifact, targetPath)
-            : `<div class="si-empty">${this.esc(t("sessionInner.reviewNoChanges"))}</div>`;
-          treeEl.innerHTML = this.buildArtifactTree(arts, targetPath);
-          const adds = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^\+/gm) || []).length : 0;
-          const dels = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^-/gm) || []).length : 0;
-          statsEl.innerHTML = `<span class="si-review-stat-add">+${adds}</span> <span class="si-review-stat-del">-${dels}</span>`;
-          // Wire tree-item clicks to load the clicked file's diff
-          treeEl.querySelectorAll(".si-review-tree-file").forEach((el) => {
-            el.addEventListener("click", () => {
-              const path = (el as HTMLElement).dataset.path;
-              if (path) load(path);
-            });
-          });
-          if (typeof (window as any).lucide !== "undefined") {
-            (window as any).lucide.createIcons({ root: panel });
-          }
+          showEmptyState(`<i data-lucide="clock" class="lucide"></i>
+            <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`);
           return;
         }
+        // Without a workspace the panel reviews every artifact the current
+        // session produced (all changes); with one, "last round" stays scoped
+        // to the most recent artifact group.
+        let roundArts: ArtifactItem[];
+        if (!ws) {
+          roundArts = arts;
+        } else {
+          const groups = new Map<number, ArtifactItem[]>();
+          for (const a of arts) {
+            const key = a.created_at || 0;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(a);
+          }
+          const sorted = [...groups.entries()].sort((a, b) => b[0] - a[0]);
+          roundArts = sorted.length > 0 ? sorted[0][1] : arts;
+        }
+        if (requestSeq !== this._reviewRequestSeq) return;
+        wrapEl.style.display = "flex";
+        emptyEl.style.display = "none";
+        const targetPath = filePath || roundArts[0]?.path || "";
+        const currentArtifact = roundArts.find((a: ArtifactItem) => a.path === targetPath) || null;
+        diffEl.innerHTML = currentArtifact
+          ? this.parseArtifactDiff(currentArtifact, targetPath)
+          : `<div class="si-empty">${this.esc(t("sessionInner.reviewNoChanges"))}</div>`;
+        treeEl.innerHTML = this.buildArtifactTree(roundArts, targetPath);
+        const adds = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^\+/gm) || []).length : 0;
+        const dels = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^-/gm) || []).length : 0;
+        statsEl.innerHTML = `<span class="si-review-stat-add">+${adds}</span> <span class="si-review-stat-del">-${dels}</span>`;
+        treeEl.querySelectorAll(".si-review-tree-file").forEach((el) => {
+          el.addEventListener("click", () => {
+            const path = (el as HTMLElement).dataset.path;
+            if (path) load(path);
+          });
+        });
+        if (typeof (window as any).lucide !== "undefined") {
+          (window as any).lucide.createIcons({ root: panel });
+        }
+        return;
       }
+
+      // (artifact/lastRound already handled above — only git modes reach here)
+      
 
       if (!ws) {
         showEmptyState(`<i data-lucide="git-pull-request" class="lucide"></i>
-          <div class="si-review-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-          <div class="si-review-empty-sub">${t("workspace.empty")}</div>`);
+          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
+          <div class="si-panel-empty-sub">${t("workspace.empty")}</div>`);
         return;
       }
       if (!api) {
         showEmptyState(`<i data-lucide="alert-circle" class="lucide"></i>
-          <div class="si-review-empty-title">${t("sessionInner.apiNotAvailable")}</div>`);
+          <div class="si-panel-empty-title">${t("sessionInner.apiNotAvailable")}</div>`);
         return;
       }
 
@@ -1263,15 +1189,15 @@ export class SessionInner {
         const statusRes = await api.gitStatus(ws);
         if (requestSeq !== this._reviewRequestSeq) return;
         if (statusRes.error) {
-          showEmptyState(`<i data-lucide="alert-triangle" class="lucide"></i>
-            <div class="si-review-empty-title">${this.esc(statusRes.error)}</div>`);
+            showEmptyState(`<i data-lucide="alert-triangle" class="lucide"></i>
+              <div class="si-panel-empty-title">${this.esc(statusRes.error)}</div>`);
           return;
         }
 
         const { branch, entries } = parseStatus(statusRes.output);
         if (!branch && entries.length === 0) {
           showEmptyState(`<i data-lucide="folder-git-2" class="lucide"></i>
-            <div class="si-review-empty-title">${t("sessionInner.reviewNoGit")}</div>`);
+            <div class="si-panel-empty-title">${t("sessionInner.reviewNoGit")}</div>`);
           return;
         }
         cachedBranch = branch;
@@ -1280,33 +1206,62 @@ export class SessionInner {
       const entries = cachedEntries || [];
       const branch = cachedBranch;
 
+      // Apply filter to entries
+      let filteredEntries = entries;
+      if (this._reviewFilter === "unstaged") {
+        filteredEntries = entries.filter((e: StatusEntry) => e.unstaged !== " ");
+      } else if (this._reviewFilter === "staged") {
+        filteredEntries = entries.filter((e: StatusEntry) => e.staged !== " " && e.staged !== "?");
+      }
+
+      // When the current filter matches no entries, show an empty state
+      // instead of closing the panel. Closing it (closeReviewTab) made the
+      // panel "kick out" whenever the status cache lagged behind a fresh
+      // `git add` (e.g. a newly staged file still read as unstaged), which
+      // looked like staged files disappeared for no reason.
+      if (filteredEntries.length === 0 && !filePath && this._reviewFilter !== "lastRound") {
+        wrapEl.style.display = "none";
+        emptyEl.style.display = "flex";
+        emptyEl.innerHTML = `<i data-lucide="check-circle-2" class="lucide"></i>
+          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`;
+        statsEl.innerHTML = "";
+        if (typeof (window as any).lucide !== "undefined") {
+          (window as any).lucide.createIcons({ root: panel });
+        }
+        return;
+      }
+
       // Show file tree
-      treeEl.innerHTML = buildTree(entries, filePath);
+      treeEl.innerHTML = buildTree(filteredEntries, filePath);
       let adds = 0;
       let dels = 0;
       let statsLabel = "";
 
       if (filePath) {
         currentReviewPath = filePath;
-        // Show loading in diff area before potentially slow git diff
         diffEl.innerHTML = `<div class="si-review-diff-loading">${t("sessionInner.reviewLoading")}</div>`;
-        const diffRes = await api.gitDiff(ws, filePath);
+        // Use gitDiffEx for staged/unstaged/branch/commit filters
+        const isEx = this._reviewFilter === "all" || this._reviewFilter === "staged" || this._reviewFilter === "unstaged" || this._reviewFilter === "branch" || this._reviewFilter === "commit";
+        const diffRes = isEx ? await api.gitDiffEx(ws, this._reviewFilter, filePath) : await api.gitDiff(ws, filePath);
         if (requestSeq !== this._reviewRequestSeq) return;
         if (diffRes.error) {
           diffEl.innerHTML = `<div class="si-empty">${this.esc(diffRes.error)}</div>`;
         } else {
-          diffEl.innerHTML = parseDiffFn(`${ws}:${filePath}`, diffRes.output);
-          ({ adds, dels } = computeStats(entries, diffRes.output));
+          diffEl.innerHTML = parseDiffFn(`${ws}:${filePath}`, diffRes.output, String(this._reviewSplitView));
+          ({ adds, dels } = computeStats(filteredEntries, diffRes.output));
         }
       } else {
         currentReviewPath = undefined;
-        ({ adds, dels, label: statsLabel } = computeStats(entries));
+        ({ adds, dels, label: statsLabel } = computeStats(filteredEntries));
         diffEl.innerHTML = `<div class="si-empty">${this.esc(t("sessionInner.reviewNoChanges"))}<br><span style="color:var(--text-muted)">${this.esc(t("sessionInner.reviewRefresh"))}</span></div>`;
       }
 
       if (requestSeq !== this._reviewRequestSeq) return;
+      // Summary view (no file selected) hides the staged/unstaged/untracked
+      // counts - they were noisy and read like line stats. Per-file view still
+      // shows +/- line counts.
       statsEl.innerHTML = statsLabel
-        ? `<span class="si-review-loading">${this.esc(statsLabel)}</span>`
+        ? ""
         : `<span class="si-review-stat-add">+${adds}</span> <span class="si-review-stat-del">-${dels}</span>`;
 
       treeEl.querySelectorAll(".si-review-tree-file").forEach((el) => {
@@ -1321,37 +1276,430 @@ export class SessionInner {
       }
     };
 
-    refreshBtn.addEventListener("click", () => load(currentReviewPath, true));
     this._reviewLoad = load;
 
-    // Mode switcher dropdown
-    const onModeChange = (val: string) => {
-      const mode = val as "git" | "artifact";
-      if (mode === this._reviewMode) return;
-      this._reviewMode = mode;
-      if (mode === "git") {
+    // Build action dropdown items (right dropdown - functional actions).
+    // refresh is a plain action; the rest are toggles with a checkmark.
+    // Merged overflow buttons (collapse/split/git) are prepended at the top.
+    const buildActionItems = () => {
+      type Item = { action: string; icon: string; labelKey: string; toggle?: boolean; divider?: boolean };
+      const items: Item[] = [];
+      // Overflow: collapse(0), split(1), git(2) merged when _reviewOverflow > idx.
+      const overflowDefs: Array<{ action: string; icon: string; labelKey: string }> = [
+        { action: "_overflow_collapse", icon: "minus", labelKey: "reviewCollapse" },
+        { action: "_overflow_split", icon: "list", labelKey: "reviewSplitView" },
+        { action: "_overflow_git", icon: "git-commit-horizontal", labelKey: "reviewActionCommit" },
+      ];
+      for (let i = 0; i < this._reviewOverflow && i < overflowDefs.length; i++) {
+        items.push(overflowDefs[i]);
+      }
+      if (this._reviewOverflow > 0) {
+        items.push({ action: "_ov_div", icon: "", labelKey: "", divider: true });
+      }
+      items.push(
+        { action: "refresh", icon: "refresh-cw", labelKey: "reviewRefresh" },
+        { action: "wrap", icon: "wrap-text", labelKey: "reviewAutoWrap", toggle: true },
+        { action: "_divider1", icon: "", labelKey: "", divider: true },
+        { action: "fullFile", icon: "file-output", labelKey: "reviewNotFullFile", toggle: true },
+        { action: "richText", icon: "layout-list", labelKey: "reviewRichText", toggle: true },
+        { action: "wordDiff", icon: "diff", labelKey: "reviewWordDiff", toggle: true },
+        { action: "hideWs", icon: "eraser", labelKey: "reviewHideWhitespace", toggle: true },
+      );
+      const isChecked = (a: string): boolean => {
+        if (a === "wrap") return this._reviewWrap;
+        if (a === "fullFile") return !this._reviewFullFile;
+        if (a === "richText") return this._reviewRichText;
+        if (a === "wordDiff") return this._reviewWordDiff;
+        if (a === "hideWs") return this._reviewHideWs;
+        return false;
+      };
+      actionDropdown.innerHTML = items.map((item) => {
+        if (item.divider) {
+          return `<div class="settings-dropdown-divider"></div>`;
+        }
+        const checked = item.toggle && isChecked(item.action) ? " checked" : "";
+        return `<div class="settings-dropdown-item review-action-item${checked}" data-action="${item.action}">
+          <i data-lucide="${item.icon}" class="lucide lucide-xs"></i>
+          <span>${this.esc(t("sessionInner." + item.labelKey))}</span>
+          <i data-lucide="check" class="lucide lucide-xs review-check"></i>
+        </div>`;
+      }).join("");
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: actionDropdown });
+      }
+    };
+    buildActionItems();
+
+    // Responsive overflow: as the sidebar narrows, merge buttons into the ⋯
+    // menu from left to right (collapse -> split -> git module). The ⋯ menu
+    // and the mode selector are always kept. Button sizes never change.
+    const setOverflow = (count: number) => {
+      const n = Math.max(0, Math.min(3, count));
+      if (n === this._reviewOverflow) return;
+      this._reviewOverflow = n;
+      // In normal mode (no workspace) all buttons stay hidden.
+      const hasWs = !!getState().activeWorkspace;
+      collapseBtn.style.display = hasWs && n <= 0 ? "" : "none";
+      splitBtn.style.display = hasWs && n <= 1 ? "" : "none";
+      gitWrap.style.display = hasWs && n <= 2 ? "" : "none";
+      buildActionItems();
+    };
+    // Measure by the sidebar panel width, which is the real constraint.
+    // Sidebar default is 280px; mode selector + ⋯ need ~170px.
+    const measureOverflow = () => {
+      // Normal mode (no workspace): no buttons to merge, all hidden.
+      if (!getState().activeWorkspace) { setOverflow(0); return; }
+      const w = panel.clientWidth;
+      let need = 0;
+      if (w < 230) need = 3;       // everything merged, only mode + ⋯ left
+      else if (w < 270) need = 2;  // git + split merged
+      else if (w < 310) need = 1; // collapse merged
+      else need = 0;
+      setOverflow(need);
+    };
+    const ro = new ResizeObserver(() => measureOverflow());
+    ro.observe(panel);
+    measureOverflow();
+
+    // Collapse the right-side file tree when the panel gets narrow so the
+    // diff area can use the full width.
+    const reviewBody = panel.querySelector(".si-review-body") as HTMLElement;
+    const reviewTree = panel.querySelector(".si-review-tree") as HTMLElement;
+    const reviewDivider = panel.querySelector(".si-review-divider") as HTMLElement;
+    const measureTree = () => {
+      if (!reviewBody) return;
+      reviewBody.classList.toggle("tree-collapsed", panel.clientWidth < 340);
+    };
+    const treeRo = new ResizeObserver(() => measureTree());
+    treeRo.observe(panel);
+    measureTree();
+
+    // Draggable divider between diff and tree (mirrors editor divider).
+    if (reviewDivider && reviewTree) {
+      let rResizing = false, rStartX = 0, rStartW = 0;
+      reviewDivider.addEventListener("mousedown", (e) => {
+        rResizing = true;
+        rStartX = e.clientX;
+        rStartW = reviewTree.offsetWidth;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+        e.preventDefault();
+      });
+      document.addEventListener("mousemove", (e) => {
+        if (!rResizing) return;
+        const newW = Math.max(120, Math.min(480, rStartW - (e.clientX - rStartX)));
+        reviewTree.style.flex = "0 0 " + newW + "px";
+      });
+      document.addEventListener("mouseup", () => {
+        if (!rResizing) return;
+        rResizing = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      });
+    }
+
+    // Apply CSS-class-driven toggles to the diff container.
+    const applyContainerClasses = () => {
+      if (!this._reviewDiffEl) return;
+      this._reviewDiffEl.classList.toggle("review-wrap", this._reviewWrap);
+      this._reviewDiffEl.classList.toggle("review-collapsed", this._reviewCollapsed);
+      this._reviewDiffEl.classList.toggle("review-split", this._reviewSplitView);
+    };
+    applyContainerClasses();
+
+    // Update the collapse/split button icons to reflect the current state.
+    // Lucide's createIcons() replaces <i> with <svg>, so the icon element
+    // no longer has data-lucide on the next call – rebuild the inner HTML.
+    const updateToolIcons = () => {
+      collapseBtn.innerHTML = `<i data-lucide="${this._reviewCollapsed ? "plus" : "minus"}" class="lucide lucide-sm"></i>`;
+      splitBtn.innerHTML = `<i data-lucide="${this._reviewSplitView ? "columns" : "list"}" class="lucide lucide-sm"></i>`;
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: collapseBtn });
+        (window as any).lucide.createIcons({ root: splitBtn });
+      }
+    };
+    updateToolIcons();
+
+    // Collapse / expand all diff bodies.
+    collapseBtn.addEventListener("click", () => {
+      this._reviewCollapsed = !this._reviewCollapsed;
+      applyContainerClasses();
+      updateToolIcons();
+    });
+
+    // Toggle split (two-column) view. Mutually exclusive with rich text + word diff.
+    splitBtn.addEventListener("click", () => {
+      this._reviewSplitView = !this._reviewSplitView;
+      if (this._reviewSplitView) {
+        this._reviewRichText = false;
+        this._reviewWordDiff = false;
+      }
+      applyContainerClasses();
+      updateToolIcons();
+      buildActionItems();
+      if (currentReviewPath) load(currentReviewPath, true);
+      else load(undefined, true);
+    });
+
+    // Git action dropdown: commit / push / pull.
+    const gitActionItems: Array<{ action: "commit" | "push" | "pull"; icon: string; labelKey: string }> = [
+      { action: "commit", icon: "git-commit-horizontal", labelKey: "reviewActionCommit" },
+      { action: "push", icon: "upload", labelKey: "reviewActionPush" },
+      { action: "pull", icon: "download", labelKey: "reviewActionPull" },
+    ];
+    const buildGitActionItems = () => {
+      gitDropdown.innerHTML = gitActionItems.map((item) =>
+        `<div class="settings-dropdown-item review-action-item${item.action === this._reviewGitAction ? " checked" : ""}${item.action === "push" ? " si-review-git-disabled" : ""}" data-git-action="${item.action}">
+          <i data-lucide="${item.icon}" class="lucide lucide-xs"></i>
+          <span>${this.esc(t("sessionInner." + item.labelKey))}</span>
+        </div>`
+      ).join("");
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: gitDropdown });
+      }
+      // Update the trigger icon to the currently-selected action.
+      const sel = gitActionItems.find((i) => i.action === this._reviewGitAction);
+      gitIcon.setAttribute("data-lucide", sel?.icon || "git-commit-horizontal");
+      gitTrigger.title = sel ? t("sessionInner." + sel.labelKey) : "";
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: gitTrigger });
+      }
+    };
+    buildGitActionItems();
+    // Move dropdowns to document.body so they escape the sidebar's stacking
+    // context (transform) and overflow:clip. Position with fixed coords.
+    const moveToBody = (dd: HTMLElement) => {
+      if (dd.parentElement !== document.body) document.body.appendChild(dd);
+    };
+    moveToBody(actionDropdown);
+    moveToBody(gitDropdown);
+    const positionDropdown = (dd: HTMLElement, trigger: HTMLElement) => {
+      moveToBody(dd);
+      const r = trigger.getBoundingClientRect();
+      dd.style.position = "fixed";
+      dd.style.top = `${r.bottom + 4}px`;
+      dd.style.left = "auto";
+      const right = window.innerWidth - r.right;
+      dd.style.right = `${Math.max(8, right)}px`;
+    };
+    // Git trigger: click on the icon runs the action; click on the chevron
+    // opens the dropdown. Both handlers merged into one to avoid conflicts.
+    gitTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // If the click landed on the chevron icon, open/close the dropdown.
+      if ((e.target as HTMLElement).classList.contains("settings-dropdown-chevron") ||
+          (e.target as HTMLElement).closest(".settings-dropdown-chevron")) {
+        const isOpen = gitDropdown.classList.contains("open");
+        document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
+        if (!isOpen) {
+          buildGitActionItems();
+          gitDropdown.classList.add("open");
+          positionDropdown(gitDropdown, gitTrigger);
+        }
+        return;
+      }
+      // Click on the icon or button body → run the selected git action.
+      runGitAction();
+    });
+    gitDropdown.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest(".settings-dropdown-item") as HTMLElement;
+      if (!item) return;
+      e.stopPropagation();
+      const action = (item.getAttribute("data-git-action") || "commit") as "commit" | "push" | "pr";
+      this._reviewGitAction = action;
+      gitDropdown.classList.remove("open");
+      buildGitActionItems();
+    });
+
+    // Trigger the selected git action when the trigger button is clicked directly
+    // (not the chevron area). For commit, open the inline input; push/pr run directly.
+    gitTrigger.addEventListener("dblclick", (e) => e.preventDefault());
+    const runGitAction = async () => {
+      const ws = getState().activeWorkspace;
+      if (!ws) return;
+      if (this._reviewGitAction === "commit") {
+        commitWrap.classList.remove("hidden");
+        commitInput.value = "";
+        commitInput.focus();
+        return;
+      }
+      const api = (window as any).electronAPI;
+      if (!api) return;
+      if (this._reviewGitAction === "push") {
+        const res = await api.gitPush(ws);
+        showToast(res.error ? res.error : (res.output || t("sessionInner.reviewPushed")), res.error ? "error" : "success");
+      } else if (this._reviewGitAction === "pull") {
+        const res = await api.gitPull(ws);
+        showToast(res.error ? res.error : (res.output || t("sessionInner.reviewPulled")), res.error ? "error" : "success");
+      }
+      if (currentReviewPath) load(currentReviewPath, true);
+      else load(undefined, true);
+    };
+
+    // Commit input area handlers.
+    const commitCommit = () => {
+      const ws = getState().activeWorkspace;
+      const message = commitInput.value.trim();
+      if (!ws || !message) return;
+      const api = (window as any).electronAPI;
+      if (!api) return;
+      api.gitCommit(ws, message).then((res: any) => {
+        if (res.error) { showToast(res.error, "error"); return; }
+        commitWrap.classList.add("hidden");
+        showToast(t("sessionInner.reviewCommitted"), "success");
         currentReviewPath = undefined;
         cachedEntries = null;
         cachedBranch = "";
-      }
-      load(mode === "artifact" ? (getState().artifacts?.[0]?.path || "") : undefined, true);
+        load(undefined, true);
+      });
     };
+    commitInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        commitCommit();
+      } else if (e.key === "Escape") {
+        commitWrap.classList.add("hidden");
+        commitInput.value = "";
+      }
+    });
+    // Click outside the palette (on the dimmed overlay) closes it, matching
+    // the search overlay's behavior in bindSearchOverlay().
+    commitWrap.addEventListener("click", (e: MouseEvent) => {
+      if (e.target === commitWrap) {
+        commitWrap.classList.add("hidden");
+        commitInput.value = "";
+      }
+    });
+
+    // Action menu dropdown - use delegation for dynamically built items.
+    actionTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = actionDropdown.classList.contains("open");
+      document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
+      if (!isOpen) {
+        buildActionItems();
+        actionDropdown.classList.add("open");
+        positionDropdown(actionDropdown, actionTrigger);
+      }
+    });
+    actionDropdown.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest(".settings-dropdown-item") as HTMLElement;
+      if (!item) return;
+      e.stopPropagation();
+      const action = item.getAttribute("data-action") || "";
+      if (action === "refresh") {
+        currentReviewPath = undefined;
+        cachedEntries = null;
+        cachedBranch = "";
+        load(undefined, true);
+        actionDropdown.classList.remove("open");
+        return;
+      }
+      // Overflow buttons merged from the toolbar when narrow.
+      if (action === "_overflow_collapse") { collapseBtn.click(); actionDropdown.classList.remove("open"); return; }
+      if (action === "_overflow_split") { splitBtn.click(); actionDropdown.classList.remove("open"); return; }
+      if (action === "_overflow_git") { gitTrigger.click(); actionDropdown.classList.remove("open"); return; }
+      // Toggle handlers: flip state, re-render, refresh checkmarks.
+      let changed = false;
+      if (action === "wrap") { this._reviewWrap = !this._reviewWrap; changed = true; }
+      else if (action === "fullFile") { this._reviewFullFile = !this._reviewFullFile; changed = true; }
+      else if (action === "richText") {
+        this._reviewRichText = !this._reviewRichText;
+        if (this._reviewRichText) this._reviewSplitView = false;
+        changed = true;
+      }
+      else if (action === "wordDiff") {
+        this._reviewWordDiff = !this._reviewWordDiff;
+        if (this._reviewWordDiff) this._reviewSplitView = false;
+        changed = true;
+      }
+      else if (action === "hideWs") { this._reviewHideWs = !this._reviewHideWs; changed = true; }
+      if (changed) {
+        applyContainerClasses();
+        updateToolIcons();
+        if (currentReviewPath) {
+          load(currentReviewPath, true);
+        } else {
+          load(undefined, true);
+        }
+        buildActionItems();
+      }
+      actionDropdown.classList.remove("open");
+    });
+
+    // Build filter dropdown items (left dropdown — mode/filter selection)
+    const buildFilterItems = () => {
+      const ws = getState().activeWorkspace;
+      const items: Array<{ filter: string; labelKey: string }> = [];
+      if (ws) {
+        items.push(
+          { filter: "all", labelKey: "reviewAllChanges" },
+          { filter: "unstaged", labelKey: "reviewUnstaged" },
+          { filter: "staged", labelKey: "reviewStaged" },
+          { filter: "branch", labelKey: "reviewBranch" },
+          { filter: "commit", labelKey: "reviewCommitChanges" },
+          { filter: "lastRound", labelKey: "reviewLastRound" },
+        );
+      } else {
+        items.push({ filter: "lastRound", labelKey: "reviewLastRound" });
+      }
+      // Without a workspace there is no git to review: force the artifact
+      // view and hide both dropdowns so the panel just shows all session changes.
+      if (!ws && this._reviewFilter !== "lastRound") {
+        this._reviewFilter = "lastRound";
+        this._reviewMode = "artifact";
+      }
+      modeWrap.style.display = ws ? "" : "none";
+      actionWrap.style.display = ws ? "" : "none";
+      // In normal mode (no workspace) all review buttons are disabled -
+      // only the modified-file artifact list is shown.
+      collapseBtn.style.display = ws ? (this._reviewOverflow <= 0 ? "" : "none") : "none";
+      splitBtn.style.display = ws ? (this._reviewOverflow <= 1 ? "" : "none") : "none";
+      gitWrap.style.display = ws ? (this._reviewOverflow <= 2 ? "" : "none") : "none";
+      modeDropdown.innerHTML = items.map((item) =>
+        `<div class="settings-dropdown-item${item.filter === this._reviewFilter ? " selected" : ""}" data-filter="${item.filter}">${this.esc(t("sessionInner." + item.labelKey))}</div>`
+      ).join("");
+      // Update trigger label to match current filter
+      const labelMap: Record<string, string> = {
+        all: t("sessionInner.reviewAllChanges"),
+        unstaged: t("sessionInner.reviewUnstaged"),
+        staged: t("sessionInner.reviewStaged"),
+        branch: t("sessionInner.reviewBranch"),
+        commit: t("sessionInner.reviewCommitChanges"),
+        lastRound: t("sessionInner.reviewLastRound"),
+      };
+      modeLabel.textContent = labelMap[this._reviewFilter] || t("sessionInner.reviewLastRound");
+    };
+    buildFilterItems();
+
+    // Filter dropdown — delegation
     modeTrigger.addEventListener("click", (e) => {
       e.stopPropagation();
       const isOpen = modeDropdown.classList.contains("open");
       document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
-      if (!isOpen) modeDropdown.classList.add("open");
+      if (!isOpen) {
+        buildFilterItems();
+        modeDropdown.classList.add("open");
+      }
     });
-    modeDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const val = (item as HTMLElement).getAttribute("data-value") || "";
-        modeLabel.textContent = (item as HTMLElement).textContent || "";
-        modeDropdown.classList.remove("open");
-        modeDropdown.querySelectorAll(".settings-dropdown-item").forEach((el) => el.classList.remove("selected"));
-        (item as HTMLElement).classList.add("selected");
-        onModeChange(val);
-      });
+    modeDropdown.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest(".settings-dropdown-item") as HTMLElement;
+      if (!item) return;
+      e.stopPropagation();
+      const filter = item.getAttribute("data-filter") || "all";
+      if (filter === this._reviewFilter) { modeDropdown.classList.remove("open"); return; }
+      this._reviewFilter = filter;
+      this._reviewMode = filter === "lastRound" ? "artifact" : "git";
+      modeLabel.textContent = item.textContent || "";
+      buildFilterItems();
+      currentReviewPath = undefined;
+      cachedEntries = null;
+      cachedBranch = "";
+      modeDropdown.classList.remove("open");
+      load(undefined, true);
     });
     document.addEventListener("click", (e) => {
       if (!modeWrap.contains(e.target as Node)) {
@@ -1359,37 +1707,19 @@ export class SessionInner {
       }
     });
 
-    // Commit
-    const doCommit = async () => {
-      const msg = commitInput.value.trim();
-      if (!msg) return;
-      commitBtn.disabled = true;
-      commitBtn.textContent = t("sessionInner.reviewCommitting");
-      try {
-        const ws = getState().activeWorkspace;
-        if (!ws || !api) return;
-        const res = await api.gitCommit(ws, msg);
-        if (res.error) {
-          showToast?.(t("sessionInner.commitFailed"), res.error, "error");
-        } else {
-          commitInput.value = "";
-          cachedEntries = null;
-          cachedBranch = "";
-          await load(undefined, true);
-        }
-      } finally {
-        commitBtn.disabled = false;
-        commitBtn.textContent = t("sessionInner.reviewCommitBtn");
-      }
-    };
-    commitBtn.addEventListener("click", doCommit);
-    commitInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doCommit(); });
-
     // Always load the review panel state when opened, even without a pending file
     if (this._reviewFilePending !== undefined) {
       await load(this._reviewFilePending, false);
       this._reviewFilePending = undefined;
     } else {
+      // Opening the review tab directly (not via "view changes" with an
+      // artifact): default to "all changes" so the workspace's full diff is
+      // shown, never a stale "last round".
+      if (getState().activeWorkspace) {
+        this._reviewFilter = "all";
+        this._reviewMode = "git";
+        this._reviewArtifact = null;
+      }
       await load(undefined, false);
     }
   }
@@ -1554,58 +1884,15 @@ export class SessionInner {
 
   private parseDiff(output: string): string {
     if (!output.trim()) return `<div class="si-empty">${t("sessionInner.reviewNoChanges")}</div>`;
-    const MAX_RENDER_LINES = 4000;
-    const rawLines = output.split("\n");
-    const lines = rawLines.length > MAX_RENDER_LINES
-      ? rawLines.slice(0, MAX_RENDER_LINES).concat(["... [diff truncated in viewer]"])
-      : rawLines;
-
-    let fileName = "";
-    let adds = 0;
-    let dels = 0;
-    let inHunk = false;
-    let newLn = 0;
-    let bodyRows = "";
-
-    for (const rawLine of lines) {
-      const line = rawLine.replace(/\t/g, "    ");
-      if (line.startsWith("diff --git")) {
-        inHunk = false;
-        const m = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
-        if (m) fileName = m[2];
-      } else if (line.startsWith("+++ ")) {
-        // b/path or just path
-        const m = line.match(/^\+\+\+ (?:b\/)?(.+)$/);
-        if (m) fileName = m[1];
-      } else if (line.startsWith("@@")) {
-        inHunk = true;
-        const m = line.match(/@@ \-\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-        newLn = m ? parseInt(m[1], 10) - 1 : 0;
-      } else if (inHunk && line.startsWith("+")) {
-        newLn++;
-        adds++;
-        const content = line.slice(1);
-        bodyRows += `<div class="diff-row diff-row-add"><span class="diff-ln">${newLn}</span><span class="diff-content">${this.esc(content) || " "}</span></div>`;
-      } else if (inHunk && line.startsWith("-")) {
-        dels++;
-        const content = line.slice(1);
-        bodyRows += `<div class="diff-row diff-row-del"><span class="diff-ln">&nbsp;</span><span class="diff-content">${this.esc(content) || " "}</span></div>`;
-      } else if (inHunk) {
-        newLn++;
-        const content = line.startsWith(" ") ? line.slice(1) : line;
-        bodyRows += `<div class="diff-row"><span class="diff-ln">${newLn}</span><span class="diff-content">${this.esc(content) || " "}</span></div>`;
-      }
-    }
-
-    fileName = fileName || t("sessionInner.reviewUnknownFile");
-    return `<div class="diff-container">
-      <div class="diff-header">
-        <span class="diff-file-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg></span>
-        <span class="diff-file-name">${this.esc(fileName)}</span>
-        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
-      </div>
-      <div class="diff-body">${bodyRows}</div>
-    </div>`;
+    return renderDiffHtml(output, {
+      fileNameFallback: t("sessionInner.reviewUnknownFile"),
+      maxLines: this._reviewFullFile ? 4000 : 1000,
+      richText: this._reviewRichText,
+      wordDiff: this._reviewWordDiff,
+      hideWhitespace: this._reviewHideWs,
+      splitView: this._reviewSplitView,
+      truncatedNotice: (n: number) => t("sessionInner.reviewTruncated", { n }),
+    });
   }
 
   private parseArtifactDiff(artifact: ArtifactItem, filePath?: string): string {
@@ -1647,59 +1934,21 @@ export class SessionInner {
   }
 
   private renderArtifactDiffView(diffText: string, filePath: string): string {
-    const MAX_RENDER_LINES = 4000;
-    const rawLines = diffText.split("\n");
-    const lines = rawLines.length > MAX_RENDER_LINES
-      ? rawLines.slice(0, MAX_RENDER_LINES).concat(["... [diff truncated in viewer]"])
-      : rawLines;
-
-    let adds = 0, dels = 0, ln = 0;
-    let inHunk = false;
-    let bodyRows = "";
-
-    for (const rawLine of lines) {
-      const line = rawLine.replace(/\t/g, "    ");
-      if (line.startsWith("@@")) {
-        inHunk = true;
-        const m = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-        if (m) ln = parseInt(m[1], 10) - 1;
-        bodyRows += `<div class="diff-row"><span class="diff-ln">&nbsp;</span><span class="diff-content"><span style="color:var(--text-tertiary)">${this.esc(line)}</span></span></div>`;
-      } else if (line.startsWith("+") && !line.startsWith("+++")) {
-        inHunk = true;
-        ln++;
-        adds++;
-        bodyRows += `<div class="diff-row diff-row-add"><span class="diff-ln">${ln}</span><span class="diff-content">${this.esc(line.slice(1)) || " "}</span></div>`;
-      } else if (line.startsWith("-") && !line.startsWith("---")) {
-        inHunk = true;
-        dels++;
-        bodyRows += `<div class="diff-row diff-row-del"><span class="diff-ln">&nbsp;</span><span class="diff-content">${this.esc(line.slice(1)) || " "}</span></div>`;
-      } else if (line.startsWith("diff --git") || line.startsWith("index ")) {
-        continue;
-      } else if (line.startsWith("---") || line.startsWith("+++")) {
-        continue;
-      } else if (!inHunk && !line.trim()) {
-        continue;
-      } else {
-        inHunk = true;
-        ln++;
-        bodyRows += `<div class="diff-row"><span class="diff-ln">${ln}</span><span class="diff-content">${this.esc(line) || " "}</span></div>`;
-      }
-    }
-
-    return `<div class="diff-container">
-      <div class="diff-header">
-        <span class="diff-file-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg></span>
-        <span class="diff-file-name">${this.esc(filePath)}</span>
-        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
-      </div>
-      <div class="diff-body">${bodyRows}</div>
-    </div>`;
+    return renderDiffHtml(diffText, {
+      fileNameFallback: filePath,
+      maxLines: this._reviewFullFile ? 4000 : 1000,
+      richText: this._reviewRichText,
+      wordDiff: this._reviewWordDiff,
+      hideWhitespace: this._reviewHideWs,
+      splitView: this._reviewSplitView,
+      truncatedNotice: (n: number) => t("sessionInner.reviewTruncated", { n }),
+    });
   }
 
   private buildArtifactTree(artifacts: ArtifactItem[], activePath: string): string {
-    if (artifacts.length === 0) return `<div class="si-review-empty">
+    if (artifacts.length === 0) return `<div class="si-panel-empty">
       <i data-lucide="check-circle-2" class="lucide"></i>
-      <div class="si-review-empty-title">${t("sessionInner.reviewNoChanges")}</div>
+      <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
     </div>`;
     // Group by top-level directory (same as git buildTree style)
     const groups = new Map<string, ArtifactItem[]>();
@@ -1716,18 +1965,13 @@ export class SessionInner {
           <span>${this.esc(dir)}</span>
         </div>`;
       for (const a of items) {
-        const extIcon = a.ext === "py" ? "file-code-2"
-          : a.ext === "ts" || a.ext === "tsx" || a.ext === "js" ? "file-json-2"
-          : a.ext === "html" || a.ext === "css" || a.ext === "md" ? "file-text"
-          : a.ext === "json" ? "file-json-2"
-          : "file";
         const active = a.path === activePath ? " si-review-tree-file--active" : "";
         const toolLabel = a.tool === "file_write" || a.tool === "write_file" || a.tool === "writeFile"
           ? "created" : "modified";
         html += `<div class="si-review-tree-file${active}" data-path="${this.esc(a.path)}">
-          <i data-lucide="${extIcon}" class="lucide lucide-xs"></i>
+          <i data-lucide="${getFileIcon(a.name)}" class="lucide lucide-xs"></i>
           <span class="si-review-tree-name">${this.esc(a.name)}</span>
-          <span class="si-review-tree-status si-review-${toolLabel === "created" ? "untracked" : "unstaged"}">${toolLabel}</span>
+          <span class="si-review-tree-status si-review-${toolLabel === "created" ? "untracked" : "unstaged"}">${toolLabel === "created" ? "U" : "M"}</span>
         </div>`;
       }
       html += `</div>`;
@@ -1735,24 +1979,193 @@ export class SessionInner {
     return html;
   }
 
-  /* ── Editor (File Tree + Code Editor) ──────────────────────────── */
+  private _editorView: EditorView | null = null;
+  private _editorCtxMenu: HTMLDivElement | null = null;
+  private _editorCtxTarget: string | null = null;
+  private _editorTabs: Array<{path: string; name: string}> = [];
+  private _activeEditorTab = "";
 
-  private _monaco: any = null;
-  private _editor: any = null;
-  private _editorReady = false;
-  private _editorQueue: string[] = [];
-  private _themeObserver: MutationObserver | null = null;
-  private _openTabs: Array<{ path: string; name: string; model: any }> = [];
-  private _activeTabPath = "";
-  private _tabBar: HTMLElement | null = null;
+  private _renderEditorTabs(tabBar: HTMLElement): void {
+    tabBar.innerHTML = this._editorTabs.map((t) => {
+      const active = t.path === this._activeEditorTab ? " active" : "";
+      return `<div class="tab${active} tab--editor" data-path="${this.esc(t.path)}">
+        <span class="tab-label">${this.esc(t.name)}</span>
+        <button class="tab-close" data-path="${this.esc(t.path)}"><i data-lucide="x" class="lucide lucide-sm"></i></button>
+      </div>`;
+    }).join("");
+    tabBar.querySelectorAll(".tab--editor").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".tab-close")) return;
+        if ((this as any)._editorDragMoved) { (this as any)._editorDragMoved = false; return; }
+        const path = (el as HTMLElement).dataset.path!;
+        this._switchEditorTab(path);
+      });
+      el.addEventListener("auxclick", (e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          const path = (el as HTMLElement).dataset.path!;
+          this._closeEditorTab(path);
+        }
+      });
+      // Drag to reorder editor tabs.
+      el.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        if ((e.target as HTMLElement).closest(".tab-close")) return;
+        const dragEl = el as HTMLElement;
+        const startX = e.clientX;
+        let moved = false;
+        const onMove = (ev: MouseEvent) => {
+          if (!moved && Math.abs(ev.clientX - startX) < 5) return;
+          if (!moved) { moved = true; dragEl.classList.add("dragging"); (this as any)._editorDragMoved = true; }
+          const rect = tabBar.getBoundingClientRect();
+          const over = Array.from(tabBar.querySelectorAll(".tab--editor")).find((t) => {
+            const r = (t as HTMLElement).getBoundingClientRect();
+            return ev.clientX >= r.left && ev.clientX <= r.right;
+          }) as HTMLElement | undefined;
+          tabBar.querySelectorAll(".tab--editor.drop-target").forEach((t) => t.classList.remove("drop-target"));
+          if (over && over !== dragEl) over.classList.add("drop-target");
+          void rect;
+        };
+        const onUp = () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          dragEl.classList.remove("dragging");
+          const target = tabBar.querySelector(".tab--editor.drop-target") as HTMLElement | null;
+          if (target) {
+            const fromIdx = this._editorTabs.findIndex((t) => t.path === (dragEl as HTMLElement).dataset.path);
+            const toIdx = this._editorTabs.findIndex((t) => t.path === target.dataset.path);
+            if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
+              const [m] = this._editorTabs.splice(fromIdx, 1);
+              this._editorTabs.splice(toIdx, 0, m);
+              this._renderEditorTabs(tabBar);
+            }
+          }
+          tabBar.querySelectorAll(".tab--editor.drop-target").forEach((t) => t.classList.remove("drop-target"));
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        e.preventDefault();
+      });
+    });
+    tabBar.querySelectorAll(".tab-close").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const path = (el as HTMLElement).dataset.path!;
+        this._closeEditorTab(path);
+      });
+    });
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: tabBar });
+    }
+  }
+
+  private async _switchEditorTab(filePath: string): Promise<void> {
+    if (filePath === this._activeEditorTab) return;
+    this._activeEditorTab = filePath;
+    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+    if (!panel) return;
+    const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+    if (tabBar) this._renderEditorTabs(tabBar);
+    await this._loadEditorFile(filePath);
+  }
+
+  private async _closeEditorTab(filePath: string): Promise<void> {
+    const idx = this._editorTabs.findIndex((t) => t.path === filePath);
+    if (idx < 0) return;
+    this._editorTabs.splice(idx, 1);
+    if (this._editorTabs.length === 0) {
+      this._activeEditorTab = "";
+      const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+      if (panel) {
+        const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+        const container = panel.querySelector(".si-code-container") as HTMLElement;
+        const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
+        if (tabBar) tabBar.style.display = "none";
+        if (container) { container.style.display = "none"; container.innerHTML = ""; }
+        if (emptyEl) emptyEl.style.display = "flex";
+        if (this._editorView) { this._editorView.destroy(); this._editorView = null; }
+      }
+      return;
+    }
+    if (filePath === this._activeEditorTab) {
+      const next = this._editorTabs[Math.min(idx, this._editorTabs.length - 1)];
+      this._activeEditorTab = next.path;
+      await this._loadEditorFile(next.path);
+    }
+    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+    if (panel) {
+      const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+      if (tabBar) this._renderEditorTabs(tabBar);
+    }
+  }
+
+  private async _loadEditorFile(filePath: string): Promise<void> {
+    const api = (window as any).electronAPI;
+    if (!api) return;
+    const result = await api.readFile(filePath);
+    if (!result) return;
+    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+    if (!panel) return;
+    const container = panel.querySelector(".si-code-container") as HTMLElement;
+    if (!container) return;
+    container.innerHTML = "";
+    container.style.display = "flex";
+
+    if (this._editorView) { this._editorView.destroy(); this._editorView = null; }
+
+    this._editorView = new EditorView({
+      state: EditorState.create({
+        doc: result.content,
+        extensions: [
+          basicSetup,
+          EditorView.editable.of(false),
+          this.cmTheme(),
+          keymap.of([indentWithTab]),
+          this.langExt(filePath.split(".").pop()?.toLowerCase() || ""),
+        ],
+      }),
+      parent: container,
+    });
+
+    container.oncontextmenu = (ev: MouseEvent) => {
+      ev.preventDefault();
+      if (!this._editorCtxMenu) return;
+      this._editorCtxMenu.style.top = ev.clientY + "px";
+      this._editorCtxMenu.style.left = ev.clientX + "px";
+      this._editorCtxMenu.classList.remove("hidden");
+    };
+  }
+
+  private cmTheme() {
+    return EditorView.theme({
+      "&": { height: "100%" },
+      ".cm-scroller": { overflow: "auto" },
+    });
+  }
+
+  private langExt(ext: string) {
+    const map: Record<string, any> = {
+      js: javascript(), jsx: javascript({ jsx: true }),
+      ts: javascript({ typescript: true }), tsx: javascript({ jsx: true, typescript: true }),
+      rs: rust(), go: rust(), java: java(),
+      json: json(), yaml: yaml(), yml: yaml(), toml: yaml(),
+      md: markdown(), html: html(), css: css(),
+      cpp: cpp(), c: cpp(), h: cpp(), hpp: cpp(),
+      cs: java(), swift: java(), kt: java(), scala: java(),
+      php: php(), xml: xml(), sql: sql(),
+      sh: python(), bash: python(), zsh: python(),
+      r: python(), lua: python(), dart: python(),
+      rb: python(), py: python(),
+    };
+    return map[ext] || [];
+  }
 
   private async setupEditorPanel(panel: HTMLElement): Promise<void> {
     const api = (window as any).electronAPI;
 
-    /* In normal mode (no workspace), editor is completely useless �?show only the default interface */
     if (!getState().activeWorkspace) {
-      panel.innerHTML = `<div class="si-editor-empty" style="display:flex;flex:1;height:100%">
-        <i data-lucide="file-code-2" class="lucide" style="width:28px;height:28px;opacity:0.35"></i>
+      panel.innerHTML = `<div class="si-panel-empty si-editor-empty">
+        <i data-lucide="file-code-2" class="lucide"></i>
         <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
         <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
       </div>`;
@@ -1762,8 +2175,8 @@ export class SessionInner {
       return;
     }
 
-    panel.innerHTML = `<div class="si-editor-wrap" style="display:flex">
-      <div class="si-editor-code" style="flex:1;display:flex;overflow:hidden">
+panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
+      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0">
         <div class="si-editor-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:4px;padding:20px;color:var(--editor-empty,#888);font-size:13px;text-align:center">
           <i data-lucide="file-code-2" class="lucide" style="width:24px;height:24px;opacity:0.35"></i>
           <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
@@ -1778,19 +2191,115 @@ export class SessionInner {
       </div>
     </div>`;
 
-    const container = panel.querySelector(".si-code-container")! as HTMLElement;
     const treeBody = panel.querySelector(".si-editor-tree-body")! as HTMLElement;
     const divider = panel.querySelector(".si-editor-divider")! as HTMLElement;
-    this._tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+    const container = panel.querySelector(".si-code-container")! as HTMLElement;
+    const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
+
+    /* context menu for tree */
+    const treeCtxMenu = document.createElement("div");
+    treeCtxMenu.className = "context-menu hidden";
+    treeCtxMenu.id = "editor-tree-ctx-menu";
+    let treeCtxPath = "";
+    let treeCtxIsDir = false;
+    document.body.appendChild(treeCtxMenu);
+
+    const showTreeCtx = (ev: MouseEvent, path: string, isDir: boolean) => {
+      ev.preventDefault();
+      treeCtxPath = path;
+      treeCtxIsDir = isDir;
+      const ext = path.split(".").pop()?.toLowerCase() || "";
+      const isMd = !isDir && ext === "md";
+      treeCtxMenu.innerHTML = isDir
+        ? `<div class="context-menu-item" data-action="send-folder">${t("sessionInner.termSendToChat")}</div>`
+        : `<div class="context-menu-item" data-action="send-file">${t("sessionInner.termSendToChat")}</div>`
+        + (isMd ? `<div class="context-menu-divider"></div><div class="context-menu-item" data-action="preview">预览</div>` : "");
+      treeCtxMenu.style.top = ev.clientY + "px";
+      treeCtxMenu.style.left = ev.clientX + "px";
+      treeCtxMenu.classList.remove("hidden");
+    };
+
+    treeCtxMenu.addEventListener("click", async (ev) => {
+      const item = (ev.target as HTMLElement).closest(".context-menu-item") as HTMLElement | null;
+      if (!item) return;
+      const action = item.dataset.action;
+      const api = (window as any).electronAPI;
+      if (action === "send-file" && api) {
+        const result = await api.readFile(treeCtxPath);
+        if (result) {
+          const name = treeCtxPath.split(/[/\\]/).pop() || treeCtxPath;
+          const att: AttachmentMeta = {
+            name, path: treeCtxPath,
+            content: result.content,
+            mime_type: result.mime_type || "",
+            size: result.size,
+            is_binary: result.is_binary,
+          };
+          addAttachments([att]);
+        }
+      } else if (action === "send-folder" && api) {
+        const name = treeCtxPath.split(/[/\\]/).pop() || treeCtxPath;
+        const att: AttachmentMeta = {
+          name, path: treeCtxPath,
+          content: "",
+          mime_type: "text/x-directory",
+          size: 0, is_binary: false,
+        };
+        addAttachments([att]);
+      } else if (action === "preview" && api) {
+        this.openFileInEditor(treeCtxPath, true);
+      }
+      treeCtxMenu.classList.add("hidden");
+      });
+      document.addEventListener("click", (e) => {
+      if (!treeCtxMenu.contains(e.target as Node)) {
+        treeCtxMenu.classList.add("hidden");
+      }
+    });
+    if (!this._editorCtxMenu) {
+      this._editorCtxMenu = document.createElement("div");
+      this._editorCtxMenu.className = "context-menu hidden";
+      this._editorCtxMenu.innerHTML = `
+        <div class="context-menu-item" data-action="copy">${t("sessionInner.termCopy")}</div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" data-action="send">${t("sessionInner.termSendToChat")}</div>`;
+      document.body.appendChild(this._editorCtxMenu);
+      this._editorCtxMenu.querySelectorAll(".context-menu-item").forEach((item) => {
+        item.addEventListener("click", () => {
+          const action = (item as HTMLElement).dataset.action;
+          const view = this._editorView;
+          if (action === "copy" && view) {
+            const sel = view.state.selection.main;
+            const text = sel.empty ? "" : view.state.sliceDoc(sel.from, sel.to);
+            if (text) navigator.clipboard.writeText(text).catch(() => {});
+          } else if (action === "send" && view) {
+            const sel = view.state.selection.main;
+            const content = sel.empty ? view.state.doc.toString() : view.state.sliceDoc(sel.from, sel.to);
+            const name = this._editorCtxTarget || "editor";
+            const att: AttachmentMeta = {
+              name,
+              path: `editor:${Date.now()}`,
+              content,
+              mime_type: "text/x-code",
+              size: content.split("\n").length,
+              is_binary: false,
+            };
+            addAttachments([att]);
+          }
+          this._editorCtxMenu!.classList.add("hidden");
+          this._editorCtxTarget = null;
+        });
+      });
+      document.addEventListener("click", (e) => {
+        if (this._editorCtxMenu && !this._editorCtxMenu.contains(e.target as Node)) {
+          this._editorCtxMenu.classList.add("hidden");
+        }
+      });
+    }
 
     let rootPath = "";
     const expandedDirs = new Set<string>();
     const dirCache = new Map<string, DirEntry[]>();
-
-    interface DirEntry {
-      name: string;
-      isDirectory: boolean;
-    }
 
     const joinPath = (base: string, name: string) => {
       const sep = base.includes("\\") ? "\\" : "/";
@@ -1809,21 +2318,7 @@ export class SessionInner {
       }
     };
 
-    const fileIcon = (name: string): string => {
-      const ext = name.split(".").pop()?.toLowerCase();
-      if (!ext) return "file";
-      const map: Record<string, string> = {
-        py: "file-code-2", ts: "file-code-2", tsx: "file-code-2",
-        js: "file-code-2", jsx: "file-code-2", rs: "file-code-2",
-        go: "file-code-2", java: "file-code-2",
-        md: "file-text", txt: "file-text",
-        json: "file-json-2", yaml: "file-json-2", yml: "file-json-2",
-        toml: "file-json-2",
-        html: "file-text", css: "file-text",
-        svg: "file-image", png: "file-image", jpg: "file-image",
-      };
-      return map[ext] || "file";
-    };
+    const fileIcon = (name: string): string => getFileIcon(name);
 
     const renderRecursive = async (dirPath: string, depth: number, out: string[]) => {
       const entries = await fetchDir(dirPath);
@@ -1848,7 +2343,7 @@ export class SessionInner {
         } else {
           out.push(`<div class="si-tree-entry" data-path="${this.esc(fullPath)}" data-file="true" style="padding-left:${indent}px">
             <span class="si-tree-chevron" style="visibility:hidden"><i data-lucide="chevron-right" class="lucide lucide-xs"></i></span>
-            <span class="si-tree-icon"><i data-lucide="${fileIcon(entry.name)}" class="lucide lucide-sm"></i></span>
+            <span class="si-tree-icon"><i data-lucide="${getFileIcon(entry.name)}" class="lucide lucide-sm"></i></span>
             <span class="si-tree-name">${this.esc(entry.name)}</span>
           </div>`);
         }
@@ -1873,6 +2368,9 @@ export class SessionInner {
           }
           await renderTree();
         });
+        (el as HTMLElement).addEventListener("contextmenu", (ev: MouseEvent) => {
+          showTreeCtx(ev, (el as HTMLElement).dataset.path!, true);
+        });
       });
 
       treeBody.querySelectorAll(".si-tree-entry[data-file]").forEach((el) => {
@@ -1882,6 +2380,9 @@ export class SessionInner {
           const filePath = (el as HTMLElement).dataset.path!;
           this.openFileInEditor(filePath);
         });
+        (el as HTMLElement).addEventListener("contextmenu", (ev: MouseEvent) => {
+          showTreeCtx(ev, (el as HTMLElement).dataset.path!, false);
+        });
       });
 
       if (typeof (window as any).lucide !== "undefined") {
@@ -1889,7 +2390,7 @@ export class SessionInner {
       }
     };
 
-    /* tree resizer */
+    /* divider resizer */
     let resizing = false;
     let startX = 0;
     let startW = 0;
@@ -1904,7 +2405,7 @@ export class SessionInner {
     });
     document.addEventListener("mousemove", (e) => {
       if (!resizing) return;
-      const newW = Math.max(120, Math.min(400, startW + e.clientX - startX));
+      const newW = Math.max(120, Math.min(400, startW - (e.clientX - startX)));
       const treeWrap = panel.querySelector(".si-editor-tree") as HTMLElement;
       treeWrap.style.width = newW + "px";
     });
@@ -1915,193 +2416,18 @@ export class SessionInner {
       document.body.style.userSelect = "";
     });
 
-    /* Monaco editor */
-    const amdRequire = (window as any).require;
-    if (amdRequire && !this._editorReady) {
-      amdRequire(["vs/editor/editor.main"], () => {
-        const monaco = (window as any).monaco;
-        this._monaco = monaco;
+    // Auto-collapse the file tree when the panel gets narrow, mirroring the
+    // review panel. Re-expands once it widens again.
+    const editorWrap = panel.querySelector(".si-editor-wrap") as HTMLElement;
+    const measureEditorTree = () => {
+      if (!editorWrap) return;
+      editorWrap.classList.toggle("tree-collapsed", panel.clientWidth < 340);
+    };
+    const editorTreeRo = new ResizeObserver(() => measureEditorTree());
+    editorTreeRo.observe(panel);
+    measureEditorTree();
 
-        monaco.editor.defineTheme("vscode-dark-plus", {
-          base: "vs-dark",
-          inherit: true,
-          rules: [
-            { token: "comment", foreground: "6A9955", fontStyle: "italic" },
-            { token: "keyword", foreground: "569CD6" },
-            { token: "string", foreground: "CE9178" },
-            { token: "number", foreground: "B5CEA8" },
-            { token: "type", foreground: "4EC9B0" },
-            { token: "tag", foreground: "569CD6" },
-            { token: "attribute.name", foreground: "9CDCFE" },
-            { token: "attribute.value", foreground: "CE9178" },
-            { token: "delimiter", foreground: "808080" },
-            { token: "variable", foreground: "9CDCFE" },
-            { token: "function", foreground: "DCDCAA" },
-            { token: "class", foreground: "4EC9B0" },
-            { token: "interface", foreground: "4EC9B0" },
-            { token: "parameter", foreground: "9CDCFE" },
-            { token: "property", foreground: "9CDCFE" },
-            { token: "constant", foreground: "4FC1FF" },
-            { token: "regexp", foreground: "D16969" },
-            { token: "string.key.json", foreground: "CE9178" },
-            { token: "string.value.json", foreground: "B5CEA8" },
-          ],
-          colors: {
-            "editor.background": "#252526",
-            "editor.foreground": "#d4d4d4",
-            "editor.lineHighlightBackground": "#252526",
-            "editor.selectionBackground": "#252526",
-            "editor.inactiveSelectionBackground": "#252526",
-            "editorCursor.foreground": "#aeafad",
-            "editorLineNumber.foreground": "#6e6e6e",
-            "editorLineNumber.activeForeground": "#c6c6c6",
-            "editor.selectionHighlightBackground": "#252526",
-            "editor.wordHighlightBackground": "#252526",
-            "editor.wordHighlightStrongBackground": "#252526",
-            "editorBracketMatch.background": "#252526",
-            "editorBracketMatch.border": "#888888",
-            "editorGutter.background": "#252526",
-            "editorIndentGuide.background": "#3b3b3b",
-            "editorIndentGuide.activeBackground": "#606060",
-            "editorRuler.foreground": "#5a5a5a",
-            "editorCodeLens.foreground": "#999999",
-            "editorOverviewRuler.border": "#7f7f7f4d",
-            "editorWidget.background": "#252526",
-            "editorWidget.border": "#454545",
-            "editorSuggestWidget.background": "#252526",
-            "editorSuggestWidget.border": "#454545",
-            "editorSuggestWidget.selectedBackground": "#252526",
-            "editorSuggestWidget.foreground": "#d4d4d4",
-            "editorHoverWidget.background": "#252526",
-            "editorHoverWidget.border": "#454545",
-            "editorLink.activeForeground": "#4e94ce",
-            "diffEditor.insertedTextBackground": "#252526",
-            "diffEditor.removedTextBackground": "#252526",
-            "scrollbar.shadow": "#00000000",
-            "scrollbarSlider.background": "#42424266",
-            "scrollbarSlider.hoverBackground": "#515151cc",
-            "scrollbarSlider.activeBackground": "#616161b3",
-            "tab.activeBackground": "#252526",
-            "tab.inactiveBackground": "#252526",
-            "tab.activeForeground": "#ffffff",
-            "tab.inactiveForeground": "#969696",
-            "tab.border": "#252526",
-            "tab.activeBorderTop": "#5188e6",
-          },
-        });
-
-        monaco.editor.defineTheme("vscode-light-plus", {
-          base: "vs",
-          inherit: true,
-          rules: [
-            { token: "comment", foreground: "008000", fontStyle: "italic" },
-            { token: "keyword", foreground: "0000FF" },
-            { token: "string", foreground: "A31515" },
-            { token: "number", foreground: "098658" },
-            { token: "type", foreground: "267F99" },
-            { token: "tag", foreground: "800000" },
-            { token: "attribute.name", foreground: "FF0000" },
-            { token: "attribute.value", foreground: "0000FF" },
-            { token: "delimiter", foreground: "808080" },
-            { token: "variable", foreground: "001188" },
-            { token: "function", foreground: "795E26" },
-            { token: "class", foreground: "267F99" },
-            { token: "interface", foreground: "267F99" },
-            { token: "parameter", foreground: "001188" },
-            { token: "property", foreground: "001188" },
-            { token: "constant", foreground: "0070C1" },
-            { token: "regexp", foreground: "800000" },
-            { token: "string.key.json", foreground: "A31515" },
-            { token: "string.value.json", foreground: "098658" },
-          ],
-          colors: {
-            "editor.background": "#f3f3f3",
-            "editor.foreground": "#333333",
-            "editor.lineHighlightBackground": "#f3f3f3",
-            "editor.selectionBackground": "#f3f3f3",
-            "editor.inactiveSelectionBackground": "#f3f3f3",
-            "editorCursor.foreground": "#333333",
-            "editorLineNumber.foreground": "#9ca3af",
-            "editorLineNumber.activeForeground": "#237893",
-            "editor.selectionHighlightBackground": "#f3f3f3",
-            "editor.wordHighlightBackground": "#f3f3f3",
-            "editor.wordHighlightStrongBackground": "#f3f3f3",
-            "editorBracketMatch.background": "#f3f3f3",
-            "editorBracketMatch.border": "#b8b8b8",
-            "editorGutter.background": "#f3f3f3",
-            "editorIndentGuide.background": "#e0e0e0",
-            "editorIndentGuide.activeBackground": "#c0c0c0",
-            "editorRuler.foreground": "#e0e0e0",
-            "editorCodeLens.foreground": "#999999",
-            "editorOverviewRuler.border": "#e0e0e0",
-            "editorWidget.background": "#f3f3f3",
-            "editorWidget.border": "#c4c4c4",
-            "editorSuggestWidget.background": "#f3f3f3",
-            "editorSuggestWidget.border": "#c4c4c4",
-            "editorSuggestWidget.selectedBackground": "#f3f3f3",
-            "editorSuggestWidget.foreground": "#333333",
-            "editorHoverWidget.background": "#f3f3f3",
-            "editorHoverWidget.border": "#c4c4c4",
-            "editorLink.activeForeground": "#006ab1",
-            "diffEditor.insertedTextBackground": "#f3f3f3",
-            "diffEditor.removedTextBackground": "#f3f3f3",
-            "scrollbar.shadow": "#00000000",
-            "scrollbarSlider.background": "#c1c1c166",
-            "scrollbarSlider.hoverBackground": "#a0a0a0b3",
-            "scrollbarSlider.activeBackground": "#90909099",
-          },
-        });
-
-        const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
-        const themeName = currentTheme === "light" ? "vscode-light-plus" : "vscode-dark-plus";
-        this._editor = monaco.editor.create(container, {
-          value: "",
-          language: "plaintext",
-          theme: themeName,
-          fontSize: 13,
-          fontFamily: "'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace",
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          automaticLayout: true,
-          tabSize: 2,
-          wordWrap: "on",
-          bracketPairColorization: { enabled: true },
-          smoothScrolling: true,
-          cursorBlinking: "smooth",
-          cursorSmoothCaretAnimation: "on",
-          padding: { top: 8 },
-          renderLineHighlight: "all",
-          overviewRulerBorder: false,
-          hideCursorInOverviewRuler: true,
-          readOnly: true,
-          lineNumbersMinChars: 2,
-          lineDecorationsWidth: 4,
-          folding: false,
-          glyphMargin: false,
-        });
-
-        this._editorReady = true;
-
-        if (!this._themeObserver) {
-          this._themeObserver = new MutationObserver(() => {
-            const t = document.documentElement.getAttribute("data-theme");
-            if (this._editor && this._monaco) {
-              this._monaco.editor.setTheme(t === "light" ? "vscode-light-plus" : "vscode-dark-plus");
-            }
-          });
-          this._themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-        }
-
-        for (const p of this._editorQueue) {
-          this.doOpenFile(p);
-        }
-        this._editorQueue = [];
-      });
-    } else if (this._editorReady) {
-      this._editor.layout();
-    }
-
-    /* start in workspace root */
+    /* workspace root */
     const home = api
       ? (await api.getAppPath()).replace(/[/\\][^/\\]+$/, "")
       : ".";
@@ -2114,65 +2440,36 @@ export class SessionInner {
     }
   }
 
-  private openFileInEditor(filePath: string): void {
-    if (!this.tabs.some((t) => t.id === "editor")) {
-      this.createTab("editor");
-      requestAnimationFrame(() => this.openFileInEditor(filePath));
-      return;
-    }
-    if (!this._editorReady) {
-      this._editorQueue.push(filePath);
-      return;
-    }
-    this.doOpenFile(filePath);
-  }
-
-  private async doOpenFile(filePath: string): Promise<void> {
-    const api = (window as any).electronAPI;
-    if (!api) return;
-    const content = await api.readFile(filePath);
-    if (content === undefined) return;
-
-    const ext = filePath.split(".").pop()?.toLowerCase() || "";
-    const langMap: Record<string, string> = {
-      py: "python", ts: "typescript", tsx: "typescript",
-      js: "javascript", jsx: "javascript", rs: "rust",
-      go: "go", md: "markdown", json: "json",
-      html: "html", css: "css", yaml: "yaml", yml: "yaml",
-      toml: "plaintext", java: "java", cpp: "cpp", c: "c",
-      h: "c", hpp: "cpp", cs: "csharp", swift: "swift",
-      kt: "kotlin", scala: "scala", rb: "ruby", php: "php",
-      sh: "shell", bash: "shell", zsh: "shell",
-      sql: "sql", r: "r", lua: "lua", dart: "dart",
-    };
-    const lang = langMap[ext] || "plaintext";
-
-    const monaco = this._monaco;
+  private async openFileInEditor(filePath: string, preview = false): Promise<void> {
     const name = filePath.split(/[/\\]/).pop() || filePath;
-    /* Use 'inmemory' scheme instead of 'file' because standalone Monaco
-       (loaded via vs/editor/editor.main.js) does not register a model
-       factory for the 'file' scheme, which would cause
-       "t.create is not a function" in the instantiation service. */
-    const uri = monaco.Uri.parse(
-      "inmemory://model" + (filePath.startsWith("/") ? filePath : "/" + filePath).replace(/\\/g, "/")
-    );
+    this._editorCtxTarget = name;
 
-    let model = monaco.editor.getModel(uri);
-    if (model) {
-      model.setValue(content);
-    } else {
-      model = monaco.editor.createModel(content, lang, uri);
+    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+    if (!panel) return;
+    const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
+    const container = panel.querySelector(".si-code-container") as HTMLElement;
+    const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+    if (!container || !tabBar) return;
+    emptyEl.style.display = "none";
+    container.style.display = "flex";
+    tabBar.style.display = "flex";
+
+    const existing = this._editorTabs.find((t) => t.path === filePath);
+    if (!existing) this._editorTabs.push({ path: filePath, name });
+    this._activeEditorTab = filePath;
+    this._renderEditorTabs(tabBar);
+
+    if (preview) {
+      const api = (window as any).electronAPI;
+      if (!api) return;
+      const result = await api.readFile(filePath);
+      if (!result) return;
+      const html = renderMarkdown(result.content);
+      container.innerHTML = `<div class="si-editor-preview" style="display:flex;flex-direction:column;height:100%"><div class="msg-text" style="padding:16px;overflow-y:auto;flex:1">${html}</div></div>`;
+      return;
     }
 
-    /* check if tab already exists */
-    const existing = this._openTabs.find((t) => t.path === filePath);
-    if (!existing) {
-      this._openTabs.push({ path: filePath, name, model });
-    }
-    this._activeTabPath = filePath;
-    this._editor.setModel(model);
-    this.renderEditorTabs();
-    this.showEditorEmpty(false);
+    await this._loadEditorFile(filePath);
 
     if (!this.tabs.some((t) => t.id === "editor")) {
       this.createTab("editor");
@@ -2181,13 +2478,26 @@ export class SessionInner {
     }
   }
 
-  private _dragSrcIdx = -1;
   private _reviewLoad: ((filePath?: string) => Promise<void>) | null = null;
   private _reviewMode: "git" | "artifact" = "git";
+  private _reviewFilter: string = "all";
   private _reviewArtifact: ArtifactItem | null = null;
   private _reviewRequestSeq = 0;
   private _reviewDiffCache: Map<string, string> | null = null;
   private _reviewTreeCache = new Map<string, string>();
+  // Review display toggles (set by the action menu).
+  private _reviewWrap = false;        // word wrap
+  private _reviewFullFile = true;     // false => truncate large diffs
+  private _reviewRichText = false;    // rich-text summary view
+  private _reviewWordDiff = false;     // inline word diff
+  private _reviewHideWs = false;       // dim whitespace-only lines
+  private _reviewSplitView = false;    // two-column split diff
+  private _reviewCollapsed = false;    // collapse all diff bodies
+  // Selected git action for the commit/push/pr trigger.
+  private _reviewGitAction: "commit" | "push" | "pr" = "commit";
+  // How many side buttons are currently merged into the ⋯ overflow menu.
+  private _reviewOverflow = 0;
+  private _reviewDiffEl: HTMLElement | null = null;  // ref for CSS class toggling
 
   /** Public entry point called from App when a "View Changes" button is clicked. */
   public showReviewTab(path: string, artifact?: ArtifactItem): void {
@@ -2202,13 +2512,22 @@ export class SessionInner {
       this.renderForce();
     }
     if (artifact) {
+      this._reviewFilter = "lastRound";
       this._reviewMode = "artifact";
       this._reviewArtifact = artifact;
     } else {
-      this._reviewMode = "git";
+      // No artifact: review git changes when a workspace is open, otherwise
+      // fall back to the session's artifacts (all changes).
+      const hasWs = !!getState().activeWorkspace;
+      this._reviewFilter = hasWs ? "all" : "lastRound";
+      this._reviewMode = hasWs ? "git" : "artifact";
       this._reviewArtifact = null;
     }
     this.openReviewTab(path);
+  }
+
+  private closeReviewTab(): void {
+    this.closeTab("review");
   }
 
   private openReviewTab(filePath?: string): void {
@@ -2225,150 +2544,42 @@ export class SessionInner {
   }
   private _reviewFilePending: string | undefined;
 
-  private renderEditorTabs(): void {
-    if (!this._tabBar) return;
-    this._tabBar.innerHTML = this._openTabs.map((t) => {
-      const active = t.path === this._activeTabPath ? " active" : "";
-      return `<div class="tab tab--editor${active}" data-path="${this.esc(t.path)}" draggable="true">
-        <span class="tab-label">${this.esc(t.name)}</span>
-        <span class="tab-close" data-path="${this.esc(t.path)}">&times;</span>
-      </div>`;
-    }).join("");
-
-    const tabs = this._tabBar.querySelectorAll<HTMLElement>(".tab.tab--editor");
-    tabs.forEach((el, idx) => {
-      el.addEventListener("click", (e) => {
-        if ((e.target as HTMLElement).classList.contains("tab-close")) return;
-        const path = (el as HTMLElement).dataset.path!;
-        this.switchEditorTab(path);
-      });
-
-      /* drag & drop */
-      el.addEventListener("dragstart", (e: DragEvent) => {
-        this._dragSrcIdx = idx;
-        (el as HTMLElement).classList.add("dragging");
-        if (e.dataTransfer) {
-          e.dataTransfer.effectAllowed = "move";
-        }
-      });
-
-      el.addEventListener("dragend", () => {
-        (el as HTMLElement).classList.remove("dragging");
-        tabs.forEach((t) => (t as HTMLElement).classList.remove("drag-over"));
-        this._dragSrcIdx = -1;
-      });
-
-      el.addEventListener("dragover", (e: DragEvent) => {
-        e.preventDefault();
-        if (e.dataTransfer) {
-          e.dataTransfer.dropEffect = "move";
-        }
-        if (idx !== this._dragSrcIdx) {
-          (el as HTMLElement).classList.add("drag-over");
-        }
-      });
-
-      el.addEventListener("dragleave", () => {
-        (el as HTMLElement).classList.remove("drag-over");
-      });
-
-      el.addEventListener("drop", (e) => {
-        e.preventDefault();
-        (el as HTMLElement).classList.remove("drag-over");
-        if (this._dragSrcIdx === -1 || this._dragSrcIdx === idx) return;
-        const item = this._openTabs.splice(this._dragSrcIdx, 1)[0];
-        this._openTabs.splice(idx, 0, item);
-        this.renderEditorTabs();
-      });
-    });
-
-    this._tabBar.querySelectorAll(".tab-close").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const path = (el as HTMLElement).dataset.path!;
-        this.closeEditorTab(path);
-      });
-    });
-  }
-
-  private switchEditorTab(filePath: string): void {
-    if (filePath === this._activeTabPath) return;
-    const tab = this._openTabs.find((t) => t.path === filePath);
-    if (!tab) return;
-    this._activeTabPath = filePath;
-    this._editor.setModel(tab.model);
-    this.showEditorEmpty(false);
-    this.renderEditorTabs();
-  }
-
-  private closeEditorTab(filePath: string): void {
-    const idx = this._openTabs.findIndex((t) => t.path === filePath);
-    if (idx === -1) return;
-    const tab = this._openTabs[idx];
-
-    tab.model.dispose();
-
-    /* determine next tab to show */
-    const wasActive = filePath === this._activeTabPath;
-    this._openTabs.splice(idx, 1);
-
-    if (this._openTabs.length === 0) {
-      this._activeTabPath = "";
-      this._editor.setModel(this._monaco.editor.createModel("", "plaintext"));
-      this.showEditorEmpty(true);
-    } else if (wasActive) {
-      const next = this._openTabs[Math.min(idx, this._openTabs.length - 1)];
-      this._activeTabPath = next.path;
-      this._editor.setModel(next.model);
-      this.showEditorEmpty(false);
-    }
-    this.renderEditorTabs();
-  }
-
-  private showEditorEmpty(show: boolean): void {
-    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
-    if (!panel) return;
-    const empty = panel.querySelector(".si-editor-empty") as HTMLElement;
-    const tabBar = panel.querySelector(".si-editor-code .tab-bar") as HTMLElement;
-    const container = panel.querySelector(".si-code-container") as HTMLElement;
-    if (empty) empty.style.display = show ? "flex" : "none";
-    if (tabBar) tabBar.style.display = show ? "none" : "";
-    if (container) container.style.display = show ? "none" : "flex";
-  }
-
   /* ── Tab Events ──────────────────────────────────────────────────── */
 
   private bindTabEvents(): void {
-    this.tabList.querySelectorAll(".tab-close").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const id = (btn as HTMLElement).dataset.close!;
-        this.closeTab(id);
-      });
-    });
-
-    const tabs = this.tabList.querySelectorAll(".tab.tab--fill");
-    tabs.forEach((tab, idx) => {
+    // Close button (tab-close) for sidebar tabs uses data-tab from the
+    // parent <button>. Also attach middle-click-to-close on the tab itself.
+    const closeTab = (el: HTMLElement) => {
+      const tabEl = el.closest(".tab") as HTMLElement;
+      if (!tabEl) return;
+      const id = tabEl.dataset.tab;
+      if (id) this.closeTab(id);
+    };
+    this.tabList.querySelectorAll(".tab").forEach((tab) => {
       const el = tab as HTMLElement;
+      const xBtn = el.querySelector(".tab-close");
+      if (xBtn) {
+        xBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeTab(el);
+        });
+      }
+      el.addEventListener("auxclick", (e) => {
+        if ((e as MouseEvent).button === 1) {
+          e.preventDefault();
+          closeTab(el);
+        }
+      });
 
       /* Activate on click (unless dragged) */
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".tab-close")) return;
         if (this.wasDragged) { this.wasDragged = false; return; }
         const id = el.dataset.tab!;
         if (id !== this.activeTab) this.activateTab(id);
       });
 
-      /* Middle-click to close */
-      el.addEventListener("auxclick", (e) => {
-        if (e.button === 1) {
-          e.preventDefault();
-          const id = el.dataset.tab!;
-          const tabDef = this.tabs.find((t) => t.id === id);
-          if (tabDef?.closable) this.closeTab(id);
-        }
-      });
-
-      /* Drag start (left button only) */
+      /* Drag start */
       el.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
         if ((e.target as HTMLElement).closest(".tab-close")) return;
@@ -2430,13 +2641,25 @@ export class SessionInner {
 
   public activateTab(id: string): void {
     this.activeTab = id;
-    this.tabList.querySelectorAll(".tab.tab--fill").forEach((t) => {
+    this.tabList.querySelectorAll(".tab").forEach((t) => {
       t.classList.toggle("active", (t as HTMLElement).dataset.tab === id);
     });
+    // Remove the .si-home placeholder when switching to a real tab so it
+    // doesn't remain visible underneath the .tab-panel.
+    const homeEl = this.tabBody.querySelector(".si-home");
+    if (homeEl && id !== "home") homeEl.remove();
     this.tabBody.querySelectorAll(".tab-panel").forEach((p) => {
       p.classList.toggle("active", (p as HTMLElement).dataset.panel === id);
     });
     if (id === "info") this.renderContent();
+    if (id === "review" && getState().activeWorkspace && this._reviewFilter !== "all") {
+      // Re-entering the review tab always shows "all changes", never a stale
+      // "last round" left over from a prior artifact view.
+      this._reviewFilter = "all";
+      this._reviewMode = "git";
+      this._reviewArtifact = null;
+      if (this._reviewLoad) this._reviewLoad(undefined);
+    }
   }
 
   private closeTab(id: string): void {
@@ -2458,15 +2681,11 @@ export class SessionInner {
       const dd = document.querySelector(".si-term-shell-dropdown");
       if (dd) dd.remove();
     }
-    if (id === "editor" && this._editor) {
-      this._editor.dispose();
-      this._editor = null;
-      this._editorReady = false;
-      this._monaco = null;
-      if (this._themeObserver) {
-        this._themeObserver.disconnect();
-        this._themeObserver = null;
-      }
+    if (id === "editor" && this._editorView) {
+      this._editorView.destroy();
+      this._editorView = null;
+      this._editorTabs = [];
+      this._activeEditorTab = "";
     }
     this.tabs.splice(idx, 1);
     if (this.tabs.length === 0) {
@@ -2714,11 +2933,7 @@ export class SessionInner {
         <a class="si-artifacts-link" id="si-view-all-changes" href="#">${t("sessionInner.viewAllChanges")} <i data-lucide="arrow-up-right" class="lucide lucide-xs"></i></a>
       </div>
       <div class="si-diff-list">${artifacts.map((a) => {
-        const extIcon = a.ext === "py" ? "file-code-2"
-          : a.ext === "ts" || a.ext === "tsx" || a.ext === "js" ? "file-json-2"
-          : a.ext === "html" || a.ext === "css" || a.ext === "md" ? "file-text"
-          : a.ext === "json" ? "file-json-2"
-          : "file";
+        const extIcon = getFileIcon(a.name);
         return `<div class="si-diff-file" data-path="${this.esc(a.path)}">
           <i data-lucide="${extIcon}" class="lucide lucide-sm si-diff-icon"></i>
           <span class="si-diff-name">${this.esc(a.name)}</span>

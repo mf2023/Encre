@@ -135,15 +135,6 @@ class MultimodalMixin:
     def supports_image_variation(self) -> bool:
         return True
 
-    def supports_text_to_speech(self) -> bool:
-        return True
-
-    def supports_speech_to_text(self) -> bool:
-        return True
-
-    def supports_audio_translation(self) -> bool:
-        return True
-
     def supports_embeddings(self) -> bool:
         return True
 
@@ -393,40 +384,6 @@ class MultimodalMixin:
 
     # ── Audio ────────────────────────────────────────────────────────────
 
-    async def text_to_speech(
-        self,
-        text: str,
-        model: str | None = None,
-        voice: str = "alloy",
-        response_format: str = "mp3",
-        speed: float = 1.0,
-        extra_params: dict[str, Any] | None = None,
-    ) -> AudioResult:
-        """Synthesise speech from text using the OpenAI TTS endpoint."""
-        payload: dict[str, Any] = {
-            "model": model or self.model or "tts-1",
-            "input": text,
-            "voice": voice,
-            "response_format": response_format,
-            "speed": speed,
-        }
-        if extra_params:
-            payload.update(extra_params)
-
-        client = self._get_client()
-        headers = self._build_headers()
-        url = f"{self._multimodal_base()}/audio/speech"
-        response = await client.post(
-            url, headers=headers, json=payload
-        )
-        response.raise_for_status()
-        return AudioResult(
-            audio_b64=_bytes_to_b64(response.content),
-            audio_format=response_format,
-            model=payload["model"],
-            provider=self.provider_name(),
-        )
-
     async def _transcribe_or_translate(
         self,
         path: str,
@@ -479,35 +436,6 @@ class MultimodalMixin:
             model=form["model"],
             provider=self.provider_name(),
         )
-
-    async def transcribe_audio(
-        self,
-        audio_b64: str,
-        model: str | None = None,
-        language: str | None = None,
-        response_format: str = "json",
-        temperature: float = 0.0,
-        prompt: str | None = None,
-        extra_params: dict[str, Any] | None = None,
-    ) -> AudioResult:
-        """Transcribe audio via the OpenAI Whisper endpoint."""
-        mime_type = "audio/mpeg"
-        if extra_params and isinstance(extra_params.get("mime_type"), str):
-            mime_type = extra_params["mime_type"]
-        result = await self._transcribe_or_translate(
-            "/audio/transcriptions",
-            audio_b64,
-            "audio.mp3",
-            mime_type,
-            model,
-            response_format,
-            temperature,
-            prompt,
-            extra_params,
-        )
-        if language:
-            result.language = language
-        return result
 
     async def translate_audio(
         self,

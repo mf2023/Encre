@@ -6,10 +6,7 @@
   <title>Encre</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="xterm.css" />
-  <link rel="stylesheet" href="vs/editor/editor.main.css" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script src="vs/loader.js"></script>
-  <script>require.config({ paths: { vs: './vs' } });</script>
 </head>
 <body>
   <div id="app-shell">
@@ -274,9 +271,6 @@
               <div class="input-toolbar">
                 <div class="toolbar-left">
                   <div class="toolbar-actions">
-                    <button class="btn-icon input-btn" id="btn-voice" data-i18n-title="input.voiceStart" title="Start recording">
-                      <i data-lucide="mic" class="lucide"></i>
-                    </button>
                     <div class="mention-wrap">
                       <button class="btn-icon input-btn" id="btn-mention" data-i18n-title="input.attachFiles" title="@ Attach">
                         <i data-lucide="at-sign" class="lucide"></i>
@@ -329,7 +323,16 @@
           </div>
         </div>
         <!-- Search overlay (global, outside main-content) -->
-        <div id="search-overlay" class="hidden">
+<div id="review-commit-overlay" class="hidden">
+  <div class="search-palette">
+    <div class="search-overlay-inner">
+      <i data-lucide="git-commit-horizontal" class="lucide search-overlay-icon"></i>
+      <input type="text" id="review-commit-input" class="palette-input" placeholder="Commit message" autocomplete="off" spellcheck="false" />
+      <kbd class="search-esc-hint">ESC</kbd>
+    </div>
+  </div>
+</div>
+<div id="search-overlay" class="hidden">
           <div class="search-palette">
             <div class="search-overlay-inner">
               <i data-lucide="search" class="lucide search-overlay-icon"></i>

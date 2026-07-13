@@ -33,7 +33,7 @@
 import { getState, subscribe, setActiveWorkspace, setSessionId, clearMessages, setWorkspaceMode } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
-import { t, onLocaleChange } from "./i18n.js";
+import { t, onLocaleChange, applyI18n } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { TransitionHelper } from "./transition-helper.js";
 import type { WorkspaceEntry, SessionEntryData } from "./types.js";
@@ -184,7 +184,11 @@ export class Workspace {
     this._restoreExpandedState();
     // Pre-create tree section & render content (hidden)
     this.ensureTreeSection();
+    // Reset any stale batch-mode state left over from a previous session.
+    this.batchMode = false;
+    this.selectedPaths.clear();
     this.renderTree();
+    this.updateBatchBarVisibility();
 
     // Unified slide transition:
     //   - 退出: session 分段向左滑出
@@ -289,20 +293,24 @@ export class Workspace {
     const header = document.createElement("div");
     header.className = "workspace-tree-header";
     header.innerHTML = `
+      <span class="sidebar-section-title" data-i18n="search.sectionWorkspaces">Workspaces</span>
       <div class="workspace-tree-actions">
-        <button class="btn-icon btn-sm" id="btn-open-workspace" title="${t("workspace.openFolder")}">
+        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder" title="Open Folder">
           <i data-lucide="folder-plus" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm" id="btn-ws-manage" title="${t("general.manage")}">
+        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage" title="Manage">
           <i data-lucide="sliders-horizontal" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" title="${t("session.batchSelectAll")}">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel" title="Cancel">
+          <i data-lucide="x" class="lucide"></i>
+        </button>
+        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll" title="Select All">
           <i data-lucide="check-square" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" title="${t("session.batchExport")}">
+        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport" title="Export Selected">
           <i data-lucide="download" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-delete" title="${t("general.delete")}">
+        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete" title="Delete Selected">
           <i data-lucide="trash-2" class="lucide"></i>
         </button>
       </div>`;
@@ -325,6 +333,7 @@ export class Workspace {
 
     document.getElementById("btn-open-workspace")?.addEventListener("click", () => this.openFolder());
     document.getElementById("btn-ws-manage")?.addEventListener("click", () => this.toggleBatchMode());
+    document.getElementById("btn-ws-cancel")?.addEventListener("click", () => this.exitBatchMode());
     document.getElementById("btn-ws-select-all")?.addEventListener("click", () => this.batchSelectAll());
     document.getElementById("btn-ws-export")?.addEventListener("click", () => this.batchExport());
     document.getElementById("btn-ws-delete")?.addEventListener("click", () => this.batchDelete());
@@ -332,6 +341,9 @@ export class Workspace {
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: section });
     }
+    // Translate the freshly-inserted data-i18n* nodes (the section is created
+    // lazily, after the initial applyI18n() pass at startup).
+    applyI18n();
   }
 
   private removeTreeSection(): void {
@@ -430,6 +442,11 @@ export class Workspace {
         if (!path) return;
 
         if (this.batchMode) {
+          // The chevron still expands/collapses even in batch mode.
+          if ((e.target as HTMLElement).closest(".ws-chevron")) {
+            this.toggleExpand(path);
+            return;
+          }
           const cb = (e.target as HTMLElement).closest<HTMLInputElement>(".ws-checkbox");
           if (!cb) {
             const checkbox = el.querySelector<HTMLInputElement>(".ws-checkbox");
@@ -510,44 +527,112 @@ export class Workspace {
     if (getState().workspaces.length === 0) return;
     this.batchMode = !this.batchMode;
     if (!this.batchMode) this.selectedPaths.clear();
-    // Toggle visibility of batch-mode buttons
-    const manageBtn = document.getElementById("btn-ws-manage");
-    const selectAllBtn = document.getElementById("btn-ws-select-all");
-    const exportBtn = document.getElementById("btn-ws-export");
-    const deleteBtn = document.getElementById("btn-ws-delete");
-    if (manageBtn) manageBtn.classList.toggle("hidden", this.batchMode);
-    if (selectAllBtn) selectAllBtn.classList.toggle("hidden", !this.batchMode);
-    if (exportBtn) exportBtn.classList.toggle("hidden", !this.batchMode);
-    if (deleteBtn) deleteBtn.classList.toggle("hidden", !this.batchMode);
+    this.updateBatchBarVisibility();
     this.renderTree();
   }
 
+  /** Exit batch mode without performing any bulk action (mirrors session cancel). */
+  private exitBatchMode(): void {
+    if (!this.batchMode) return;
+    this.batchMode = false;
+    this.selectedPaths.clear();
+    this.updateBatchBarVisibility();
+    this.renderTree();
+  }
+
+  /** Show/hide the batch-mode action buttons (mirrors the session batch bar). */
+  private updateBatchBarVisibility(): void {
+    const openBtn = document.getElementById("btn-open-workspace");
+    const manageBtn = document.getElementById("btn-ws-manage");
+    const cancelBtn = document.getElementById("btn-ws-cancel");
+    const selectAllBtn = document.getElementById("btn-ws-select-all");
+    const exportBtn = document.getElementById("btn-ws-export");
+    const deleteBtn = document.getElementById("btn-ws-delete");
+    // In batch mode the "add workspace" and "manage" toggles are replaced by
+    // the cancel / select-all / export / delete actions.
+    if (openBtn) openBtn.classList.toggle("hidden", this.batchMode);
+    if (manageBtn) manageBtn.classList.toggle("hidden", this.batchMode);
+    if (cancelBtn) cancelBtn.classList.toggle("hidden", !this.batchMode);
+    if (selectAllBtn) selectAllBtn.classList.toggle("hidden", !this.batchMode);
+    if (exportBtn) exportBtn.classList.toggle("hidden", !this.batchMode);
+    if (deleteBtn) deleteBtn.classList.toggle("hidden", !this.batchMode);
+  }
+
   private batchSelectAll(): void {
-    const workspaces = getState().workspaces;
-    if (this.selectedPaths.size === workspaces.length) {
+    const st = getState();
+    const allPaths = [
+      ...st.workspaces.map((w) => w.path),
+      ...st.sessionsList.map((s) => s.session_id),
+    ];
+    const allSelected = allPaths.length > 0 && allPaths.every((p) => this.selectedPaths.has(p));
+    if (allSelected) {
       this.selectedPaths.clear();
     } else {
-      for (const ws of workspaces) {
-        this.selectedPaths.add(ws.path);
-      }
+      for (const p of allPaths) this.selectedPaths.add(p);
     }
     this.renderTree();
   }
 
-  private async batchExport(): Promise<void> {
-    const paths = Array.from(this.selectedPaths);
-    if (paths.length === 0) return;
-    const wsPaths = new Set(getState().workspaces.map(w => w.path));
-    for (const p of paths) {
-      if (!wsPaths.has(p)) {
-        send({ type: "export_session", session_id: p });
+  /**
+   * Sessions whose parent workspace is also selected are covered by that
+   * workspace selection, so they must not be processed a second time.
+   */
+  private coveredSessionIds(): Set<string> {
+    const st = getState();
+    const wsPaths = new Set(st.workspaces.map(w => w.path));
+    const selectedWs = [...this.selectedPaths].filter(p => wsPaths.has(p));
+    const covered = new Set<string>();
+    if (selectedWs.length === 0) return covered;
+    for (const wsPath of selectedWs) {
+      for (const s of st.sessionsList) {
+        const owner = s.metadata?.workspace || s.metadata?.workspace_path || "";
+        if (owner === wsPath) covered.add(s.session_id);
       }
+    }
+    return covered;
+  }
+
+  private async batchExport(): Promise<void> {
+    const st = getState();
+    const wsPaths = new Set(st.workspaces.map(w => w.path));
+    const covered = this.coveredSessionIds();
+    const toExport: string[] = [];
+    // Individual sessions that are not covered by a selected workspace.
+    for (const p of this.selectedPaths) {
+      if (wsPaths.has(p)) continue;        // a workspace is not a session export
+      if (covered.has(p)) continue;        // already exported via its workspace
+      toExport.push(p);
+    }
+    // Every session that belongs to a selected workspace.
+    for (const sid of covered) toExport.push(sid);
+    if (toExport.length === 0) return;
+    for (const sid of toExport) {
+      send({ type: "export_session", session_id: sid });
     }
     this.selectedPaths.clear();
     this.toggleBatchMode();
   }
 
   private toggleSelect(path: string): void {
+    const st = getState();
+    const ws = st.workspaces.find((w) => w.path === path);
+    if (ws) {
+      // Selecting a workspace cascades to every session under it (and
+      // deselecting clears them), mirroring parent/child selection.
+      const childSids = st.sessionsList
+        .filter((s) => (s.metadata?.workspace || s.metadata?.workspace_path || "") === path)
+        .map((s) => s.session_id);
+      const willSelect = !this.selectedPaths.has(path);
+      if (willSelect) {
+        this.selectedPaths.add(path);
+        for (const sid of childSids) this.selectedPaths.add(sid);
+      } else {
+        this.selectedPaths.delete(path);
+        for (const sid of childSids) this.selectedPaths.delete(sid);
+      }
+      this.renderTree();
+      return;
+    }
     if (this.selectedPaths.has(path)) {
       this.selectedPaths.delete(path);
     } else {
@@ -556,15 +641,19 @@ export class Workspace {
   }
 
   private async batchDelete(): Promise<void> {
-    const paths = Array.from(this.selectedPaths);
-    if (paths.length === 0) return;
-    const count = paths.length;
+    const st = getState();
+    const wsPaths = new Set(st.workspaces.map(w => w.path));
+    const covered = this.coveredSessionIds();
+    const selectedWs = [...this.selectedPaths].filter(p => wsPaths.has(p));
+    const standaloneSessions = [...this.selectedPaths].filter(p => !wsPaths.has(p) && !covered.has(p));
+    const count = selectedWs.length + standaloneSessions.length;
+    if (count === 0) return;
     if (!await Dialog.confirm(t("workspace.confirmDeleteTitle", { count }), t("workspace.confirmDelete", { count }))) return;
-    const wsPaths = new Set(getState().workspaces.map(w => w.path));
-    for (const p of paths) {
+    for (const p of this.selectedPaths) {
       if (wsPaths.has(p)) {
         send({ type: "remove_workspace", path: p });
-      } else {
+      } else if (!covered.has(p)) {
+        // Sessions under a selected workspace are removed with the workspace.
         send({ type: "delete_session", session_id: p });
       }
     }
@@ -579,6 +668,17 @@ export class Workspace {
     const requestId = crypto.randomUUID();
     setRequestedSessionId("", requestId);
     send({ type: "open_workspace", path: folderPath, request_id: requestId });
+  }
+
+  /** Toggle a workspace's expansion in the tree (works in both normal and batch mode). */
+  private toggleExpand(path: string): void {
+    if (this.expandedWsPaths.has(path)) {
+      this.expandedWsPaths.delete(path);
+    } else {
+      this.expandedWsPaths.add(path);
+    }
+    this._saveExpandedState();
+    this.renderTree();
   }
 
   private activate(path: string): void {

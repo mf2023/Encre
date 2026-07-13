@@ -121,6 +121,72 @@ class EncreGitRepo:
             args.append(file_path)
         return self._run_git(args)
 
+    def get_porcelain_status(self) -> str:
+        """Return ``git status --porcelain -b`` output (branch + file entries).
+
+        ``--untracked-files=all`` expands untracked directories so every new
+        file is listed individually (``?? path/to/file``) instead of being
+        collapsed into a single ``?? dir/`` entry. The review panel skips
+        entries that end with ``/``, so without this flag newly created files
+        inside untracked directories never appear in the review tree.
+        """
+        if not self._in_repo:
+            return ""
+        return self._run_git(["git", "status", "--porcelain", "-b", "--untracked-files=all"])
+
+    def get_diff_ex(self, filter_type: str = "all", file_path: str | None = None) -> str:
+        """Return diff for a specific filter type, with untracked file support.
+
+        Args:
+            filter_type: One of "all", "unstaged", "staged", "branch", "commit".
+            file_path: Optional path to limit the diff to a single file.
+
+        Returns:
+            The unified diff text, or an empty string.
+        """
+        if not self._in_repo:
+            return ""
+        if filter_type == "staged":
+            args = ["git", "diff", "--staged", "--"]
+        elif filter_type == "branch":
+            args = ["git", "diff", "main...HEAD", "--"]
+        elif filter_type == "commit":
+            args = ["git", "diff", "HEAD~1..HEAD", "--"]
+        else:
+            # "all" reviews every uncommitted change versus HEAD (staged +
+            # unstaged). ``git diff --`` alone only shows unstaged changes,
+            # which silently drops staged mutations such as a staged deletion
+            # (``D ``) -- the file would render as an empty diff.
+            args = ["git", "diff", "HEAD", "--"]
+        if file_path:
+            args.append(file_path)
+        try:
+            output = self._run_git(args)
+        except RuntimeError:
+            output = ""
+        if not output and file_path:
+            untracked = self._get_untracked_files()
+            if file_path in untracked:
+                import os
+                full_path = os.path.join(self.workspace, file_path)
+                if os.path.isfile(full_path):
+                    try:
+                        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+                            content = f.read()
+                        from encre.git.diff import EncreGitDiff
+                        diff_body = EncreGitDiff.compute_diff(old="", new=content)
+                        return (
+                            f"diff --git a/{file_path} b/{file_path}\n"
+                            f"new file mode 100644\n"
+                            f"index 0000000..0000000\n"
+                            f"--- /dev/null\n"
+                            f"+++ b/{file_path}\n"
+                            f"{diff_body}"
+                        )
+                    except Exception:
+                        return ""
+        return output
+
     def get_diff_stats(self) -> dict[str, int]:
         """Return aggregate insertion/deletion/file counts against HEAD."""
         if not self._in_repo:
@@ -309,6 +375,13 @@ class EncreGitRepo:
             args,
             capture_output=True,
             text=True,
+            # Git emits UTF-8 (file content in diffs, non-ASCII paths). On a
+            # zh-CN Windows host the default codec is GBK, so `text=True`
+            # alone raises UnicodeDecodeError on multi-byte UTF-8 sequences
+            # (e.g. a diff touching a file with Chinese text). Force UTF-8 and
+            # replace any stray bytes instead of crashing the whole request.
+            encoding="utf-8",
+            errors="replace",
             cwd=self.workspace,
             timeout=timeout,
         )

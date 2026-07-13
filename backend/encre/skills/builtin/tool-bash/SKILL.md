@@ -8,7 +8,7 @@ context: inline
 ## When to Use
 - Build/run a project: `npm run build`, `cargo build`, `python -m pytest`, `make`
 - Start a dev server / long process: `npm run dev`
-- Install dependencies: `npm install`, `pip install`
+- Install dependencies: `bash npm install`, `bash pip install`
 - Truly custom scripts with no dedicated tool
 
 ## When NOT to Use (a dedicated tool exists -> use it; bash is the last resort)
@@ -17,7 +17,7 @@ context: inline
 - Write/replace a file -> `file_write` (no `>`/`>>`/`tee`)
 - Search contents -> `grep` (no `grep`/`rg` command)
 - Find files -> `glob` (no `ls`/`find`/`dir`)
-- Fetch a URL -> `web_fetch` (no `curl`/`wget`)
+- Fetch a URL -> `web_fetch` (no `rest_client`/`wget`)
 - Git ops -> `git` (no `git` command in bash)
 - Run tests -> `test_run` (no `pytest`/`npm test`)
 - Lint/format -> `lint_format`

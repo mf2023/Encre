@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, setPermissionPolicies, subscribe, showToast } from "./state.js";
+import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, setPermissionPolicies, subscribe, showToast, isEnabled } from "./state.js";
 import { send } from "./ws.js";
 import { waitForModelValidation, onAdapterTestResult } from "./stream.js";
 import { setModelConfigs, setMcpServers, setSkillsList, setSubAgents } from "./state.js";
@@ -1060,7 +1060,6 @@ export class Settings {
     const currentLang = getLocale();
     this.updateSidebarNav();
     const currentLinkBehavior = (s.default_link_behavior as string) || "system";
-    const currentMdBehavior = (s.default_markdown_behavior as string) || "ask";
     const currentSendMode = (s.shortcut_send_mode as string) || "enter";
     const currentStartupMode = (s.startup_session_mode as string) || "normal";
     const currentStartupBehavior = (s.startup_session_behavior as string) || "new";
@@ -1079,12 +1078,6 @@ export class Settings {
 
     const behaviorOptions: DropdownOption[] = [
       { id: "system", label: t("settings.systemBrowser") },
-      { id: "in_app", label: t("settings.inApp") },
-    ];
-
-    const mdOptions: DropdownOption[] = [
-      { id: "ask", label: t("settings.askEachTime") },
-      { id: "system", label: t("settings.systemApp") },
       { id: "in_app", label: t("settings.inApp") },
     ];
 
@@ -1174,17 +1167,7 @@ export class Settings {
             ${this.renderDropdown("dd-link", behaviorOptions, currentLinkBehavior, (v) => { this.saveSetting("default_link_behavior", v); this.renderGeneral(); })}
           </div>
         </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.markdownBehavior")}</div>
-            <div class="settings-item-desc">${t("settings.markdownBehaviorDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            ${this.renderDropdown("dd-md", mdOptions, currentMdBehavior, (v) => { this.saveSetting("default_markdown_behavior", v); this.renderGeneral(); })}
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
+          <div class="settings-item-divider"></div>
         <div class="settings-item-row">
           <div class="settings-item-info">
             <div class="settings-item-title">${t("settings.languagePreference")}</div>
@@ -1202,7 +1185,7 @@ export class Settings {
           </div>
           <div class="settings-item-control">
             <label class="toggle-switch">
-              <input type="checkbox" id="auto-expand-toggle" ${s.auto_expand === true ? "checked" : ""} />
+              <input type="checkbox" id="auto-expand-toggle" ${isEnabled(s.auto_expand) ? "checked" : ""} />
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -1215,7 +1198,7 @@ export class Settings {
           </div>
           <div class="settings-item-control">
             <label class="toggle-switch">
-              <input type="checkbox" id="sub-agent-auto-open-toggle" ${s.sub_agent_auto_open_view !== false ? "checked" : ""} />
+              <input type="checkbox" id="sub-agent-auto-open-toggle" ${s.sub_agent_auto_open_view === undefined || isEnabled(s.sub_agent_auto_open_view) ? "checked" : ""} />
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -1228,7 +1211,7 @@ export class Settings {
           </div>
           <div class="settings-item-control">
             <label class="toggle-switch">
-              <input type="checkbox" id="automation-auto-open-toggle" ${s.automation_auto_open_view === true ? "checked" : ""} />
+              <input type="checkbox" id="automation-auto-open-toggle" ${isEnabled(s.automation_auto_open_view) ? "checked" : ""} />
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -1272,7 +1255,6 @@ export class Settings {
     this.bindDropdown("dd-startup", (v) => { this.saveSetting("startup_session_mode", v); this.renderGeneral(); });
     this.bindDropdown("dd-startup-behavior", (v) => { this.saveSetting("startup_session_behavior", v); this.renderGeneral(); });
     this.bindDropdown("dd-link", (v) => { this.saveSetting("default_link_behavior", v); this.renderGeneral(); });
-    this.bindDropdown("dd-md", (v) => { this.saveSetting("default_markdown_behavior", v); this.renderGeneral(); });
     this.bindDropdown("dd-lang-pref", (v) => { this.saveSetting("language_preference", v); this.renderGeneral(); });
 
     // Auto-expand toggle
@@ -1472,7 +1454,7 @@ export class Settings {
       { id: "discord", name: "Discord", desc: "集成 Discord 机器人，管理服务器频道消息与交互", fields: [
         { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
       ], docs: "https://discord.com/developers/applications" },
-      { id: "weixin", name: "微信", desc: "接入微信公众号平台，自动回复用户消息与事件推送", fields: [
+      { id: "weixin", name: "微信", desc: "连接微信，收发消息并自动回复", fields: [
         { key: "app_id", labelKey: "fieldAppId", type: "text" },
         { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
       ], docs: "https://mp.weixin.qq.com/" },
@@ -1547,6 +1529,8 @@ export class Settings {
 
     let cardsHtml = "";
     for (const def of adapterDefs) {
+      const adapterNameKey = `settings.adapterName${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`;
+      const displayName = t(adapterNameKey);
       const enabled = !!(s[`adapter_${def.id}_enabled` as keyof typeof s]);
       const statusInfo = adapters.find(a => a.name === def.id);
       const connected = statusInfo?.connected ?? false;
@@ -1625,10 +1609,11 @@ export class Settings {
       }
 
       const iconData = PLATFORM_ICONS[def.id];
+      const isMonoIcon = def.id === "matrix" || def.id === "sms" || def.id === "webhook";
       let iconHtml: string;
       if (iconData) {
         const vb = iconData.viewBox || "0 0 24 24";
-        iconHtml = `<svg viewBox="${vb}" width="22" height="22" style="margin-right:10px;flex-shrink:0">${iconData.inner}</svg>`;
+        iconHtml = `<svg viewBox="${vb}" width="22" height="22" class="adapter-platform-icon${isMonoIcon ? " pi-mono" : ""}" style="margin-right:10px;flex-shrink:0">${iconData.inner}</svg>`;
       } else {
         const fbColors: Record<string, string> = {
           feishu: "#3370FF", dingtalk: "#0089FF", slack: "#4A154B", msgraph: "#0078D4",
@@ -1645,7 +1630,7 @@ export class Settings {
           sms: "SMS",
         };
         const c = fbColors[def.id] || "#888";
-        const fbLabel = fbText[def.id] || def.name.substring(0, 2);
+        const fbLabel = fbText[def.id] || displayName.substring(0, 2);
         iconHtml = `<div style="width:22px;height:22px;border-radius:5px;background:${c};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-right:10px;flex-shrink:0">${fbLabel}</div>`;
       }
 
@@ -1655,7 +1640,7 @@ export class Settings {
             <div class="settings-item-info">
               <div class="settings-item-title" style="display:flex;align-items:center">
                 ${iconHtml}
-                ${this.esc(def.name)}
+                 ${this.esc(displayName)}
                 <span style="margin-left:8px;font-size:11px;font-weight:400">${statusLabel}</span>
               </div>
               <div class="settings-item-desc">${descHtml}</div>
@@ -1677,11 +1662,6 @@ export class Settings {
 
     this.panels.gateway.innerHTML = `
       <div class="settings-section-title"><i data-lucide="network" class="lucide section-title-icon"></i> ${t("settings.gatewayManagement")}</div>
-      <div class="settings-card" style="margin-bottom:16px">
-        <div class="model-manage-header">
-          <div class="model-manage-desc">${t("settings.gatewayDesc")}</div>
-        </div>
-      </div>
       ${cardsHtml}`;
 
     // Bind event listeners
@@ -3047,12 +3027,6 @@ private _bindModelSelect(): void {
 
     this.panels.permissions.innerHTML = `
       <div class="settings-section-title"><i data-lucide="shield" class="lucide section-title-icon"></i> ${t("permissions.settings.title")}</div>
-      <div class="settings-card">
-        <div class="model-manage-header">
-          <div class="model-manage-desc">${t("permissions.settings.subtitle")}</div>
-        </div>
-      </div>
-
       <div class="settings-section-title"><i data-lucide="wrench" class="lucide section-title-icon"></i> ${t("permissions.settings.tools")}</div>
       <div class="settings-card">${toolsHtml}</div>
 
@@ -3552,7 +3526,7 @@ private _bindModelSelect(): void {
     if (parts.length !== 3) return iso;
     const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return d.toLocaleDateString(getLocale() === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" });
   }
 
   /**
@@ -3572,8 +3546,9 @@ private _bindModelSelect(): void {
    * the SVG total width grows with the day count so the container
    * scrolls horizontally for long histories.
    */
-  private _renderUsageHeatmap(sessions: UsageStatsSessionEntry[], muted: string): string {
+   private _renderUsageHeatmap(sessions: UsageStatsSessionEntry[], muted: string): string {
     if (!sessions || sessions.length === 0) return "";
+    const loc = getLocale() === "zh" ? "zh-CN" : "en-US";
 
     // Aggregate sessions by (day, hour) -- 24 buckets per day.
     const cellTokens: Record<string, number> = {};
@@ -3625,12 +3600,12 @@ private _bindModelSelect(): void {
       maxCell = 1;
     }
 
-    // Layout -- intentionally small.  Cell = 9px square, gap = 1px so
-    // the grid is dense but cells stay individually clickable.  Hour
-    // labels are 9px font; day labels are 9px font.  A 90-day chart is
-    // about 90 * 10 = 900px wide, 24 * 10 = 240px tall.
-    const cellW = 9, cellH = 9, cellGap = 1;
-    const cellRadius = 1.5;
+    // Layout -- small, evenly-spaced squares.  Cell = 11px square with a
+    // 3px gap so the boxes read as distinct squares (not a dense smear).
+    // Hour labels are 9px font; day labels are 9px font.  A 90-day chart
+    // is about 90 * 14 = 1260px wide (scrolls), 24 * 14 = 336px tall.
+    const cellW = 11, cellH = 11, cellGap = 3;
+    const cellRadius = 0;
     const PL = 36, PR = 6, PT = 18, PB = 18;
     // Stretch the chart to fill the container when the day count is
     // small -- otherwise 7 days of activity looks like a 100px-tall
@@ -3705,7 +3680,7 @@ private _bindModelSelect(): void {
       if (isMonthStart || (d > 0 && isWeek && d % 14 === 0)) {
         const x = PL + d * stride + cellW / 2;
         const label = isMonthStart
-          ? colDate.toLocaleDateString(undefined, { month: "short" })
+          ? colDate.toLocaleDateString(loc, { month: "short" })
           : String(colDate.getDate());
         dayLabels.push(
           `<text x="${x.toFixed(1)}" y="${(PT + 24 * (cellH + cellGap) + 10).toFixed(1)}" ` +
@@ -3753,11 +3728,11 @@ private _bindModelSelect(): void {
     }
 
     // Legend row at the bottom -- "Less" ... ramp swatches ... "More".
-    const legendCellSize = 9;
-    const legendGap = 1;
+    const legendCellSize = 11;
+    const legendGap = 3;
     const legendW = ramp.length * legendCellSize + (ramp.length - 1) * legendGap;
     const legendRects = ramp.map((c, i) =>
-      `<rect x="${i * (legendCellSize + legendGap)}" y="0" width="${legendCellSize}" height="${legendCellSize}" rx="1" ry="1" ` +
+      `<rect x="${i * (legendCellSize + legendGap)}" y="0" width="${legendCellSize}" height="${legendCellSize}" rx="0" ry="0" ` +
       `fill="${c}" stroke="var(--border-border-neutral-l1, rgba(224,226,242,0.18))" stroke-width="0.4"/>`
     ).join("");
 
@@ -4054,13 +4029,13 @@ private _bindModelSelect(): void {
       </div>
 
       <div class="about-info-card">
-        <div class="about-info-row" data-key="version" data-version="desktop">
-          <span class="about-info-label">Encre Desktop</span>
-          <span class="about-info-value">v${dv}</span>
-        </div>
         <div class="about-info-row" data-key="version" data-version="agent">
           <span class="about-info-label">Encre Agent</span>
           <span class="about-info-value">v${av}</span>
+        </div>
+        <div class="about-info-row" data-key="version" data-version="desktop">
+          <span class="about-info-label">Encre Desktop</span>
+          <span class="about-info-value">v${dv}</span>
         </div>
 
       </div>
@@ -4107,7 +4082,9 @@ private _bindModelSelect(): void {
             "contact": "mailto:dunimd@outlook.com",
           };
           const url = urlMap[link];
-          if (behavior === "system") {
+          if (url && url.startsWith("mailto:")) {
+            window.electronAPI?.openExternal(url);
+          } else if (behavior === "system") {
             if (url) {
               window.electronAPI?.openExternal(url);
             } else {

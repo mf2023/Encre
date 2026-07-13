@@ -34,7 +34,9 @@ _GENERAL_SETTINGS_KEYS = frozenset({
     "shortcut_send_mode",
     "language",
     "default_link_behavior",
-    "default_markdown_behavior",
+    "auto_expand",
+    "sub_agent_auto_open_view",
+    "automation_auto_open_view",
     "startup_session_mode",
     "startup_session_behavior",
 })

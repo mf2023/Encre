@@ -1,0 +1,425 @@
+/**
+ * Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+ *
+ * Shared unified-diff renderer.
+ *
+ * Used by three call sites so a diff looks identical everywhere:
+ *   - chat tool cards (file_write / file_edit / apply_patch results)
+ *   - review panel, git mode   (raw `git diff` output)
+ *   - review panel, artifact mode (artifact diff_text)
+ *
+ * Handles standard `git diff` output (with `diff --git` / `+++` / `@@`
+ * headers) as well as header-less diffs produced by the native `compute_diff`
+ * (e.g. new-file artifacts whose body is all `+` lines with no `@@` hunk
+ * header). The hunk activates on the first content line, so diffs without a
+ * `@@` header still render instead of collapsing to `+0 -0`.
+ *
+ * Optional rendering modes (passed via DiffRenderOptions):
+ *   - maxLines:       truncate huge diffs after N content lines
+ *   - richText:       summary-card view instead of per-line diff
+ *   - wordDiff:       inline <del>/<ins> word-level highlighting
+ *   - hideWhitespace: dim whitespace-only change lines
+ */
+
+import { getFileIcon } from "./files.js";
+import { t } from "./i18n.js";
+
+const MAX_RENDER_LINES = 4000;
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** True for git diff meta/header lines that carry no diff body content. */
+function isDiffMetaLine(line: string): boolean {
+  return (
+    line.startsWith("diff --git") ||
+    line.startsWith("--- ") ||
+    line.startsWith("index ") ||
+    line.startsWith("old mode ") ||
+    line.startsWith("new mode ") ||
+    line.startsWith("new file mode ") ||
+    line.startsWith("deleted file mode ") ||
+    line.startsWith("similarity index ") ||
+    line.startsWith("dissimilarity index ") ||
+    line.startsWith("rename from ") ||
+    line.startsWith("rename to ") ||
+    line.startsWith("copy from ") ||
+    line.startsWith("copy to ") ||
+    line.startsWith("Binary files ") ||
+    line.startsWith("GIT binary patch")
+  );
+}
+
+/** A parsed logical diff line (after stripping the +/-/ space prefix). */
+interface DiffLine {
+  kind: "add" | "del" | "ctx" | "hunk" | "meta";
+  text: string;
+  ln: number;    // new-file line number for add/ctx lines
+  oldLn: number; // old-file line number for del/ctx lines (split view)
+}
+
+/** Parse raw unified-diff text into logical lines + file metadata. */
+function parseDiff(diffText: string): {
+  fileName: string;
+  lines: DiffLine[];
+} {
+  const lines = diffText.split("\n");
+  let fileName = "";
+  const out: DiffLine[] = [];
+  let newLn = 0;
+  let oldLn = 0;
+  let inHunk = false;
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\t/g, "    ");
+    if (line.startsWith("+++ ")) {
+      if (!line.startsWith("+++ /dev/null")) {
+        const m = line.match(/^\+\+\+ (?:[ab]\/)?(.+)$/);
+        if (m) fileName = m[1];
+      }
+    } else if (line.startsWith("--- ")) {
+      if (!fileName) {
+        const m = line.match(/^--- (?:[ab]\/)?(.+)$/);
+        if (m && m[1] !== "/dev/null") fileName = m[1];
+      }
+    } else if (isDiffMetaLine(line)) {
+      continue;
+    } else if (line.startsWith("@@")) {
+      inHunk = true;
+      // Capture both old (-) and new (+) start line numbers.
+      const m = line.match(/@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?/);
+      newLn = m ? parseInt(m[2], 10) - 1 : 0;
+      oldLn = m ? parseInt(m[1], 10) - 1 : 0;
+      out.push({ kind: "hunk", text: line, ln: 0, oldLn: 0 });
+    } else if (line.startsWith("+")) {
+      inHunk = true;
+      newLn++;
+      out.push({ kind: "add", text: line.slice(1), ln: newLn, oldLn: 0 });
+    } else if (line.startsWith("-")) {
+      inHunk = true;
+      oldLn++;
+      out.push({ kind: "del", text: line.slice(1), ln: 0, oldLn });
+    } else if (inHunk) {
+      newLn++;
+      oldLn++;
+      const text = line.startsWith(" ") ? line.slice(1) : line;
+      out.push({ kind: "ctx", text, ln: newLn, oldLn });
+    }
+  }
+  return { fileName, lines: out };
+}
+
+/** Split a line into word tokens (runs of non-space + whitespace kept). */
+function tokenize(text: string): string[] {
+  return text.match(/(\s+|\S+)/g) || [];
+}
+
+/** LCS-based word diff between two lines -> [{op:'eq'|'del'|'add', tok}]. */
+function wordDiff(oldText: string, newText: string): Array<{ op: "eq" | "del" | "add"; tok: string }> {
+  const a = tokenize(oldText);
+  const b = tokenize(newText);
+  const n = a.length;
+  const m = b.length;
+  // dp[i][j] = LCS length of a[i..] and b[j..]
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const result: Array<{ op: "eq" | "del" | "add"; tok: string }> = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      result.push({ op: "eq", tok: a[i] });
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      result.push({ op: "del", tok: a[i] });
+      i++;
+    } else {
+      result.push({ op: "add", tok: b[j] });
+      j++;
+    }
+  }
+  while (i < n) result.push({ op: "del", tok: a[i++] });
+  while (j < m) result.push({ op: "add", tok: b[j++] });
+  return result;
+}
+
+/** Render a token list as HTML with <del>/<ins> for word-diff. */
+function renderTokens(tokens: Array<{ op: "eq" | "del" | "add"; tok: string }>): string {
+  let html = "";
+  for (const t of tokens) {
+    if (t.op === "eq") {
+      html += escapeHtml(t.tok);
+    } else if (t.op === "del") {
+      html += `<del>${escapeHtml(t.tok)}</del>`;
+    } else {
+      html += `<ins>${escapeHtml(t.tok)}</ins>`;
+    }
+  }
+  return html || " ";
+}
+
+/** True when a line's content is all whitespace. */
+function isWhitespaceOnly(text: string): boolean {
+  return text.trim() === "";
+}
+
+export interface DiffRenderOptions {
+  fileNameFallback?: string;
+  /** Truncate after this many content lines (default MAX_RENDER_LINES). */
+  maxLines?: number;
+  /** Rich-text summary card view instead of per-line diff. */
+  richText?: boolean;
+  /** Inline word-level <del>/<ins> highlighting. */
+  wordDiff?: boolean;
+  /** Dim lines whose change is whitespace-only. */
+  hideWhitespace?: boolean;
+  /** Split (two-column) view: old on the left, new on the right. */
+  splitView?: boolean;
+  /** Optional formatter for the truncated-line notice. */
+  truncatedNotice?: (hidden: number) => string;
+}
+
+/**
+ * Render a unified diff as HTML.
+ *
+ * Accepts either an options object or (for backward compatibility) a plain
+ * string used as fileNameFallback.
+ *
+ * @returns A `<div class="diff-container">…</div>` string, or `""` for empty
+ *   input so callers can render their own empty state.
+ */
+export function renderDiffHtml(
+  diffText: string,
+  optsOrFallback?: DiffRenderOptions | string,
+): string {
+  if (!diffText.trim()) return "";
+
+  const opts: DiffRenderOptions = typeof optsOrFallback === "string"
+    ? { fileNameFallback: optsOrFallback }
+    : (optsOrFallback ?? {});
+
+  const maxLines = opts.maxLines ?? MAX_RENDER_LINES;
+  const { fileName, lines } = parseDiff(diffText);
+  const fileLabel = fileName || opts.fileNameFallback || "";
+
+  const adds = lines.filter((l) => l.kind === "add").length;
+  const dels = lines.filter((l) => l.kind === "del").length;
+
+  // Rich-text summary view: no per-line table.
+  if (opts.richText) {
+    return renderRichText(fileLabel, lines, adds, dels);
+  }
+
+  // Split view: two-column (old | new) layout.
+  if (opts.splitView) {
+    return renderSplitView(fileLabel, lines, adds, dels, opts);
+  }
+
+  // Truncate content lines (add/del/ctx) beyond maxLines; hunk headers always kept.
+  let contentCount = 0;
+  let truncated = 0;
+  const bodyRows: string[] = [];
+  for (const dl of lines) {
+    if (dl.kind === "add" || dl.kind === "del" || dl.kind === "ctx") {
+      if (contentCount >= maxLines) {
+        truncated++;
+        continue;
+      }
+      contentCount++;
+    }
+    bodyRows.push(renderRow(dl, opts));
+  }
+  if (truncated > 0) {
+    const notice = opts.truncatedNotice
+      ? opts.truncatedNotice(truncated)
+      : `... [diff truncated, ${truncated} more lines]`;
+    bodyRows.push(`<div class="diff-row diff-row-truncated"><span class="diff-ln">&nbsp;</span><span class="diff-content">${escapeHtml(notice)}</span></div>`);
+  }
+
+  return `<div class="diff-container">
+      <div class="diff-header">
+        <span class="diff-file-icon"><i data-lucide="${getFileIcon(fileLabel)}" class="lucide lucide-xs" style="width:14px;height:14px"></i></span>
+        <span class="diff-file-name">${escapeHtml(fileLabel)}</span>
+        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
+      </div>
+      <div class="diff-body">${bodyRows.join("")}</div>
+    </div>`;
+}
+
+/** Render one logical diff line as an HTML row. */
+function renderRow(dl: DiffLine, opts: DiffRenderOptions): string {
+  if (dl.kind === "hunk") {
+    return `<div class="diff-row"><span class="diff-ln">&nbsp;</span><span class="diff-content"><span style="color:var(--text-tertiary)">${escapeHtml(dl.text)}</span></span></div>`;
+  }
+  const wsOnly = opts.hideWhitespace && isWhitespaceOnly(dl.text);
+  const wsClass = wsOnly ? " diff-row-ws-only" : "";
+  if (dl.kind === "add") {
+    let content: string;
+    if (opts.wordDiff) {
+      // Pair with the nearest preceding del line happens at block level;
+      // for a standalone add, just highlight the whole line as added.
+      content = `<ins>${escapeHtml(dl.text)}</ins>`;
+    } else {
+      content = escapeHtml(dl.text) || " ";
+    }
+    return `<div class="diff-row diff-row-add${wsClass}"><span class="diff-ln">${dl.ln}</span><span class="diff-content">${content}</span></div>`;
+  }
+  if (dl.kind === "del") {
+    const content = opts.wordDiff
+      ? `<del>${escapeHtml(dl.text)}</del>`
+      : (escapeHtml(dl.text) || " ");
+    return `<div class="diff-row diff-row-del${wsClass}"><span class="diff-ln">&nbsp;</span><span class="diff-content">${content}</span></div>`;
+  }
+  // context
+  return `<div class="diff-row${wsClass}"><span class="diff-ln">${dl.ln}</span><span class="diff-content">${escapeHtml(dl.text) || " "}</span></div>`;
+}
+
+/**
+ * For word-diff, re-render adjacent del+add block pairs with inline
+ * token-level <del>/<ins>. This post-processes the parsed lines so paired
+ * changes show what words actually moved, not whole-line highlights.
+ */
+export function renderDiffHtmlWordDiff(
+  diffText: string,
+  opts?: Omit<DiffRenderOptions, "wordDiff">,
+): string {
+  return renderDiffHtml(diffText, { ...opts, wordDiff: true });
+}
+
+/** Rich-text summary card: file header + per-hunk add/del preview. */
+function renderRichText(
+  fileLabel: string,
+  lines: DiffLine[],
+  adds: number,
+  dels: number,
+): string {
+  // Collect a short preview: first 3 added and first 3 deleted lines.
+  const addedPreview = lines.filter((l) => l.kind === "add").slice(0, 3);
+  const delPreview = lines.filter((l) => l.kind === "del").slice(0, 3);
+
+  const previewRow = (dl: DiffLine, cls: string) =>
+    `<div class="rt-preview-line ${cls}">${escapeHtml(dl.text.slice(0, 120)) || " "}</div>`;
+
+  const total = adds + dels;
+  const addPct = total > 0 ? Math.round((adds / total) * 100) : 0;
+
+  return `<div class="diff-container diff-rich-text">
+      <div class="diff-header">
+        <span class="diff-file-icon"><i data-lucide="${getFileIcon(fileLabel)}" class="lucide lucide-xs" style="width:14px;height:14px"></i></span>
+        <span class="diff-file-name">${escapeHtml(fileLabel)}</span>
+        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
+      </div>
+      <div class="rt-body">
+        <div class="rt-stat-row">
+          <span class="rt-stat-add">+${adds} ${escapeHtml(t("sessionInner.reviewRtAdded"))}</span>
+          <span class="rt-stat-del">-${dels} ${escapeHtml(t("sessionInner.reviewRtDeleted"))}</span>
+          <span class="rt-stat-pct">${escapeHtml(t("sessionInner.reviewRtAddPct", { n: addPct }))}</span>
+        </div>
+        ${addedPreview.length ? `<div class="rt-section"><div class="rt-section-title">${escapeHtml(t("sessionInner.reviewRtAddPreview"))}</div>${addedPreview.map((l) => previewRow(l, "rt-add")).join("")}</div>` : ""}
+        ${delPreview.length ? `<div class="rt-section"><div class="rt-section-title">${escapeHtml(t("sessionInner.reviewRtDelPreview"))}</div>${delPreview.map((l) => previewRow(l, "rt-del")).join("")}</div>` : ""}
+      </div>
+    </div>`;
+}
+
+/**
+ * Split (two-column) view: old file on the left, new file on the right.
+ * Within each hunk, deleted lines fill the left column, added lines the
+ * right, and context lines appear in both. Removed/added lines leave the
+ * opposite column blank so the two sides stay aligned row-for-row.
+ */
+function renderSplitView(
+  fileLabel: string,
+  lines: DiffLine[],
+  adds: number,
+  dels: number,
+  opts: DiffRenderOptions,
+): string {
+  type Cell = { ln: number; text: string; cls: string } | null;
+  const maxLines = opts.maxLines ?? MAX_RENDER_LINES;
+  let contentCount = 0;
+  let truncated = 0;
+
+  const rows: string[] = [];
+  // Buffer pending dels/adds so a run of deletes followed by a run of adds
+  // pair up top-to-bottom (del-side left, add-side right) instead of stacking.
+  let delQueue: DiffLine[] = [];
+  let addQueue: DiffLine[] = [];
+
+  const flushPair = () => {
+    const n = Math.max(delQueue.length, addQueue.length);
+    for (let i = 0; i < n; i++) {
+      if (contentCount >= maxLines) { truncated++; continue; }
+      contentCount++;
+      const d = delQueue[i];
+      const a = addQueue[i];
+      const left: Cell = d
+        ? { ln: d.oldLn, text: d.text, cls: "diff-row-del" }
+        : null;
+      const right: Cell = a
+        ? { ln: a.ln, text: a.text, cls: "diff-row-add" }
+        : null;
+      rows.push(splitRowHtml(left, right));
+    }
+    delQueue = [];
+    addQueue = [];
+  };
+
+  const cellHtml = (c: Cell): string => {
+    if (!c) return `<span class="diff-ln">&nbsp;</span><span class="diff-content diff-cell-empty">&nbsp;</span>`;
+    return `<span class="diff-ln">${c.ln || "&nbsp;"}</span><span class="diff-content ${c.cls}">${escapeHtml(c.text) || " "}</span>`;
+  };
+
+  function splitRowHtml(left: Cell, right: Cell): string {
+    return `<div class="diff-row diff-row-split"><div class="diff-split-side">${cellHtml(left)}</div><div class="diff-split-side">${cellHtml(right)}</div></div>`;
+  }
+
+  for (const dl of lines) {
+    if (dl.kind === "hunk") {
+      flushPair();
+      rows.push(`<div class="diff-row diff-row-split diff-row-hunk"><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content"><span style="color:var(--text-tertiary)">${escapeHtml(dl.text)}</span></span></div><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div></div>`);
+      continue;
+    }
+    if (contentCount >= maxLines) {
+      if (dl.kind !== "ctx") { truncated++; }
+      continue;
+    }
+    if (dl.kind === "del") {
+      delQueue.push(dl);
+    } else if (dl.kind === "add") {
+      addQueue.push(dl);
+    } else {
+      // ctx: flush pending changes, then render a paired context row.
+      flushPair();
+      contentCount++;
+      const cell: Cell = { ln: dl.ln, text: dl.text, cls: "" };
+      rows.push(splitRowHtml(cell, cell));
+    }
+  }
+  flushPair();
+
+  if (truncated > 0) {
+    const notice = opts.truncatedNotice
+      ? opts.truncatedNotice(truncated)
+      : `... [diff truncated, ${truncated} more lines]`;
+    rows.push(`<div class="diff-row diff-row-split diff-row-truncated"><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content">${escapeHtml(notice)}</span></div><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div></div>`);
+  }
+
+  return `<div class="diff-container diff-split">
+      <div class="diff-header">
+        <span class="diff-file-icon"><i data-lucide="${getFileIcon(fileLabel)}" class="lucide lucide-xs" style="width:14px;height:14px"></i></span>
+        <span class="diff-file-name">${escapeHtml(fileLabel)}</span>
+        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
+      </div>
+      <div class="diff-body">${rows.join("")}</div>
+    </div>`;
+}

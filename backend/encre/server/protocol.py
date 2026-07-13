@@ -124,7 +124,6 @@ ClientMessageType = Literal[
     "retry",
     "switch_branch",
     "rollback",
-    "transcribe_audio",
     "get_usage_stats",
     "automation_list_jobs",
     "automation_create_job",
@@ -1094,21 +1093,6 @@ class ClientGetUsageStats:
 
 
 @dataclass
-class ClientTranscribeAudio:
-    type: str = "transcribe_audio"
-    audio_data: str = ""
-    format: str = "webm"
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ClientTranscribeAudio":
-        return cls(
-            type="transcribe_audio",
-            audio_data=d.get("audio_data", ""),
-            format=d.get("format", "webm"),
-        )
-
-
-@dataclass
 class ClientAutomationListJobs:
     type: str = "automation_list_jobs"
 
@@ -1277,7 +1261,6 @@ ClientMessage = (
     | ClientRetry
     | ClientSwitchBranch
     | ClientRollbackBranch
-    | ClientTranscribeAudio
     | ClientGetUsageStats
     | ClientTestAdapter
     | ClientIclawResume
@@ -1378,7 +1361,6 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "retry": ClientRetry,
         "switch_branch": ClientSwitchBranch,
         "rollback": ClientRollbackBranch,
-        "transcribe_audio": ClientTranscribeAudio,
         "get_usage_stats": ClientGetUsageStats,
         "automation_list_jobs": ClientAutomationListJobs,
         "automation_create_job": ClientAutomationCreateJob,
@@ -1463,7 +1445,6 @@ ServerMessageType = Literal[
     "branch_switched",
     "branch_rolled_back",
     "branch_updated",
-    "transcription_result",
     "usage_stats",
     "automation_jobs_list",
     "automation_job_created",

@@ -1817,6 +1817,12 @@ class EncreWSHandler:
                     if mem_dir.is_dir():
                         for fpath in sorted(mem_dir.glob("*.md"), key=lambda p:
                             p.stat().st_mtime, reverse=True):
+                            # Hide the internal profile file (_profile.md) from
+                            # the settings UI. It is still loaded by the system;
+                            # just not shown. Match by the fixed filename so
+                            # other files starting with "_" or "." are unaffected.
+                            if fpath.name == "_profile.md":
+                                continue
                             try:
                                 raw = fpath.read_text("utf-8")
                                 # Decrypt memory files (all encrypted by default)
@@ -2419,7 +2425,11 @@ class EncreWSHandler:
                     self._info = info
                     self._current_session_id = sid
                     sess = info.agent.session
-                    removed = sess.rollback_to(msg.branch_id, msg.message_id)
+                    removed, target_branch_id = sess.rollback_to(msg.branch_id, msg.message_id)
+                    if not removed and target_branch_id == msg.branch_id:
+                        await self._send(ws, "error", message="Message not found", code="rollback_error",
+                                         session_id=sid)
+                        continue
                     # rollback_to keeps the target message but the frontend
                     # removes it locally (its content goes into the input box
                     # for re-editing).  Remove it here too so that a page
@@ -2427,7 +2437,7 @@ class EncreWSHandler:
                     sess.messages = [
                         m for m in sess.messages
                         if not (
-                            m.get("branch_id") == msg.branch_id
+                            m.get("branch_id") == target_branch_id
                             and (
                                 m.get("id", "").endswith(":M:" + msg.message_id)
                                 or m.get("id") == msg.message_id

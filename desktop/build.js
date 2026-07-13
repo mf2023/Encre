@@ -70,14 +70,6 @@ esbuild.buildSync({
   jsxImportSource: "react",
 });
 
-// Copy Monaco Editor files
-const monacoSrc = path.join(desktop, "node_modules", "monaco-editor", "min", "vs");
-const monacoDst = path.join(desktop, "renderer", "vs");
-if (fs.existsSync(monacoSrc)) {
-  copyRecursive(monacoSrc, monacoDst);
-  console.log("Monaco Editor files copied.");
-}
-
 // Copy xterm CSS
 const xtermCssSrc = path.join(desktop, "node_modules", "@xterm", "xterm", "css", "xterm.css");
 const xtermCssDst = path.join(desktop, "renderer", "xterm.css");

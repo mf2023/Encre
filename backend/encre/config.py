@@ -289,7 +289,9 @@ class EncreConfig:
     language: str = "zh"
     language_preference: str = "auto"
     default_link_behavior: str = "ask"
-    default_markdown_behavior: str = "ask"
+    auto_expand: bool = True
+    sub_agent_auto_open_view: bool = True
+    automation_auto_open_view: bool = False
     shortcut_send_mode: str = "enter"
     startup_session_mode: str = "normal"
     startup_session_behavior: str = "new"
