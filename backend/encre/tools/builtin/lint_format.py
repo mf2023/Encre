@@ -145,12 +145,9 @@ def _detect_toolchain(workspace: str, hint: str | None) -> str:
             return "eslint"
     if (ws / "pyproject.toml").exists() or (ws / "setup.cfg").exists() or (ws / "requirements.txt").exists():
         return "ruff"
-    # Fallback based on file extensions
-    py_files = list(ws.rglob("*.py"))
-    if py_files:
+    if next(ws.rglob("*.py"), None):
         return "ruff"
-    js_files = list(ws.rglob("*.js")) + list(ws.rglob("*.ts"))
-    if js_files:
+    if next(ws.rglob("*.js"), None) or next(ws.rglob("*.ts"), None):
         return "eslint"
     return "ruff"
 
@@ -203,9 +200,9 @@ async def _run_ruff(workspace: str, paths: list[str], mode: str, timeout: float)
     if mode == "format":
         cmd: list[str] = [sys.executable, "-m", "ruff", "format"]
     elif mode == "fix":
-        cmd = [sys.executable, "-m", "ruff", "check", "--fix", "--output-format=concise"]
+        cmd = [sys.executable, "-m", "ruff", "check", "--fix", "--output-format=json"]
     else:
-        cmd = [sys.executable, "-m", "ruff", "check", "--output-format=concise"]
+        cmd = [sys.executable, "-m", "ruff", "check", "--output-format=json"]
     if paths:
         cmd.extend(paths)
     t0 = time.time()
@@ -215,11 +212,8 @@ async def _run_ruff(workspace: str, paths: list[str], mode: str, timeout: float)
                         raw_output=(out + "\n" + err).strip())
     diagnostics: list[LintDiagnostic] = []
     fixed_files: set[str] = set()
-    # ruff output formats we handle:
-    # - JSON: --output-format=json
-    # - Concise: ``path:line:col: CODE message``
     if mode in ("fix", "check"):
-        json_payload = await _try_ruff_json(workspace, paths, timeout)
+        json_payload = _parse_ruff_json(out)
         if json_payload:
             for entry in json_payload:
                 loc = entry.get("location") or {}
@@ -262,19 +256,10 @@ async def _run_ruff(workspace: str, paths: list[str], mode: str, timeout: float)
     return report
 
 
-async def _try_ruff_json(workspace: str, paths: list[str], timeout: float) -> list[dict[str, Any]]:
-    """Try to obtain a JSON payload from ``ruff check --output-format=json``."""
-    cmd: list[str] = [sys.executable, "-m", "ruff", "check", "--output-format=json"]
-    if paths:
-        cmd.extend(paths)
+def _parse_ruff_json(output: str) -> list[dict[str, Any]]:
+    """Parse ruff's JSON output from a string."""
     try:
-        code, out, _err = await _exec(cmd, workspace, timeout)
-    except Exception:
-        return []
-    if code > 1:
-        return []
-    try:
-        payload = json.loads(out)
+        payload = json.loads(output)
     except json.JSONDecodeError:
         return []
     return payload if isinstance(payload, list) else []
@@ -431,7 +416,7 @@ async def _run_cargo(workspace: str, paths: list[str], mode: str, timeout: float
                     file=str(file_name),
                     line=int(primary.get("line_start") or 0),
                     column=int(primary.get("column_start") or 0),
-                    code=str(message.get("code") or {}).get("code", "") if isinstance(message.get("code"), dict) else "",
+                    code=str((message.get("code") or {}).get("code", "")),
                     severity=severity_kind,
                     message=str(message.get("message") or "").strip(),
                     fixed=False,
@@ -502,7 +487,10 @@ async def _lint_format_execute(**kwargs: Any) -> str:
     if not isinstance(raw_paths, list):
         raw_paths = []
 
-    max_duration = float(kwargs.get("max_duration") or kwargs.get("timeout") or 120.0)
+    try:
+        max_duration = float(kwargs.get("max_duration") or kwargs.get("timeout") or 120.0)
+    except (TypeError, ValueError):
+        max_duration = 120.0
     if max_duration <= 0:
         max_duration = 120.0
 

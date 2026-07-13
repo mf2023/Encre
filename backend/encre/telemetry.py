@@ -35,6 +35,69 @@ from encre.logging_config import get_logger
 logger = get_logger("encre.telemetry")
 
 
+# Per-1K-token USD pricing (input, output) for cost tracking.  Unknown
+# models default to zero cost; ``_compute_cost_usd`` prefix-matches the
+# model name so dated snapshots (``claude-sonnet-4-6-20250929``) and
+# provider-qualified names (``anthropic/claude-sonnet-4``) resolve to the
+# base entry.  Prices are approximate public list prices as of mid-2025;
+# update via this table when a provider changes pricing.
+PRICING_TABLE: dict[str, tuple[float, float]] = {
+    # Anthropic Claude (USD per 1K tokens: input, output)
+    "claude-opus-4":        (0.015, 0.075),
+    "claude-sonnet-4":      (0.003, 0.015),
+    "claude-haiku-4":       (0.0008, 0.004),
+    "claude-3-5-sonnet":    (0.003, 0.015),
+    "claude-3-5-haiku":     (0.0008, 0.004),
+    "claude-3-opus":        (0.015, 0.075),
+    "claude-3-haiku":       (0.00025, 0.00125),
+    # OpenAI
+    "gpt-4o":               (0.0025, 0.010),
+    "gpt-4o-mini":          (0.00015, 0.0006),
+    "gpt-4-turbo":          (0.010, 0.030),
+    "gpt-4":                (0.030, 0.060),
+    "gpt-3.5-turbo":        (0.0005, 0.0015),
+    "o1":                   (0.015, 0.060),
+    "o1-mini":              (0.003, 0.012),
+    # DeepSeek
+    "deepseek-chat":        (0.00014, 0.00028),
+    "deepseek-reasoner":    (0.00055, 0.00219),
+    # Google Gemini
+    "gemini-1.5-pro":       (0.00125, 0.005),
+    "gemini-1.5-flash":     (0.000075, 0.0003),
+    "gemini-2.0-flash":     (0.0001, 0.0004),
+    # Groq / Meta open models (cheap)
+    "llama-3.1-405b":       (0.00059, 0.00079),
+    "llama-3.1-70b":        (0.00059, 0.00079),
+    "llama-3.3-70b":        (0.00059, 0.00079),
+}
+
+
+def _compute_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Return the USD cost for *model*'s token usage, 0.0 if unpriced.
+
+    Prefix-matches the (lowercased) model name against ``PRICING_TABLE``,
+    preferring the longest key match so ``claude-sonnet-4-6-20250929``
+    resolves to ``claude-sonnet-4`` rather than a shorter accidental
+    prefix.  Falls back to substring matching so provider-qualified names
+    like ``anthropic/claude-sonnet-4`` still resolve.
+    """
+    if not model or not PRICING_TABLE:
+        return 0.0
+    m = model.lower().strip()
+    best_key = ""
+    for key in PRICING_TABLE:
+        if m.startswith(key) and len(key) > len(best_key):
+            best_key = key
+    if not best_key:
+        for key in PRICING_TABLE:
+            if key in m and len(key) > len(best_key):
+                best_key = key
+    if not best_key:
+        return 0.0
+    in_price, out_price = PRICING_TABLE[best_key]
+    return (input_tokens / 1000.0) * in_price + (output_tokens / 1000.0) * out_price
+
+
 @dataclass
 class ToolCallRecord:
     tool_name: str
@@ -67,14 +130,16 @@ class RetryRecord:
 
 
 class EncreTelemetry:
-    def __init__(self, enabled: bool = True, session_id: str = "") -> None:
+    def __init__(self, enabled: bool = True, session_id: str = "", parent_session_id: str = "") -> None:
         self.enabled = enabled
         self.session_id = session_id or str(int(time.time() * 1000))
+        self.parent_session_id = parent_session_id
         self.tool_calls: list[ToolCallRecord] = []
         self.turns: list[TurnRecord] = []
         self.retries: list[RetryRecord] = []
         self._session_started_at: float = time.time()
         self._output_dir: str = ""
+        self._session_cost_usd: float = 0.0  # restored from JSONL on resume
 
     def _ensure_output(self) -> None:
         if self._output_dir:
@@ -120,6 +185,7 @@ class EncreTelemetry:
         entry = {
             "event": "tool_call",
             "session_id": self.session_id,
+            "parent_session_id": self.parent_session_id or None,
             "timestamp": record.timestamp,
             "tool_name": record.tool_name,
             "latency_ms": record.latency_ms,
@@ -142,18 +208,25 @@ class EncreTelemetry:
     ) -> None:
         if not self.enabled:
             return
+        token_usage = token_usage or {}
         record = TurnRecord(
             turn_number=turn_number,
             event_count=event_count,
             latency_ms=latency_ms,
             compact_triggered=compact_triggered,
-            token_usage=token_usage or {},
+            token_usage=token_usage,
             model=model,
         )
         self.turns.append(record)
+        # Cost tracking: price this turn's tokens against the model.
+        inp = token_usage.get("input_tokens", token_usage.get("prompt_tokens", 0)) or 0
+        out = token_usage.get("output_tokens", token_usage.get("completion_tokens", 0)) or 0
+        cost = _compute_cost_usd(model, inp, out)
+        self._session_cost_usd += cost
         entry = {
             "event": "turn",
             "session_id": self.session_id,
+            "parent_session_id": self.parent_session_id or None,
             "timestamp": record.timestamp,
             "turn_number": record.turn_number,
             "event_count": record.event_count,
@@ -161,10 +234,11 @@ class EncreTelemetry:
             "compact_triggered": record.compact_triggered,
             "token_usage": record.token_usage,
             "model": record.model,
+            "cost_usd": round(cost, 6),
         }
         logger.debug(json.dumps(entry, ensure_ascii=False))
         self._write_jsonl(entry)
-        self._update_cumulative_from_turn(token_usage)
+        self._update_cumulative_from_turn(token_usage, model, cost)
 
     def record_retry(
         self,
@@ -230,11 +304,12 @@ class EncreTelemetry:
             "tool_usage": tool_usage,
             "total_retries": total_retries,
             "retry_by_error": retry_by_type,
+            "session_cost_usd": round(self._session_cost_usd, 6),
         }
 
     def flush(self) -> dict[str, Any]:
         summary = self.get_summary()
-        entry = {"event": "session_summary", "session_id": self.session_id, **summary}
+        entry = {"event": "session_summary", "session_id": self.session_id, "parent_session_id": self.parent_session_id or None, **summary}
         logger.debug(json.dumps(entry, ensure_ascii=False))
         self._write_jsonl(entry)
         return summary
@@ -244,6 +319,55 @@ class EncreTelemetry:
         self.turns.clear()
         self.retries.clear()
         self._session_started_at = time.time()
+        self._session_cost_usd = 0.0
+
+    def restore_session_cost_from_jsonl(self) -> float:
+        """Recompute this session's cumulative cost from its JSONL log.
+
+        Called when a session is resumed so ``get_summary()`` reflects the
+        full session cost rather than only post-resume activity.  Reads
+        each ``turn`` event's ``cost_usd`` field (falling back to recomputing
+        it from the model + token_usage for older entries that predate the
+        cost field) and stores the sum in ``self._session_cost_usd``.
+        Returns the restored total.
+        """
+        if not self._output_dir:
+            self._ensure_output()
+        if not self._output_dir:
+            self._session_cost_usd = 0.0
+            return 0.0
+        path = os.path.join(self._output_dir, f"{self.session_id}.jsonl")
+        if not os.path.exists(path):
+            self._session_cost_usd = 0.0
+            return 0.0
+        total = 0.0
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except Exception:
+            return 0.0
+        for line in lines:
+            if not line.strip():
+                continue
+            data = None
+            try:
+                try:
+                    data = json.loads(decrypt(line.strip()))
+                except Exception:
+                    data = json.loads(line.strip())
+            except Exception:
+                continue
+            if not isinstance(data, dict) or data.get("event") != "turn":
+                continue
+            cost = data.get("cost_usd")
+            if cost is None:
+                tu = data.get("token_usage", {}) or {}
+                inp = tu.get("input_tokens", tu.get("prompt_tokens", 0)) or 0
+                out = tu.get("output_tokens", tu.get("completion_tokens", 0)) or 0
+                cost = _compute_cost_usd(data.get("model", ""), inp, out)
+            total += float(cost or 0)
+        self._session_cost_usd = total
+        return total
 
     # ── Persistent cumulative counters (survive session deletion) ─────
 
@@ -263,6 +387,8 @@ class EncreTelemetry:
                 "total_output_tokens": 0,
                 "total_tool_calls": 0,
                 "tool_call_breakdown": {},
+                "total_cost_usd": 0.0,
+                "model_cost_breakdown": {},
             }
             for k, v in defaults.items():
                 data.setdefault(k, v)
@@ -273,6 +399,8 @@ class EncreTelemetry:
                 "total_output_tokens": 0,
                 "total_tool_calls": 0,
                 "tool_call_breakdown": {},
+                "total_cost_usd": 0.0,
+                "model_cost_breakdown": {},
             }
 
     @staticmethod
@@ -284,12 +412,28 @@ class EncreTelemetry:
         except Exception:
             pass  # never crash on telemetry write failure
 
-    def _update_cumulative_from_turn(self, token_usage: dict[str, int] | None) -> None:
+    def _update_cumulative_from_turn(
+        self,
+        token_usage: dict[str, int] | None,
+        model: str = "",
+        cost_usd: float = 0.0,
+    ) -> None:
         if not token_usage:
             return
+        inp = token_usage.get("input_tokens", token_usage.get("prompt_tokens", 0)) or 0
+        out = token_usage.get("output_tokens", token_usage.get("completion_tokens", 0)) or 0
         cu = self._load_cumulative()
-        cu["total_input_tokens"] += token_usage.get("input_tokens", token_usage.get("prompt_tokens", 0))
-        cu["total_output_tokens"] += token_usage.get("output_tokens", token_usage.get("completion_tokens", 0))
+        cu["total_input_tokens"] += inp
+        cu["total_output_tokens"] += out
+        cu["total_cost_usd"] = round(cu.get("total_cost_usd", 0.0) + cost_usd, 6)
+        if model:
+            mb = cu.setdefault("model_cost_breakdown", {})
+            entry = mb.setdefault(model, {
+                "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
+            })
+            entry["input_tokens"] += inp
+            entry["output_tokens"] += out
+            entry["cost_usd"] = round(entry.get("cost_usd", 0.0) + cost_usd, 6)
         self._save_cumulative(cu)
 
     def _update_cumulative_from_tool_call(self, tool_name: str) -> None:
@@ -337,6 +481,7 @@ class EncreTelemetry:
                 session_model = ""
                 turn_count = 0
                 session_first_active = 0.0
+                session_cost = 0.0
 
                 for line in lines:
                     if not line.strip():
@@ -368,6 +513,12 @@ class EncreTelemetry:
                         turn_count += 1
                         model = data.get("model", "") or ""
                         session_model = model
+                        # Cost: prefer the persisted cost_usd, else recompute
+                        # for older entries that predate the cost field.
+                        cost = data.get("cost_usd")
+                        if cost is None:
+                            cost = _compute_cost_usd(model, inp, out)
+                        session_cost += float(cost or 0)
                         if model:
                             md = model_breakdown.setdefault(model, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "turns": 0})
                             md["input_tokens"] += inp
@@ -400,6 +551,7 @@ class EncreTelemetry:
                         "tool_calls": session_tool_calls,
                         "tool_call_breakdown": session_tool_breakdown,
                         "first_active": session_first_active,
+                        "cost_usd": round(session_cost, 6),
                     }
 
         # Build sorted session list (by first_active timestamp ascending) for time-series charts
@@ -415,6 +567,8 @@ class EncreTelemetry:
             "total_output_tokens": total_output,
             "total_tool_calls": total_tool_calls,
             "tool_call_breakdown": tool_call_breakdown,
+            "total_cost_usd": round(cumulative.get("total_cost_usd", 0.0), 6),
+            "model_cost_breakdown": cumulative.get("model_cost_breakdown", {}),
             "model_breakdown": {
                 m: v for m, v in sorted(
                     model_breakdown.items(),

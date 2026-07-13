@@ -49,15 +49,18 @@ async def _bash_output_execute(**kwargs: Any) -> str:
 
     wait = bool(kwargs.get("wait", False))
     if wait:
-        timeout = max(0.0, min(60.0, float(kwargs.get("wait_seconds", 5.0))))
-        deadline = asyncio.get_event_loop().time() + timeout
+        try:
+            timeout = max(0.0, min(60.0, float(kwargs.get("wait_seconds", 5.0))))
+        except (TypeError, ValueError):
+            timeout = 5.0
+        deadline = asyncio.get_running_loop().time() + timeout
         while True:
             snap = mgr.read_new_output(shell_id)
             if "error" in snap:
                 return f"Error: {snap['error']}"
             if snap["stdout"] or snap["stderr"] or not snap["running"]:
                 return json.dumps(snap, ensure_ascii=False)
-            if asyncio.get_event_loop().time() >= deadline:
+            if asyncio.get_running_loop().time() >= deadline:
                 return json.dumps(snap, ensure_ascii=False)
             await asyncio.sleep(0.15)
 

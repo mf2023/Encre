@@ -496,10 +496,20 @@ class SteerQueue:
     is running. These are queued and drained before each API call.
 
     Mirrors Hermes agent's /steer mechanism.
+
+    Also carries a ``system_messages`` queue: mid-conversation *system*
+    instructions (stage transitions, stuck-recovery nudges, dynamic
+    policy changes) that should reach the model as ``role: system`` rather
+    than ``role: user``.  Unlike the system prompt prefix -- which is
+    rewritten each turn -- these are appended as discrete system messages
+    so the model treats them as authoritative directives layered on top of
+    its standing instructions, and so the base system prompt stays
+    cache-stable.
     """
 
     def __init__(self) -> None:
         self._queue: list[str] = []
+        self._system_messages: list[str] = []
         self._max = MAX_STEER_MESSAGES
 
     def push(self, message: str) -> None:
@@ -507,6 +517,21 @@ class SteerQueue:
         if len(self._queue) < self._max:
             self._queue.append(message)
             logger.info("[steer] queued instruction: %s", message[:80])
+
+    def push_system(self, message: str) -> None:
+        """Queue a mid-conversation *system* instruction.
+
+        System messages are injected as ``role: system`` entries (after the
+        base system prompt, before the user/assistant history) rather than
+        rewritten into the prefix.  Used for stage transitions, stuck
+        recovery, and dynamic directives that should not perturb the cached
+        base prompt.
+        """
+        if not message or not message.strip():
+            return
+        if len(self._system_messages) < self._max:
+            self._system_messages.append(message)
+            logger.info("[steer] queued system instruction: %s", message[:80])
 
     def drain(self) -> list[str]:
         """Drain and return all queued steer messages."""
@@ -516,9 +541,21 @@ class SteerQueue:
         self._queue.clear()
         return items
 
+    def drain_system(self) -> list[str]:
+        """Drain and return all queued system messages."""
+        if not self._system_messages:
+            return []
+        items = list(self._system_messages)
+        self._system_messages.clear()
+        return items
+
     @property
     def has_pending(self) -> bool:
         return bool(self._queue)
+
+    @property
+    def has_pending_system(self) -> bool:
+        return bool(self._system_messages)
 
 
 def build_steer_injection(steer_messages: list[str]) -> str:

@@ -177,6 +177,67 @@ def should_drain_collapses(state: ContextCollapseState) -> bool:
     return state.has_pending and state.pending_count >= MAX_STAGED_COLLAPSES
 
 
+# How many of the most-recent tool results to keep verbatim.  Older tool
+# results beyond this window are collapsed to one-line stubs.
+COLLAPSE_KEEP_RECENT_TOOL_RESULTS = 8
+# Minimum tool-result length before it's worth collapsing -- short results
+# are already cheap to keep.
+COLLAPSE_MIN_RESULT_CHARS = 200
+
+
+def collapse_old_tool_outputs(
+    messages: list[dict[str, Any]],
+    keep_recent: int = COLLAPSE_KEEP_RECENT_TOOL_RESULTS,
+    min_chars: int = COLLAPSE_MIN_RESULT_CHARS,
+) -> list[dict[str, Any]]:
+    """Collapse old tool-result messages into one-line stubs.
+
+    A deterministic, LLM-free collapse pass: the most recent *keep_recent*
+    tool results are preserved verbatim, and every older tool result longer
+    than *min_chars* is replaced by a one-line stub that records the tool
+    name, call id, and a truncated preview.  Assistant messages with
+    ``tool_calls`` are preserved (the stubs still reference their ids so
+    the API's tool-call/tool-result pairing stays valid).
+
+    This is the cheap first stage of the collapse pipeline; the expensive
+    model-driven summarisation in :class:`encre.compact.engine.CompactEngine`
+    runs afterward only if pressure is still high.
+    """
+    if not messages:
+        return list(messages)
+
+    # Collect indices of tool messages, newest last.
+    tool_indices = [i for i, m in enumerate(messages) if m.get("role") == "tool"]
+    if len(tool_indices) <= keep_recent:
+        return list(messages)
+
+    # Indices of tool results that are "old" (beyond the recent window).
+    old_tool_idx = set(tool_indices[:-keep_recent]) if keep_recent > 0 else set(tool_indices)
+
+    out: list[dict[str, Any]] = []
+    for i, m in enumerate(messages):
+        if i in old_tool_idx and m.get("role") == "tool":
+            content = m.get("content", "")
+            if isinstance(content, str) and len(content) > min_chars:
+                stub = (
+                    f"[collapsed tool result: {m.get('name', 'tool')} "
+                    f"call_id={m.get('tool_call_id', '')} "
+                    f"len={len(content)} preview={content[:80]!r}]"
+                )
+                collapsed = dict(m)
+                collapsed["content"] = stub
+                collapsed["_collapsed"] = True
+                out.append(collapsed)
+                continue
+        out.append(dict(m))
+    return out
+
+
+def count_collapsed(messages: list[dict[str, Any]]) -> int:
+    """Return how many messages in *messages* were collapsed to stubs."""
+    return sum(1 for m in messages if m.get("_collapsed"))
+
+
 async def drain_collapses(
     state: ContextCollapseState,
     backend: Any,

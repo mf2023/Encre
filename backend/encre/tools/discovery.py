@@ -28,15 +28,19 @@ from __future__ import annotations
 Architecture
 ============
 
-Default tool set exposed to the model:
-  - file_read, file_write, file_edit, bash, grep, glob, todo (the 7 base tools)
-  - find_tool (the dispatcher) -- always present
+Default tool set exposed to the model (``BASE_TOOLS``): the file/shell/search
+primitives (file_read, file_write, file_edit, bash, grep, glob, todo), the
+one-shot delivery chain (web_search, web_fetch, skill, info), the sub-agent
+and user-interaction tools (agent, question), and the memory tools. Plus
+``find_tool`` (the dispatcher). These are always present every turn so the
+model can act immediately -- search the web, fetch a page, activate a domain
+skill, render a card -- without first having to discover the primitive.
 
 Everything else (browser, docker, deploy, database, lsp, notebook, pdf,
-spreadsheet, image, web_fetch, web_search, desktop, rest_client, agent,
-git, apply_patch, bash_output/kill/list, memory_*, task_*, cron_*, MCP-discovered
-tools, plugin tools) lives only in the discovery index. They are *unlocked*
-into the session's active tool set once the model calls
+spreadsheet, image, desktop, rest_client, git, apply_patch, bash_output/kill/
+list, task_*, cron_*, MCP-discovered tools, plugin tools) lives only in the
+discovery index. They are *unlocked* into the session's active tool set once
+the model calls
   find_tool(query="...")
 and a match comes back. Subsequent backend.chat() calls include them in the
 `tools` array, so the model can call them natively with full schema.
@@ -220,10 +224,6 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
         "category": "meta",
         "triggers": ["find tool", "search tools", "discover tool"],
     },
-    "expand": {
-        "category": "meta",
-        "triggers": ["expand", "archive", "restore context", "retrieve compacted"],
-    },
     "question": {
         "category": "communication",
         "triggers": ["ask user", "question", "clarify", "confirm intent", "gather context"],
@@ -231,6 +231,16 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
     "todo": {
         "category": "task",
         "triggers": ["todo", "checklist", "track progress"],
+    },
+    "info": {
+        "category": "communication",
+        "triggers": [
+            "card", "info card", "widget",
+            "flight", "airplane", "plane", "boarding pass", "flight status",
+            "train", "railway", "high speed rail", "bullet train", "CRH",
+            "ship", "cruise", "ferry", "boat", "vessel", "sailing",
+            "itinerary", "travel card", "trip card",
+        ],
     },
     # Lint / format
     "lint_format": {
@@ -273,9 +283,17 @@ BASE_TOOLS: frozenset[str] = frozenset({
     "glob",
     "todo",
     "web_search",
+    "web_fetch",
+    "skill",
     "agent",
     "question",
-    "expand",
+    "memory_create",
+    "memory_read",
+    "memory_update",
+    "memory_delete",
+    "memory_search",
+    "memory_profile",
+    "info",
 })
 
 

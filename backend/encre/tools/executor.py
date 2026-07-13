@@ -571,7 +571,12 @@ class ToolPipeline:
                 p["is_error"] = sr.get("is_error", False)
                 p["latency_ms"] = sr.get("elapsed_ms", 0)
                 p["recovery_history"] = []
-                p["result"] = _apply_result_budget(p["result"], p["tool"], context_ratio=loop._last_context_ratio)
+                p["result"] = _apply_result_budget(
+                    p["result"], p["tool"],
+                    context_ratio=loop._last_context_ratio,
+                    session_id=loop.session.id or "",
+                    tool_name=p.get("name", ""),
+                )
                 yield create_tool_result(id=p["client_id"], content=p["result"], is_error=p["is_error"])
                 loop.session.add_tool_result(p["id"], p["result"], is_error=p["is_error"], client_id=p["client_id"])
                 loop.telemetry.record_tool_call(tool_name=p["name"], latency_ms=p["latency_ms"], success=not p["is_error"], error_message=p["result"] if p["is_error"] else "")
@@ -617,13 +622,6 @@ class ToolPipeline:
         """
         loop = self._loop
         tool_start = time.time()
-
-        staleness_error = loop._check_file_write_precondition(p["name"], p["args"])
-        if staleness_error:
-            p["result"] = staleness_error
-            p["is_error"] = True
-            p["latency_ms"] = (time.time() - tool_start) * 1000
-            return p
 
         # ── Pre-execution middlewares ──
         args = p["args"]
@@ -706,10 +704,12 @@ class ToolPipeline:
     ) -> Generator[AgentEvent, None, None]:
         """Emit result events for one tool (telemetry, artifacts, etc.)."""
         loop = self._loop
-        p["result"] = _apply_result_budget(p["result"], p["tool"], context_ratio=loop._last_context_ratio)
-
-        if not p["is_error"] and p["name"] == "file_read":
-            loop._record_file_read(p["args"].get("file_path", ""))
+        p["result"] = _apply_result_budget(
+            p["result"], p["tool"],
+            context_ratio=loop._last_context_ratio,
+            session_id=loop.session.id or "",
+            tool_name=p.get("name", ""),
+        )
 
         if not p["is_error"] and p["name"] in _WRITE_TOOL_NAMES:
             fp = _extract_file_path(p["name"], p["result"])
@@ -822,15 +822,6 @@ class ToolPipeline:
             elif p["name"] == "workflow":
                 await self._exec_workflow_tracked(tracked, p, loop)
             else:
-                staleness = loop._check_file_write_precondition(p["name"], p["args"])
-                if staleness:
-                    p["result"] = staleness
-                    p["is_error"] = True
-                    p["latency_ms"] = 0
-                    tracked.result_content = staleness
-                    tracked.is_error = True
-                    return
-
                 result_p = await self._execute_single_tool(p, prompt)
                 tracked.result_content = result_p.get("result", "")
                 tracked.is_error = result_p.get("is_error", False)
@@ -848,6 +839,7 @@ class ToolPipeline:
             execute_fn=_exec_fn,
             emit_fn=_emit_fn,
             concurrency=_MAX_TOOL_CONCURRENCY,
+            tool_registry=loop.tool_registry if hasattr(loop, "tool_registry") else None,
         )
 
         conc_sorted = sorted(tools, key=lambda p: 0 if p.get("safe") else 1)

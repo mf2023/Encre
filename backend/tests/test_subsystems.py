@@ -228,12 +228,19 @@ class TestSkills:
     def test_create_bundled_skills(self):
         """Verifies that create bundled skills."""
         from encre.skills.bundled import create_bundled_skills
+        from encre.skills.builtin import builtin_skills_dir
         from encre.skills.registry import EncreSkillRegistry
+        from encre.skills.types import SkillSource
         registry = EncreSkillRegistry()
         create_bundled_skills(registry)
-        # After creation, registry should have bundled skills
-        skill = registry.lookup("debug")
+        registry.load_from_dir(builtin_skills_dir(), source=SkillSource.BUNDLED)
+        # After creation, registry should have bundled skills. loop is
+        # programmatically registered; debug is a static builtin SKILL.md.
+        loop = registry.lookup("loop")
         # Confirm the expected result for this scenario: create bundled skills.
+        assert loop is not None
+        assert loop.name == "loop"
+        skill = registry.lookup("debug")
         assert skill is not None
         assert skill.name == "debug"
 
@@ -384,3 +391,79 @@ class TestPrompts:
         dp = EncreDataPrompt()
         # Confirm the expected result for this scenario: data prompt.
         assert dp is not None
+
+
+class TestSkillTool:
+    """Tests for the model-facing skill activation tool."""
+
+    @staticmethod
+    def _fake_loop():
+        from encre.skills.builtin import builtin_skills_dir
+        from encre.skills.registry import EncreSkillRegistry
+        from encre.skills.types import SkillSource
+        from encre.skills.bundled import create_bundled_skills
+
+        registry = EncreSkillRegistry()
+        create_bundled_skills(registry)
+        registry.load_from_dir(builtin_skills_dir(), source=SkillSource.BUNDLED)
+
+        class _Loop:
+            skill_registry = registry
+            class _S:
+                id = "test"
+            session = _S()
+            _active_doc_skills = {}
+
+        loop = _Loop()
+        from encre.tools.builtin.find_tool import set_parent_loop
+        set_parent_loop(loop)
+        return loop
+
+    def test_skill_tool_registered(self):
+        """The skill tool is registered in the default tool set."""
+        from encre.tools.defaults import register_default_tools
+        from encre.tools.registry import ToolRegistry
+        tr = ToolRegistry()
+        register_default_tools(tr)
+        assert "skill" in tr.list_tools()
+
+    def test_skill_tool_activates_and_caches(self):
+        """Activating a skill caches its body on the loop for next-turn injection."""
+        import asyncio
+        from encre.tools.defaults import register_default_tools
+        from encre.tools.registry import ToolRegistry
+        tr = ToolRegistry()
+        register_default_tools(tr)
+        exe = tr.list_tools()["skill"].execute
+        loop = self._fake_loop()
+        result = asyncio.run(exe(name="travel-flights", args="Beijing to Shanghai"))
+        assert "travel-flights" in result
+        assert "travel-flights" in loop._active_doc_skills
+        body = loop._active_doc_skills["travel-flights"]
+        assert "Flight Search Guidance" in body
+
+    def test_skill_tool_alias_normalises_to_canonical(self):
+        """An alias resolves to the canonical skill name in the cache."""
+        import asyncio
+        from encre.tools.defaults import register_default_tools
+        from encre.tools.registry import ToolRegistry
+        tr = ToolRegistry()
+        register_default_tools(tr)
+        exe = tr.list_tools()["skill"].execute
+        loop = self._fake_loop()
+        asyncio.run(exe(name="flights"))
+        # Alias "flights" must cache under the canonical "travel-flights".
+        assert "travel-flights" in loop._active_doc_skills
+        assert "flights" not in loop._active_doc_skills
+
+    def test_skill_tool_unknown_name_errors(self):
+        """An unknown skill name returns a clear error, not a crash."""
+        import asyncio
+        from encre.tools.defaults import register_default_tools
+        from encre.tools.registry import ToolRegistry
+        tr = ToolRegistry()
+        register_default_tools(tr)
+        exe = tr.list_tools()["skill"].execute
+        self._fake_loop()
+        result = asyncio.run(exe(name="does-not-exist"))
+        assert result.startswith("Error:")

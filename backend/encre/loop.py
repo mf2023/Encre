@@ -31,7 +31,6 @@ import os
 import re
 import time
 import uuid
-from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -176,11 +175,31 @@ _CONTEXT_OVERFLOW_PATTERN = re.compile(
 _is_context_overflow = is_context_overflow
 
 
+def _spillover_dir(session_id: str) -> str | None:
+    """Return the directory for spillover files for *session_id*, creating it.
+
+    Spillover lets a tool result larger than the context budget keep its full
+    content on disk (so the agent can retrieve it later) instead of losing it
+    to truncation.  Returns None when the data dir is unavailable so callers
+    fall back to plain truncation.
+    """
+    try:
+        from encre.config import get_data_dir
+        import pathlib
+        d = get_data_dir() / "spillover" / (session_id or "default")
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d)
+    except Exception:
+        return None
+
+
 def _apply_result_budget(
     result: str,
     tool: Any,
     max_chars: int = 100_000,
     context_ratio: float = 1.0,
+    session_id: str = "",
+    tool_name: str = "",
 ) -> str:
     """Truncate a tool result if it exceeds the tool's size budget.
 
@@ -194,10 +213,32 @@ def _apply_result_budget(
         # more room, but never below a minimum usable preview size.
         scaled = int(budget * context_ratio)
         budget = max(500, min(budget, scaled))
-    if len(result) > budget:
-        excess = len(result) - budget
-        return result[:budget] + f"\n... (truncated {excess} characters)"
-    return result
+    if len(result) <= budget:
+        return result
+    excess = len(result) - budget
+    spillover_path = None
+    if session_id:
+        import hashlib
+        spillover_dir = _spillover_dir(session_id)
+        if spillover_dir:
+            digest = hashlib.sha1(result.encode("utf-8", errors="replace")).hexdigest()[:16]
+            label = (tool_name or "tool").replace("/", "_")[:32]
+            fname = f"spillover_{label}_{digest}.txt"
+            import os as _os
+            fpath = _os.path.join(spillover_dir, fname)
+            try:
+                with open(fpath, "w", encoding="utf-8") as f:
+                    f.write(result)
+                spillover_path = fpath
+            except Exception:
+                spillover_path = None
+    preview = result[:1000]
+    if spillover_path:
+        return (
+            preview
+            + f"\n... (truncated {excess} characters; full output saved to {spillover_path})"
+        )
+    return result[:budget] + f"\n... (truncated {excess} characters)"
 
 
 def _extract_file_path(tool_name: str, result: str) -> str | None:
@@ -489,6 +530,12 @@ class EncreLoop:
         self.profile_system = profile_system
         self.soul_system = soul_system
         self.skill_registry = skill_registry
+        # Per-session cache of auto-activated tool skills (tool_name -> body).
+        # Populated after each tool run; rendered into the next turn's system
+        # prompt so the model sees detailed usage guidance for tools it has
+        # already used.  Idempotent and de-duplicated by tool name.
+        self._active_tool_skills: dict[str, str] = {}
+        self._active_doc_skills: dict[str, str] = {}
         self.telemetry = telemetry or EncreTelemetry(enabled=False)
         # Initialise OpenTelemetry tracer from config (no-op when disabled
         # or when opentelemetry-api is not installed).
@@ -571,11 +618,6 @@ class EncreLoop:
         # Populated in background during streaming when
         # ``enable_streaming_tool_execution`` is True.
         self._streaming_tool_results: dict[str, dict[str, Any]] = {}
-        # Read-before-write tracking: maps resolved file_path -> {mtime, read_time}.
-        # Populated by file_read results; checked before file_write/file_edit.
-        # Bounded LRU so long sessions do not grow this without limit.
-        self._read_file_state: OrderedDict[str, dict[str, float]] = OrderedDict()
-        self._read_file_state_limit: int = 1000
         # ── Recovery state ─────────────────────────────────────────
         # Max output tokens recovery: escalates from default_slot_tokens
         # to max_tokens, then retries up to MAX_OUTPUT_TOKENS_RECOVERY_LIMIT.
@@ -583,6 +625,12 @@ class EncreLoop:
         self._max_output_tokens_override: int | None = None
         self._has_attempted_reactive_compact: bool = False
         self._slot_escalated: bool = False
+        # Unified recovery state machine (opt-in).  When
+        # ``enable_unified_recovery`` is True, the loop consults this machine
+        # for "have we tried X" guard decisions; when False the inline
+        # guards above remain authoritative and the RSM stays dormant.
+        from encre.loop_recovery import RecoveryStateMachine
+        self._rsm: RecoveryStateMachine = RecoveryStateMachine()
         # Fallback model tracking: set when a fallback switch occurs.
         self._active_fallback_model: str = ""
         self._active_fallback_backend_type: str = ""
@@ -610,58 +658,10 @@ class EncreLoop:
         self.session.metadata.setdefault("working_set", {})
         self.session.metadata.setdefault("turn_summaries", [])
         self.session.metadata.setdefault("tool_semantics", {})
-        self.session.metadata.setdefault("delegate_history", [])
         self.session.metadata.setdefault("stuck_events", [])
 
     def _cache_fresh(self, built_at: float, ttl: float = _PROMPT_CACHE_TTL_SECONDS) -> bool:
         return (time.time() - built_at) < ttl
-
-    def _record_file_read(self, file_path: str) -> None:
-        if not file_path:
-            return
-        try:
-            st = os.stat(file_path)
-            resolved = os.path.abspath(file_path)
-            self._read_file_state[resolved] = {
-                "mtime": st.st_mtime_ns,
-                "read_time": time.time(),
-            }
-            self._read_file_state.move_to_end(resolved)
-            while len(self._read_file_state) > self._read_file_state_limit:
-                self._read_file_state.popitem(last=False)
-        except (OSError, ValueError):
-            pass
-
-    def _check_file_write_precondition(self, tool_name: str, args: dict[str, Any]) -> str | None:
-        fp = args.get("file_path", "")
-        if not fp and tool_name == "apply_patch":
-            return None
-        if not fp:
-            return None
-        resolved = os.path.abspath(fp)
-        entry = self._read_file_state.get(resolved)
-        if entry is not None:
-            self._read_file_state.move_to_end(resolved)
-
-        if entry is None:
-            return (
-                f"Error: The file `{fp}` has not been read in this session. "
-                f"Please read it first with `file_read` before making changes."
-            )
-
-        try:
-            current_mtime = os.stat(resolved).st_mtime_ns
-        except OSError:
-            return None
-
-        if current_mtime != entry["mtime"]:
-            return (
-                f"Error: The file `{fp}` has been modified since it was last read "
-                f"(mtime changed). Please re-read it with `file_read` to get the "
-                f"current content before making changes."
-            )
-
-        return None
 
     def _set_task_stage(self, stage: str, reason: str = "") -> None:
         if stage not in _TASK_STAGES:
@@ -1271,6 +1271,68 @@ class EncreLoop:
     def _cancelled(self) -> bool:
         return self._cancel_event.is_set()
 
+    def _finalize_cancelled_turn(self) -> int:
+        """Defense layer: close any half-finished tool_use in session state.
+
+        After a cancel breaks out of the run loop, the last assistant
+        message may declare tool_calls whose results were never written (the
+        tool was cancelled before it ran). That orphan tool_use breaks the
+        history sidebar, rollback, and the next API request. This scans the
+        *persisted* session messages and synthesizes an error tombstone for
+        every tool_call id lacking a matching tool_result, so the session
+        history is always self-consistent -- not merely repaired at request
+        time by the sanitize gateway.
+
+        Returns the number of tombstones added. Idempotent: a second call on
+        an already-closed history adds nothing.
+        """
+        msgs = self.session.messages
+        if not msgs:
+            return 0
+        # Walk from the end; the only assistant whose tool_calls can be
+        # unmatched is the last assistant with tool_calls (results, if any,
+        # sit right after it).
+        last_asst_idx = -1
+        for i in range(len(msgs) - 1, -1, -1):
+            if msgs[i].get("role") == "assistant" and msgs[i].get("tool_calls"):
+                last_asst_idx = i
+                break
+        if last_asst_idx < 0:
+            return 0
+        asst = msgs[last_asst_idx]
+        declared = {
+            tc.get("id", "")
+            for tc in asst.get("tool_calls", [])
+            if tc.get("id")
+        }
+        if not declared:
+            return 0
+        # Collect tool_result ids that immediately follow this assistant.
+        have: set[str] = set()
+        j = last_asst_idx + 1
+        while j < len(msgs) and msgs[j].get("role") == "tool":
+            tid = msgs[j].get("tool_call_id", "")
+            if tid:
+                have.add(tid)
+            j += 1
+        missing = declared - have
+        if not missing:
+            return 0
+        tombstone = (
+            "[Error: This tool call was cancelled before it completed. "
+            "No result was produced.]"
+        )
+        added = 0
+        for mid in sorted(missing):
+            self.session.add_tool_result(mid, tombstone, is_error=True)
+            added += 1
+        if added:
+            logger.info(
+                "[run] finalized cancelled turn: %d tombstone(s) for orphan tool_use",
+                added,
+            )
+        return added
+
     _SKILL_PATTERN = re.compile(r"^/(\S+)(?:\s+(.*))?", re.DOTALL)
 
     async def _activate_skills(self, prompt: str) -> tuple[str, str]:
@@ -1299,6 +1361,130 @@ class EncreLoop:
         if parts:
             return "\n\n".join(parts) + "\n\n---\n\n", remaining
         return "", prompt
+
+    async def _collect_tool_skill(self, tool_name: str) -> None:
+        """Activate the matching ``tool-<name>`` skill after a tool runs.
+
+        Caches the body on the loop so subsequent turns surface detailed
+        usage guidance (when to use / pitfalls / parameters) for tools the
+        agent has already used.  Idempotent: re-calling for the same tool is
+        a no-op, so it is safe to invoke from every post-tool code path.
+        """
+        if not self.skill_registry or not tool_name:
+            return
+        if tool_name in self._active_tool_skills:
+            return
+        skill_name = f"tool-{tool_name.replace('_', '-')}"
+        skill = self.skill_registry.lookup(skill_name)
+        if skill is None:
+            return
+        try:
+            body = await self.skill_registry.activate(skill_name)
+        except Exception:
+            return
+        if not body or body.startswith("Error: "):
+            return
+        self._active_tool_skills[tool_name] = body
+
+    async def _collect_doc_skills(self, args: dict) -> None:
+        """Auto-activate document skills whose ``when_to_use`` matches file
+        extensions referenced in the tool arguments.  Only skills with
+        ``auto_activate`` are eligible, so process skills (code-review,
+        refactor, ...) never fire from a mere file reference."""
+        if not self.skill_registry or not args:
+            return
+        paths = [str(v) for v in args.values() if isinstance(v, str)]
+        if not paths:
+            return
+        try:
+            names = await self.skill_registry.activate_for_paths(paths)
+        except Exception:
+            return
+        for skill_name in names:
+            if skill_name in self._active_doc_skills:
+                continue
+            try:
+                body = await self.skill_registry.activate(
+                    skill_name, "(referenced this session)"
+                )
+            except Exception:
+                continue
+            if not body or body.startswith("Error: "):
+                continue
+            self._active_doc_skills[skill_name] = body
+
+    def _render_active_tool_skills(self) -> str:
+        """Render accumulated tool-skill guidance for the system prompt."""
+        if not self._active_tool_skills:
+            return ""
+        parts = [
+            "## Tool Skills (auto-activated)",
+            "",
+            "Detailed usage guidance for tools already used this session:",
+            "",
+        ]
+        for tool_name, body in self._active_tool_skills.items():
+            parts.append(f"### tool-{tool_name.replace('_', '-')}")
+            parts.append("")
+            parts.append(body.strip())
+            parts.append("")
+        return "\n".join(parts).rstrip()
+
+    def _render_active_doc_skills(self) -> str:
+        """Render accumulated document-skill guidance for the system prompt."""
+        if not self._active_doc_skills:
+            return ""
+        parts = [
+            "## Document Skills (auto-activated)",
+            "",
+            "Domain guidance for file types referenced this session:",
+            "",
+        ]
+        for skill_name, body in self._active_doc_skills.items():
+            parts.append(f"### {skill_name}")
+            parts.append("")
+            parts.append(body.strip())
+            parts.append("")
+        return "\n".join(parts).rstrip()
+
+    def _render_skill_catalogue(self) -> str:
+        """Render the dynamic skill catalogue from the live registry.
+
+        Replaces the hard-coded skill lists that used to live in the mode and
+        specialty prompt blocks.  Scans ``self.skill_registry`` (which is itself
+        populated by scanning the builtin skills directory) so newly added
+        SKILL.md folders appear here automatically with no code change.
+
+        Excludes ``tool-*`` skills (those are auto-injected tool-usage guidance,
+        not user/model-invokable capabilities) and anything not user-invocable.
+        """
+        if not self.skill_registry:
+            return ""
+        skills = [
+            s for s in self.skill_registry.list_all()
+            if s.user_invocable and not s.name.startswith("tool-")
+        ]
+        if not skills:
+            return ""
+        # Group by prefix: "travel-flights" -> "travel"; standalone names -> "general".
+        groups: dict[str, list[str]] = {}
+        for s in sorted(skills, key=lambda x: x.name):
+            prefix = s.name.split("-", 1)[0] if "-" in s.name else "general"
+            groups.setdefault(prefix, []).append(
+                f"- `/{s.name}`: {s.description.strip()}"
+            )
+        parts = [
+            "Invoke a skill by typing `/skill-name <args>` (aliases also work), "
+            "or call the `skill` tool with `name` (and optional `args`) to "
+            "activate it yourself when the request matches a skill's purpose.",
+            "Use a skill when the request matches its purpose.",
+            "",
+        ]
+        for group_name in sorted(groups):
+            parts.append(f"**{group_name}**")
+            parts.extend(groups[group_name])
+            parts.append("")
+        return "\n".join(parts).rstrip()
 
     def _workspace_info(self) -> tuple[str, str, str]:
         """Return (workspace_root, workspace_name, project_summary) for the prompt builder.
@@ -1840,6 +2026,15 @@ class EncreLoop:
             ):
                 yield ev
         finally:
+            # Defense layer (exception/asyncio-cancel path): even if the run
+            # was torn down by an exception or hard task cancellation -- which
+            # skips the normal convergence point in _run_impl -- close any
+            # orphan tool_use so the persisted history stays self-consistent.
+            # Idempotent with the _run_impl call, so a second pass adds nothing.
+            try:
+                self._finalize_cancelled_turn()
+            except Exception:
+                logger.warning("[run] finalize in finally failed", exc_info=True)
             reset_bash_workspace(_bash_ws_token)
             reset_active_loop(_loop_token)
             reset_agent_active_loop(_agent_loop_token)
@@ -1857,6 +2052,8 @@ class EncreLoop:
         self._truncated_tool_call_retry_count = 0
         self._max_output_tokens_recovery_count = 0
         self._unknown_error_retry_count = 0
+        # RSM reset mirrors the inline counters above (per-run, not per-turn).
+        self._rsm.reset_for_new_turn()
         # Log effective max_turns so we can diagnose unexpected session stops
         logger.info("[run] _run_impl start turn={turn} max_turns={max_turns} backend={backend_type} model={model}",
                      turn=self.session.turn_count, max_turns=self.config.max_turns,
@@ -1896,6 +2093,8 @@ class EncreLoop:
                 self.config.language,
                 custom_instructions,
                 tuple(c.get("name", "") for c in (slash_commands or [])),
+                tuple(sorted(s.name for s in self.skill_registry.list_all()
+                       if s.user_invocable and not s.name.startswith("tool-"))) if self.skill_registry else (),
             )
             if (
                 hasattr(self, "_sys_prompt_cache")
@@ -1916,6 +2115,7 @@ class EncreLoop:
                     session_id=self.session.id,
                     slash_command_mode=slash_command_mode,
                     slash_commands=slash_commands,
+                    skill_summary=self._render_skill_catalogue(),
                 )
                 self._sys_prompt_cache = system_prompt
                 self._sys_prompt_cache_key = _cache_key
@@ -1937,6 +2137,7 @@ class EncreLoop:
                 session_id=self.session.id,
                 slash_command_mode=slash_command_mode,
                 slash_commands=slash_commands,
+                skill_summary=self._render_skill_catalogue(),
             )
             system_prompt = system_prompt + "\n\n" + built
 
@@ -1960,6 +2161,16 @@ class EncreLoop:
         # Prepend skill prompt to system prompt
         if skill_prompt:
             system_prompt = skill_prompt + system_prompt
+
+        # Inject auto-activated tool skills: usage guidance for tools the
+        # agent has already used this session (collected after each tool run).
+        tool_skills_prompt = self._render_active_tool_skills()
+        if tool_skills_prompt:
+            system_prompt = tool_skills_prompt + "\n\n" + system_prompt
+
+        doc_skills_prompt = self._render_active_doc_skills()
+        if doc_skills_prompt:
+            system_prompt = doc_skills_prompt + "\n\n" + system_prompt
 
         if _skip_enrichment:
             # Sub-agent behavioral framework: essential blocks every agent
@@ -2167,6 +2378,27 @@ class EncreLoop:
                         len(micro), est_tokens // 1000,
                     )
 
+            # Step 1a: context collapse -- deterministic one-line stubs for old
+            # tool results, before the model-driven compact.  LLM-free, so it
+            # runs ahead of the expensive summarisation and shrinks what the
+            # model has to summarise.  Gated off by default.
+            if getattr(self.config, "enable_context_collapse", False):
+                try:
+                    from encre.loop_state.collapse import collapse_old_tool_outputs, count_collapsed
+                    collapsed = collapse_old_tool_outputs(context_msgs)
+                    n_collapsed = count_collapsed(collapsed)
+                    if n_collapsed:
+                        self.session.replace_branch_messages(self.session.active_branch_id, collapsed)
+                        ctx_msgs = self.session.get_context_messages()
+                        context_msgs = ctx_msgs
+                        est_tokens = count_message_tokens(context_msgs)
+                        logger.info(
+                            "[collapse] stubbed %d old tool results turn=%d tokens %dk",
+                            n_collapsed, self.session.turn_count, est_tokens // 1000,
+                        )
+                except Exception as _ce:
+                    logger.warning("[collapse] failed: %s", _ce)
+
             # Step 1b: multi-stage pipeline -- pure message-transform
             # reductions (budget/snip/semantic/collapse) that run before the
             # model-driven compact, so the expensive summarisation is only a
@@ -2337,6 +2569,32 @@ class EncreLoop:
                 logger.info("[run] interrupt detected before API call turn=%d", self.session.turn_count)
                 yield create_finish("cancelled")
                 return
+
+            # 1. Mid-conversation system message injection: drain any queued
+            #    system directives (stage transition, stuck recovery, dynamic
+            #    policy) and append them as discrete ``role: system`` entries
+            #    right after the base system prompt -- without rewriting the
+            #    prefix, so the cached base prompt stays stable.
+            _system_msgs = self._steer_queue.drain_system()
+            if _system_msgs:
+                # Insert after the leading system message(s) but before the
+                # user/assistant history.  ``backend_messages`` typically
+                # starts with one system entry; we splice ours in after it.
+                _insert_at = 0
+                for _i, _m in enumerate(backend_messages):
+                    if _m.get("role") == "system":
+                        _insert_at = _i + 1
+                    else:
+                        break
+                for _offset, _sm in enumerate(_system_msgs):
+                    backend_messages.insert(
+                        _insert_at + _offset,
+                        {"role": "system", "content": _sm},
+                    )
+                logger.info(
+                    "[run] injected %d mid-conversation system message(s) turn=%d",
+                    len(_system_msgs), self.session.turn_count,
+                )
 
             # 2. Steer injection: drain any queued /steer instructions
             _steer_msgs = self._steer_queue.drain()
@@ -2639,7 +2897,13 @@ class EncreLoop:
                     # Reactive compact: on context overflow (413), compact the session
                     # synchronously so the next turn has room and retries naturally
                     # instead of showing the user an error card.
-                    if not _reactive_compacted and _is_context_overflow(exc):
+                    _rsm_active = getattr(self.config, "enable_unified_recovery", False)
+                    if _rsm_active:
+                        from encre.loop_recovery import RecoveryKind
+                        _rsm_allows_compact = self._rsm.can_attempt(RecoveryKind.REACTIVE_COMPACT)
+                    else:
+                        _rsm_allows_compact = True
+                    if not _reactive_compacted and _is_context_overflow(exc) and _rsm_allows_compact:
                         try:
                             context_msgs = self.session.get_context_messages()
                             est = count_message_tokens(context_msgs)
@@ -2656,6 +2920,9 @@ class EncreLoop:
                                             self.session.turn_count)
                                 _reactive_compacted = True
                                 self._has_attempted_reactive_compact = True
+                                if _rsm_active:
+                                    self._rsm.record_attempt(RecoveryKind.REACTIVE_COMPACT)
+                                    self._rsm.mark_recovered()
                                 _llm_span.set_attribute("llm.reactive_compact", "succeeded")
                                 _llm_span.end()
                                 # Don't yield error -- next turn picks up compacted messages
@@ -2667,7 +2934,10 @@ class EncreLoop:
                     # Model fallback: on rate-limit / overload, switch to
                     # fallback model and retry once.  Mirrors Claude Code's
                     # FallbackTriggeredError in query.ts.
-                    if can_fallback(self.config) and is_rate_limit_or_overload(exc):
+                    _rsm_allows_fallback = True
+                    if _rsm_active:
+                        _rsm_allows_fallback = self._rsm.can_attempt(RecoveryKind.MODEL_FALLBACK)
+                    if can_fallback(self.config) and is_rate_limit_or_overload(exc) and _rsm_allows_fallback:
                         original_model = self.config.model
                         fallback_model = self.config.fallback_model
                         logger.info(
@@ -2708,6 +2978,10 @@ class EncreLoop:
                         self.backend = fallback_backend
                         _attempt_fallback = True
                         _reactive_compacted = False
+                        if _rsm_active:
+                            from encre.loop_recovery import RecoveryKind as _RK
+                            self._rsm.record_attempt(_RK.MODEL_FALLBACK)
+                            self._rsm.reset_for_fallback()
                         continue
 
                     # ── Withheld error pattern ───────────────────────────
@@ -2831,12 +3105,25 @@ class EncreLoop:
             # slot budget or retrying with a continuation message.
             # Mirrors Claude Code's maxOutputTokensRecovery in query.ts.
             if _slot_finish_reason in ("max_tokens", "length"):
+                # When the unified RSM is enabled, route the max-output
+                # recovery guard through it so this third recovery path
+                # participates in the per-turn recovery cap alongside
+                # reactive-compact and model-fallback.
+                _rsm_active = getattr(self.config, "enable_unified_recovery", False)
+                _RK = None
+                if _rsm_active:
+                    from encre.loop_recovery import RecoveryKind as _RK
+                    _rsm_allows_maxout = self._rsm.can_attempt(_RK.MAX_OUTPUT_TOKENS)
+                else:
+                    _rsm_allows_maxout = True
                 if not _slot_escalated and self.config.default_slot_tokens and self.config.default_slot_tokens < self.config.max_tokens:
                     # First escalation: go from default_slot_tokens to
                     # full max_tokens.  No retry needed — just bump the
                     # budget for the next turn.
                     _slot_escalated = True
                     self._slot_escalated = True
+                    if _rsm_active:
+                        self._rsm.record_attempt(_RK.SLOT_ESCALATION)
                     logger.info(
                         "[slot] escalating from %d -> %d turn=%d",
                         self.config.default_slot_tokens, self.config.max_tokens,
@@ -2847,11 +3134,30 @@ class EncreLoop:
                     yield create_system_message(
                         build_slot_escalation_message()
                     )
-                elif self._max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT:
+                elif _rsm_allows_maxout and self._max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT:
                     # Already at max_tokens, but still hitting the
                     # limit.  Retry with the recovery message.
                     self._max_output_tokens_recovery_count += 1
                     self._max_output_tokens_override = ESCALATED_MAX_TOKENS
+                    if _rsm_active:
+                        self._rsm.record_attempt(_RK.MAX_OUTPUT_TOKENS)
+                    # Tombstone: if the model was truncated mid-tool-call
+                    # the in-flight tool_use blocks have no matching
+                    # tool_result, which the API rejects on the next
+                    # request.  Synthesize error tool_results before the
+                    # retry continue.  Mirrors the model-fallback path.
+                    if tool_call_buffers:
+                        _tombstones = build_tombstone_messages(
+                            tool_call_buffers, "max_tokens truncation"
+                        )
+                        for _ts in _tombstones:
+                            self.session.add_message(
+                                _ts["role"], _ts.get("content", ""),
+                                tool_call_id=_ts.get("tool_call_id"),
+                                name=_ts.get("name"),
+                                is_error=_ts.get("is_error", False),
+                            )
+                        tool_call_buffers.clear()
                     logger.info(
                         "[max_tokens] recovery attempt %d/%d turn=%d",
                         self._max_output_tokens_recovery_count,
@@ -2865,6 +3171,8 @@ class EncreLoop:
                 else:
                     # Exhausted retries — let the text-only exit logic
                     # decide whether to stop
+                    if _rsm_active:
+                        self._rsm.mark_recovered()
                     logger.warning(
                         "[max_tokens] recovery exhausted after %d attempts turn=%d",
                         self._max_output_tokens_recovery_count,
@@ -3187,6 +3495,18 @@ class EncreLoop:
 
             # ── Permission & hooks for all tools (sequential -- these may need user input) ──
             if self._cancelled():
+                # Tombstone: the user cancelled mid-turn after the model
+                # issued tool_calls but before they were executed.  Synthesize
+                # error tool_results so the API does not reject the *next*
+                # request with an orphan tool_use / tool_result mismatch.
+                for _prep in prepared:
+                    if not _prep.get("skip") and not _prep.get("pre_executed"):
+                        self.session.add_tool_result(
+                            _prep["id"],
+                            "[Cancelled by user]",
+                            is_error=True,
+                            client_id=_prep.get("client_id", ""),
+                        )
                 break
             for p in prepared:
                 if self._cancelled():
@@ -3379,7 +3699,11 @@ class EncreLoop:
                 if not p.get("pre_executed"):
                     continue
                 pr = self._streaming_tool_results[p["client_id"]]
-                _pre_result = _apply_result_budget(pr["result"], p["tool"])
+                _pre_result = _apply_result_budget(
+                    pr["result"], p["tool"],
+                    session_id=self.session.id or "",
+                    tool_name=p.get("name", ""),
+                )
                 yield create_tool_result(
                     id=p["client_id"], content=_pre_result, is_error=pr["is_error"],
                 )
@@ -3447,18 +3771,6 @@ class EncreLoop:
 
                 async def _execute_safe(p: dict[str, Any]) -> dict[str, Any]:
                     tool_start = time.time()
-                    # Read-before-write + staleness check for write tools
-                    staleness_error = self._check_file_write_precondition(p["name"], p["args"])
-                    if staleness_error:
-                        _span = trace_tool_call(self._tracer, p["name"], p["args"])
-                        _span.end()
-                        p["result"] = staleness_error
-                        p["sub_agent_messages"] = None
-                        p["sub_agent_references"] = []
-                        p["is_error"] = True
-                        p["recovery_history"] = []
-                        p["latency_ms"] = (time.time() - tool_start) * 1000
-                        return p
                     tool_error = False
                     _span = trace_tool_call(self._tracer, p["name"], p["args"])
                     try:
@@ -3488,6 +3800,8 @@ class EncreLoop:
                         extra = await self.hook_system.emit_post_tool(p["name"], p["args"], result)
                         if extra:
                             result = result + "\n" + extra
+                        await self._collect_tool_skill(p["name"])
+                        await self._collect_doc_skills(p["args"])
                         _span.set_attribute("tool.success", not tool_error)
                         _span.set_attribute("tool.latency_ms", (time.time() - tool_start) * 1000)
                     except Exception as _exc:
@@ -3533,10 +3847,11 @@ class EncreLoop:
                         turn_events += 1
                         continue
                     p = item
-                    p["result"] = _apply_result_budget(p["result"], p["tool"])
-                    # Track file reads for read-before-write enforcement
-                    if not p["is_error"] and p["name"] == "file_read":
-                        self._record_file_read(p["args"].get("file_path", ""))
+                    p["result"] = _apply_result_budget(
+                        p["result"], p["tool"],
+                        session_id=self.session.id or "",
+                        tool_name=p.get("name", ""),
+                    )
                     # Auto-verify: append verification reminder for write tools
                     if not p["is_error"] and p["name"] in _WRITE_TOOL_NAMES:
                         fp = _extract_file_path(p["name"], p["result"])
@@ -3624,21 +3939,6 @@ class EncreLoop:
             # ── Execute unsafe tools sequentially ──
             for p in unsafe_tools:
                 tool_start = time.time()
-                # Read-before-write + staleness check for write tools
-                staleness_error = self._check_file_write_precondition(p["name"], p["args"])
-                if staleness_error:
-                    yield create_tool_result(id=p["client_id"], content=staleness_error, is_error=True)
-                    self.session.add_tool_result(p["id"], staleness_error, is_error=True, client_id=p["client_id"])
-                    turn_events += 1
-                    self.telemetry.record_tool_call(
-                        tool_name=p["name"], latency_ms=0.0,
-                        success=False, error_message=staleness_error,
-                    )
-                    self._error_tool_names.add(p["name"])
-                    yield create_tool_call_end(id=p["client_id"])
-                    turn_events += 1
-                    continue
-
                 yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
 
                 tool_error = False
@@ -3783,11 +4083,17 @@ class EncreLoop:
                     extra = await self.hook_system.emit_post_tool(p["name"], p["args"], result)
                     if extra:
                         result = result + "\n" + extra
+                    await self._collect_tool_skill(p["name"])
+                    await self._collect_doc_skills(p["args"])
                 except Exception as exc:
                     result = f"Tool execution crashed: {type(exc).__name__}: {exc}"
                     tool_error = True
 
-                result = _apply_result_budget(result, p["tool"])
+                result = _apply_result_budget(
+                    result, p["tool"],
+                    session_id=self.session.id or "",
+                    tool_name=p.get("name", ""),
+                )
                 yield create_tool_result(
                     id=p["client_id"],
                     content=result,
@@ -4134,10 +4440,16 @@ class EncreLoop:
                         extra = await self.hook_system.emit_post_tool(p["name"], p["args"], result)
                         if extra:
                             result = result + "\n" + extra
+                        await self._collect_tool_skill(p["name"])
+                        await self._collect_doc_skills(p["args"])
                     except Exception as exc:
                         result = f"Tool execution crashed: {type(exc).__name__}: {exc}"
                         tool_error = True
-                    result = _apply_result_budget(result, p["tool"])
+                    result = _apply_result_budget(
+                        result, p["tool"],
+                        session_id=self.session.id or "",
+                        tool_name=p.get("name", ""),
+                    )
                     yield create_tool_result(id=p["client_id"], content=result, is_error=tool_error)
                     self.session.add_tool_result(p["id"], result, is_error=tool_error, client_id=p["client_id"])
                     turn_events += 1
@@ -4298,6 +4610,19 @@ class EncreLoop:
             # Clean up persistent terminal sessions from this turn.
             await _cleanup_terminal_sessions()
 
+        # ── Defense layer: close any half-finished tool_use block ────────
+        # A cancel (user pause / abnormal exit) can break the
+        # assistant.tool_calls -> tool_result pairing mid-turn: the assistant
+        # message was already persisted (line ~3352) declaring N tool calls,
+        # but only some got results before the loop broke out. That leaves an
+        # orphan tool_use in session state -- which breaks history display,
+        # rollback, and the next API call regardless of the sanitize gateway.
+        # Fix the session state HERE (the single convergence point after the
+        # while loop) so the persisted history is always self-consistent, not
+        # just papered over at request time. Sanitize (loop.py:2594) remains
+        # as a belt-and-suspenders safety net for any path that slips through.
+        self._finalize_cancelled_turn()
+
         reason = "cancelled" if self._cancelled() else "max_tokens"
         logger.warning("[run] session ending turn={turn} max_turns={max_turns} reason={reason}",
                        turn=self.session.turn_count, max_turns=self.config.max_turns, reason=reason)
@@ -4437,6 +4762,7 @@ class EncreLoop:
         sub_agent.session.id = sub_agent.session.id or str(uuid.uuid4())
         saved_session_id = sub_agent.session.id
         sub_agent.session.metadata["channel"] = "sub_agent"
+        sub_agent.session.parent_session_id = self.session.id or ""
 
         def _save():
             try:

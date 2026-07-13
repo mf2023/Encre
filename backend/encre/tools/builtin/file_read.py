@@ -34,6 +34,7 @@ from typing import Any
 
 from encre.native import read_file as _native_read
 from encre.tools.base import build_tool
+from encre.tools.builtin._sandbox import remap_tool_path
 
 _IMAGE_EXTS = {
     ".png": "image/png",
@@ -124,6 +125,9 @@ async def _file_read_execute(**kwargs: Any) -> str:
     file_path = kwargs.get("file_path", "")
     if not file_path:
         return "Error: file_path is required"
+    file_path = remap_tool_path(file_path)
+    if not file_path:
+        return "Error: Path rejected by sandbox"
 
     if not os.path.exists(file_path):
         return f"Error: File not found: {file_path}"
@@ -161,7 +165,7 @@ async def _file_read_execute(**kwargs: Any) -> str:
     limit = int(kwargs.get("limit", 0) or 0)
     offset = int(kwargs.get("offset", 1) or 1)
     try:
-        return _native_read(file_path, offset, limit)
+        content = _native_read(file_path, offset, limit)
     except FileNotFoundError:
         return f"Error: File not found: {file_path}"
     except PermissionError:
@@ -178,6 +182,11 @@ async def _file_read_execute(**kwargs: Any) -> str:
         )
     except Exception as e:
         return f"Error reading file: {e}"
+
+    if not content:
+        size = os.path.getsize(file_path)
+        return f"(empty file, {size} bytes)"
+    return content
 
 
 EncreFileReadTool = build_tool(

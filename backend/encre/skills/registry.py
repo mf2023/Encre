@@ -126,7 +126,7 @@ class EncreSkillRegistry:
                 continue
             ext = match.group(0).lower()
             for skill in self._skills.values():
-                if skill.when_to_use and ext in skill.when_to_use.lower() and skill.name not in seen:
+                if skill.auto_activate and skill.when_to_use and ext in skill.when_to_use.lower() and skill.name not in seen:
                     seen.add(skill.name)
                     prompts.append(skill.name)
         return prompts
@@ -187,6 +187,8 @@ class EncreSkillRegistry:
         model = metadata.get("model")
         disable_model = _parse_bool(str(metadata.get("disable_model_invocation", "false")))
         user_invocable = _parse_bool(str(metadata.get("user_invocable", "true")))
+        hidden = _parse_bool(str(metadata.get("hidden", "false")))
+        auto_activate = _parse_bool(str(metadata.get("auto_activate", "false")))
         context_raw = str(metadata.get("context", "inline")).strip().lower()
         context_enum = SkillContext(context_raw) if context_raw in ("inline", "fork") else SkillContext.INLINE
 
@@ -199,7 +201,7 @@ class EncreSkillRegistry:
         _known = {"name", "description", "license", "compatibility", "aliases",
                    "allowed-tools", "allowed_tools", "metadata", "model", "context",
                    "when_to_use", "argument_hint", "disable_model_invocation",
-                   "user_invocable", "version"}
+                   "user_invocable", "hidden", "auto_activate", "version"}
         for k, v in metadata.items():
             if k not in _known and v is not None:
                 extra_meta[str(k)] = str(v)
@@ -253,6 +255,8 @@ class EncreSkillRegistry:
             model=str(model) if model else None,
             disable_model_invocation=disable_model,
             user_invocable=user_invocable,
+            hidden=hidden,
+            auto_activate=auto_activate,
             context=context_enum,
             source=source,
             file_path=filepath,

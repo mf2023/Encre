@@ -243,9 +243,20 @@ class EncreOrchestrator:
             max_turns=15,
             permission_mode=role.permission_mode,
         )
+        if role.model_override:
+            config.model = role.model_override
+        if role.backend_type_override:
+            config.backend_type = role.backend_type_override
         agent = EncreAgent(config=config)
         system_prompt = role.system_prompt_override or None
-        full_prompt = f"{node.name}: {node.description}\n\n{context}"
+        full_prompt = (
+            f"{node.name}: {node.description}\n\n{context}\n\n"
+            "---\n"
+            "You are executing a subtask. Do NOT restate the full plan. "
+            "Work ONLY on your assigned task. "
+            "Reference files with file:line format. "
+            "Report completion status explicitly."
+        )
 
         parts: list[str] = []
         async for event in agent.run(full_prompt, system_prompt=system_prompt):

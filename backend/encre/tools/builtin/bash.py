@@ -52,7 +52,7 @@ from typing import Any
 
 from encre.tools.base import build_tool
 from encre.tools.builtin._shell_manager import BackgroundShellManager
-from encre.tools.builtin._terminal_manager import TerminalSessionManager, SHELL_LAUNCH
+from encre.tools.builtin._terminal_manager import TerminalSessionManager
 
 # ── Workspace injection (set by the loop per turn) ────────────────
 # The active loop injects its workspace path here before each turn.
@@ -195,7 +195,10 @@ async def _bash_execute(**kwargs: Any) -> str:
 
     terminal = str(kwargs.get("terminal", "auto")).lower()
     cwd = kwargs.get("cwd") or None
-    timeout = int(kwargs.get("timeout", 120))
+    try:
+        timeout = int(kwargs.get("timeout", 120))
+    except (TypeError, ValueError):
+        timeout = 120
     max_chars = _resolve_max_chars(kwargs)
 
     # Background shells still use BackgroundShellManager (Python async)
@@ -408,4 +411,5 @@ EncreBashTool = build_tool(
     cost_level="high",
     retryability="guarded",
     safe_fallback="Prefer a dedicated tool, or inspect command preconditions and the current workspace state before retrying bash.",
+    get_effective_path=lambda self, args: args.get("command") or None,
 )

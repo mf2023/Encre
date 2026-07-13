@@ -69,6 +69,7 @@ interface ElectronAPI {
   getDrives(): Promise<string[]>;
   gitStatus(repoPath: string): Promise<{ output?: string; error?: string }>;
   gitDiff(repoPath: string, filePath?: string): Promise<{ output?: string; error?: string }>;
+  gitCommit(repoPath: string, message: string): Promise<{ output?: string; error?: string }>;
   getServiceStatus(): Promise<{ running: boolean; pid: number | null; port: number }>;
   restartService(): Promise<{ success: boolean }>;
   getAutoStart(): Promise<boolean>;

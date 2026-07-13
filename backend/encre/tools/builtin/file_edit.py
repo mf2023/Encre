@@ -372,4 +372,5 @@ EncreFileEditTool = build_tool(
     cost_level="high",
     retryability="guarded",
     safe_fallback="Re-read the file, make the target text more unique, or switch to dry_run to inspect the proposed diff first.",
+    get_effective_path=lambda self, args: args.get("file_path") or None,
 )

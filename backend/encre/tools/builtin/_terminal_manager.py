@@ -48,9 +48,10 @@ from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
 def _win_kill_tree(pid: int, force: bool = False) -> None:
     """Terminate a process and all its children on Windows."""
     import subprocess as _sp
-    flag = "/F" if force else "/T"
-    _sp.run(["taskkill", flag, "/T", "/PID", str(pid)],
-            capture_output=True, timeout=5)
+    args = ["taskkill", "/T", "/PID", str(pid)]
+    if force:
+        args.insert(1, "/F")
+    _sp.run(args, capture_output=True, timeout=5)
 
 
 _ENCRE_MARKER = "__ENCRE_DONE_{:08x}__"
@@ -209,9 +210,10 @@ class TerminalSessionManager:
 
         async def _read_stream(pipe, parts, marker_bytes):
             nonlocal found_marker
-            while time.monotonic() < deadline:
+            while time.monotonic() < deadline and not found_marker:
                 try:
-                    chunk = await asyncio.wait_for(pipe.read(4096), timeout=max(0.1, deadline - time.monotonic()))
+                    remaining = max(0.1, deadline - time.monotonic())
+                    chunk = await asyncio.wait_for(pipe.read(4096), timeout=remaining)
                 except asyncio.TimeoutError:
                     break
                 if not chunk:
@@ -219,6 +221,7 @@ class TerminalSessionManager:
                 parts.append(chunk)
                 if not found_marker and marker_bytes in chunk:
                     found_marker = True
+                    break
             return found_marker
 
         marker_bytes = marker.encode("utf-8")
@@ -228,7 +231,13 @@ class TerminalSessionManager:
         stderr_task = asyncio.create_task(
             _read_stream(session.process.stderr, stderr_parts, marker_bytes)
         )
-        await asyncio.gather(read_task, stderr_task)
+        done, pending = await asyncio.wait(
+            [read_task, stderr_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
         elapsed = int((time.monotonic() - started) * 1000)
         stdout_text = b"".join(stdout_parts).decode("utf-8", errors="replace")

@@ -151,12 +151,9 @@ def _detect_framework(workspace: str, hint: str | None) -> str:
             return "jest"
     if (ws / "pyproject.toml").exists() or (ws / "pytest.ini").exists() or (ws / "setup.cfg").exists():
         return "pytest"
-    # Fallback: if any *.py exists, use pytest; else if any *.js/*.ts, jest.
-    py_files = list(ws.rglob("*.py"))
-    if py_files:
+    if next(ws.rglob("*.py"), None):
         return "pytest"
-    js_files = list(ws.rglob("*.js")) + list(ws.rglob("*.ts"))
-    if js_files:
+    if next(ws.rglob("*.js"), None) or next(ws.rglob("*.ts"), None):
         return "jest"
     return "pytest"
 
@@ -282,9 +279,8 @@ async def _run_npm_test(
         report.raw_output = "npx/npm not found in PATH"
         return report
     bin_name = "vitest" if framework == "vitest" else "jest"
-    cmd: list[str] = [npx, "--no-install", bin_name, "run", "--reporter=json", "--outputFile=/dev/null"]
-    # vitest honours ``--reporter=json`` and writes JSON to stdout
-    # (no outputFile); jest writes via ``--json``.
+    _devnull = "NUL" if sys.platform == "win32" else "/dev/null"
+    cmd: list[str] = [npx, "--no-install", bin_name, "run", "--reporter=json", f"--outputFile={_devnull}"]
     if framework == "jest":
         cmd = [npx, "--no-install", "jest", "--json"]
     if test_filter:
@@ -484,7 +480,10 @@ async def _test_run_execute(**kwargs: Any) -> str:
         return f"Error: workspace does not exist or is not a directory: {workspace}"
     framework = _detect_framework(workspace, kwargs.get("framework"))
     test_filter = kwargs.get("filter") or kwargs.get("test_filter")
-    max_duration = float(kwargs.get("max_duration") or kwargs.get("timeout") or 120.0)
+    try:
+        max_duration = float(kwargs.get("max_duration") or kwargs.get("timeout") or 120.0)
+    except (TypeError, ValueError):
+        max_duration = 120.0
     if max_duration <= 0:
         max_duration = 120.0
 

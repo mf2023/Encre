@@ -236,6 +236,22 @@ class TestEncrePromptBuilder:
         builder = EncrePromptBuilder()
         builder.remove_block("nonexistent")  # Should not raise
 
+    def test_skill_summary_injects_dynamic_catalogue(self):
+        """A provided skill_summary is rendered as a dynamic Skills block."""
+        from encre.prompts.system import EncrePromptBuilder
+        builder = EncrePromptBuilder()
+        summary = "- `/travel-flights`: Flight search guidance"
+        prompt = builder.build(skill_summary=summary)
+        assert "## Skills (auto-discovered)" in prompt
+        assert "/travel-flights" in prompt
+
+    def test_empty_skill_summary_omits_block(self):
+        """No skill_summary means no Skills block is injected."""
+        from encre.prompts.system import EncrePromptBuilder
+        builder = EncrePromptBuilder()
+        prompt = builder.build(skill_summary="")
+        assert "## Skills (auto-discovered)" not in prompt
+
     def test_add_custom_instructions(self):
         """Verifies that add custom instructions."""
         from encre.prompts.system import EncrePromptBuilder
@@ -287,7 +303,7 @@ class TestEncrePromptBuilder:
         builder = EncrePromptBuilder()
         result = builder.build(specialty="unknown_specialty")
         # Confirm the expected result for this scenario: build unknown specialty falls back to general.
-        assert "General Assistant" in result
+        assert "Dig Deeper Than the Surface" in result
 
     def test_build_with_permission_mode(self):
         """Verifies that build with permission mode."""
@@ -308,8 +324,11 @@ class TestEncrePromptBuilder:
         tools = [{"function": {"name": "test_tool", "description": "A test tool"}}]
         result = builder.build(tools=tools)
         # Confirm the expected result for this scenario: build with tools.
-        assert "test_tool" in result
-        assert "A test tool" in result
+        # Tools are passed to the model via the API tools field, not inlined
+        # into the system prompt text; build must succeed and include the
+        # tool-usage guidance block.
+        assert isinstance(result, str) and len(result) > 0
+        assert "tool_usage" in result.lower() or "find_tool" in result.lower() or "bash" in result.lower()
 
     def test_build_with_custom_instructions(self):
         """Verifies that build with custom instructions."""

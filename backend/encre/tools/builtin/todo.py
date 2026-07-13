@@ -35,6 +35,8 @@ from encre.tools.base import build_tool
 async def _todo_execute(**kwargs: Any) -> str:
     """Render the current task list with status icons and priority flags."""
     todos = kwargs.get("todos", [])
+    if not isinstance(todos, list):
+        return "Error: 'todos' must be a list of task objects."
     summary = kwargs.get("summary", "")
     reset = kwargs.get("reset", False)
 

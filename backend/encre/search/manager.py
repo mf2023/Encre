@@ -30,6 +30,12 @@ The MCP server URL is embedded in this module and auto-encrypted to disk on
 first use, so users -- and the model -- cannot discover the endpoint address.
 
 Encrypted config on disk: ``<data_dir>/dsp_cache.bin``
+
+API key
+-------
+Authenticates with an embedded Exa API key (free tier). The anonymous MCP
+endpoint rate-limits hard after a few calls; the embedded key lifts that. It
+is injected as an ``Authorization: Bearer`` header at connect time.
 """
 
 import asyncio
@@ -54,6 +60,11 @@ _MCP_SEARCH_TIMEOUT: float = 60.0
 
 # Obfuscated filename -- looks like a generic DSP/embedding cache
 _MCP_SEARCH_CONFIG_FILE = "dsp_cache.bin"
+
+# Personal Exa API key (free tier). Hardcoded by design so search works out
+# of the box; the free quota is enough for development and a key leak is
+# harmless on a free plan. Rotate if it ever gets abused.
+_EXA_API_KEY = "6388f17a-4954-4bc5-9de0-dd5d16164f68"
 
 
 def _config_path() -> pathlib.Path:
@@ -122,6 +133,10 @@ class EncreSearchManager:
                 raise RuntimeError("MCP search config missing 'url'")
 
             headers = dict(config.get("headers", {}))
+            # Always authenticate with the embedded Exa key -- the anonymous
+            # endpoint rate-limits hard after a few calls. Injected at connect
+            # time so it works even against a stale encrypted config cache.
+            headers["Authorization"] = f"Bearer {_EXA_API_KEY}"
             timeout = float(config.get("timeout", 60.0))
 
             transport = HttpTransport(url, timeout=timeout, headers=headers)
@@ -166,12 +181,19 @@ class EncreSearchManager:
         num: int = 10,
         language: str = "",
         categories: str = "general",
+        content: bool = True,
     ) -> dict[str, Any]:
         """Execute a search query via the MCP service.
 
         Returns the same dict shape as the original DuckDuckGo backend::
 
             {"results": [{title, url, content}], "suggestions": []}
+
+        Args:
+            content: When True (default), request page content / full text from
+                the search server so results are self-contained and the model
+                rarely needs a follow-up ``web_fetch`` (which anti-crawling
+                sites often block). Set False for link-only results.
         """
         if not query:
             return {"results": [], "suggestions": []}
@@ -183,15 +205,68 @@ class EncreSearchManager:
         args: dict[str, Any] = _map_search_args(
             query=query, num=num, language=language,
             categories=categories, schema=self._tool_schema,
+            content=content,
         )
 
         try:
-            content = await self._client.call_tool(self._search_tool, args)
+            content_resp = await self._client.call_tool(self._search_tool, args)
         except Exception as exc:
             logger.warning("MCP search failed: %s", exc)
+            await self.close()
             return {"results": [], "suggestions": [], "_error": f"Search failed: {exc}"}
 
-        return _normalize_mcp_response(content)
+        normalized = _normalize_mcp_response(content_resp)
+        results = normalized.get("results", [])
+
+        # The Exa MCP ``web_search_exa`` tool only returns title + URL (its
+        # schema rejects a ``contents`` flag). When content is requested and
+        # the search response carried no inline content, fetch page bodies in
+        # one batched ``web_fetch_exa`` call. That call uses Exa's own crawler,
+        # which handles JS rendering and anti-scraping (ctrip/fliggy/...) that
+        # plain httpx cannot -- the main reason a model would otherwise end up
+        # with nothing useful.
+        if content and results and not any(r.get("content") for r in results):
+            await self._fetch_contents(results)
+
+        return normalized
+
+    async def _fetch_contents(
+        self,
+        results: list[dict[str, Any]],
+        *,
+        max_chars_per_url: int = 4000,
+    ) -> None:
+        """Fetch page bodies for result URLs in one batched call, in place.
+
+        Uses ``web_fetch_exa`` (Exa's crawler) which handles JS rendering and
+        anti-scraping. Failures degrade gracefully: a URL that cannot be
+        fetched keeps its empty content, so the result stays link-only rather
+        than failing the whole search.
+        """
+        if self._client is None or not self._client.is_initialized:
+            return
+        url_to_result: dict[str, dict[str, Any]] = {}
+        ordered_urls: list[str] = []
+        for r in results:
+            url = r.get("url", "")
+            if url and url not in url_to_result:
+                url_to_result[url] = r
+                ordered_urls.append(url)
+        if not ordered_urls:
+            return
+        try:
+            resp = await self._client.call_tool(
+                "web_fetch_exa",
+                {"urls": ordered_urls, "maxCharacters": max_chars_per_url},
+            )
+        except Exception as exc:
+            logger.warning("web_fetch_exa batch failed: %s", exc)
+            return
+        content_map = _parse_fetch_response(resp)
+        for url, r in url_to_result.items():
+            body = content_map.get(url, "")
+            if body:
+                r["content"] = body
 
     async def search_batch(
         self,
@@ -202,6 +277,30 @@ class EncreSearchManager:
     ) -> list[dict[str, Any]]:
         tasks = [self.search(q, num=num, language=language) for q in queries]
         return await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def fetch(self, url: str, *, max_chars: int = 50000) -> str:
+        """Fetch a single URL as clean markdown via Exa's crawler.
+
+        Handles JS rendering and anti-scraping (ctrip/fliggy/...) that plain
+        httpx cannot. Returns ``""`` when the page cannot be fetched so the
+        caller can fall back or report. Used by the ``web_fetch`` tool so a
+        user-supplied URL gets the same anti-scraping power as search results.
+        """
+        if not url:
+            return ""
+        await self._ensure_connected()
+        if self._client is None:
+            return ""
+        try:
+            resp = await self._client.call_tool(
+                "web_fetch_exa",
+                {"urls": [url], "maxCharacters": max_chars},
+            )
+        except Exception as exc:
+            logger.warning("web_fetch_exa failed for %s: %s", url, exc)
+            return ""
+        content_map = _parse_fetch_response(resp)
+        return content_map.get(url, "")
 
 
 # ------------------------------------------------------------------
@@ -215,14 +314,23 @@ def _map_search_args(
     language: str = "",
     categories: str = "general",
     schema: dict[str, Any] | None = None,
+    content: bool = True,
 ) -> dict[str, Any]:
     """Map standard search parameters to whatever the MCP tool's schema expects.
 
     Different MCP search servers use different parameter names:
     - ``open-webSearch`` uses ``query``, ``max_results``
     - ``web_search_prime`` (智谱) uses ``search_query``, ``content_size``
+    - Exa (``web_search_exa``) uses ``query``, ``numResults``, and a ``contents``
+      object whose ``text`` / ``highlights`` sub-flags control whether page
+      content is returned at all. Without enabling these the server returns
+      only title + URL + a short snippet -- forcing a follow-up web_fetch that
+      anti-crawling sites block. When ``content=True`` we detect and enable
+      whichever content switch the schema exposes.
 
-    This function inspects the schema and maps accordingly.
+    Args:
+        content: When True, enable any schema-declared content/text flags so
+            results carry page content inline.
     """
     if not schema:
         return {"query": query}
@@ -244,14 +352,44 @@ def _map_search_args(
         args["query"] = query
 
     # Pass optional params if the tool supports them
-    for pname in props:
+    for pname, pdef in props.items():
         low = pname.lower()
-        if "max" in low and ("result" in low or "limit" in low or "count" in low):
+        is_count_param = (
+            ("max" in low and ("result" in low or "limit" in low or "count" in low))
+            or ("num" in low and "result" in low)  # numResults, num_results
+            or low in {"count", "limit", "num", "top_k", "k",
+                       "maxresults", "max_results", "n_results"}
+        )
+        if is_count_param:
             args[pname] = num
         if ("language" in low or "locale" in low or "region" in low) and language:
             args[pname] = language
         if ("category" in low or "source" in low or "engine" in low) and categories != "general":
             args[pname] = categories
+
+    # ── Content / full-text switches ────────────────────────────────────
+    # Without these the server returns title+URL only; the model then has to
+    # web_fetch each URL, which anti-crawling sites (ctrip, fliggy, ...) block.
+    if content:
+        for pname, pdef in props.items():
+            low = pname.lower()
+            ptype = pdef.get("type", "string")
+            # Exa-style nested "contents" object: {text: true, highlights: true}
+            if low == "contents" and ptype == "object":
+                sub_props = pdef.get("properties", {}) or {}
+                contents_val: dict[str, Any] = {}
+                if "text" in sub_props:
+                    contents_val["text"] = True
+                if "highlights" in sub_props:
+                    contents_val["highlights"] = True
+                if contents_val:
+                    args[pname] = contents_val
+            # Flat "text" boolean (some Exa versions / other servers)
+            elif low == "text" and ptype == "boolean":
+                args[pname] = True
+            # "livecrawl" / "live_crawl" forces a fresh fetch instead of cache
+            elif ("livecrawl" in low or "live_crawl" in low) and ptype == "boolean":
+                args[pname] = True
 
     return args
 
@@ -278,11 +416,11 @@ def _normalize_mcp_response(content: list[dict[str, Any]]) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
 
     # Concatenate all text content blocks
-    raw_text = ""
+    parts: list[str] = []
     for item in content:
-        t = item.get("type", "text")
-        if t == "text":
-            raw_text += item.get("text", "")
+        if item.get("type") == "text":
+            parts.append(item.get("text", ""))
+    raw_text = "".join(parts)
 
     if not raw_text.strip():
         return {"results": [], "suggestions": []}
@@ -378,7 +516,20 @@ def _parse_text_block(block: str) -> dict[str, Any] | None:
 
 
 def _normalize_result_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Map any common result key name to our canonical ``{title, url, content}``."""
+    """Map any common result key name to our canonical ``{title, url, content}``.
+
+    Caps ``content`` length so a single full-text page cannot dominate the
+    payload when content fetching is enabled.
+    """
+    raw_content = str(
+        entry.get("content")
+        or entry.get("snippet")
+        or entry.get("description")
+        or entry.get("text")
+        or entry.get("body")
+        or ""
+    )
+    content = _truncate_content(raw_content, _MAX_RESULT_CONTENT)
     return {
         "title": str(
             entry.get("title")
@@ -393,15 +544,63 @@ def _normalize_result_entry(entry: dict[str, Any]) -> dict[str, Any]:
             or entry.get("source")
             or ""
         ),
-        "content": str(
-            entry.get("content")
-            or entry.get("snippet")
-            or entry.get("description")
-            or entry.get("text")
-            or entry.get("body")
-            or ""
-        ),
+        "content": content,
     }
+
+
+# Cap inline page content per result so N full-text results do not blow up
+# the model's context. ~8000 chars ~= 2k tokens; 5 results ~= 10k tokens.
+_MAX_RESULT_CONTENT = 8000
+
+
+def _truncate_content(text: str, limit: int) -> str:
+    """Truncate to ``limit`` chars with a visible marker when cut."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n…[content truncated]"
+
+
+# Matches a "URL: <url>" line as emitted by web_fetch_exa.
+_FETCH_URL_RE = re.compile(r"^URL:\s*(?P<url>\S+)\s*$", re.MULTILINE)
+
+
+def _parse_fetch_response(content: list[dict[str, Any]]) -> dict[str, str]:
+    """Parse a ``web_fetch_exa`` response into a ``{url: body}`` map.
+
+    The Exa fetch tool concatenates pages into one text block, each prefixed
+    with a markdown heading and a URL line::
+
+        # <title>
+        URL: <url>
+
+        <page body>
+        # <title>
+        URL: <url>
+        ...
+
+    Returns a mapping from URL to page body (body truncated conservatively).
+    URLs that do not appear get no entry (caller leaves them link-only).
+    """
+    parts: list[str] = []
+    for item in content:
+        if item.get("type") == "text":
+            parts.append(item.get("text", ""))
+    raw = "\n".join(parts)
+    if not raw.strip():
+        return {}
+    out: dict[str, str] = {}
+    # Split at lines starting with "# " (each fetched page begins with such a
+    # heading). Keep the heading with its block.
+    blocks = re.split(r"\n(?=# )", raw)
+    for block in blocks:
+        m = _FETCH_URL_RE.search(block)
+        if not m:
+            continue
+        url = m.group("url").strip()
+        body = block[m.end():].strip()
+        if body and url not in out:
+            out[url] = body
+    return out
 
 
 __all__ = ["EncreSearchManager"]

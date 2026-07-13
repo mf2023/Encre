@@ -83,6 +83,7 @@ class BundledSkillDefinition:
         file_path: Path to the source SKILL.md, if loaded from disk.
         body: Raw prompt body loaded from the skill file.
         hidden: Hide from user-facing skill listings.
+        auto_activate: If true, auto-activate when a referenced file matches ``when_to_use`` extensions.
         license: Agent-Skills standard ``license`` field.
         compatibility: Agent-Skills standard ``compatibility`` field.
         metadata: Arbitrary extra metadata key/value pairs.
@@ -103,6 +104,7 @@ class BundledSkillDefinition:
     file_path: str = ""
     body: str = ""
     hidden: bool = False
+    auto_activate: bool = False
     # Agent Skills standard fields
     license: str = ""
     compatibility: str = ""

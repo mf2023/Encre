@@ -743,11 +743,13 @@ export class Settings {
     if (typeof (window as any).__appCleanupContentArea === "function") {
       (window as any).__appCleanupContentArea();
     }
-    // Force a chat render to restore the message list after cleanup
-    // emptied it.  Without this the chat view stays blank after leaving
-    // settings.
-    import("./chat.js").then(m => m.Chat?.render?.());
-    if (typeof (window as any).__chatRender === "function") {
+    // Force a full chat re-render after cleanup emptied the DOM.  A plain
+    // render() would hit the render-key cache, see "messages unchanged", and
+    // skip fullRender -- leaving the chat blank. renderForce() resets the
+    // key so the message list is repainted from current state.
+    if (typeof (window as any).__chatForceRender === "function") {
+      (window as any).__chatForceRender();
+    } else if (typeof (window as any).__chatRender === "function") {
       (window as any).__chatRender();
     }
   }

@@ -319,14 +319,6 @@ fn _attach_windows_job(
     Ok(())
 }
 
-// ── Platform-specific kill helpers ────────────────────────────────
-
-/// Kill the child process tree (used on timeout).
-#[cfg(not(target_os = "windows"))]
-fn _kill_process_tree(pid: u32) {
-    let _ = unsafe { libc::killpg(pid as i32, libc::SIGKILL) };
-}
-
 // ── Output decoding ──────────────────────────────────────────────
 
 /// Decode subprocess output bytes into a String.

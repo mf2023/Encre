@@ -84,6 +84,7 @@ class BashAnalysis:
     write_targets: list[str] = field(default_factory=list)
     network_targets: list[str] = field(default_factory=list)
     subcommands: list[str] = field(default_factory=list)
+    shlex_error_type: str = ""  # "", "unbalanced_quote", "injection_detected"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -275,6 +276,55 @@ _RE_CURL_UPLOAD = re.compile(r'\bcurl\s+.*-F\s+\S+@\S+', re.IGNORECASE)
 _RE_SCP = re.compile(r'\bscp\s+\S+@', re.IGNORECASE)
 _RE_SSH_TUNNEL = re.compile(r'\bssh\s+-[DRL]\s', re.IGNORECASE)
 
+# Brace expansion (bash) -- {a,b} expands to multiple tokens, letting an
+# attacker construct filenames/patterns that evade single-token regex
+# checks (e.g. /etc/{passwd,shadow} splits into two disclosure targets).
+# Benign uses exist (mkdir {a,b,c}) so this sets the expansion flag.
+_RE_BRACE_EXPANSION = re.compile(r'\{[^{}]*,[^{}]*\}')
+
+# ${IFS} / $IFS reference -- the Internal Field Separator used as a
+# whitespace separator substitute to break up command tokens and evade
+# space-anchored pattern matching (e.g. cat${IFS}/etc/passwd).  The
+# negative lookahead avoids matching unrelated vars like $IFSHOME.
+_RE_IFS_REFERENCE = re.compile(r'\$\{?IFS\}?(?![A-Za-z0-9_])', re.IGNORECASE)
+
+# /proc/<pid>/(environ|cmdline|maps|smaps) -- environment-variable and
+# memory-map disclosure via procfs (leaks secrets, ASLR base addresses).
+_RE_PROC_ENVIRON = re.compile(r'/proc/\S*/(?:environ|cmdline|maps|smaps|auxv)\b', re.IGNORECASE)
+
+# Backslash command-name fragmentation -- escapes inside a command word
+# to evade token-anchored regex (c\at -> cat).  shlex de-escapes these at
+# tokenization time, so a raw regex on the command string misses them; this
+# pattern catches letter-backslash-letter mid-token.  Checked against the
+# quote-stripped command to avoid flagging escapes inside string literals.
+_RE_BACKSLASH_FRAGMENT = re.compile(r'[A-Za-z]\\[A-Za-z]')
+
+
+def _strip_quoted_spans(command: str) -> str:
+    """Return *command* with single/double-quoted spans replaced by spaces.
+
+    Used to run evasion-detection regexes (brace expansion, ``${IFS}``,
+    backslash fragmentation) only on the parts of the command that bash
+    actually parses as code, so legitimate escapes inside string literals
+    (``echo -e "foo\\nbar"``) don't trigger false positives.  Quote
+    characters themselves are also blanked.  Approximate: it does not
+    handle backslash-escaped quotes inside strings, but that's fine for
+    a best-effort evasion screen.
+    """
+    out: list[str] = []
+    quote: str = ""
+    for ch in command:
+        if quote:
+            if ch == quote:
+                quote = ""
+            out.append(" ")
+        elif ch in ("'", '"'):
+            quote = ch
+            out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
 
 def analyze_bash_command(command: str) -> BashAnalysis:
     """Perform multi-layer static analysis of a shell command.
@@ -295,9 +345,23 @@ def analyze_bash_command(command: str) -> BashAnalysis:
             if (not tok.startswith("-") and "/" not in tok[:
                 2]) or tok.startswith("--"):
                 analysis.subcommands.append(tok)
-    except ValueError:
+    except ValueError as ve:
+        # Classify the shlex failure so callers can distinguish a benign
+        # unbalanced quote from a more suspicious malformed token.  shlex
+        # does not parse braces, so "unbalanced_brace" surfaces from the
+        # brace-expansion check below, not here.
+        msg = str(ve).lower()
+        if "quot" in msg or "no escaped character" in msg or "unterminated" in msg:
+            analysis.shlex_error_type = "unbalanced_quote"
+            analysis.injection_details.append(
+                f"shlex: unbalanced_quote: {ve}"
+            )
+        else:
+            analysis.shlex_error_type = "injection_detected"
+            analysis.injection_details.append(
+                f"shlex: injection_detected: {ve}"
+            )
         analysis.injection_detected = True
-        analysis.injection_details.append("Unterminated quote or illegal token")
 
     # ── Layer 2: Unicode homoglyph detection ──
     for i, ch in enumerate(command):
@@ -316,6 +380,24 @@ def analyze_bash_command(command: str) -> BashAnalysis:
             analysis.injection_details.append(
                 f"Control character U+{ord(ch):04X} at position {i}"
             )
+
+    # CR differential: a lone carriage return (0x0D) not part of a CRLF
+    # line ending causes the displayed/logged command to differ from what
+    # bash executes -- the terminal moves the cursor to column 0, hiding
+    # earlier content from a human reviewer (CRLF smuggling / log hiding).
+    # Layer 2 above deliberately excludes ``\r`` to avoid false positives on
+    # Windows CRLF in multi-line scripts, so a lone CR needs this dedicated
+    # check.  ``\r\n`` (proper line ending) is NOT flagged.
+    lone_cr = [
+        i for i, ch in enumerate(command)
+        if ch == "\r" and (i + 1 >= len(command) or command[i + 1] != "\n")
+    ]
+    if lone_cr:
+        analysis.injection_detected = True
+        analysis.injection_details.append(
+            f"lone carriage return (CR) at position(s) {lone_cr[:3]}"
+            " -- log/display differential"
+        )
 
     # ── Layer 3: Pattern matching ──
 
@@ -434,6 +516,7 @@ def analyze_bash_command(command: str) -> BashAnalysis:
         (_RE_CAT_SHADOW, "read /etc/shadow or /etc/passwd"),
         (_RE_CAT_SSH_KEY, "read SSH private keys"),
         (_RE_READ_ENV, "read .env secrets"),
+        (_RE_PROC_ENVIRON, "read /proc/<pid>/(environ|cmdline|maps) -- secret/address disclosure"),
     ]:
         if pattern.search(command):
             analysis.injection_details.append(desc)
@@ -446,6 +529,27 @@ def analyze_bash_command(command: str) -> BashAnalysis:
     if _RE_IFS_MANIP.search(command):
         analysis.injection_details.append("IFS manipulation attempt")
         analysis.injection_detected = True
+
+    # Evasion techniques -- run against the quote-stripped command so escapes
+    # inside string literals (echo -e "foo\nbar") don't false-positive.
+    unquoted = _strip_quoted_spans(command)
+    if _RE_IFS_REFERENCE.search(unquoted):
+        analysis.injection_details.append(
+            "${IFS}/$IFS reference -- whitespace-substitute token evasion"
+        )
+        analysis.injection_detected = True
+    if _RE_BACKSLASH_FRAGMENT.search(unquoted):
+        analysis.injection_details.append(
+            "backslash command-name fragmentation (e.g. c\\at) -- evades token regex"
+        )
+        analysis.injection_detected = True
+    # Brace expansion is expansion (not injection): benign uses like
+    # ``mkdir {a,b,c}`` are common, so flag for review without blocking.
+    if _RE_BRACE_EXPANSION.search(unquoted):
+        analysis.contains_substitution = True
+        analysis.injection_details.append(
+            "brace expansion {a,b} -- may evade single-token pattern checks"
+        )
 
     # Data exfiltration
     for pattern, desc in [
@@ -549,19 +653,60 @@ class EncreSafetyEngine:
         self._ssrf_guard = EncreSSRFGuard()
         self._auto_classifier = auto_classifier
 
+    def native_sandbox_provides_fs_isolation(self) -> bool:
+        """Return True when the Rust native sandbox applies real filesystem isolation.
+
+        The Rust ``sandbox_execute`` applies OS-native isolation that varies by
+        platform (see ``native/crates/encre-core/src/sandbox.rs``):
+
+          * Linux   -> Landlock LSM (kernel 5.13+): r/w workspace only, no network.
+          * macOS   -> sandbox_init(3): r/w workspace only, no network.
+          * Windows -> Job Object: process/memory limits only, NO filesystem
+            restriction -- ``rm -rf`` outside the workspace still succeeds.
+
+        Only on Linux/macOS does the native path substitute for a container's
+        filesystem isolation.  Windows still needs Docker for FS confinement.
+        """
+        import sys as _sys
+        return _sys.platform in ("linux", "darwin")
+
     def require_container_sandbox(self, tool_name: str) -> bool:
         """Check if a tool call should be routed through the container sandbox.
 
         Only ``bash`` commands are sandboxed (file operations use path
         isolation instead).  The sandbox must be enabled, available, and
         configured with a mode that supports container isolation.
+
+        Unified sandbox awareness: the Rust ``sandbox_execute`` already applies
+        OS-native filesystem isolation to every bash command (Landlock on
+        Linux, sandbox_init on macOS).  When that native isolation is available
+        AND the configured network policy is ``NONE`` (the native path's
+        no-network guarantee), a Docker container layer on top would be
+        redundant -- it adds startup overhead without strengthening FS or
+        network isolation.  We therefore do NOT force a container in that
+        case, even when the mode is CONTAINER/HYBRID.  A non-NONE network
+        policy (the user wants network access the native path cannot provide)
+        or a non-native platform (Windows Job Object has no FS isolation)
+        still routes to Docker.
         """
         if tool_name not in ("bash",):
             return False
         if not self.sandbox_enabled or self.sandbox is None:
             return False
-        # Check the sandbox mode: CONTAINER or HYBRID trigger container isolation
+
         mode = getattr(self.sandbox.config, "mode", None)
+        network = getattr(self.sandbox.config, "network", None)
+        net_policy = getattr(network, "policy", None)
+
+        if (
+            mode in (SandboxMode.CONTAINER, SandboxMode.HYBRID)
+            and self.native_sandbox_provides_fs_isolation()
+            and net_policy == NetworkPolicy.NONE
+        ):
+            # Native path already provides FS isolation + no network -- skip Docker.
+            return False
+
+        # Check the sandbox mode: CONTAINER or HYBRID trigger container isolation
         if mode is not None:
             return mode in (SandboxMode.CONTAINER, SandboxMode.HYBRID)
         # Legacy/default: sandbox IS container mode

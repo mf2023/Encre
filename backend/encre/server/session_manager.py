@@ -472,6 +472,11 @@ class SessionManager:
                 agent.session = EncreSession.load_from_dir(str(dir_path), cfg)
                 agent.loop.session = agent.session
                 agent.telemetry.session_id = session_id
+                # Restore the session's cumulative cost from its JSONL log so
+                # get_summary() reflects the full session, not just post-resume
+                # activity.  Best-effort: never blocks session load on failure.
+                with contextlib.suppress(Exception):
+                    agent.telemetry.restore_session_cost_from_jsonl()
                 info = SessionInfo(session_id=session_id, agent=agent)
                 info.sessions_dir = self._get_sessions_dir()
                 meta = EncreSession.read_meta(str(dir_path))

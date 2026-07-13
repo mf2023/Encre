@@ -55,6 +55,8 @@ class AgentRole:
     permission_mode: str = "auto"
     specialty: str = "general"
     priority: int = 5
+    model_override: str = ""
+    backend_type_override: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +67,8 @@ class AgentRole:
             "permission_mode": self.permission_mode,
             "specialty": self.specialty,
             "priority": self.priority,
+            "model_override": self.model_override,
+            "backend_type_override": self.backend_type_override,
         }
 
 

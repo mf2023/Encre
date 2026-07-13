@@ -96,6 +96,11 @@ def _ensure_bundled_skills_loaded(registry: EncreSkillRegistry) -> None:
     if _BUNDLED_SKILLS_LOADED and registry.list_all():
         return
     create_bundled_skills(registry)
+    # Load static built-in skills (one SKILL.md per sub-directory).  These are
+    # pure markdown - adding a built-in skill is just dropping a folder.
+    from encre.skills.builtin import builtin_skills_dir
+    from encre.skills.types import SkillSource
+    registry.load_from_dir(builtin_skills_dir(), source=SkillSource.BUNDLED)
     _BUNDLED_SKILLS_LOADED = True
 
 
@@ -279,6 +284,7 @@ class EncreAgent:
         feedback: EncreFeedbackLearner | None = None,
         code_index: EncreCodeIndex | None = None,
     ) -> None:
+        from encre.config import get_data_dir
         self.config = config or EncreConfig()
         self.tool_registry = tool_registry or ToolRegistry()
         if not self.tool_registry.list_tools():
@@ -287,7 +293,6 @@ class EncreAgent:
         if memory_system is not None:
             self.memory_system = memory_system
         else:
-            from encre.config import get_data_dir
             self.memory_system = EncreMemorySystem(str(get_data_dir() / "memory"))
         if profile_system is not None:
             self.profile_system = profile_system
@@ -542,11 +547,9 @@ class EncreAgent:
         """Wire parent loop reference to tools that need it."""
         from encre.tools.builtin.agent import set_parent_loop as _agent_set_parent
         from encre.tools.builtin.codebase import set_parent_loop as _codebase_set_parent
-        from encre.tools.builtin.expand import set_parent_loop as _expand_set_parent
         from encre.tools.builtin.find_tool import set_parent_loop as _find_set_parent
         _agent_set_parent(self.loop)
         _codebase_set_parent(self.loop)
-        _expand_set_parent(self.loop)
         _find_set_parent(self.loop)
 
     # ------------------------------------------------------------------

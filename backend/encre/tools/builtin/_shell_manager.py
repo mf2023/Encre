@@ -47,9 +47,10 @@ from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
 def _win_kill_tree(pid: int, force: bool = False) -> None:
     """Terminate a process and all its children on Windows."""
     import subprocess as _sp
-    flag = "/F" if force else "/T"
-    _sp.run(["taskkill", flag, "/T", "/PID", str(pid)],
-            capture_output=True, timeout=5)
+    args = ["taskkill", "/T", "/PID", str(pid)]
+    if force:
+        args.insert(1, "/F")
+    _sp.run(args, capture_output=True, timeout=5)
 
 
 @dataclass

@@ -119,4 +119,5 @@ EncreFileWriteTool = build_tool(
     retryability="guarded",
     safe_fallback="Check the file path and content before retrying. For small changes, prefer file_edit instead.",
     is_destructive=True,
+    get_effective_path=lambda self, args: args.get("file_path") or None,
 )

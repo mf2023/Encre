@@ -27,6 +27,7 @@ from __future__ import annotations
 
 Lsp implementation for the Encre tool system.
 """
+import asyncio
 from typing import Any
 
 from encre.lsp.manager import EncreLSPManager
@@ -114,85 +115,90 @@ async def _lsp_execute(**kwargs: Any) -> str:
     Args:
         kwargs: Description of the kwargs parameter.
     """
-    operation = kwargs.get("operation", "")
-    file_path = kwargs.get("file_path", "")
-    line = kwargs.get("line", 0)
-    character = kwargs.get("character", 0)
-    workspace = kwargs.get("workspace", "")
+    try:
+        operation = kwargs.get("operation", "")
+        file_path = kwargs.get("file_path", "")
+        line = kwargs.get("line", 0)
+        character = kwargs.get("character", 0)
+        workspace = kwargs.get("workspace", "")
 
-    if operation == "initialize":
-        if not workspace:
-            return "Error: workspace is required for initialization"
-        await _get_manager().initialize_for_workspace(workspace)
-        return "LSP servers initialized"
+        if operation == "initialize":
+            if not workspace:
+                return "Error: workspace is required for initialization"
+            await _get_manager().initialize_for_workspace(workspace)
+            return "LSP servers initialized"
 
-    if operation == "shutdown":
-        await _get_manager().shutdown()
-        global _manager
-        _manager = None
-        return "LSP servers shut down"
+        if operation == "shutdown":
+            await _get_manager().shutdown()
+            global _manager
+            _manager = None
+            return "LSP servers shut down"
 
-    manager = _get_manager()
+        manager = _get_manager()
 
-    if operation == "diagnostics":
-        if not file_path:
-            return "Error: file_path is required"
-        diagnostics = await manager.get_diagnostics(file_path)
-        if not diagnostics:
-            return "No diagnostics found"
-        lines: list[str] = []
-        for d in diagnostics:
-            lines.append(
-                f"[{d.severity}] {d.message} "
-                f"at {d.range.start.line}:{d.range.start.character}"
-            )
-        return "\n".join(lines)
+        if operation == "diagnostics":
+            if not file_path:
+                return "Error: file_path is required"
+            diagnostics = await asyncio.wait_for(manager.get_diagnostics(file_path), timeout=30)
+            if not diagnostics:
+                return "No diagnostics found"
+            lines: list[str] = []
+            for d in diagnostics:
+                lines.append(
+                    f"[{d.severity}] {d.message} "
+                    f"at {d.range.start.line}:{d.range.start.character}"
+                )
+            return "\n".join(lines)
 
-    if operation == "go_to_definition":
-        if not file_path:
-            return "Error: file_path is required"
-        locations = await manager.go_to_definition(file_path, line, character)
-        if not locations:
-            return "No definition found"
-        lines = []
-        for loc in locations:
-            lines.append(
-                f"{loc.uri} "
-                f"({loc.range.start.line}:{loc.range.start.character})"
-            )
-        return "\n".join(lines)
+        if operation == "go_to_definition":
+            if not file_path:
+                return "Error: file_path is required"
+            locations = await asyncio.wait_for(manager.go_to_definition(file_path, line, character), timeout=30)
+            if not locations:
+                return "No definition found"
+            lines = []
+            for loc in locations:
+                lines.append(
+                    f"{loc.uri} "
+                    f"({loc.range.start.line}:{loc.range.start.character})"
+                )
+            return "\n".join(lines)
 
-    if operation == "find_references":
-        if not file_path:
-            return "Error: file_path is required"
-        locations = await manager.find_references(file_path, line, character)
-        if not locations:
-            return "No references found"
-        lines = []
-        for loc in locations:
-            lines.append(
-                f"{loc.uri} "
-                f"({loc.range.start.line}:{loc.range.start.character})"
-            )
-        return "\n".join(lines)
+        if operation == "find_references":
+            if not file_path:
+                return "Error: file_path is required"
+            locations = await asyncio.wait_for(manager.find_references(file_path, line, character), timeout=30)
+            if not locations:
+                return "No references found"
+            lines = []
+            for loc in locations:
+                lines.append(
+                    f"{loc.uri} "
+                    f"({loc.range.start.line}:{loc.range.start.character})"
+                )
+            return "\n".join(lines)
 
-    if operation == "hover":
-        if not file_path:
-            return "Error: file_path is required"
-        hover_result = await manager.hover(file_path, line, character)
-        if hover_result is None:
-            return "No hover information available"
-        return hover_result.contents
+        if operation == "hover":
+            if not file_path:
+                return "Error: file_path is required"
+            hover_result = await asyncio.wait_for(manager.hover(file_path, line, character), timeout=30)
+            if hover_result is None:
+                return "No hover information available"
+            return hover_result.contents
 
-    if operation == "document_symbols":
-        if not file_path:
-            return "Error: file_path is required"
-        symbols = await manager.document_symbols(file_path)
-        if not symbols:
-            return "No symbols found"
-        return _format_symbols(symbols)
+        if operation == "document_symbols":
+            if not file_path:
+                return "Error: file_path is required"
+            symbols = await asyncio.wait_for(manager.document_symbols(file_path), timeout=30)
+            if not symbols:
+                return "No symbols found"
+            return _format_symbols(symbols)
 
-    return f"Unknown operation: {operation}"
+        return f"Unknown operation: {operation}"
+    except asyncio.TimeoutError:
+        return "Error: LSP operation timed out after 30 seconds"
+    except Exception as exc:
+        return f"Error: LSP operation failed: {exc}"
 
 
 EncreLSPTool = build_tool(

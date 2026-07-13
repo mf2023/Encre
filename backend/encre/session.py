@@ -222,6 +222,7 @@ class EncreSession:
         self.tool_call_count: int = 0
         self.turn_count: int = 0
         self.metadata: dict[str, Any] = {}
+        self.parent_session_id: str = ""
         self._checkpoints: OrderedDict[str, SessionCheckpoint] = OrderedDict()
         self._max_checkpoints: int = config.checkpoint_max_count
         self.artifacts: list[dict[str, Any]] = []
@@ -550,9 +551,9 @@ class EncreSession:
                 if next_meta and next_meta.fork_point_message_id:
                     truncated: list[dict[str, Any]] = []
                     for m in msgs:
+                        truncated.append(m)
                         if m.get("id", "") == next_meta.fork_point_message_id:
                             break
-                        truncated.append(m)
                     msgs = truncated
             if branch_meta and branch_meta.fork_point_message_id:
                 first_id = msgs[0].get("id", "") if msgs else ""

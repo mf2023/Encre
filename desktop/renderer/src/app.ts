@@ -154,6 +154,14 @@ class App {
 
     this.splash = new SplashScreen();
     this.chat = new Chat();
+    // Expose chat render so settings can refresh the message list after
+    // the settings overlay tears down the chat DOM.
+    (window as any).__chatRender = () => this.chat.render();
+    // Force a full re-render (resets the render-key cache) -- needed after
+    // cleanupContentArea() empties #message-list, because a plain render()
+    // would see the unchanged render key and skip fullRender, leaving the
+    // chat blank when returning from settings.
+    (window as any).__chatForceRender = () => this.chat.renderForce();
     this.tools = new Tools();
     this.settings = new Settings();
     this.files = new Files(this.input);
@@ -1665,6 +1673,24 @@ class App {
       }
     });
 
+    // "View all" link → open review tab in sidebar
+    const viewAll = document.getElementById("summary-view-all");
+    if (viewAll) {
+      viewAll.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        panel!.classList.add("hidden");
+        btn!.classList.remove("active");
+        const st = getState();
+        const first = st.artifacts?.[0];
+        if (st.workspaceMode === "iwork") {
+          this.sessionInner.showReviewTab("", undefined);
+        } else {
+          this.sessionInner.showReviewTab(first?.path || "", first || undefined);
+        }
+      });
+    }
+
     // Re-render when state changes
     onLocaleChange(() => {
       if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
@@ -1693,16 +1719,37 @@ class App {
       el.innerHTML = `<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">${t("sessionInner.noProgress")}</div>`;
       return;
     }
-    el.innerHTML = items.slice(0, 8).map((item: any) => {
+    const active = items.filter((i: any) => i.status !== "done");
+    const done = items.filter((i: any) => i.status === "done");
+    const parts: string[] = [];
+    const renderItem = (item: any) => {
+      let cls = "sp-todo-item";
       let icon = "circle";
-      let cls = "";
-      if (item.status === "done") { icon = "check-circle-2"; cls = "color:var(--success)"; }
-      else if (item.status === "active") { icon = "loader"; cls = "color:var(--accent)"; }
-      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary);${cls}">
-        <i data-lucide="${icon}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px"></i>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(item.text)}</span>
+      if (item.status === "done") { cls += " sp-todo-done"; icon = "check-circle-2"; }
+      else if (item.status === "active") { cls += " sp-todo-active"; icon = "loader"; }
+      else { cls += " sp-todo-pending"; }
+      return `<div class="${cls}">
+        <i data-lucide="${icon}" class="lucide lucide-sm sp-todo-icon"></i>
+        <span class="sp-todo-text">${this.esc(item.text)}</span>
       </div>`;
-    }).join("");
+    };
+    active.slice(0, 8).forEach((i: any) => parts.push(renderItem(i)));
+    if (done.length > 0) {
+      const collapsed = done.length > 2;
+      const displayCount = collapsed ? 0 : done.length;
+      parts.push(`<div class="sp-todo-done-section${collapsed ? " collapsed" : ""}">
+        <div class="sp-todo-done-header" onclick="this.parentElement.classList.toggle('collapsed')">
+          <i data-lucide="check-circle-2" class="lucide lucide-sm sp-todo-done-icon"></i>
+          <span class="sp-todo-done-label">${t("sessionInner.doneItems", { count: done.length })}</span>
+          <i data-lucide="chevron-down" class="lucide lucide-sm sp-todo-chevron"></i>
+        </div>
+        <div class="sp-todo-done-body">${done.slice(0, 8).map(renderItem).join("")}</div>
+      </div>`);
+    }
+    el.innerHTML = parts.join("");
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: el });
+    }
   }
 
   private renderSummaryArtifacts(st: ReturnType<typeof getState>): void {
@@ -1715,12 +1762,31 @@ class App {
     }
     el.innerHTML = artifacts.slice(0, 6).map((a: any) => {
       const iconSrc = a.ext === "py" ? "file-code-2" : a.ext === "ts" || a.ext === "tsx" || a.ext === "js" ? "file-code-2" : "file-plus-2";
-      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary)">
-        <i data-lucide="${iconSrc}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px"></i>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(a.name)}</span>
-        <span style="font-size:11px;flex-shrink:0;color:var(--text-muted)">+${a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : 0}/-${a.diff_text ? (a.diff_text.match(/^-/gm) || []).length : 0}</span>
+      const adds = a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : 0;
+      const dels = a.diff_text ? (a.diff_text.match(/^-/gm) || []).length : 0;
+      return `<div class="sp-artifact-item">
+        <i data-lucide="${iconSrc}" class="lucide lucide-sm sp-artifact-icon"></i>
+        <span class="sp-artifact-name">${this.esc(a.name)}</span>
+        <span class="sp-artifact-stats">
+          <span class="si-diff-add">+${adds}</span>
+          <span class="si-diff-remove">-${dels}</span>
+        </span>
+        <a class="sp-artifact-review" href="#" data-path="${this.esc(a.path)}">
+          <i data-lucide="eye" class="lucide lucide-xs"></i>
+        </a>
       </div>`;
     }).join("");
+    el.querySelectorAll(".sp-artifact-review").forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const path = (link as HTMLElement).dataset.path!;
+        this.summaryPanel.classList.add("hidden");
+        const sbBtn = document.getElementById("btn-summary-panel");
+        if (sbBtn) sbBtn.classList.remove("active");
+        if (this.chat.onViewChanges) this.chat.onViewChanges(path);
+      });
+    });
   }
 
   private renderSummaryReferences(st: ReturnType<typeof getState>): void {

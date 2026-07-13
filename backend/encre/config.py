@@ -253,7 +253,10 @@ class EncreConfig:
     enable_prompt_caching: bool = True
     enable_streaming_tool_execution: bool = True
     enable_multi_stage_compact: bool = False
+    enable_unified_recovery: bool = False
+    enable_context_collapse: bool = False
     enable_project_rules: bool = True
+    enable_file_watcher: bool = False
     # Fallback model: auto-switched when the primary model fails (rate limit,
     # overload, etc.).  Empty string = no fallback.  Mirrors Claude Code's
     # fallbackModel in query.ts.

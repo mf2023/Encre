@@ -242,6 +242,20 @@ def _slash_commands_block(
     return PromptBlock(priority=48, name="slash_commands", condition=None, content=content)
 
 
+def _skills_block(skill_summary: str = "") -> PromptBlock | None:
+    """Dynamic skill catalogue: what skills are available and when to use them.
+
+    Replaces the hard-coded skill lists previously baked into mode/specialty
+    prompt blocks.  ``skill_summary`` is pre-rendered by the caller (the loop,
+    from the live skill registry) so this module stays free of a registry
+    dependency.  Returns ``None`` when no summary is provided.
+    """
+    if not skill_summary or not skill_summary.strip():
+        return None
+    content = "## Skills (auto-discovered)\n\n" + skill_summary.strip()
+    return PromptBlock(priority=47, name="skills", condition=None, content=content)
+
+
 def _normal_mode_block(session_id: str = "") -> PromptBlock:
     """Normal (non-workspace) mode block with the session files directory."""
     from encre.tools.builtin._sandbox import get_session_files_dir
@@ -360,12 +374,13 @@ class EncrePromptBuilder:
         session_id: str = "",
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
+        skill_summary: str = "",
     ) -> str:
         """Assemble the full system prompt from the active blocks.
 
-        Collects core, mode, slash-command and specialty blocks, filters them
-        by the active intents, sorts by priority, concatenates, and appends the
-        prompt-cache boundary marker.
+        Collects core, mode, slash-command, skill-catalogue and specialty
+        blocks, filters them by the active intents, sorts by priority,
+        concatenates, and appends the prompt-cache boundary marker.
         """
         intents = intents or ["general"]
 
@@ -406,14 +421,27 @@ class EncrePromptBuilder:
         if "slash_commands" not in blocks:
             blocks["slash_commands"] = _slash_commands_block(slash_command_mode, slash_commands)
 
+        # Dynamic skill catalogue (replaces hard-coded skill lists in mode prompts).
+        if "skills" not in blocks:
+            skills_block = _skills_block(skill_summary)
+            if skills_block is not None:
+                blocks["skills"] = skills_block
+
         # Specialty block (if not overridden)
         if "specialty" not in blocks:
             specialty_map: dict[str, PromptBlock] = {}
-            if "coding" in intents:
+            # A specialty can be triggered either by an active intent (derived
+            # from the tool surface) or by an explicit ``specialty`` argument
+            # (e.g. EncreCodingPrompt forces "coding").  Union both sources so
+            # either path produces the right block.
+            active = set(intents)
+            if specialty:
+                active.add(specialty)
+            if "coding" in active:
                 specialty_map["coding"] = _specialty_coding_block()
-            if "research" in intents:
+            if "research" in active:
                 specialty_map["research"] = _specialty_research_block()
-            if "data" in intents:
+            if "data" in active:
                 specialty_map["data"] = _specialty_data_block()
             # specific specialty takes priority, fall back to general
             if specialty in specialty_map:
@@ -429,10 +457,17 @@ class EncrePromptBuilder:
                 priority=200, name="custom", condition=None, content=custom_instructions,
             )
 
-        # Filter by condition, then sort by priority, then assemble
+        # Filter by condition, then sort by priority, then assemble.
+        # A block is kept when its condition is empty, or when any active intent
+        # OR the explicit ``specialty`` argument matches the condition.  This
+        # lets e.g. EncreCodingPrompt (which forces specialty="coding" with no
+        # coding intent) still surface the coding specialty block.
+        filter_keys = set(intents)
+        if specialty:
+            filter_keys.add(specialty)
         filtered: list[PromptBlock] = []
         for block in blocks.values():
-            if block.condition is None or any(i in block.condition for i in intents):
+            if block.condition is None or any(i in block.condition for i in filter_keys):
                 filtered.append(block)
 
         sorted_blocks = sorted(filtered, key=lambda b: b.priority)

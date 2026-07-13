@@ -393,13 +393,13 @@ export function handleEvent(event: ServerEvent): void {
       _ensureAssistantMessage(_eventSessionId(event));
       // Thinking phase ends when tool calls begin
       state.finishThinking();
-      state.recordSegment("tool", event.id, _eventSessionId(event));
       // Find existing (may have been auto-created by deltas arriving first) or create
       let tc = state.findToolCall(event.id, _eventSessionId(event));
       if (tc) {
         tc.name = event.name || tc.name;
         tc.status = "pending";
       } else {
+        state.recordSegment("tool", event.id, _eventSessionId(event));
         state.addToolCall({
           id: event.id,
           name: event.name,
@@ -1245,7 +1245,11 @@ export function handleEvent(event: ServerEvent): void {
       const ev = event as BranchUpdated;
       if (_shouldRejectSessionScopedEvent(ev)) break;
       state.setBranches(ev.branches, ev.active_branch_id, ev.session_id);
-      if (ev.messages) {
+      // Only replace messages when the session is NOT running.
+      // During retry (running=true), the frontend manages messages locally
+      // (removes old assistant + streams new), and replacing them would
+      // orphan the streaming placeholder.
+      if (ev.messages && !state.getState().running) {
         state.loadSessionMessages(ev.messages, ev.session_id);
       }
       chat?.render();

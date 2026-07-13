@@ -98,7 +98,7 @@ class TestFileReadTool:
         file_path = os.path.join(temp_dir, "empty.txt")
         result = await tool.execute(file_path=file_path)
         # Confirm the expected result for this scenario: read empty file.
-        assert result == ""
+        assert result == "(empty file, 0 bytes)"
 
     def test_input_schema_required(self):
         """Verifies that input schema required."""

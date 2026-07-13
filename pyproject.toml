@@ -62,6 +62,13 @@ dependencies = [
 where = ["backend"]
 include = ["encre*"]
 
+[tool.setuptools.package-data]
+# Non-Python resources shipped with the package.  Without this, wheels / frozen
+# builds silently drop .prompt and .md files, breaking built-in skills/prompts.
+"encre" = ["*.txt"]
+"encre.prompts" = ["**/*.prompt"]
+"encre.skills.builtin" = ["**/*.md"]
+
 # [tool.setuptools-rust]
 # module = "backend.encre._native"
 # (manual: _native.pyd is copied into backend/encre/ during setup)

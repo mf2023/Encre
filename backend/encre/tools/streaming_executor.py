@@ -58,6 +58,47 @@ class TrackedTool:
     result_content: str | None = None
     sub_agent_messages: list[dict[str, Any]] | None = None
     sub_agent_session_id: str | None = None
+    paths: frozenset[str] = field(default_factory=frozenset)
+
+
+def _extract_paths(
+    tool: TrackedTool,
+    tool_registry: Any = None,
+) -> frozenset[str]:
+    """Extract filesystem paths a tool call touches, for overlap detection.
+
+    First tries the tool's ``get_effective_path`` hook (Tool Protocol 4.3).
+    Falls back to :func:`encre.safety._extract_tool_target_paths` for tools
+    that do not implement the hook.  Paths are normalized (``~`` expanded,
+    backslashes to forward slashes, lowercased) so ``./Foo.txt`` and
+    ``foo.txt`` collapse to the same key.
+    """
+    # Try the tool's own get_effective_path hook first
+    if tool_registry is not None:
+        try:
+            tool_obj = tool_registry.get(tool.name)
+            if tool_obj is not None and hasattr(tool_obj, "get_effective_path"):
+                ep = tool_obj.get_effective_path(tool.args or {})
+                if ep:
+                    from encre.safety import _normalize_path_for_immune_check
+                    norm = _normalize_path_for_immune_check(ep)
+                    if norm:
+                        return frozenset({norm})
+        except Exception:
+            pass
+
+    # Fallback: generic arg scanning via safety module
+    try:
+        from encre.safety import _extract_tool_target_paths, _normalize_path_for_immune_check
+    except Exception:
+        return frozenset()
+    raw = _extract_tool_target_paths(tool.name, tool.args or {})
+    out: set[str] = set()
+    for p in raw:
+        norm = _normalize_path_for_immune_check(p)
+        if norm:
+            out.add(norm)
+    return frozenset(out)
 
 
 class StreamingToolExecutor:
@@ -74,6 +115,7 @@ class StreamingToolExecutor:
         execute_fn: Callable[[TrackedTool], Any],
         emit_fn: Callable[[TrackedTool], Generator[AgentEvent, None, None]] | None = None,
         concurrency: int = 10,
+        tool_registry: Any = None,
     ) -> None:
         """Initialize the streaming executor.
 
@@ -81,12 +123,14 @@ class StreamingToolExecutor:
             execute_fn: Async callable invoked for each tracked tool.
             emit_fn: Optional callable to emit results for a tracked tool.
             concurrency: Maximum number of concurrent tool executions.
+            tool_registry: Optional ToolRegistry for resolving hooks.
         """
         self._tools: list[TrackedTool] = []
         self._execute_fn = execute_fn
         self._emit_fn = emit_fn or self._default_emit_results
         self._semaphore = asyncio.Semaphore(concurrency)
         self._discarded = False
+        self._tool_registry = tool_registry
 
     def discard(self) -> None:
         """Discard all pending and in-progress tools.
@@ -98,6 +142,8 @@ class StreamingToolExecutor:
 
     def add_tool(self, tool: TrackedTool) -> None:
         """Queue a tool for execution. Starts executing if concurrency allows."""
+        if not tool.paths:
+            tool.paths = _extract_paths(tool, self._tool_registry)
         self._tools.append(tool)
         task = asyncio.create_task(self._process_tool(tool))
         tool.promise = task
@@ -133,10 +179,24 @@ class StreamingToolExecutor:
 
         Returns:
             True if the tool can proceed (no concurrent unsafe tools running).
+
+        Path-aware serialization: even two concurrency-safe tools are
+        serialized when they touch the same filesystem path (e.g. a
+        ``file_read`` and ``file_write`` of the same file must not race).
+        Tools that touch no extractable path fall back to the original
+        concurrency-safety rule.
         """
         executing = [t for t in self._tools if t.status == "executing"]
         if not executing:
             return True
+        # Path overlap check: if this tool shares a path with any executing
+        # tool, it must wait (regardless of concurrency-safety flags) so a
+        # reader doesn't observe a half-written file.  Only applies when the
+        # tool actually declared paths; path-less tools skip this.
+        if tool.paths:
+            for t in executing:
+                if t.paths and (tool.paths & t.paths):
+                    return False
         return tool.is_concurrency_safe and all(t.is_concurrency_safe for t in executing)
 
     def _wait_for_state_change(self) -> asyncio.Future[Any]:

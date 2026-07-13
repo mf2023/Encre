@@ -548,58 +548,99 @@ def _build_compacted(
 def _sanitize_tool_groups(
     messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Remove orphaned tool messages that lack their assistant.
+    """Remove / repair tool_call groups so the backend never rejects a turn.
 
-    Compaction can leave tool results without their parent assistant
-    tool_calls block, which causes backend API 400 errors.  This also
-    drops assistant messages whose tool_calls carry no usable id, because
-    such a block can never be matched to tool results and would make the
-    next request fail with "insufficient tool messages".
+    Handles two orphan shapes that both produce 400 errors -- the classic
+    pause/resume failure where a cancelled turn leaves a half-finished
+    assistant+tools block behind:
+
+    1. **Orphan tool result** -- a ``role:tool`` message whose
+       ``tool_call_id`` no preceding kept assistant declared. The backend
+       rejects this as "tool_use_id not found". Fixed by dropping it.
+
+    2. **Incomplete assistant group** -- an assistant ``tool_calls`` block
+       missing one or more matching tool_results (a tool was cancelled mid
+       turn before its result was written). The backend rejects this as
+       "messages must end with a tool_result" / "insufficient tool messages".
+       Fixed by synthesizing an error tombstone for each missing id, so the
+       already-executed sibling results are preserved instead of dropping the
+       whole group.
+
+    An assistant block whose ``tool_calls`` carry no usable id at all is
+    dropped together with its trailing tool messages, since it can never be
+    matched.
     """
     if not messages:
         return messages
 
-    # Skip leading orphan tools instead of mutating the input list.
-    start = 0
-    while start < len(messages) and messages[start].get("role") == "tool":
-        start += 1
+    # tombstone body reused for every synthesized missing result
+    tombstone = (
+        "[Error: This tool call's result was not persisted. "
+        "The tool did not complete.]"
+    )
 
-    # Pair each assistant tool_calls with its completed tool_results
     result: list[dict[str, Any]] = []
-    i = start
-    while i < len(messages):
+    # ids declared by an assistant we have already KEPT (and that therefore
+    # may legitimately be referenced by a later tool_result).
+    seen_declared: set[str] = set()
+    i = 0
+    n = len(messages)
+    while i < n:
         msg = messages[i]
         role = msg.get("role", "")
-        tool_calls = msg.get("tool_calls")
 
-        if role == "assistant" and tool_calls:
+        if role == "tool":
+            tid = msg.get("tool_call_id", "")
+            # Keep only if a preceding kept assistant declared this id.
+            if tid and tid in seen_declared:
+                result.append(dict(msg))
+            # else: orphan result (no matching tool_call) -> drop
+            i += 1
+            continue
+
+        if role == "assistant" and msg.get("tool_calls"):
+            tool_calls = msg["tool_calls"]
             expected = {tc.get("id", "") for tc in tool_calls if tc.get("id")}
             if not expected:
-                # Assistant claims tool_calls but none have an id.  Drop the
-                # invalid assistant and any immediately following tool
-                # messages so the API never sees an unmatched tool_call block.
-                j = i + 1
-                while j < len(messages) and messages[j].get("role") == "tool":
-                    j += 1
-                i = j
+                # Assistant claims tool_calls but none have an id -- the
+                # block can never be matched.  Drop it and any immediately
+                # following tool messages so the API never sees an
+                # unmatched tool_call block.
+                i += 1
+                while i < n and messages[i].get("role") == "tool":
+                    i += 1
                 continue
 
-            # Collect following tool results
+            # Collect following tool results (consecutive tool messages).
             j = i + 1
             found: set[str] = set()
-            while j < len(messages) and messages[j].get("role") == "tool":
+            while j < n and messages[j].get("role") == "tool":
                 tid = messages[j].get("tool_call_id", "")
                 if tid:
                     found.add(tid)
                 j += 1
 
-            if expected.issubset(found):
-                result.append(dict(msg))
-                k = i + 1
-                while k < j:
-                    result.append(dict(messages[k]))
-                    k += 1
-            # else: skip this assistant and its orphaned tools -- incomplete
+            missing = expected - found
+            # Keep the assistant + only the tool results it declared. Any
+            # other tool messages in the consecutive run are orphans (their
+            # id belongs to no preceding kept assistant) -- drop them.
+            declared_results = [
+                dict(messages[k]) for k in range(i + 1, j)
+                if messages[k].get("tool_call_id") in expected
+            ]
+            result.append(dict(msg))
+            seen_declared |= expected
+            result.extend(declared_results)
+            if missing:
+                # Incomplete group -- synthesize tombstones for the missing
+                # ids so the sibling results are preserved instead of
+                # discarding the whole turn's work.
+                for mid in missing:
+                    result.append({
+                        "role": "tool",
+                        "tool_call_id": mid,
+                        "content": tombstone,
+                    })
             i = j
             continue
 

@@ -447,7 +447,12 @@ fn parse_symbols(rel_path: &str, content: &str, lang: &str) -> Vec<Symbol> {
 // Walk the workspace and gather (path, rel, lang, mtime) tuples.
 fn collect_source_files(workspace: &Path) -> Vec<(PathBuf, String, String, f64)> {
     let mut out = Vec::new();
-    for entry in WalkDir::new(workspace).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(workspace).into_iter().filter_map(|e| {
+        if let Err(ref err) = e {
+            eprintln!("[ast] walk error: {err}");
+        }
+        e.ok()
+    }) {
         let path = entry.path();
         if path == workspace || !entry.file_type().is_file() {
             continue;

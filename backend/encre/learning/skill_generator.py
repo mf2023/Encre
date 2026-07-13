@@ -157,14 +157,38 @@ class SkillGenerator:
         if skill_registry is None:
             return
 
-        from encre.skills.types import BundledSkillDefinition
+        from encre.skills.types import BundledSkillDefinition, SkillContext, SkillSource
+
+        body = skill_def["body"]
+        name = skill_def["name"]
+        aliases = list(skill_def.get("aliases") or [])
+        when_to_use = skill_def.get("when_to_use", "")
+
+        async def get_prompt(
+            args: str | None = None,
+            ctx: dict[str, Any] | None = None,
+        ) -> str:
+            resolved = body
+            if args is not None:
+                resolved = resolved.replace("{{args}}", args)
+                resolved = resolved.replace("{{arguments}}", args)
+                resolved = resolved.replace("{{user_input}}", args)
+            if ctx is not None:
+                for key, value in ctx.items():
+                    resolved = resolved.replace(f"{{{{{key}}}}}", str(value))
+            return resolved
+
         bundled = BundledSkillDefinition(
-            name=skill_def["name"],
+            name=name,
             description=skill_def["description"],
-            source="auto_generated",
-            prompt=skill_def["body"],
+            get_prompt_for_command=get_prompt,
+            aliases=aliases,
+            when_to_use=when_to_use,
+            context=SkillContext.INLINE,
+            source=SkillSource.BUNDLED,
+            body=body,
         )
-        skill_registry._bundled[skill_def["name"]] = bundled
+        skill_registry.register(bundled)
 
         skills_dir = self._get_auto_skills_dir()
         skills_dir.mkdir(parents=True, exist_ok=True)

@@ -35,14 +35,14 @@ class TestEncreConfigDefaults:
     def test_default_model(self):
         """Test: Default model."""
         config = EncreConfig()
-        # Verify: config.model == "gpt-4o"
-        assert config.model == "gpt-4o"
+        # Verify: config.model == "" (flat field empty until a ModelConfig is selected)
+        assert config.model == ""
 
     def test_default_backend_type(self):
         """Test: Default backend type."""
         config = EncreConfig()
-        # Verify: config.backend_type == "openai"
-        assert config.backend_type == "openai"
+        # Verify: config.backend_type == "" (derived from active ModelConfig)
+        assert config.backend_type == ""
 
     def test_default_max_tokens(self):
         """Test: Default max tokens."""
@@ -59,14 +59,14 @@ class TestEncreConfigDefaults:
     def test_default_permission_mode(self):
         """Test: Default permission mode."""
         config = EncreConfig()
-        # Verify: config.permission_mode == "default"
-        assert config.permission_mode == "default"
+        # Verify: config.permission_mode == "bypass"
+        assert config.permission_mode == "bypass"
 
     def test_default_max_turns(self):
         """Test: Default max turns."""
         config = EncreConfig()
-        # Verify: config.max_turns == 25
-        assert config.max_turns == 25
+        # Verify: config.max_turns == 0 (0 = unlimited)
+        assert config.max_turns == 0
 
     def test_default_sandbox_enabled(self):
         """Test: Default sandbox enabled."""
@@ -215,8 +215,8 @@ class TestEncreConfigBackendKwargs:
     def test_backend_kwargs_does_not_affect_top_level(self):
         """Test: Backend kwargs does not affect top level."""
         config = EncreConfig(backend_kwargs={"model": "fake"})
-        # Verify: config.model == "gpt-4o"  # untouched
-        assert config.model == "gpt-4o"  # untouched
+        # Verify: config.model == ""  # untouched (flat field stays at default)
+        assert config.model == ""  # untouched
         # Verify: config.backend_kwargs["model"] == "fake"
         assert config.backend_kwargs["model"] == "fake"
 
@@ -235,14 +235,14 @@ class TestEncreConfigToDict:
         """Test: To dict contains default values."""
         config = EncreConfig()
         result = config.to_dict()
-        # Verify: result["model"] == "gpt-4o"
-        assert result["model"] == "gpt-4o"
+        # Verify: result["model"] == ""
+        assert result["model"] == ""
         # Verify: result["max_tokens"] == 4096
         assert result["max_tokens"] == 4096
-        # Verify: result["permission_mode"] == "default"
-        assert result["permission_mode"] == "default"
-        # Verify: result["backend_type"] == "openai"
-        assert result["backend_type"] == "openai"
+        # Verify: result["permission_mode"] == "bypass"
+        assert result["permission_mode"] == "bypass"
+        # Verify: result["backend_type"] == ""
+        assert result["backend_type"] == ""
 
     def test_to_dict_reflects_overrides(self):
         """Test: To dict reflects overrides."""

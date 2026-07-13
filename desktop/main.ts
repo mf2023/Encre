@@ -1308,6 +1308,27 @@ ipcMain.handle("gitDiff", async (_event, repoPath: string, filePath?: string) =>
   });
 });
 
+// Runs `git commit` with a message for all staged+unstaged changes.
+ipcMain.handle("gitCommit", async (_event, repoPath: string, message: string) => {
+  return new Promise((resolve) => {
+    const git = spawn("git", ["commit", "-m", message], { cwd: repoPath, windowsHide: process.platform === "win32" });
+    let out = "";
+    let err = "";
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve({ error: "git commit timed out" }); } };
+    const t = setTimeout(() => { git.kill(); finish(); }, 15000);
+    git.stdout.on("data", (d: Buffer) => { if (!done) out += d.toString(); });
+    git.stderr.on("data", (d: Buffer) => { if (!done) err += d.toString(); });
+    git.on("error", (e) => { clearTimeout(t); if (!done) { done = true; resolve({ error: e.message }); } });
+    git.on("close", (code) => {
+      clearTimeout(t);
+      if (done) return;
+      done = true;
+      resolve(code === 0 ? { output: out } : { error: err || "git commit failed" });
+    });
+  });
+});
+
 // Window controls
 // Minimizes the window that sent the request.
 ipcMain.handle("window-minimize", (event) => {

@@ -133,6 +133,32 @@ class EncreTool(ABC):
         """
         return False
 
+    # ── Optional hooks (Tool Protocol) ─────────────────────────────────
+    # These are optional lifecycle hooks that tools may override to
+    # participate in the richer permission / scheduling / validation
+    # pipeline.  Default no-ops maintain backward compatibility.
+
+    def validate_input(self, args: dict[str, Any]) -> str | None:
+        """Validate tool arguments before execution.
+        Returns None if valid, or an error message string if invalid."""
+        return None
+
+    def backfill_observable_input(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Mutate *args* in place to fill in observable context before
+        the model sees the tool result.  Default no-op."""
+        return args
+
+    def should_defer(self, context: dict[str, Any]) -> bool:
+        """Return True if the tool should be deferred (e.g. high resource
+        cost, requires user confirmation outside permission check)."""
+        return False
+
+    def get_effective_path(self, args: dict[str, Any]) -> str | None:
+        """Return the filesystem path this tool operates on, if any.
+        Used for path-aware concurrency serialization."""
+        _ = args
+        return None
+
     def to_openai_format(self) -> dict[str, Any]:
         """Convert this tool definition to the OpenAI tool format."""
         return {
@@ -188,6 +214,10 @@ def build_tool(
     is_destructive: bool | Callable[[dict[str, Any]], bool] | None = None,
     to_openai_format: Callable[..., dict[str, Any]] | None = None,
     to_anthropic_format: Callable[..., dict[str, Any]] | None = None,
+    validate_input: Callable[[dict[str, Any]], str | None] | None = None,
+    backfill_observable_input: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    should_defer: Callable[[dict[str, Any]], bool] | None = None,
+    get_effective_path: Callable[[dict[str, Any]], str | None] | None = None,
 ) -> EncreTool:
     """Create a tool object without subclassing ``EncreTool``.
 
@@ -294,6 +324,10 @@ def build_tool(
         "is_concurrency_safe": _concurrency_check,
         "is_readonly": _readonly_check,
         "is_destructive": _destructive_check,
+        "validate_input": validate_input or (lambda self, args: None),
+        "backfill_observable_input": backfill_observable_input or (lambda self, args: args),
+        "should_defer": should_defer or (lambda self, context: False),
+        "get_effective_path": get_effective_path or (lambda self, args: None),
         "to_openai_format": to_openai_format if to_openai_format is not None else _openai_format,
         "to_anthropic_format": to_anthropic_format if to_anthropic_format is not None else _anthropic_format,
         "discovery_card": _discovery,

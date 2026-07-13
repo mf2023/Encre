@@ -82,6 +82,7 @@ class IndexManager:
         # primary BM25 index.
         self._ast_indices: dict[str, Any] = {}
         self._embedding_indices: dict[str, Any] = {}
+        self._enable_file_watcher: bool = False
         # Callback fired when a workspace's code index finishes loading.
         # Signature: ``f(ws_id: str, index: EncreCodeIndex) -> None``.
         # Used by the WebSocket handler to inject the index into the
@@ -95,6 +96,10 @@ class IndexManager:
         ``None`` to clear.
         """
         self._on_index_ready = callback
+
+    def set_file_watcher(self, enabled: bool) -> None:
+        """Enable or disable the auto-start file watcher on index ready."""
+        self._enable_file_watcher = enabled
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -549,6 +554,14 @@ class IndexManager:
                 cb(ws_id, idx)
             except Exception:
                 logger.warning("[index_manager] on_index_ready callback failed ws=%s", ws_id, exc_info=True)
+        # Auto-start file watcher when the feature flag is enabled.
+        if self._enable_file_watcher:
+            try:
+                import asyncio
+                asyncio.ensure_future(idx.watch())
+                logger.info("[index_manager] auto-started file watcher ws=%s", ws_id)
+            except Exception:
+                logger.warning("[index_manager] failed to start file watcher ws=%s", ws_id, exc_info=True)
 
     async def _load_cached_index(self, ws_id: str, ws_path: str) -> None:
         """Load a previously-built index from disk without spawning a subprocess."""

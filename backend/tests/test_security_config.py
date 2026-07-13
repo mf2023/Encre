@@ -159,9 +159,10 @@ class TestConfig:
         """Verifies that defaults."""
         cfg = EncreConfig()
         # Confirm the expected result for this scenario: defaults.
-        assert cfg.max_turns > 0
+        # max_turns=0 means unlimited; model="" until a ModelConfig is selected.
         assert cfg.max_tokens > 0
-        assert cfg.model != ""
+        assert cfg.max_turns == 0
+        assert cfg.model == ""
 
     def test_custom_config(self):
         """Verifies that custom config."""
@@ -186,7 +187,7 @@ class TestConfig:
         """Verifies that permission mode default."""
         cfg = EncreConfig()
         # Confirm the expected result for this scenario: permission mode default.
-        assert cfg.permission_mode == "default"
+        assert cfg.permission_mode == "bypass"
 
     def test_sandbox_enabled_default(self):
         """Verifies that sandbox enabled default."""
@@ -322,13 +323,13 @@ class TestSandboxTypes:
 
     def test_sandbox_config_defaults(self):
         """Verifies that sandbox config defaults."""
-        from encre.sandbox.types import SandboxConfig
+        from encre.sandbox.types import NetworkPolicy, SandboxConfig
 
         cfg = SandboxConfig()
         # Confirm the expected result for this scenario: sandbox config defaults.
         assert cfg.image == "python:3.11-slim"
-        assert cfg.network == "none"
-        assert cfg.memory_limit == "512m"
+        assert cfg.network.policy is NetworkPolicy.NONE
+        assert cfg.resource.memory_limit == "512m"
 
     def test_sandbox_result(self):
         """Verifies that sandbox result."""

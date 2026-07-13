@@ -42,10 +42,32 @@ Returns a JSON-encoded report listing each file touched and the result.
 import json
 import os
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from typing import Any
 
 from encre.tools.base import build_tool
+
+# ──────────────────────────────────────────────────────────────────────
+# Atomic write helper — temp → fsync → rename
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _atomic_write(path: str, content: str) -> None:
+    dirname = os.path.dirname(path) or "."
+    os.makedirs(dirname, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dirname, suffix=".tmp")
+    try:
+        os.write(fd, content.encode("utf-8"))
+        os.fsync(fd)
+        os.close(fd)
+        os.replace(tmp, path)
+    except BaseException:
+        os.close(fd)
+        os.unlink(tmp)
+        raise
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Diff parsing
@@ -317,39 +339,36 @@ def _locate(
             return len(src)
         return max(target, min_pos)
 
-    candidates = [target]
+    pre_len = len(pre)
+    src_len = len(src)
+
+    if min_pos <= target < src_len and src[target:target + pre_len] == pre:
+        return target
+
     for delta in range(1, 201):
-        candidates.append(target + delta)
-        candidates.append(target - delta)
-    for pos in candidates:
-        if pos < min_pos:
-            continue
-        if pos + len(pre) > len(src):
-            continue
-        if src[pos:
-            pos + len(pre)] == pre:
-            return pos
+        for pos in (target + delta, target - delta):
+            if pos < min_pos or pos + pre_len > src_len:
+                continue
+            if src[pos:pos + pre_len] == pre:
+                return pos
+
     # Last-ditch: tolerate trailing-whitespace differences
-    for pos in candidates:
-        if pos < min_pos:
-            continue
-        if pos + len(pre) > len(src):
-            continue
-        if all(src[pos + i].rstrip() == pre[i].rstrip() for i in range(len(pre))):
-            return pos
+    for delta in range(0, 201):
+        for pos in (target + delta if delta else target, target - delta):
+            if pos < min_pos or pos + pre_len > src_len:
+                continue
+            if all(src[pos + i].rstrip() == pre[i].rstrip() for i in range(pre_len)):
+                return pos
     return None
 
 
 def _resolve(root: str, rel: str) -> str:
-    """Resolve.
-
-    Args:
-        root: Description of the root parameter.
-        rel: Description of the rel parameter.
-    """
-    if os.path.isabs(rel):
-        return rel
-    return os.path.normpath(os.path.join(root, rel))
+    p = rel if os.path.isabs(rel) else os.path.normpath(os.path.join(root, rel))
+    root_abs = os.path.realpath(root)
+    p_real = os.path.realpath(p)
+    if not p_real.startswith(root_abs + os.sep) and p_real != root_abs:
+        raise ValueError(f"Path '{rel}' escapes workspace root '{root}'")
+    return p_real
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -402,9 +421,7 @@ async def _apply_patch_execute(**kwargs: Any) -> str:
                 abs_path = _resolve(root, fd.new_path)
                 new_text, notes = _apply_hunks("", fd.hunks)
                 if not dry_run:
-                    os.makedirs(os.path.dirname(abs_path) or ".", exist_ok=True)
-                    with open(abs_path, "w", encoding="utf-8", newline="") as fh:
-                        fh.write(new_text)
+                    _atomic_write(abs_path, new_text)
                 entry["action"] = "create"
                 entry["status"] = "ok"
                 entry["hunks"] = notes
@@ -426,14 +443,11 @@ async def _apply_patch_execute(**kwargs: Any) -> str:
                 new_text, notes = _apply_hunks(original, fd.hunks)
                 if not dry_run:
                     if fd.is_rename and src_path != dst_path:
-                        os.makedirs(os.path.dirname(dst_path) or ".", exist_ok=True)
-                        with open(dst_path, "w", encoding="utf-8", newline="") as fh:
-                            fh.write(new_text)
+                        _atomic_write(dst_path, new_text)
                         if os.path.exists(src_path) and os.path.abspath(src_path) != os.path.abspath(dst_path):
                             os.remove(src_path)
                     else:
-                        with open(dst_path, "w", encoding="utf-8", newline="") as fh:
-                            fh.write(new_text)
+                        _atomic_write(dst_path, new_text)
                 entry["action"] = "modify" if not fd.is_rename else "rename+modify"
                 entry["status"] = "ok"
                 entry["hunks"] = notes

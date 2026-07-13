@@ -520,12 +520,15 @@ export function startAssistantMessage(sessionId = state.sessionId): Message {
 export function recordSegment(kind: TimelineSegment["kind"], toolId?: string, sessionId = state.sessionId): void {
   const msg = getLastAssistantMessage(sessionId);
   if (!msg) return;
-  // Skip duplicate continuous deltas of same kind.
-  // Tool segments must preserve per-call ordering, so only dedupe when toolId is identical.
-  const last = msg.segments[msg.segments.length - 1];
-  if (last && last.kind === kind) {
-    if (kind !== "tool" || last.toolId === toolId) return;
+  // Check entire segment list for existing tool segment with same toolId.
+  // This prevents duplicates when tool_call_delta arrives before tool_call_start
+  // and a text/thinking delta interleaves between the two recordSegment calls.
+  if (kind === "tool" && toolId) {
+    if (msg.segments.some(s => s.kind === "tool" && s.toolId === toolId)) return;
   }
+  // Skip duplicate continuous deltas of same kind for non-tool segments.
+  const last = msg.segments[msg.segments.length - 1];
+  if (last && last.kind === kind && kind !== "tool") return;
   msg.segments.push({ kind, toolId });
   syncSessionState(sessionId);
   emit();

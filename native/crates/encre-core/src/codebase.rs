@@ -342,7 +342,12 @@ fn scan_workspace_files(workspace_path: &Path) -> Vec<(String, PathBuf, fs::Meta
         .build();
 
     let mut out = Vec::new();
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker.filter_map(|e| {
+        if let Err(ref err) = e {
+            eprintln!("[codebase] walk error: {err}");
+        }
+        e.ok()
+    }) {
         if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
             continue;
         }

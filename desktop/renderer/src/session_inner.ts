@@ -1017,28 +1017,47 @@ export class SessionInner {
   /* ── Review (Git Diff) ─────────────────────────────────────────── */
 
   private async setupReviewPanel(panel: HTMLElement): Promise<void> {
-    panel.innerHTML = `<div class="si-review-empty" style="display:none"></div>
-<div class="si-review-wrap" style="display:none">
-      <div class="si-review-toolbar">
-        <span class="si-review-branch"></span>
-        <span class="si-review-stats"></span>
-        <button class="btn-icon btn-icon--xs btn-icon--fade si-review-refresh" title="${t("sessionInner.reviewRefresh")}">
-          <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+    panel.innerHTML = `<div class="si-review-toolbar">
+      <div class="settings-dropdown-wrap">
+        <button class="settings-dropdown-trigger" type="button" style="width:130px">
+          <span>${this.esc(t("sessionInner.reviewGitChange"))}</span>
+          <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
         </button>
+        <div class="settings-dropdown">
+          <div class="settings-dropdown-item selected" data-value="git">${this.esc(t("sessionInner.reviewGitChange"))}</div>
+          <div class="settings-dropdown-item" data-value="artifact">${this.esc(t("sessionInner.reviewArtifactChange"))}</div>
+        </div>
       </div>
+      <span class="si-review-stats"></span>
+      <button class="btn-icon btn-icon--xs btn-icon--fade si-review-refresh" title="${t("sessionInner.reviewRefresh")}">
+        <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+      </button>
+</div>
+<div class="si-review-empty" style="display:none"></div>
+<div class="si-review-wrap" style="display:none">
       <div class="si-review-body">
         <div class="si-review-diff"></div>
         <div class="si-review-tree"></div>
       </div>
-    </div>`;
+      <div class="si-review-commit-bar hidden">
+        <input class="si-review-commit-input" type="text" placeholder="${this.esc(t("sessionInner.reviewCommitPlaceholder"))}" />
+        <button class="si-review-commit-btn">${this.esc(t("sessionInner.reviewCommitBtn"))}</button>
+      </div>
+</div>`;
 
     const diffEl = panel.querySelector(".si-review-diff") as HTMLElement;
     const treeEl = panel.querySelector(".si-review-tree") as HTMLElement;
-    const branchEl = panel.querySelector(".si-review-branch") as HTMLElement;
+    const modeWrap = panel.querySelector(".settings-dropdown-wrap") as HTMLElement;
+    const modeTrigger = modeWrap.querySelector(".settings-dropdown-trigger") as HTMLElement;
+    const modeLabel = modeTrigger.querySelector("span") as HTMLElement;
+    const modeDropdown = modeWrap.querySelector(".settings-dropdown") as HTMLElement;
     const statsEl = panel.querySelector(".si-review-stats") as HTMLElement;
     const refreshBtn = panel.querySelector(".si-review-refresh") as HTMLElement;
     const emptyEl = panel.querySelector(".si-review-empty") as HTMLElement;
     const wrapEl = panel.querySelector(".si-review-wrap") as HTMLElement;
+    const commitBar = panel.querySelector(".si-review-commit-bar") as HTMLElement;
+    const commitInput = panel.querySelector(".si-review-commit-input") as HTMLInputElement;
+    const commitBtn = panel.querySelector(".si-review-commit-btn") as HTMLElement;
 
     const api = (window as any).electronAPI;
     const workspace = getState().activeWorkspace;
@@ -1175,9 +1194,18 @@ export class SessionInner {
         }
       };
 
+      // Show/hide commit bar based on mode
+      if (commitBar) commitBar.classList.toggle("hidden", this._reviewMode !== "git");
+      modeLabel.textContent = this._reviewMode === "git"
+        ? t("sessionInner.reviewGitChange")
+        : t("sessionInner.reviewArtifactChange");
+      modeDropdown.querySelectorAll(".settings-dropdown-item").forEach((el) => {
+        el.classList.toggle("selected", el.getAttribute("data-value") === this._reviewMode);
+      });
+
       // Artifact mode: show stored diff from tool result (non-git).
       // Build a multi-file tree from all session artifacts; clicking a
-      // tree item loads its diff �?just like the git file tree works.
+      // tree item loads its diff — just like the git file tree works.
       if (this._reviewMode === "artifact") {
         const arts = getState().artifacts;
         // Fall through to git if no artifacts remain (e.g. after session switch)
@@ -1195,7 +1223,6 @@ export class SessionInner {
           treeEl.innerHTML = this.buildArtifactTree(arts, targetPath);
           const adds = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^\+/gm) || []).length : 0;
           const dels = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^-/gm) || []).length : 0;
-          branchEl.textContent = `${t("sessionInner.reviewBranch")}: ${t("sessionInner.reviewArtifact")}`;
           statsEl.innerHTML = `<span class="si-review-stat-add">+${adds}</span> <span class="si-review-stat-del">-${dels}</span>`;
           // Wire tree-item clicks to load the clicked file's diff
           treeEl.querySelectorAll(".si-review-tree-file").forEach((el) => {
@@ -1231,7 +1258,6 @@ export class SessionInner {
         treeEl.innerHTML = "";
       }
       statsEl.innerHTML = `<span class="si-review-loading">${t("sessionInner.reviewLoading")}</span>`;
-      branchEl.textContent = `${t("sessionInner.reviewBranch")}: ...`;
 
       if (!cachedEntries || forceRefresh) {
         const statusRes = await api.gitStatus(ws);
@@ -1255,7 +1281,6 @@ export class SessionInner {
       const branch = cachedBranch;
 
       // Show file tree
-      branchEl.textContent = `${t("sessionInner.reviewBranch")}: ${branch || "?"}`;
       treeEl.innerHTML = buildTree(entries, filePath);
       let adds = 0;
       let dels = 0;
@@ -1298,6 +1323,67 @@ export class SessionInner {
 
     refreshBtn.addEventListener("click", () => load(currentReviewPath, true));
     this._reviewLoad = load;
+
+    // Mode switcher dropdown
+    const onModeChange = (val: string) => {
+      const mode = val as "git" | "artifact";
+      if (mode === this._reviewMode) return;
+      this._reviewMode = mode;
+      if (mode === "git") {
+        currentReviewPath = undefined;
+        cachedEntries = null;
+        cachedBranch = "";
+      }
+      load(mode === "artifact" ? (getState().artifacts?.[0]?.path || "") : undefined, true);
+    };
+    modeTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = modeDropdown.classList.contains("open");
+      document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
+      if (!isOpen) modeDropdown.classList.add("open");
+    });
+    modeDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const val = (item as HTMLElement).getAttribute("data-value") || "";
+        modeLabel.textContent = (item as HTMLElement).textContent || "";
+        modeDropdown.classList.remove("open");
+        modeDropdown.querySelectorAll(".settings-dropdown-item").forEach((el) => el.classList.remove("selected"));
+        (item as HTMLElement).classList.add("selected");
+        onModeChange(val);
+      });
+    });
+    document.addEventListener("click", (e) => {
+      if (!modeWrap.contains(e.target as Node)) {
+        modeDropdown.classList.remove("open");
+      }
+    });
+
+    // Commit
+    const doCommit = async () => {
+      const msg = commitInput.value.trim();
+      if (!msg) return;
+      commitBtn.disabled = true;
+      commitBtn.textContent = t("sessionInner.reviewCommitting");
+      try {
+        const ws = getState().activeWorkspace;
+        if (!ws || !api) return;
+        const res = await api.gitCommit(ws, msg);
+        if (res.error) {
+          showToast?.(t("sessionInner.commitFailed"), res.error, "error");
+        } else {
+          commitInput.value = "";
+          cachedEntries = null;
+          cachedBranch = "";
+          await load(undefined, true);
+        }
+      } finally {
+        commitBtn.disabled = false;
+        commitBtn.textContent = t("sessionInner.reviewCommitBtn");
+      }
+    };
+    commitBtn.addEventListener("click", doCommit);
+    commitInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doCommit(); });
 
     // Always load the review panel state when opened, even without a pending file
     if (this._reviewFilePending !== undefined) {
@@ -1473,30 +1559,53 @@ export class SessionInner {
     const lines = rawLines.length > MAX_RENDER_LINES
       ? rawLines.slice(0, MAX_RENDER_LINES).concat(["... [diff truncated in viewer]"])
       : rawLines;
-    let html = `<div class="si-review-diff-content">`;
+
+    let fileName = "";
+    let adds = 0;
+    let dels = 0;
     let inHunk = false;
+    let newLn = 0;
+    let bodyRows = "";
+
     for (const rawLine of lines) {
       const line = rawLine.replace(/\t/g, "    ");
       if (line.startsWith("diff --git")) {
         inHunk = false;
-        html += `<div class="si-review-diff-file-header">${this.esc(line)}</div>`;
-      } else if (line.startsWith("--- ") || line.startsWith("+++ ")) {
-        html += `<div class="si-review-diff-meta">${this.esc(line)}</div>`;
+        const m = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
+        if (m) fileName = m[2];
+      } else if (line.startsWith("+++ ")) {
+        // b/path or just path
+        const m = line.match(/^\+\+\+ (?:b\/)?(.+)$/);
+        if (m) fileName = m[1];
       } else if (line.startsWith("@@")) {
         inHunk = true;
-        html += `<div class="si-review-diff-hunk">${this.esc(line)}</div>`;
+        const m = line.match(/@@ \-\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        newLn = m ? parseInt(m[1], 10) - 1 : 0;
       } else if (inHunk && line.startsWith("+")) {
-        html += `<div class="si-review-diff-add"><span class="si-review-diff-marker">+</span>${this.esc(line.slice(1)) || " "}</div>`;
+        newLn++;
+        adds++;
+        const content = line.slice(1);
+        bodyRows += `<div class="diff-row diff-row-add"><span class="diff-ln">${newLn}</span><span class="diff-content">${this.esc(content) || " "}</span></div>`;
       } else if (inHunk && line.startsWith("-")) {
-        html += `<div class="si-review-diff-del"><span class="si-review-diff-marker">-</span>${this.esc(line.slice(1)) || " "}</div>`;
+        dels++;
+        const content = line.slice(1);
+        bodyRows += `<div class="diff-row diff-row-del"><span class="diff-ln">&nbsp;</span><span class="diff-content">${this.esc(content) || " "}</span></div>`;
       } else if (inHunk) {
-        html += `<div class="si-review-diff-ctx"><span class="si-review-diff-marker"> </span>${this.esc(line.slice(1)) || " "}</div>`;
-      } else {
-        html += `<div class="si-review-diff-ctx">${this.esc(line)}</div>`;
+        newLn++;
+        const content = line.startsWith(" ") ? line.slice(1) : line;
+        bodyRows += `<div class="diff-row"><span class="diff-ln">${newLn}</span><span class="diff-content">${this.esc(content) || " "}</span></div>`;
       }
     }
-    html += `</div>`;
-    return html;
+
+    fileName = fileName || t("sessionInner.reviewUnknownFile");
+    return `<div class="diff-container">
+      <div class="diff-header">
+        <span class="diff-file-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg></span>
+        <span class="diff-file-name">${this.esc(fileName)}</span>
+        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
+      </div>
+      <div class="diff-body">${bodyRows}</div>
+    </div>`;
   }
 
   private parseArtifactDiff(artifact: ArtifactItem, filePath?: string): string {
@@ -1534,7 +1643,57 @@ export class SessionInner {
         </div>
       </div>`;
     }
-    return this.parseDiff(diffText);
+    return this.renderArtifactDiffView(diffText, targetPath);
+  }
+
+  private renderArtifactDiffView(diffText: string, filePath: string): string {
+    const MAX_RENDER_LINES = 4000;
+    const rawLines = diffText.split("\n");
+    const lines = rawLines.length > MAX_RENDER_LINES
+      ? rawLines.slice(0, MAX_RENDER_LINES).concat(["... [diff truncated in viewer]"])
+      : rawLines;
+
+    let adds = 0, dels = 0, ln = 0;
+    let inHunk = false;
+    let bodyRows = "";
+
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/\t/g, "    ");
+      if (line.startsWith("@@")) {
+        inHunk = true;
+        const m = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (m) ln = parseInt(m[1], 10) - 1;
+        bodyRows += `<div class="diff-row"><span class="diff-ln">&nbsp;</span><span class="diff-content"><span style="color:var(--text-tertiary)">${this.esc(line)}</span></span></div>`;
+      } else if (line.startsWith("+") && !line.startsWith("+++")) {
+        inHunk = true;
+        ln++;
+        adds++;
+        bodyRows += `<div class="diff-row diff-row-add"><span class="diff-ln">${ln}</span><span class="diff-content">${this.esc(line.slice(1)) || " "}</span></div>`;
+      } else if (line.startsWith("-") && !line.startsWith("---")) {
+        inHunk = true;
+        dels++;
+        bodyRows += `<div class="diff-row diff-row-del"><span class="diff-ln">&nbsp;</span><span class="diff-content">${this.esc(line.slice(1)) || " "}</span></div>`;
+      } else if (line.startsWith("diff --git") || line.startsWith("index ")) {
+        continue;
+      } else if (line.startsWith("---") || line.startsWith("+++")) {
+        continue;
+      } else if (!inHunk && !line.trim()) {
+        continue;
+      } else {
+        inHunk = true;
+        ln++;
+        bodyRows += `<div class="diff-row"><span class="diff-ln">${ln}</span><span class="diff-content">${this.esc(line) || " "}</span></div>`;
+      }
+    }
+
+    return `<div class="diff-container">
+      <div class="diff-header">
+        <span class="diff-file-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg></span>
+        <span class="diff-file-name">${this.esc(filePath)}</span>
+        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
+      </div>
+      <div class="diff-body">${bodyRows}</div>
+    </div>`;
   }
 
   private buildArtifactTree(artifacts: ArtifactItem[], activePath: string): string {

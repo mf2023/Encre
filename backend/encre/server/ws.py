@@ -760,6 +760,12 @@ class EncreWSHandler:
                     session.agent.add_message("user", prompt, mode=msg.mode or "")
                     if not session.agent.session.metadata.get("temp_chat"):
                         await self._manager._save_session_async(session)
+                    # Broadcast the session list immediately so the sidebar's
+                    # history entry appears the moment the user sends a message
+                    # -- not delayed until the model starts replying. The list
+                    # reads in-memory SessionInfo, so it already reflects the
+                    # user message added above.
+                    self._broadcast_sessions()
                     logger.info("[run] session=%s workspace=%s", session.session_id[:8], self._workspace_path or "(none)")
 
                     # Auto-name: fire-and-forget so conversation is not delayed.
@@ -2267,6 +2273,31 @@ class EncreWSHandler:
                         info = self._manager.load_or_create_session(sid, config=self._default_config)
                     self._manager.touch(sid)
                     sess = info.agent.session
+                    mode = getattr(msg, "mode", "normal")
+                    # Save the old assistant content BEFORE branching, so we can
+                    # pass it as context for detailed/concise retry.
+                    old_assistant_content = None
+                    if mode in ("detailed", "concise"):
+                        branch_msgs = sess.get_branch_messages(sess.active_branch_id)
+                        user_count = 0
+                        for i, m in enumerate(branch_msgs):
+                            if m.get("role") == "user":
+                                if user_count == msg.user_message_index:
+                                    for j in range(i + 1, len(branch_msgs)):
+                                        if branch_msgs[j].get("role") == "assistant":
+                                            old_raw = branch_msgs[j].get("content", "")
+                                            if isinstance(old_raw, list):
+                                                texts = [
+                                                    b.get("text", "")
+                                                    for b in old_raw
+                                                    if isinstance(b, dict) and b.get("type") == "text"
+                                                ]
+                                                old_assistant_content = " ".join(texts)
+                                            else:
+                                                old_assistant_content = str(old_raw)
+                                            break
+                                    break
+                                user_count += 1
                     try:
                         user_msg, _new_branch = sess.retry_at_user_index(msg.user_message_index)
                     except ValueError as e:
@@ -2275,13 +2306,21 @@ class EncreWSHandler:
                         continue
                     # Notify frontend about the new branch so the branch switcher updates.
                     branches_list = [b.__dict__ for b in sess.branches.values()]
+                    # Send the correct messages for the new branch so the frontend
+                    # can render only the active branch's messages.
+                    context_msgs = sess.get_context_messages()
+                    msgs = [m for m in context_msgs if m.get("role") != "system"]
                     await self._send(ws, "branch_updated",
                         session_id=sid,
                         active_branch_id=sess.active_branch_id,
-                        branches=branches_list)
+                        branches=branches_list,
+                        messages=msgs)
                     if user_msg:
-                        mode = getattr(msg, "mode", "normal")
-                        if mode == "detailed":
+                        if mode == "detailed" and old_assistant_content:
+                            user_msg += f"\n\nBelow is my previous response — please rewrite it to be more detailed and thorough, expanding on all points with deeper explanations:\n\n{old_assistant_content}"
+                        elif mode == "concise" and old_assistant_content:
+                            user_msg += f"\n\nBelow is my previous response — please rewrite it to be more concise, keeping only the essential information:\n\n{old_assistant_content}"
+                        elif mode == "detailed":
                             user_msg += "\n\n(Please provide a more detailed response with thorough explanations and comprehensive coverage.)"
                         elif mode == "concise":
                             user_msg += "\n\n(Please provide a concise response, keeping it brief and to the point.)"

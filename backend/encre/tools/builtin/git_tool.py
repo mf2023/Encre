@@ -28,6 +28,7 @@ from __future__ import annotations
 Git tool implementation for the Encre tool system.
 """
 import asyncio
+import shlex
 from typing import Any
 
 from encre.tools.base import build_tool
@@ -46,7 +47,7 @@ async def _git_execute(**kwargs: Any) -> str:
     cmd_parts = ["git", "-C", repo_path, command]
 
     if args:
-        cmd_parts.extend(args.split())
+        cmd_parts.extend(shlex.split(args))
 
     try:
         from encre.tools.builtin._suppress_window import (

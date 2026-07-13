@@ -270,6 +270,13 @@ class EncreServer:
             self._ws_server.close()
             await self._ws_server.wait_closed()
         await self._manager.shutdown()
+        try:
+            from encre.tools.builtin.web_search import _get_manager
+            mgr = _get_manager()
+            if mgr is not None:
+                await mgr.close()
+        except Exception:
+            pass
         logger.info("Server stopped")
 
 

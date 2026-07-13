@@ -39,6 +39,7 @@ import { t, onLocaleChange, getLocale } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { findSlashCommand } from "./slash_commands.js";
 import { EALoader } from "./ealoader.js";
+import { renderFlightWidget, renderTrainWidget, renderShipWidget } from "./info-widgets.js";
 
 const md = new MarkdownIt({
   html: true,
@@ -254,6 +255,7 @@ function getToolIcon(name: string, terminal?: string): string {
     if (name === "question") return "help-circle";
     if (name === "memory_profile") return "user-circle";
     if (name === "compact") return "shrink";
+    if (name === "info") return "layout-dashboard";
     return "";
 }
 
@@ -276,6 +278,7 @@ function formatToolName(name: string, terminal?: string): string {
     rest_client: "Rest Client", desktop: "Desktop",
     question: "Question", memory_profile: "Memory Profile",
     compact: "Compress",
+    info: "Info Card",
   };
   if (labels[name]) return labels[name];
   if (name.startsWith("mcp__")) return "MCP";
@@ -425,12 +428,12 @@ function getToolBodyText(tc: ToolCallState): string {
       if (json.stdout) parts.push(json.stdout);
       if (json.stderr) parts.push(json.stderr);
       const text = parts.join("\n");
-      if (!text.trim()) return `<pre style="font-size:11px;color:var(--text-muted);margin:0;padding:0">${escapeHtml("(no output)")}</pre>`;
+      if (!text.trim()) return `<pre style="font-size:11.5px;color:var(--text-muted);margin:0;padding:0">${escapeHtml("(no output)")}</pre>`;
       const lines = text.split("\n");
       const maxLines = 20;
       const shown = lines.slice(0, maxLines);
       const hasMore = lines.length > maxLines;
-      let html = `<pre style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;margin:0;line-height:1.5">${escapeHtml(shown.join("\n"))}`;
+      let html = `<pre style="font-size:11.5px;color:var(--text-secondary);white-space:pre-wrap;margin:0;line-height:1.5">${escapeHtml(shown.join("\n"))}`;
       if (hasMore) {
         html += `\n<span style="color:var(--text-muted)">${t("chat.moreLines", { count: lines.length - maxLines })}</span>`;
       }
@@ -445,7 +448,7 @@ function getToolBodyText(tc: ToolCallState): string {
   const maxLines = 8;
   const shown = lines.slice(0, maxLines);
   const hasMore = lines.length > maxLines;
-  let html = `<pre style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;margin:0;line-height:1.5">${escapeHtml(shown.join("\n"))}`;
+  let html = `<pre style="font-size:11.5px;color:var(--text-secondary);white-space:pre-wrap;margin:0;line-height:1.5">${escapeHtml(shown.join("\n"))}`;
   if (hasMore) {
     html += `\n<span style="color:var(--text-muted)">${t("chat.moreLines", { count: lines.length - maxLines })}</span>`;
   }
@@ -573,7 +576,7 @@ function renderWebResults(result: string): string {
   if (num === 1) {
     // No structured entries found, show cleaned text
     const cleaned = result.replace(/\n{3,}/g, "\n\n").trim();
-    html += `<div class="web-item" style="white-space:pre-wrap;line-height:1.6;font-size:12px">${escapeHtml(cleaned)}</div>`;
+    html += `<div class="web-item" style="white-space:pre-wrap;line-height:1.5;font-size:11.5px">${escapeHtml(cleaned)}</div>`;
   }
   html += "</div>";
   return html;
@@ -1132,6 +1135,63 @@ export class Chat {
       if (card) {
         const path = card.getAttribute("data-path") || "";
         if (path && this.onViewChanges) this.onViewChanges(path);
+      }
+    };
+
+    // Resize info-card iframes when the sandboxed content reports its height.
+    const resizeInfoFrame = (iframe: HTMLIFrameElement) => {
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc) return;
+        const height = Math.max(doc.body?.scrollHeight || 0, doc.documentElement?.scrollHeight || 0);
+        if (height > 0) iframe.style.height = `${height}px`;
+      } catch {
+        // Cross-origin or otherwise inaccessible iframe; ignore.
+      }
+    };
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || typeof data.__encreInfoHeight !== "number" || !data.__encreInfoId) return;
+      const iframe = document.querySelector(`#${data.__encreInfoId} .info-card-frame`) as HTMLIFrameElement | null;
+      if (iframe) iframe.style.height = `${data.__encreInfoHeight}px`;
+    });
+    w.__resizeInfoFrame = resizeInfoFrame;
+
+    // Info-card toolbar actions: toggle render/code view and copy source.
+    w.__toggleInfoView = (cardId: string) => {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      const frame = card.querySelector(".info-card-frame") as HTMLElement | null;
+      const codeBlock = card.querySelector(".info-card-code") as HTMLElement | null;
+      const btn = card.querySelector(".info-card-actions .info-btn[data-action='toggle-view']") as HTMLElement | null;
+      if (!frame || !codeBlock) return;
+      const showingCode = !codeBlock.classList.contains("hidden");
+      const nextMode = showingCode ? "render" : "code";
+      frame.classList.toggle("hidden", nextMode !== "render");
+      codeBlock.classList.toggle("hidden", nextMode !== "code");
+      if (btn) {
+        // The button icon always represents the action that will happen on click:
+        // preview mode -> show code icon (click to view code)
+        // code mode -> show eye icon (click to view preview)
+        const nextIcon = nextMode === "code" ? "code" : "eye";
+        btn.title = t(nextMode === "code" ? "chat.infoCode" : "chat.infoRender");
+        btn.dataset.mode = nextMode;
+        // Re-create the <i> element because Lucide replaces it with an SVG.
+        btn.innerHTML = `<i data-lucide="${nextIcon}" class="info-btn-icon"></i>`;
+        if (typeof (window as any).lucide !== "undefined") {
+          (window as any).lucide.createIcons({ root: btn });
+        }
+      }
+    };
+    w.__copyInfoSource = async (cardId: string) => {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      const source = card.getAttribute("data-source") || "";
+      try {
+        await navigator.clipboard.writeText(source);
+        showToast(t("chat.infoCopied"), "", "success");
+      } catch {
+        showToast(t("chat.infoCopyFailed"), "", "error");
       }
     };
 
@@ -1741,6 +1801,7 @@ export class Chat {
     if (isHiddenTool(name)) return "";
     if (name === "agent") return this.renderAgent(tc, item.id);
     if (name === "question") return this.renderQuestionCard(tc, item.id);
+    if (name === "info") return this.renderInfoCard(tc, item.id);
     if (isFileMutationTool(name)) {
       // edit / write / file_write / file_edit / apply_patch render as a
       // collapsible strip whose body shows a GitHub-style diff — same
@@ -1839,6 +1900,104 @@ export class Chat {
     </div>`;
   }
 
+  private renderInfoCard(tc: ToolCallState, itemId: string): string {
+    // Parse the info tool result. The backend returns a JSON payload with
+    // display/type/title/content; fall back to treating the raw result as HTML.
+    let payload: { display?: string; title?: string; content?: string; type?: string; widget?: string; is_complete_html?: boolean } = {};
+    if (tc.result) {
+      try {
+        const parsed = JSON.parse(tc.result);
+        if (parsed && typeof parsed === "object") payload = parsed;
+      } catch {
+        payload = { content: tc.result };
+      }
+    }
+
+    const display = payload.display || (tc.params.display as string) || "base";
+    const title = payload.title || (tc.params.title as string) || "";
+    const content = payload.content || (tc.params.content as string) || "";
+    const widget = (payload.widget as string) || (tc.params.widget as string) || "";
+    const cardType = (payload.type as string) || (tc.params.type as string) || "html";
+    const cardId = `tc-${tc.id}`;
+
+    // Structured travel widgets are rendered directly as cards in the chat
+    // DOM. They do NOT live inside the sandboxed HTML iframe used by base.
+    if (cardType === "widget" && ["flight", "train", "ship"].includes(widget)) {
+      let widgetHtml = "";
+      try {
+        const data = JSON.parse(content || "{}");
+        widgetHtml = widget === "flight"
+          ? renderFlightWidget(data)
+          : widget === "train"
+          ? renderTrainWidget(data)
+          : renderShipWidget(data);
+      } catch {
+        widgetHtml = `<div class="encre-widget-card encre-widget-error">
+          <div class="encre-widget-title">Invalid ${widget} data</div>
+          <div class="encre-widget-subtitle">The model must provide a JSON object with the required fields.</div>
+        </div>`;
+      }
+      return `<div class="info-card info-card--widget" id="${cardId}" data-info-type="widget" data-widget="${escapeHtml(widget)}" data-source="${escapeHtml(content)}">
+        <div class="info-card-header">
+          <div class="info-card-title-wrap">
+            <i data-lucide="layout-dashboard" class="info-card-icon"></i>
+            <span class="info-card-title">${escapeHtml(title || t("chat.toolInfo"))}</span>
+          </div>
+          <div class="info-card-actions">
+            <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" title="${t("chat.infoCopy")}">
+              <i data-lucide="copy" class="info-btn-icon"></i>
+            </button>
+          </div>
+        </div>
+        <div class="info-card-body info-card-body--widget">${widgetHtml}</div>
+      </div>`;
+    }
+
+    if (!content) {
+      return `<div class="info-card info-card--empty" id="${cardId}">
+        <div class="info-card-header">
+          <i data-lucide="layout-dashboard" class="info-card-icon"></i>
+          <span class="info-card-title">${t("chat.toolInfo")}</span>
+        </div>
+        <div class="info-card-body">${t("chat.infoWaiting")}</div>
+      </div>`;
+    }
+
+    // display='base' (default): sandbox the model's HTML/CSS/JS in an iframe.
+    const trimmed = content.trim().toLowerCase();
+    const isFullDoc = trimmed.startsWith("<!doctype") || trimmed.startsWith("<html");
+    const doc = isFullDoc
+      ? content
+      : `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><style>html,body{margin:0;padding:0;overflow:auto !important;}</style></head><body>${content}<script>(function(){function s(){var h=Math.max(document.body.scrollHeight,document.documentElement.scrollHeight);if(window.parent!==window){window.parent.postMessage({__encreInfoHeight:h,__encreInfoId:"${cardId}"},'*');}}if(document.readyState==='complete')s();else window.onload=s;})();</script></body></html>`;
+    const srcdoc = escapeHtml(doc);
+    const isCode = display === "code";
+    const escapedSource = escapeHtml(content);
+    const isCompleteHtml = payload.is_complete_html ?? isFullDoc;
+    const fragmentBadge = isCompleteHtml ? "" : `<span class="info-card-fragment-badge">fragment</span>`;
+
+    return `<div class="info-card" id="${cardId}" data-info-type="html" data-source="${escapeHtml(content)}">
+      <div class="info-card-header">
+        <div class="info-card-title-wrap">
+          <i data-lucide="layout-dashboard" class="info-card-icon"></i>
+          <span class="info-card-title">${escapeHtml(title || t("chat.toolInfo"))}</span>
+          ${fragmentBadge}
+        </div>
+        <div class="info-card-actions">
+          <button class="info-btn" data-action="toggle-view" data-mode="${isCode ? "render" : "code"}" onclick="window.__toggleInfoView('${cardId}')" title="${isCode ? t("chat.infoRender") : t("chat.infoCode")}">
+            <i data-lucide="${isCode ? "eye" : "code"}" class="info-btn-icon"></i>
+          </button>
+          <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" title="${t("chat.infoCopy")}">
+            <i data-lucide="copy" class="info-btn-icon"></i>
+          </button>
+        </div>
+      </div>
+      <div class="info-card-body">
+        <iframe class="info-card-frame${isCode ? " hidden" : ""}" sandbox="allow-scripts" srcdoc="${srcdoc}" loading="lazy" onload="window.__resizeInfoFrame(this)"></iframe>
+        <pre class="info-card-code${isCode ? "" : " hidden"}"><code>${escapedSource}</code></pre>
+      </div>
+    </div>`;
+  }
+
   private renderFileCard(tc: ToolCallState): string {
     // Invoked only for delete_file (see renderToolCall routing). Kept as a
     // compact one-line card; no diff badge (delete has no diff) and no
@@ -1888,14 +2047,18 @@ export class Chat {
     const statusHtml = _toolStatusHtml(tc.status);
     const hasResult = !!tc.result;
     const bodyHtml = hasResult ? getToolBodyText(tc) : "";
-    const iconHtml = icon ? `<i data-lucide="${icon}" class="strip-icon"></i>` : "";
+    // Wrap the tool icon in an icon-wrap that swaps the semantic icon for
+    // a chevron-down on hover, mirroring the thinking strip so the expand
+    // affordance lives on the icon, not as a separate arrow on the right.
+    const iconHtml = icon
+      ? `<span class="icon-wrap"><i data-lucide="${icon}" class="semantic"></i><i data-lucide="chevron-down" class="arrow"></i></span>`
+      : "";
     return `<div class="strip-item${expanded ? " expanded" : ""}" data-id="${id}">
-      <div class="strip">
+      <div class="strip" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
         ${iconHtml}
         <span class="strip-name">${name}</span>
         <span class="strip-status" data-status="${tc.status}">${statusHtml}</span>
         <span class="strip-summary">${summary ? escapeHtml(summary) : ""}</span>
-        <i data-lucide="chevron-down" class="strip-arrow"></i>
       </div>
       <div class="strip-body-slot" data-has-body="${hasResult ? "1" : "0"}">${bodyHtml ? `<div class="strip-body">${bodyHtml}</div>` : ""}</div>
     </div>`;
@@ -2013,8 +2176,8 @@ export class Chat {
       `Reduction:    ${reductionPct}%`,
     ];
     return `<div class="strip-item${expanded ? " expanded" : ""}" data-id="${id}">
-      <div class="strip">
-        <i data-lucide="shrink" class="strip-icon"></i>
+      <div class="strip" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
+        <span class="icon-wrap"><i data-lucide="shrink" class="semantic"></i><i data-lucide="chevron-down" class="arrow"></i></span>
         <span class="strip-name">Context compacted</span>
         <span class="strip-summary">${escapeHtml(summary)}</span>
       </div>
@@ -2028,8 +2191,8 @@ export class Chat {
     const icon = item.kindTag === "error" ? "alert-circle" : "info";
     const label = item.kindTag === "error" ? "System notice" : "System message";
     return `<div class="strip-item system-message-strip${expanded ? " expanded" : ""}" data-id="${id}">
-      <div class="strip">
-        <i data-lucide="${icon}" class="strip-icon"></i>
+      <div class="strip" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
+        <span class="icon-wrap"><i data-lucide="${icon}" class="semantic"></i><i data-lucide="chevron-down" class="arrow"></i></span>
         <span class="strip-name">${escapeHtml(label)}</span>
         <span class="strip-summary">${escapeHtml(item.content.slice(0, 80))}</span>
       </div>
@@ -2062,11 +2225,10 @@ export class Chat {
     : isRejected ? `<div class="spec-footer"><span class="spec-rejected-label"><i data-lucide="x-circle"></i> Rejected</span></div>`
     : "";
     return `<div class="strip-item${expanded ? " expanded" : ""}" data-id="${id}">
-      <div class="strip">
-        <i data-lucide="file-text" class="strip-icon" style="color:var(--chip-accent,#8b5cf6)"></i>
+      <div class="strip" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
+        <span class="icon-wrap"><i data-lucide="file-text" class="semantic" style="color:var(--chip-accent,#8b5cf6)"></i><i data-lucide="chevron-down" class="arrow"></i></span>
         <span class="strip-name">${escapeHtml(spec.title)}</span>
         <span class="strip-summary">${status}</span>
-        <i data-lucide="chevron-down" class="strip-arrow"></i>
       </div>
       <div class="strip-body-slot" data-has-body="1">
         <div class="strip-body spec-body">${sectionsHtml}${feedbackHtml}${reviewActions}</div>

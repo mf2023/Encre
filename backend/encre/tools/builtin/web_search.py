@@ -25,8 +25,10 @@ from __future__ import annotations
 
 """Web search via encre's built-in search engine -- no API keys, no Docker.
 
-Uses ``EncreSearchManager`` (DuckDuckGo Lite by default, with optional
-external SearXNG support).  Zero configuration required.
+Uses ``EncreSearchManager`` (Exa MCP search service by default).  Zero
+configuration required.  Page content is returned inline by default so the
+model rarely needs a follow-up ``web_fetch`` (which anti-crawling sites often
+block); pass ``content=false`` for link-only results.
 """
 
 from typing import Any
@@ -46,27 +48,16 @@ def _get_manager() -> EncreSearchManager:
     return _manager
 
 
-def set_search_mode(mode: str, searxng_url: str = "") -> None:
-    """Switch the global search backend at runtime.
-
-    Args:
-        mode: ``"builtin"`` or ``"searxng"``.
-        searxng_url: Base URL of external SearXNG instance (only for ``"searxng"`` mode).
-    """
-    mgr = _get_manager()
-    mgr.mode = mode
-    if searxng_url:
-        mgr.searxng_url = searxng_url
-        mgr._resolved_searxng_url = searxng_url
-
-
 async def _web_search_execute(**kwargs: Any) -> str:
-    """Search the web via EncreSearchManager (DuckDuckGo Lite by default). Returns formatted results."""
+    """Search the web via EncreSearchManager (Exa MCP). Returns formatted results with inline page content by default."""
     query = kwargs.get("query", "")
     if not query:
         return "Error: No search query provided."
 
-    num = min(int(kwargs.get("num", 10)), 10)
+    try:
+        num = max(1, min(int(kwargs.get("num", 10)), 10))
+    except (TypeError, ValueError):
+        num = 5
     language = kwargs.get("language", "")
     categories = kwargs.get("categories", "general")
 
@@ -76,6 +67,7 @@ async def _web_search_execute(**kwargs: Any) -> str:
         num=num,
         language=language,
         categories=categories,
+        content=bool(kwargs.get("content", True)),
     )
 
     error = result.get("_error", "")
@@ -97,7 +89,9 @@ async def _web_search_execute(**kwargs: Any) -> str:
         content = r.get("content", "").strip()
         entry = f"{i}. [{title}]({url})"
         if content:
-            entry += f"\n   {content}"
+            # Indent multi-line content under the title for readability.
+            indented = content.replace("\n", "\n   ")
+            entry += f"\n   {indented}"
         lines.append(entry)
 
     output = "\n\n".join(lines)
@@ -110,10 +104,12 @@ async def _web_search_execute(**kwargs: Any) -> str:
 EncreWebSearchTool = build_tool(
     name="web_search",
     description=(
-        "Search the internet for up-to-date information, news, or answers. "
-        "Powered by DuckDuckGo Lite -- zero setup, zero API keys.\n\n"
-        "Use this for: current events, recent data, documentation lookups, "
-        "or any question that needs information beyond the training cutoff."
+        "Search the web for up-to-date information. Returns each result with "
+        "title, URL, and -- by default -- the page content inline, so you "
+        "usually do NOT need a follow-up web_fetch (which anti-crawling sites "
+        "often block). Use for: current events, recent data, documentation, "
+        "flight/train/hotel lookups, or any question needing information beyond "
+        "the training cutoff."
     ),
     input_schema={
         "type": "object",
@@ -124,7 +120,7 @@ EncreWebSearchTool = build_tool(
             },
             "num": {
                 "type": "integer",
-                "description": "Maximum number of results (default: 5, max: 10)",
+                "description": "Maximum number of results (default: 10, max: 10). Lower this when content=true to keep the payload small.",
             },
             "language": {
                 "type": "string",
@@ -132,7 +128,11 @@ EncreWebSearchTool = build_tool(
             },
             "categories": {
                 "type": "string",
-                "description": "Search category (ignored in builtin mode, used with external SearXNG): general, news",
+                "description": "Search category (used with external SearXNG): general, news",
+            },
+            "content": {
+                "type": "boolean",
+                "description": "Whether to return page content inline (default: true). Set false for link-only results when you just need URLs.",
             },
         },
         "required": ["query"],
@@ -150,4 +150,4 @@ EncreWebSearchTool = build_tool(
 )
 
 
-__all__ = ["EncreWebSearchTool", "_get_manager", "set_search_mode"]
+__all__ = ["EncreWebSearchTool", "_get_manager"]
