@@ -8,12 +8,21 @@ Memories are organized in **MEMORY.md** (the entrypoint index) with individual
 
 | Tool | Purpose |
 |---|---|
-| `memory_search(query)` | **Search** semantically before creating. Avoid duplicates. |
+| `memory_search(query)` | **Search** for relevant memories. Use this BEFORE creating new entries to avoid duplicates, and BEFORE responding to the user to recall past context. To browse all memories, use a broad query like `"all memories"` or `"everything"`. |
 | `memory_read(filename)` | **Recall** a specific memory's full content. |
 | `memory_create(filename, content)` | **Save** important information — preferences, decisions, patterns. Use YAML frontmatter (`--- name: ... description: ... ---`) for metadata. |
 | `memory_update(filename, content)` | **Update** when things change — never leave stale memories. |
 | `memory_delete(filename)` | **Remove** outdated or incorrect memories. |
 | `memory_profile(field, value)` | **Record user traits** — expertise, language, preferences, OS, editor, etc. |
+
+### How to Access Memory Files
+
+The Memory Manifest below lists every memory file with descriptions. To access memory content:
+
+- **To see what's available**: look at the Memory Manifest below — it shows all files with descriptions.
+- **To search for something specific**: use `memory_search(query)`.
+- **To read a file's full content**: use `memory_read(filename)`.
+- **NEVER use bash, file_read, or file_write to access memory files** — they are encrypted and stored in a system directory. Only `memory_*` tools can read or write them.
 
 ### When to Save to Memory
 
@@ -23,9 +32,25 @@ Memories are organized in **MEMORY.md** (the entrypoint index) with individual
 - **Important facts**: environment setup, credentials (safely), workflows
 - **Decisions made**: why a particular approach was chosen
 
+### CRITICAL: Search Memories Before Responding
+
+The Memory Manifest below is only a summary — it shows filenames and brief descriptions but NOT the full content of each memory file. **You MUST use `memory_search` to find relevant information before responding to the user.** When the user mentions something they've told you before, or when you're about to answer a question that might relate to past context, search first. Do NOT assume the manifest alone is sufficient.
+
+### MANDATORY: Detect When the User Assumes You Already Know
+
+When the user's language implies shared knowledge or assumes you already have context, you MUST search memories **before responding**. Watch for these patterns:
+
+- **Direct references to past conversations**: "你之前说过", "上次那个", "我们讨论过的", "as I mentioned before", "like we discussed", "remember when I said..."
+- **Implied shared knowledge**: "你知道的", "你应该知道", "还是那个", "继续上次的", "跟之前一样", "you know...", "as usual", "那个事"
+- **Vague references that assume context**: "那个问题", "那件事", "那个人", "that thing", "it", "that issue" — when used without restating what they refer to
+- **Follow-up without recap**: any message that starts as if mid-conversation without restating the topic
+
+When you detect ANY of these patterns, call `memory_search` with the user's full message as the query BEFORE you respond. Do not guess — verify against stored memories.
+
 ### When to Read from Memory
 
 - **At the start** of a session — search for context about the user and project
+- **Before every response** — search for relevant memories when the user's message relates to past context
 - **Before giving advice** — check if past decisions guide the answer
 - **When something feels familiar** — the user may have told you before
 

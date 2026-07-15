@@ -112,6 +112,7 @@ class AnthropicBackend(BaseBackend):
         model: str = "claude-sonnet-4-6-20250514",
         thinking_budget_tokens: int = 16000,
         thinking_mode: str = "enabled",
+        thinking_effort: str = "",
         auth_manager: AuthManager | None = None,
         connection_monitor: ConnectionHealthMonitor | None = None,
         fallback_keys: list[str] | None = None,
@@ -135,6 +136,10 @@ class AnthropicBackend(BaseBackend):
                 decides how much to think), or ``"disabled"``.  Haiku 4.5
                 does not support extended thinking and the parameter is
                 skipped regardless of ``thinking_mode``.
+            thinking_effort: Optional effort level for ``"adaptive"`` mode.
+                One of ``"low"``, ``"medium"``, ``"high"``.  Empty string
+                leaves the choice to the model.  Ignored in ``"enabled"``
+                and ``"disabled"`` modes.
             auth_manager: Pre-configured :class:`AuthManager` for key rotation.
                 If not provided but ``fallback_keys`` is given, one is created
                 automatically.
@@ -149,6 +154,7 @@ class AnthropicBackend(BaseBackend):
         self.model = model
         self.thinking_budget_tokens = thinking_budget_tokens
         self.thinking_mode = thinking_mode
+        self.thinking_effort = thinking_effort
         self.retry_config: RetryConfig = kwargs.pop("retry_config", DEFAULT_RETRY_CONFIG)
 
         # -- Auth management --
@@ -295,6 +301,8 @@ class AnthropicBackend(BaseBackend):
                 current_tool_use: dict[str, Any] | None = None
                 current_tool_index: int = 0
                 finish_reason: str = "stop"
+                _input_tokens: int = 0
+                _output_tokens: int = 0
 
                 # Anthropic SSE emits paired lines: "event: <type>" followed
                 # by "data: <json>". Parse them into BackendEvent objects.
@@ -307,7 +315,12 @@ class AnthropicBackend(BaseBackend):
                         continue
                     data = json.loads(data_line[6:].strip())
 
-                    if event_type == "content_block_start":
+                    if event_type == "message_start":
+                        msg = data.get("message", {})
+                        msg_usage = msg.get("usage", {})
+                        _input_tokens = msg_usage.get("input_tokens", 0)
+
+                    elif event_type == "content_block_start":
                         # A new content block begins (text, thinking, tool_use).
                         block = data.get("content_block", {})
                         if block.get("type") == "text":
@@ -365,7 +378,7 @@ class AnthropicBackend(BaseBackend):
                             current_tool_use = None
 
                     elif event_type == "message_delta":
-                        # Message-level update carrying the stop reason.
+                        # Message-level update carrying the stop reason and usage.
                         delta = data.get("delta", {})
                         stop_reason = delta.get("stop_reason", "")
                         # Map Anthropic stop reasons to our finish reasons.
@@ -377,6 +390,8 @@ class AnthropicBackend(BaseBackend):
                             finish_reason = "max_tokens"
                         else:
                             finish_reason = stop_reason or "stop"
+                        msg_usage = data.get("usage", {})
+                        _output_tokens = msg_usage.get("output_tokens", 0)
 
                     elif event_type == "error":
                         error_data = data.get("error", {})
@@ -384,7 +399,8 @@ class AnthropicBackend(BaseBackend):
                         logger.error(f"Anthropic stream error: {err_msg}")
                         yield create_backend_error(err_msg)
 
-                yield create_backend_finish(finish_reason)
+                _usage = {"input_tokens": _input_tokens, "output_tokens": _output_tokens} if _input_tokens or _output_tokens else None
+                yield create_backend_finish(finish_reason, usage=_usage)
 
         except Exception as e:
             logger.error(f"Anthropic backend request failed: {e}", extra={"model": self.model})
@@ -400,8 +416,9 @@ class AnthropicBackend(BaseBackend):
         Anthropic's Messages API supports three extended-thinking modes:
 
         * ``"adaptive"``: the model decides how much to think.  Only
-          available on Opus 4.6+ / Sonnet 4.6+.  Returns
-          ``{"type": "adaptive"}``.
+          available on Opus 4.6+ / Sonnet 4.6+ / Claude 5.  Returns
+          ``{"type": "adaptive"}`` or ``{"type": "adaptive",
+          "effort": "low|medium|high"}`` when an effort level is set.
         * ``"enabled"``: explicit token budget.  Returns
           ``{"type": "enabled", "budget_tokens": N}`` where ``N`` is
           clamped to fit under ``max_tokens - 1``.
@@ -422,10 +439,13 @@ class AnthropicBackend(BaseBackend):
             return None
         if self.thinking_mode == "disabled":
             return None
-        # Adaptive mode is only valid for Opus 4.6+ / Sonnet 4.6+.
+        # Adaptive mode is only valid for Opus 4.6+ / Sonnet 4.6+ / Claude 5.
         if self.thinking_mode == "adaptive" and (
-            "opus-4-6" in m or "opus-4-7" in m or "sonnet-4-6" in m
+            "opus-4-6" in m or "opus-4-7" in m or "sonnet-4-6" in m or "claude-5" in m
         ):
+            effort = (self.thinking_effort or "").lower()
+            if effort in {"low", "medium", "high"}:
+                return {"type": "adaptive", "effort": effort}
             return {"type": "adaptive"}
         # Explicit budget mode (default).
         budget = int(self.thinking_budget_tokens or 16000)

@@ -161,6 +161,7 @@ class FailoverBackend(BaseBackend):
         backends: list[tuple[str, BaseBackend]],
         retry_config: RetryConfig = DEFAULT_RETRY_CONFIG,
         connection_monitor: ConnectionHealthMonitor | None = None,
+        **kwargs: Any,
     ) -> None:
         """Initialize the failover backend.
 
@@ -176,6 +177,9 @@ class FailoverBackend(BaseBackend):
         Raises:
             ValueError: If ``backends`` is empty.
         """
+        # ``create_backend`` forwards per-model thinking kwargs that do not
+        # apply to the failover wrapper itself; ignore them safely.
+        _ = kwargs
         if not backends:
             raise ValueError("At least one backend is required")
         self._backends: list[tuple[str, BaseBackend]] = backends

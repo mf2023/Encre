@@ -130,6 +130,7 @@ class SessionManager:
         self._sessions_changed_callbacks: list[Callable[[], None]] = []
         self._dir_sessions: dict[str, dict[str, SessionInfo]] = {}
         self._dir_bootstrapped: dict[str, bool] = {}
+        self._unnamed_counter = 0
         if sessions_dir:
             self._sessions_dir = sessions_dir
             pathlib.Path(sessions_dir).mkdir(parents=True, exist_ok=True)
@@ -418,6 +419,11 @@ class SessionManager:
         agent.telemetry.session_id = session_id
         info = SessionInfo(session_id=session_id, agent=agent)
         info.sessions_dir = self._get_sessions_dir()
+        # Assign a placeholder name immediately so the sidebar shows
+        # "未命名" / "未命名 2" / ... instead of the raw first message.
+        self._unnamed_counter += 1
+        placeholder_name = "未命名" if self._unnamed_counter == 1 else f"未命名 {self._unnamed_counter}"
+        info.metadata["name"] = placeholder_name
         self._sessions[session_id] = info
         self._fire_sessions_changed()
         return info
@@ -579,7 +585,12 @@ class SessionManager:
         if session_id not in self._index:
             self._bootstrap_index_from_disk()
         if session_id not in self._index:
-            return False
+            # Session may be in-memory only (not yet persisted to disk index).
+            # Create a minimal index entry so the name persists.
+            info = self._sessions.get(session_id)
+            if info is None:
+                return False
+            self._index_add(info)
         self._index[session_id]["name"] = new_name
         self._index_dirty = True
         self._save_index()

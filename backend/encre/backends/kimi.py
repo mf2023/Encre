@@ -108,7 +108,11 @@ class KimiBackend(OpenAISSEBackend):
             return None
         # kimi-k2.5 / k2.6 / k2-thinking all accept the DeepSeek shape.
         if "k2.5" in m or "k2.6" in m or "k2-thinking" in m or "k2.7" in m:
-            return {"thinking": {"type": "enabled"}}
+            return {
+                "thinking": {
+                    "type": "enabled" if self.thinking_enabled else "disabled",
+                }
+            }
         return None
 
     def context_window_size(self) -> int:

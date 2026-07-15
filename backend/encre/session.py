@@ -137,6 +137,44 @@ def _inject_orphan_tool_tombstones(messages: list[dict[str, Any]]) -> list[dict[
     return out
 
 
+def _extract_file_paths_from_messages(messages: list[dict[str, Any]]) -> set[str]:
+    """Collect file paths touched by write tool_calls in *messages*."""
+    paths: set[str] = set()
+    write_tools = {"file_write", "file_edit", "write_file", "writeFile", "apply_patch"}
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        for tc in msg.get("tool_calls", []) or []:
+            if not isinstance(tc, dict):
+                continue
+            func = tc.get("function", {})
+            if not isinstance(func, dict):
+                continue
+            name = func.get("name", "")
+            if name not in write_tools:
+                continue
+            raw_args = func.get("arguments", "{}")
+            try:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            except Exception:
+                continue
+            if not isinstance(args, dict):
+                continue
+            if name == "apply_patch":
+                for fd in args.get("files", []) or []:
+                    if not isinstance(fd, dict):
+                        continue
+                    for key in ("old_path", "new_path"):
+                        p = fd.get(key)
+                        if isinstance(p, str) and p:
+                            paths.add(p)
+            else:
+                fp = args.get("file_path", "")
+                if isinstance(fp, str) and fp:
+                    paths.add(fp)
+    return paths
+
+
 def _tool_to_icon(tool_name: str) -> str:
     """Map a tool name to a Lucide icon for the references panel."""
     if tool_name.startswith("mcp__"):
@@ -383,13 +421,19 @@ class EncreSession:
         except (OSError, PermissionError) as exc:
             logger.warning("[file_snapshot] failed to capture %s: %s", file_path, exc)
 
-    def restore_file_snapshots(self) -> int:
-        """Write all captured file snapshots back to disk.
-        Returns the number of files restored.
+    def restore_file_snapshots_for_paths(self, paths: set[str]) -> int:
+        """Write captured snapshots for *paths* back to disk and drop them.
+
+        Only files that were touched by the removed/rolled-back turns are
+        restored. Paths that are still referenced by kept messages are left
+        untouched so earlier user work is not accidentally reverted.
         """
         import os as _os
         count = 0
-        for file_path, b64_content in self.file_snapshots.items():
+        for file_path in list(paths):
+            b64_content = self.file_snapshots.get(file_path)
+            if b64_content is None:
+                continue
             try:
                 if b64_content:
                     raw = base64.b64decode(b64_content)
@@ -397,14 +441,20 @@ class EncreSession:
                     with open(file_path, "wb") as fh:
                         fh.write(raw)
                 else:
-                    # Empty snapshot = file did not exist before → delete it
+                    # Empty snapshot = file did not exist before -> delete it
                     if _os.path.exists(file_path):
                         _os.remove(file_path)
                 count += 1
             except (OSError, PermissionError, Exception) as exc:
                 logger.warning("[file_snapshot] failed to restore %s: %s", file_path, exc)
-        self.file_snapshots.clear()
+            self.file_snapshots.pop(file_path, None)
         return count
+
+    def restore_file_snapshots(self) -> int:
+        """Write all captured file snapshots back to disk.
+        Returns the number of files restored.
+        """
+        return self.restore_file_snapshots_for_paths(set(self.file_snapshots.keys()))
 
     def add_reference(self, tool_name: str, summary: str, icon: str = "") -> dict[str, Any]:
         """Record a non-file tool reference (memory, MCP, web, agent, etc.).
@@ -702,8 +752,8 @@ class EncreSession:
 
         Finds the target message across ALL branches (not just ``branch_id``),
         removes all messages after it in that branch, wipes every descendant
-        branch entirely, restores file snapshots, rebuilds artifacts, clears
-        plan_items, and switches to the target branch.
+        branch entirely, restores file snapshots, rebuilds artifacts, filters
+        references to the rollback point, and switches to the target branch.
 
         Returns ``(removed_message_ids, actual_target_branch_id)``.
         """
@@ -777,14 +827,18 @@ class EncreSession:
             if m.get("role") == "assistant" and m.get("tool_calls")
         )
 
-        # Hard-rollback: revert file operations, rebuild artifacts, clear
-        # plan_items, and remove references that belonged to wiped branches
-        # or were created after the rollback point in the target branch.
-        restored = self.restore_file_snapshots()
+        # Hard-rollback: revert only file operations performed by the removed
+        # messages. Files touched by kept messages must stay as-is so that
+        # work done before the rollback point is not accidentally reverted.
+        removed_msgs = [m for m in self.messages if m.get("id", "") in removed]
+        remaining_msgs = [m for m in self.messages if m.get("id", "") not in removed]
+        removed_files = _extract_file_paths_from_messages(removed_msgs)
+        kept_files = _extract_file_paths_from_messages(remaining_msgs)
+        files_to_restore = removed_files - kept_files
+        restored = self.restore_file_snapshots_for_paths(files_to_restore)
         if restored:
             logger.info("[rollback_to] restored %d file(s) from snapshots", restored)
         self.rebuild_artifacts_from_messages()
-        self.plan_items.clear()
         target_created_at = target_msg.get("created_at", 0) / 1000.0
         self.references = [
             r for r in self.references
@@ -1242,6 +1296,7 @@ class EncreSession:
                 session.metadata = meta.get("metadata", {})
                 session.plan_items = meta.get("plan_items", [])
                 session.artifacts = meta.get("artifacts", [])
+                session.references = meta.get("references", [])
                 session.active_branch_id = meta.get("active_branch_id", session.active_branch_id)
                 session._branch_counter = meta.get("_branch_counter", session._branch_counter)
                 branches_raw = meta.get("branches", {})

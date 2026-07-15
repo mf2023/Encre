@@ -106,6 +106,17 @@ class EncreServer:
         headers_dict = {k: v for k, v in header_list}
         return status, body, headers_dict
 
+    def _safe_broadcast_automation_update(self, job: Any) -> None:
+        """Wrapper around broadcast_automation_update that logs errors.
+
+        Called by the scheduler's on_complete callback.  The scheduler calls
+        this synchronously from _execute_job (inside the event loop thread).
+        """
+        try:
+            self._ws_handler.broadcast_automation_update(job)
+        except Exception:
+            logger.exception("[automation] broadcast_automation_update failed")
+
     async def start(self) -> None:
         try:
             import websockets
@@ -180,7 +191,7 @@ class EncreServer:
             await self._scheduler.start(self._make_scheduler_agent_factory())
             # Register callback so frontend gets notified when jobs complete
             self._scheduler.on_job_complete(
-                lambda job: self._ws_handler.broadcast_automation_update(job)
+                lambda job: self._safe_broadcast_automation_update(job)
             )
             self._scheduler.on_job_progress(
                 lambda job, event_type, event_data: self._ws_handler.broadcast_automation_progress(job, event_type, event_data)

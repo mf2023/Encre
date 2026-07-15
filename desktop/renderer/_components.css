@@ -118,12 +118,11 @@
 
 
 /* ── 2. 列表条目（flex 行 + hover/active 状态） ────────────────
-   合并来源: .nav-item (L465) / .session-item (L805)
+   合并来源: .nav-item (L465)
    / .ws-tree-node-header (L607) / .settings-nav-item (L4102)
    / .sidebar-settings-back-btn (L3848)
    ──────────────────────────────────────────────────────────────── */
 .nav-item,
-.session-item,
 .ws-tree-node-header,
 .settings-nav-item,
 .sidebar-settings-back-btn {
@@ -157,17 +156,8 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
-.session-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary);
-}
-[data-theme="light"] .session-item:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
 /* active 状态 */
 .nav-item.active,
-.session-item.active,
 .ws-tree-node-header.active,
 .settings-nav-item.active {
   background: var(--bg-tertiary);
@@ -176,14 +166,12 @@
 
 /* 特有区别 */
 .nav-item            { font-size: 13.5px; font-weight: 500; }
-.session-item         { font-size: 13px; padding: 9px 12px; overflow: hidden; }
 .ws-tree-node-header  { font-size: 13px; gap: 5px; padding: 7px 8px; }
 .settings-nav-item    { font-size: 13px; padding: 7px 10px; }
 .sidebar-settings-back-btn { font-size: 12.5px; font-weight: 500; padding: 6px 12px; }
 
 /* 列表条目中的 lucide 图标统一定宽 */
 .nav-item .lucide,
-.session-item .lucide,
 .ws-tree-node-header .lucide,
 .settings-nav-item .lucide,
 .sidebar-settings-back-btn .lucide {
@@ -294,7 +282,6 @@
    ──────────────────────────────────────────────────────────────── */
 .si-badge,
 .si-status,
-.ws-session-count,
 .si-panel-badge {
   display: inline-flex;
   align-items: center;
@@ -317,7 +304,8 @@
 
 .ws-session-count {
   font-size: 10.5px;
-  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .si-panel-badge {
@@ -852,10 +840,27 @@ body.splash-mode #btn-bell {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
-/* Hide the top-bar mode switch in views where it has no business being
-   shown (settings + automation). The seg lives in #header-bar which is
-   a SIBLING of #app, so we use :has() instead of descendant selectors. */
-body:has(#app.settings-mode) #mode-seg,
-body:has(#automation-view:not(.hidden)) #mode-seg {
+/* Hide the top-bar mode switch in settings mode (the seg lives in
+   #header-bar which is a SIBLING of #app, so we use :has()). */
+body:has(#app.settings-mode) #mode-seg {
   display: none !important;
+}
+
+/* ── Loading button spinner ──────────────────────────────────── */
+@keyframes btn-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.btn-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.8;
+}
+.btn-loading-icon {
+  display: inline-block;
+  animation: btn-spin 1s linear infinite;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: middle;
 }

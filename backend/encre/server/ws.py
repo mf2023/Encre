@@ -65,6 +65,7 @@ from encre.config import (
     EncreConfig,
     ModelConfig,
     SubAgentConfig,
+    _thinking_config_from_dict,
 )
 from encre.server.protocol import (
     ClientAddDocument,
@@ -76,6 +77,7 @@ from encre.server.protocol import (
     ClientAutomationCancelJob,
     ClientAutomationCreateJob,
     ClientAutomationDeleteJob,
+    ClientAutomationDeleteExecution,
     ClientAutomationGetHistory,
     ClientAutomationListJobs,
     ClientAutomationToggleJob,
@@ -416,7 +418,13 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientListModels):
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
-                    models = await info.agent.loop.backend.list_models()
+                    backend = info.agent.loop.backend
+                    if backend is None:
+                        # No backend configured yet - return empty model list
+                        # instead of crashing with AttributeError.
+                        models = []
+                    else:
+                        models = await backend.list_models()
                     await self._send(ws, "models_list", models=models)
 
                 elif isinstance(msg, ClientListSessions):
@@ -673,6 +681,13 @@ class EncreWSHandler:
                                         from encre.backends.base import format_backend_error
                                         with contextlib.suppress(Exception):
                                             await self._send(ws, "finish", reason="error", error=format_backend_error(e), session_id=sid)
+                                    else:
+                                        _iclaw_session = router.session_manager.get_session(sid) if sid else None
+                                        if _iclaw_session and _iclaw_session.agent.telemetry.enabled:
+                                            with contextlib.suppress(Exception):
+                                                await self._send(ws, "telemetry",
+                                                    data=_iclaw_session.agent.telemetry.get_summary(),
+                                                    session_id=sid)
                                 except Exception as e:
                                     logger.error("[iclaw] setup error: %s", e, exc_info=True)
                                     from encre.backends.base import format_backend_error
@@ -733,9 +748,34 @@ class EncreWSHandler:
                     mode_prompt = msg.mode_prompt or ""
 
                     if msg.attachments:
-                        attachment_block = _format_attachments(msg.attachments)
-                        if attachment_block:
-                            prompt = attachment_block + "\n\n" + prompt
+                        # Check if the active model supports multimodal.
+                        active_model = session.agent.config.get_active_model()
+                        is_multimodal = active_model and (active_model.multimodal or False)
+
+                        if is_multimodal and any(
+                            a.get("mime_type", "").startswith("image/") for a in msg.attachments
+                        ):
+                            # Build a multimodal content block: text + image_url items.
+                            content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+                            for att in msg.attachments:
+                                mime = att.get("mime_type", "")
+                                if mime.startswith("image/"):
+                                    data = att.get("content", "")
+                                    if data:
+                                        content.append({
+                                            "type": "image_url",
+                                            "image_url": {"url": f"data:{mime};base64,{data}"},
+                                        })
+                                else:
+                                    name = att.get("name", "file")
+                                    content.append({"type": "text", "text": f"[Attached: {name}]"})
+                            session.session.add_message("user", content)
+                            # Set prompt empty since we already built the combined content
+                            prompt = ""
+                        else:
+                            attachment_block = _format_attachments(msg.attachments)
+                            if attachment_block:
+                                prompt = attachment_block + "\n\n" + prompt
 
                     if msg.specialty and msg.specialty != "general":
                         session.agent.loop.prompt_builder._specialty = msg.specialty
@@ -758,19 +798,19 @@ class EncreWSHandler:
                     session.agent.config.slash_command_mode = msg.mode or ""
 
                     session.agent.add_message("user", prompt, mode=msg.mode or "")
+                    # Immediately update the in-memory index and broadcast so
+                    # the sidebar shows the new entry before the model responds.
                     if not session.agent.session.metadata.get("temp_chat"):
-                        await self._manager._save_session_async(session)
-                    # Broadcast the session list immediately so the sidebar's
-                    # history entry appears the moment the user sends a message
-                    # -- not delayed until the model starts replying. The list
-                    # reads in-memory SessionInfo, so it already reflects the
-                    # user message added above.
-                    self._broadcast_sessions()
+                        self._manager._index_add(session)
+                        self._broadcast_sessions()
+                        # Persist to disk in the background (non-blocking).
+                        self._manager._schedule_save(session)
                     logger.info("[run] session=%s workspace=%s", session.session_id[:8], self._workspace_path or "(none)")
 
                     # Auto-name: fire-and-forget so conversation is not delayed.
                     sess = session.agent.session
-                    if not sess.metadata.get("name") and sess.turn_count <= 1:
+                    current_name = session.metadata.get("name", "") or sess.metadata.get("name", "")
+                    if current_name.startswith("未命名") and sess.turn_count <= 1:
                         _sid = session.session_id
                         _p = prompt
                         _t = asyncio.ensure_future(self._auto_name_and_rename(session, _p))
@@ -1184,6 +1224,8 @@ class EncreWSHandler:
                                 max_tokens=msg.max_tokens or 4096,
                                 context_window=0,
                                 enabled=True,
+                                multimodal=msg.multimodal,
+                                thinking_config=_thinking_config_from_dict(msg.thinking_config) if msg.thinking_config else None,
                             )
                             if 0 <= msg.model_index < len(cfg.models):
                                 # Edit: replace the exact entry the user opened and
@@ -1216,7 +1258,18 @@ class EncreWSHandler:
                             try:
                                 info.agent.rebuild_backend()
                             except Exception as exc:
-                                logger.warning("[validate_model] rebuild_backend failed: %s", exc)
+                                logger.error("[validate_model] rebuild_backend failed: %s\n%s",
+                                    exc, traceback.format_exc())
+                                await self._send(ws, "model_validation_error",
+                                    message=f"Validation passed but backend rebuild failed: {exc}")
+                                return
+                            # Verify backend actually got created - if not, surface error.
+                            if info.agent.loop.backend is None:
+                                logger.error("[validate_model] backend is None after rebuild - config: type=%s api_key=%s base_url=%s",
+                                    cfg.backend_type, bool(cfg.api_key), cfg.base_url)
+                                await self._send(ws, "model_validation_error",
+                                    message="Backend failed to initialize. Check backend_type/api_key/base_url.")
+                                return
                             self._persist_config(info)
 
                             models_dict = _inject_context_windows([
@@ -1461,6 +1514,7 @@ class EncreWSHandler:
                         turn_count=s.turn_count,
                         plan_items=s.plan_items,
                         artifacts=s.artifacts,
+                        references=s.references,
                         user_input=user_input)
 
                 elif isinstance(msg, ClientEditMessage):
@@ -1558,9 +1612,10 @@ class EncreWSHandler:
                     if not msg.session_id or not msg.new_name.strip():
                         await self._send(ws, "error", message="Missing session_id or new_name", code="invalid_request")
                         continue
-                    ok = self._manager.rename_session(msg.session_id, msg.new_name.strip())
+                    new_name = msg.new_name.strip()[:8]
+                    ok = self._manager.rename_session(msg.session_id, new_name)
                     if ok:
-                        await self._send(ws, "session_renamed", session_id=msg.session_id, new_name=msg.new_name.strip())
+                        await self._send(ws, "session_renamed", session_id=msg.session_id, new_name=new_name)
                     else:
                         await self._send(ws, "error", message="Session not found", code="not_found")
 
@@ -2148,6 +2203,7 @@ class EncreWSHandler:
                     if session.agent_task is not None and not session.agent_task.done():
                         session.is_running = True
                     sess = session.agent.session
+                    sess.mark_messages_dirty()
                     sess.rebuild_artifacts_from_messages()
                     context = sess.get_context_messages()
                     msgs = [m for m in context if m.get("role") != "system"]
@@ -2601,6 +2657,24 @@ class EncreWSHandler:
                         await self._send(ws, "error",
                             message="Job not found", code="job_not_found")
 
+                elif isinstance(msg, ClientAutomationDeleteExecution):
+                    info = self._get_or_create_session()
+                    self._manager.touch(info.session_id)
+                    if self._scheduler is None:
+                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
+                        continue
+                    sid = self._scheduler.delete_job_execution(msg.entry_id)
+                    if sid:
+                        # Clean up sub-agent session directory if it exists
+                        sub_agent_dir = _get_data_dir() / "sub_agents" / sid
+                        if sub_agent_dir.is_dir():
+                            shutil.rmtree(str(sub_agent_dir))
+                        self.broadcast_automation_update()
+                        await self._send(ws, "automation_execution_deleted", entry_id=msg.entry_id)
+                    else:
+                        await self._send(ws, "error",
+                            message="Execution not found", code="execution_not_found")
+
 
                 elif isinstance(msg, ClientAutomationGetHistory):
                     info = self._get_or_create_session()
@@ -2608,7 +2682,7 @@ class EncreWSHandler:
                     if self._scheduler is None:
                         await self._send(ws, "automation_job_history", history=[])
                         continue
-                    jobs = self._scheduler.list_jobs()
+                    jobs = self._scheduler.list_jobs(include_finished=True)
                     history = []
                     for j in jobs:
                         for exec_entry in j.executions:
@@ -2630,10 +2704,14 @@ class EncreWSHandler:
                                 # full transcript without re-running the
                                 # job.
                                 messages = self._load_sub_agent_messages(exec_entry.session_id)
-                                if messages:
-                                    entry["messages"] = messages
+                                entry["messages"] = messages or []
+                            else:
+                                entry["messages"] = []
                             history.append(entry)
-                    history.sort(key=lambda h: h["time"], reverse=True)
+                    # Older failed executions may have no timestamp. Keep
+                    # them in history without letting one legacy record block
+                    # the entire websocket response.
+                    history.sort(key=lambda h: h["time"] or 0, reverse=True)
                     await self._send(ws, "automation_job_history", history=history)
 
                 elif isinstance(msg, ClientGetUsageStats):
@@ -2717,8 +2795,14 @@ class EncreWSHandler:
         fetch both groups at once).
         """
         result = self._manager.list_sessions()
-        self._manager.query_index()
         active_ids = {s["session_id"] for s in result}
+        for entry in self._manager.query_index():
+            if entry["session_id"] in active_ids:
+                continue
+            if entry.get("channel", "normal") == "iwork":
+                continue
+            result.append(entry)
+            active_ids.add(entry["session_id"])
 
         # Include sessions managed by the EventRouter (iClaw desktop + QQ/Telegram etc. adapters)
         if self._adapter_manager and self._adapter_manager.router:
@@ -3053,7 +3137,7 @@ class EncreWSHandler:
         # Build history list with session_ids and per-execution messages
         history: list[dict[str, Any]] = []
         if self._scheduler:
-            for j in self._scheduler.list_jobs():
+            for j in self._scheduler.list_jobs(include_finished=True):
                 for exec_entry in j.executions:
                     entry: dict[str, Any] = {
                         "id": f"{j.id}_{exec_entry.time}",
@@ -3069,9 +3153,19 @@ class EncreWSHandler:
                         entry["session_id"] = exec_entry.session_id
                         messages = self._load_sub_agent_messages(exec_entry.session_id)
                         if messages:
-                            entry["messages"] = messages
+                            # Ensure messages are JSON-serializable (session
+                            # objects may contain datetime or other non-primitive types)
+                            try:
+                                json.dumps(messages, ensure_ascii=False)
+                                entry["messages"] = messages
+                            except (TypeError, ValueError) as e:
+                                logger.warning("[automation] messages not serializable for session %s: %s", exec_entry.session_id, e)
+                                messages = None
+                        entry["messages"] = messages or []
+                    else:
+                        entry["messages"] = []
                     history.append(entry)
-            history.sort(key=lambda h: h["time"], reverse=True)
+            history.sort(key=lambda h: h["time"] or 0, reverse=True)
 
         # Result data for frontend display -- pull messages from the
         # sub-agent session, not from JobExecution.
@@ -3080,13 +3174,21 @@ class EncreWSHandler:
             messages: list[dict[str, Any]] | None = None
             if getattr(job, "session_id", None):
                 messages = self._load_sub_agent_messages(job.session_id)
+                if messages:
+                    try:
+                        json.dumps(messages, ensure_ascii=False)
+                    except (TypeError, ValueError) as e:
+                        logger.warning("[automation] result messages not serializable for session %s: %s", job.session_id, e)
+                        messages = None
             result_data = {
                 "action": "completed" if job.state.name == "COMPLETED" else "failed",
                 "id": job.id,
+                "job_id": job.id,
                 "name": job.name,
                 "prompt": job.prompt,
                 "result": job.last_result[:2000],
-                "messages": messages,
+                "messages": messages or [],
+                "state": job.state.name,
             }
             if getattr(job, "session_id", None):
                 result_data["session_id"] = job.session_id
@@ -3113,11 +3215,16 @@ class EncreWSHandler:
                 except Exception as exc:
                     logger.warning("[automation] failed to push to gateway %s: %s", gw_id, exc)
 
+        logger.debug("[broadcast_automation_update] job=%s state=%s connections=%s history_len=%s",
+                    getattr(job, 'id', None) if job else None,
+                    getattr(job, 'state', None) if job else None,
+                    len(self._connections), len(history))
         for ws in self._connections:
             try:
                 _t = asyncio.ensure_future(self._send(ws, "automation_job_update", history=history, result=result_data))
                 self._tasks.add(_t)
-            except Exception:
+            except Exception as exc:
+                logger.warning("[broadcast_automation_update] failed to schedule send: %s", exc)
                 closed.append(ws)
         for ws in closed:
             self._connections.remove(ws)
@@ -3349,17 +3456,22 @@ class EncreWSHandler:
             logger.debug("[index] failed to send progress", exc_info=True)
 
     async def _auto_name_session(self, session: Any, first_user_msg: str) -> str:
-        """Generate a concise session name (≤10 chars) from the user's first message.
+        """Generate a concise session name (≤8 chars) from the user's first message.
         Uses the same backend as the session's agent with a minimal prompt.
         If the call fails or times out, returns empty string (no name set)."""
         try:
             backend = session.agent.loop.backend
             if backend is None:
+                logger.debug("[session] auto-name: backend is None")
                 return ""
-            prompt_text = first_user_msg.strip()[:200]
+            prompt_text = first_user_msg.strip()[:500]
             if not prompt_text:
                 return ""
-            sys_prompt = "You are a naming assistant. Summarize the user's request in 10 characters or less. Return ONLY the name, no quotes, no explanation."
+            sys_prompt = (
+                "You are a title naming assistant. Based on the user's message, "
+                "generate a concise title of no more than 8 characters. "
+                "Return ONLY the title text, no quotes, no explanation, no punctuation."
+            )
             gen = backend.chat(
                 messages=[
                     {"role": "system", "content": sys_prompt},
@@ -3375,25 +3487,27 @@ class EncreWSHandler:
                     full_text += event.text
                 elif isinstance(event, BackendFinish):
                     break
-            name = full_text.strip().strip('"').strip("'").strip("「").strip("」").strip("『").strip("』")[:15]
+            name = full_text.strip().strip('"').strip("'").strip("「").strip("」").strip("『").strip("』")[:8]
             if len(name) < 2:
+                logger.debug("[session] auto-name: generated name too short: '{}'", full_text[:50])
                 return ""
             return name
-        except Exception:
+        except Exception as e:
+            logger.warning("[session] auto-name failed: %s", e)
             return ""
 
     async def _auto_name_and_rename(self, session: Any, prompt: str) -> None:
         """Generate a session name in the background (fire-and-forget)."""
         try:
             name = await asyncio.wait_for(
-                self._auto_name_session(session, prompt), timeout=5.0)
+                self._auto_name_session(session, prompt), timeout=15.0)
             if name:
                 self._manager.rename_session(session.session_id, name)
-                logger.info("[session] auto-named %s -> %s", session.session_id[:8], name)
+                logger.info("[session] auto-named {} -> {}", session.session_id[:8], name)
         except TimeoutError:
-            logger.debug("[session] auto-name timed out")
-        except Exception:
-            logger.debug("[session] auto-name failed", exc_info=True)
+            logger.debug("[session] auto-name timed out (15s)")
+        except Exception as e:
+            logger.debug("[session] auto-name failed: {}", e)
 
     @staticmethod
     async def _build_skills_list(info: Any) -> list[dict[str, Any]]:
@@ -3570,10 +3684,15 @@ class EncreWSHandler:
             if m.get("role") == "user":
                 user_idx += 1
                 if user_idx == index:
+                    from encre.session import _extract_file_paths_from_messages
                     session.agent.loop.rollback.commit(
                         sess, f"before_edit_msg_{index}")
-                    # Restore file snapshots from the truncated turns
-                    restored = sess.restore_file_snapshots()
+                    # Restore only file snapshots from the truncated turns;
+                    # leave files touched by kept messages untouched.
+                    removed_files = _extract_file_paths_from_messages(msgs[i + 1:])
+                    kept_files = _extract_file_paths_from_messages(msgs[:i + 1])
+                    files_to_restore = removed_files - kept_files
+                    restored = sess.restore_file_snapshots_for_paths(files_to_restore)
                     if restored:
                         logger.info("[edit_msg] restored %d file(s) from snapshots", restored)
                     m["content"] = new_content
@@ -3601,10 +3720,15 @@ class EncreWSHandler:
             if m.get("role") == "user":
                 user_idx += 1
                 if user_idx == index:
+                    from encre.session import _extract_file_paths_from_messages
                     session.agent.loop.rollback.commit(
                         sess, f"before_delete_msg_{index}")
-                    # Restore file snapshots from the deleted turns
-                    restored = sess.restore_file_snapshots()
+                    # Restore only file snapshots from the deleted turns;
+                    # leave files touched by kept messages untouched.
+                    removed_files = _extract_file_paths_from_messages(msgs[i:])
+                    kept_files = _extract_file_paths_from_messages(msgs[:i])
+                    files_to_restore = removed_files - kept_files
+                    restored = sess.restore_file_snapshots_for_paths(files_to_restore)
                     if restored:
                         logger.info("[delete_msg] restored %d file(s) from snapshots", restored)
                     sess.messages = msgs[:i]

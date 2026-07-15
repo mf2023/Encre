@@ -186,6 +186,8 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
         auth_manager: AuthManager | None = None,
         connection_monitor: ConnectionHealthMonitor | None = None,
         fallback_keys: list[str] | None = None,
+        reasoning_effort: str = "",
+        thinking_enabled: bool = True,
         **_kwargs: Any,
     ) -> None:
         """Initialise the SSE backend.
@@ -206,6 +208,10 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
                 If not provided, a default one is created.
             fallback_keys: Additional API keys for automatic rotation on
                 401/403 errors.  Ignored when ``auth_manager`` is given.
+            thinking_enabled: Whether to request model thinking/reasoning
+                tokens.  Backends that support toggling thinking use this
+                to emit ``{"thinking": {"type": "enabled"}}`` (default) or
+                ``{"thinking": {"type": "disabled"}}``.
             **kwargs: Additional provider-specific parameters.
         """
         self.api_key = api_key
@@ -213,6 +219,8 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
         # Normalise so the endpoint is always the API root (no trailing path).
         self.model = model
         self.http_timeout = http_timeout
+        self.reasoning_effort = reasoning_effort
+        self.thinking_enabled = thinking_enabled
         self._client: httpx.AsyncClient | None = None
         self._tool_call_buffers: dict[int, dict[str, Any]] = {}
 
@@ -413,11 +421,15 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
 
         Anthropic and Google use native thinking protocols and do not pass
         through this method (see :class:`AnthropicBackend._build_thinking_param`
-        and :class:`GoogleBackend._build_thinking_config`).
+        and :class:`GoogleBackend._build_thinking_config').
 
         Return ``None`` to omit the parameter entirely.
         """
-        return {"thinking": {"type": "enabled"}}
+        return {
+            "thinking": {
+                "type": "enabled" if self.thinking_enabled else "disabled",
+            }
+        }
 
     def _prepare_request_kwargs(self) -> dict[str, Any]:
         """Return additional keyword arguments for the HTTP POST request.

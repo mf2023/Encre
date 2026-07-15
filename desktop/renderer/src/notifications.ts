@@ -37,7 +37,9 @@ import {
   dismissNotification,
   clearAllNotifications,
   getUnreadCount,
+  addNotification,
 } from "./state.js";
+import { MediaViewer } from "./media-viewer.js";
 import { t } from "./i18n.js";
 import type { NotificationItem } from "./types.js";
 
@@ -74,6 +76,9 @@ export class Notifications {
   private panel: HTMLElement | null = null;
   private toastContainer: HTMLElement | null = null;
   private lastNotificationIds: Set<string> = new Set();
+  private _mediaViewer: MediaViewer | null = null;
+  private _detailId: string | null = null;
+  private _listClickHandler: ((e: MouseEvent) => void) | null = null;
 
   /**
    * Constructor: wires the bell button, outside-click dismissal and state subscription.
@@ -160,7 +165,7 @@ export class Notifications {
     toast.innerHTML = `
       <div class="notification-toast-message">${this.esc(item.message || item.title)}</div>
       ${sourceHtml}
-      <button class="notification-toast-collapse" title="${t("notifications.dismiss")}">
+      <button class="notification-toast-collapse" data-tooltip="${t("notifications.dismiss")}">
         <i data-lucide="chevron-down" class="lucide lucide-sm"></i>
       </button>
     `;
@@ -207,6 +212,24 @@ export class Notifications {
   /** Opens the slide-out notification panel anchored to the bell. */
   openPanel(): void {
     if (!this.bell) return;
+
+    // Inject demo activity notification with latest fields
+    dismissNotification("demo-activity");
+    addNotification({
+      id: "demo-activity",
+      type: "info",
+      title: t("notifications.demoTitle"),
+      message: t("notifications.demoMessage"),
+      source: t("notifications.demoSource"),
+      timestamp: Date.now(),
+      read: false,
+      media: {
+        type: "video",
+        src: "D:\\Downloads\\911Mothers_2010W-480p.mp4",
+      },
+    });
+
+    this._detailId = null;
     this.panel = document.createElement("div");
     this.panel.className = "notification-panel";
     this.renderPanel();
@@ -219,6 +242,7 @@ export class Notifications {
 
   /** Closes the slide-out notification panel. */
   private closePanel(): void {
+    this._destroyMediaViewer();
     if (this.panel) {
       this.panel.remove();
       this.panel = null;
@@ -226,9 +250,16 @@ export class Notifications {
     }
   }
 
-  /** Builds the panel's inner HTML from unread/read notification lists. */
+  /** Builds the panel's inner HTML from unread/read notification lists or detail view. */
   private renderPanel(): void {
     if (!this.panel) return;
+
+    // Detail view
+    if (this._detailId) {
+      this._renderDetailView();
+      return;
+    }
+
     const all = getState().notifications;
     const unread = all.filter((n) => !n.read);
     const read = all.filter((n) => n.read);
@@ -256,19 +287,107 @@ export class Notifications {
 
     this.panel.innerHTML = `${header}${empty}${unreadSection}${readSection}`;
 
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.panel });
+    }
+
+    this._wireListEvents();
+  }
+
+  private _wireListEvents(): void {
+    if (!this.panel) return;
+
+    // Remove previous handler to avoid duplicates
+    if (this._listClickHandler) {
+      this.panel.removeEventListener("click", this._listClickHandler);
+    }
+
     this.panel.querySelector(".notification-panel-clear")?.addEventListener("click", () => {
       clearAllNotifications();
       this.closePanel();
     });
 
-    this.panel.querySelectorAll(".notification-panel-item").forEach((el) => {
-      const id = el.getAttribute("data-id");
+    this._listClickHandler = (e: MouseEvent) => {
+      const item = (e.target as HTMLElement).closest<HTMLElement>(".notification-panel-item");
+      if (!item) return;
+      const id = item.getAttribute("data-id");
       if (!id) return;
-      el.addEventListener("click", () => markOneNotificationRead(id));
-      el.querySelector(".notification-panel-dismiss")?.addEventListener("click", (e) => {
+
+      if ((e.target as HTMLElement).closest(".notification-panel-dismiss")) {
         e.stopPropagation();
         dismissNotification(id);
-      });
+        return;
+      }
+
+      e.stopPropagation();
+      this._detailId = id;
+      this.renderPanel();
+    };
+
+    this.panel.addEventListener("click", this._listClickHandler);
+  }
+
+  /** Destroys the current media viewer instance (stops video playback). */
+  private _destroyMediaViewer(): void {
+    if (this._mediaViewer) {
+      this._mediaViewer.destroy();
+      this._mediaViewer = null;
+    }
+  }
+
+  /** Renders the detail view for the currently selected notification. */
+  private _renderDetailView(): void {
+    if (!this.panel) return;
+    const n = getState().notifications.find((x) => x.id === this._detailId);
+    if (!n) {
+      this._detailId = null;
+      this.renderPanel();
+      return;
+    }
+
+    const absTime = new Date(n.timestamp).toLocaleString();
+
+    this.panel.innerHTML = `
+      <div class="notification-detail">
+        <div class="notification-detail-header">
+          <button class="notification-detail-back" id="notif-detail-back">
+            <i data-lucide="arrow-left" class="lucide lucide-sm"></i>
+            <span>${t("notifications.back")}</span>
+          </button>
+        </div>
+        ${n.media
+          ? `<div class="notification-detail-media" id="notif-detail-media"></div>`
+          : `<div class="notification-detail-media notification-detail-media--empty"></div>`}
+        <div class="notification-detail-body">
+          <div class="notification-detail-title">${this.esc(n.title)}</div>
+          ${n.message ? `<div class="notification-detail-msg">${this.esc(n.message)}</div>` : ""}
+          <div class="notification-detail-meta">
+            ${n.source ? `<span class="notification-detail-source">${this.esc(n.source)}</span>` : ""}
+            <span class="notification-detail-time">${absTime}</span>
+          </div>
+        </div>
+      </div>`;
+
+    // Render media via shared MediaViewer component
+    if (n.media) {
+      const mediaEl = this.panel.querySelector<HTMLElement>("#notif-detail-media");
+      if (mediaEl) {
+        this._destroyMediaViewer();
+        this._mediaViewer = new MediaViewer(mediaEl, n.media);
+      }
+    }
+
+    this.panel.querySelector("#notif-detail-back")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._destroyMediaViewer();
+      this._detailId = null;
+      this.renderPanel();
+    });
+
+    this.panel.querySelector("#notif-detail-back")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._detailId = null;
+      this.renderPanel();
     });
 
     if (typeof (window as any).lucide !== "undefined") {
@@ -283,12 +402,13 @@ export class Notifications {
         <div class="notification-panel-body">
           <div class="notification-panel-item-title">${this.esc(n.title)}</div>
           <div class="notification-panel-item-msg">${this.esc(n.message || "")}</div>
-          ${n.source ? `<div class="notification-panel-item-source">${this.esc(n.source)}</div>` : ""}
-          <div class="notification-panel-item-time">${relativeTime(n.timestamp)}</div>
+          <div class="notification-panel-meta">
+            ${n.source ? `<span class="notification-panel-item-source">${this.esc(n.source)}</span>` : ""}
+            <span class="notification-panel-item-time">${relativeTime(n.timestamp)}</span>
+          </div>
         </div>
         <div class="notification-panel-actions">
-          ${n.read ? "" : `<span class="notification-panel-dot"></span>`}
-          <button class="notification-panel-dismiss" title="${t("notifications.dismiss")}">
+          <button class="notification-panel-dismiss" data-tooltip="${t("notifications.dismiss")}">
             <i data-lucide="x" class="lucide lucide-sm"></i>
           </button>
         </div>

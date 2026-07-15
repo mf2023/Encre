@@ -94,6 +94,9 @@ class BedrockBackend(BaseBackend):
         aws_access_key_id: str = "",
         aws_secret_access_key: str = "",
         region_name: str = "us-east-1",
+        thinking_mode: str = "enabled",
+        thinking_budget_tokens: int = 16000,
+        thinking_effort: str = "",
         **_kwargs: Any,
     ) -> None:
         """Initialise the Bedrock backend.
@@ -104,12 +107,25 @@ class BedrockBackend(BaseBackend):
             aws_access_key_id: Optional AWS access key ID.
             aws_secret_access_key: Optional AWS secret access key.
             region_name: AWS region.  Defaults to ``us-east-1``.
+            thinking_mode: One of ``"enabled"`` (explicit budget),
+                ``"adaptive"`` (Claude Opus 4.6+ / Sonnet 4.6+ only), or
+                ``"disabled"``.  Only applies to Anthropic Claude models.
+            thinking_budget_tokens: Token budget for extended thinking on
+                Claude models.  Ignored when ``thinking_mode`` is
+                ``"disabled"`` or ``"adaptive"``.
+            thinking_effort: Optional effort level for ``"adaptive"`` mode.
+                One of ``"low"``, ``"medium"``, ``"high"``.  Empty string
+                leaves the choice to the model.  Only applies to Anthropic
+                Claude models.
             **_kwargs: Additional arguments (currently unused).
         """
         self.model = model
         self.aws_access_key_id = aws_access_key_id
         self.aws_secret_access_key = aws_secret_access_key
         self.region_name = region_name
+        self.thinking_mode = thinking_mode
+        self.thinking_budget_tokens = thinking_budget_tokens
+        self.thinking_effort = thinking_effort
         self._client = None
 
     async def _ensure_client(self) -> None:
@@ -353,6 +369,33 @@ class BedrockBackend(BaseBackend):
             elif tool_choice == "none":
                 params["toolConfig"]["toolChoice"] = {"none": {}}
 
+        # Anthropic Claude models on Bedrock support extended thinking via
+        # provider-specific request fields.
+        model_lower = self.model.lower()
+        if "claude" in model_lower or "anthropic" in model_lower:
+            if self.thinking_mode == "disabled":
+                params["additionalModelRequestFields"] = {
+                    "thinking": {"type": "disabled"},
+                }
+            elif self.thinking_mode == "adaptive":
+                # Adaptive mode does not accept budget_tokens; it optionally
+                # accepts an effort level via outputConfig.
+                params["additionalModelRequestFields"] = {
+                    "thinking": {"type": "adaptive"},
+                }
+                effort = (self.thinking_effort or "").lower()
+                if effort in {"low", "medium", "high"}:
+                    params["outputConfig"] = {"effort": effort}
+            else:
+                budget = int(self.thinking_budget_tokens or 16000)
+                budget = max(1024, min(budget, 63999))
+                params["additionalModelRequestFields"] = {
+                    "thinking": {
+                        "type": "enabled",
+                        "budget_tokens": budget,
+                    }
+                }
+
         try:
             loop = asyncio.get_running_loop()
 
@@ -368,6 +411,7 @@ class BedrockBackend(BaseBackend):
                 tool_use_buffer: dict[str, Any] | None = None
                 tool_index: int = 0
                 thinking_block: bool = False  # current content block is thinking
+                _usage: dict[str, int] | None = None
                 # ``thinking_block`` tracks whether the in-progress content block
                 # is a reasoning block so that deltas are routed to
                 # create_backend_thinking vs create_backend_text.
@@ -455,7 +499,15 @@ class BedrockBackend(BaseBackend):
                         yield create_backend_error("Bedrock internal server error")
                         return
 
-                yield create_backend_finish(finish_reason)
+                    elif "metadata" in event:
+                        meta_usage = event["metadata"].get("usage", {})
+                        if meta_usage:
+                            _usage = {
+                                "input_tokens": meta_usage.get("inputTokens", 0),
+                                "output_tokens": meta_usage.get("outputTokens", 0),
+                            }
+
+                yield create_backend_finish(finish_reason, usage=_usage)
 
             else:
                 # Non-streaming path: one blocking Converse call off-thread.
@@ -482,12 +534,19 @@ class BedrockBackend(BaseBackend):
                         )
 
                 stop_reason = response.get("stopReason", "end_turn")
+                usage_raw = response.get("usage", {})
+                _non_stream_usage: dict[str, int] | None = None
+                if usage_raw:
+                    _non_stream_usage = {
+                        "input_tokens": usage_raw.get("inputTokens", 0),
+                        "output_tokens": usage_raw.get("outputTokens", 0),
+                    }
                 if stop_reason == "end_turn":
-                    yield create_backend_finish("stop")
+                    yield create_backend_finish("stop", usage=_non_stream_usage)
                 elif stop_reason == "tool_use":
-                    yield create_backend_finish("tool_calls")
+                    yield create_backend_finish("tool_calls", usage=_non_stream_usage)
                 else:
-                    yield create_backend_finish(stop_reason or "stop")
+                    yield create_backend_finish(stop_reason or "stop", usage=_non_stream_usage)
 
         except Exception as e:
             yield create_backend_error(str(e))

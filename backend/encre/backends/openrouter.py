@@ -114,7 +114,9 @@ class OpenRouterBackend(OpenAISSEBackend):
         up by :data:`_REASONING_FIELD_NAMES` in
         :class:`OpenAISSEBackend`.
         """
-        return {"reasoning": {"enabled": True}}
+        if self.reasoning_effort:
+            return {"reasoning": {"enabled": self.thinking_enabled, "effort": self.reasoning_effort}}
+        return {"reasoning": {"enabled": self.thinking_enabled}}
 
     def context_window_size(self) -> int:
         if self._context_window > 0:

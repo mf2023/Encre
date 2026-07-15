@@ -31,7 +31,7 @@
 
 import { ClientMessage, ServerEvent } from "./types.js";
 import { initCrypto, encrypt, decrypt, isReady } from "./crypto.js";
-import { setConnected, getState } from "./state.js";
+import { setConnected, getState, showToast } from "./state.js";
 
 type EventHandler = (event: ServerEvent) => void;
 
@@ -98,8 +98,8 @@ export async function connect(onEvent: EventHandler): Promise<void> {
         }
 
         handler?.(event);
-      } catch {
-        /* ignore malformed */
+      } catch (e) {
+        console.warn("[ws] malformed message:", e);
       }
     });
 
@@ -132,7 +132,8 @@ export async function connect(onEvent: EventHandler): Promise<void> {
       ws?.addEventListener("open", onOpen, { once: true });
       ws?.addEventListener("error", onError, { once: true });
     });
-  } catch {
+  } catch (e) {
+    console.warn("[ws] connect failed:", e);
     scheduleReconnect();
   }
 }
@@ -157,6 +158,7 @@ export async function send(msg: ClientMessage): Promise<void> {
     }
   } catch (err) {
     console.warn("[ws] send failed:", err);
+    showToast("Send failed", "", "error", "WebSocket");
   }
 }
 

@@ -116,6 +116,7 @@ class TurnRecord:
     compact_triggered: bool = False
     token_usage: dict[str, int] = field(default_factory=dict)
     model: str = ""
+    channel: str = ""
     timestamp: float = field(default_factory=time.time)
 
 
@@ -205,6 +206,7 @@ class EncreTelemetry:
         compact_triggered: bool = False,
         token_usage: dict[str, int] | None = None,
         model: str = "",
+        channel: str = "",
     ) -> None:
         if not self.enabled:
             return
@@ -216,6 +218,7 @@ class EncreTelemetry:
             compact_triggered=compact_triggered,
             token_usage=token_usage,
             model=model,
+            channel=channel,
         )
         self.turns.append(record)
         # Cost tracking: price this turn's tokens against the model.
@@ -234,6 +237,7 @@ class EncreTelemetry:
             "compact_triggered": record.compact_triggered,
             "token_usage": record.token_usage,
             "model": record.model,
+            "channel": record.channel,
             "cost_usd": round(cost, 6),
         }
         logger.debug(json.dumps(entry, ensure_ascii=False))
@@ -479,6 +483,7 @@ class EncreTelemetry:
                 session_tool_calls = 0
                 session_tool_breakdown: dict[str, int] = {}
                 session_model = ""
+                session_channel = ""
                 turn_count = 0
                 session_first_active = 0.0
                 session_cost = 0.0
@@ -513,6 +518,9 @@ class EncreTelemetry:
                         turn_count += 1
                         model = data.get("model", "") or ""
                         session_model = model
+                        channel = data.get("channel", "") or ""
+                        if channel:
+                            session_channel = channel
                         # Cost: prefer the persisted cost_usd, else recompute
                         # for older entries that predate the cost field.
                         cost = data.get("cost_usd")
@@ -544,6 +552,7 @@ class EncreTelemetry:
                     session_summaries[session_id] = {
                         "session_id": session_id,
                         "model": session_model,
+                        "channel": session_channel or "normal",
                         "input_tokens": session_input,
                         "output_tokens": session_output,
                         "total_tokens": session_tokens,

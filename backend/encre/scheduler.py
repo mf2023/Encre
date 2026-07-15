@@ -27,6 +27,7 @@ import asyncio
 import contextlib
 import json
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -457,6 +458,8 @@ class EncreScheduler:
         job.metadata["tag"] = tag
         job.model_index = model_index
         job._agent_config = agent_config
+        job.fail_count = 0
+        job.state = JobState.PENDING
         if push_gateways is not None:
             job.push_gateways = push_gateways
         if self._durable_path:
@@ -523,10 +526,21 @@ class EncreScheduler:
     def get_job(self, job_id: str) -> ScheduledJob | None:
         return self._jobs.get(job_id)
 
-    def list_jobs(self, state: JobState | None = None) -> list[ScheduledJob]:
+    def list_jobs(self, state: JobState | None = None, include_finished: bool = False) -> list[ScheduledJob]:
+        """List jobs, optionally filtered by state.
+
+        By default, CANCELLED jobs and completed/failed ONE_SHOT jobs
+        are excluded to avoid cluttering the UI with stale entries.
+        """
         jobs = list(self._jobs.values())
         if state is not None:
             jobs = [j for j in jobs if j.state == state]
+        elif not include_finished:
+            jobs = [
+                j for j in jobs
+                if j.state != JobState.CANCELLED
+                and not (j.schedule_type == ScheduleType.ONE_SHOT and j.state in (JobState.COMPLETED, JobState.FAILED))
+            ]
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)
 
     def on_job_complete(self, callback: Callable[[ScheduledJob], None]) -> None:
@@ -565,36 +579,53 @@ class EncreScheduler:
     async def _loop(self) -> None:
         """Main scheduler loop -- polls for due jobs."""
         while self._running:
-            now = time.time()
-            due_jobs: list[ScheduledJob] = []
+            try:
+                now = time.time()
+                due_jobs: list[ScheduledJob] = []
 
-            for job in self._jobs.values():
-                if job.state not in (JobState.PENDING,):
-                    continue
-                if job.suspended:
-                    continue
-                if job.schedule_type == ScheduleType.ONE_SHOT:
-                    if job.fire_at and now >= job.fire_at:
-                        due_jobs.append(job)
-                elif job.schedule_type == ScheduleType.RECURRING and job.cron:
-                    if job.last_fired is None:  # noqa: SIM108
-                        # First time the scheduler sees this recurring job after
-                        # creation or restart: only consider future fire times so
-                        # the job does not execute immediately on application
-                        # startup just because its creation time is in the past.
-                        next_fire = job.cron.next_fire(now)
+                for job in self._jobs.values():
+                    if job.state not in (JobState.PENDING,):
+                        continue
+                    if job.suspended:
+                        continue
+                    if job.schedule_type == ScheduleType.ONE_SHOT:
+                        if job.fire_at and now >= job.fire_at:
+                            due_jobs.append(job)
+                        else:
+                            pass
+                    elif job.schedule_type == ScheduleType.RECURRING and job.cron:
+                        if job.last_fired is None:
+                            # First time: compute next_fire from the fixed
+                            # creation timestamp so the result is stable
+                            # across poll cycles.  Using the current poll
+                            # time (now) would make next_fire keep shifting
+                            # forward (e.g. "every minute" would return
+                            # now+60s on every call, making now >= next_fire
+                            # *always* false — the job would never fire).
+                            next_fire = job.cron.next_fire(job.created_at)
+                        else:
+                            next_fire = job.cron.next_fire(job.last_fired)
+                        if next_fire and now >= next_fire:
+                            due_jobs.append(job)
+                        else:
+                            logger.debug("[scheduler] recurring job {} not due yet: next_fire={} now={} last_fired={}",
+                                          job.id, next_fire, now, job.last_fired)
                     else:
-                        next_fire = job.cron.next_fire(job.last_fired)
-                    if next_fire and now >= next_fire:
-                        due_jobs.append(job)
+                        logger.debug("[scheduler] job {} skipped: type={} cron={}", job.id, job.schedule_type, job.cron)
 
-            for job in due_jobs:
-                await self._execute_job(job)
+                logger.debug("[scheduler] poll: {} jobs, {} due", len(self._jobs), len(due_jobs))
 
-            if self._durable_path:
-                self._save()
+                for job in due_jobs:
+                    logger.info("[scheduler] executing job {} (name={})", job.id, job.name)
+                    await self._execute_job(job)
 
-            await asyncio.sleep(self._poll_interval)
+                if self._durable_path:
+                    self._save()
+
+                await asyncio.sleep(self._poll_interval)
+            except Exception as e:
+                logger.exception("[scheduler] _loop iteration crashed: {}", e)
+                await asyncio.sleep(self._poll_interval)
 
     async def _execute_job(self, job: ScheduledJob) -> None:
         """Execute a single scheduled job.
@@ -615,7 +646,11 @@ class EncreScheduler:
         session.
         """
         if self._agent_factory is None:
+            logger.warning("[scheduler] _agent_factory is None, cannot execute job {}", job.id)
             return
+
+        logger.info("[scheduler] _execute_job {} (name={}) starting, state={}, cron={}, last_fired={}",
+                      job.id, job.name, job.state, job.cron.to_expression() if job.cron else None, job.last_fired)
 
         job.state = JobState.RUNNING
         job.last_fired = time.time()
@@ -623,30 +658,25 @@ class EncreScheduler:
         # Lightweight execution record. The full transcript is owned by
         # the sub-agent session that _run_sub_agent will create.
         exec_entry = JobExecution(
-            time=job.last_fired,
+            time=time.time(),
             state="RUNNING",
             result="",
-            session_id=None,
+            session_id=uuid.uuid4().hex,
             fail_count=0,
         )
         job.executions.append(exec_entry)
+        job.session_id = exec_entry.session_id
+        if self._durable_path:
+            self._save()
 
-        # Parent agent is a transport/config holder only. _run_sub_agent
-        # will create a fresh sub-EncreAgent internally.
-        parent_agent = self._agent_factory(job._agent_config)
-
-        # Notify frontend that execution has started. session_id is
-        # filled in once the sub-agent is created.
-        if self._on_progress:
+        # Notify frontend immediately that the job is now RUNNING so the
+        # automation panel can update its state (status → RUNNING, history
+        # entry appears) without waiting for execution to finish.
+        if self._on_complete:
             try:
-                await self._on_progress(job, "start", {
-                    "id": job.id,
-                    "name": job.name,
-                    "prompt": job.prompt,
-                    "session_id": None,
-                })
+                self._on_complete(job)
             except Exception:
-                logger.warning("[scheduler] progress callback failed for 'start' event", exc_info=True)
+                logger.debug("[scheduler] start-state broadcast failed for job {}", job.id, exc_info=True)
 
         # Build an event translator that turns raw AgentEvents into the
         # existing automation_stream_event wire format. This is the only
@@ -704,9 +734,30 @@ class EncreScheduler:
                 try:
                     await self._on_progress(job, event_name, event_data)
                 except Exception:
-                    logger.warning("[scheduler] progress callback failed for '%s'", event_name, exc_info=True)
+                    logger.warning("[scheduler] progress callback failed for '{}'", event_name, exc_info=True)
 
         try:
+            # Parent agent is a transport/config holder only. _run_sub_agent
+            # will create a fresh sub-EncreAgent internally. This call is
+            # INSIDE the try block so that factory failures (e.g. invalid
+            # model config causing rebuild_backend to raise) are caught by
+            # the exception handler below, which correctly resets job state
+            # to PENDING/FAILED instead of crashing the entire _loop().
+            parent_agent = self._agent_factory(job._agent_config)
+
+            # Notify frontend that execution has started. session_id is
+            # filled in once the sub-agent is created.
+            if self._on_progress:
+                try:
+                    await self._on_progress(job, "start", {
+                        "id": job.id,
+                        "name": job.name,
+                        "prompt": job.prompt,
+                        "session_id": exec_entry.session_id,
+                    })
+                except Exception:
+                    logger.warning("[scheduler] progress callback failed for 'start' event", exc_info=True)
+
             if job.dag_definition:
                 # DAG path: each node is a sub-agent run.
                 node_session_ids = await self._execute_dag_job(
@@ -731,8 +782,11 @@ class EncreScheduler:
                     prompt=job.prompt,
                     system_prompt=None,
                     tool_policy="all",
-                    progress_callback=None,
+                    progress_callback=lambda messages: self._emit_execution_snapshot(
+                        job, exec_entry, messages,
+                    ),
                     event_callback=_translate_event,
+                    session_id=exec_entry.session_id,
                 )
 
                 session_id = sub_result.get("session_id")
@@ -743,11 +797,12 @@ class EncreScheduler:
                 job.last_result = final_content[:2000]
                 job.state = JobState.COMPLETED
                 job.fail_count = 0
+                job.last_fired = time.time()          # ← mark successful execution
                 exec_entry.state = "COMPLETED"
                 exec_entry.result = final_content[:5000]
 
         except Exception as e:
-            logger.exception("[scheduler] job execution failed: %s", e)
+            logger.exception("[scheduler] job execution failed: job={} name={} error={}", job.id, job.name, e)
             job.fail_count += 1
             job.last_result = f"Error: {e}"
             exec_entry.state = "FAILED" if job.fail_count >= job.max_failures else "PENDING"
@@ -769,11 +824,30 @@ class EncreScheduler:
                 logger.warning("[scheduler] progress callback failed for 'finish' event", exc_info=True)
 
         if self._on_complete:
-            self._on_complete(job)
+            try:
+                self._on_complete(job)
+            except Exception:
+                logger.warning("[scheduler] on_complete callback failed for job {}", job.id, exc_info=True)
 
         if job.schedule_type == ScheduleType.RECURRING:
             job.state = JobState.PENDING  # reset for next cycle after notification
         # ONE_SHOT stays COMPLETED/FAILED
+        if self._durable_path:
+            self._save()
+
+    async def _emit_execution_snapshot(
+        self,
+        job: ScheduledJob,
+        execution: JobExecution,
+        messages: list[dict[str, Any]],
+    ) -> None:
+        """Publish the current canonical sub-agent transcript to clients."""
+        if self._on_progress is None:
+            return
+        await self._on_progress(job, "snapshot", {
+            "session_id": execution.session_id,
+            "messages": messages,
+        })
 
     async def _execute_dag_job(
         self,
@@ -901,8 +975,11 @@ class EncreScheduler:
         payload = json.dumps(data, indent=2, ensure_ascii=False)
         with contextlib.suppress(Exception):
             payload = encrypt(payload)
-        with open(self._durable_path, "w", encoding="utf-8") as f:
+        # Atomic write: write to temp file then rename
+        tmp_path = self._durable_path.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(payload)
+        tmp_path.replace(self._durable_path)
 
     def _load(self) -> None:
         if not self._durable_path or not self._durable_path.exists():
@@ -910,15 +987,28 @@ class EncreScheduler:
         try:
             with open(self._durable_path, encoding="utf-8") as f:
                 raw = f.read().strip()
+            if not raw:
+                # Empty/corrupted file - reset to a valid empty list.
+                self._jobs = {}
+                return
             if raw and not raw.startswith("["):
                 with contextlib.suppress(Exception):
                     raw = decrypt(raw)
             data = json.loads(raw)
             for item in data:
                 job = ScheduledJob.from_dict(item)
+                # Recover jobs stuck in RUNNING state after a crash/restart.
+                # Recurring jobs should return to PENDING so they can fire again.
+                if job.state == JobState.RUNNING:
+                    if job.schedule_type == ScheduleType.RECURRING:
+                        job.state = JobState.PENDING
+                    else:
+                        job.state = JobState.FAILED
+                        job.fail_count += 1
                 self._jobs[job.id] = job
         except json.JSONDecodeError as e:
-            logger.warning(f"Could not parse durable job store {self._durable_path}: {e}")
+            logger.warning(f"Could not parse durable job store {self._durable_path}: {e} - resetting to empty")
+            self._jobs = {}
         except KeyError as e:
             logger.warning(f"Missing key in durable job store entry: {e}")
         except Exception as e:

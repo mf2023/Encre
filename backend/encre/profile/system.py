@@ -318,7 +318,7 @@ class EncreProfileSystem:
                 self._profile = UserProfile.from_dict(data)
         except Exception:
             import traceback
-            logger.warning("Failed to load profile, starting fresh: %s", traceback.format_exc())
+            logger.warning("Failed to load profile, starting fresh: {}", traceback.format_exc())
             self._profile = UserProfile()
 
     def save(self) -> None:
@@ -401,6 +401,6 @@ class EncreProfileSystem:
             if result:
                 inferred, confidences = result
                 self.merge_inferred(inferred, confidences)
-                logger.info("Profile updated from session inference (%d fields)", len(inferred))
+                logger.info("Profile updated from session inference ({} fields)", len(inferred))
         except Exception as e:
-            logger.warning("Profile inference failed: %s", e)
+            logger.warning("Profile inference failed: {}", e)

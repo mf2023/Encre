@@ -33,10 +33,13 @@ Follows the same pattern as ``settings_manager.py``:
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from encre.crypto import decrypt, encrypt
+
+logger = logging.getLogger(__name__)
 
 _KEYBINDS_FILE = "keybinds.json"
 
@@ -463,22 +466,45 @@ def load_keybinds() -> dict[str, Any]:
     if path.is_file():
         try:
             raw = path.read_text(encoding="utf-8")
-            return json.loads(decrypt(raw))
-        except Exception:
-            pass
+            binds = json.loads(decrypt(raw))
+            logger.info("[keybinds] loaded %d entries from %s", len(binds.get("keybinds", [])), path)
+            return binds
+        except Exception as exc:
+            logger.warning("[keybinds] failed to load from %s: %s — falling back to defaults", path, exc)
 
     binds = default_keybinds()
     save_keybinds(binds)
+    logger.info("[keybinds] created default keybinds at %s", path)
     return binds
 
 
 def save_keybinds(binds: dict[str, Any]) -> None:
-    """Encrypt and persist keybinds to ``<data_dir>/keybinds.json``."""
+    """Encrypt and persist keybinds to ``<data_dir>/keybinds.json``.
+
+    Verifies the written data by reading it back immediately.
+    """
     path = _config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = json.dumps(binds, ensure_ascii=False, indent=2)
     encrypted = encrypt(raw)
     path.write_text(encrypted, encoding="utf-8")
+
+    # Readback verification — detect corruption early
+    try:
+        stored = path.read_text(encoding="utf-8")
+        decrypted = decrypt(stored)
+        verified = json.loads(decrypted)
+        if verified.get("version") != binds.get("version"):
+            logger.warning("[keybinds] save verification: version mismatch")
+    except Exception as exc:
+        logger.error("[keybinds] save verification FAILED: %s — re-saving", exc)
+        # Retry once
+        path.write_text(encrypted, encoding="utf-8")
+        try:
+            stored = path.read_text(encoding="utf-8")
+            decrypt(stored)
+        except Exception as exc2:
+            logger.error("[keybinds] retry also failed: %s", exc2)
 
 
 __all__ = ["default_keybinds", "load_keybinds", "save_keybinds"]

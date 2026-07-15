@@ -48,6 +48,7 @@ interface ElectronAPI {
   pickFiles(): Promise<string[]>;
   pickDirectory(): Promise<string | null>;
   readFile(filePath: string): Promise<FileReadResult>;
+  readFileBase64(filePath: string): Promise<{ data: string; mime_type: string } | null>;
   readDirectory(dirPath: string): Promise<{ path: string; name: string } | null>;
   writeFile(filePath: string, data: string): Promise<boolean>;
   readKeyfile(): Promise<ArrayBuffer>;
@@ -76,7 +77,6 @@ interface ElectronAPI {
   gitPull(repoPath: string): Promise<{ output?: string; error?: string }>;
   gitBehind(repoPath: string): Promise<{ behind: number; error?: string }>;
   getServiceStatus(): Promise<{ running: boolean; pid: number | null; port: number }>;
-  restartService(): Promise<{ success: boolean }>;
   getAutoStart(): Promise<boolean>;
   setAutoStart(enabled: boolean): Promise<{ success: boolean; error?: string }>;
   trayLocaleUpdate(locale: string): void;
@@ -110,6 +110,22 @@ interface ElectronAPI {
     logFile: string;
     recentLogs: string[];
   }>;
+  getLogs(filters: {
+    fromDate?: string;
+    toDate?: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<{
+    entries: { timestamp: string; level: string; source: string; message: string }[];
+    total: number;
+    fileExists: boolean;
+    rawLines: number;
+  }>;
+  clearLogs(): Promise<{ success: boolean }>;
+  setWinKeyCapture(enabled: boolean): Promise<void>;
+  onRestartProgress(callback: (data: { progress: number }) => void): () => void;
+  restartService(): Promise<{ success: boolean; error?: string }>;
+  openFolder(folderPath: string): Promise<boolean>;
 }
 
 /** Global `Window` augmentation exposing the Electron bridge and icon runtime. */

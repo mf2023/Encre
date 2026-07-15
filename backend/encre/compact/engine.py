@@ -83,13 +83,43 @@ MICROCOMPACT_CACHE_TTL_MINUTES = 30  # clear tool results older than this
 MICROCOMPACT_KEEP_RECENT_TURNS = 5   # keep this many recent turns during microcompact
 COMPACT_MAX_OUTPUT_TOKENS = 16_384   # max tokens for the summary response
 MAX_CONSECUTIVE_COMPACT_FAILURES = 3  # circuit breaker
-COMPACTABLE_TOOLS = frozenset({       # tools whose results can be cleared
-    "bash", "grep", "glob", "web_search", "web_fetch",
-    "file_read", "file_write", "file_edit", "git", "lsp",
-    "notebook", "database", "docker", "pdf", "browser",
-    "find_tool", "deploy", "apply_patch", "test_runner",
-    "lint_format", "image", "spreadsheet",
+
+# Three-tier tool classification for microcompact:
+#   CLEARABLE: large one-shot outputs, safe to wipe entirely
+#   SUMMARIZABLE: outputs where the head/structure matters -- keep first 200 chars
+#   PROTECTED: outputs that must NEVER be cleared (diffs, errors, patches)
+CLEARABLE_TOOLS = frozenset({
+    "web_search", "web_fetch", "pdf", "image",
+    "spreadsheet", "document", "media",
 })
+SUMMARIZABLE_TOOLS = frozenset({
+    "bash", "grep", "glob", "file_read", "file_write",
+    "file_edit", "git", "lsp", "notebook", "database",
+    "docker", "browser", "find_tool", "deploy",
+    "test_runner", "lint_format",
+})
+PROTECTED_TOOLS = frozenset({
+    "apply_patch",  # edits are irreplaceable
+})
+
+# Backward-compat: legacy single-set union
+COMPACTABLE_TOOLS = CLEARABLE_TOOLS | SUMMARIZABLE_TOOLS
+
+# Cap on tokens that active archive injection may add to a summary.
+ACTIVE_ARCHIVE_TOKEN_BUDGET = 6_000
+# Cap on kept image stubs (recent 2 by default)
+ACTIVE_ARCHIVE_KEEP_IMAGES = 2
+# How many of the most recent tool results to actively surface after summary
+ACTIVE_ARCHIVE_KEEP_RECENT_TOOLS = 6
+
+# P1: milestone summarisation cadence.  When the loop has advanced
+# MILESTONE_INTERVAL turns since the last milestone, a fresh
+# summary snapshot is written to session.metadata.  Set to 0 to
+# disable milestone writes entirely.
+MILESTONE_INTERVAL = 12
+# Cap on the number of stored milestones.  Older entries are dropped
+# so the metadata does not grow unbounded across a long session.
+MILESTONE_MAX_ENTRIES = 6
 
 # ── Compact summary prompt ─────────────────────────────────────────────
 
@@ -235,12 +265,17 @@ class CompactEngine:
     ) -> list[dict[str, Any]]:
         """Clear old tool results to free cache-able space.
 
-        This is the cheapest form of compaction -- no API call, just
-        replaces old tool outputs with stubs.  It preserves:
+        Three-tier strategy (per-tool classification):
+        - CLEARABLE:  full wipe → ``[Previous tool output cleared]``
+        - SUMMARIZABLE: keep first 200 chars + length hint
+        - PROTECTED:  never touch (apply_patch, etc.)
+
+        Preserves:
         - System messages
         - All user messages
         - The last *keep_recent_turns* assistant messages and their tools
         - Tool results within the recent window
+        - All PROTECTED tool outputs everywhere
 
         Returns a NEW message list.  Does not mutate the input.
         """
@@ -262,23 +297,44 @@ class CompactEngine:
 
         result: list[dict[str, Any]] = []
         cleared = 0
+        summarised = 0
         for i, msg in enumerate(messages):
             if i < cutoff and msg.get("role") == "tool":
                 tool_name = msg.get("name", "")
-                if tool_name in COMPACTABLE_TOOLS:
-                    content = msg.get("content", "")
-                    if isinstance(content, str) and len(content) > 200:
-                        new_msg = dict(msg)
-                        new_msg["content"] = "[Previous tool output cleared]"
-                        result.append(new_msg)
-                        cleared += 1
-                        continue
+                # PROTECTED: never touch
+                if tool_name in PROTECTED_TOOLS:
+                    result.append(msg)
+                    continue
+                content = msg.get("content", "")
+                if not isinstance(content, str) or len(content) <= 200:
+                    result.append(msg)
+                    continue
+                new_msg = dict(msg)
+                if tool_name in CLEARABLE_TOOLS:
+                    new_msg["content"] = "[Previous tool output cleared]"
+                    cleared += 1
+                elif tool_name in SUMMARIZABLE_TOOLS:
+                    # Keep first 200 chars + total length hint so the
+                    # model can still see the head (often contains
+                    # the matching line, error message, or file head)
+                    head = content[:200]
+                    tail = f"\n... [truncated; {len(content) - 200} chars cleared]"
+                    new_msg["content"] = head + tail
+                    summarised += 1
+                else:
+                    # Unknown tool: behave like SUMMARIZABLE (safe default)
+                    head = content[:200]
+                    tail = f"\n... [truncated; {len(content) - 200} chars cleared]"
+                    new_msg["content"] = head + tail
+                    summarised += 1
+                result.append(new_msg)
+                continue
             result.append(msg)
 
-        if cleared:
+        if cleared or summarised:
             logger.info(
-                "[microcompact] cleared %d old tool results, "
-                "kept %d recent turns", cleared, keep_recent_turns,
+                "[microcompact] cleared=%d summarised=%d kept %d recent turns",
+                cleared, summarised, keep_recent_turns,
             )
         return result
 
@@ -310,9 +366,20 @@ class CompactEngine:
         API error, etc.).
         """
         if self._failure_count >= MAX_CONSECUTIVE_COMPACT_FAILURES:
-            logger.warning("[compact] circuit breaker open -- %d consecutive failures, falling back to budget truncation",
+            logger.warning("[compact] circuit breaker open -- %d consecutive failures, attempting segmented rescue",
                            self._failure_count)
-            return _budget_fallback(messages, backend.context_window_size())
+            # P1: circuit-breaker rescue -- before surrendering to budget
+            # truncation, try to summarise in segments.  This is more
+            # likely to succeed because each segment is smaller and less
+            # likely to hit a context-overflow error.
+            rescued = await _segmented_rescue(messages, backend, self._failure_count)
+            if rescued is not None:
+                self._failure_count = 0
+                return rescued
+            # Final fallback: keep more recent turns than the legacy
+            # 4-turn budget so we lose less middle context.
+            logger.warning("[compact] segmented rescue failed -- falling back to extended budget truncation")
+            return _budget_fallback(messages, backend.context_window_size(), keep_recent=8)
 
         # Save pre-compact messages to archive cache BEFORE compaction
         if session_id:
@@ -332,14 +399,57 @@ class CompactEngine:
         except Exception as exc:
             logger.warning("[compact] API call failed: %s", exc, exc_info=True)
             self._failure_count += 1
-            # Fallback: budget-based truncation as last resort
-            return _budget_fallback(messages, backend.context_window_size())
+            # P1: try segmented rescue before plain budget fallback
+            rescued = await _segmented_rescue(messages, backend, self._failure_count)
+            if rescued is not None:
+                self._failure_count = 0
+                return rescued
+            return _budget_fallback(messages, backend.context_window_size(), keep_recent=8)
 
         if not summary or len(summary) < 100:
             logger.warning("[compact] empty or too-short summary (%d chars)",
                            len(summary) if summary else 0)
             self._failure_count += 1
-            return _budget_fallback(messages, backend.context_window_size())
+            rescued = await _segmented_rescue(messages, backend, self._failure_count)
+            if rescued is not None:
+                self._failure_count = 0
+                return rescued
+            return _budget_fallback(messages, backend.context_window_size(), keep_recent=8)
+
+        # P2: validate that the summary actually covers all 9 required
+        # sections.  A hallucinated or truncated summary is dangerous
+        # because it silently drops context.  We check the heading
+        # strings; if more than one is missing, retry once with an
+        # explicit reminder.  If the retry also fails, degrade to
+        # segmented rescue rather than accept a lossy summary.
+        validation = _validate_summary_sections(summary)
+        if not validation.ok:
+            logger.warning(
+                "[compact] summary missing sections %s -- retrying once",
+                validation.missing,
+            )
+            try:
+                retry_summary = await _generate_summary(
+                    backend, compact_msgs, extra_instruction=_SUMMARY_SECTION_REMINDER,
+                )
+                if retry_summary and len(retry_summary) >= 100:
+                    retry_validation = _validate_summary_sections(retry_summary)
+                    if retry_validation.ok or len(retry_validation.missing) < len(validation.missing):
+                        summary = retry_summary
+                        validation = retry_validation
+            except Exception as retry_exc:
+                logger.warning("[compact] section-reminder retry failed: %s", retry_exc)
+        if not validation.ok:
+            logger.warning(
+                "[compact] summary still missing sections %s after retry -- rescuing",
+                validation.missing,
+            )
+            self._failure_count += 1
+            rescued = await _segmented_rescue(messages, backend, self._failure_count)
+            if rescued is not None:
+                self._failure_count = 0
+                return rescued
+            return _budget_fallback(messages, backend.context_window_size(), keep_recent=8)
 
         self._failure_count = 0
         self._last_compact_turn = turn_count
@@ -349,9 +459,10 @@ class CompactEngine:
         new_est = count_message_tokens(compacted)
         logger.info(
             "[compact] done turn=%d msgs %d->%d tokens %dk->%dk "
-            "(summary %d chars)",
+            "(summary %d chars, sections %d/%d)",
             turn_count, len(messages), len(compacted),
             est // 1000, new_est // 1000, len(summary),
+            len(validation.found), 9,
         )
 
         return compacted
@@ -373,12 +484,38 @@ def _prepare_compact_input(
 ) -> list[dict[str, Any]]:
     """Strip images/documents from messages, add compact prompt.
 
-    Only keeps text content -- images and binary attachments waste tokens
-    in the summary call.
+    Image handling (P3): the most recent ``ACTIVE_ARCHIVE_KEEP_IMAGES``
+    image blocks are kept with a brief description stub instead of the
+    generic ``[image]`` marker, so the summary can reference them by
+    position.  Older images are still collapsed to ``[image]`` to save
+    tokens.  PDF/document content: similarly preserved for the most
+    recent entries (text-extracted if available) and stubbed for the
+    rest.
+
+    Content is also length-capped so a single huge tool result does not
+    blow the summary input budget.
     """
+    # Pre-scan: identify which image/document blocks are recent enough
+    # to keep with descriptive stubs.
+    image_count = 0
+    document_count = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "image":
+                        image_count += 1
+                    elif block.get("type") == "document":
+                        document_count += 1
+
+    keep_image_threshold = max(0, image_count - ACTIVE_ARCHIVE_KEEP_IMAGES)
+    keep_document_threshold = max(0, document_count - 2)
+    image_seen = 0
+    document_seen = 0
+
     result: list[dict[str, Any]] = []
     for msg in messages:
-        msg.get("role", "")
         content = msg.get("content", "")
 
         # Strip image/document blocks from array content
@@ -390,9 +527,26 @@ def _prepare_compact_input(
                     if btype == "text":
                         text_parts.append(block.get("text", ""))
                     elif btype == "image":
-                        text_parts.append("[image]")
+                        if image_seen >= keep_image_threshold:
+                            # Recent image -- keep with a descriptive stub
+                            # so the summary knows it exists.  We do not
+                            # embed the bytes; we just note position.
+                            alt = block.get("alt", "") or block.get("text", "")
+                            stub = f"[recent image: {alt[:80]}]" if alt else "[recent image]"
+                            text_parts.append(stub)
+                        else:
+                            text_parts.append("[image]")
+                        image_seen += 1
                     elif btype == "document":
-                        text_parts.append("[document]")
+                        if document_seen >= keep_document_threshold:
+                            # Recent document -- keep a short text stub.
+                            text = block.get("text", "") or block.get("alt", "")
+                            if isinstance(text, str) and len(text) > 400:
+                                text = text[:400] + "..."
+                            text_parts.append(f"[recent document excerpt]\n{text}" if text else "[recent document]")
+                        else:
+                            text_parts.append("[document]")
+                        document_seen += 1
                     else:
                         text_parts.append(str(block)[:200])
             content = " ".join(text_parts)
@@ -415,6 +569,8 @@ def _prepare_compact_input(
 async def _generate_summary(
     backend: Any,
     messages: list[dict[str, Any]],
+    *,
+    extra_instruction: str = "",
 ) -> str | None:
     """Call the backend to produce a conversation summary.
 
@@ -422,12 +578,24 @@ async def _generate_summary(
     - thinking explicitly disabled
     - no tools
     - a compact output token budget
+    - optional *extra_instruction* appended to the compact prompt (used
+      to re-emphasise required sections when the first attempt was
+      lossy)
     """
     text_parts: list[str] = []
 
+    request_messages = messages
+    if extra_instruction:
+        # Inject the extra instruction as a fresh user message so the
+        # model sees it in the same context as the original prompt.
+        request_messages = [
+            *messages,
+            {"role": "user", "content": extra_instruction},
+        ]
+
     try:
         async for event in backend.chat(
-            messages=messages,
+            messages=request_messages,
             tools=None,        # NO tools during compact
             tool_choice="none",
             temperature=0.0,
@@ -473,7 +641,10 @@ def _build_compacted(
         [system message if present]
         [compact boundary marker]
         [summary user message]
-        [archive reference hint]
+        [ACTIVE ARCHIVE -- P0: the N most recent tool outputs that the
+         microcompact stage would otherwise have wiped, kept verbatim
+         inside a token budget so the model doesn't have to ask]
+        [archive reference hint -- legacy fallback]
         [workspace context if present]
         [first user message -- task anchor]
         [last 4 complete turns]
@@ -498,6 +669,18 @@ def _build_compacted(
         "is_compact_boundary": True,
         "is_compact_summary": True,
     })
+
+    # P0 active archive injection -- surface the N most recent tool
+    # results verbatim so the model can see them without requesting
+    # them.  This is critical: the legacy design relied on the model
+    # knowing to ASK for the archive, which it almost never does.
+    active_archive = _build_active_archive(messages)
+    if active_archive:
+        result.append({
+            "role": "user",
+            "content": active_archive,
+            "is_compact_active_archive": True,
+        })
 
     # Archive reference: hint that older context is still available
     if session_id:
@@ -543,6 +726,67 @@ def _build_compacted(
         result.append(dict(msg))
 
     return _sanitize_tool_groups(result)
+
+
+def _build_active_archive(messages: list[dict[str, Any]]) -> str:
+    """Build the P0 active-archive block.
+
+    Returns a markdown block that surfaces the N most recent
+    tool results (and a few critical early tool results) inside a
+    token budget.  The model sees this immediately, no ask required.
+
+    Strategy:
+    - Walk messages in reverse
+    - Keep tool messages with substantive content (>= 50 chars)
+    - Stop once we hit the token budget
+    - Include only the most recent ``ACTIVE_ARCHIVE_KEEP_RECENT_TOOLS``
+      tool outputs to avoid bloat
+    """
+    budget = ACTIVE_ARCHIVE_TOKEN_BUDGET
+    used = 0
+    kept: list[str] = []
+    seen_tool_call_ids: set[str] = set()
+
+    # Walk in reverse so most recent first
+    for msg in reversed(messages):
+        if msg.get("role") != "tool":
+            continue
+        if len(kept) >= ACTIVE_ARCHIVE_KEEP_RECENT_TOOLS:
+            break
+        tool_name = msg.get("name", "tool")
+        tool_call_id = msg.get("tool_call_id", "")
+        if tool_call_id and tool_call_id in seen_tool_call_ids:
+            continue
+        if tool_call_id:
+            seen_tool_call_ids.add(tool_call_id)
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            content = str(content)
+        # Skip trivial outputs (they were already preserved by
+        # microcompact's 200-char threshold).
+        if len(content) < 50:
+            continue
+        # Cap each entry at 800 chars to keep the archive dense.
+        if len(content) > 800:
+            content = content[:800] + f"\n... [{len(content) - 800} chars trimmed]"
+        entry = f"### tool: {tool_name}\n```\n{content}\n```"
+        entry_tokens = len(entry) // 4  # rough chars/4 ≈ tokens
+        if used + entry_tokens > budget:
+            continue
+        kept.append(entry)
+        used += entry_tokens
+
+    if not kept:
+        return ""
+
+    kept.reverse()  # restore chronological order
+    return (
+        "## Recent Critical Tool Outputs (active archive -- P0 injection)\n"
+        "These are the most recent tool outputs from BEFORE the summary. "
+        "You can use them directly without asking for the archive.  "
+        "If you need older context, ask for the archive.\n\n"
+        + "\n\n".join(kept)
+    )
 
 
 def _sanitize_tool_groups(
@@ -674,6 +918,144 @@ def _budget_fallback(
 
     result = system + ([first_user] if first_user else []) + recent
     return _sanitize_tool_groups(result)
+
+
+# ── P1 segmented rescue ────────────────────────────────────────────────
+
+
+async def _segmented_rescue(
+    messages: list[dict[str, Any]],
+    backend: Any,
+    _failure_count: int = 0,
+    max_segments: int = 3,
+) -> list[dict[str, Any]] | None:
+    """P1 circuit-breaker rescue: summarise in segments.
+
+    When the full conversation cannot be summarised in one pass
+    (context overflow, API error, etc.), we slice the messages into
+    ``max_segments`` roughly-equal chunks and summarise each
+    independently.  Each segment is small enough to succeed, and the
+    concatenation gives us a richer summary than a single budget
+    truncation.
+
+    Returns a compacted message list, or ``None`` if every segment
+    fails (caller should fall back to ``_budget_fallback``).
+    """
+    if len(messages) < 6:
+        return None
+
+    # Slice into segments at user-message boundaries so each segment
+    # is a coherent chunk of the conversation.
+    user_indices = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    if len(user_indices) < 2:
+        return None
+    chunk_size = max(1, len(user_indices) // max_segments)
+    boundaries = [user_indices[i] for i in range(0, len(user_indices), chunk_size)]
+    if boundaries[-1] != len(messages):
+        boundaries.append(len(messages))
+
+    segment_summaries: list[str] = []
+    for seg_idx in range(len(boundaries) - 1):
+        start = boundaries[seg_idx]
+        end = boundaries[seg_idx + 1]
+        segment = messages[start:end]
+        if len(segment) < 2:
+            continue
+        try:
+            seg_input = _prepare_compact_input(segment, "")
+            seg_summary = await _generate_summary(backend, seg_input)
+            if seg_summary and len(seg_summary) >= 50:
+                segment_summaries.append(
+                    f"### Segment {seg_idx + 1}\n{seg_summary.strip()}"
+                )
+        except Exception as exc:
+            logger.warning(
+                "[segmented_rescue] segment %d failed: %s", seg_idx + 1, exc,
+            )
+            continue
+
+    if not segment_summaries:
+        return None
+
+    # Build the result: system + combined summary + first user + last turns
+    combined_summary = (
+        "## Segmented Rescue Summary\n"
+        "The full conversation was too large for a single summary, so it "
+        "was split and summarised in segments.\n\n"
+        + "\n\n".join(segment_summaries)
+    )
+    return _build_compacted(messages, combined_summary, "", "", "")
+
+
+# ── P2 summary validation ──────────────────────────────────────────────
+
+
+_REQUIRED_SECTION_HEADINGS: tuple[str, ...] = (
+    "Primary Request and Intent",
+    "Files and Code Sections",
+    "Key Decisions and Changes",
+    "Errors and Fixes",
+    "Current State",
+    "Pending Tasks",
+    "User Messages",
+    "Workspace Context",
+    "Next Step",
+)
+
+
+class _SectionValidation:
+    """Result of :func:`_validate_summary_sections`."""
+
+    __slots__ = ("found", "missing", "ok")
+
+    def __init__(self, found: list[str], missing: list[str]) -> None:
+        self.found = found
+        self.missing = missing
+        self.ok = not missing
+
+
+def _validate_summary_sections(summary: str) -> _SectionValidation:
+    """P2: confirm the model-generated summary actually covers the
+    9 required sections.  The compact prompt REQUIRES these headings;
+    a missing heading usually means the model ran out of output tokens
+    or hallucinated structure.
+    """
+    if not summary:
+        return _SectionValidation(found=[], missing=list(_REQUIRED_SECTION_HEADINGS))
+
+    found: list[str] = []
+    missing: list[str] = []
+    lowered = summary.lower()
+    for heading in _REQUIRED_SECTION_HEADINGS:
+        # Match either the literal heading or its lowercased prefix
+        # (e.g. "1. Primary Request" or "### Primary Request and Intent")
+        needle = heading.lower()
+        if needle in lowered:
+            found.append(heading)
+        else:
+            # Try matching just the first 25 chars
+            short = needle[:25]
+            if short in lowered:
+                found.append(heading)
+            else:
+                missing.append(heading)
+    return _SectionValidation(found=found, missing=missing)
+
+
+_SUMMARY_SECTION_REMINDER = (
+    "Your previous summary was missing some required sections.  "
+    "Please RE-EMIT the full summary with ALL 9 sections present and clearly headed:\n"
+    "1. Primary Request and Intent\n"
+    "2. Files and Code Sections\n"
+    "3. Key Decisions and Changes Made\n"
+    "4. Errors and Fixes\n"
+    "5. Current State\n"
+    "6. Pending Tasks\n"
+    "7. User Messages\n"
+    "8. Workspace Context\n"
+    "9. Next Step (Optional)\n"
+    "Wrap the response in <summary>...</summary> tags.  Do NOT skip any section."
+)
 
 
 # ── Backward-compatible alias ──────────────────────────────────────────

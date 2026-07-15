@@ -75,3 +75,16 @@ class VolcengineArkBackend(OpenAICompatibleBackend):
         # Ensure the Ark base URL is set unless the caller overrode it.
         kwargs.setdefault("base_url", self.DEFAULT_BASE_URL)
         super().__init__(**kwargs)
+
+    def _thinking_request_param(self) -> dict[str, Any] | None:
+        """Doubao / Seed thinking models use the DeepSeek-style envelope.
+
+        Only reasoning-capable SKUs accept ``thinking.type``; omit it for
+        standard chat models to avoid a 400.
+        """
+        if not self.model:
+            return None
+        m = self.model.lower()
+        if any(k in m for k in ("doubao", "seed", "thinking", "reasoner")):
+            return {"thinking": {"type": "enabled" if self.thinking_enabled else "disabled"}}
+        return None

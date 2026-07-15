@@ -52,6 +52,12 @@ from encre.backends.opencode import OpenCodeGoBackend, OpenCodeZenBackend
 from encre.backends.openrouter import OpenRouterBackend
 from encre.backends.retry import DEFAULT_RETRY_CONFIG, RetryConfig
 from encre.backends.router import RouterBackend
+from encre.utils.types import (
+    AdaptiveThinking,
+    DisabledThinking,
+    EnabledThinking,
+    ThinkingConfig,
+)
 from encre.backends.tencent import TencentBackend
 from encre.backends.volcengine import VolcengineArkBackend
 from encre.backends.xiaomi import XiaomiBackend
@@ -77,15 +83,23 @@ def _build_failover_backends(
             ak = m.api_key or default_api_key
             bu = m.base_url or default_base_url
             md = m.model_id or default_model
+            tc = getattr(m, "thinking_config", None)
         elif isinstance(m, dict):  # Raw dict
             name = m.get("name") or m.get("model_id", "unknown")
             bt = m.get("backend_type", "openai")
             ak = m.get("api_key", default_api_key)
             bu = m.get("base_url", default_base_url)
             md = m.get("model_id", default_model)
+            tc = m.get("thinking_config")
         else:
             continue
-        be = create_backend(bt, api_key=ak, base_url=bu, model=md)
+        be = create_backend(
+            bt,
+            api_key=ak,
+            base_url=bu,
+            model=md,
+            thinking_config=tc,
+        )
         if be is not None:
             result.append((name, be))
     return result
@@ -126,6 +140,102 @@ def _create_failover(**kwargs: Any) -> FailoverBackend:
 # ── Factory ──────────────────────────────────────────────────────────────
 
 
+def _build_thinking_kwargs(
+    backend_type: str,
+    thinking_config: ThinkingConfig | None,
+) -> dict[str, Any]:
+    """Translate a ThinkingConfig into backend-specific constructor kwargs."""
+    if thinking_config is None:
+        return {}
+
+    enabled = thinking_config.enabled
+    level = getattr(thinking_config, "level", "") or ""
+
+    if isinstance(thinking_config, AdaptiveThinking):
+        budget = thinking_config.max_tokens
+    elif isinstance(thinking_config, EnabledThinking):
+        budget = thinking_config.budget_tokens
+    else:
+        budget = 0
+
+    # Anthropic / Bedrock (Claude models) use mode + budget/effort.
+    # Adaptive mode does NOT accept budget_tokens; it optionally accepts
+    # an effort/level parameter instead.
+    if backend_type in ("anthropic", "bedrock"):
+        if isinstance(thinking_config, AdaptiveThinking):
+            mode = "adaptive"
+            budget = 0
+        elif enabled:
+            mode = "enabled"
+        else:
+            mode = "disabled"
+            budget = 0
+        result: dict[str, Any] = {"thinking_mode": mode}
+        if budget > 0:
+            result["thinking_budget_tokens"] = budget
+        if level:
+            result["thinking_effort"] = level
+        return result
+
+    # Google Gemini uses enable + level + budget.
+    if backend_type == "google":
+        return {
+            "enable_thinking": enabled,
+            "thinking_budget": budget,
+            "thinking_level": level,
+        }
+
+    # DeepSeek uses the thinking envelope plus an optional reasoning_effort.
+    if backend_type == "deepseek":
+        result = {"thinking_enabled": enabled}
+        if level:
+            result["reasoning_effort"] = level
+        return result
+
+    # Alibaba Qwen uses enable_thinking plus an optional thinking_budget.
+    if backend_type == "alibaba":
+        result = {"thinking_enabled": enabled}
+        if budget > 0:
+            result["thinking_budget"] = budget
+        return result
+
+    # OpenAI-protocol backends that accept reasoning_effort (o-series, GPT-5.x).
+    if backend_type in (
+        "openai",
+        "openai_compatible",
+        "openrouter",
+        "novita",
+        "aigateway",
+        "groq",
+        "github-copilot",
+        "lmstudio",
+        "opencode-zen",
+        "opencode-go",
+        "huggingface",
+    ):
+        result = {"thinking_enabled": enabled}
+        if level:
+            result["reasoning_effort"] = level
+        return result
+
+    # OpenAI-protocol backends that use the DeepSeek-style thinking envelope.
+    if backend_type in (
+        "glm",
+        "kimi",
+        "tencent",
+        "xiaomi",
+        "volcengine-ark",
+        "arcee",
+        "gmi",
+        "minimax",
+        "kilocode",
+        "ollama",
+    ):
+        return {"thinking_enabled": enabled}
+
+    return {}
+
+
 def create_backend(type: str, **kwargs: Any) -> BaseBackend | None:
     if not type:
         return None
@@ -137,6 +247,7 @@ def create_backend(type: str, **kwargs: Any) -> BaseBackend | None:
     # For non-failover types, strip meta-params that the individual
     # backend constructors do not expect.
     kwargs.pop("models", None)
+    thinking_config: ThinkingConfig | None = kwargs.pop("thinking_config", None)
 
     backend_map: dict[str, type[BaseBackend]] = {
         "openai": OpenAIBackend,
@@ -172,4 +283,11 @@ def create_backend(type: str, **kwargs: Any) -> BaseBackend | None:
     cls = backend_map.get(type)
     if cls is None:
         raise ValueError(f"Unknown backend type: {type}. Available: {sorted(backend_map.keys())}")
+
+    # Merge per-model thinking configuration into backend-specific kwargs.
+    # Existing kwargs take precedence so callers can still override explicitly.
+    thinking_kwargs = _build_thinking_kwargs(type, thinking_config)
+    for key, value in thinking_kwargs.items():
+        kwargs.setdefault(key, value)
+
     return cls(**kwargs)

@@ -32,6 +32,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from encre.scheduler import (
@@ -41,6 +42,12 @@ from encre.scheduler import (
     ScheduledJob,
     ScheduleType,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolate_default_scheduler_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep default scheduler instances independent across tests."""
+    monkeypatch.setattr("encre.config.get_data_dir", lambda: tmp_path)
 
 # ===========================================================================
 # CronSchedule.parse()
@@ -644,6 +651,16 @@ class TestEncreSchedulerBasic:
         pending = sched.list_jobs(state=JobState.PENDING)
         assert len(pending) == 0
 
+    def test_list_jobs_can_include_finished_one_shot_history(self):
+        sched = EncreScheduler()
+        job_id = sched.schedule(name="Finished", prompt="...", fire_at=time.time() + 60)
+        job = sched.get_job(job_id)
+        assert job is not None
+        job.state = JobState.COMPLETED
+
+        assert sched.list_jobs() == []
+        assert sched.list_jobs(include_finished=True) == [job]
+
     def test_get_job_nonexistent(self):
         """Verifies that get job nonexistent."""
         sched = EncreScheduler()
@@ -787,6 +804,55 @@ class TestJobCallbacks:
         # Confirm the expected result for this scenario: schedule with agent config.
         assert job._agent_config is not None
         assert job._agent_config["model"] == "claude-sonnet-4-20250514"
+
+    def test_execute_job_streams_snapshot_with_preallocated_session_id(self, tmp_path: Path):
+        """Automation stream, durable history, and sub-agent use one session id."""
+        class FakeLoop:
+            def __init__(self):
+                self.received_session_id = ""
+
+            async def _run_sub_agent(self, **kwargs):
+                self.received_session_id = kwargs["session_id"]
+                await kwargs["progress_callback"]([
+                    {"role": "user", "content": "Run report"},
+                    {"role": "assistant", "content": "Report complete"},
+                ])
+                return {
+                    "content": "Report complete",
+                    "messages": [],
+                    "session_id": self.received_session_id,
+                }
+
+        fake_loop = FakeLoop()
+        scheduler = EncreScheduler(durable_path=str(tmp_path / "jobs.json"))
+        job_id = scheduler.schedule(name="Report", prompt="Run report", fire_at=time.time())
+        job = scheduler.get_job(job_id)
+        assert job is not None
+        scheduler._agent_factory = lambda _config: SimpleNamespace(loop=fake_loop)
+
+        events: list[tuple[str, dict[str, object]]] = []
+
+        async def capture(_job, event_type, event_data):
+            events.append((event_type, event_data))
+
+        scheduler.on_job_progress(capture)
+        import asyncio
+        asyncio.run(scheduler._execute_job(job))
+
+        execution = job.executions[-1]
+        assert job.state == JobState.COMPLETED
+        assert execution.session_id == fake_loop.received_session_id
+        assert execution.session_id
+        assert scheduler.list_jobs(include_finished=True) == [job]
+
+        start = next(data for event_type, data in events if event_type == "start")
+        snapshot = next(data for event_type, data in events if event_type == "snapshot")
+        assert start["session_id"] == execution.session_id
+        assert snapshot["session_id"] == execution.session_id
+        assert snapshot["messages"] == [
+            {"role": "user", "content": "Run report"},
+            {"role": "assistant", "content": "Report complete"},
+        ]
 
 
 # ===========================================================================

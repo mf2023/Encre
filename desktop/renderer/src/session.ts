@@ -35,6 +35,7 @@ import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { Dialog } from "./dialog.js";
+import { showContextMenu } from "./context-menu.js";
 import type { SessionEntryData } from "./types.js";
 
 /**
@@ -89,10 +90,10 @@ export class Session {
     const exp = document.getElementById("btn-batch-export");
     const del = document.getElementById("btn-batch-delete");
     const cancel = document.getElementById("btn-batch-cancel");
-    if (selAll) selAll.title = t("session.batchSelectAll");
-    if (exp) exp.title = t("session.batchExport");
-    if (del) del.title = t("session.batchDelete");
-    if (cancel) cancel.title = t("session.cancel");
+    if (selAll) selAll.dataset.tooltip = t("session.batchSelectAll");
+    if (exp) exp.dataset.tooltip = t("session.batchExport");
+    if (del) del.dataset.tooltip = t("session.batchDelete");
+    if (cancel) cancel.dataset.tooltip = t("session.cancel");
   }
 
   private toggleBatchMode(): void {
@@ -177,34 +178,23 @@ export class Session {
     let html = "";
     for (const s of filteredSessions) {
       const active = s.session_id === currentSid ? " active" : "";
-      const ts = (s.last_active || s.created_at || 0) * 1000;
-      const date = new Date(ts);
-      const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
-      // Full timestamp for the hover tooltip (localized, e.g. "2026-06-22 14:30:45").
-      // Falls back to an empty string when the timestamp is invalid.
-      const fullTs = ts > 0 ? date.toLocaleString() : "";
       const preview = s.preview || t("general.emptySessionName");
       const displayName = s.name || preview;
-      const msgCount = s.message_count ?? 0;
       const runningBadge = s.is_running ? '<span class="session-running"></span>' : "";
-      const badge = this.channelBadge(s.channel);
       if (this.batchMode) {
-        html += `<div class="ws-tree-session-item" data-sid="${s.session_id}" title="${this.esc(fullTs)}">
+        html += `<div class="ws-tree-session-item" data-sid="${s.session_id}">
           <div class="session-item-top">
             <input type="checkbox" class="session-checkbox" data-sid="${s.session_id}" ${this.selectedIds.has(s.session_id) ? "checked" : ""} />
             <span class="session-preview">${this.esc(displayName)}</span>
             ${runningBadge}
           </div>
-          <span class="session-meta">${dateStr} ${timeStr} · ${msgCount} ${t("session.messages")} ${badge}</span>
         </div>`;
       } else {
-        html += `<div class="ws-tree-session-item${active}" data-sid="${s.session_id}" title="${this.esc(fullTs)}">
+        html += `<div class="ws-tree-session-item${active}" data-sid="${s.session_id}">
           <div class="session-item-top">
             <span class="session-preview">${this.esc(displayName)}</span>
             ${runningBadge}
           </div>
-          <span class="session-meta">${dateStr} ${timeStr} · ${msgCount} ${t("session.messages")} ${badge}</span>
         </div>`;
       }
     }
@@ -303,9 +293,7 @@ export class Session {
         <i data-lucide="trash-2" class="lucide lucide-sm"></i>
         <span>${this.esc(t("session.delete"))}</span>
       </div>`;
-    this.contextMenuEl.style.left = `${x}px`;
-    this.contextMenuEl.style.top = `${y}px`;
-    this.contextMenuEl.classList.remove("hidden");
+    showContextMenu(this.contextMenuEl, x, y);
 
     document.getElementById("ctx-rename")?.addEventListener("click", () => this.handleRename());
     document.getElementById("ctx-export")?.addEventListener("click", () => this.handleExport());
@@ -398,22 +386,6 @@ export class Session {
     el.textContent = s;
     return el.innerHTML;
   }
-
-  /** Build a short badge label for the session's channel/mode. */
-  private channelBadge(channel?: string): string {
-    if (!channel || channel === "normal") return "";
-    const labels: Record<string, string> = {
-      iwork: "iWork",
-      automation: t("session.channelAutomation"),
-      qqbot: "QQ",
-      telegram: "Telegram",
-      webhook: "Webhook",
-      discord: "Discord",
-      slack: "Slack",
-    };
-    const label = labels[channel] || channel;
-    return `<span class="session-channel-badge" data-channel="${this.esc(channel)}">${this.esc(label)}</span>`;
-  }
 }
 
 /**
@@ -424,7 +396,14 @@ export class Session {
  * @param y       - Screen Y for menu placement.
  * @param noRename - When `true`, hide the rename item (e.g. for workspace sessions).
  */
-export function showSessionContextMenu(sid: string, x: number, y: number, noRename?: boolean): void {
+export function showSessionContextMenu(
+  sid: string,
+  x: number,
+  y: number,
+  noRename?: boolean,
+  noExport?: boolean,
+  deleteOverride?: () => void,
+): void {
   const menuEl = document.getElementById("session-context-menu")!;
   const currentSid = sid;
   let items = "";
@@ -435,12 +414,14 @@ export function showSessionContextMenu(sid: string, x: number, y: number, noRena
       <span>${escHtml(t("session.rename"))}</span>
     </div>`;
   }
-  items += `
+  if (!noExport) {
+    items += `
     <div class="context-menu-item" id="ctx-export-ws">
       <i data-lucide="download" class="lucide lucide-sm"></i>
       <span>${escHtml(t("session.exportMd"))}</span>
     </div>`;
-  if (!noRename) {
+  }
+  if (!noRename || !noExport) {
     items += `<div class="context-menu-divider"></div>`;
   }
   items += `
@@ -449,9 +430,7 @@ export function showSessionContextMenu(sid: string, x: number, y: number, noRena
       <span>${escHtml(t("session.delete"))}</span>
     </div>`;
   menuEl.innerHTML = items;
-  menuEl.style.left = `${x}px`;
-  menuEl.style.top = `${y}px`;
-  menuEl.classList.remove("hidden");
+  showContextMenu(menuEl, x, y);
 
   if (!noRename) {
     document.getElementById("ctx-rename-ws")?.addEventListener("click", () => {
@@ -459,12 +438,18 @@ export function showSessionContextMenu(sid: string, x: number, y: number, noRena
       showRenameDialogForSession(currentSid);
     });
   }
-  document.getElementById("ctx-export-ws")?.addEventListener("click", () => {
-    send({ type: "export_session", session_id: currentSid });
-    menuEl.classList.add("hidden");
-  });
+  if (!noExport) {
+    document.getElementById("ctx-export-ws")?.addEventListener("click", () => {
+      send({ type: "export_session", session_id: currentSid });
+      menuEl.classList.add("hidden");
+    });
+  }
   document.getElementById("ctx-delete-ws")?.addEventListener("click", async () => {
     menuEl.classList.add("hidden");
+    if (deleteOverride) {
+      deleteOverride();
+      return;
+    }
     const sessions = getState().sessionsList;
     const s = sessions.find((x) => x.session_id === currentSid);
     const name = s?.name || s?.preview || currentSid.slice(0, 8);

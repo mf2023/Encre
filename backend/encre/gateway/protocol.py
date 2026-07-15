@@ -109,8 +109,11 @@ class GatewayMessage:
         return GatewayMessage(op=GatewayOp.SUBMIT_STREAM, data=d)
 
     @staticmethod
-    def text_delta(text: str, msg_id: str = "") -> "GatewayMessage":
-        return GatewayMessage(op=GatewayOp.TEXT_DELTA, data={"text": text, "id": msg_id})
+    def text_delta(text: str, msg_id: str = "", session_id: str = "") -> "GatewayMessage":
+        d: dict[str, Any] = {"text": text, "id": msg_id}
+        if session_id:
+            d["session_id"] = session_id
+        return GatewayMessage(op=GatewayOp.TEXT_DELTA, data=d)
 
     @staticmethod
     def tool_result(tool_id: str, content: str, is_error: bool = False) -> "GatewayMessage":

@@ -299,6 +299,9 @@ class DeepSeekBackend(OpenAISSEBackend):
         requires tool parameter schemas to be well-formed (all object
         properties required, ``additionalProperties: false``).  We sanitize
         both before delegating to the base request builder.
+
+        DeepSeek V4 models also accept ``reasoning_effort`` (e.g. ``"high"``
+        or ``"max"``) to control reasoning intensity.
         """
         data = super()._build_request_data(
             messages=_sanitize_messages(messages),
@@ -308,4 +311,6 @@ class DeepSeekBackend(OpenAISSEBackend):
             max_tokens=max_tokens,
             stream=stream,
         )
+        if getattr(self, "reasoning_effort", ""):
+            data["reasoning_effort"] = self.reasoning_effort
         return data

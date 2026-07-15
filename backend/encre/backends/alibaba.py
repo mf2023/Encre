@@ -64,6 +64,7 @@ class AlibabaBackend(OpenAISSEBackend):
         api_key: str = "",
         base_url: str = "",
         model: str = "qwen-plus",
+        thinking_budget: int = 0,
         **kwargs: Any,
     ) -> None:
         """Initialize the Alibaba DashScope backend.
@@ -74,12 +75,16 @@ class AlibabaBackend(OpenAISSEBackend):
             base_url: API endpoint; defaults to the DashScope
                 OpenAI-compatible endpoint.
             model: Default Qwen model identifier.
+            thinking_budget: Optional token budget for the thinking phase.
+                Only sent for thinking-capable models (QwQ / Qwen3 thinking
+                variants).  ``0`` omits the parameter.
             **kwargs: Additional options forwarded to the parent backend.
         """
         if not base_url:
             # No explicit endpoint given: use the DashScope compatible URL.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
+        self.thinking_budget = thinking_budget
 
     def _thinking_request_param(self) -> dict[str, Any] | None:
         """Qwen uses ``enable_thinking`` instead of DeepSeek's ``thinking``.
@@ -88,13 +93,20 @@ class AlibabaBackend(OpenAISSEBackend):
         ``enable_thinking: true`` to emit ``reasoning_content``.  Regular
         Qwen-Max / Qwen-Plus / Qwen-Flash do not support a thinking
         toggle, so we omit the parameter entirely.
+
+        Thinking-capable models also accept ``thinking_budget`` to cap the
+        number of thinking tokens.
         """
-        if self.model and (
-            "qwq" in self.model.lower()
-            or ("qwen3" in self.model.lower()
-            and "think" in self.model.lower())
-        ):
-            return {"enable_thinking": True}
+        if not self.model:
+            return None
+        m = self.model.lower()
+        if "qwq" in m or ("qwen3" in m and "think" in m):
+            if not self.thinking_enabled:
+                return {"enable_thinking": False}
+            result: dict[str, Any] = {"enable_thinking": True}
+            if getattr(self, "thinking_budget", 0) > 0:
+                result["thinking_budget"] = self.thinking_budget
+            return result
         return None
 
     def context_window_size(self) -> int:

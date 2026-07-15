@@ -38,8 +38,6 @@ import { TransitionHelper } from "./transition-helper.js";
  */
 
 export class AutomationPanel {
-  private _automationBtn: HTMLElement | null = null;
-  private _backBtn: HTMLElement | null = null;
   private _toggleBtn: HTMLElement | null = null;
   private _automationView: HTMLElement | null = null;
   private _mainContent: HTMLElement | null = null;
@@ -51,18 +49,15 @@ export class AutomationPanel {
 
   /** Called each time the automation panel opens */
   public onShow: (() => void) | null = null;
+  /** Called each time the automation panel hides */
+  public onHide: (() => void) | null = null;
 
   constructor() {
-    this._automationBtn = document.getElementById("btn-automation");
-    this._backBtn = document.getElementById("btn-automation-back");
     this._toggleBtn = document.getElementById("btn-toggle-sidebar");
     this._automationView = document.getElementById("automation-view");
     this._mainContent = document.getElementById("main-content");
     this._sessionBar = document.getElementById("session-bar");
     this._appEl = document.getElementById("app");
-
-    this._automationBtn?.addEventListener("click", () => this.toggleAutomationView());
-    this._backBtn?.addEventListener("click", () => this.hideAutomationView());
   }
 
   /**
@@ -72,22 +67,73 @@ export class AutomationPanel {
     return !!(this._automationView && !this._automationView.classList.contains("hidden"));
   }
 
-  /** Public: hide automation view if active */
-  /** Hides the automation view if it is currently active. */
-  hide(): void {
+  /** Hides the automation view if it is currently active. Returns a promise that
+   *  resolves when the hide transition completes (or immediately if not active).
+   *  If `instant` is true, skips the slide animation. */
+  async hide(instant = false): Promise<void> {
     if (this.isActive) {
-      this.hideAutomationView();
+      if (instant) {
+        this._instantHide();
+      } else {
+        await this.hideAutomationView();
+      }
     }
   }
 
-  /** Toggle automation panel visibility */
+  /** Shows the automation view. Returns a promise that resolves when the show
+   *  transition completes. */
+  async show(): Promise<void> {
+    await this.showAutomationView();
+  }
+
   /** Toggles automation panel visibility (show when hidden, hide when shown). */
-  toggleAutomationView(): void {
+  async toggleAutomationView(): Promise<void> {
     if (this.isActive) {
-      this.hideAutomationView();
+      await this.hideAutomationView();
     } else {
-      this.showAutomationView();
+      await this.showAutomationView();
     }
+  }
+
+  /** Instantly hides automation view without animation. Used when switching
+   *  directly to another mode to avoid a double-transition flash. */
+  private _instantHide(): void {
+    if (this._automationView) {
+      this._automationView.classList.add("hidden");
+      this._automationView.style.position = "";
+      this._automationView.style.width = "";
+      this._automationView.style.height = "";
+      this._automationView.style.top = "";
+      this._automationView.style.left = "";
+      this._automationView.style.transition = "";
+      this._automationView.style.transform = "";
+      this._automationView.style.opacity = "";
+    }
+    // main-content was hidden by TransitionHelper.slide (it was the exit element)
+    if (this._mainContent) {
+      this._mainContent.classList.remove("hidden");
+      this._mainContent.style.position = "";
+      this._mainContent.style.width = "";
+      this._mainContent.style.height = "";
+      this._mainContent.style.top = "";
+      this._mainContent.style.left = "";
+      this._mainContent.style.transition = "";
+      this._mainContent.style.transform = "";
+      this._mainContent.style.opacity = "";
+    }
+    const mainBody = document.getElementById("main-body");
+    if (mainBody) mainBody.style.position = "";
+    if (this._sessionBar) this._sessionBar.classList.remove("hidden");
+    if (this._appEl && !this._sidebarWasCollapsed) {
+      this._appEl.classList.remove("sidebar-collapsed");
+    }
+    if (this._toggleBtn) {
+      this._toggleBtn.style.transition = "";
+      this._toggleBtn.style.opacity = "";
+      this._toggleBtn.style.transform = "";
+      this._toggleBtn.style.pointerEvents = "";
+    }
+    this.onHide?.();
   }
 
   /** Slides the automation view in over the main content (collapsing the sidebar). */
@@ -103,9 +149,13 @@ export class AutomationPanel {
       }
     }
 
-    // Hide toggle button, show back button
-    if (this._toggleBtn) this._toggleBtn.classList.add("hidden");
-    if (this._backBtn) this._backBtn.classList.remove("hidden");
+    // Smoothly fade+slide the sidebar toggle button instead of instant hide
+    if (this._toggleBtn) {
+      this._toggleBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
+      this._toggleBtn.style.opacity = "0";
+      this._toggleBtn.style.transform = "translateX(-8px)";
+      this._toggleBtn.style.pointerEvents = "none";
+    }
 
     if (this._sessionBar) this._sessionBar.classList.add("hidden");
 
@@ -140,6 +190,9 @@ export class AutomationPanel {
     // Refresh automation data when panel opens
     this.onShow?.();
 
+    // Clear button transition after animation
+    if (this._toggleBtn) this._toggleBtn.style.transition = "";
+
     this._transitioning = false;
   }
 
@@ -169,9 +222,18 @@ export class AutomationPanel {
         if (this._appEl && !this._sidebarWasCollapsed) {
           this._appEl.classList.remove("sidebar-collapsed");
         }
-        // Show toggle button, hide back button
-        if (this._toggleBtn) this._toggleBtn.classList.remove("hidden");
-        if (this._backBtn) this._backBtn.classList.add("hidden");
+        // Restore toggle button with slide-in from right
+        if (this._toggleBtn) {
+          this._toggleBtn.style.transition = "none";
+          this._toggleBtn.style.transform = "translateX(100%)";
+          this._toggleBtn.style.opacity = "0";
+          requestAnimationFrame(() => {
+            this._toggleBtn!.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
+            this._toggleBtn!.style.transform = "translateX(0)";
+            this._toggleBtn!.style.opacity = "";
+            this._toggleBtn!.style.pointerEvents = "";
+          });
+        }
       },
     });
 
@@ -185,6 +247,10 @@ export class AutomationPanel {
     });
     if (mainBody) mainBody.style.position = "";
 
+    // Clear button transition after animation
+    if (this._toggleBtn) this._toggleBtn.style.transition = "";
+
     this._transitioning = false;
+    this.onHide?.();
   }
 }

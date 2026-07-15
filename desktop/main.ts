@@ -36,7 +36,7 @@
  * the main process through the `electronAPI` exposed by `preload.ts`.
  */
 
-import { app, BrowserWindow, ipcMain, shell, dialog, Tray, nativeImage, nativeTheme, session } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog, Tray, nativeImage, nativeTheme, session, protocol, net } from "electron";
 import { ChildProcess, spawn, execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
@@ -51,6 +51,7 @@ let tray: Tray | null = null;
 // Set to true right before an explicit "Quit" so the window close handler
 // does not just hide the app to the tray.
 let isQuitting = false;
+let winKeyCapture = false;
 // WebSocket / HTTP port the Python backend listens on.
 const WS_PORT = 7110;
 // Root directory for all Encre user data (~/.dunimd/encre).
@@ -365,6 +366,20 @@ function killProcessOnPort(port: number): void {
   } catch { /* nothing on that port */ }
 }
 
+/** Kills ALL Python processes whose command line contains "encre". */
+function killAllEncreProcesses(): void {
+  try {
+    if (process.platform === "win32") {
+      execSync(
+        `powershell -Command "Get-CimInstance Win32_Process -Filter \\"name='python.exe'\\" | Where-Object { $_.CommandLine -match 'encre' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`,
+        { stdio: "ignore", timeout: 5000 },
+      );
+    } else {
+      execSync(`pkill -f "python.*encre" 2>/dev/null`, { stdio: "ignore" });
+    }
+  } catch { /* no remaining encre processes */ }
+}
+
 /**
  * Spawns the Python backend service (`python -m encre.server.app`) as a
  * detached child process and resolves once it logs "Server ready".
@@ -446,7 +461,11 @@ function startPythonServer(): Promise<void> {
  * file and/or the tracked process), frees the port, then spawns a fresh one
  * and updates the tray status.
  */
-async function restartService(): Promise<void> {
+async function restartService(event: Electron.IpcMainInvokeEvent): Promise<{ success: boolean; error?: string }> {
+  const sendProgress = (progress: number) => {
+    try { event.sender.send("restart-progress", { progress }); } catch {}
+  };
+  sendProgress(5);
   // Kill existing process via PID file (most reliable across detached processes)
   const existingPid = readPidFile();
   if (existingPid !== null && isProcessRunning(existingPid)) {
@@ -457,17 +476,24 @@ async function restartService(): Promise<void> {
     try { serverProcess.kill(); } catch {}
     serverProcess = null;
   }
+  // Sweep any remaining Encre server processes
+  killAllEncreProcesses();
   // Clean up PID file
   try { fs.unlinkSync(PID_FILE); } catch {}
+  sendProgress(30);
   // Wait briefly for port to be released
   await new Promise((r) => setTimeout(r, 1500));
+  sendProgress(60);
   // Start again
   try {
     await startPythonServer();
     updateTrayStatus(true);
+    sendProgress(100);
+    return { success: true };
   } catch (err) {
     console.error("Failed to restart service:", err);
     updateTrayStatus(false);
+    return { success: false, error: String(err) };
   }
 }
 
@@ -713,6 +739,11 @@ function createWindow(): void {
   });
   mainWindow.webContents.on("before-input-event", (event, input) => {
     const key = (input.key || "").toLowerCase();
+    // Block Win key when capturing shortcuts, preventing Start menu from opening
+    if (winKeyCapture && key === "meta") {
+      event.preventDefault();
+      return;
+    }
     const isZoomHotkey =
       input.control &&
       (key === "-" || key === "_" || key === "+" || key === "=" || key === "0");
@@ -841,9 +872,8 @@ ipcMain.handle("getServiceStatus", () => {
 });
 
 // Restarts the backend service on demand.
-ipcMain.handle("restartService", async () => {
-  await restartService();
-  return { success: true };
+ipcMain.handle("restartService", async (event) => {
+  return await restartService(event);
 });
 
 // 鈹€鈹€ Logs & Diagnostics IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -912,6 +942,119 @@ ipcMain.handle("getDiagnostics", async () => {
     logFile,
     recentLogs,
   };
+});
+
+// ── Structured Log Reader ────────────────────────────────────────────
+
+interface LogEntry {
+  timestamp: string;
+  level: string;
+  source: string;
+  message: string;
+}
+
+/**
+ * Reads and filters log entries from the active log file.
+ * Supports date-range filtering and pagination (newest-first).
+ */
+ipcMain.handle("getLogs", async (_event, filters: {
+  fromDate?: string;
+  toDate?: string;
+  offset?: number;
+  limit?: number;
+}) => {
+  const logFile = path.join(getDataDir(), "yimd.log");
+  if (!fs.existsSync(logFile)) return { entries: [], total: 0, fileExists: false, rawLines: 0 };
+
+  const fromMs = filters.fromDate ? new Date(filters.fromDate + "T00:00:00").getTime() : 0;
+  const toMs = filters.toDate ? new Date(filters.toDate + "T23:59:59").getTime() : Infinity;
+  const offset = filters.offset ?? 0;
+  const limit = filters.limit ?? 500;
+
+  const logLineRe = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d{3})?)\s*\[(\w+)\]\s*([^:]+?):\s*(.*)$/;
+
+  try {
+    const content = fs.readFileSync(logFile, "utf-8");
+    const rawLines = content.replace(/\r\n/g, "\n").split("\n");
+    const rawCount = rawLines.length;
+
+    // Parse into entries (handle multi-line messages)
+    const allEntries: LogEntry[] = [];
+    let current: LogEntry | null = null;
+
+    for (const line of rawLines) {
+      const m = line.match(logLineRe);
+      if (m) {
+        if (current) allEntries.push(current);
+        current = {
+          timestamp: m[1].replace(",", "."),
+          level: m[2],
+          source: m[3].trim(),
+          message: m[4],
+        };
+      } else if (current && line.trim()) {
+        current.message += "\n" + line;
+      }
+    }
+    if (current) allEntries.push(current);
+
+    // If no entries were parsed but raw lines exist, use raw lines as fallback
+    const entries = allEntries.length === 0 && rawCount > 0
+      ? rawLines.filter(l => l.trim()).map((line, i) => ({
+          timestamp: "",
+          level: "",
+          source: "",
+          message: line,
+        }))
+      : allEntries;
+
+    // Filter by date range
+    const filtered = entries.filter(e => {
+      if (!e.timestamp) return true;
+      const ts = new Date(e.timestamp).getTime();
+      return ts >= fromMs && ts <= toMs;
+    });
+
+    // Paginate (newest first)
+    const reversed = filtered.reverse();
+    const total = reversed.length;
+    const page = reversed.slice(offset, offset + limit);
+
+    return { entries: page, total, fileExists: true, rawLines: rawCount };
+  } catch {
+    return null;
+  }
+});
+
+// Reads a file and returns its content as base64 with mime type (for images, etc.).
+ipcMain.handle("readFileBase64", async (_event, filePath: string) => {
+  try {
+    const buf = fs.readFileSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+      ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+      ".ico": "image/x-icon", ".svg": "image/svg+xml",
+      ".mp4": "video/mp4", ".webm": "video/webm",
+    };
+    return {
+      data: buf.toString("base64"),
+      mime_type: mimeMap[ext] || "application/octet-stream",
+    };
+  } catch {
+    return null;
+  }
+});
+
+// Clear/truncate the active log file.
+ipcMain.handle("clearLogs", async () => {
+  const logFile = path.join(getDataDir(), "yimd.log");
+  try {
+    fs.writeFileSync(logFile, "");
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
 });
 
 // 鈹€鈹€ Auto-start IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -1230,7 +1373,7 @@ ipcMain.handle("gitStatus", async (_event, repoPath: string) => {
   }
   try {
     const res = await fetch(`http://localhost:${WS_PORT}/git/status?workspace=${encodeURIComponent(repoPath)}`);
-    const data = await res.json();
+    const data: any = await res.json();
     const result = data.error ? { error: data.error } : { output: data.output || "" };
     GIT_STATUS_CACHE.set(repoPath, { ts: Date.now(), result });
     return result;
@@ -1250,7 +1393,7 @@ ipcMain.handle("gitDiff", async (_event, repoPath: string, filePath?: string) =>
     const params = new URLSearchParams({ workspace: repoPath, filter: "all" });
     if (filePath) params.set("file", filePath);
     const res = await fetch(`http://localhost:${WS_PORT}/git/diff?${params}`);
-    const data = await res.json();
+    const data: any = await res.json();
     const result = data.error ? { error: data.error } : { output: data.output || "" };
     GIT_DIFF_CACHE.set(cacheKey, { ts: Date.now(), result });
     return result;
@@ -1270,7 +1413,7 @@ ipcMain.handle("gitDiffEx", async (_event, repoPath: string, filter: string, fil
     const params = new URLSearchParams({ workspace: repoPath, filter });
     if (filePath) params.set("file", filePath);
     const res = await fetch(`http://localhost:${WS_PORT}/git/diff?${params}`);
-    const data = await res.json();
+    const data: any = await res.json();
     const result = data.error ? { error: data.error } : { output: data.output || "" };
     GIT_DIFF_CACHE.set(cacheKey, { ts: Date.now(), result });
     return result;
@@ -1283,7 +1426,7 @@ ipcMain.handle("gitCommit", async (_event, repoPath: string, message: string) =>
   try {
     const params = new URLSearchParams({ workspace: repoPath, message });
     const res = await fetch(`http://localhost:${WS_PORT}/git/commit?${params}`);
-    const data = await res.json();
+    const data: any = await res.json();
     return data.error ? { error: data.error } : { output: data.output || "" };
   } catch (e) {
     return { error: (e as Error).message };
@@ -1294,7 +1437,7 @@ ipcMain.handle("gitPush", async (_event, repoPath: string) => {
   try {
     const params = new URLSearchParams({ workspace: repoPath });
     const res = await fetch(`http://localhost:${WS_PORT}/git/push?${params}`);
-    const data = await res.json();
+    const data: any = await res.json();
     return data.error ? { error: data.error } : { output: data.output || "" };
   } catch (e) {
     return { error: (e as Error).message };
@@ -1305,7 +1448,7 @@ ipcMain.handle("gitCreatePr", async (_event, repoPath: string) => {
   try {
     const params = new URLSearchParams({ workspace: repoPath });
     const res = await fetch(`http://localhost:${WS_PORT}/git/pr?${params}`);
-    const data = await res.json();
+    const data: any = await res.json();
     return {
       error: data.error || "",
       output: data.output || "",
@@ -1320,7 +1463,7 @@ ipcMain.handle("gitBehind", async (_event, repoPath: string) => {
   try {
     const params = new URLSearchParams({ workspace: repoPath });
     const res = await fetch(`http://localhost:${WS_PORT}/git/behind?${params}`);
-    const data = await res.json();
+    const data: any = await res.json();
     return { behind: data.behind ?? -1, error: data.error || "" };
   } catch (e) {
     return { behind: -1, error: (e as Error).message };
@@ -1331,11 +1474,16 @@ ipcMain.handle("gitPull", async (_event, repoPath: string) => {
   try {
     const params = new URLSearchParams({ workspace: repoPath });
     const res = await fetch(`http://localhost:${WS_PORT}/git/pull?${params}`);
-    const data = await res.json();
+    const data: any = await res.json();
     return data.error ? { error: data.error } : { output: data.output || "" };
   } catch (e) {
     return { error: (e as Error).message };
   }
+});
+
+// Win key capture flag — set by renderer when shortcuts panel is open
+ipcMain.handle("setWinKeyCapture", (_event, enabled: boolean) => {
+  winKeyCapture = enabled;
 });
 
 // Window controls
@@ -1367,6 +1515,17 @@ ipcMain.handle("window-is-maximized", (event) => {
 // Toggles the dev tools for the requesting window.
 ipcMain.handle("toggle-devtools", (event) => {
   BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
+});
+
+// Opens a folder in the OS file explorer.
+ipcMain.handle("openFolder", async (_event, folderPath: string) => {
+  if (typeof folderPath !== "string") return false;
+  try {
+    await shell.openPath(folderPath);
+    return true;
+  } catch {
+    return false;
+  }
 });
 
 // Opens an external URL in the OS browser (http/https/mailto only).
@@ -1547,6 +1706,18 @@ app.whenReady().then(async () => {
 
   // Redirect Electron user data to our cache directory
   app.setPath("userData", path.join(DATA_DIR, ".electron"));
+
+  // Register local:// protocol to serve local files (for notification media, etc.)
+  protocol.handle("local", (request) => {
+    const filePath = decodeURIComponent(request.url.slice("local://".length)).replace(/^\//, "");
+    const resolved = path.resolve(filePath);
+    try {
+      fs.accessSync(resolved);
+      return net.fetch("file:///" + resolved.replace(/\\/g, "/"));
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  });
 
   // Set up encrypted browser cookie store
   setupBrowserSession();

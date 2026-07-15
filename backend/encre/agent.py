@@ -491,12 +491,15 @@ class EncreAgent:
         the updated settings.
         """
         from encre.backend import create_backend as _cb
+        active_model = self.config.get_active_model()
+        thinking_config = active_model.thinking_config or self.config.thinking_config
         self.loop.backend = _cb(
             self.config.backend_type,
             api_key=self.config.api_key,
             base_url=self.config.base_url,
             model=self.config.model,
             models=self.config.models,
+            thinking_config=thinking_config,
             **self.config.backend_kwargs,
         )
 

@@ -288,8 +288,9 @@ class EncreMemorySystem:
 
         parts.append("")
         parts.append(
-            "To read a memory, view the relevant .md file. "
-            "To create a memory, write a new .md file."
+            "Use `memory_search` or `memory_read` to access memory files. "
+            "Use `memory_create` to save new memories. "
+            "Do NOT use file_read / file_write for memory files — they are encrypted."
         )
 
         return "\n".join(parts)
@@ -351,14 +352,25 @@ class EncreMemorySystem:
 
     def consolidate(self) -> list:
         """Run duplicate/conflict/staleness checks and return actions."""
+        from encre.crypto import decrypt
+
         files: dict[str, str] = {}
         age_days: dict[str, int] = {}
         for m in self.scan():
             try:
                 with open(m.file_path, encoding="utf-8") as f:
-                    files[m.filename] = f.read()
+                    raw = f.read().strip()
             except (OSError, UnicodeDecodeError):
-                pass
+                continue
+            if not raw:
+                continue
+            if raw.startswith("---"):
+                files[m.filename] = raw
+            else:
+                try:
+                    files[m.filename] = decrypt(raw)
+                except Exception:
+                    files[m.filename] = raw
             age_days[m.filename] = memory_age_days(m.mtime_ms)
         return self._consolidator.consolidate(files, age_days)
 

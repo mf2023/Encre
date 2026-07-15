@@ -298,7 +298,7 @@
           confirmClearSessionsTitle: "\u6E05\u9664\u4F1A\u8BDD\u8BB0\u5F55",
           sessionCleared: "\u4F1A\u8BDD\u5DF2\u6E05\u9664",
           themeSaved: "\u4E3B\u9898\u5DF2\u4FDD\u5B58",
-          noModelsConfigured: "No models configured",
+          noModelsConfigured: "\u6CA1\u6709\u4EFB\u4F55\u6A21\u578B",
           backToModelList: "\u8FD4\u56DE\u6A21\u578B\u5217\u8868",
           backToMcpList: "\u8FD4\u56DE MCP \u5217\u8868",
           backToSkillsList: "\u8FD4\u56DE Skills \u5217\u8868",
@@ -345,6 +345,8 @@
           memory: "\u8BB0\u5FC6",
           permissions: "\u6743\u9650",
           usage: "\u7528\u91CF\u7EDF\u8BA1",
+          shortcuts: "\u5FEB\u6377\u952E",
+          storage: "\u5B58\u50A8",
           index: "\u7D22\u5F15",
           document: "\u6587\u6863",
           projectRules: "\u9879\u76EE\u89C4\u5219",
@@ -379,7 +381,14 @@
           tempChatHint: "\u9000\u51FA\u540E\u5C06\u81EA\u52A8\u6E05\u9664",
           toggleSidebar: "\u5207\u6362\u4F1A\u8BDD\u4FA7\u8FB9\u680F",
           toggleSummary: "\u6458\u8981",
-          channelAutomation: "\u81EA\u52A8"
+          channelAutomation: "\u81EA\u52A8",
+          automationJobCreated: "\u4EFB\u52A1\u5DF2\u521B\u5EFA",
+          automationJobUpdated: "\u4EFB\u52A1\u5DF2\u66F4\u65B0",
+          automationJobDeleted: "\u4EFB\u52A1\u5DF2\u5220\u9664",
+          automationJobToggled: "\u4EFB\u52A1\u5DF2\u5207\u6362",
+          documentAdded: "\u6587\u6863\u5DF2\u6DFB\u52A0",
+          documentRemoved: "\u6587\u6863\u5DF2\u5220\u9664",
+          documentError: "\u6587\u6863\u64CD\u4F5C\u5931\u8D25"
         },
         notifications: {
           empty: "\u6682\u65E0\u901A\u77E5",
@@ -393,7 +402,11 @@
           justNow: "\u521A\u521A",
           minutesAgo: "{n} \u5206\u949F\u524D",
           hoursAgo: "{n} \u5C0F\u65F6\u524D",
-          daysAgo: "{n} \u5929\u524D"
+          daysAgo: "{n} \u5929\u524D",
+          back: "\u8FD4\u56DE",
+          demoTitle: "\u65B0\u529F\u80FD\uFF1A\u6D3B\u52A8\u901A\u77E5",
+          demoMessage: "\u60A8\u73B0\u5728\u53EF\u4EE5\u67E5\u770B AI \u52A9\u624B\u7684\u5386\u53F2\u6D3B\u52A8\u8BB0\u5F55\uFF0C\u5305\u62EC\u4EE3\u7801\u66F4\u6539\u3001\u6587\u4EF6\u64CD\u4F5C\u7B49\u3002\u70B9\u51FB\u5C55\u5F00\u67E5\u770B\u5B8C\u6574\u8BE6\u60C5\u3002",
+          demoSource: "\u7CFB\u7EDF\u66F4\u65B0"
         },
         search: {
           placeholder: "\u641C\u7D22\u6D88\u606F\u3001\u6587\u4EF6...",
@@ -410,7 +423,7 @@
           sectionSkills: "\u6280\u80FD",
           sectionWorkspaces: "\u5DE5\u4F5C\u533A",
           sectionModels: "\u6A21\u578B",
-          sectionMcpServers: "MCP \u670D\u52A1",
+          sectionMcpServers: "MCP Server",
           sectionSubAgents: "\u5B50\u4EE3\u7406",
           sectionDocuments: "\u6587\u6863",
           sectionNotifications: "\u901A\u77E5",
@@ -437,7 +450,9 @@
         theme: {
           system: "\u8DDF\u968F\u7CFB\u7EDF",
           light: "\u6D45\u8272",
-          dark: "\u6DF1\u8272"
+          dark: "\u6DF1\u8272",
+          switchTitle: "\u5207\u6362\u4E3B\u9898",
+          switchConfirm: "\u786E\u5B9A\u5207\u6362\u5230\u300C{label}\u300D\u4E3B\u9898\uFF1F"
         },
         welcome: {
           title: "\u6709\u4EC0\u4E48\u6211\u53EF\u4EE5\u5E2E\u4F60\u7684\uFF1F",
@@ -457,7 +472,9 @@
         language: {
           zh: "\u4E2D\u6587",
           en: "English",
-          autoFollow: "\u8DDF\u968F\u5E94\u7528\u8BED\u8A00"
+          autoFollow: "\u8DDF\u968F\u5E94\u7528\u8BED\u8A00",
+          switchTitle: "\u5207\u6362\u8BED\u8A00",
+          switchConfirm: "\u786E\u5B9A\u5207\u6362\u5230\u300C{label}\u300D\uFF1F"
         },
         settings: {
           basicSettings: "\u57FA\u7840\u8BBE\u7F6E",
@@ -486,17 +503,33 @@
           systemBrowser: "\u7CFB\u7EDF\u6D4F\u89C8\u5668",
           inApp: "\u5E94\u7528\u5185\u6253\u5F00",
           systemApp: "\u7CFB\u7EDF\u5E94\u7528",
-          dataManagement: "\u6570\u636E\u7BA1\u7406",
           browserData: "\u6D4F\u89C8\u5668\u6570\u636E",
           browserDataDesc: "\u6D4F\u89C8\u5668\u4E2D\u7684\u7AD9\u70B9\u6570\u636E\uFF08\u5982 Cookies\u3001\u672C\u5730\u5B58\u50A8\u7B49\uFF09",
           clear: "\u6E05\u9664",
-          dataCleared: "\u6D4F\u89C8\u5668\u6570\u636E\u5DF2\u6E05\u9664",
-          dataClearError: "\u6E05\u9664\u6D4F\u89C8\u5668\u6570\u636E\u5931\u8D25",
           confirmClearBrowserDataTitle: "\u6E05\u9664\u6D4F\u89C8\u5668\u6570\u636E",
           confirmClearBrowserData: "\u8FD9\u5C06\u6E05\u9664\u6240\u6709\u7AD9\u70B9\u6570\u636E\uFF0C\u5305\u62EC Cookies\u3001\u672C\u5730\u5B58\u50A8\u548C\u7F13\u5B58\u3002\u662F\u5426\u7EE7\u7EED\uFF1F",
-          modelManagement: "\u6A21\u578B\u7BA1\u7406",
+          keyboardShortcuts: "\u5FEB\u6377\u952E",
+          shortcutCategoryApplication: "\u5E94\u7528",
+          shortcutCategorySession: "\u4F1A\u8BDD",
+          shortcutCategoryMessages: "\u6D88\u606F",
+          shortcutCategoryInput: "\u8F93\u5165",
+          shortcutCategoryModes: "\u6A21\u5F0F",
+          shortcutCategoryNavigation: "\u5BFC\u822A",
+          shortcutCategorySearch: "\u641C\u7D22",
+          shortcutCategorySettings: "\u8BBE\u7F6E",
+          shortcutCategoryPanels: "\u9762\u677F",
+          shortcutCategoryAutomation: "\u81EA\u52A8\u5316",
+          shortcutCategoryWorkspace: "\u5DE5\u4F5C\u533A",
+          shortcutCategoryNotifications: "\u901A\u77E5",
+          shortcutCategoryAppearance: "\u5916\u89C2",
+          shortcutCategoryGeneral: "\u901A\u7528",
+          shortcutConflict: '"{0}" \u5DF2\u4F7F\u7528\u8BE5\u5FEB\u6377\u952E\uFF0C\u662F\u5426\u4ECD\u8981\u66FF\u6362\uFF1F',
+          shortcutConflictTitle: "\u5FEB\u6377\u952E\u51B2\u7A81",
+          shortcutsDisabledDesc: "\u8BE5\u754C\u9762\u5DF2\u7981\u7528\u6240\u6709\u5FEB\u6377\u952E\uFF0C\u8BF7\u70B9\u51FB\u4E0B\u65B9\u6309\u94AE\u5F55\u5236\u65B0\u5FEB\u6377\u952E",
+          modelManagement: "\u6A21\u578B",
           modelManagementDesc: "\u914D\u7F6E API key \u6DFB\u52A0\u66F4\u591A\u53EF\u7528\u6A21\u578B\uFF0C\u9884\u7F6E\u6A21\u578B\u9ED8\u8BA4\u4F7F\u7528\u7A33\u5B9A\u7248\u672C\u3002",
           addModel: "\u6DFB\u52A0\u6A21\u578B",
+          multimodalToggle: "\u591A\u6A21\u6001",
           model: "\u6A21\u578B",
           provider: "\u670D\u52A1\u5546",
           actions: "\u64CD\u4F5C",
@@ -514,6 +547,10 @@
           enterApiKey: "\u8F93\u5165 API \u5BC6\u94A5",
           baseUrl: "Base URL",
           maxTokens: "Max Tokens",
+          enableThinkingLevel: "\u5141\u8BB8\u63A8\u7406\u7B49\u7EA7",
+          enableThinkingLevelHint: "\u5F00\u542F\u540E\u53EF\u624B\u52A8\u9009\u62E9\u63A8\u7406\u7B49\u7EA7\uFF0C\u5173\u95ED\u65F6\u4F7F\u7528\u6A21\u578B\u9ED8\u8BA4\u7B49\u7EA7",
+          thinkingDefault: "\u9ED8\u8BA4",
+          thinkingLevel: "\u63A8\u7406\u7B49\u7EA7",
           deepseekChatExample: "\u4F8B\u5982\uFF1Adeepseek-chat",
           viewDocs: "\u67E5\u770B\u6587\u6863",
           getApiKey: "\u83B7\u53D6API\u5BC6\u94A5",
@@ -560,13 +597,13 @@
           filesIndexed: "{count} \u4E2A\u6587\u4EF6",
           license: "\u8BB8\u53EF\u8BC1",
           compatibility: "\u517C\u5BB9\u6027",
-          mcpServers: "MCP \u670D\u52A1\u5668",
+          mcpServers: "MCP Server",
           mcpInstructions: "MCP (Model Context Protocol) \u670D\u52A1\u5668\u5141\u8BB8 Agent \u6269\u5C55\u989D\u5916\u7684\u5DE5\u5177\u80FD\u529B\u3002",
-          noMcpServers: "\u6682\u65E0 MCP \u670D\u52A1\u5668",
-          mcpServer: "MCP \u670D\u52A1\u5668",
-          confirmDeleteMcpTitle: "\u5220\u9664 MCP \u670D\u52A1\u5668",
-          confirmDeleteMcp: '\u786E\u5B9A\u8981\u5220\u9664 MCP \u670D\u52A1\u5668 "{name}"\uFF1F',
-          addMcpServer: "\u6DFB\u52A0 MCP \u670D\u52A1\u5668",
+          noMcpServers: "\u6682\u65E0 MCP Server",
+          mcpServer: "MCP Server",
+          confirmDeleteMcpTitle: "\u5220\u9664 MCP Server",
+          confirmDeleteMcp: '\u786E\u5B9A\u8981\u5220\u9664 MCP Server "{name}"\uFF1F',
+          addMcpServer: "\u6DFB\u52A0 MCP Server",
           serverName: "\u670D\u52A1\u5668\u540D\u79F0",
           filesystemServerExample: "e.g. filesystem-server",
           type: "\u7C7B\u578B",
@@ -596,6 +633,11 @@
           agentManagement: "\u667A\u80FD\u4F53",
           agentInstructions: "\u521B\u5EFA\u548C\u7BA1\u7406\u53EF\u88AB Agent \u8C03\u7528\u7684\u547D\u540D\u667A\u80FD\u4F53\u3002\u6BCF\u4E2A\u667A\u80FD\u4F53\u53EF\u8BBE\u7F6E\u72EC\u7ACB\u7684\u7CFB\u7EDF\u63D0\u793A\u8BCD\u3002",
           systemPrompt: "System Prompt",
+          storage: "\u5B58\u50A8",
+          storageDataDir: "\u6570\u636E\u76EE\u5F55",
+          storageSessions: "\u4F1A\u8BDD\u8BB0\u5F55",
+          storageSessionsDesc: "\u6E05\u9664\u672C\u5730\u6570\u636E\u5E93\u4E2D\u7684\u6240\u6709\u4F1A\u8BDD\u5386\u53F2",
+          storageClearSessions: "\u6E05\u9664\u5168\u90E8",
           about: "\u5173\u4E8E",
           version: "\u7248\u672C",
           aboutAppName: "\u5E94\u7528\u540D\u79F0",
@@ -608,10 +650,23 @@
           devDevToolsTitle: "\u6253\u5F00\u5F00\u53D1\u8005\u5DE5\u5177",
           devDevToolsDesc: "Chrome \u5F00\u53D1\u8005\u5DE5\u5177\uFF08F12\uFF09\uFF0C\u7528\u4E8E\u8C03\u8BD5",
           devDevToolsBtn: "\u6253\u5F00",
+          devRestartTitle: "\u5F3A\u5236\u91CD\u542F",
+          devRestartAppTitle: "\u5F3A\u5236\u91CD\u542F\u5E94\u7528",
+          devRestartAppDesc: "\u6E05\u9664\u672C\u5730\u5B58\u50A8\u5E76\u91CD\u65B0\u52A0\u8F7D\u5E94\u7528",
+          devRestartServerTitle: "\u5F3A\u5236\u91CD\u542F\u670D\u52A1\u5668",
+          devRestartServerDesc: "\u91CD\u542F\u540E\u7AEF\u670D\u52A1\u5668\u8FDB\u7A0B",
+          devRestartBtn: "\u5F3A\u5236\u91CD\u542F",
+          devRestartRunningTitle: "\u68C0\u6D4B\u5230\u8FD0\u884C\u4E2D\u7684\u4EFB\u52A1",
+          devRestartRunningDesc: "\u6709\u6B63\u5728\u6267\u884C\u7684\u4EFB\u52A1\uFF0C\u5F3A\u5236\u91CD\u542F\u5C06\u4E2D\u65AD\u5B83\uFF0C\u786E\u5B9A\u7EE7\u7EED\uFF1F",
+          devRestartProgressTitle: "\u6B63\u5728\u91CD\u542F\u670D\u52A1\u5668",
+          devRestartPhaseKill: "\u6B63\u5728\u5173\u95ED\u670D\u52A1\u5668...",
+          devRestartPhasePort: "\u7B49\u5F85\u7AEF\u53E3\u91CA\u653E...",
+          devRestartPhaseStart: "\u6B63\u5728\u542F\u52A8\u670D\u52A1\u5668...",
+          devRestartSucceed: "\u670D\u52A1\u5668\u91CD\u542F\u6210\u529F",
+          devRestartFailed: "\u670D\u52A1\u5668\u91CD\u542F\u5931\u8D25",
           aboutDataDir: "\u6570\u636E\u76EE\u5F55",
           aboutCacheSize: "\u7F13\u5B58\u5927\u5C0F",
           aboutCopy: "\u590D\u5236",
-          aboutClear: "\u6E05\u7406",
           aboutLegalTitle: "\u6CD5\u5F8B\u4E0E\u81F4\u8C22",
           aboutSupportTitle: "\u652F\u6301\u4E0E\u793E\u533A",
           aboutLicense: "\u5F00\u6E90\u8BB8\u53EF\u8BC1",
@@ -632,8 +687,22 @@
           aboutOpenDataDir: "\u6570\u636E\u76EE\u5F55",
           aboutOpenLogs: "\u6253\u5F00\u6587\u4EF6\u5939",
           aboutLogs: "\u65E5\u5FD7",
+          aboutLogsDesc: "\u67E5\u770B\u5E94\u7528\u65E5\u5FD7",
           aboutRecentLogs: "\u6700\u8FD1\u65E5\u5FD7",
           aboutLogContent: "\u5185\u5BB9",
+          aboutLogDateFrom: "\u8D77\u59CB\u65E5\u671F",
+          aboutLogDateTo: "\u7ED3\u675F\u65E5\u671F",
+          aboutLogClearDate: "\u6E05\u9664",
+          aboutLogLoadMore: "\u52A0\u8F7D\u66F4\u591A",
+          aboutLogNoLogs: "\u6682\u65E0\u65E5\u5FD7",
+          aboutLogLoading: "\u52A0\u8F7D\u4E2D\u2026",
+          aboutLogTimestamp: "\u65F6\u95F4",
+          aboutLogLevel: "\u7EA7\u522B",
+          aboutLogSource: "\u6765\u6E90",
+          aboutLogMessage: "\u6D88\u606F",
+          aboutLogCopyRow: "\u590D\u5236\u884C",
+          aboutLogCopyAll: "\u590D\u5236\u5168\u90E8",
+          aboutLogClearAll: "\u6E05\u9664\u6240\u6709\u65E5\u5FD7",
           copyright: "Copyright \xA9 2024-2026 Dunimd. All Rights Reserved.",
           indexAndDocument: "\u7D22\u5F15\u4E0E\u6587\u6863",
           codeIndexManage: "\u4EE3\u7801\u7D22\u5F15\u7BA1\u7406",
@@ -654,7 +723,7 @@
           indexOnlyInWorkspace: "\u7D22\u5F15\u4E0E\u6587\u6863\u4EC5\u5728\u5DE5\u4F5C\u533A\u6A21\u5F0F\u4E0B\u53EF\u7528\u3002\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A\u5DE5\u4F5C\u533A\u3002",
           modeHintAll: "\u9002\u7528\u4E8E\u6240\u6709\u6A21\u5F0F",
           modeHintIwork: "\u4EC5\u9002\u7528\u4E8E iWork \u6A21\u5F0F",
-          documentManage: "\u6587\u6863\u7BA1\u7406",
+          documentManage: "\u6587\u6863",
           docManagementDesc: "\u7BA1\u7406\u53C2\u8003\u6587\u6863\u3002\u4ECE\u672C\u5730\u6587\u4EF6\u6216 URL \u6DFB\u52A0\uFF0C\u4E3A AI \u63D0\u4F9B\u4E0A\u4E0B\u6587\u53C2\u8003\u3002",
           documentCount: "\u6587\u6863\u6570",
           addDocument: "\u6DFB\u52A0\u6587\u6863",
@@ -700,8 +769,8 @@
           enableGlobalRules: "\u542F\u7528\u5168\u5C40\u89C4\u5219",
           enableGlobalRulesDesc: "\u52A0\u8F7D ~/.dunimd/encre/rules/ \u4E2D\u7684\u5168\u5C40\u89C4\u5219",
           projectRules: "\u9879\u76EE\u89C4\u5219",
-          globalRules: "\u5168\u5C40\u89C4\u5219",
-          globalRulesDesc: "\u5B58\u653E\u4E8E ~/.dunimd/encre/rules/ \u7684\u5168\u5C40\u89C4\u5219\uFF0C\u8DE8\u4F1A\u8BDD\u6301\u4E45\u5316",
+          globalRules: "\u89C4\u5219",
+          globalRulesDesc: "\u5168\u5C40\u89C4\u5219\uFF0C\u8DE8\u4F1A\u8BDD\u6301\u4E45\u5316",
           addGlobalRule: "\u6DFB\u52A0\u5168\u5C40\u89C4\u5219",
           noProjectRules: "\u672A\u68C0\u6D4B\u5230\u9879\u76EE\u89C4\u5219\u6587\u4EF6",
           noGlobalRules: "\u6682\u65E0\u5168\u5C40\u89C4\u5219",
@@ -764,6 +833,11 @@
           totalOutputTokens: "\u8F93\u51FA Token",
           totalToolCalls: "\u5DE5\u5177\u8C03\u7528\u603B\u6570",
           dailyUsageByModel: "\u6BCF\u65E5\u7528\u91CF\uFF08\u6309\u6A21\u578B\u5806\u53E0\uFF09",
+          dailyUsageByChannel: "\u6BCF\u65E5\u7528\u91CF\uFF08\u6309\u6A21\u5F0F\u5806\u53E0\uFF09",
+          usageGroupByModel: "\u6309\u6A21\u578B",
+          usageGroupByMode: "\u6309\u6A21\u5F0F",
+          modeNormal: "\u5BF9\u8BDD",
+          modeAutomation: "\u81EA\u52A8\u5316",
           activityHeatmap: "\u6D3B\u8DC3\u5EA6\u70ED\u529B\u56FE",
           deletedModel: "\u5DF2\u5220\u9664",
           unknownModel: "\u672A\u77E5",
@@ -774,6 +848,8 @@
           hoursPerDay: "\u5C0F\u65F6/\u5929",
           days: "\u5929",
           olderDaysHidden: "\u66F4\u65E9\u7684\u6570\u636E\u5DF2\u9690\u85CF",
+          chartTotal: "\u603B\u8BA1",
+          noUsageData: "\u6682\u65E0\u7528\u91CF\u6570\u636E\uFF0C\u5F00\u59CB\u5BF9\u8BDD\u540E\u81EA\u52A8\u7EDF\u8BA1",
           // 网关
           gatewayManagement: "\u7F51\u5173",
           adapterEnabled: "\u5DF2\u542F\u7528",
@@ -992,7 +1068,8 @@
         },
         files: {
           attachedFiles: "\u6211\u5DF2\u9644\u52A0\u4EE5\u4E0B\u6587\u4EF6\uFF1A",
-          attached: "\u5DF2\u9644\u52A0"
+          attached: "\u5DF2\u9644\u52A0",
+          skippedMedia: "\u5A92\u4F53\u6587\u4EF6\u5DF2\u8DF3\u8FC7\uFF08\u6A21\u578B\u4E0D\u652F\u6301\u591A\u6A21\u6001\uFF09"
         },
         sessionInner: {
           tabTerminal: "\u7EC8\u7AEF",
@@ -1164,7 +1241,8 @@
         },
         mode: {
           normal: "\u804A\u5929",
-          iwork: "iWork"
+          iwork: "\u5DE5\u4F5C\u533A",
+          automation: "\u81EA\u52A8\u5316"
         },
         slashCommands: {
           title: "\u659C\u6760\u547D\u4EE4",
@@ -1184,9 +1262,11 @@
           placeholderIwork: "\u4F60\u5728\u505A\u4EC0\u4E48\u9879\u76EE\uFF1F",
           attachFiles: "@ \u4E0A\u4F20\u6587\u4EF6",
           selectModel: "\u9009\u62E9\u6A21\u578B",
+          selectThinkingLevel: "\u9009\u62E9\u63A8\u7406\u7B49\u7EA7",
           send: "\u53D1\u9001",
           stop: "\u505C\u6B62",
           think: "\u6DF1\u5EA6\u601D\u8003",
+          thinkingOff: "NONE",
           disclaimer: "AI \u751F\u6210\u5185\u5BB9\u4EC5\u4F9B\u53C2\u8003\uFF0C\u4E0D\u4EE3\u8868\u6211\u4EEC\u7684\u7ACB\u573A"
         },
         summary: {
@@ -1372,7 +1452,7 @@
           themeSaved: "\u4E3B\u9898",
           languageSaved: "\u8BED\u8A00",
           saved: "\u5DF2\u4FDD\u5B58",
-          keyboardShortcuts: "\u952E\u76D8\u5FEB\u6377\u952E",
+          keyboardShortcuts: "\u5FEB\u6377\u952E",
           shortcutsDesc: "Ctrl+K \u641C\u7D22 | Ctrl+, \u8BBE\u7F6E | Ctrl+L \u65B0\u4F1A\u8BDD | Escape \u5173\u95ED | Enter \u53D1\u9001 | Shift+Enter \u6362\u884C",
           slashCommands: "\u659C\u6760\u547D\u4EE4",
           manage: "\u7BA1\u7406",
@@ -1424,7 +1504,7 @@
           settings_general: "\u8BBE\u7F6E - \u901A\u7528",
           settings_models: "\u8BBE\u7F6E - \u6A21\u578B\u7BA1\u7406",
           settings_skills: "\u8BBE\u7F6E - \u6280\u80FD\u4E0E\u547D\u4EE4",
-          settings_mcp: "\u8BBE\u7F6E - MCP \u670D\u52A1\u5668",
+          settings_mcp: "\u8BBE\u7F6E - MCP Server",
           settings_agent: "\u8BBE\u7F6E - \u667A\u80FD\u4F53\u914D\u7F6E",
           settings_index: "\u8BBE\u7F6E - \u7D22\u5F15\u4E0E\u6587\u6863",
           settings_rules: "\u8BBE\u7F6E - \u89C4\u5219",
@@ -1519,6 +1599,8 @@
           memory: "Memory",
           permissions: "Permissions",
           usage: "Usage",
+          shortcuts: "Shortcuts",
+          storage: "Storage",
           index: "Index",
           document: "Documents",
           projectRules: "Project Rules",
@@ -1554,7 +1636,14 @@
           toggleSidebar: "Toggle session sidebar",
           toggleSummary: "Summary",
           // Channel / mode badge labels (shown in the session sidebar)
-          channelAutomation: "Auto"
+          channelAutomation: "Auto",
+          automationJobCreated: "Job Created",
+          automationJobUpdated: "Job Updated",
+          automationJobDeleted: "Job Deleted",
+          automationJobToggled: "Job Toggled",
+          documentAdded: "Document Added",
+          documentRemoved: "Document Removed",
+          documentError: "Document Error"
         },
         notifications: {
           empty: "No notifications",
@@ -1568,7 +1657,11 @@
           justNow: "Just now",
           minutesAgo: "{n} min ago",
           hoursAgo: "{n} hours ago",
-          daysAgo: "{n} days ago"
+          daysAgo: "{n} days ago",
+          back: "Back",
+          demoTitle: "New Feature: Activity Feed",
+          demoMessage: "You can now view the activity history of your AI assistant, including code changes, file operations, and more. Click to expand and see the full details.",
+          demoSource: "System Update"
         },
         search: {
           placeholder: "Search messages, files...",
@@ -1627,12 +1720,16 @@
         theme: {
           system: "Follow System",
           light: "Light",
-          dark: "Dark"
+          dark: "Dark",
+          switchTitle: "Switch Theme",
+          switchConfirm: 'Switch to the "{label}" theme?'
         },
         language: {
           zh: "\u4E2D\u6587",
           en: "English",
-          autoFollow: "Follow App Language"
+          autoFollow: "Follow App Language",
+          switchTitle: "Switch Language",
+          switchConfirm: 'Switch to "{label}"?'
         },
         settings: {
           basicSettings: "Basic Settings",
@@ -1661,17 +1758,33 @@
           systemBrowser: "System Browser",
           inApp: "In App",
           systemApp: "System App",
-          dataManagement: "Data Management",
           browserData: "Browser Data",
           browserDataDesc: "Site data in browser (Cookies, local storage, etc.)",
           clear: "Clear",
-          dataCleared: "Browser data cleared",
-          dataClearError: "Failed to clear browser data",
           confirmClearBrowserDataTitle: "Clear Browser Data",
           confirmClearBrowserData: "This will clear all site data including cookies, local storage, and cache. Continue?",
-          modelManagement: "Model Management",
+          keyboardShortcuts: "Shortcuts",
+          shortcutCategoryApplication: "Application",
+          shortcutCategorySession: "Session",
+          shortcutCategoryMessages: "Messages",
+          shortcutCategoryInput: "Input",
+          shortcutCategoryModes: "Modes",
+          shortcutCategoryNavigation: "Navigation",
+          shortcutCategorySearch: "Search",
+          shortcutCategorySettings: "Settings",
+          shortcutCategoryPanels: "Panels",
+          shortcutCategoryAutomation: "Automation",
+          shortcutCategoryWorkspace: "Workspace",
+          shortcutCategoryNotifications: "Notifications",
+          shortcutCategoryAppearance: "Appearance",
+          shortcutCategoryGeneral: "General",
+          shortcutConflict: '"{0}" already uses this shortcut. Still replace it?',
+          shortcutConflictTitle: "Shortcut Conflict",
+          shortcutsDisabledDesc: "All keyboard shortcuts are disabled. Click a button below to record a new shortcut.",
+          modelManagement: "Models",
           modelManagementDesc: "Configure API key to add more available models. Pre-configured models use stable versions.",
           addModel: "Add Model",
+          multimodalToggle: "Multimodal",
           model: "Model",
           provider: "Provider",
           actions: "Actions",
@@ -1689,6 +1802,10 @@
           enterApiKey: "Enter API key",
           baseUrl: "Base URL",
           maxTokens: "Max Tokens",
+          enableThinkingLevel: "Enable Reasoning Level",
+          enableThinkingLevelHint: "When enabled, you can select the reasoning level; otherwise the model default is used",
+          thinkingDefault: "Default",
+          thinkingLevel: "Reasoning Level",
           deepseekChatExample: "e.g. deepseek-chat",
           viewDocs: "View docs",
           getApiKey: "Get API Key",
@@ -1772,6 +1889,11 @@
           agentManagement: "Agent",
           agentInstructions: "Create and manage named agents that can be invoked by the Agent. Each agent can have its own system prompt.",
           systemPrompt: "System Prompt",
+          storage: "Storage",
+          storageDataDir: "Data Directory",
+          storageSessions: "Session Records",
+          storageSessionsDesc: "Clear all session history from the local database",
+          storageClearSessions: "Clear All",
           about: "About",
           version: "Version",
           aboutAppName: "App Name",
@@ -1784,10 +1906,23 @@
           devDevToolsTitle: "Open DevTools",
           devDevToolsDesc: "Chrome DevTools (F12) for debugging",
           devDevToolsBtn: "Open",
+          devRestartTitle: "Force Restart",
+          devRestartAppTitle: "Force Restart App",
+          devRestartAppDesc: "Clear local storage and reload the application",
+          devRestartServerTitle: "Force Restart Server",
+          devRestartServerDesc: "Restart the backend server process",
+          devRestartBtn: "Force Restart",
+          devRestartRunningTitle: "Running Task Detected",
+          devRestartRunningDesc: "There is an active task running. Force restart will interrupt it. Are you sure?",
+          devRestartProgressTitle: "Restarting Server",
+          devRestartPhaseKill: "Shutting down server...",
+          devRestartPhasePort: "Waiting for port release...",
+          devRestartPhaseStart: "Starting server...",
+          devRestartSucceed: "Server restarted successfully",
+          devRestartFailed: "Failed to restart server",
           aboutDataDir: "Data Directory",
           aboutCacheSize: "Cache Size",
           aboutCopy: "Copy",
-          aboutClear: "Clear",
           aboutLegalTitle: "Legal & Notices",
           aboutSupportTitle: "Support & Community",
           aboutLicense: "Open Source License",
@@ -1808,8 +1943,22 @@
           aboutOpenDataDir: "Data Folder",
           aboutOpenLogs: "Open Folder",
           aboutLogs: "Logs",
+          aboutLogsDesc: "View application logs",
           aboutRecentLogs: "Recent Logs",
           aboutLogContent: "Content",
+          aboutLogDateFrom: "From",
+          aboutLogDateTo: "To",
+          aboutLogClearDate: "Clear",
+          aboutLogLoadMore: "Load More",
+          aboutLogNoLogs: "No logs",
+          aboutLogLoading: "Loading\u2026",
+          aboutLogTimestamp: "Timestamp",
+          aboutLogLevel: "Level",
+          aboutLogSource: "Source",
+          aboutLogMessage: "Message",
+          aboutLogCopyRow: "Copy Row",
+          aboutLogCopyAll: "Copy All",
+          aboutLogClearAll: "Clear All Logs",
           copyright: "Copyright \xA9 2024-2026 Dunimd. All Rights Reserved.",
           indexAndDocument: "Index & Document",
           codeIndexManage: "Code Index Management",
@@ -1830,7 +1979,7 @@
           indexOnlyInWorkspace: "Index & Document is only available in workspace mode. Please open a workspace first.",
           modeHintAll: "Applies to all modes",
           modeHintIwork: "Applies to iWork mode only",
-          documentManage: "Document Management",
+          documentManage: "Document",
           docManagementDesc: "Manage reference documents. Add files or URLs to provide context for the AI.",
           documentCount: "Documents",
           addDocument: "Add Document",
@@ -1876,8 +2025,8 @@
           enableGlobalRules: "Enable Global Rules",
           enableGlobalRulesDesc: "Load global rules from ~/.dunimd/encre/rules/",
           projectRules: "Project Rules",
-          globalRules: "Global Rules",
-          globalRulesDesc: "Global rules stored in ~/.dunimd/encre/rules/, persisted across sessions",
+          globalRules: "Rules",
+          globalRulesDesc: "Global rules persisted across sessions",
           addGlobalRule: "Add Global Rule",
           noProjectRules: "No project rule files detected",
           noGlobalRules: "No global rules yet",
@@ -1946,6 +2095,11 @@
           sessionBreakdown: "By Session",
           noUsageData: "No usage data yet. Start a conversation to collect statistics.",
           dailyUsageByModel: "Daily usage (stacked by model)",
+          dailyUsageByChannel: "Daily usage (stacked by mode)",
+          usageGroupByModel: "By model",
+          usageGroupByMode: "By mode",
+          modeNormal: "Chat",
+          modeAutomation: "Automation",
           activityHeatmap: "Activity heatmap",
           deletedModel: "deleted",
           unknownModel: "unknown",
@@ -1960,6 +2114,7 @@
           days: "days",
           models: "models",
           olderDaysHidden: "older days hidden",
+          chartTotal: "Total",
           tokenTrend: "Token Trend",
           noToolData: "No tool calls yet",
           tokens: "tokens",
@@ -2237,7 +2392,8 @@
         },
         files: {
           attachedFiles: "I've attached the following files:",
-          attached: "Attached"
+          attached: "Attached",
+          skippedMedia: "Media file skipped (model not multimodal)"
         },
         sessionInner: {
           tabTerminal: "Terminal",
@@ -2409,7 +2565,8 @@
         },
         mode: {
           normal: "Chats",
-          iwork: "iWork"
+          iwork: "Workspace",
+          automation: "Automation"
         },
         slashCommands: {
           title: "Slash Commands",
@@ -2429,9 +2586,11 @@
           placeholderIwork: "What are you working on?",
           attachFiles: "@ Attach",
           selectModel: "Select model",
+          selectThinkingLevel: "Select reasoning level",
           send: "Send",
           stop: "Stop",
           think: "Deep Thinking",
+          thinkingOff: "NONE",
           disclaimer: "AI-generated content is for reference only"
         },
         summary: {
@@ -2622,7 +2781,7 @@
           themeSaved: "Theme",
           languageSaved: "Language",
           saved: "saved",
-          keyboardShortcuts: "Keyboard Shortcuts",
+          keyboardShortcuts: "Shortcuts",
           shortcutsDesc: "Ctrl+K Search | Ctrl+, Settings | Ctrl+L New Session | Escape Close | Enter Send | Shift+Enter New line",
           slashCommands: "Slash Commands",
           manage: "Manage",
@@ -2788,7 +2947,7 @@
     document.querySelectorAll("[data-i18n-title]").forEach((el2) => {
       const key = el2.getAttribute("data-i18n-title");
       if (key) {
-        el2.setAttribute("title", t(key));
+        el2.setAttribute("data-tooltip", t(key));
       }
     });
   }
@@ -3163,9 +3322,9 @@
       }
       if (!rawFileRefs) {
         const sid = sessionId;
-        const idx2 = messages.filter((m) => m.role === "user").length;
+        const idx = messages.filter((m) => m.role === "user").length;
         try {
-          const stored = localStorage.getItem(`fr:${sid}:${idx2}`);
+          const stored = localStorage.getItem(`fr:${sid}:${idx}`);
           if (stored) rawFileRefs = JSON.parse(stored);
         } catch {
         }
@@ -3288,9 +3447,9 @@
     addMessage(msg, sid);
     if (sid && fileRefs && fileRefs.length > 0) {
       const snapshot = getOrCreateSessionSnapshot(sid);
-      const idx2 = snapshot.messages.filter((m) => m.role === "user").length - 1;
+      const idx = snapshot.messages.filter((m) => m.role === "user").length - 1;
       try {
-        localStorage.setItem(`fr:${sid}:${idx2}`, JSON.stringify(fileRefs));
+        localStorage.setItem(`fr:${sid}:${idx}`, JSON.stringify(fileRefs));
       } catch {
       }
     }
@@ -3417,6 +3576,13 @@
         (e) => e.session_id === sid ? { ...e, is_running: v2 } : e
       );
       window.electronAPI?.traySessionsUpdate?.(state.sessionsList);
+      traySessionsCache.normal = traySessionsCache.normal.map(
+        (e) => e.session_id === sid ? { ...e, is_running: v2 } : e
+      );
+      traySessionsCache.iwork = traySessionsCache.iwork.map(
+        (e) => e.session_id === sid ? { ...e, is_running: v2 } : e
+      );
+      window.electronAPI?.traySessionsBothUpdate?.({ normal: traySessionsCache.normal, iwork: traySessionsCache.iwork });
     }
   }
   function setActiveToolId(id2) {
@@ -3574,14 +3740,6 @@
     snapshot.compactEvents = [...snapshot.compactEvents, evt];
     syncSessionState(sessionId);
     emit();
-    if (sessionId === state.sessionId) {
-      const reductionPct = evt.old_tokens > 0 ? Math.round((1 - evt.new_tokens / evt.old_tokens) * 100) : 0;
-      showToast(
-        "Context compacted",
-        `${evt.old_count} \u2192 ${evt.new_count} messages, ${reductionPct}% tokens reduced`,
-        "info"
-      );
-    }
   }
   function setAgentState(agentState, sessionId = state.sessionId) {
     const snapshot = getOrCreateSessionSnapshot(sessionId);
@@ -4025,7 +4183,8 @@
             event = JSON.parse(raw);
           }
           handler?.(event);
-        } catch {
+        } catch (e) {
+          console.warn("[ws] malformed message:", e);
         }
       });
       ws.addEventListener("close", () => {
@@ -4053,7 +4212,8 @@
         ws?.addEventListener("open", onOpen, { once: true });
         ws?.addEventListener("error", onError, { once: true });
       });
-    } catch {
+    } catch (e) {
+      console.warn("[ws] connect failed:", e);
       scheduleReconnect();
     }
   }
@@ -4072,6 +4232,7 @@
       }
     } catch (err) {
       console.warn("[ws] send failed:", err);
+      showToast("Send failed", "", "error", "WebSocket");
     }
   }
   function sendRetry(branch_id, user_message_index, mode) {
@@ -4751,7 +4912,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (event.branches && event.active_branch_id) {
           setBranches(event.branches, event.active_branch_id, event.session_id);
         }
-        chat?.render?.();
+        chat?.renderForce?.();
         window.__sessionInner?.render?.();
         send({ type: "list_sessions" });
         send({ type: "list_all_sessions" });
@@ -5010,6 +5171,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           type: "error",
           title: t("stream.notificationError"),
           message: event.message,
+          source: "System",
           timestamp: Date.now(),
           read: false
         });
@@ -5157,6 +5319,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const cfgAny = cfg;
         if (cfgAny.keybinds && typeof cfgAny.keybinds === "object" && Array.isArray(cfgAny.keybinds.keybinds)) {
           setSettings({ ...getState().settings, keybinds: cfgAny.keybinds });
+        } else {
+          try {
+            const saved = localStorage.getItem("encre_keybinds");
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (parsed && typeof parsed === "object" && Array.isArray(parsed.keybinds)) {
+                setSettings({ ...getState().settings, keybinds: parsed });
+              }
+            }
+          } catch {
+          }
         }
         const _adapterKeys = Object.keys(cfgAny).filter((k2) => k2.startsWith("adapter_"));
         if (_adapterKeys.length > 0) {
@@ -5252,9 +5425,16 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         setDocsList(event.documents);
         break;
       case "document_added":
+        send({ type: "list_documents" });
+        break;
       case "document_updated":
+        send({ type: "list_documents" });
+        break;
       case "document_removed":
+        send({ type: "list_documents" });
+        break;
       case "document_error":
+        showToast(t("common.documentError"), "", "error", "Index");
         send({ type: "list_documents" });
         break;
       case "skill_installed":
@@ -5422,6 +5602,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         break;
       case "session_renamed":
         send({ type: "list_sessions" });
+        send({ type: "list_all_sessions" });
         window.__sessionInner?.render?.();
         break;
       case "model_validated":
@@ -5456,6 +5637,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           setSessionId(pending.sessionId);
           send({ type: "resume", session_id: pending.sessionId, request_id: pending.requestId });
         }
+        send({ type: "list_sessions" });
         send({ type: "list_all_sessions" });
         window.__sessionInner?.render?.();
         break;
@@ -5549,8 +5731,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         _automationStreamCallback?.(event);
         break;
       case "automation_job_update":
-        if (event.history && _automationHistoryCallback) {
-          _automationHistoryCallback(event.history);
+        if (event.history) {
+          setAutomationHistory(event.history);
         }
         if (event.result && _automationShowResultCallback) {
           _automationShowResultCallback(event.result);
@@ -5644,7 +5826,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       created_at: derivedCreatedAt,
       last_active: derivedLastActive,
       is_running: isRunning,
-      channel: st3.workspaceMode === "iwork" ? "iwork" : "normal"
+      channel: st3.workspaceMode === "iwork" ? "iwork" : "normal",
+      metadata: {
+        workspace: st3.activeWorkspace || void 0,
+        workspace_path: st3.activeWorkspace || void 0
+      }
     }];
     setSessionsList(updated);
   }
@@ -5706,7 +5892,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     return null;
   }
-  var _adapterTestCallback, _automationJobsCallback, _automationHistoryCallback, _automationJobCreatedCallback, _automationJobCancelledCallback, _automationJobUpdatedCallback, _automationShowResultCallback, _automationStreamCallback, chat, tools, permissions, _settings, permissionResolve, _sessionGeneration, _requestedSessionId, _requestedSessionRequestId, _activeStreamSessionId, _toolCallGeneration, _validationResolve, _validationReject, _lastSync;
+  var _adapterTestCallback, _automationJobsCallback, _automationJobCreatedCallback, _automationJobCancelledCallback, _automationJobUpdatedCallback, _automationShowResultCallback, _automationStreamCallback, chat, tools, permissions, _settings, permissionResolve, _sessionGeneration, _requestedSessionId, _requestedSessionRequestId, _activeStreamSessionId, _toolCallGeneration, _validationResolve, _validationReject, _lastSync;
   var init_stream = __esm({
     "renderer/src/stream.ts"() {
       "use strict";
@@ -5717,7 +5903,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       init_slash_commands();
       _adapterTestCallback = null;
       _automationJobsCallback = null;
-      _automationHistoryCallback = null;
       _automationJobCreatedCallback = null;
       _automationJobCancelledCallback = null;
       _automationJobUpdatedCallback = null;
@@ -57511,6 +57696,30 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
   });
 
+  // renderer/src/context-menu.ts
+  function showContextMenu(menu, x, y) {
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      const rect = menu.getBoundingClientRect();
+      if (rect.right > window.innerWidth) {
+        menu.style.left = `${Math.max(8, x - rect.width)}px`;
+      }
+      if (rect.bottom > window.innerHeight) {
+        menu.style.top = `${Math.max(8, y - rect.height)}px`;
+      }
+      const r2 = menu.getBoundingClientRect();
+      if (r2.left < 0) menu.style.left = "8px";
+      if (r2.top < 0) menu.style.top = "8px";
+    });
+  }
+  var init_context_menu = __esm({
+    "renderer/src/context-menu.ts"() {
+      "use strict";
+    }
+  });
+
   // renderer/src/session.ts
   var session_exports = {};
   __export(session_exports, {
@@ -57518,7 +57727,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     showRenameDialogForSession: () => showRenameDialogForSession,
     showSessionContextMenu: () => showSessionContextMenu
   });
-  function showSessionContextMenu(sid, x, y, noRename) {
+  function showSessionContextMenu(sid, x, y, noRename, noExport, deleteOverride) {
     const menuEl = document.getElementById("session-context-menu");
     const currentSid = sid;
     let items = "";
@@ -57529,12 +57738,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       <span>${escHtml(t("session.rename"))}</span>
     </div>`;
     }
-    items += `
+    if (!noExport) {
+      items += `
     <div class="context-menu-item" id="ctx-export-ws">
       <i data-lucide="download" class="lucide lucide-sm"></i>
       <span>${escHtml(t("session.exportMd"))}</span>
     </div>`;
-    if (!noRename) {
+    }
+    if (!noRename || !noExport) {
       items += `<div class="context-menu-divider"></div>`;
     }
     items += `
@@ -57543,21 +57754,25 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       <span>${escHtml(t("session.delete"))}</span>
     </div>`;
     menuEl.innerHTML = items;
-    menuEl.style.left = `${x}px`;
-    menuEl.style.top = `${y}px`;
-    menuEl.classList.remove("hidden");
+    showContextMenu(menuEl, x, y);
     if (!noRename) {
       document.getElementById("ctx-rename-ws")?.addEventListener("click", () => {
         menuEl.classList.add("hidden");
         showRenameDialogForSession(currentSid);
       });
     }
-    document.getElementById("ctx-export-ws")?.addEventListener("click", () => {
-      send({ type: "export_session", session_id: currentSid });
-      menuEl.classList.add("hidden");
-    });
+    if (!noExport) {
+      document.getElementById("ctx-export-ws")?.addEventListener("click", () => {
+        send({ type: "export_session", session_id: currentSid });
+        menuEl.classList.add("hidden");
+      });
+    }
     document.getElementById("ctx-delete-ws")?.addEventListener("click", async () => {
       menuEl.classList.add("hidden");
+      if (deleteOverride) {
+        deleteOverride();
+        return;
+      }
       const sessions = getState().sessionsList;
       const s15 = sessions.find((x2) => x2.session_id === currentSid);
       const name2 = s15?.name || s15?.preview || currentSid.slice(0, 8);
@@ -57628,6 +57843,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       init_stream();
       init_i18n();
       init_dialog();
+      init_context_menu();
       Session = class {
         /**
          * Constructor: grabs sidebar DOM nodes and subscribes to state/locale changes.
@@ -57671,10 +57887,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           const exp = document.getElementById("btn-batch-export");
           const del = document.getElementById("btn-batch-delete");
           const cancel = document.getElementById("btn-batch-cancel");
-          if (selAll) selAll.title = t("session.batchSelectAll");
-          if (exp) exp.title = t("session.batchExport");
-          if (del) del.title = t("session.batchDelete");
-          if (cancel) cancel.title = t("session.cancel");
+          if (selAll) selAll.dataset.tooltip = t("session.batchSelectAll");
+          if (exp) exp.dataset.tooltip = t("session.batchExport");
+          if (del) del.dataset.tooltip = t("session.batchDelete");
+          if (cancel) cancel.dataset.tooltip = t("session.cancel");
         }
         toggleBatchMode() {
           if (this.batchMode) {
@@ -57746,32 +57962,23 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           let html2 = "";
           for (const s15 of filteredSessions) {
             const active = s15.session_id === currentSid ? " active" : "";
-            const ts2 = (s15.last_active || s15.created_at || 0) * 1e3;
-            const date = new Date(ts2);
-            const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
-            const fullTs = ts2 > 0 ? date.toLocaleString() : "";
             const preview = s15.preview || t("general.emptySessionName");
             const displayName = s15.name || preview;
-            const msgCount = s15.message_count ?? 0;
             const runningBadge = s15.is_running ? '<span class="session-running"></span>' : "";
-            const badge = this.channelBadge(s15.channel);
             if (this.batchMode) {
-              html2 += `<div class="ws-tree-session-item" data-sid="${s15.session_id}" title="${this.esc(fullTs)}">
+              html2 += `<div class="ws-tree-session-item" data-sid="${s15.session_id}">
           <div class="session-item-top">
             <input type="checkbox" class="session-checkbox" data-sid="${s15.session_id}" ${this.selectedIds.has(s15.session_id) ? "checked" : ""} />
             <span class="session-preview">${this.esc(displayName)}</span>
             ${runningBadge}
           </div>
-          <span class="session-meta">${dateStr} ${timeStr} \xB7 ${msgCount} ${t("session.messages")} ${badge}</span>
         </div>`;
             } else {
-              html2 += `<div class="ws-tree-session-item${active}" data-sid="${s15.session_id}" title="${this.esc(fullTs)}">
+              html2 += `<div class="ws-tree-session-item${active}" data-sid="${s15.session_id}">
           <div class="session-item-top">
             <span class="session-preview">${this.esc(displayName)}</span>
             ${runningBadge}
           </div>
-          <span class="session-meta">${dateStr} ${timeStr} \xB7 ${msgCount} ${t("session.messages")} ${badge}</span>
         </div>`;
             }
           }
@@ -57851,9 +58058,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         <i data-lucide="trash-2" class="lucide lucide-sm"></i>
         <span>${this.esc(t("session.delete"))}</span>
       </div>`;
-          this.contextMenuEl.style.left = `${x}px`;
-          this.contextMenuEl.style.top = `${y}px`;
-          this.contextMenuEl.classList.remove("hidden");
+          showContextMenu(this.contextMenuEl, x, y);
           document.getElementById("ctx-rename")?.addEventListener("click", () => this.handleRename());
           document.getElementById("ctx-export")?.addEventListener("click", () => this.handleExport());
           document.getElementById("ctx-delete")?.addEventListener("click", () => this.handleDelete());
@@ -57933,21 +58138,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           const el2 = document.createElement("span");
           el2.textContent = s15;
           return el2.innerHTML;
-        }
-        /** Build a short badge label for the session's channel/mode. */
-        channelBadge(channel) {
-          if (!channel || channel === "normal") return "";
-          const labels = {
-            iwork: "iWork",
-            automation: t("session.channelAutomation"),
-            qqbot: "QQ",
-            telegram: "Telegram",
-            webhook: "Webhook",
-            discord: "Discord",
-            slack: "Slack"
-          };
-          const label = labels[channel] || channel;
-          return `<span class="session-channel-badge" data-channel="${this.esc(channel)}">${this.esc(label)}</span>`;
         }
       };
     }
@@ -59247,16 +59437,16 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
 
   // node_modules/markdown-it/lib/renderer.mjs
   var default_rules = {};
-  default_rules.code_inline = function(tokens2, idx2, options, env, slf) {
-    const token = tokens2[idx2];
+  default_rules.code_inline = function(tokens2, idx, options, env, slf) {
+    const token = tokens2[idx];
     return "<code" + slf.renderAttrs(token) + ">" + escapeHtml(token.content) + "</code>";
   };
-  default_rules.code_block = function(tokens2, idx2, options, env, slf) {
-    const token = tokens2[idx2];
-    return "<pre" + slf.renderAttrs(token) + "><code>" + escapeHtml(tokens2[idx2].content) + "</code></pre>\n";
+  default_rules.code_block = function(tokens2, idx, options, env, slf) {
+    const token = tokens2[idx];
+    return "<pre" + slf.renderAttrs(token) + "><code>" + escapeHtml(tokens2[idx].content) + "</code></pre>\n";
   };
-  default_rules.fence = function(tokens2, idx2, options, env, slf) {
-    const token = tokens2[idx2];
+  default_rules.fence = function(tokens2, idx, options, env, slf) {
+    const token = tokens2[idx];
     const info = token.info ? unescapeAll(token.info).trim() : "";
     let langName = "";
     let langAttrs = "";
@@ -59292,25 +59482,25 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     return `<pre><code${slf.renderAttrs(token)}>${highlighted}</code></pre>
 `;
   };
-  default_rules.image = function(tokens2, idx2, options, env, slf) {
-    const token = tokens2[idx2];
+  default_rules.image = function(tokens2, idx, options, env, slf) {
+    const token = tokens2[idx];
     token.attrs[token.attrIndex("alt")][1] = slf.renderInlineAsText(token.children, options, env);
-    return slf.renderToken(tokens2, idx2, options);
+    return slf.renderToken(tokens2, idx, options);
   };
-  default_rules.hardbreak = function(tokens2, idx2, options) {
+  default_rules.hardbreak = function(tokens2, idx, options) {
     return options.xhtmlOut ? "<br />\n" : "<br>\n";
   };
-  default_rules.softbreak = function(tokens2, idx2, options) {
+  default_rules.softbreak = function(tokens2, idx, options) {
     return options.breaks ? options.xhtmlOut ? "<br />\n" : "<br>\n" : "\n";
   };
-  default_rules.text = function(tokens2, idx2) {
-    return escapeHtml(tokens2[idx2].content);
+  default_rules.text = function(tokens2, idx) {
+    return escapeHtml(tokens2[idx].content);
   };
-  default_rules.html_block = function(tokens2, idx2) {
-    return tokens2[idx2].content;
+  default_rules.html_block = function(tokens2, idx) {
+    return tokens2[idx].content;
   };
-  default_rules.html_inline = function(tokens2, idx2) {
-    return tokens2[idx2].content;
+  default_rules.html_inline = function(tokens2, idx) {
+    return tokens2[idx].content;
   };
   function Renderer() {
     this.rules = assign({}, default_rules);
@@ -59326,13 +59516,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     return result;
   };
-  Renderer.prototype.renderToken = function renderToken(tokens2, idx2, options) {
-    const token = tokens2[idx2];
+  Renderer.prototype.renderToken = function renderToken(tokens2, idx, options) {
+    const token = tokens2[idx];
     let result = "";
     if (token.hidden) {
       return "";
     }
-    if (token.block && token.nesting !== -1 && idx2 && tokens2[idx2 - 1].hidden) {
+    if (token.block && token.nesting !== -1 && idx && tokens2[idx - 1].hidden) {
       result += "\n";
     }
     result += (token.nesting === -1 ? "</" : "<") + token.tag;
@@ -59344,8 +59534,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     if (token.block) {
       needLf = true;
       if (token.nesting === 1) {
-        if (idx2 + 1 < tokens2.length) {
-          const nextToken = tokens2[idx2 + 1];
+        if (idx + 1 < tokens2.length) {
+          const nextToken = tokens2[idx + 1];
           if (nextToken.type === "inline" || nextToken.hidden) {
             needLf = false;
           } else if (nextToken.nesting === -1 && nextToken.tag === token.tag) {
@@ -59504,14 +59694,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     const result = [];
     list3.forEach(function(name2) {
-      const idx2 = this.__find__(name2);
-      if (idx2 < 0) {
+      const idx = this.__find__(name2);
+      if (idx < 0) {
         if (ignoreInvalid) {
           return;
         }
         throw new Error("Rules manager: invalid rule name " + name2);
       }
-      this.__rules__[idx2].enabled = true;
+      this.__rules__[idx].enabled = true;
       result.push(name2);
     }, this);
     this.__cache__ = null;
@@ -59532,14 +59722,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     const result = [];
     list3.forEach(function(name2) {
-      const idx2 = this.__find__(name2);
-      if (idx2 < 0) {
+      const idx = this.__find__(name2);
+      if (idx < 0) {
         if (ignoreInvalid) {
           return;
         }
         throw new Error("Rules manager: invalid rule name " + name2);
       }
-      this.__rules__[idx2].enabled = false;
+      this.__rules__[idx].enabled = false;
       result.push(name2);
     }, this);
     this.__cache__ = null;
@@ -59589,28 +59779,28 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
   };
   Token.prototype.attrSet = function attrSet(name2, value) {
-    const idx2 = this.attrIndex(name2);
+    const idx = this.attrIndex(name2);
     const attrData = [name2, value];
-    if (idx2 < 0) {
+    if (idx < 0) {
       this.attrPush(attrData);
     } else {
-      this.attrs[idx2] = attrData;
+      this.attrs[idx] = attrData;
     }
   };
   Token.prototype.attrGet = function attrGet(name2) {
-    const idx2 = this.attrIndex(name2);
+    const idx = this.attrIndex(name2);
     let value = null;
-    if (idx2 >= 0) {
-      value = this.attrs[idx2][1];
+    if (idx >= 0) {
+      value = this.attrs[idx][1];
     }
     return value;
   };
   Token.prototype.attrJoin = function attrJoin(name2, value) {
-    const idx2 = this.attrIndex(name2);
-    if (idx2 < 0) {
+    const idx = this.attrIndex(name2);
+    if (idx < 0) {
       this.attrPush([name2, value]);
     } else {
-      this.attrs[idx2][1] = this.attrs[idx2][1] + " " + value;
+      this.attrs[idx][1] = this.attrs[idx][1] + " " + value;
     }
   };
   var token_default = Token;
@@ -60679,9 +60869,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     return pos;
   }
-  function markTightParagraphs(state2, idx2) {
+  function markTightParagraphs(state2, idx) {
     const level = state2.level + 2;
-    for (let i8 = idx2 + 2, l = state2.tokens.length - 2; i8 < l; i8++) {
+    for (let i8 = idx + 2, l = state2.tokens.length - 2; i8 < l; i8++) {
       if (state2.tokens[i8].level === level && state2.tokens[i8].type === "paragraph_open") {
         state2.tokens[i8 + 2].hidden = true;
         state2.tokens[i8].hidden = true;
@@ -62783,8 +62973,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       compile(this);
       return this;
     }
-    this.__tlds__ = this.__tlds__.concat(list3).sort().filter(function(el2, idx2, arr) {
-      return el2 !== arr[idx2 - 1];
+    this.__tlds__ = this.__tlds__.concat(list3).sort().filter(function(el2, idx, arr) {
+      return el2 !== arr[idx - 1];
     }).reverse();
     compile(this);
     return this;
@@ -64018,8 +64208,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     typographer: true,
     breaks: true
   });
-  md.renderer.rules.fence = (tokens2, idx2) => {
-    const token = tokens2[idx2];
+  md.renderer.rules.fence = (tokens2, idx) => {
+    const token = tokens2[idx];
     const lang = token.info ? token.info.trim().split(/\s+/)[0] : "";
     let content2 = token.content;
     let highlighted = "";
@@ -64044,8 +64234,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   </div>
 `;
   };
-  md.renderer.rules.code_inline = (tokens2, idx2) => {
-    const content2 = tokens2[idx2].content;
+  md.renderer.rules.code_inline = (tokens2, idx) => {
+    const content2 = tokens2[idx].content;
     return `<code class="inline-code">${escapeHtml4(content2)}</code>`;
   };
   function renderMarkdown(text2) {
@@ -64340,6 +64530,15 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   }
   function buildSubAgentTimeline(msgs) {
     const timeline = buildTimeline(msgs);
+    const subView = getState().subAgentView;
+    const subRunning = !!(subView && (subView.status === "running" || subView.status === "pending"));
+    if (subRunning) {
+      for (const item of timeline) {
+        if (item.kind === "assistant_text") {
+          item.showActions = false;
+        }
+      }
+    }
     let seenHeader = false;
     return timeline.filter((item) => {
       if (item.kind === "ai_header") {
@@ -64498,7 +64697,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     return matches / Math.max(words.size, 1);
   }
   function _toolStatusHtml(status) {
-    if (status === "running") return `<span class="tool-status-dot running" title="Running"><span class="tool-spinner"></span></span>`;
+    if (status === "running") return `<span class="tool-status-dot running"></span></span>`;
     return "";
   }
   function createLucideIcons(root) {
@@ -64568,9 +64767,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       } else {
         for (const b2 of st3.branches) {
           if (b2.parent_branch_id === st3.activeBranchId && b2.fork_point_message_id) {
-            const idx2 = msgs.findIndex((m) => m.serverId === b2.fork_point_message_id);
-            if (idx2 >= 0) {
-              forkMsgIdx = idx2;
+            const idx = msgs.findIndex((m) => m.serverId === b2.fork_point_message_id);
+            if (idx >= 0) {
+              forkMsgIdx = idx;
               break;
             }
           }
@@ -64908,8 +65107,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         codeBlock.classList.toggle("hidden", nextMode !== "code");
         if (btn) {
           const nextIcon = nextMode === "code" ? "code" : "eye";
-          btn.title = t(nextMode === "code" ? "chat.infoCode" : "chat.infoRender");
           btn.dataset.mode = nextMode;
+          btn.dataset.tooltip = t(nextMode === "code" ? "chat.infoCode" : "chat.infoRender");
           btn.innerHTML = `<i data-lucide="${nextIcon}" class="info-btn-icon"></i>`;
           if (typeof window.lucide !== "undefined") {
             window.lucide.createIcons({ root: btn });
@@ -64922,9 +65121,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const source = card.getAttribute("data-source") || "";
         try {
           await navigator.clipboard.writeText(source);
-          showToast(t("chat.infoCopied"), "", "success");
         } catch {
-          showToast(t("chat.infoCopyFailed"), "", "error");
+          showToast(t("chat.infoCopyFailed"), "", "error", "Chat");
         }
       };
       this.container.addEventListener("scroll", () => {
@@ -65093,11 +65291,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         html2 += `<div class="turn">${turnMid}`;
         if (turnActions) {
           html2 += `<div class="assistant-actions turn-actions">`;
-          html2 += `<button class="btn-icon btn-icon--msg assistant-copy-btn" title="${t("chat.copy")}">
+          html2 += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
           <i data-lucide="copy" class="lucide lucide-sm"></i>
         </button>`;
           if (turnRetry) {
-            html2 += `<button class="btn-icon btn-icon--msg assistant-retry-btn" title="${t("chat.retry")}">
+            html2 += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
             <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
           </button>`;
           }
@@ -65285,9 +65483,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           badge.style.color = statusColor;
         }
         const taskEls = card.querySelectorAll(".wf-task");
-        taskEls.forEach((taskEl, idx2) => {
-          if (idx2 >= wf.tasks.length) return;
-          const t3 = wf.tasks[idx2];
+        taskEls.forEach((taskEl, idx) => {
+          if (idx >= wf.tasks.length) return;
+          const t3 = wf.tasks[idx];
           const dot3 = taskEl.querySelector(".wf-dot");
           const statusEl = taskEl.querySelector(".wf-task-status");
           if (dot3 && dot3.getAttribute("data-status") !== t3.status) {
@@ -65301,19 +65499,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
       if (lastAssistantIndex >= 0) {
         const assistantItem = timeline[lastAssistantIndex];
-        if (assistantItem.content.trim().length > 0) {
-          const el2 = this.ml.querySelector(`[data-id="${assistantItem.id}"]`);
-          if (el2) {
-            const contentEl = el2.querySelector(".msg-text");
-            if (contentEl) {
-              const rawText = contentEl.textContent || "";
-              const newText = assistantItem.content;
-              if (rawText !== newText) {
-                const newHtml = renderMarkdown(newText);
-                if (contentEl.innerHTML !== newHtml) {
-                  contentEl.innerHTML = newHtml;
-                }
-              }
+        const newText = assistantItem.content;
+        const el2 = this.ml.querySelector(`[data-id="${assistantItem.id}"]`);
+        if (!el2) {
+          this.renderForce();
+          return;
+        }
+        if (newText.trim().length > 0) {
+          const contentEl = el2.querySelector(".msg-text");
+          if (contentEl) {
+            const newHtml = renderMarkdown(newText);
+            if (contentEl.innerHTML !== newHtml) {
+              contentEl.innerHTML = newHtml;
             }
           }
         }
@@ -65383,13 +65580,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           ${modeBadge}
           ${displayContent}</div>
         <div class="user-actions">
-          <button class="btn-icon btn-icon--msg msg-copy-btn" title="${t("chat.copy")}">
+          <button class="btn-icon btn-icon--msg msg-copy-btn" data-tooltip="${t("chat.copy")}">
             <i data-lucide="copy" class="lucide lucide-sm"></i>
           </button>
-          ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" title="${t("chat.rollbackEdit")}">
+          ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" data-tooltip="${t("chat.rollbackEdit")}">
             <i data-lucide="history" class="lucide lucide-sm"></i>
           </button>
-          <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" title="${t("chat.delete")}">
+          <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" data-tooltip="${t("chat.delete")}">
             <i data-lucide="trash-2" class="lucide lucide-sm"></i>
           </button>`}
         </div>
@@ -65400,13 +65597,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       <div class="user-bubble">
         ${modeBadge}${termCard}${fileCards}${contentHtml}</div>
       <div class="user-actions">
-        <button class="btn-icon btn-icon--msg msg-copy-btn" title="${t("chat.copy")}">
+        <button class="btn-icon btn-icon--msg msg-copy-btn" data-tooltip="${t("chat.copy")}">
           <i data-lucide="copy" class="lucide lucide-sm"></i>
         </button>
-        ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" title="${t("chat.rollbackEdit")}">
+        ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" data-tooltip="${t("chat.rollbackEdit")}">
           <i data-lucide="history" class="lucide lucide-sm"></i>
         </button>
-        <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" title="${t("chat.delete")}">
+        <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" data-tooltip="${t("chat.delete")}">
           <i data-lucide="trash-2" class="lucide lucide-sm"></i>
         </button>`}
       </div>
@@ -65554,7 +65751,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             <span class="info-card-title">${escapeHtml4(title || t("chat.toolInfo"))}</span>
           </div>
           <div class="info-card-actions">
-            <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" title="${t("chat.infoCopy")}">
+            <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" data-tooltip="${t("chat.infoCopy")}">
               <i data-lucide="copy" class="info-btn-icon"></i>
             </button>
           </div>
@@ -65587,10 +65784,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           ${fragmentBadge}
         </div>
         <div class="info-card-actions">
-          <button class="info-btn" data-action="toggle-view" data-mode="${isCode ? "render" : "code"}" onclick="window.__toggleInfoView('${cardId}')" title="${isCode ? t("chat.infoRender") : t("chat.infoCode")}">
+          <button class="info-btn" data-action="toggle-view" data-mode="${isCode ? "render" : "code"}" onclick="window.__toggleInfoView('${cardId}')" data-tooltip="${isCode ? t("chat.infoRender") : t("chat.infoCode")}">
             <i data-lucide="${isCode ? "eye" : "code"}" class="info-btn-icon"></i>
           </button>
-          <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" title="${t("chat.infoCopy")}">
+          <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" data-tooltip="${t("chat.infoCopy")}">
             <i data-lucide="copy" class="info-btn-icon"></i>
           </button>
         </div>
@@ -65742,8 +65939,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     renderCompactCard(item) {
       const st3 = getState();
-      const idx2 = parseInt(item.id.replace("compact-", ""));
-      const evt = st3.compactEvents[idx2];
+      const idx = parseInt(item.id.replace("compact-", ""));
+      const evt = st3.compactEvents[idx];
       if (!evt) return "";
       const id2 = item.id;
       const expanded = this.expandedItems.has(id2);
@@ -65821,7 +66018,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const statusLabel = status === "running" ? t("chat.workflowRunning") || "Running" : status === "completed" ? t("chat.workflowDone") || "Completed" : t("chat.workflowFailed") || "Failed";
       const taskList = wf.tasks.map((t3) => {
         const dotCls = t3.status === "completed" ? "wf-dot--done" : t3.status === "running" ? "wf-dot--running" : t3.status === "failed" ? "wf-dot--failed" : t3.status === "skipped" ? "wf-dot--skipped" : "wf-dot--pending";
-        const dot3 = `<span class="wf-dot ${dotCls}" title="${escapeHtml4(t3.taskName)}: ${t3.status}"></span>`;
+        const dot3 = `<span class="wf-dot ${dotCls}" data-tooltip="${escapeHtml4(t3.taskName)}: ${t3.status}"></span>`;
         return `<div class="wf-task">
         ${dot3}
         <span class="wf-task-name">${escapeHtml4(t3.taskName || t3.taskId)}</span>
@@ -65889,18 +66086,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           setTimeout(() => {
             codeCopyBtn.textContent = t("chat.copy");
           }, 2e3);
-        }).catch(() => showToast(t("chat.copyFailed"), "", "error"));
+        }).catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
         return;
       }
       const copyBtn = target.closest(".msg-copy-btn");
       if (copyBtn) {
         e.stopPropagation();
         const userItem = copyBtn.closest(".user-item");
-        const idx2 = userItem ? parseInt(userItem.getAttribute("data-user-idx") ?? "") : NaN;
+        const idx = userItem ? parseInt(userItem.getAttribute("data-user-idx") ?? "") : NaN;
         const st3 = getState();
         const userMsgs = st3.messages.filter((m) => m.role === "user");
-        if (!isNaN(idx2) && userMsgs[idx2]) {
-          navigator.clipboard.writeText(userMsgs[idx2].content).then(() => flashCopyButton(copyBtn)).catch(() => showToast(t("chat.copyFailed"), "", "error"));
+        if (!isNaN(idx) && userMsgs[idx]) {
+          navigator.clipboard.writeText(userMsgs[idx].content).then(() => flashCopyButton(copyBtn)).catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
         }
         return;
       }
@@ -65908,23 +66105,23 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (editBtn) {
         e.stopPropagation();
         const userItem = editBtn.closest(".user-item");
-        const idx2 = userItem ? parseInt(userItem.getAttribute("data-user-idx") ?? "") : NaN;
+        const idx = userItem ? parseInt(userItem.getAttribute("data-user-idx") ?? "") : NaN;
         const st3 = getState();
         const userMsgs = st3.messages.filter((m) => m.role === "user");
-        if (isNaN(idx2) || !userMsgs[idx2]) return;
-        const targetMsg = userMsgs[idx2];
+        if (isNaN(idx) || !userMsgs[idx]) return;
+        const targetMsg = userMsgs[idx];
         let origContent = targetMsg.content;
         if (origContent.includes("<terminal>") || origContent.includes("<attach ") || origContent.includes("<mode>")) origContent = "";
         Dialog.confirm(t("chat.rollbackEdit"), t("chat.rollbackEditDesc")).then((confirmed) => {
           if (confirmed) {
             const sid = targetMsg.serverId;
-            rememberRollbackEditTarget(targetMsg, idx2);
+            rememberRollbackEditTarget(targetMsg, idx);
             if (sid && st3.activeBranchId) {
               send({ type: "rollback", branch_id: st3.activeBranchId, message_id: sid });
             } else {
-              send({ type: "delete_message", message_index: idx2, session_id: st3.sessionId });
+              send({ type: "delete_message", message_index: idx, session_id: st3.sessionId });
             }
-            truncateToUserMessage(idx2);
+            truncateToUserMessage(idx);
             this.renderForce();
             const input = document.getElementById("prompt-input");
             if (input) {
@@ -65954,12 +66151,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (deleteBtn) {
         e.stopPropagation();
         const userItem = deleteBtn.closest(".user-item");
-        const idx2 = userItem ? parseInt(userItem.getAttribute("data-user-idx") ?? "") : NaN;
+        const idx = userItem ? parseInt(userItem.getAttribute("data-user-idx") ?? "") : NaN;
         const st3 = getState();
         const userMsgs = st3.messages.filter((m) => m.role === "user");
-        if (isNaN(idx2) || !userMsgs[idx2]) return;
+        if (isNaN(idx) || !userMsgs[idx]) return;
         Dialog.confirm(t("chat.deleteMessage"), t("chat.deleteMessageDesc")).then((confirmed) => {
-          if (confirmed) send({ type: "delete_message", message_index: idx2 });
+          if (confirmed) send({ type: "delete_message", message_index: idx });
         });
         return;
       }
@@ -65973,7 +66170,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const st3 = getState();
         const msg = st3.messages.find((m) => m.id === msgId);
         if (msg) {
-          navigator.clipboard.writeText(msg.content).then(() => flashCopyButton(assistantCopyBtn)).catch(() => showToast(t("chat.copyFailed"), "", "error"));
+          navigator.clipboard.writeText(msg.content).then(() => flashCopyButton(assistantCopyBtn)).catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
         }
         return;
       }
@@ -66054,8 +66251,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const switcher = branchPrev.closest(".branch-switcher");
         if (!switcher) return;
         const ids = switcher.dataset.branchIds?.split(",") || [];
-        const idx2 = parseInt(switcher.dataset.activeIdx || "0");
-        const newIdx = idx2 > 0 ? idx2 - 1 : ids.length - 1;
+        const idx = parseInt(switcher.dataset.activeIdx || "0");
+        const newIdx = idx > 0 ? idx - 1 : ids.length - 1;
         const branchId = ids[newIdx];
         if (branchId && branchId !== getState().activeBranchId) {
           if (typeof window.sendSwitchBranch === "function") {
@@ -66070,8 +66267,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const switcher = branchNext.closest(".branch-switcher");
         if (!switcher) return;
         const ids = switcher.dataset.branchIds?.split(",") || [];
-        const idx2 = parseInt(switcher.dataset.activeIdx || "0");
-        const newIdx = idx2 < ids.length - 1 ? idx2 + 1 : 0;
+        const idx = parseInt(switcher.dataset.activeIdx || "0");
+        const newIdx = idx < ids.length - 1 ? idx + 1 : 0;
         const branchId = ids[newIdx];
         if (branchId && branchId !== getState().activeBranchId) {
           if (typeof window.sendSwitchBranch === "function") {
@@ -66117,8 +66314,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (!st3.running) return;
       if (!this.userScrolledUp) this.scrollToBottom();
     }
-    toggleWelcome(show) {
-      if (show) {
+    toggleWelcome(show2) {
+      if (show2) {
         this.welcomeScreen.classList.remove("hidden");
         this.ml.classList.add("hidden");
       } else {
@@ -66253,6 +66450,190 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.container.scrollTop = ratio * max;
     }
   };
+
+  // renderer/src/tooltip.ts
+  var tooltipEl = null;
+  var currentEl = null;
+  var showTimer = null;
+  var hideTimer = null;
+  var OFFSET = 8;
+  var SHOW_DELAY = 1e3;
+  var SKIP_SELECTOR = ".window-btn, .header-window-controls";
+  function ensureTooltip() {
+    if (tooltipEl) return tooltipEl;
+    const el2 = document.createElement("div");
+    el2.className = "encre-tooltip";
+    el2.setAttribute("role", "tooltip");
+    document.body.appendChild(el2);
+    tooltipEl = el2;
+    return el2;
+  }
+  function resolvePaintedBackground(start) {
+    let node = start;
+    while (node) {
+      const bg = getComputedStyle(node).backgroundColor;
+      if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") return bg;
+      node = node.parentElement;
+    }
+    return "var(--bg-secondary)";
+  }
+  function syncBackground() {
+    const el2 = ensureTooltip();
+    el2.style.background = resolvePaintedBackground(
+      document.getElementById("session-list")
+    );
+  }
+  function position(el2) {
+    const tip = tooltipEl;
+    const rect = el2.getBoundingClientRect();
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let left = rect.left + rect.width / 2 - tw / 2;
+    let top2 = rect.bottom + OFFSET;
+    if (top2 + th > window.innerHeight - 4) {
+      top2 = rect.top - th - OFFSET;
+    }
+    left = Math.max(4, Math.min(left, window.innerWidth - tw - 4));
+    top2 = Math.max(4, Math.min(top2, window.innerHeight - th - 4));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top2}px`;
+  }
+  function positionAt(x, y) {
+    const tip = tooltipEl;
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let left = x - tw / 2;
+    let top2 = y + OFFSET;
+    if (top2 + th > window.innerHeight - 4) {
+      top2 = y - th - OFFSET;
+    }
+    left = Math.max(4, Math.min(left, window.innerWidth - tw - 4));
+    top2 = Math.max(4, Math.min(top2, window.innerHeight - th - 4));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top2}px`;
+  }
+  function show(el2, text2) {
+    const tip = ensureTooltip();
+    if (currentEl === el2 && tip.classList.contains("encre-tooltip--visible")) {
+      tip.textContent = text2;
+      position(el2);
+      return;
+    }
+    tip.textContent = text2;
+    syncBackground();
+    position(el2);
+    tip.classList.add("encre-tooltip--visible");
+  }
+  function restoreAndHide() {
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = null;
+    }
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    if (currentEl) {
+      const src = currentEl.dataset.encreTooltipSrc;
+      const text2 = currentEl.dataset.encreTooltip || "";
+      if (src === "title") currentEl.setAttribute("title", text2);
+      else if (src === "data-tooltip") currentEl.setAttribute("data-tooltip", text2);
+      delete currentEl.dataset.encreTooltip;
+      delete currentEl.dataset.encreTooltipSrc;
+      currentEl = null;
+    }
+    if (tooltipEl) tooltipEl.classList.remove("encre-tooltip--visible");
+  }
+  function activate(el2) {
+    const attr = el2.dataset.tooltip != null && el2.dataset.tooltip !== "" ? "data-tooltip" : el2.getAttribute("title") ? "title" : null;
+    if (!attr) return;
+    const text2 = (attr === "data-tooltip" ? el2.dataset.tooltip || "" : el2.getAttribute("title") || "").trim();
+    if (!text2) return;
+    el2.dataset.encreTooltip = text2;
+    el2.dataset.encreTooltipSrc = attr;
+    el2.removeAttribute(attr);
+    currentEl = el2;
+    if (showTimer) clearTimeout(showTimer);
+    showTimer = window.setTimeout(() => {
+      showTimer = null;
+      if (currentEl === el2) show(el2, text2);
+    }, SHOW_DELAY);
+  }
+  function handleOver(e) {
+    if (currentEl) return;
+    const target = e.target;
+    if (!target) return;
+    const el2 = target.closest("[data-tooltip], [title]");
+    if (!el2 || el2.closest(SKIP_SELECTOR)) return;
+    activate(el2);
+  }
+  function handleOut(e) {
+    if (!currentEl) return;
+    const related = e.relatedTarget;
+    if (related && currentEl.contains(related)) return;
+    restoreAndHide();
+  }
+  function handleFocus(e) {
+    if (currentEl) return;
+    const target = e.target;
+    if (!target) return;
+    const el2 = target.closest("[data-tooltip], [title]");
+    if (!el2 || el2.closest(SKIP_SELECTOR)) return;
+    activate(el2);
+  }
+  function handleBlur(e) {
+    if (!currentEl) return;
+    const related = e.relatedTarget;
+    if (related && currentEl.contains(related)) return;
+    restoreAndHide();
+  }
+  function initTooltip() {
+    ensureTooltip();
+    syncBackground();
+    document.addEventListener("mouseover", handleOver, true);
+    document.addEventListener("mouseout", handleOut, true);
+    document.addEventListener("focusin", handleFocus, true);
+    document.addEventListener("focusout", handleBlur, true);
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = window.setTimeout(restoreAndHide, 0);
+      },
+      true
+    );
+    window.addEventListener("blur", restoreAndHide);
+    document.addEventListener("pointerdown", restoreAndHide, true);
+    const themeObserver = new MutationObserver(() => syncBackground());
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"]
+    });
+  }
+  function showTooltipAt(text2, x, y) {
+    if (!text2) return;
+    const tip = ensureTooltip();
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = null;
+    }
+    if (currentEl) {
+      const src = currentEl.dataset.encreTooltipSrc;
+      const t3 = currentEl.dataset.encreTooltip || "";
+      if (src === "title") currentEl.setAttribute("title", t3);
+      else if (src === "data-tooltip") currentEl.setAttribute("data-tooltip", t3);
+      delete currentEl.dataset.encreTooltip;
+      delete currentEl.dataset.encreTooltipSrc;
+      currentEl = null;
+    }
+    tip.textContent = text2;
+    syncBackground();
+    positionAt(x, y);
+    tip.classList.add("encre-tooltip--visible");
+  }
+  function hideTooltip() {
+    if (tooltipEl) tooltipEl.classList.remove("encre-tooltip--visible");
+  }
 
   // renderer/src/splash.ts
   var SplashScreen = class {
@@ -66448,6 +66829,72 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       viewBox: "0 0 1024 1024"
     }
   };
+
+  // renderer/src/shortcutDisplay.ts
+  init_state();
+  var _isMac = null;
+  function isMac() {
+    if (_isMac === null) {
+      _isMac = navigator.platform.includes("Mac") || navigator.userAgent.includes("Macintosh");
+    }
+    return _isMac;
+  }
+  var MOD_KEYS = {
+    ctrlcmd: { mac: "\u2318", win: "Ctrl" },
+    ctrl: { mac: "\u2303", win: "Ctrl" },
+    alt: { mac: "\u2325", win: "Alt" },
+    shift: { mac: "\u21E7", win: "Shift" }
+  };
+  function formatMod(mod) {
+    const m = MOD_KEYS[mod];
+    if (!m) return mod.charAt(0).toUpperCase() + mod.slice(1);
+    return isMac() ? m.mac : m.win;
+  }
+  var KEY_ALIASES = {
+    escape: "Esc",
+    backspace: "\u232B",
+    enter: "\u21B5",
+    up: "\u2191",
+    down: "\u2193",
+    left: "\u2190",
+    right: "\u2192",
+    tab: "Tab",
+    space: "Space",
+    "`": "`",
+    ",": ",",
+    ".": ".",
+    ";": ";",
+    "'": "'",
+    "[": "[",
+    "]": "]",
+    "\\": "\\",
+    "/": "/",
+    "=": "=",
+    "-": "-"
+  };
+  function formatKey(key) {
+    return KEY_ALIASES[key] || key.toUpperCase();
+  }
+  function formatShortcut(pattern) {
+    const parts = pattern.split("+");
+    const key = parts.pop() || "";
+    const mods = parts.map(formatMod);
+    if (isMac()) {
+      return [...mods, formatKey(key)].join("");
+    }
+    return [...mods, formatKey(key)].join("+");
+  }
+  function lookupShortcut(id2) {
+    const cfg = getState().settings.keybinds;
+    const binds = cfg?.keybinds || [];
+    const entry = binds.find((b2) => b2.id === id2);
+    if (!entry || !entry.keys || entry.keys.length === 0) return null;
+    return formatShortcut(entry.keys[0]);
+  }
+  function augmentTitle(existing, shortcut) {
+    if (!shortcut) return existing;
+    return `${existing} (${shortcut})`;
+  }
 
   // node_modules/@kurkle/color/dist/color.esm.js
   function round(v2) {
@@ -72082,9 +72529,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       hi: data2.length - 1
     };
   }
-  function evaluateInteractionItems(chart, axis, position, handler2, intersect) {
+  function evaluateInteractionItems(chart, axis, position2, handler2, intersect) {
     const metasets = chart.getSortedVisibleDatasetMetas();
-    const value = position[axis];
+    const value = position2[axis];
     for (let i8 = 0, ilen = metasets.length; i8 < ilen; ++i8) {
       const { index: index2, data: data2 } = metasets[i8];
       const { lo: lo3, hi: hi2 } = binarySearch(metasets[i8], axis, value, intersect);
@@ -72105,16 +72552,16 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       return Math.sqrt(Math.pow(deltaX, 2) + Math.pow(deltaY, 2));
     };
   }
-  function getIntersectItems(chart, position, axis, useFinalPosition, includeInvisible) {
+  function getIntersectItems(chart, position2, axis, useFinalPosition, includeInvisible) {
     const items = [];
-    if (!includeInvisible && !chart.isPointInArea(position)) {
+    if (!includeInvisible && !chart.isPointInArea(position2)) {
       return items;
     }
     const evaluationFunc = function(element, datasetIndex, index2) {
       if (!includeInvisible && !_isPointInArea(element, chart.chartArea, 0)) {
         return;
       }
-      if (element.inRange(position.x, position.y, useFinalPosition)) {
+      if (element.inRange(position2.x, position2.y, useFinalPosition)) {
         items.push({
           element,
           datasetIndex,
@@ -72122,10 +72569,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         });
       }
     };
-    evaluateInteractionItems(chart, axis, position, evaluationFunc, true);
+    evaluateInteractionItems(chart, axis, position2, evaluationFunc, true);
     return items;
   }
-  function getNearestRadialItems(chart, position, axis, useFinalPosition) {
+  function getNearestRadialItems(chart, position2, axis, useFinalPosition) {
     let items = [];
     function evaluationFunc(element, datasetIndex, index2) {
       const { startAngle, endAngle } = element.getProps([
@@ -72133,8 +72580,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         "endAngle"
       ], useFinalPosition);
       const { angle } = getAngleFromPoint(element, {
-        x: position.x,
-        y: position.y
+        x: position2.x,
+        y: position2.y
       });
       if (_angleBetween(angle, startAngle, endAngle)) {
         items.push({
@@ -72144,15 +72591,15 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         });
       }
     }
-    evaluateInteractionItems(chart, axis, position, evaluationFunc);
+    evaluateInteractionItems(chart, axis, position2, evaluationFunc);
     return items;
   }
-  function getNearestCartesianItems(chart, position, axis, intersect, useFinalPosition, includeInvisible) {
+  function getNearestCartesianItems(chart, position2, axis, intersect, useFinalPosition, includeInvisible) {
     let items = [];
     const distanceMetric = getDistanceMetricForAxis(axis);
     let minDistance = Number.POSITIVE_INFINITY;
     function evaluationFunc(element, datasetIndex, index2) {
-      const inRange2 = element.inRange(position.x, position.y, useFinalPosition);
+      const inRange2 = element.inRange(position2.x, position2.y, useFinalPosition);
       if (intersect && !inRange2) {
         return;
       }
@@ -72161,7 +72608,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (!pointInArea && !inRange2) {
         return;
       }
-      const distance = distanceMetric(position, center);
+      const distance = distanceMetric(position2, center);
       if (distance < minDistance) {
         items = [
           {
@@ -72179,27 +72626,27 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         });
       }
     }
-    evaluateInteractionItems(chart, axis, position, evaluationFunc);
+    evaluateInteractionItems(chart, axis, position2, evaluationFunc);
     return items;
   }
-  function getNearestItems(chart, position, axis, intersect, useFinalPosition, includeInvisible) {
-    if (!includeInvisible && !chart.isPointInArea(position)) {
+  function getNearestItems(chart, position2, axis, intersect, useFinalPosition, includeInvisible) {
+    if (!includeInvisible && !chart.isPointInArea(position2)) {
       return [];
     }
-    return axis === "r" && !intersect ? getNearestRadialItems(chart, position, axis, useFinalPosition) : getNearestCartesianItems(chart, position, axis, intersect, useFinalPosition, includeInvisible);
+    return axis === "r" && !intersect ? getNearestRadialItems(chart, position2, axis, useFinalPosition) : getNearestCartesianItems(chart, position2, axis, intersect, useFinalPosition, includeInvisible);
   }
-  function getAxisItems(chart, position, axis, intersect, useFinalPosition) {
+  function getAxisItems(chart, position2, axis, intersect, useFinalPosition) {
     const items = [];
     const rangeMethod = axis === "x" ? "inXRange" : "inYRange";
     let intersectsItem = false;
-    evaluateInteractionItems(chart, axis, position, (element, datasetIndex, index2) => {
-      if (element[rangeMethod] && element[rangeMethod](position[axis], useFinalPosition)) {
+    evaluateInteractionItems(chart, axis, position2, (element, datasetIndex, index2) => {
+      if (element[rangeMethod] && element[rangeMethod](position2[axis], useFinalPosition)) {
         items.push({
           element,
           datasetIndex,
           index: index2
         });
-        intersectsItem = intersectsItem || element.inRange(position.x, position.y, useFinalPosition);
+        intersectsItem = intersectsItem || element.inRange(position2.x, position2.y, useFinalPosition);
       }
     });
     if (intersect && !intersectsItem) {
@@ -72211,10 +72658,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     evaluateInteractionItems,
     modes: {
       index(chart, e, options, useFinalPosition) {
-        const position = getRelativePosition(e, chart);
+        const position2 = getRelativePosition(e, chart);
         const axis = options.axis || "x";
         const includeInvisible = options.includeInvisible || false;
-        const items = options.intersect ? getIntersectItems(chart, position, axis, useFinalPosition, includeInvisible) : getNearestItems(chart, position, axis, false, useFinalPosition, includeInvisible);
+        const items = options.intersect ? getIntersectItems(chart, position2, axis, useFinalPosition, includeInvisible) : getNearestItems(chart, position2, axis, false, useFinalPosition, includeInvisible);
         const elements2 = [];
         if (!items.length) {
           return [];
@@ -72233,10 +72680,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         return elements2;
       },
       dataset(chart, e, options, useFinalPosition) {
-        const position = getRelativePosition(e, chart);
+        const position2 = getRelativePosition(e, chart);
         const axis = options.axis || "xy";
         const includeInvisible = options.includeInvisible || false;
-        let items = options.intersect ? getIntersectItems(chart, position, axis, useFinalPosition, includeInvisible) : getNearestItems(chart, position, axis, false, useFinalPosition, includeInvisible);
+        let items = options.intersect ? getIntersectItems(chart, position2, axis, useFinalPosition, includeInvisible) : getNearestItems(chart, position2, axis, false, useFinalPosition, includeInvisible);
         if (items.length > 0) {
           const datasetIndex = items[0].datasetIndex;
           const data2 = chart.getDatasetMeta(datasetIndex).data;
@@ -72252,24 +72699,24 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         return items;
       },
       point(chart, e, options, useFinalPosition) {
-        const position = getRelativePosition(e, chart);
+        const position2 = getRelativePosition(e, chart);
         const axis = options.axis || "xy";
         const includeInvisible = options.includeInvisible || false;
-        return getIntersectItems(chart, position, axis, useFinalPosition, includeInvisible);
+        return getIntersectItems(chart, position2, axis, useFinalPosition, includeInvisible);
       },
       nearest(chart, e, options, useFinalPosition) {
-        const position = getRelativePosition(e, chart);
+        const position2 = getRelativePosition(e, chart);
         const axis = options.axis || "xy";
         const includeInvisible = options.includeInvisible || false;
-        return getNearestItems(chart, position, axis, options.intersect, useFinalPosition, includeInvisible);
+        return getNearestItems(chart, position2, axis, options.intersect, useFinalPosition, includeInvisible);
       },
       x(chart, e, options, useFinalPosition) {
-        const position = getRelativePosition(e, chart);
-        return getAxisItems(chart, position, "x", options.intersect, useFinalPosition);
+        const position2 = getRelativePosition(e, chart);
+        return getAxisItems(chart, position2, "x", options.intersect, useFinalPosition);
       },
       y(chart, e, options, useFinalPosition) {
-        const position = getRelativePosition(e, chart);
-        return getAxisItems(chart, position, "y", options.intersect, useFinalPosition);
+        const position2 = getRelativePosition(e, chart);
+        return getAxisItems(chart, position2, "y", options.intersect, useFinalPosition);
       }
     }
   };
@@ -72279,8 +72726,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     "right",
     "bottom"
   ];
-  function filterByPosition(array2, position) {
-    return array2.filter((v2) => v2.pos === position);
+  function filterByPosition(array2, position2) {
+    return array2.filter((v2) => v2.pos === position2);
   }
   function filterDynamicPositionByAxis(array2, axis) {
     return array2.filter((v2) => STATIC_POSITIONS.indexOf(v2.pos) === -1 && v2.box.axis === axis);
@@ -73116,14 +73563,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       type: "tick"
     });
   }
-  function titleAlign(align, position, reverse) {
+  function titleAlign(align, position2, reverse) {
     let ret = _toLeftRightCenter(align);
-    if (reverse && position !== "right" || !reverse && position === "right") {
+    if (reverse && position2 !== "right" || !reverse && position2 === "right") {
       ret = reverseAlign(ret);
     }
     return ret;
   }
-  function titleArgs(scale, offset, position, align) {
+  function titleArgs(scale, offset, position2, align) {
     const { top: top2, left, bottom, right, chart } = scale;
     const { chartArea, scales: scales2 } = chart;
     let rotation = 0;
@@ -73132,28 +73579,28 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     const width = right - left;
     if (scale.isHorizontal()) {
       titleX = _alignStartEnd(align, left, right);
-      if (isObject2(position)) {
-        const positionAxisID = Object.keys(position)[0];
-        const value = position[positionAxisID];
+      if (isObject2(position2)) {
+        const positionAxisID = Object.keys(position2)[0];
+        const value = position2[positionAxisID];
         titleY = scales2[positionAxisID].getPixelForValue(value) + height - offset;
-      } else if (position === "center") {
+      } else if (position2 === "center") {
         titleY = (chartArea.bottom + chartArea.top) / 2 + height - offset;
       } else {
-        titleY = offsetFromEdge(scale, position, offset);
+        titleY = offsetFromEdge(scale, position2, offset);
       }
       maxWidth = right - left;
     } else {
-      if (isObject2(position)) {
-        const positionAxisID = Object.keys(position)[0];
-        const value = position[positionAxisID];
+      if (isObject2(position2)) {
+        const positionAxisID = Object.keys(position2)[0];
+        const value = position2[positionAxisID];
         titleX = scales2[positionAxisID].getPixelForValue(value) - width + offset;
-      } else if (position === "center") {
+      } else if (position2 === "center") {
         titleX = (chartArea.left + chartArea.right) / 2 - width + offset;
       } else {
-        titleX = offsetFromEdge(scale, position, offset);
+        titleX = offsetFromEdge(scale, position2, offset);
       }
       titleY = _alignStartEnd(align, bottom, top2);
-      rotation = position === "left" ? -HALF_PI : HALF_PI;
+      rotation = position2 === "left" ? -HALF_PI : HALF_PI;
     }
     return {
       titleX,
@@ -73518,9 +73965,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
     }
     _calculatePadding(first, last, sin, cos) {
-      const { ticks: { align, padding }, position } = this.options;
+      const { ticks: { align, padding }, position: position2 } = this.options;
       const isRotated = this.labelRotation !== 0;
-      const labelsBelowTicks = position !== "top" && this.axis === "x";
+      const labelsBelowTicks = position2 !== "top" && this.axis === "x";
       if (this.isHorizontal()) {
         const offsetLeft = this.getPixelForTick(0) - this.left;
         const offsetRight = this.right - this.getPixelForTick(this.ticks.length - 1);
@@ -73572,8 +74019,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       ]);
     }
     isHorizontal() {
-      const { axis, position } = this.options;
-      return position === "top" || position === "bottom" || axis === "x";
+      const { axis, position: position2 } = this.options;
+      return position2 === "top" || position2 === "bottom" || axis === "x";
     }
     isFullSize() {
       return this.options.fullSize;
@@ -73641,9 +74088,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       garbageCollect(caches, length);
       const widest = widths.indexOf(widestLabelSize);
       const highest = heights.indexOf(highestLabelSize);
-      const valueAt = (idx2) => ({
-        width: widths[idx2] || 0,
-        height: heights[idx2] || 0
+      const valueAt = (idx) => ({
+        width: widths[idx] || 0,
+        height: heights[idx] || 0
       });
       return {
         first: valueAt(0),
@@ -73717,7 +74164,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const axis = this.axis;
       const chart = this.chart;
       const options = this.options;
-      const { grid, position, border } = options;
+      const { grid, position: position2, border } = options;
       const offset = grid.offset;
       const isHorizontal = this.isHorizontal();
       const ticks = this.ticks;
@@ -73732,36 +74179,36 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       };
       let borderValue, i8, lineValue, alignedLineValue;
       let tx1, ty1, tx2, ty2, x1, y1, x2, y2;
-      if (position === "top") {
+      if (position2 === "top") {
         borderValue = alignBorderValue(this.bottom);
         ty1 = this.bottom - tl2;
         ty2 = borderValue - axisHalfWidth;
         y1 = alignBorderValue(chartArea.top) + axisHalfWidth;
         y2 = chartArea.bottom;
-      } else if (position === "bottom") {
+      } else if (position2 === "bottom") {
         borderValue = alignBorderValue(this.top);
         y1 = chartArea.top;
         y2 = alignBorderValue(chartArea.bottom) - axisHalfWidth;
         ty1 = borderValue + axisHalfWidth;
         ty2 = this.top + tl2;
-      } else if (position === "left") {
+      } else if (position2 === "left") {
         borderValue = alignBorderValue(this.right);
         tx1 = this.right - tl2;
         tx2 = borderValue - axisHalfWidth;
         x1 = alignBorderValue(chartArea.left) + axisHalfWidth;
         x2 = chartArea.right;
-      } else if (position === "right") {
+      } else if (position2 === "right") {
         borderValue = alignBorderValue(this.left);
         x1 = chartArea.left;
         x2 = alignBorderValue(chartArea.right) - axisHalfWidth;
         tx1 = borderValue + axisHalfWidth;
         tx2 = this.left + tl2;
       } else if (axis === "x") {
-        if (position === "center") {
+        if (position2 === "center") {
           borderValue = alignBorderValue((chartArea.top + chartArea.bottom) / 2 + 0.5);
-        } else if (isObject2(position)) {
-          const positionAxisID = Object.keys(position)[0];
-          const value = position[positionAxisID];
+        } else if (isObject2(position2)) {
+          const positionAxisID = Object.keys(position2)[0];
+          const value = position2[positionAxisID];
           borderValue = alignBorderValue(this.chart.scales[positionAxisID].getPixelForValue(value));
         }
         y1 = chartArea.top;
@@ -73769,11 +74216,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         ty1 = borderValue + axisHalfWidth;
         ty2 = ty1 + tl2;
       } else if (axis === "y") {
-        if (position === "center") {
+        if (position2 === "center") {
           borderValue = alignBorderValue((chartArea.left + chartArea.right) / 2);
-        } else if (isObject2(position)) {
-          const positionAxisID = Object.keys(position)[0];
-          const value = position[positionAxisID];
+        } else if (isObject2(position2)) {
+          const positionAxisID = Object.keys(position2)[0];
+          const value = position2[positionAxisID];
           borderValue = alignBorderValue(this.chart.scales[positionAxisID].getPixelForValue(value));
         }
         tx1 = borderValue - axisHalfWidth;
@@ -73831,7 +74278,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     _computeLabelItems(chartArea) {
       const axis = this.axis;
       const options = this.options;
-      const { position, ticks: optionTicks } = options;
+      const { position: position2, ticks: optionTicks } = options;
       const isHorizontal = this.isHorizontal();
       const ticks = this.ticks;
       const { align, crossAlign, padding, mirror } = optionTicks;
@@ -73842,35 +74289,35 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const items = [];
       let i8, ilen, tick, label, x, y, textAlign, pixel, font, lineHeight, lineCount, textOffset;
       let textBaseline = "middle";
-      if (position === "top") {
+      if (position2 === "top") {
         y = this.bottom - hTickAndPadding;
         textAlign = this._getXAxisLabelAlignment();
-      } else if (position === "bottom") {
+      } else if (position2 === "bottom") {
         y = this.top + hTickAndPadding;
         textAlign = this._getXAxisLabelAlignment();
-      } else if (position === "left") {
+      } else if (position2 === "left") {
         const ret = this._getYAxisLabelAlignment(tl2);
         textAlign = ret.textAlign;
         x = ret.x;
-      } else if (position === "right") {
+      } else if (position2 === "right") {
         const ret = this._getYAxisLabelAlignment(tl2);
         textAlign = ret.textAlign;
         x = ret.x;
       } else if (axis === "x") {
-        if (position === "center") {
+        if (position2 === "center") {
           y = (chartArea.top + chartArea.bottom) / 2 + tickAndPadding;
-        } else if (isObject2(position)) {
-          const positionAxisID = Object.keys(position)[0];
-          const value = position[positionAxisID];
+        } else if (isObject2(position2)) {
+          const positionAxisID = Object.keys(position2)[0];
+          const value = position2[positionAxisID];
           y = this.chart.scales[positionAxisID].getPixelForValue(value) + tickAndPadding;
         }
         textAlign = this._getXAxisLabelAlignment();
       } else if (axis === "y") {
-        if (position === "center") {
+        if (position2 === "center") {
           x = (chartArea.left + chartArea.right) / 2 - tickAndPadding;
-        } else if (isObject2(position)) {
-          const positionAxisID = Object.keys(position)[0];
-          const value = position[positionAxisID];
+        } else if (isObject2(position2)) {
+          const positionAxisID = Object.keys(position2)[0];
+          const value = position2[positionAxisID];
           x = this.chart.scales[positionAxisID].getPixelForValue(value);
         }
         textAlign = this._getYAxisLabelAlignment(tl2).textAlign;
@@ -73907,7 +74354,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               tickTextAlign = "center";
             }
           }
-          if (position === "top") {
+          if (position2 === "top") {
             if (crossAlign === "near" || rotation !== 0) {
               textOffset = -lineCount * lineHeight + lineHeight / 2;
             } else if (crossAlign === "center") {
@@ -73994,10 +74441,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       return items;
     }
     _getXAxisLabelAlignment() {
-      const { position, ticks } = this.options;
+      const { position: position2, ticks } = this.options;
       const rotation = -toRadians(this.labelRotation);
       if (rotation) {
-        return position === "top" ? "left" : "right";
+        return position2 === "top" ? "left" : "right";
       }
       let align = "center";
       if (ticks.align === "start") {
@@ -74010,13 +74457,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       return align;
     }
     _getYAxisLabelAlignment(tl2) {
-      const { position, ticks: { crossAlign, mirror, padding } } = this.options;
+      const { position: position2, ticks: { crossAlign, mirror, padding } } = this.options;
       const labelSizes = this._getLabelSizes();
       const tickAndPadding = tl2 + padding;
       const widest = labelSizes.widest.width;
       let textAlign;
       let x;
-      if (position === "left") {
+      if (position2 === "left") {
         if (mirror) {
           x = this.right + padding;
           if (crossAlign === "near") {
@@ -74040,7 +74487,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             x = this.left;
           }
         }
-      } else if (position === "right") {
+      } else if (position2 === "right") {
         if (mirror) {
           x = this.left + padding;
           if (crossAlign === "near") {
@@ -74077,8 +74524,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         return;
       }
       const chart = this.chart;
-      const position = this.options.position;
-      if (position === "left" || position === "right") {
+      const position2 = this.options.position;
+      if (position2 === "left" || position2 === "right") {
         return {
           top: 0,
           left: this.left,
@@ -74086,7 +74533,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           right: this.right
         };
       }
-      if (position === "top" || position === "bottom") {
+      if (position2 === "top" || position2 === "bottom") {
         return {
           top: this.top,
           left: 0,
@@ -74217,7 +74664,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
     }
     drawTitle() {
-      const { ctx, options: { position, title, reverse } } = this;
+      const { ctx, options: { position: position2, title, reverse } } = this;
       if (!title.display) {
         return;
       }
@@ -74225,7 +74672,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const padding = toPadding(title.padding);
       const align = title.align;
       let offset = font.lineHeight / 2;
-      if (position === "bottom" || position === "center" || isObject2(position)) {
+      if (position2 === "bottom" || position2 === "center" || isObject2(position2)) {
         offset += padding.bottom;
         if (isArray(title.text)) {
           offset += font.lineHeight * (title.text.length - 1);
@@ -74233,12 +74680,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       } else {
         offset += padding.top;
       }
-      const { titleX, titleY, maxWidth, rotation } = titleArgs(this, offset, position, align);
+      const { titleX, titleY, maxWidth, rotation } = titleArgs(this, offset, position2, align);
       renderText(ctx, title.text, 0, 0, font, {
         color: title.color,
         maxWidth,
         rotation,
-        textAlign: titleAlign(align, position, reverse),
+        textAlign: titleAlign(align, position2, reverse),
         textBaseline: "middle",
         translation: [
           titleX,
@@ -74638,11 +75085,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       return id2;
     }
   }
-  function axisFromPosition(position) {
-    if (position === "top" || position === "bottom") {
+  function axisFromPosition(position2) {
+    if (position2 === "top" || position2 === "bottom") {
       return "x";
     }
-    if (position === "left" || position === "right") {
+    if (position2 === "left" || position2 === "right") {
       return "y";
     }
   }
@@ -74955,8 +75402,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     "right",
     "chartArea"
   ];
-  function positionIsHorizontal(position, axis) {
-    return position === "top" || position === "bottom" || KNOWN_POSITIONS.indexOf(position) === -1 && axis === "x";
+  function positionIsHorizontal(position2, axis) {
+    return position2 === "top" || position2 === "bottom" || KNOWN_POSITIONS.indexOf(position2) === -1 && axis === "x";
   }
   function compare2Level(l1, l2) {
     return function(a2, b2) {
@@ -75371,7 +75818,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
       this._dataChanges = [];
       const datasetCount = this.data.datasets.length;
-      const makeSet = (idx2) => new Set(_dataChanges.filter((c) => c[0] === idx2).map((c, i8) => i8 + "," + c.splice(1).join(",")));
+      const makeSet = (idx) => new Set(_dataChanges.filter((c) => c[0] === idx).map((c, i8) => i8 + "," + c.splice(1).join(",")));
       const changeSet = makeSet(0);
       for (let i8 = 1; i8 < datasetCount; i8++) {
         if (!setsEqual(changeSet, makeSet(i8))) {
@@ -77963,7 +78410,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
       const rtlHelper = getRtlAdapter(opts.rtl, this.left, this.width);
       const ctx = this.ctx;
-      const position = titleOpts.position;
+      const position2 = titleOpts.position;
       const halfFontSize = titleFont.size / 2;
       const topPaddingPlusHalfFontSize = titlePadding.top + halfFontSize;
       let y;
@@ -77977,8 +78424,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const maxHeight = this.columnSizes.reduce((acc, size) => Math.max(acc, size.height), 0);
         y = topPaddingPlusHalfFontSize + _alignStartEnd(opts.align, this.top, this.bottom - maxHeight - opts.labels.padding - this._computeTitleHeight());
       }
-      const x = _alignStartEnd(position, left, left + maxWidth);
-      ctx.textAlign = rtlHelper.textAlign(_toLeftRightCenter(position));
+      const x = _alignStartEnd(position2, left, left + maxWidth);
+      ctx.textAlign = rtlHelper.textAlign(_toLeftRightCenter(position2));
       ctx.textBaseline = "middle";
       ctx.strokeStyle = titleOpts.color;
       ctx.fillStyle = titleOpts.color;
@@ -78804,7 +79251,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           };
         }
       } else {
-        const position = positioners[options.position].call(this, active, this._eventPosition);
+        const position2 = positioners[options.position].call(this, active, this._eventPosition);
         tooltipItems = this._createItems(options);
         this.title = this.getTitle(tooltipItems, options);
         this.beforeBody = this.getBeforeBody(tooltipItems, options);
@@ -78812,7 +79259,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         this.afterBody = this.getAfterBody(tooltipItems, options);
         this.footer = this.getFooter(tooltipItems, options);
         const size = this._size = getTooltipSize(this, options);
-        const positionAndSize = Object.assign({}, position, size);
+        const positionAndSize = Object.assign({}, position2, size);
         const alignment = determineAlignment(this.chart, options, positionAndSize);
         const backgroundPoint = getBackgroundPoint(options, positionAndSize, alignment, this.chart);
         this.xAlign = alignment.xAlign;
@@ -78823,8 +79270,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           y: backgroundPoint.y,
           width: size.width,
           height: size.height,
-          caretX: position.x,
-          caretY: position.y
+          caretX: position2.x,
+          caretY: position2.y
         };
       }
       this._tooltipItems = tooltipItems;
@@ -79085,12 +79532,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const animX = anims && anims.x;
       const animY = anims && anims.y;
       if (animX || animY) {
-        const position = positioners[options.position].call(this, this._active, this._eventPosition);
-        if (!position) {
+        const position2 = positioners[options.position].call(this, this._active, this._eventPosition);
+        if (!position2) {
           return;
         }
         const size = this._size = getTooltipSize(this, options);
-        const positionAndSize = Object.assign({}, position, this._size);
+        const positionAndSize = Object.assign({}, position2, this._size);
         const alignment = determineAlignment(chart, options, positionAndSize);
         const point = getBackgroundPoint(options, positionAndSize, alignment, chart);
         if (animX._to !== point.x || animY._to !== point.y) {
@@ -79098,8 +79545,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           this.yAlign = alignment.yAlign;
           this.width = size.width;
           this.height = size.height;
-          this.caretX = position.x;
-          this.caretY = position.y;
+          this.caretX = position2.x;
+          this.caretY = position2.y;
           this._resolveAnimations().update(this, point);
         }
       }
@@ -79201,8 +79648,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     _positionChanged(active, e) {
       const { caretX, caretY, options } = this;
-      const position = positioners[options.position].call(this, active, e);
-      return position !== false && (caretX !== position.x || caretY !== position.y);
+      const position2 = positioners[options.position].call(this, active, e);
+      return position2 !== false && (caretX !== position2.x || caretY !== position2.y);
     }
   };
   var plugin_tooltip = {
@@ -80294,7 +80741,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const opts = this.options;
       const { angleLines, grid, border } = opts;
       const labelCount = this._pointLabels.length;
-      let i8, offset, position;
+      let i8, offset, position2;
       if (opts.pointLabels.display) {
         drawPointLabels(this, labelCount);
       }
@@ -80322,10 +80769,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           ctx.setLineDash(optsAtIndex.borderDash);
           ctx.lineDashOffset = optsAtIndex.borderDashOffset;
           offset = this.getDistanceFromCenterForValue(opts.reverse ? this.min : this.max);
-          position = this.getPointPosition(i8, offset);
+          position2 = this.getPointPosition(i8, offset);
           ctx.beginPath();
           ctx.moveTo(this.xCenter, this.yCenter);
-          ctx.lineTo(position.x, position.y);
+          ctx.lineTo(position2.x, position2.y);
           ctx.stroke();
         }
         ctx.restore();
@@ -80920,6 +81367,23 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
 
   // renderer/src/settings.ts
   Chart.register(...registerables);
+  async function withLoading(btn, fn4) {
+    const origText = btn.textContent || "";
+    const origDisabled = btn.disabled;
+    btn.innerHTML = `<span class="btn-loading-icon"><i data-lucide="loader" style="width:14px;height:14px"></i></span> ${origText}`;
+    btn.classList.add("btn-loading");
+    btn.disabled = true;
+    if (typeof window.lucide !== "undefined") {
+      window.lucide.createIcons({ root: btn });
+    }
+    try {
+      return await fn4();
+    } finally {
+      btn.innerHTML = origText;
+      btn.classList.remove("btn-loading");
+      btn.disabled = origDisabled;
+    }
+  }
   initLocale();
   var APP_VERSION = "0.1.5-pre.1";
   var DEV_MODE_STORAGE_KEY = "encre-dev-mode";
@@ -80954,11 +81418,16 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this._versions = null;
       this._usageBarChart = null;
       this._usageBarChartData = null;
+      this._usageGroupBy = "model";
+      this._recordingShortcutId = null;
+      this._captureHandler = null;
       this.modelCreateActive = false;
       this.nav = document.querySelector(".sidebar-settings-items");
       this.panels = {
         general: document.getElementById("panel-general"),
         usage: document.getElementById("panel-usage"),
+        shortcuts: document.getElementById("panel-shortcuts"),
+        storage: document.getElementById("panel-storage"),
         model: document.getElementById("panel-model"),
         gateway: document.getElementById("panel-gateway"),
         index: document.getElementById("panel-index"),
@@ -81110,42 +81579,46 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.panels.model.addEventListener("change", (e) => {
         const cb = e.target.closest(".model-enable-toggle");
         if (!cb) return;
-        const idx2 = parseInt(cb.getAttribute("data-idx") || "0");
+        const idx = parseInt(cb.getAttribute("data-idx") || "0");
         const currentModels = [...getState().modelConfigs];
-        if (idx2 >= 0 && idx2 < currentModels.length) {
+        if (idx < 0 || idx >= currentModels.length) return;
+        const isMultimodal = cb.classList.contains("model-multimodal-toggle");
+        if (isMultimodal) {
+          currentModels[idx] = { ...currentModels[idx], multimodal: cb.checked };
+        } else {
           const newEnabled = cb.checked;
-          currentModels[idx2] = { ...currentModels[idx2], enabled: newEnabled };
+          currentModels[idx] = { ...currentModels[idx], enabled: newEnabled };
           let activeIdx = getState().activeModelIndex;
-          if (!newEnabled && idx2 === activeIdx) {
-            const nextIdx = currentModels.findIndex((m, i8) => i8 !== idx2 && m.enabled !== false);
+          if (!newEnabled && idx === activeIdx) {
+            const nextIdx = currentModels.findIndex((m, i8) => i8 !== idx && m.enabled !== false);
             if (nextIdx >= 0) activeIdx = nextIdx;
           }
           setModelConfigs(currentModels, activeIdx);
-          send({ type: "update_models", models: currentModels, active_model_index: activeIdx });
         }
+        send({ type: "update_models", models: currentModels, active_model_index: getState().activeModelIndex });
       });
       this.panels.model.addEventListener("click", (e) => {
         const target = e.target;
         const deleteBtn = target.closest("[data-action='delete']");
         if (deleteBtn) {
-          const idx2 = parseInt(deleteBtn.getAttribute("data-idx") || "0");
-          const m = getState().modelConfigs[idx2];
+          const idx = parseInt(deleteBtn.getAttribute("data-idx") || "0");
+          const m = getState().modelConfigs[idx];
           Dialog.confirm(t("common.confirmDeleteTitle"), t("common.confirmDelete", { name: m?.name || t("common.unnamed") })).then((ok) => {
             if (ok) {
               const currentModels = [...getState().modelConfigs];
-              currentModels.splice(idx2, 1);
+              currentModels.splice(idx, 1);
               let activeIdx = getState().activeModelIndex;
               if (activeIdx >= currentModels.length) activeIdx = Math.max(0, currentModels.length - 1);
               setModelConfigs(currentModels, activeIdx);
-              send({ type: "delete_model", model_index: idx2 });
+              send({ type: "delete_model", model_index: idx });
             }
           });
           return;
         }
         const editBtn = target.closest("[data-action='edit']");
         if (editBtn) {
-          const idx2 = parseInt(editBtn.getAttribute("data-idx") || "0");
-          this.showModelEdit(idx2);
+          const idx = parseInt(editBtn.getAttribute("data-idx") || "0");
+          this.showModelEdit(idx);
           return;
         }
         const createBtn = target.closest("#btn-goto-create-model");
@@ -81158,13 +81631,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const target = e.target;
         const deleteBtn = target.closest("[data-action='delete-mcp']");
         if (deleteBtn) {
-          const idx2 = parseInt(deleteBtn.getAttribute("data-idx") || "0");
+          const idx = parseInt(deleteBtn.getAttribute("data-idx") || "0");
           const current = [...getState().mcpServers || []];
-          const srv = current[idx2];
+          const srv = current[idx];
           const name2 = srv?.name || t("settings.mcpServer");
           Dialog.confirm(t("settings.confirmDeleteMcpTitle"), t("settings.confirmDeleteMcp", { name: name2 })).then((ok) => {
             if (ok) {
-              current.splice(idx2, 1);
+              current.splice(idx, 1);
               setMcpServers(current);
               send({ type: "update_mcp", mcp_servers: current });
             }
@@ -81173,8 +81646,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
         const editBtn = target.closest("[data-action='edit-mcp']");
         if (editBtn) {
-          const idx2 = parseInt(editBtn.getAttribute("data-idx") || "0");
-          this._renderMcpImportDialog(idx2);
+          const idx = parseInt(editBtn.getAttribute("data-idx") || "0");
+          this._renderMcpImportDialog(idx);
           return;
         }
         const createBtn = target.closest("#btn-goto-create-mcp");
@@ -81186,10 +81659,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.panels.mcp.addEventListener("change", (e) => {
         const cb = e.target.closest(".mcp-enable-toggle");
         if (cb) {
-          const idx2 = parseInt(cb.getAttribute("data-idx") || "0");
+          const idx = parseInt(cb.getAttribute("data-idx") || "0");
           const current = [...getState().mcpServers || []];
-          if (idx2 >= 0 && idx2 < current.length) {
-            current[idx2] = { ...current[idx2], disabled: !cb.checked };
+          if (idx >= 0 && idx < current.length) {
+            current[idx] = { ...current[idx], disabled: !cb.checked };
             send({ type: "update_mcp", mcp_servers: current });
           }
         }
@@ -81203,22 +81676,22 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
         const editBtn = target.closest("[data-action='edit']");
         if (editBtn && this.panels.agent.contains(editBtn)) {
-          const idx2 = parseInt(editBtn.getAttribute("data-index") || "0");
+          const idx = parseInt(editBtn.getAttribute("data-index") || "0");
           const agents = getState().subAgents || [];
-          if (idx2 >= 0 && idx2 < agents.length) {
-            this.showAgentCreate(agents[idx2]);
+          if (idx >= 0 && idx < agents.length) {
+            this.showAgentCreate(agents[idx]);
           }
           return;
         }
         const deleteBtn = target.closest("[data-action='delete']");
         if (deleteBtn && this.panels.agent.contains(deleteBtn)) {
-          const idx2 = parseInt(deleteBtn.getAttribute("data-index") || "0");
+          const idx = parseInt(deleteBtn.getAttribute("data-index") || "0");
           const agents = getState().subAgents || [];
-          if (idx2 < 0 || idx2 >= agents.length) return;
-          const name2 = agents[idx2].name;
+          if (idx < 0 || idx >= agents.length) return;
+          const name2 = agents[idx].name;
           Dialog.confirm(t("settings.confirmDeleteSubAgent", { name: name2 }), t("settings.confirmDeleteSubAgentTitle")).then((confirmed) => {
             if (!confirmed) return;
-            const updated = agents.filter((_2, i8) => i8 !== idx2);
+            const updated = agents.filter((_2, i8) => i8 !== idx);
             setSubAgents(updated);
             send({ type: "update_sub_agents", agents: updated });
           });
@@ -81389,11 +81862,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       });
       onAdapterTestResult((event) => {
         this._adapterTestResults[event.adapter_id] = { success: event.success, message: event.message };
-        if (event.success) {
-          showToast(t("common.connectionSuccess"), event.message, "success");
-        } else {
-          showToast(t("common.connectionFailed"), event.message, "error");
-        }
         if (this.currentPanel === "gateway") {
           this.renderGateway();
         }
@@ -81443,11 +81911,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (devNav && typeof window.lucide !== "undefined") {
           window.lucide.createIcons({ root: devNav });
         }
-        showToast(
-          t("settings.aboutAppName") + " " + APP_VERSION,
-          t("settings.devModeUnlocked"),
-          "success"
-        );
       }
     }
     handleDesktopTap() {
@@ -81482,10 +81945,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         window.lucide.createIcons({ root: sidebarNav });
       }
     }
+    openModelCreate() {
+      this.open();
+      this.switchPanel("model");
+      this.showModelCreate();
+    }
     updateSidebarNav() {
       const labelMap = {
         general: t("sidebar.general"),
         usage: t("sidebar.usage"),
+        shortcuts: t("sidebar.shortcuts"),
+        storage: t("sidebar.storage"),
         model: t("sidebar.models"),
         gateway: t("sidebar.gateway"),
         agent: t("sidebar.agent"),
@@ -81511,6 +81981,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     close() {
       document.getElementById("app")?.classList.remove("settings-mode");
+      delete document.documentElement.dataset.shortcutPanelActive;
+      delete document.documentElement.dataset.shortcutRecording;
+      window.electronAPI?.setWinKeyCapture?.(false);
+      this._recordingShortcutId = null;
       this._cleanupTransientOverlays();
       if (typeof window.__appCleanupContentArea === "function") {
         window.__appCleanupContentArea();
@@ -81582,6 +82056,32 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
         setTimeout(() => this.highlightInPanel(firstPanelId, lower), 150);
       }
+      this._updateDividerVisibility();
+    }
+    /** Hide dividers that separate groups where all items are hidden by search. */
+    _updateDividerVisibility() {
+      const children = this.nav.children;
+      let lastVisibleIdx = -1;
+      for (let i8 = 0; i8 < children.length; i8++) {
+        const child = children[i8];
+        if (child.classList.contains("settings-nav-item")) {
+          if (child.style.display !== "none") {
+            lastVisibleIdx = i8;
+          }
+        } else if (child.classList.contains("settings-nav-divider")) {
+          let hasVisibleAfter = false;
+          for (let j3 = i8 + 1; j3 < children.length; j3++) {
+            const next = children[j3];
+            if (next.classList.contains("settings-nav-divider")) break;
+            if (next.classList.contains("settings-nav-item") && next.style.display !== "none") {
+              hasVisibleAfter = true;
+              break;
+            }
+          }
+          const hasVisibleBefore = lastVisibleIdx >= 0;
+          child.style.display = hasVisibleBefore && hasVisibleAfter ? "" : "none";
+        }
+      }
     }
     highlightInPanel(panelId, query) {
       const panel = this.panels[panelId];
@@ -81631,6 +82131,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     switchPanel(id2) {
       this.currentPanel = id2;
       this.modelCreateActive = false;
+      delete document.documentElement.dataset.shortcutPanelActive;
+      window.electronAPI?.setWinKeyCapture?.(false);
       this.nav.querySelectorAll(".settings-nav-item").forEach((item) => {
         item.classList.toggle("active", item.getAttribute("data-panel") === id2);
       });
@@ -81661,6 +82163,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         this.panels.usage.classList.add("active");
         this._renderUsageSection();
         send({ type: "get_usage_stats" });
+      } else if (id2 === "shortcuts") {
+        this.panels.shortcuts.classList.add("active");
+        this.renderShortcuts();
+        document.documentElement.dataset.shortcutPanelActive = "true";
+        window.electronAPI?.setWinKeyCapture?.(true);
+      } else if (id2 === "storage") {
+        this.panels.storage.classList.add("active");
+        this.renderStorage();
       } else if (id2 === "index") {
         console.log("[DEBUG switchPanel] index panel, docsList:", getState().docsList.length, "items");
         this.panels.index.classList.add("active");
@@ -81705,13 +82215,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.modelCreateActive = true;
       this._renderModelCreateDialog();
     }
-    showModelEdit(idx2) {
+    showModelEdit(idx) {
       this.modelCreateActive = true;
-      this._renderModelCreateDialog(idx2);
+      this._renderModelCreateDialog(idx);
     }
     renderAll() {
       this.renderGeneral();
       this._renderUsageSection();
+      this.renderShortcuts();
       this.renderModel();
       this.renderGateway();
       this.renderIndex();
@@ -81738,7 +82249,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       </div>`;
     }
     modeHint(modeKey) {
-      return `<span class="mode-hint-icon" title="${this.esc(t(modeKey))}">
+      return `<span class="mode-hint-icon" data-tooltip="${this.esc(t(modeKey))}">
       <i data-lucide="circle-alert" class="lucide"></i>
     </span>`;
     }
@@ -81956,19 +82467,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             </label>
           </div>
         </div>
-      </div>
-
-      <div class="settings-section-title"><i data-lucide="database" class="lucide section-title-icon"></i> ${t("settings.dataManagement")}</div>
-      <div class="settings-card">
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.browserData")}</div>
-            <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <button class="btn btn--danger" id="btn-clear-sessions">${t("settings.clear")}</button>
-          </div>
-        </div>
       </div>`;
       this.bindDropdown("dd-theme", (v2) => this.saveTheme(v2));
       this.bindDropdown("dd-lang", (v2) => {
@@ -82007,19 +82505,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const checked = e.target.checked;
         this.saveSetting("automation_auto_open_view", checked ? "true" : "false");
       });
-      document.getElementById("btn-clear-sessions")?.addEventListener("click", async () => {
-        const confirmed = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));
-        if (!confirmed) return;
-        const api = window.electronAPI;
-        if (api?.browserClearData) {
-          const result = await api.browserClearData();
-          if (result.success) {
-            Dialog.alert(t("settings.dataManagement"), t("settings.dataCleared"));
-          } else {
-            Dialog.alert(t("settings.dataManagement"), t("settings.dataClearError") + (result.error ? ": " + result.error : ""));
-          }
-        }
-      });
       const electronAPI = window.electronAPI;
       if (electronAPI) {
         (async () => {
@@ -82033,7 +82518,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
                 const result = await window.electronAPI.setAutoStart(enabled);
                 if (!result.success) {
                   if (typeof showToast === "function") {
-                    showToast("Error", result.error || "", "error");
+                    showToast("Error", result.error || "", "error", "Settings");
                   }
                   checkbox.checked = !enabled;
                 }
@@ -82047,6 +82532,128 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: this.panels.general });
       }
+    }
+    renderShortcuts() {
+      const keybindsCfg = getState().settings.keybinds;
+      const binds = keybindsCfg?.keybinds || [];
+      const categories = /* @__PURE__ */ new Map();
+      for (const b2 of binds) {
+        const cat = b2.category || "general";
+        if (!categories.has(cat)) categories.set(cat, []);
+        categories.get(cat).push({ id: b2.id, keys: b2.keys, desc: b2.description || b2.id });
+      }
+      const CAT_LABELS = {
+        application: t("settings.shortcutCategoryApplication"),
+        session: t("settings.shortcutCategorySession"),
+        messages: t("settings.shortcutCategoryMessages"),
+        input: t("settings.shortcutCategoryInput"),
+        modes: t("settings.shortcutCategoryModes"),
+        navigation: t("settings.shortcutCategoryNavigation"),
+        search: t("settings.shortcutCategorySearch"),
+        settings: t("settings.shortcutCategorySettings"),
+        panels: t("settings.shortcutCategoryPanels"),
+        automation: t("settings.shortcutCategoryAutomation"),
+        workspace: t("settings.shortcutCategoryWorkspace"),
+        notifications: t("settings.shortcutCategoryNotifications"),
+        appearance: t("settings.shortcutCategoryAppearance"),
+        general: t("settings.shortcutCategoryGeneral")
+      };
+      let rowsHtml = "";
+      for (const [cat, items] of categories) {
+        rowsHtml += `<div class="shortcut-category-label">${this.esc(CAT_LABELS[cat] || cat)}</div>`;
+        for (const item of items) {
+          const displayKeys = item.keys && item.keys.length > 0 ? formatShortcut(item.keys[0]) : "\u2014";
+          const desc = t("shortcuts." + item.id) || item.desc;
+          const isRecording = this._recordingShortcutId === item.id;
+          rowsHtml += `
+        <div class="settings-item-row shortcut-row" data-id="${item.id}">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${this.esc(desc)}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="shortcut-key-btn${isRecording ? " recording" : ""}" data-id="${item.id}">${isRecording ? "..." : this.esc(displayKeys)}</button>
+          </div>
+        </div>`;
+        }
+      }
+      this.panels.shortcuts.innerHTML = `
+      <div class="settings-section-title"><i data-lucide="keyboard" class="lucide section-title-icon"></i> ${t("settings.keyboardShortcuts")}</div>
+      <div class="settings-item-desc" style="margin: -8px 0 16px; padding: 0 2px;">${t("settings.shortcutsDisabledDesc")}</div>
+      <div class="settings-card" id="shortcuts-card">${rowsHtml}</div>`;
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: this.panels.shortcuts });
+      }
+      const card = document.getElementById("shortcuts-card");
+      if (!card) return;
+      card.querySelectorAll(".shortcut-key-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const id2 = btn.getAttribute("data-id");
+          if (!id2) return;
+          if (this._recordingShortcutId) {
+            document.removeEventListener("keydown", this._captureHandler, true);
+          }
+          this._recordingShortcutId = id2;
+          document.documentElement.dataset.shortcutRecording = "true";
+          const allBtns = card.querySelectorAll(".shortcut-key-btn");
+          allBtns.forEach((b2) => b2.classList.remove("recording"));
+          btn.classList.add("recording");
+          btn.textContent = "...";
+          const stopRecording = () => {
+            this._recordingShortcutId = null;
+            delete document.documentElement.dataset.shortcutRecording;
+          };
+          this._captureHandler = async (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (ev.repeat) return;
+            if (ev.key === "Control" || ev.key === "Meta" || ev.key === "Alt" || ev.key === "Shift") {
+              return;
+            }
+            const parts = [];
+            if (ev.ctrlKey || ev.metaKey) parts.push("ctrlcmd");
+            if (ev.altKey) parts.push("alt");
+            if (ev.shiftKey) parts.push("shift");
+            const key = ev.key;
+            const mappedKey = key === "Escape" ? "escape" : key === " " ? "space" : key === "," ? "," : key === "." ? "." : key === "`" ? "`" : key === "=" ? "=" : key === "-" ? "-" : key === "[" ? "[" : key === "]" ? "]" : key === ";" ? ";" : key === "'" ? "'" : key === "\\" ? "\\" : key === "/" ? "/" : key.toLowerCase();
+            parts.push(mappedKey);
+            const pattern = parts.join("+");
+            stopRecording();
+            const cfg = getState().settings.keybinds;
+            const allBinds = cfg?.keybinds ? [...cfg.keybinds] : [];
+            const target = allBinds.find((b2) => b2.id === id2);
+            if (target) {
+              const conflict = allBinds.find((b2) => b2.id !== id2 && b2.keys && b2.keys.includes(pattern));
+              if (conflict) {
+                const conflictName = t(`shortcuts.${conflict.id}`) || conflict.description || conflict.id;
+                const msg = t("settings.shortcutConflict").replace("{0}", conflictName);
+                const ok = await Dialog.confirm(t("settings.shortcutConflictTitle"), msg);
+                if (!ok) {
+                  this.renderShortcuts();
+                  this.renderStorage();
+                  document.removeEventListener("keydown", this._captureHandler, true);
+                  return;
+                }
+                conflict.keys = conflict.keys.filter((k2) => k2 !== pattern);
+              }
+              const existingIdx = target.keys.indexOf(pattern);
+              if (existingIdx >= 0) target.keys.splice(existingIdx, 1);
+              if (target.keys.length === 0) target.keys = [pattern];
+              else target.keys[0] = pattern;
+            }
+            const updated = { ...cfg, keybinds: allBinds };
+            setSettings({ ...getState().settings, keybinds: updated });
+            send({ type: "configure", config: { keybinds: updated } });
+            try {
+              localStorage.setItem("encre_keybinds", JSON.stringify(updated));
+            } catch {
+            }
+            this.renderShortcuts();
+            document.removeEventListener("keydown", this._captureHandler, true);
+          };
+          document.addEventListener("keydown", this._captureHandler, true);
+        });
+      });
     }
     saveSetting(key, value) {
       const current = { ...getState().settings, [key]: value };
@@ -82101,10 +82708,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           </div>
           <div class="model-table-cell model-cell-provider">${this.esc(m.backend_type)}</div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit" data-idx="${i8}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit" data-idx="${i8}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" data-idx="${i8}" title="${t("settings.delete")}">
+            <button class="btn-icon" data-action="delete" data-idx="${i8}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -82425,12 +83032,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             }
             const enableInput = document.getElementById(`adapter-enable-${def.id}`);
             config3.enabled = enableInput ? enableInput.checked : false;
-            const statusEl = document.getElementById(`adapter-test-status-${def.id}`);
-            if (statusEl) {
-              statusEl.innerHTML = `<span style="color:var(--text-muted)">${t("settings.adapterTesting")}...</span>`;
-            }
-            testBtn.disabled = true;
-            send({ type: "test_adapter", adapter_id: def.id, config: config3 });
+            delete this._adapterTestResults[def.id];
+            withLoading(testBtn, () => new Promise((resolve2) => {
+              const poll = () => {
+                if (this._adapterTestResults[def.id] !== void 0) {
+                  resolve2();
+                } else {
+                  setTimeout(poll, 100);
+                }
+              };
+              setTimeout(poll, 100);
+              send({ type: "test_adapter", adapter_id: def.id, config: config3 });
+            }));
           });
         }
         const docsLink = document.querySelector(`[data-adapter-docs="${def.id}"]`);
@@ -82544,6 +83157,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       } else {
         initialTokens = this._maxTokensDefault(initialProviderId);
       }
+      const initialThinkingConfig = existing?.thinking_config;
+      const initialThinkingEnabled = initialThinkingConfig ? initialThinkingConfig.selectable !== false : true;
       const bodyHtml = `
       <div class="model-form-row">
         <label class="model-form-label" for="model-create-backend">
@@ -82559,9 +83174,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         <label class="model-form-label" for="new-model-select">
           <span class="model-form-required">*</span>${t("settings.model")}
         </label>
-        <div class="model-form-dropdown-row">
+        <div class="model-form-dropdown-row" style="display:flex;align-items:center;gap:10px">
           ${modelOptions.length > 0 ? this.renderDropdown("new-model-select", modelOptions, initialModelSelectValue, () => {
       }) : `<div class="model-form-hint">${t("settings.customModelIdHint")}</div>`}
+          <label class="toggle-switch">
+            <input type="checkbox" id="new-model-multimodal" ${existing?.multimodal ? "checked" : ""} />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
       <div class="model-form-row" id="model-id-row"${isCurated ? ` style="display:none"` : ""}>
@@ -82590,6 +83209,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       <div class="model-form-row">
         <label class="model-form-label" for="new-model-tokens">${t("settings.maxTokens")}</label>
         <input type="number" id="new-model-tokens" class="model-form-input" min="1" value="${initialTokens}" ${isCurated ? "readonly" : ""} />
+      </div>
+      <div class="model-form-row model-form-row-inline">
+        <label class="model-form-label" for="new-model-thinking-enabled">${t("settings.enableThinkingLevel")}</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="new-model-thinking-enabled" ${initialThinkingEnabled ? "checked" : ""} />
+          <span class="toggle-slider"></span>
+        </label>
       </div>`;
       const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
       const okBtn = overlay.querySelector("#dialog-form-ok");
@@ -82715,10 +83341,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         console.log("[model-create] modelIdEl exists=", !!modelIdEl, "value=", modelIdEl?.value, "display=", modelIdEl?.style?.display);
         if (!name2 || !modelId || !apiKey) {
           console.warn("[model-create] validation failed \u2014 name=%s modelId=%s apiKey=%s", name2 ? "ok" : "MISSING", modelId ? "ok" : "MISSING", apiKey ? "ok" : "MISSING");
-          showToast(t("common.pleaseFillRequired"), "", "error");
+          showToast(t("common.pleaseFillRequired"), "", "error", "Settings");
           return;
         }
-        showToast(t("common.validatingConnection"), "", "info");
+        const multimodalInput = document.getElementById("new-model-multimodal");
+        const thinkingEnabledInput = document.getElementById("new-model-thinking-enabled");
+        const thinkingLevelEnabled = thinkingEnabledInput?.checked ?? true;
+        const previousLevel = initialThinkingConfig?.level || "medium";
+        const thinkingConfig = thinkingLevelEnabled ? { type: "enabled", enabled: true, level: previousLevel, selectable: true } : { type: "enabled", enabled: true, level: "", selectable: false };
         send({
           type: "validate_model",
           backend_type: backend,
@@ -82727,14 +83357,20 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           model_id: modelId,
           max_tokens: maxTokens,
           name: name2,
-          model_index: isEdit && editIdx !== void 0 ? editIdx : -1
+          model_index: isEdit && editIdx !== void 0 ? editIdx : -1,
+          multimodal: multimodalInput?.checked ?? false,
+          thinking_config: thinkingConfig
         });
-        try {
-          await waitForModelValidation();
-        } catch (e) {
-          showToast(t("common.connectionFailed") + (e ? `: ${e}` : ""), "", "error");
-          return;
-        }
+        let validated = false;
+        await withLoading(okBtn, async () => {
+          try {
+            await waitForModelValidation();
+            validated = true;
+          } catch (e) {
+            showToast(t("common.connectionFailed") + (e ? `: ${e}` : ""), "", "error", "Settings");
+          }
+        });
+        if (!validated) return;
         this.renderModel();
         close();
       });
@@ -82804,7 +83440,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             <div class="skill-aliases-sub">${sizeStr}</div>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon btn-doc-remove" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" title="${tFn("settings.delete")}">
+            <button class="btn-icon btn-doc-remove" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" data-tooltip="${tFn("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -82906,6 +83542,26 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         </div>
       </div>`;
       document.body.appendChild(overlay);
+      overlay.querySelectorAll("textarea").forEach((ta2) => {
+        const autoResize = () => {
+          ta2.style.height = "auto";
+          ta2.style.height = Math.min(ta2.scrollHeight, 300) + "px";
+        };
+        ta2.addEventListener("input", autoResize);
+        autoResize();
+      });
+      overlay.querySelectorAll(".prompt-input[contenteditable]").forEach((el2) => {
+        const ph = el2.parentElement?.querySelector(".prompt-placeholder");
+        const update2 = () => {
+          el2.style.height = "auto";
+          el2.style.height = Math.min(el2.scrollHeight, 300) + "px";
+          if (ph) {
+            ph.classList.toggle("hidden", (el2.textContent || "").trim().length > 0);
+          }
+        };
+        el2.addEventListener("input", update2);
+        update2();
+      });
       const close = () => overlay.remove();
       overlay.querySelector("#dialog-form-cancel")?.addEventListener("click", close);
       if (typeof window.lucide !== "undefined") {
@@ -82936,13 +83592,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             ${aliases ? `<div class="skill-aliases-sub">${t("settings.aliases")}: ${this.esc(aliases)}</div>` : ""}
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="view-skill" data-name="${this.esc(sk.name)}" title="${t("settings.view")}">
+            <button class="btn-icon" data-action="view-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.view")}">
               <i data-lucide="eye" class="lucide"></i>
             </button>
-            ${isUser ? `<button class="btn-icon" data-action="edit-skill" data-name="${this.esc(sk.name)}" title="${t("settings.edit")}">
+            ${isUser ? `<button class="btn-icon" data-action="edit-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>` : ""}
-            ${canDelete ? `<button class="btn-icon" data-action="delete-skill" data-name="${this.esc(sk.name)}" title="${t("settings.delete")}">
+            ${canDelete ? `<button class="btn-icon" data-action="delete-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>` : ""}
             <label class="toggle-switch toggle-sm">
@@ -83007,10 +83663,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             <div class="skill-aliases-sub">${this.esc(cmd2.description)}</div>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit-command" data-name="${this.esc(cmd2.name)}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit-command" data-name="${this.esc(cmd2.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-command" data-name="${this.esc(cmd2.name)}" title="${t("settings.delete")}">
+            <button class="btn-icon" data-action="delete-command" data-name="${this.esc(cmd2.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -83103,7 +83759,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const st3 = getState();
       const updated = st3.customCommands.filter((c) => c.name !== name2);
       this.saveCustomCommands(updated);
-      showToast(t("settings.commandRemoved"), "");
       this.renderSkills();
     }
     _renderSkillDetailDialog(skillName, isEdit = false) {
@@ -83202,7 +83857,7 @@ ${content2}`;
           const isZip = name2.toLowerCase().endsWith(".zip");
           const isMd = name2.toLowerCase().endsWith(".md");
           if (!isMd && !isZip) {
-            showToast(t("settings.skillFileError"), "", "error");
+            showToast(t("settings.skillFileError"), "", "error", "Settings");
             continue;
           }
           if (isZip) {
@@ -83215,7 +83870,7 @@ ${content2}`;
           }
         }
       } catch (e) {
-        showToast(t("settings.failedInstallSkill"), e.message || String(e), "error");
+        showToast(t("settings.failedInstallSkill"), e.message || String(e), "error", "Settings");
       }
     }
     renderMcpList() {
@@ -83237,10 +83892,10 @@ ${content2}`;
             <span class="mcp-transport-tag">${transportTag}</span>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit-mcp" data-idx="${i8}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit-mcp" data-idx="${i8}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-mcp" data-idx="${i8}" title="${t("settings.removeServer")}">
+            <button class="btn-icon" data-action="delete-mcp" data-idx="${i8}" data-tooltip="${t("settings.removeServer")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -83400,19 +84055,19 @@ ${content2}`;
         const textarea = overlay.querySelector("#mcp-import-textarea");
         const raw = textarea?.value.trim();
         if (!raw) {
-          showToast(t("common.pleaseFillRequired"), "", "error");
+          showToast(t("common.pleaseFillRequired"), "", "error", "Settings");
           return;
         }
         let parsed;
         try {
           parsed = JSON.parse(raw);
         } catch (e) {
-          showToast(t("settings.importMcpJsonParseError"), String(e), "error");
+          showToast(t("settings.importMcpJsonParseError"), String(e), "error", "Settings");
           return;
         }
         const servers = this._parseMcpJsonToServers(parsed);
         if (servers.length === 0) {
-          showToast(t("settings.importMcpJsonParseError"), t("settings.noMcpServers"), "error");
+          showToast(t("settings.importMcpJsonParseError"), t("settings.noMcpServers"), "error", "Settings");
           return;
         }
         parsedServers = servers;
@@ -83453,10 +84108,10 @@ ${content2}`;
             ${new Date(r.modified * 1e3).toLocaleString()}
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit-rule" data-name="${this._escapeHtml(r.name)}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" title="${t("settings.delete")}">
+            <button class="btn-icon" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -83472,7 +84127,7 @@ ${content2}`;
           ${rowsHtml}
         </div>`;
       this.panels.rules.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="globe" class="lucide section-title-icon"></i> ${t("settings.globalRules")}</div>
+      <div class="settings-section-title"><i data-lucide="file-check" class="lucide section-title-icon"></i> ${t("settings.globalRules")}</div>
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${t("settings.globalRulesDesc")}</div>
@@ -83585,8 +84240,8 @@ ${content2}`;
         if (entries.length === 0) {
           return `<div class="empty-state">${t("permissions.settings.noItems")}</div>`;
         }
-        return entries.map(([name2, policy], idx2) => {
-          const divider = idx2 < entries.length - 1 ? '<div class="settings-item-divider"></div>' : "";
+        return entries.map(([name2, policy], idx) => {
+          const divider = idx < entries.length - 1 ? '<div class="settings-item-divider"></div>' : "";
           const descKey = `permissions.settings.desc.${name2}`;
           const desc = t(descKey) === descKey ? "" : t(descKey);
           return `
@@ -83610,7 +84265,6 @@ ${content2}`;
       const toolsHtml = renderRows("tools", toolEntries);
       const capsHtml = renderRows("capabilities", capEntries);
       this.panels.permissions.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="shield" class="lucide section-title-icon"></i> ${t("permissions.settings.title")}</div>
       <div class="settings-section-title"><i data-lucide="wrench" class="lucide section-title-icon"></i> ${t("permissions.settings.tools")}</div>
       <div class="settings-card">${toolsHtml}</div>
 
@@ -83644,7 +84298,6 @@ ${content2}`;
               }
             }
             setPermissionPolicies(next);
-            showToast(t("permissions.settings.saved"), "");
           });
         }
       }
@@ -83683,7 +84336,7 @@ ${content2}`;
             </div>`).join("")}
         </div>`;
       this.panels.agent.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="bot" class="lucide section-title-icon"></i> ${t("settings.agentManagement")}</div>
+      <div class="settings-section-title"><i data-lucide="sparkles" class="lucide section-title-icon"></i> ${t("settings.agentManagement")}</div>
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${t("settings.agentInstructions")}</div>
@@ -83728,9 +84381,9 @@ ${content2}`;
         const systemPrompt = document.getElementById("agent-system-prompt")?.value || "";
         const newAgent = { name: name2, description, system_prompt: systemPrompt };
         if (isEdit && existing) {
-          const idx2 = agents.findIndex((a2) => a2.name === existing.name);
-          if (idx2 >= 0) {
-            agents[idx2] = newAgent;
+          const idx = agents.findIndex((a2) => a2.name === existing.name);
+          if (idx >= 0) {
+            agents[idx] = newAgent;
           }
         } else {
           agents.push(newAgent);
@@ -83756,7 +84409,7 @@ ${content2}`;
             ${memType}
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="view-memory" data-path="${this.esc(entry.path)}" title="${tFn("settings.view")}">
+            <button class="btn-icon" data-action="view-memory" data-path="${this.esc(entry.path)}" data-tooltip="${tFn("settings.view")}">
               <i data-lucide="eye" class="lucide"></i>
             </button>
           </div>
@@ -83775,7 +84428,7 @@ ${content2}`;
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${tFn("settings.memoryDesc")}</div>
-          <button class="btn-add-model-top" id="btn-refresh-memory" title="${tFn("settings.refresh")}">
+          <button class="btn-add-model-top" id="btn-refresh-memory">
             <i data-lucide="refresh-cw" class="lucide"></i>
             <span>${tFn("settings.refresh")}</span>
           </button>
@@ -83829,6 +84482,7 @@ ${content2}`;
         return;
       }
       const sessions = stats.sessions || [];
+      const groupBy = this._usageGroupBy;
       const daySet = /* @__PURE__ */ new Set();
       for (const s15 of sessions) {
         const dk = this._formatDayKey(s15.first_active);
@@ -83837,40 +84491,40 @@ ${content2}`;
       const allDays = Array.from(daySet).sort();
       const BAR_CHART_DAY_LIMIT = 60;
       const days = allDays.slice(-BAR_CHART_DAY_LIMIT);
-      const modelTotals = {};
+      const groupTotals = {};
       for (const s15 of sessions) {
-        const m = s15.model || "(unknown model)";
-        if (!modelTotals[m]) modelTotals[m] = { tokens: 0, status: s15.model_status };
-        modelTotals[m].tokens += s15.total_tokens || 0;
+        const g = groupBy === "model" ? s15.model || "(unknown model)" : this._channelDisplayName(s15.channel || "normal");
+        if (!groupTotals[g]) groupTotals[g] = { tokens: 0, status: s15.model_status };
+        groupTotals[g].tokens += s15.total_tokens || 0;
       }
-      const modelOrder = Object.keys(modelTotals).sort(
-        (a2, b2) => modelTotals[b2].tokens - modelTotals[a2].tokens || a2.localeCompare(b2)
+      const groupOrder = Object.keys(groupTotals).sort(
+        (a2, b2) => groupTotals[b2].tokens - groupTotals[a2].tokens || a2.localeCompare(b2)
       );
-      const modelColor = {};
-      modelOrder.forEach((m, i8) => {
-        modelColor[m] = _Settings.CHART_COLORS[i8 % _Settings.CHART_COLORS.length];
+      const groupColor = {};
+      groupOrder.forEach((g, i8) => {
+        groupColor[g] = _Settings.CHART_COLORS[i8 % _Settings.CHART_COLORS.length];
       });
       const cellMap = {};
       for (const s15 of sessions) {
         const dk = this._formatDayKey(s15.first_active);
         if (!dk) continue;
-        const m = s15.model || "(unknown model)";
+        const g = groupBy === "model" ? s15.model || "(unknown model)" : this._channelDisplayName(s15.channel || "normal");
         if (!cellMap[dk]) cellMap[dk] = {};
-        if (!cellMap[dk][m]) cellMap[dk][m] = { tokens: 0, count: 0, turns: 0, tools: 0 };
-        const cell = cellMap[dk][m];
+        if (!cellMap[dk][g]) cellMap[dk][g] = { tokens: 0, count: 0, turns: 0, tools: 0 };
+        const cell = cellMap[dk][g];
         cell.tokens += s15.total_tokens || 0;
         cell.count += 1;
         cell.turns += s15.turns || 0;
         cell.tools += s15.tool_calls || 0;
       }
       const truncated = allDays.length > days.length;
-      const unifiedChart = this._renderUnifiedDailyBarChart(days, modelOrder, cellMap, modelColor, muted, modelTotals, truncated);
+      const unifiedChart = this._renderUnifiedDailyBarChart(days, groupOrder, cellMap, groupColor, muted, groupTotals, truncated, groupBy);
       const heatmap = this._renderUsageHeatmap(sessions, muted);
       el2.innerHTML = `
       <div class="settings-section-title">
         <i data-lucide="chart-column" class="lucide section-title-icon"></i>
         ${t("settings.usageStats")}
-        <button class="btn-icon" id="btn-refresh-usage" style="margin-left:auto" title="${t("settings.refresh")}">
+        <button class="btn-icon" id="btn-refresh-usage" style="margin-left:auto" data-tooltip="${t("settings.refresh")}">
           <i data-lucide="refresh-cw" class="lucide"></i>
         </button>
       </div>
@@ -83925,21 +84579,31 @@ ${content2}`;
             animation: { duration: 250 },
             plugins: {
               legend: { display: false },
-              tooltip: {
-                backgroundColor: "rgba(20,20,28,0.95)",
-                titleColor: "#fff",
-                bodyColor: "#d1d3db",
-                borderColor: "rgba(255,255,255,0.1)",
-                borderWidth: 1,
-                padding: 10,
-                callbacks: {
-                  label: (ctx) => `${ctx.dataset.label}: ${this._formatNumber(ctx.parsed.y || 0)}`,
-                  footer: (items) => {
-                    const total = items.reduce((s15, it2) => s15 + (it2.parsed.y || 0), 0);
-                    return `Total: ${this._formatNumber(total)}`;
-                  }
+              // Native Chart.js tooltip disabled in favour of our global custom
+              // tooltip (see tooltip.ts) which matches the app's design system.
+              tooltip: { enabled: false }
+            },
+            onHover: (event, activeElements) => {
+              if (!activeElements || activeElements.length === 0) {
+                hideTooltip();
+                return;
+              }
+              const idx = activeElements[0].index;
+              const day = data2.labels[idx];
+              const lines = [`${day}`];
+              let total = 0;
+              for (const ds3 of data2.datasets) {
+                const v2 = ds3.data[idx] || 0;
+                if (v2 > 0) {
+                  lines.push(`${ds3.label}: ${this._formatNumber(v2)}`);
+                  total += v2;
                 }
               }
+              lines.push(`${t("settings.chartTotal")}: ${this._formatNumber(total)}`);
+              const rect = canvas.getBoundingClientRect();
+              const x = rect.left + (event?.x ?? rect.width / 2);
+              const y = rect.top + (event?.y ?? 0);
+              showTooltipAt(lines.join("\n"), x, y);
             },
             scales: {
               x: {
@@ -83961,14 +84625,33 @@ ${content2}`;
           }
         });
       }
+      canvas?.addEventListener("mouseleave", () => hideTooltip());
       document.getElementById("btn-refresh-usage")?.addEventListener("click", () => {
         send({ type: "get_usage_stats" });
+      });
+      el2.querySelectorAll(".usage-groupby-seg .seg-item").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const mode = btn.getAttribute("data-groupby");
+          if (mode && mode !== this._usageGroupBy) {
+            this._usageGroupBy = mode;
+            this._renderUsageSection();
+          }
+        });
       });
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: el2 });
       }
     }
-    /** Render a granular bar chart for one model: X = time (daily), Y = tokens per day. */
+    /** Map channel identifier to a display label. */
+    _channelDisplayName(channel) {
+      const labels = {
+        normal: t("settings.modeNormal"),
+        iwork: "iWork",
+        iclaw: "iClaw",
+        sub_agent: t("settings.modeAutomation")
+      };
+      return labels[channel] || channel;
+    }
     /** YYYY-MM-DD key for grouping sessions by calendar day (local time). */
     _formatDayKey(timestamp) {
       if (!timestamp || timestamp <= 0) return "";
@@ -83987,13 +84670,13 @@ ${content2}`;
      * below the chart maps every model name to its color and shows a
      * "(deleted)" / "(unknown)" tag for historical-only models.
      */
-    _renderUnifiedDailyBarChart(days, modelOrder, cellMap, modelColor, muted, modelTotals, truncated = false) {
-      if (days.length === 0 || modelOrder.length === 0) return "";
-      const datasets = modelOrder.map((m) => ({
-        label: m,
-        data: days.map((d) => cellMap[d]?.[m]?.tokens || 0),
-        backgroundColor: modelColor[m],
-        borderColor: modelColor[m],
+    _renderUnifiedDailyBarChart(days, groupOrder, cellMap, groupColor, muted, groupTotals, truncated = false, groupBy = "model") {
+      if (days.length === 0 || groupOrder.length === 0) return "";
+      const datasets = groupOrder.map((g) => ({
+        label: g,
+        data: days.map((d) => cellMap[d]?.[g]?.tokens || 0),
+        backgroundColor: groupColor[g],
+        borderColor: groupColor[g],
         borderWidth: 0,
         borderRadius: 2,
         maxBarThickness: 28,
@@ -84001,28 +84684,33 @@ ${content2}`;
       }));
       const labels = days.map((d) => this._shortDay(d));
       this._usageBarChartData = { labels, datasets };
-      const legendItems = modelOrder.map((m) => {
-        const color2 = modelColor[m];
-        const total = modelTotals[m]?.tokens || 0;
-        const status = modelTotals[m]?.status;
-        const tag = status === "deleted" ? `<span class="usage-model-tag usage-model-tag--deleted">${t("settings.deletedModel") || "deleted"}</span>` : status === "unknown" ? `<span class="usage-model-tag usage-model-tag--unknown">${t("settings.unknownModel") || "unknown"}</span>` : "";
-        const display = m.length > 32 ? this.esc(m.slice(0, 32) + "...") : this.esc(m);
+      const legendItems = groupOrder.map((g) => {
+        const color2 = groupColor[g];
+        const total = groupTotals[g]?.tokens || 0;
+        const status = groupTotals[g]?.status;
+        const tag = groupBy === "model" && status === "deleted" ? `<span class="usage-model-tag usage-model-tag--deleted">${t("settings.deletedModel")}</span>` : groupBy === "model" && status === "unknown" ? `<span class="usage-model-tag usage-model-tag--unknown">${t("settings.unknownModel")}</span>` : "";
+        const display = g.length > 32 ? this.esc(g.slice(0, 32) + "...") : this.esc(g);
         return `
-        <div class="usage-legend-item" title="${this.esc(m)}">
+        <div class="usage-legend-item">
           <span class="usage-model-dot" style="background:${color2}"></span>
           <span class="usage-legend-name">${display}</span>
           ${tag}
           <span class="usage-legend-tokens">${this._formatNumber(total)}</span>
         </div>`;
       }).join("");
+      const titleKey = groupBy === "model" ? "settings.dailyUsageByModel" : "settings.dailyUsageByChannel";
       return `
       <div class="usage-chart-box">
         <div class="usage-chart-title">
           <i data-lucide="bar-chart-3" class="lucide"></i>
-          ${t("settings.dailyUsageByModel") || "Daily token usage by model"}
+          ${t(titleKey)}
+          <div class="seg usage-groupby-seg">
+            <button class="seg-item${groupBy === "model" ? " active" : ""}" data-groupby="model" aria-selected="${groupBy === "model" ? "true" : "false"}">${t("settings.usageGroupByModel")}</button>
+            <button class="seg-item${groupBy === "channel" ? " active" : ""}" data-groupby="channel" aria-selected="${groupBy === "channel" ? "true" : "false"}">${t("settings.usageGroupByMode")}</button>
+          </div>
         </div>
         <div class="usage-heatmap-stats">
-          ${truncated ? `<div class="usage-heatmap-stat"><span>${t("settings.olderDaysHidden") || "older days hidden"}</span></div>` : ""}
+          ${truncated ? `<div class="usage-heatmap-stat"><span>${t("settings.olderDaysHidden")}</span></div>` : ""}
         </div>
         <div class="usage-chart-canvas-wrap">
           <canvas id="usage-bar-chart"></canvas>
@@ -84040,11 +84728,11 @@ ${content2}`;
       return d.toLocaleDateString(getLocale() === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" });
     }
     /**
-     * Render a 24-hour activity heatmap.  24 rows (one per hour of day,
-     * 0:00 at the top, 23:00 at the bottom) × N day columns (one per
-     * calendar day, newest on the right).  Cell color encodes total
-     * tokens consumed during that hour of that day, summed across every
-     * model.
+      * Render a daily activity heatmap.  Each day is one column with 6
+      * rows, one per 4-hour block of the day (00:00 at the top, 20:00 at
+      * the bottom) × N day columns (one per calendar day, newest on the
+      * right).  Cell color encodes total tokens consumed during that
+      * 4-hour block of that day, summed across every model.
      *
      * Color scale: empty = light/neutral, more activity = deeper brand
      * green.  The user wanted "less = white, more = green", which means
@@ -84059,6 +84747,8 @@ ${content2}`;
     _renderUsageHeatmap(sessions, muted) {
       if (!sessions || sessions.length === 0) return "";
       const loc = getLocale() === "zh" ? "zh-CN" : "en-US";
+      const BLOCK_HOURS = 4;
+      const BLOCKS = Math.floor(24 / BLOCK_HOURS);
       const cellTokens = {};
       for (const s15 of sessions) {
         if (!s15.first_active) continue;
@@ -84066,11 +84756,11 @@ ${content2}`;
         if (isNaN(d.getTime())) continue;
         const dayKey = this._formatDayKey(s15.first_active);
         if (!dayKey) continue;
-        const hour = d.getHours();
-        cellTokens[`${dayKey}|${hour}`] = (cellTokens[`${dayKey}|${hour}`] || 0) + (s15.total_tokens || 0);
+        const block2 = Math.floor(d.getHours() / BLOCK_HOURS);
+        cellTokens[`${dayKey}|${block2}`] = (cellTokens[`${dayKey}|${block2}`] || 0) + (s15.total_tokens || 0);
       }
       const MIN_DAYS = 30;
-      const MAX_DAYS = 90;
+      const MAX_DAYS = 92;
       const latestMs = Math.max(...sessions.filter((s15) => s15.first_active).map((s15) => s15.first_active * 1e3));
       const earliestMs = Math.min(...sessions.filter((s15) => s15.first_active).map((s15) => s15.first_active * 1e3));
       const latestDate = new Date(latestMs);
@@ -84100,15 +84790,15 @@ ${content2}`;
         maxCell = 1;
       }
       const cellW = 11, cellH = 11, cellGap = 3;
-      const cellRadius = 0;
-      const PL = 36, PR = 6, PT = 18, PB = 18;
-      const MIN_DAY_STRIDE = 16;
-      const TARGET_TOTAL_W = 720;
+      const cellRadius = 1;
+      const PL = 40, PR = 6, PT = 18, PB = 18;
+      const MIN_DAY_STRIDE = 9;
+      const TARGET_TOTAL_W = 1100;
       const naturalStride = cellW + cellGap;
       const idealStride = Math.max(MIN_DAY_STRIDE, Math.min(naturalStride * 2, TARGET_TOTAL_W / numDays));
       const stride = Math.max(MIN_DAY_STRIDE, Math.min(naturalStride * 2, idealStride));
       const W = PL + numDays * stride - cellGap + PR;
-      const H3 = PT + 24 * (cellH + cellGap) - cellGap + PB;
+      const H3 = PT + BLOCKS * (cellH + cellGap) - cellGap + PB;
       const todayKey = this._formatDayKey(Math.floor(Date.now() / 1e3));
       const baseBg = "var(--usage-hm-base, #ffffff)";
       const emptyColor = "var(--usage-hm-empty, #f3f4f6)";
@@ -84122,17 +84812,17 @@ ${content2}`;
       const pickColor = (v2) => {
         if (v2 <= 0) return ramp[0];
         const t3 = v2 / maxCell;
-        let idx2 = 1;
-        if (t3 > 0.75) idx2 = 4;
-        else if (t3 > 0.5) idx2 = 3;
-        else if (t3 > 0.25) idx2 = 2;
-        return ramp[idx2];
+        let idx = 1;
+        if (t3 > 0.75) idx = 4;
+        else if (t3 > 0.5) idx = 3;
+        else if (t3 > 0.25) idx = 2;
+        return ramp[idx];
       };
       const hourLabels = [];
-      for (let h3 = 0; h3 < 24; h3 += 6) {
-        const y = PT + h3 * (cellH + cellGap) + cellH / 2 + 3;
+      for (let b2 = 0; b2 < BLOCKS; b2++) {
+        const y = PT + b2 * (cellH + cellGap) + cellH / 2 + 4;
         hourLabels.push(
-          `<text x="${PL - 6}" y="${y.toFixed(1)}" text-anchor="end" fill="var(--text-text-tertiary, #666b75)" style="font-size:9px;font-family:var(--font-family-default);">${String(h3).padStart(2, "0")}:00</text>`
+          `<text x="${PL - 6}" y="${y.toFixed(1)}" text-anchor="end" fill="var(--text-text-tertiary, #666b75)" style="font-size:12px;font-family:var(--font-family-default);">${String(b2 * BLOCK_HOURS).padStart(2, "0")}:00</text>`
         );
       }
       const dayLabels = [];
@@ -84141,15 +84831,13 @@ ${content2}`;
         const colDate = new Date(startDate);
         colDate.setDate(colDate.getDate() + d);
         const m = colDate.getMonth();
-        const isMonthStart = m !== lastMonth;
-        const isWeek = d % 7 === 0;
-        if (isMonthStart || d > 0 && isWeek && d % 14 === 0) {
+        if (m !== lastMonth) {
+          lastMonth = m;
           const x = PL + d * stride + cellW / 2;
-          const label = isMonthStart ? colDate.toLocaleDateString(loc, { month: "short" }) : String(colDate.getDate());
+          const label = colDate.toLocaleDateString(loc, { month: "short" });
           dayLabels.push(
-            `<text x="${x.toFixed(1)}" y="${(PT + 24 * (cellH + cellGap) + 10).toFixed(1)}" text-anchor="middle" fill="${isMonthStart ? "var(--text-text-secondary, #9599a6)" : "var(--text-text-tertiary, #666b75)"}" style="font-size:9px;${isMonthStart ? "font-weight:var(--font-weight-medium,500);" : ""}font-family:var(--font-family-default);">${label}</text>`
+            `<text x="${x.toFixed(1)}" y="${(PT + BLOCKS * (cellH + cellGap) + 13).toFixed(1)}" text-anchor="middle" fill="var(--text-text-secondary, #9599a6)" style="font-size:12px;font-weight:var(--font-weight-medium,500);font-family:var(--font-family-default);">${label}</text>`
           );
-          if (isMonthStart) lastMonth = m;
         }
       }
       const cells = [];
@@ -84158,18 +84846,20 @@ ${content2}`;
         colDate.setDate(colDate.getDate() + d);
         const dayKey = this._formatDayKey(Math.floor(colDate.getTime() / 1e3));
         const isToday = dayKey === todayKey;
-        for (let h3 = 0; h3 < 24; h3++) {
-          const v2 = cellTokens[`${dayKey}|${h3}`] || 0;
+        for (let b2 = 0; b2 < BLOCKS; b2++) {
+          const v2 = cellTokens[`${dayKey}|${b2}`] || 0;
           const x = PL + d * stride;
-          const y = PT + h3 * (cellH + cellGap);
+          const y = PT + b2 * (cellH + cellGap);
           const fill2 = pickColor(v2);
-          const tooltip = v2 > 0 ? `${dayKey} ${String(h3).padStart(2, "0")}:00
-${this._formatNumber(v2)} tokens` : `${dayKey} ${String(h3).padStart(2, "0")}:00
+          const startH = b2 * BLOCK_HOURS;
+          const endH = startH + BLOCK_HOURS;
+          const tooltip = v2 > 0 ? `${dayKey} ${String(startH).padStart(2, "0")}:00\u2013${String(endH).padStart(2, "0")}:00
+${this._formatNumber(v2)} tokens` : `${dayKey} ${String(startH).padStart(2, "0")}:00\u2013${String(endH).padStart(2, "0")}:00
 No activity`;
-          const stroke = isToday && h3 === 0 ? "var(--bg-bg-brand, #32f08c)" : "var(--border-border-neutral-l1, rgba(224,226,242,0.18))";
-          const strokeW = isToday && h3 === 0 ? 1 : 0.4;
+          const stroke = isToday && b2 === 0 ? "var(--bg-bg-brand, #32f08c)" : "var(--border-border-neutral-l1, rgba(224,226,242,0.18))";
+          const strokeW = isToday && b2 === 0 ? 1 : 0.4;
           cells.push(
-            `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cellW}" height="${cellH}" rx="${cellRadius}" ry="${cellRadius}" fill="${fill2}" stroke="${stroke}" stroke-width="${strokeW}" class="usage-hm-cell" data-day="${this.esc(dayKey)}" data-hour="${h3}"><title>${this.esc(tooltip)}</title></rect>`
+            `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cellW}" height="${cellH}" rx="${cellRadius}" ry="${cellRadius}" fill="${fill2}" stroke="${stroke}" stroke-width="${strokeW}" class="usage-hm-cell" data-day="${this.esc(dayKey)}" data-block="${b2}" data-tooltip="${this.esc(tooltip)}"></rect>`
           );
         }
       }
@@ -84326,7 +85016,7 @@ No activity`;
         const displayName = name2 === "unknown" ? "Unknown" : name2;
         return `<div class="donut-legend-item">
         <span class="donut-legend-dot" style="background:${_Settings.CHART_COLORS[i8 % _Settings.CHART_COLORS.length]}"></span>
-        <span class="donut-legend-label" title="${this.esc(name2)}">${this.esc(displayName.length > 24 ? displayName.slice(0, 24) + "..." : displayName)}</span>
+        <span class="donut-legend-label" : displayName)}</span>
         <span class="donut-legend-value">${pct}%</span>
       </div>`;
       }).join("");
@@ -84362,11 +85052,12 @@ No activity`;
     _formatSessionDate(timestamp) {
       if (!timestamp || timestamp <= 0) return "";
       const d = new Date(timestamp * 1e3);
+      const loc = getLocale() === "zh" ? "zh-CN" : "en-US";
       const now = Date.now();
       if (now - timestamp * 1e3 < 864e5) {
-        return d.toLocaleTimeString(void 0, { hour: "2-digit", minute: "2-digit" });
+        return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
       }
-      return d.toLocaleDateString(void 0, { month: "short", day: "numeric" });
+      return d.toLocaleDateString(loc, { month: "short", day: "numeric" });
     }
     _formatNumber(n) {
       if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
@@ -84375,8 +85066,18 @@ No activity`;
     }
     renderDeveloper() {
       this.panels.developer.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="terminal" class="lucide section-title-icon"></i> ${t("settings.devPanelTitle")}</div>
+      <div class="settings-section-title"><i data-lucide="code" class="lucide section-title-icon"></i> ${t("settings.devPanelTitle")}</div>
       <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.devDevToolsTitle")}</div>
+            <div class="settings-item-desc">${t("settings.devDevToolsDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="dev-open-devtools">${t("settings.devDevToolsBtn")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
         <div class="settings-item-row">
           <div class="settings-item-info">
             <div class="settings-item-title">${t("settings.devCloseTitle")}</div>
@@ -84386,14 +85087,26 @@ No activity`;
             <button class="btn btn-sm" id="dev-close-mode" style="color:var(--error)">${t("settings.devCloseBtn")}</button>
           </div>
         </div>
+      </div>
+      <div class="settings-section-title" style="margin-top:24px"><i data-lucide="rotate-ccw" class="lucide section-title-icon"></i> ${t("settings.devRestartTitle")}</div>
+      <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.devRestartAppTitle")}</div>
+            <div class="settings-item-desc">${t("settings.devRestartAppDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="dev-reset-state" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
+          </div>
+        </div>
         <div class="settings-item-divider"></div>
         <div class="settings-item-row">
           <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.devDevToolsTitle")}</div>
-            <div class="settings-item-desc">${t("settings.devDevToolsDesc")}</div>
+            <div class="settings-item-title">${t("settings.devRestartServerTitle")}</div>
+            <div class="settings-item-desc">${t("settings.devRestartServerDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-open-devtools">${t("settings.devDevToolsBtn")}</button>
+            <button class="btn btn-sm" id="dev-restart-server" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
           </div>
         </div>
       </div>`;
@@ -84404,10 +85117,114 @@ No activity`;
         setDevModeEnabled(false);
         this.updateSidebarNav();
         this.switchPanel("general");
-        showToast("Developer mode disabled", "");
       });
       document.getElementById("dev-open-devtools")?.addEventListener("click", () => {
         window.electronAPI?.toggleDevTools();
+      });
+      document.getElementById("dev-reset-state")?.addEventListener("click", async () => {
+        const confirmed = await Dialog.confirm(t("settings.devRestartAppTitle"), t("settings.devRestartAppDesc"));
+        if (!confirmed) return;
+        localStorage.clear();
+        location.reload();
+      });
+      document.getElementById("dev-restart-server")?.addEventListener("click", async () => {
+        const running = getState().running;
+        if (running) {
+          const ok = await Dialog.confirm(t("settings.devRestartRunningTitle"), t("settings.devRestartRunningDesc"));
+          if (!ok) return;
+        }
+        const confirmed = await Dialog.confirm(t("settings.devRestartTitle"), t("settings.devRestartServerDesc"));
+        if (!confirmed) return;
+        const prog = Dialog.progress(t("settings.devRestartProgressTitle"), "");
+        const cleanup = window.electronAPI?.onRestartProgress?.((data2) => {
+          const p = data2.progress;
+          let msg;
+          if (p <= 20) msg = t("settings.devRestartPhaseKill");
+          else if (p <= 50) msg = t("settings.devRestartPhasePort");
+          else msg = t("settings.devRestartPhaseStart");
+          prog.update(p, msg);
+        });
+        try {
+          const result = await window.electronAPI?.restartService?.();
+          if (result?.success) {
+            prog.succeed(t("settings.devRestartSucceed"));
+          } else {
+            prog.fail(t("settings.devRestartFailed") + (result?.error ? ": " + result.error : ""));
+          }
+        } catch (err) {
+          prog.fail(t("settings.devRestartFailed") + ": " + String(err));
+        } finally {
+          if (cleanup) cleanup();
+        }
+      });
+    }
+    renderStorage() {
+      this.panels.storage.innerHTML = `
+      <div class="settings-section-title"><i data-lucide="hard-drive" class="lucide section-title-icon"></i> ${t("settings.storage")}</div>
+      <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.aboutLogs")}</div>
+            <div class="settings-item-desc">${t("settings.aboutLogsDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-open-logs">${t("settings.aboutLogs")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.storageDataDir")}</div>
+            <div class="settings-item-desc">${t("settings.aboutOpenDataDir")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-open-data-dir">${t("settings.aboutOpenDataDir")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.storageSessions")}</div>
+            <div class="settings-item-desc">${t("settings.storageSessionsDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-clear-sessions" style="color:var(--error)">${t("settings.storageClearSessions")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.browserData")}</div>
+            <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-clear-browser" style="color:var(--error)">${t("settings.clear")}</button>
+          </div>
+        </div>
+      </div>`;
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: this.panels.storage });
+      }
+      document.getElementById("storage-open-data-dir")?.addEventListener("click", async () => {
+        const appPath = await window.electronAPI?.getAppPath?.();
+        if (appPath) {
+          window.electronAPI?.openFolder?.(appPath);
+        }
+      });
+      document.getElementById("storage-clear-sessions")?.addEventListener("click", async () => {
+        const ok = await Dialog.confirm(t("common.confirmClearSessionsTitle"), t("common.confirmClearSessions"));
+        if (ok) {
+          send({ type: "clear_all_sessions" });
+        }
+      });
+      document.getElementById("storage-clear-browser")?.addEventListener("click", async () => {
+        const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));
+        if (ok) {
+          window.electronAPI?.browserClearData?.();
+        }
+      });
+      document.getElementById("storage-open-logs")?.addEventListener("click", async () => {
+        await window.electronAPI?.openChildWindow("logs", t("settings.aboutLogs") || "Logs");
       });
     }
     renderAbout() {
@@ -84466,20 +85283,11 @@ No activity`;
         <div class="about-links-divider"></div>
         <div class="about-links-group-title">${tFn("settings.aboutSupportTitle")}</div>
         ${supportHtml}
-      </div>
-
-      <div class="about-actions">
-        <button class="about-action-btn" type="button" data-action="check-update">
-          <span class="about-action-icon"><i data-lucide="refresh-cw"></i></span>
-          <span class="about-action-label">${tFn("settings.aboutCheckUpdate")}</span>
-        </button>
-        <button class="about-action-btn" type="button" data-action="open-datadir">
-          <span class="about-action-icon"><i data-lucide="folder-open"></i></span>
-          <span class="about-action-label">${tFn("settings.aboutOpenDataDir")}</span>
-        </button>
-        <button class="about-action-btn" type="button" data-action="logs">
-          <span class="about-action-icon"><i data-lucide="scroll-text"></i></span>
-          <span class="about-action-label">${tFn("settings.aboutLogs")}</span>
+        <div class="about-links-divider"></div>
+        <button class="about-link-row" type="button" data-action="check-update">
+          <span class="about-link-icon"><i data-lucide="refresh-cw"></i></span>
+          <span class="about-link-label">${tFn("settings.aboutCheckUpdate")}</span>
+          <span class="about-link-chevron"><i data-lucide="chevron-right"></i></span>
         </button>
       </div>
 
@@ -84514,20 +85322,6 @@ No activity`;
                 window.electronAPI?.openChildWindow(link2, label);
               }
             }
-          }
-        });
-      });
-      this.panels.about.querySelectorAll(".about-action-btn[data-action]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const action = btn.getAttribute("data-action");
-          const label = btn.querySelector(".about-action-label")?.textContent || action || "";
-          if (!action) return;
-          switch (action) {
-            case "logs":
-              await window.electronAPI?.openChildWindow("logs", tFn("settings.aboutLogs") || "Logs");
-              break;
-            default:
-              window.electronAPI?.openChildWindow(action, label);
           }
         });
       });
@@ -84816,8 +85610,8 @@ No activity`;
     setKeys(keys2 = []) {
       this.keys = keys2;
       this._keysMap = {};
-      keys2.forEach((key, idx2) => {
-        this._keysMap[key.id] = idx2;
+      keys2.forEach((key, idx) => {
+        this._keysMap[key.id] = idx;
       });
     }
     create() {
@@ -84838,17 +85632,17 @@ No activity`;
     }
     // Adds a doc to the end of the index
     add(doc2) {
-      const idx2 = this.size();
+      const idx = this.size();
       if (isString3(doc2)) {
-        this._addString(doc2, idx2);
+        this._addString(doc2, idx);
       } else {
-        this._addObject(doc2, idx2);
+        this._addObject(doc2, idx);
       }
     }
     // Removes the doc at the specified index of the index
-    removeAt(idx2) {
-      this.records.splice(idx2, 1);
-      for (let i8 = idx2, len = this.size(); i8 < len; i8 += 1) {
+    removeAt(idx) {
+      this.records.splice(idx, 1);
+      for (let i8 = idx, len = this.size(); i8 < len; i8 += 1) {
         this.records[i8].i -= 1;
       }
     }
@@ -84991,7 +85785,7 @@ No activity`;
   }
   var MAX_BITS = 32;
   function search(text2, pattern, patternAlphabet, {
-    location = Config2.location,
+    location: location2 = Config2.location,
     distance = Config2.distance,
     threshold = Config2.threshold,
     findAllMatches = Config2.findAllMatches,
@@ -85004,7 +85798,7 @@ No activity`;
     }
     const patternLen = pattern.length;
     const textLen = text2.length;
-    const expectedLocation = Math.max(0, Math.min(location, textLen));
+    const expectedLocation = Math.max(0, Math.min(location2, textLen));
     let currentThreshold = threshold;
     let bestLocation = expectedLocation;
     const calcScore = (errors2, currentLocation) => {
@@ -85147,7 +85941,7 @@ No activity`;
   var stripDiacritics = String.prototype.normalize ? (str) => str.normalize("NFD").replace(/[\u0300-\u036F\u0483-\u0489\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0711\u0730-\u074A\u07A6-\u07B0\u07EB-\u07F3\u07FD\u0816-\u0819\u081B-\u0823\u0825-\u0827\u0829-\u082D\u0859-\u085B\u08D3-\u08E1\u08E3-\u0903\u093A-\u093C\u093E-\u094F\u0951-\u0957\u0962\u0963\u0981-\u0983\u09BC\u09BE-\u09C4\u09C7\u09C8\u09CB-\u09CD\u09D7\u09E2\u09E3\u09FE\u0A01-\u0A03\u0A3C\u0A3E-\u0A42\u0A47\u0A48\u0A4B-\u0A4D\u0A51\u0A70\u0A71\u0A75\u0A81-\u0A83\u0ABC\u0ABE-\u0AC5\u0AC7-\u0AC9\u0ACB-\u0ACD\u0AE2\u0AE3\u0AFA-\u0AFF\u0B01-\u0B03\u0B3C\u0B3E-\u0B44\u0B47\u0B48\u0B4B-\u0B4D\u0B56\u0B57\u0B62\u0B63\u0B82\u0BBE-\u0BC2\u0BC6-\u0BC8\u0BCA-\u0BCD\u0BD7\u0C00-\u0C04\u0C3E-\u0C44\u0C46-\u0C48\u0C4A-\u0C4D\u0C55\u0C56\u0C62\u0C63\u0C81-\u0C83\u0CBC\u0CBE-\u0CC4\u0CC6-\u0CC8\u0CCA-\u0CCD\u0CD5\u0CD6\u0CE2\u0CE3\u0D00-\u0D03\u0D3B\u0D3C\u0D3E-\u0D44\u0D46-\u0D48\u0D4A-\u0D4D\u0D57\u0D62\u0D63\u0D82\u0D83\u0DCA\u0DCF-\u0DD4\u0DD6\u0DD8-\u0DDF\u0DF2\u0DF3\u0E31\u0E34-\u0E3A\u0E47-\u0E4E\u0EB1\u0EB4-\u0EB9\u0EBB\u0EBC\u0EC8-\u0ECD\u0F18\u0F19\u0F35\u0F37\u0F39\u0F3E\u0F3F\u0F71-\u0F84\u0F86\u0F87\u0F8D-\u0F97\u0F99-\u0FBC\u0FC6\u102B-\u103E\u1056-\u1059\u105E-\u1060\u1062-\u1064\u1067-\u106D\u1071-\u1074\u1082-\u108D\u108F\u109A-\u109D\u135D-\u135F\u1712-\u1714\u1732-\u1734\u1752\u1753\u1772\u1773\u17B4-\u17D3\u17DD\u180B-\u180D\u1885\u1886\u18A9\u1920-\u192B\u1930-\u193B\u1A17-\u1A1B\u1A55-\u1A5E\u1A60-\u1A7C\u1A7F\u1AB0-\u1ABE\u1B00-\u1B04\u1B34-\u1B44\u1B6B-\u1B73\u1B80-\u1B82\u1BA1-\u1BAD\u1BE6-\u1BF3\u1C24-\u1C37\u1CD0-\u1CD2\u1CD4-\u1CE8\u1CED\u1CF2-\u1CF4\u1CF7-\u1CF9\u1DC0-\u1DF9\u1DFB-\u1DFF\u20D0-\u20F0\u2CEF-\u2CF1\u2D7F\u2DE0-\u2DFF\u302A-\u302F\u3099\u309A\uA66F-\uA672\uA674-\uA67D\uA69E\uA69F\uA6F0\uA6F1\uA802\uA806\uA80B\uA823-\uA827\uA880\uA881\uA8B4-\uA8C5\uA8E0-\uA8F1\uA8FF\uA926-\uA92D\uA947-\uA953\uA980-\uA983\uA9B3-\uA9C0\uA9E5\uAA29-\uAA36\uAA43\uAA4C\uAA4D\uAA7B-\uAA7D\uAAB0\uAAB2-\uAAB4\uAAB7\uAAB8\uAABE\uAABF\uAAC1\uAAEB-\uAAEF\uAAF5\uAAF6\uABE3-\uABEA\uABEC\uABED\uFB1E\uFE00-\uFE0F\uFE20-\uFE2F]/g, "").replace(NON_DECOMPOSABLE_RE, (ch) => NON_DECOMPOSABLE_MAP[ch]) : (str) => str;
   var BitapSearch = class {
     constructor(pattern, {
-      location = Config2.location,
+      location: location2 = Config2.location,
       threshold = Config2.threshold,
       distance = Config2.distance,
       includeMatches = Config2.includeMatches,
@@ -85158,7 +85952,7 @@ No activity`;
       ignoreLocation = Config2.ignoreLocation
     } = {}) {
       this.options = {
-        location,
+        location: location2,
         threshold,
         distance,
         includeMatches,
@@ -85218,7 +86012,7 @@ No activity`;
         return result2;
       }
       const {
-        location,
+        location: location2,
         distance,
         threshold,
         findAllMatches,
@@ -85238,7 +86032,7 @@ No activity`;
           score: score2,
           indices
         } = search(text2, pattern, alphabet, {
-          location: location + startIndex,
+          location: location2 + startIndex,
           distance,
           threshold,
           findAllMatches,
@@ -85421,7 +86215,7 @@ No activity`;
   };
   var FuzzyMatch = class extends BaseMatch {
     constructor(pattern, {
-      location = Config2.location,
+      location: location2 = Config2.location,
       threshold = Config2.threshold,
       distance = Config2.distance,
       includeMatches = Config2.includeMatches,
@@ -85433,7 +86227,7 @@ No activity`;
     } = {}) {
       super(pattern);
       this._bitapSearch = new BitapSearch(pattern, {
-        location,
+        location: location2,
         threshold,
         distance,
         includeMatches,
@@ -85471,13 +86265,13 @@ No activity`;
       return /^'(.*)$/;
     }
     search(text2) {
-      let location = 0;
+      let location2 = 0;
       let index2;
       const indices = [];
       const patternLen = this.pattern.length;
-      while ((index2 = text2.indexOf(this.pattern, location)) > -1) {
-        location = index2 + patternLen;
-        indices.push([index2, location - 1]);
+      while ((index2 = text2.indexOf(this.pattern, location2)) > -1) {
+        location2 = index2 + patternLen;
+        indices.push([index2, location2 - 1]);
       }
       const isMatch = !!indices.length;
       return {
@@ -85535,9 +86329,9 @@ No activity`;
       for (let i8 = 0, len = query.length; i8 < len; i8 += 1) {
         const queryItem = query[i8];
         let found = false;
-        let idx2 = -1;
-        while (!found && ++idx2 < searchersLen) {
-          const searcher = searchers[idx2];
+        let idx = -1;
+        while (!found && ++idx < searchersLen) {
+          const searcher = searchers[idx];
           const token = searcher.isMultiMatch(queryItem);
           if (token) {
             results.push(new searcher(token, options));
@@ -85547,9 +86341,9 @@ No activity`;
         if (found) {
           continue;
         }
-        idx2 = -1;
-        while (++idx2 < searchersLen) {
-          const searcher = searchers[idx2];
+        idx = -1;
+        while (++idx < searchersLen) {
+          const searcher = searchers[idx];
           const token = searcher.isSingleMatch(queryItem);
           if (token) {
             results.push(new searcher(token, options));
@@ -85569,7 +86363,7 @@ No activity`;
       minMatchCharLength = Config2.minMatchCharLength,
       ignoreLocation = Config2.ignoreLocation,
       findAllMatches = Config2.findAllMatches,
-      location = Config2.location,
+      location: location2 = Config2.location,
       threshold = Config2.threshold,
       distance = Config2.distance
     } = {}) {
@@ -85581,7 +86375,7 @@ No activity`;
         minMatchCharLength,
         findAllMatches,
         ignoreLocation,
-        location,
+        location: location2,
         threshold,
         distance
       };
@@ -85869,11 +86663,11 @@ No activity`;
     if (includeScore) transformers.push(transformScore);
     return results.map((result) => {
       const {
-        idx: idx2
+        idx
       } = result;
       const data2 = {
-        item: docs[idx2],
-        refIndex: idx2
+        item: docs[idx],
+        refIndex: idx
       };
       if (transformers.length) {
         transformers.forEach((transformer) => {
@@ -86095,8 +86889,8 @@ No activity`;
       }
       if (indicesToRemove.length) {
         if (this._invertedIndex) {
-          for (const idx2 of indicesToRemove) {
-            removeFromInvertedIndex(this._invertedIndex, idx2);
+          for (const idx of indicesToRemove) {
+            removeFromInvertedIndex(this._invertedIndex, idx);
           }
         }
         for (let i8 = indicesToRemove.length - 1; i8 >= 0; i8 -= 1) {
@@ -86106,12 +86900,12 @@ No activity`;
       }
       return results;
     }
-    removeAt(idx2) {
+    removeAt(idx) {
       if (this._invertedIndex) {
-        removeFromInvertedIndex(this._invertedIndex, idx2);
+        removeFromInvertedIndex(this._invertedIndex, idx);
       }
-      const doc2 = this._docs.splice(idx2, 1)[0];
-      this._myIndex.removeAt(idx2);
+      const doc2 = this._docs.splice(idx, 1)[0];
+      this._myIndex.removeAt(idx);
       return doc2;
     }
     getIndex() {
@@ -86129,9 +86923,9 @@ No activity`;
         ignoreFieldNorm
       } = this.options;
       if (isString3(query) && !query.trim()) {
-        let docs = this._docs.map((item, idx2) => ({
+        let docs = this._docs.map((item, idx) => ({
           item,
-          refIndex: idx2
+          refIndex: idx
         }));
         if (isNumber3(limit) && limit > -1) {
           docs = docs.slice(0, limit);
@@ -86182,7 +86976,7 @@ No activity`;
       const results = heap ? null : [];
       records.forEach(({
         v: text2,
-        i: idx2,
+        i: idx,
         n: norm2
       }) => {
         if (!isDefined(text2)) {
@@ -86196,7 +86990,7 @@ No activity`;
         if (isMatch) {
           const result = {
             item: text2,
-            idx: idx2,
+            idx,
             matches: [{
               score: score2,
               value: text2,
@@ -86220,7 +87014,7 @@ No activity`;
     }
     _searchLogical(query) {
       const expression2 = parse2(query, this.options);
-      const evaluate = (node, item, idx2) => {
+      const evaluate = (node, item, idx) => {
         if (!("children" in node)) {
           const {
             keyId,
@@ -86245,7 +87039,7 @@ No activity`;
           }
           if (matches && matches.length) {
             return [{
-              idx: idx2,
+              idx,
               item,
               matches
             }];
@@ -86259,7 +87053,7 @@ No activity`;
         const res = [];
         for (let i8 = 0, len = children.length; i8 < len; i8 += 1) {
           const child = children[i8];
-          const result = evaluate(child, item, idx2);
+          const result = evaluate(child, item, idx);
           if (result.length) {
             res.push(...result);
           } else if (operator2 === LogicalOperator.AND) {
@@ -86273,23 +87067,23 @@ No activity`;
       const results = [];
       records.forEach(({
         $: item,
-        i: idx2
+        i: idx
       }) => {
         if (isDefined(item)) {
-          const expResults = evaluate(expression2, item, idx2);
+          const expResults = evaluate(expression2, item, idx);
           if (expResults.length) {
-            if (!resultMap.has(idx2)) {
-              resultMap.set(idx2, {
-                idx: idx2,
+            if (!resultMap.has(idx)) {
+              resultMap.set(idx, {
+                idx,
                 item,
                 matches: []
               });
-              results.push(resultMap.get(idx2));
+              results.push(resultMap.get(idx));
             }
             expResults.forEach(({
               matches
             }) => {
-              resultMap.get(idx2).matches.push(...matches);
+              resultMap.get(idx).matches.push(...matches);
             });
           }
         }
@@ -86316,7 +87110,7 @@ No activity`;
       const results = heap ? null : [];
       records.forEach(({
         $: item,
-        i: idx2
+        i: idx
       }) => {
         if (!isDefined(item)) {
           return;
@@ -86344,7 +87138,7 @@ No activity`;
         }
         if (matches.length) {
           const result = {
-            idx: idx2,
+            idx,
             item,
             matches
           };
@@ -86374,7 +87168,7 @@ No activity`;
       if (isArray2(value)) {
         value.forEach(({
           v: text2,
-          i: idx2,
+          i: idx,
           n: norm2
         }) => {
           if (!isDefined(text2)) {
@@ -86391,7 +87185,7 @@ No activity`;
               score: score2,
               key,
               value: text2,
-              idx: idx2,
+              idx,
               norm: norm2,
               indices,
               hasInverse
@@ -86860,7 +87654,8 @@ No activity`;
               is_binary: result.is_binary
             }]);
           }
-        } catch {
+        } catch (e) {
+          console.warn("[search] readFile failed:", e);
         }
       }
       this.insertPromptText(t("search.readFile", { path }));
@@ -86882,12 +87677,12 @@ No activity`;
         if (sec.items.length === 0) continue;
         html2 += `<div class="search-result-section-title">${sec.getLabel()}</div>`;
         for (const r of sec.items) {
-          const idx2 = results.indexOf(r);
-          const sel = idx2 === this.selectedIdx ? " selected" : "";
+          const idx = results.indexOf(r);
+          const sel = idx === this.selectedIdx ? " selected" : "";
           const kindLabel = this.esc(sec.kindLabel(r));
           const snippet2 = this.esc(r.snippet);
           const preview = r.preview ? `<span class="search-result-preview">${this.esc(r.preview)}</span>` : "";
-          html2 += `<div class="search-result-item${sel}" data-idx="${idx2}">
+          html2 += `<div class="search-result-item${sel}" data-idx="${idx}">
           ${sec.icon}
           <div class="search-result-body">
             <span class="search-result-kind">${kindLabel}</span>
@@ -86995,9 +87790,9 @@ No activity`;
     bindClicks() {
       this.resultsEl.querySelectorAll(".search-result-item").forEach((item) => {
         item.addEventListener("click", () => {
-          const idx2 = parseInt(item.dataset.idx || "-1");
-          if (idx2 >= 0 && idx2 < this.currentResults.length) {
-            this.activateResult(this.currentResults[idx2]);
+          const idx = parseInt(item.dataset.idx || "-1");
+          if (idx >= 0 && idx < this.currentResults.length) {
+            this.activateResult(this.currentResults[idx]);
           }
         });
       });
@@ -87056,6 +87851,56 @@ No activity`;
 
   // renderer/src/notifications.ts
   init_state();
+
+  // renderer/src/media-viewer.ts
+  function esc(s15) {
+    const el2 = document.createElement("span");
+    el2.textContent = s15;
+    return el2.innerHTML;
+  }
+  function resolveUrl(src) {
+    const normalized = src.replace(/\\/g, "/");
+    if (normalized.startsWith("local://") || normalized.startsWith("http") || normalized.startsWith("data:")) {
+      return normalized;
+    }
+    return "local:///" + normalized;
+  }
+  var MediaViewer = class {
+    constructor(el2, media) {
+      this.videoEl = null;
+      this.el = el2;
+      this.media = media;
+      this.render();
+    }
+    render() {
+      if (this.media.type === "image") {
+        this.renderImage();
+      } else if (this.media.type === "video") {
+        this.renderVideo();
+      }
+    }
+    renderImage() {
+      this.el.innerHTML = `<img class="media-viewer-img" src="${esc(resolveUrl(this.media.src))}" />`;
+    }
+    renderVideo() {
+      const url = resolveUrl(this.media.src);
+      this.el.innerHTML = `<video class="media-viewer-video" src="${esc(url)}" autoplay loop muted playsinline webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"></video>`;
+      this.videoEl = this.el.querySelector(".media-viewer-video");
+      if (!this.videoEl) return;
+      this.videoEl.volume = 1;
+      this.videoEl.muted = false;
+    }
+    destroy() {
+      if (this.videoEl) {
+        this.videoEl.pause();
+        this.videoEl.removeAttribute("src");
+        this.videoEl.load();
+      }
+      this.el.innerHTML = "";
+    }
+  };
+
+  // renderer/src/notifications.ts
   init_i18n();
   var toastTimer = null;
   function relativeTime(ts2) {
@@ -87089,6 +87934,9 @@ No activity`;
       this.panel = null;
       this.toastContainer = null;
       this.lastNotificationIds = /* @__PURE__ */ new Set();
+      this._mediaViewer = null;
+      this._detailId = null;
+      this._listClickHandler = null;
       this.bell = document.getElementById("btn-bell");
       if (this.bell) {
         this.bell.addEventListener("click", (e) => {
@@ -87157,7 +88005,7 @@ No activity`;
       toast.innerHTML = `
       <div class="notification-toast-message">${this.esc(item.message || item.title)}</div>
       ${sourceHtml}
-      <button class="notification-toast-collapse" title="${t("notifications.dismiss")}">
+      <button class="notification-toast-collapse" data-tooltip="${t("notifications.dismiss")}">
         <i data-lucide="chevron-down" class="lucide lucide-sm"></i>
       </button>
     `;
@@ -87196,6 +88044,21 @@ No activity`;
     /** Opens the slide-out notification panel anchored to the bell. */
     openPanel() {
       if (!this.bell) return;
+      dismissNotification("demo-activity");
+      addNotification({
+        id: "demo-activity",
+        type: "info",
+        title: t("notifications.demoTitle"),
+        message: t("notifications.demoMessage"),
+        source: t("notifications.demoSource"),
+        timestamp: Date.now(),
+        read: false,
+        media: {
+          type: "video",
+          src: "D:\\Downloads\\911Mothers_2010W-480p.mp4"
+        }
+      });
+      this._detailId = null;
       this.panel = document.createElement("div");
       this.panel.className = "notification-panel";
       this.renderPanel();
@@ -87206,15 +88069,20 @@ No activity`;
     }
     /** Closes the slide-out notification panel. */
     closePanel() {
+      this._destroyMediaViewer();
       if (this.panel) {
         this.panel.remove();
         this.panel = null;
         this.render();
       }
     }
-    /** Builds the panel's inner HTML from unread/read notification lists. */
+    /** Builds the panel's inner HTML from unread/read notification lists or detail view. */
     renderPanel() {
       if (!this.panel) return;
+      if (this._detailId) {
+        this._renderDetailView();
+        return;
+      }
       const all = getState().notifications;
       const unread = all.filter((n) => !n.read);
       const read = all.filter((n) => n.read);
@@ -87228,18 +88096,88 @@ No activity`;
       const readSection = read.length > 0 ? `<div class="notification-section-label">${t("notifications.read")}</div>
          ${this.renderItems(read.slice(0, 20))}` : "";
       this.panel.innerHTML = `${header}${empty2}${unreadSection}${readSection}`;
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: this.panel });
+      }
+      this._wireListEvents();
+    }
+    _wireListEvents() {
+      if (!this.panel) return;
+      if (this._listClickHandler) {
+        this.panel.removeEventListener("click", this._listClickHandler);
+      }
       this.panel.querySelector(".notification-panel-clear")?.addEventListener("click", () => {
         clearAllNotifications();
         this.closePanel();
       });
-      this.panel.querySelectorAll(".notification-panel-item").forEach((el2) => {
-        const id2 = el2.getAttribute("data-id");
+      this._listClickHandler = (e) => {
+        const item = e.target.closest(".notification-panel-item");
+        if (!item) return;
+        const id2 = item.getAttribute("data-id");
         if (!id2) return;
-        el2.addEventListener("click", () => markOneNotificationRead(id2));
-        el2.querySelector(".notification-panel-dismiss")?.addEventListener("click", (e) => {
+        if (e.target.closest(".notification-panel-dismiss")) {
           e.stopPropagation();
           dismissNotification(id2);
-        });
+          return;
+        }
+        e.stopPropagation();
+        this._detailId = id2;
+        this.renderPanel();
+      };
+      this.panel.addEventListener("click", this._listClickHandler);
+    }
+    /** Destroys the current media viewer instance (stops video playback). */
+    _destroyMediaViewer() {
+      if (this._mediaViewer) {
+        this._mediaViewer.destroy();
+        this._mediaViewer = null;
+      }
+    }
+    /** Renders the detail view for the currently selected notification. */
+    _renderDetailView() {
+      if (!this.panel) return;
+      const n = getState().notifications.find((x) => x.id === this._detailId);
+      if (!n) {
+        this._detailId = null;
+        this.renderPanel();
+        return;
+      }
+      const absTime = new Date(n.timestamp).toLocaleString();
+      this.panel.innerHTML = `
+      <div class="notification-detail">
+        <div class="notification-detail-header">
+          <button class="notification-detail-back" id="notif-detail-back">
+            <i data-lucide="arrow-left" class="lucide lucide-sm"></i>
+            <span>${t("notifications.back")}</span>
+          </button>
+        </div>
+        ${n.media ? `<div class="notification-detail-media" id="notif-detail-media"></div>` : `<div class="notification-detail-media notification-detail-media--empty"></div>`}
+        <div class="notification-detail-body">
+          <div class="notification-detail-title">${this.esc(n.title)}</div>
+          ${n.message ? `<div class="notification-detail-msg">${this.esc(n.message)}</div>` : ""}
+          <div class="notification-detail-meta">
+            ${n.source ? `<span class="notification-detail-source">${this.esc(n.source)}</span>` : ""}
+            <span class="notification-detail-time">${absTime}</span>
+          </div>
+        </div>
+      </div>`;
+      if (n.media) {
+        const mediaEl = this.panel.querySelector("#notif-detail-media");
+        if (mediaEl) {
+          this._destroyMediaViewer();
+          this._mediaViewer = new MediaViewer(mediaEl, n.media);
+        }
+      }
+      this.panel.querySelector("#notif-detail-back")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._destroyMediaViewer();
+        this._detailId = null;
+        this.renderPanel();
+      });
+      this.panel.querySelector("#notif-detail-back")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._detailId = null;
+        this.renderPanel();
       });
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: this.panel });
@@ -87252,12 +88190,13 @@ No activity`;
         <div class="notification-panel-body">
           <div class="notification-panel-item-title">${this.esc(n.title)}</div>
           <div class="notification-panel-item-msg">${this.esc(n.message || "")}</div>
-          ${n.source ? `<div class="notification-panel-item-source">${this.esc(n.source)}</div>` : ""}
-          <div class="notification-panel-item-time">${relativeTime(n.timestamp)}</div>
+          <div class="notification-panel-meta">
+            ${n.source ? `<span class="notification-panel-item-source">${this.esc(n.source)}</span>` : ""}
+            <span class="notification-panel-item-time">${relativeTime(n.timestamp)}</span>
+          </div>
         </div>
         <div class="notification-panel-actions">
-          ${n.read ? "" : `<span class="notification-panel-dot"></span>`}
-          <button class="notification-panel-dismiss" title="${t("notifications.dismiss")}">
+          <button class="notification-panel-dismiss" data-tooltip="${t("notifications.dismiss")}">
             <i data-lucide="x" class="lucide lucide-sm"></i>
           </button>
         </div>
@@ -87349,6 +88288,7 @@ No activity`;
   };
 
   // renderer/src/workspace.ts
+  init_context_menu();
   var Workspace = class {
     /**
      * Constructor: resolves DOM nodes, wires buttons and subscribes to state.
@@ -87380,6 +88320,10 @@ No activity`;
       }
       this.syncFirstNavActive();
     }
+    /** Public read-only access to the workspace mode flag. */
+    get isInWorkspaceModePublic() {
+      return this.isInWorkspaceMode;
+    }
     /**
      * Force-exit workspace mode without any visual transitions.
      */
@@ -87396,14 +88340,27 @@ No activity`;
         this.treeSectionEl.style.transition = "";
         this.treeSectionEl.style.transform = "";
         this.treeSectionEl.style.opacity = "";
+        this.treeSectionEl.style.position = "";
+        this.treeSectionEl.style.top = "";
+        this.treeSectionEl.style.left = "";
+        this.treeSectionEl.style.width = "";
+        this.treeSectionEl.style.height = "";
+        this.treeSectionEl.style.maxHeight = "";
         this.treeSectionEl.classList.add("hidden");
       }
       if (this._sessionSectionEl) {
         this._sessionSectionEl.style.transition = "";
         this._sessionSectionEl.style.transform = "";
         this._sessionSectionEl.style.opacity = "";
+        this._sessionSectionEl.style.position = "";
+        this._sessionSectionEl.style.top = "";
+        this._sessionSectionEl.style.left = "";
+        this._sessionSectionEl.style.width = "";
+        this._sessionSectionEl.style.height = "";
         this._sessionSectionEl.classList.remove("hidden");
       }
+      const parentForce = this._sessionSectionEl?.parentElement;
+      if (parentForce) parentForce.style.position = "";
       const oldWs = getState().activeWorkspace;
       setActiveWorkspace("");
       setWorkspaceMode("normal");
@@ -87413,29 +88370,36 @@ No activity`;
         send({ type: "close_workspace", path: oldWs, request_id: requestId });
       }
       send({ type: "list_sessions" });
+      const tempBtnForce = document.getElementById("btn-temp-chat");
+      if (tempBtnForce) {
+        tempBtnForce.style.transition = "";
+        tempBtnForce.style.opacity = "";
+        tempBtnForce.style.transform = "";
+        tempBtnForce.style.pointerEvents = "";
+      }
       this.syncFirstNavActive();
       setTimeout(() => {
         this._exiting = false;
       }, 100);
     }
-    toggleWorkspaceMode() {
+    async toggleWorkspaceMode() {
       if (this._transitioning) return;
       if (this.isInWorkspaceMode) {
-        this.exitWorkspaceMode();
+        await this.exitWorkspaceMode();
       } else {
-        this.enterWorkspaceMode();
+        await this.enterWorkspaceMode();
       }
     }
-    enter() {
+    async enter() {
       if (!this.isInWorkspaceMode && !this._transitioning) {
-        this.enterWorkspaceMode();
+        await this.enterWorkspaceMode();
       }
     }
     /** Public exit — used by the header mode switch to leave workspace mode
      *  with the same animation pipeline as the internal toggle button. */
-    exit() {
+    async exit() {
       if (this.isInWorkspaceMode && !this._transitioning) {
-        this.exitWorkspaceMode();
+        await this.exitWorkspaceMode();
       }
     }
     /** Ensure a workspace path is expanded in the tree so its sessions are visible. */
@@ -87459,7 +88423,7 @@ No activity`;
       }
     }
     onStateChange() {
-      if (this._exiting || this._transitioning) return;
+      if (this._exiting) return;
       if (!this.isInWorkspaceMode) return;
       const st3 = getState();
       const currentJson = JSON.stringify({ workspaces: st3.workspaces, activeWorkspace: st3.activeWorkspace, sessions: st3.sessionsList });
@@ -87481,16 +88445,40 @@ No activity`;
       this.selectedPaths.clear();
       this.renderTree();
       this.updateBatchBarVisibility();
-      await TransitionHelper.slide({
-        exit: [this._sessionSectionEl].filter(Boolean),
-        enter: [this.treeSectionEl].filter(Boolean),
-        setup: () => {
-          if (this.treeSectionEl) {
-            this.treeSectionEl.classList.add("active");
-            this.treeSectionEl.style.maxHeight = "1000px";
+      try {
+        await TransitionHelper.slide({
+          exit: [this._sessionSectionEl].filter(Boolean),
+          enter: [this.treeSectionEl].filter(Boolean),
+          setup: () => {
+            const parent = this._sessionSectionEl?.parentElement;
+            if (parent) parent.style.position = "relative";
+            [this._sessionSectionEl, this.treeSectionEl].forEach((el2) => {
+              if (!el2) return;
+              el2.style.position = "absolute";
+              el2.style.top = "0";
+              el2.style.left = "0";
+              el2.style.width = "100%";
+              el2.style.height = "100%";
+            });
+            if (this.treeSectionEl) {
+              this.treeSectionEl.classList.add("active");
+              this.treeSectionEl.style.maxHeight = "1000px";
+            }
           }
-        }
+        });
+      } catch (e) {
+        console.error("[workspace] slide transition failed:", e);
+      }
+      const parentEnter = this._sessionSectionEl?.parentElement;
+      [this._sessionSectionEl, this.treeSectionEl].forEach((el2) => {
+        if (!el2) return;
+        el2.style.position = "";
+        el2.style.top = "";
+        el2.style.left = "";
+        el2.style.width = "";
+        el2.style.height = "";
       });
+      if (parentEnter) parentEnter.style.position = "";
       const workspaces = getState().workspaces;
       const activeWs = getState().activeWorkspace;
       if (window.__pendingTrayResume) {
@@ -87499,13 +88487,17 @@ No activity`;
         const requestId = crypto.randomUUID();
         setRequestedSessionId("", requestId);
         send({ type: "open_workspace", path: workspaces[0].path, request_id: requestId });
-      } else if (activeWs) {
-        this.expandedWsPaths.add(activeWs);
+      } else {
+        send({ type: "list_all_sessions" });
+        if (activeWs) this.expandedWsPaths.add(activeWs);
       }
-      const autoBtn = document.getElementById("btn-automation");
-      if (autoBtn) autoBtn.classList.add("hidden");
       const tempBtn = document.getElementById("btn-temp-chat");
-      if (tempBtn) tempBtn.classList.add("hidden");
+      if (tempBtn) {
+        tempBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
+        tempBtn.style.opacity = "0";
+        tempBtn.style.transform = "translateX(-20px)";
+        tempBtn.style.pointerEvents = "none";
+      }
       this.syncFirstNavActive();
       this._transitioning = false;
       setWorkspaceMode("iwork");
@@ -87514,19 +88506,44 @@ No activity`;
     async exitWorkspaceMode() {
       if (this._transitioning) return;
       this._transitioning = true;
-      await TransitionHelper.slide({
-        exit: [this.treeSectionEl].filter(Boolean),
-        enter: [this._sessionSectionEl].filter(Boolean),
-        setup: () => {
-          if (this.treeSectionEl) {
-            this.treeSectionEl.classList.remove("active");
+      try {
+        await TransitionHelper.slide({
+          exit: [this.treeSectionEl].filter(Boolean),
+          enter: [this._sessionSectionEl].filter(Boolean),
+          setup: () => {
+            const parent = this._sessionSectionEl?.parentElement;
+            if (parent) parent.style.position = "relative";
+            [this._sessionSectionEl, this.treeSectionEl].forEach((el2) => {
+              if (!el2) return;
+              el2.style.position = "absolute";
+              el2.style.top = "0";
+              el2.style.left = "0";
+              el2.style.width = "100%";
+              el2.style.height = "100%";
+            });
+            if (this.treeSectionEl) {
+              this.treeSectionEl.classList.remove("active");
+            }
           }
-        }
+        });
+      } catch (e) {
+        console.error("[workspace] exit slide transition failed:", e);
+      }
+      const parentExit = this._sessionSectionEl?.parentElement;
+      [this._sessionSectionEl, this.treeSectionEl].forEach((el2) => {
+        if (!el2) return;
+        el2.style.position = "";
+        el2.style.top = "";
+        el2.style.left = "";
+        el2.style.width = "";
+        el2.style.height = "";
       });
+      if (parentExit) parentExit.style.position = "";
       this._exiting = true;
       this.isInWorkspaceMode = false;
       this.batchMode = false;
       this.selectedPaths.clear();
+      this._saveExpandedState();
       this.expandedWsPaths.clear();
       const oldWs = getState().activeWorkspace;
       setActiveWorkspace("");
@@ -87540,10 +88557,21 @@ No activity`;
       this._transitioning = false;
       setWorkspaceMode("normal");
       this.onModeChange?.();
-      const autoBtn = document.getElementById("btn-automation");
-      if (autoBtn) autoBtn.classList.remove("hidden");
       const tempBtn = document.getElementById("btn-temp-chat");
-      if (tempBtn) tempBtn.classList.remove("hidden");
+      if (tempBtn) {
+        tempBtn.style.transition = "none";
+        tempBtn.style.transform = "translateX(100%)";
+        tempBtn.style.opacity = "0";
+        requestAnimationFrame(() => {
+          tempBtn.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
+          tempBtn.style.transform = "translateX(0)";
+          tempBtn.style.opacity = "";
+          tempBtn.style.pointerEvents = "";
+          setTimeout(() => {
+            if (tempBtn) tempBtn.style.transition = "";
+          }, 330);
+        });
+      }
       setTimeout(() => {
         this._exiting = false;
       }, 100);
@@ -87555,6 +88583,14 @@ No activity`;
       if (this.treeSectionEl) return;
       const sessionSection = document.getElementById("session-section");
       if (!sessionSection) return;
+      let wrapper = document.getElementById("sidebar-section-wrapper");
+      if (!wrapper) {
+        wrapper = document.createElement("div");
+        wrapper.id = "sidebar-section-wrapper";
+        wrapper.style.cssText = "position:relative;flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0";
+        sessionSection.parentNode?.insertBefore(wrapper, sessionSection);
+        wrapper.appendChild(sessionSection);
+      }
       const section = document.createElement("div");
       section.id = "workspace-tree-section";
       const header = document.createElement("div");
@@ -87562,22 +88598,22 @@ No activity`;
       header.innerHTML = `
       <span class="sidebar-section-title" data-i18n="search.sectionWorkspaces">Workspaces</span>
       <div class="workspace-tree-actions">
-        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder" title="Open Folder">
+        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder" data-tooltip="Open Folder">
           <i data-lucide="folder-plus" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage" title="Manage">
+        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage" data-tooltip="Manage">
           <i data-lucide="sliders-horizontal" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel" title="Cancel">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel" data-tooltip="Cancel">
           <i data-lucide="x" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll" title="Select All">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll" data-tooltip="Select All">
           <i data-lucide="check-square" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport" title="Export Selected">
+        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport" data-tooltip="Export Selected">
           <i data-lucide="download" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete" title="Delete Selected">
+        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete" data-tooltip="Delete Selected">
           <i data-lucide="trash-2" class="lucide"></i>
         </button>
       </div>`;
@@ -87586,7 +88622,7 @@ No activity`;
       list3.className = "workspace-tree-list";
       section.appendChild(header);
       section.appendChild(list3);
-      sessionSection.parentNode?.insertBefore(section, sessionSection);
+      wrapper.insertBefore(section, sessionSection);
       this.treeSectionEl = section;
       this.treeListEl = list3;
       section.classList.add("hidden");
@@ -87622,15 +88658,11 @@ No activity`;
         const isExpanded = this.expandedWsPaths.has(ws4.path);
         const isActive = ws4.path === activeWs ? " active" : "";
         const expandIcon = isExpanded ? "chevron-down" : "chevron-right";
-        const wsSessions = s15.sessionsList.filter((sess) => {
-          const wsPath = sess.metadata?.workspace || sess.metadata?.workspace_path || "";
-          return wsPath === ws4.path;
-        });
+        const wsSessions = s15.sessionsList.filter((sess) => this.belongsToWorkspace(sess, ws4.path));
         html2 += `<div class="ws-tree-node" data-ws-path="${this.esc(ws4.path)}">
         <div class="ws-tree-node-header${isActive}" data-ws-path="${this.esc(ws4.path)}">
           ${this.batchMode ? `<input type="checkbox" class="ws-checkbox" data-path="${this.esc(ws4.path)}" ${this.selectedPaths.has(ws4.path) ? "checked" : ""} />` : ""}
           <i data-lucide="${expandIcon}" class="lucide lucide-xs ws-chevron"></i>
-          <i data-lucide="folder" class="lucide lucide-sm ws-folder-icon${isActive ? " ws-folder-active" : ""}"></i>
           <span class="ws-name">${this.esc(ws4.name)}</span>
           <span class="ws-session-count">${wsSessions.length}</span>
         </div>
@@ -87653,22 +88685,14 @@ No activity`;
       let html2 = "";
       for (const sess of sessions) {
         const active = sess.session_id === activeSid ? " active" : "";
-        const ts2 = (sess.last_active || sess.created_at || 0) * 1e3;
-        const date = new Date(ts2);
-        const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
-        const fullTs = ts2 > 0 ? date.toLocaleString() : "";
         const displayName = sess.name || sess.preview || t("general.emptySessionName");
-        const msgCount = sess.message_count ?? 0;
         const runningBadge = sess.is_running ? '<span class="session-running"></span>' : "";
-        const badge = this.channelBadge(sess.channel);
-        html2 += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}" title="${this.esc(fullTs)}">
+        html2 += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}">
         <div class="session-item-top">
           ${this.batchMode ? `<input type="checkbox" class="session-checkbox" data-sid="${sess.session_id}" ${this.selectedPaths.has(sess.session_id) ? "checked" : ""} />` : ""}
           <span class="session-preview">${this.esc(displayName)}</span>
           ${runningBadge}
         </div>
-        <span class="ws-session-meta">${dateStr} ${time} \xB7 ${msgCount} ${t("session.messages")} ${badge}</span>
       </div>`;
       }
       return html2;
@@ -87696,6 +88720,10 @@ No activity`;
             return;
           }
           if (e.target.closest("input")) return;
+          if (e.target.closest(".ws-chevron")) {
+            this.toggleExpand(path);
+            return;
+          }
           if (this.expandedWsPaths.has(path)) {
             this.expandedWsPaths.delete(path);
           } else {
@@ -87812,8 +88840,7 @@ No activity`;
       if (selectedWs.length === 0) return covered;
       for (const wsPath of selectedWs) {
         for (const s15 of st3.sessionsList) {
-          const owner = s15.metadata?.workspace || s15.metadata?.workspace_path || "";
-          if (owner === wsPath) covered.add(s15.session_id);
+          if (this.belongsToWorkspace(s15, wsPath)) covered.add(s15.session_id);
         }
       }
       return covered;
@@ -87840,7 +88867,7 @@ No activity`;
       const st3 = getState();
       const ws4 = st3.workspaces.find((w) => w.path === path);
       if (ws4) {
-        const childSids = st3.sessionsList.filter((s15) => (s15.metadata?.workspace || s15.metadata?.workspace_path || "") === path).map((s15) => s15.session_id);
+        const childSids = st3.sessionsList.filter((s15) => this.belongsToWorkspace(s15, path)).map((s15) => s15.session_id);
         const willSelect = !this.selectedPaths.has(path);
         if (willSelect) {
           this.selectedPaths.add(path);
@@ -87907,6 +88934,15 @@ No activity`;
       el2.textContent = s15;
       return el2.innerHTML;
     }
+    /** Normalize a file path for comparison (case-insensitive on Windows). */
+    normalizePath(p) {
+      return p.replace(/\\/g, "/").toLowerCase();
+    }
+    /** Check whether a session belongs to a given workspace path. */
+    belongsToWorkspace(sess, wsPath) {
+      const owner = sess.metadata?.workspace || sess.metadata?.workspace_path || "";
+      return this.normalizePath(owner) === this.normalizePath(wsPath);
+    }
     /** Build a short badge label for the session's channel/mode. */
     channelBadge(channel) {
       if (!channel || channel === "normal") return "";
@@ -87929,9 +88965,7 @@ No activity`;
         <i data-lucide="trash-2" class="lucide lucide-sm"></i>
         <span>${this.esc(t("workspace.remove"))}</span>
       </div>`;
-      menuEl.style.left = `${x}px`;
-      menuEl.style.top = `${y}px`;
-      menuEl.classList.remove("hidden");
+      showContextMenu(menuEl, x, y);
       document.getElementById("ctx-ws-delete")?.addEventListener("click", async () => {
         menuEl.classList.add("hidden");
         if (await Dialog.confirm(
@@ -88012,8 +89046,6 @@ No activity`;
   // renderer/src/iclaw.ts
   var AutomationPanel = class {
     constructor() {
-      this._automationBtn = null;
-      this._backBtn = null;
       this._toggleBtn = null;
       this._automationView = null;
       this._mainContent = null;
@@ -88024,15 +89056,13 @@ No activity`;
       this._transitioning = false;
       /** Called each time the automation panel opens */
       this.onShow = null;
-      this._automationBtn = document.getElementById("btn-automation");
-      this._backBtn = document.getElementById("btn-automation-back");
+      /** Called each time the automation panel hides */
+      this.onHide = null;
       this._toggleBtn = document.getElementById("btn-toggle-sidebar");
       this._automationView = document.getElementById("automation-view");
       this._mainContent = document.getElementById("main-content");
       this._sessionBar = document.getElementById("session-bar");
       this._appEl = document.getElementById("app");
-      this._automationBtn?.addEventListener("click", () => this.toggleAutomationView());
-      this._backBtn?.addEventListener("click", () => this.hideAutomationView());
     }
     /**
      * Whether the automation view is currently visible.
@@ -88040,21 +89070,69 @@ No activity`;
     get isActive() {
       return !!(this._automationView && !this._automationView.classList.contains("hidden"));
     }
-    /** Public: hide automation view if active */
-    /** Hides the automation view if it is currently active. */
-    hide() {
+    /** Hides the automation view if it is currently active. Returns a promise that
+     *  resolves when the hide transition completes (or immediately if not active).
+     *  If `instant` is true, skips the slide animation. */
+    async hide(instant = false) {
       if (this.isActive) {
-        this.hideAutomationView();
+        if (instant) {
+          this._instantHide();
+        } else {
+          await this.hideAutomationView();
+        }
       }
     }
-    /** Toggle automation panel visibility */
+    /** Shows the automation view. Returns a promise that resolves when the show
+     *  transition completes. */
+    async show() {
+      await this.showAutomationView();
+    }
     /** Toggles automation panel visibility (show when hidden, hide when shown). */
-    toggleAutomationView() {
+    async toggleAutomationView() {
       if (this.isActive) {
-        this.hideAutomationView();
+        await this.hideAutomationView();
       } else {
-        this.showAutomationView();
+        await this.showAutomationView();
       }
+    }
+    /** Instantly hides automation view without animation. Used when switching
+     *  directly to another mode to avoid a double-transition flash. */
+    _instantHide() {
+      if (this._automationView) {
+        this._automationView.classList.add("hidden");
+        this._automationView.style.position = "";
+        this._automationView.style.width = "";
+        this._automationView.style.height = "";
+        this._automationView.style.top = "";
+        this._automationView.style.left = "";
+        this._automationView.style.transition = "";
+        this._automationView.style.transform = "";
+        this._automationView.style.opacity = "";
+      }
+      if (this._mainContent) {
+        this._mainContent.classList.remove("hidden");
+        this._mainContent.style.position = "";
+        this._mainContent.style.width = "";
+        this._mainContent.style.height = "";
+        this._mainContent.style.top = "";
+        this._mainContent.style.left = "";
+        this._mainContent.style.transition = "";
+        this._mainContent.style.transform = "";
+        this._mainContent.style.opacity = "";
+      }
+      const mainBody = document.getElementById("main-body");
+      if (mainBody) mainBody.style.position = "";
+      if (this._sessionBar) this._sessionBar.classList.remove("hidden");
+      if (this._appEl && !this._sidebarWasCollapsed) {
+        this._appEl.classList.remove("sidebar-collapsed");
+      }
+      if (this._toggleBtn) {
+        this._toggleBtn.style.transition = "";
+        this._toggleBtn.style.opacity = "";
+        this._toggleBtn.style.transform = "";
+        this._toggleBtn.style.pointerEvents = "";
+      }
+      this.onHide?.();
     }
     /** Slides the automation view in over the main content (collapsing the sidebar). */
     async showAutomationView() {
@@ -88066,8 +89144,12 @@ No activity`;
           this._appEl.classList.add("sidebar-collapsed");
         }
       }
-      if (this._toggleBtn) this._toggleBtn.classList.add("hidden");
-      if (this._backBtn) this._backBtn.classList.remove("hidden");
+      if (this._toggleBtn) {
+        this._toggleBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
+        this._toggleBtn.style.opacity = "0";
+        this._toggleBtn.style.transform = "translateX(-8px)";
+        this._toggleBtn.style.pointerEvents = "none";
+      }
       if (this._sessionBar) this._sessionBar.classList.add("hidden");
       const mainBody = document.getElementById("main-body");
       await TransitionHelper.slide({
@@ -88093,6 +89175,7 @@ No activity`;
       });
       if (mainBody) mainBody.style.position = "";
       this.onShow?.();
+      if (this._toggleBtn) this._toggleBtn.style.transition = "";
       this._transitioning = false;
     }
     /** Slides the automation view out and restores the main content and sidebar. */
@@ -88116,8 +89199,17 @@ No activity`;
           if (this._appEl && !this._sidebarWasCollapsed) {
             this._appEl.classList.remove("sidebar-collapsed");
           }
-          if (this._toggleBtn) this._toggleBtn.classList.remove("hidden");
-          if (this._backBtn) this._backBtn.classList.add("hidden");
+          if (this._toggleBtn) {
+            this._toggleBtn.style.transition = "none";
+            this._toggleBtn.style.transform = "translateX(100%)";
+            this._toggleBtn.style.opacity = "0";
+            requestAnimationFrame(() => {
+              this._toggleBtn.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
+              this._toggleBtn.style.transform = "translateX(0)";
+              this._toggleBtn.style.opacity = "";
+              this._toggleBtn.style.pointerEvents = "";
+            });
+          }
         }
       });
       [this._mainContent, this._automationView].forEach((el2) => {
@@ -88128,13 +89220,16 @@ No activity`;
         el2.style.left = "";
       });
       if (mainBody) mainBody.style.position = "";
+      if (this._toggleBtn) this._toggleBtn.style.transition = "";
       this._transitioning = false;
+      this.onHide?.();
     }
   };
 
   // renderer/src/automation.ts
   init_i18n();
   init_ws();
+  init_dialog();
   init_state();
   init_session();
   init_stream();
@@ -88282,10 +89377,15 @@ No activity`;
       this.createWrap = document.getElementById("automation-create-wrap");
       this.createBtn = document.getElementById("automation-create-btn");
       this.createDropdown = document.getElementById("automation-create-dropdown");
+      this.detailEl = this.el.querySelector(".automation-detail");
+      this.detailContentEl = document.getElementById("automation-detail-content");
+      this.detailBreadcrumbEl = document.getElementById("automation-detail-breadcrumb");
+      this.detailBackEl = document.getElementById("automation-detail-back");
       this.bindTabs();
       this.bindCallbacks();
       this.bindCreateButton();
       this.bindHistoryFilters();
+      this.detailBackEl.addEventListener("click", () => this.hideDetail());
       document.addEventListener("click", (e) => {
         const target = e.target;
         const filtersEl = document.getElementById("history-filters");
@@ -88295,6 +89395,77 @@ No activity`;
           });
         }
       });
+    }
+    // ── Detail view (sub-agent result inside automation panel) ──────
+    /** Show the detail panel for a sub-agent result. */
+    showDetail(data2) {
+      this.detailBreadcrumbEl.innerHTML = `<span class="automation-detail-breadcrumb-label">${this.escapeHtml(data2.name || "")}</span>`;
+      if (data2.messages && data2.messages.length > 0) {
+        this.renderDetailMessages(data2.messages);
+      } else if (data2.state === "FAILED") {
+        this.detailContentEl.innerHTML = `
+        <div class="si-panel-empty" style="flex:1;gap:14px;">
+          <i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i>
+          <div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div>
+          <div class="si-panel-empty-sub">${this.escapeHtml(data2.result || "")}</div>
+        </div>`;
+        if (typeof window.lucide !== "undefined") {
+          window.lucide.createIcons({ root: this.detailContentEl });
+        }
+      } else {
+        this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="padding:40px 20px;">${t("automation.noMessages") || "No messages"}</div>`;
+      }
+      this.panelsEl.style.display = "none";
+      this.detailEl.classList.add("active");
+      this.detailEl.style.display = "flex";
+      this.tabsEl.style.display = "none";
+    }
+    /** Hide the detail panel and return to the list. */
+    hideDetail() {
+      this.detailEl.classList.remove("active");
+      this.detailEl.style.display = "none";
+      this.panelsEl.style.display = "";
+      this.tabsEl.style.display = "";
+      this.detailContentEl.innerHTML = "";
+      this.detailBreadcrumbEl.innerHTML = "";
+    }
+    /** Render a flat message array as bubbles inside the detail content area. */
+    renderDetailMessages(rawMessages) {
+      const html2 = [];
+      for (const msg of rawMessages) {
+        if (msg.role === "user") {
+          const text2 = typeof msg.content === "string" ? msg.content : msg.content?.[0]?.text || "";
+          html2.push(`<div class="user-item"><div class="user-bubble">${this.escapeHtml(text2)}</div></div>`);
+        } else if (msg.role === "assistant" || msg.role === "tool") {
+          const thinking = msg.reasoning_content || msg.reasoning || (msg.content && typeof msg.content === "object" ? "" : "");
+          if (thinking && typeof thinking === "string" && thinking.length > 0) {
+            html2.push(`<details class="thinking-strip"><summary>Thinking</summary><div class="thought-body">${renderMarkdown(thinking)}</div></details>`);
+          }
+          let text2 = "";
+          if (typeof msg.content === "string") {
+            text2 = msg.content;
+          } else if (Array.isArray(msg.content)) {
+            text2 = msg.content.map((c) => c.text || "").join("\n");
+          }
+          if (text2.trim()) {
+            html2.push(`<div class="assistant-text"><div class="msg-text">${renderMarkdown(text2)}</div></div>`);
+          }
+          if (msg.tool_calls) {
+            for (const tc2 of msg.tool_calls) {
+              html2.push(`<div class="tool-call">${this.escapeHtml(tc2.function?.name || tc2.name || "tool")}</div>`);
+            }
+          }
+        }
+      }
+      this.detailContentEl.innerHTML = html2.join("\n");
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: this.detailContentEl });
+      }
+    }
+    escapeHtml(text2) {
+      const div = document.createElement("div");
+      div.appendChild(document.createTextNode(text2));
+      return div.innerHTML;
     }
     /** Refreshes the panel by requesting the jobs list and run history. */
     render() {
@@ -88411,9 +89582,14 @@ No activity`;
             <label class="model-form-label">${t("automation.pushGateways")}</label>
             <div id="auto-dlg-push-gateways" style="margin-top:4px"></div>
           </div>
-          <div class="model-form-row">
+          <div class="model-form-row" style="flex-direction:column;align-items:stretch">
             <label class="model-form-label">${t("automation.whatToDo")}</label>
-            <textarea id="auto-dlg-prompt" class="model-form-input" rows="8">${escapeHtml5(editJob?.prompt || template.defaultPrompt)}</textarea>
+            <div class="input-wrapper input-wrapper--dialog">
+              <div class="input-row">
+                <div id="auto-dlg-prompt" class="prompt-input" contenteditable="true" role="textbox" aria-multiline="true" style="min-height:56px;max-height:300px">${escapeHtml5(editJob?.prompt || template.defaultPrompt)}</div>
+                <div class="prompt-placeholder" style="left:14px;top:10px">${t("automation.whatToDo")}</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="dialog-footer">
@@ -88425,6 +89601,18 @@ No activity`;
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: overlay });
       }
+      overlay.querySelectorAll(".prompt-input[contenteditable]").forEach((el2) => {
+        const ph = el2.parentElement?.querySelector(".prompt-placeholder");
+        const update2 = () => {
+          el2.style.height = "auto";
+          el2.style.height = Math.min(el2.scrollHeight, 300) + "px";
+          if (ph) {
+            ph.classList.toggle("hidden", (el2.textContent || "").trim().length > 0);
+          }
+        };
+        el2.addEventListener("input", update2);
+        update2();
+      });
       let scheduleValue = parsed.scheduleType;
       let timeValue = parsed.time;
       const timeRow = overlay.querySelector("#auto-dlg-time-row");
@@ -88457,8 +89645,8 @@ No activity`;
           });
         });
       };
-      const showTimePicker = (show) => {
-        timeRow.style.display = show ? "" : "none";
+      const showTimePicker = (show2) => {
+        timeRow.style.display = show2 ? "" : "none";
       };
       scheduleTrigger.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -88510,11 +89698,11 @@ No activity`;
         modelDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
           item.addEventListener("click", (e) => {
             e.stopPropagation();
-            const idx2 = parseInt(item.getAttribute("data-index") || "-1");
-            if (idx2 < 0) return;
-            selectedModelIndex = idx2;
+            const idx = parseInt(item.getAttribute("data-index") || "-1");
+            if (idx < 0) return;
+            selectedModelIndex = idx;
             const models2 = getState().modelConfigs;
-            modelTrigger.querySelector("span").textContent = models2[idx2]?.name || "\u2014";
+            modelTrigger.querySelector("span").textContent = models2[idx]?.name || "\u2014";
             modelDropdown.classList.remove("open");
           });
         });
@@ -88591,7 +89779,7 @@ No activity`;
       overlay.querySelector("#auto-dlg-ok")?.addEventListener("click", () => {
         const name2 = document.getElementById("auto-dlg-name")?.value.trim();
         if (!name2) return;
-        const prompt2 = document.getElementById("auto-dlg-prompt")?.value.trim() || template.defaultPrompt;
+        const prompt2 = document.getElementById("auto-dlg-prompt")?.textContent?.trim() || template.defaultPrompt;
         const time = timeValue || "09:00";
         const [h3, m] = time.split(":").map((s15) => s15.padStart(2, "0"));
         let cron;
@@ -88744,10 +89932,10 @@ No activity`;
           <div class="model-table-cell model-cell-provider">${formatSchedule(job.cron)}</div>
           <div class="model-table-cell model-cell-actions">
             ${stateTag(job.state, job.suspended)}
-            <button class="btn-icon" data-action="edit" title="${t("general.edit")}">
+            <button class="btn-icon" data-action="edit" data-tooltip="${t("general.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" title="${t("general.delete")}">
+            <button class="btn-icon" data-action="delete" data-tooltip="${t("general.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -88997,23 +90185,6 @@ No activity`;
     renderHistory() {
       const filtersEl = document.getElementById("history-filters");
       let displayHistory = [...getState().automationHistory];
-      if (this.jobs.length > 0) {
-        const historyJobIds = new Set(displayHistory.map((h3) => h3.job_id));
-        for (const job of this.jobs) {
-          if (!historyJobIds.has(job.id)) {
-            displayHistory.push({
-              id: `${job.id}_pending`,
-              job_id: job.id,
-              name: job.name,
-              tag: job.tag || "",
-              time: job.created_at,
-              state: "PENDING",
-              last_result: "",
-              fail_count: 0
-            });
-          }
-        }
-      }
       const fromTs = this.historyDateFrom ? (/* @__PURE__ */ new Date(this.historyDateFrom + "T00:00:00")).getTime() / 1e3 : null;
       const toTs = this.historyDateTo ? (/* @__PURE__ */ new Date(this.historyDateTo + "T23:59:59")).getTime() / 1e3 : null;
       displayHistory = displayHistory.filter((h3) => {
@@ -89093,25 +90264,49 @@ No activity`;
           const entry = getState().automationHistory.find((h3) => h3.id === entryId);
           if (!entry) return;
           const job = this.jobs.find((j3) => j3.id === entry.job_id);
-          this.onViewResult?.({
+          const data2 = {
             id: entry.id,
             name: entry.name,
             prompt: job?.prompt || entry.name,
             result: entry.last_result || "",
             tag: entry.tag,
-            messages: entry.messages,
+            messages: entry.messages || [],
             state: entry.state,
             job_id: entry.job_id,
             session_id: entry.session_id
-          });
+          };
+          if (data2.state === "FAILED") {
+            this.showDetail(data2);
+          } else {
+            this.onViewResult?.(data2);
+          }
         });
       });
       this.historyTimelineEl.querySelectorAll(".history-timeline-item").forEach((item) => {
         item.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           const sid = item.getAttribute("data-sid");
-          if (sid) {
+          const entryId = item.getAttribute("data-entry-id");
+          const entry = getState().automationHistory.find((h3) => h3.id === entryId);
+          const isFailed = !!entry && entry.state === "FAILED";
+          if (sid && !isFailed) {
             showSessionContextMenu(sid, e.clientX, e.clientY, true);
+          } else if (sid && isFailed) {
+            showSessionContextMenu(sid, e.clientX, e.clientY, true, true, () => {
+              if (entryId) {
+                Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
+                  if (confirmed) {
+                    send({ type: "automation_delete_execution", entry_id: entryId });
+                  }
+                });
+              }
+            });
+          } else if (entryId) {
+            Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
+              if (confirmed) {
+                send({ type: "automation_delete_execution", entry_id: entryId });
+              }
+            });
           }
         });
       });
@@ -89146,6 +90341,88 @@ No activity`;
     div.textContent = str;
     return div.innerHTML;
   }
+
+  // renderer/src/mode-transition.ts
+  init_state();
+  init_ws();
+  init_stream();
+  var ModeTransitionManager = class {
+    constructor(opts) {
+      this._transitioning = false;
+      this._preAutomationMode = "normal";
+      /** Saved active workspace path so re-entering iWork restores it. */
+      this._savedActiveWorkspace = "";
+      this._workspace = opts.workspace;
+      this._automationPanel = opts.automationPanel;
+      this._onModeChange = opts.onModeChange;
+    }
+    get isTransitioning() {
+      return this._transitioning;
+    }
+    getCurrentMode() {
+      if (this._automationPanel.isActive) return "automation";
+      return getState().workspaceMode === "iwork" ? "iwork" : "normal";
+    }
+    async switchMode(target) {
+      const current = this.getCurrentMode();
+      if (target === current || this._transitioning) return;
+      this._transitioning = true;
+      const origOnModeChange = this._workspace.onModeChange;
+      this._workspace.onModeChange = null;
+      try {
+        if (target === "automation") {
+          this._preAutomationMode = current;
+          if (current === "iwork") {
+            this._savedActiveWorkspace = getState().activeWorkspace;
+            await Promise.all([
+              this._workspace.exit(),
+              this._automationPanel.show()
+            ]);
+          } else {
+            await this._automationPanel.show();
+          }
+        } else if (target === "iwork") {
+          if (current === "automation") {
+            if (this._savedActiveWorkspace) {
+              setActiveWorkspace(this._savedActiveWorkspace);
+              const requestId = crypto.randomUUID();
+              setRequestedSessionId("", requestId);
+              send({ type: "open_workspace", path: this._savedActiveWorkspace, request_id: requestId });
+              this._savedActiveWorkspace = "";
+            }
+            await this._automationPanel.hide();
+            const sidebar = document.getElementById("sidebar");
+            if (sidebar) {
+              sidebar.style.transition = "none";
+              void document.body.offsetHeight;
+              sidebar.style.transition = "";
+            }
+            await this._workspace.enter();
+          } else {
+            await this._workspace.enter();
+          }
+          origOnModeChange?.();
+        } else if (target === "normal") {
+          if (current === "automation") {
+            await this._automationPanel.hide();
+          } else {
+            await this._workspace.exit();
+          }
+          origOnModeChange?.();
+        }
+      } finally {
+        this._workspace.onModeChange = origOnModeChange;
+        this._transitioning = false;
+      }
+    }
+    async toggleAutomation() {
+      if (this.getCurrentMode() === "automation") {
+        await this.switchMode(this._preAutomationMode);
+      } else {
+        await this.switchMode("automation");
+      }
+    }
+  };
 
   // renderer/src/session_inner.ts
   init_state();
@@ -103354,7 +104631,7 @@ void main() {
       var _a3;
       let getter = this.value;
       let compare2 = this.facet.compareInput;
-      let id2 = this.id, idx2 = addresses[id2] >> 1, multi = this.type == 2;
+      let id2 = this.id, idx = addresses[id2] >> 1, multi = this.type == 2;
       let depDoc = false, depSel = false, depAddrs = [];
       for (let dep of this.dependencies) {
         if (dep == "doc")
@@ -103366,14 +104643,14 @@ void main() {
       }
       return {
         create(state2) {
-          state2.values[idx2] = getter(state2);
+          state2.values[idx] = getter(state2);
           return 1;
         },
         update(state2, tr3) {
           if (depDoc && tr3.docChanged || depSel && (tr3.docChanged || tr3.selection) || ensureAll(state2, depAddrs)) {
             let newVal = getter(state2);
-            if (multi ? !compareArray(newVal, state2.values[idx2], compare2) : !compare2(newVal, state2.values[idx2])) {
-              state2.values[idx2] = newVal;
+            if (multi ? !compareArray(newVal, state2.values[idx], compare2) : !compare2(newVal, state2.values[idx])) {
+              state2.values[idx] = newVal;
               return 1;
             }
           }
@@ -103386,13 +104663,13 @@ void main() {
             if (this.dependencies.every((dep) => {
               return dep instanceof Facet ? oldState.facet(dep) === state2.facet(dep) : dep instanceof StateField ? oldState.field(dep, false) == state2.field(dep, false) : true;
             }) || (multi ? compareArray(newVal = getter(state2), oldVal, compare2) : compare2(newVal = getter(state2), oldVal))) {
-              state2.values[idx2] = oldVal;
+              state2.values[idx] = oldVal;
               return 0;
             }
           } else {
             newVal = getter(state2);
           }
-          state2.values[idx2] = newVal;
+          state2.values[idx] = newVal;
           return 1;
         }
       };
@@ -103420,7 +104697,7 @@ void main() {
     let providerAddrs = providers.map((p) => addresses[p.id]);
     let providerTypes = providers.map((p) => p.type);
     let dynamic = providerAddrs.filter((p) => !(p & 1));
-    let idx2 = addresses[facet.id] >> 1;
+    let idx = addresses[facet.id] >> 1;
     function get2(state2) {
       let values2 = [];
       for (let i8 = 0; i8 < providerAddrs.length; i8++) {
@@ -103437,31 +104714,31 @@ void main() {
       create(state2) {
         for (let addr of providerAddrs)
           ensureAddr(state2, addr);
-        state2.values[idx2] = get2(state2);
+        state2.values[idx] = get2(state2);
         return 1;
       },
       update(state2, tr3) {
         if (!ensureAll(state2, dynamic))
           return 0;
         let value = get2(state2);
-        if (facet.compare(value, state2.values[idx2]))
+        if (facet.compare(value, state2.values[idx]))
           return 0;
-        state2.values[idx2] = value;
+        state2.values[idx] = value;
         return 1;
       },
       reconfigure(state2, oldState) {
         let depChanged = ensureAll(state2, providerAddrs);
         let oldProviders = oldState.config.facets[facet.id], oldValue = oldState.facet(facet);
         if (oldProviders && !depChanged && sameArray(providers, oldProviders)) {
-          state2.values[idx2] = oldValue;
+          state2.values[idx] = oldValue;
           return 0;
         }
         let value = get2(state2);
         if (facet.compare(value, oldValue)) {
-          state2.values[idx2] = oldValue;
+          state2.values[idx] = oldValue;
           return 0;
         }
-        state2.values[idx2] = value;
+        state2.values[idx] = value;
         return 1;
       }
     };
@@ -103493,31 +104770,31 @@ void main() {
     @internal
     */
     slot(addresses) {
-      let idx2 = addresses[this.id] >> 1;
+      let idx = addresses[this.id] >> 1;
       return {
         create: (state2) => {
-          state2.values[idx2] = this.create(state2);
+          state2.values[idx] = this.create(state2);
           return 1;
         },
         update: (state2, tr3) => {
-          let oldVal = state2.values[idx2];
+          let oldVal = state2.values[idx];
           let value = this.updateF(oldVal, tr3);
           if (this.compareF(oldVal, value))
             return 0;
-          state2.values[idx2] = value;
+          state2.values[idx] = value;
           return 1;
         },
         reconfigure: (state2, oldState) => {
           let init2 = state2.facet(initField), oldInit = oldState.facet(initField), reInit;
           if ((reInit = init2.find((i8) => i8.field == this)) && reInit != oldInit.find((i8) => i8.field == this)) {
-            state2.values[idx2] = reInit.create(state2);
+            state2.values[idx] = reInit.create(state2);
             return 1;
           }
           if (oldState.config.address[this.id] != null) {
-            state2.values[idx2] = oldState.field(this);
+            state2.values[idx] = oldState.field(this);
             return 0;
           }
-          state2.values[idx2] = this.create(state2);
+          state2.values[idx] = this.create(state2);
           return 1;
         }
       };
@@ -103728,15 +105005,15 @@ void main() {
   function ensureAddr(state2, addr) {
     if (addr & 1)
       return 2;
-    let idx2 = addr >> 1;
-    let status = state2.status[idx2];
+    let idx = addr >> 1;
+    let status = state2.status[idx];
     if (status == 4)
       throw new Error("Cyclic dependency between fields and/or facets");
     if (status & 2)
       return status;
-    state2.status[idx2] = 4;
-    let changed = state2.computeSlot(state2, state2.config.dynamicSlots[idx2]);
-    return state2.status[idx2] = 2 | changed;
+    state2.status[idx] = 4;
+    let changed = state2.computeSlot(state2, state2.config.dynamicSlots[idx]);
+    return state2.status[idx] = 2 | changed;
   }
   function getAddr(state2, addr) {
     return addr & 1 ? state2.config.staticValues[addr >> 1] : state2.values[addr >> 1];
@@ -124605,7 +125882,7 @@ void main() {
     });
     return found;
   }
-  function hideTooltip(tr3, tooltip) {
+  function hideTooltip2(tr3, tooltip) {
     let from3 = tooltip.pos, to2 = tooltip.end || from3;
     let result = tr3.state.facet(lintConfig).hideOn(tr3, from3, to2);
     if (result != null)
@@ -125091,7 +126368,7 @@ void main() {
     }
     return sev;
   }
-  var lintHover = /* @__PURE__ */ hoverTooltip(lintTooltip, { hideOn: hideTooltip });
+  var lintHover = /* @__PURE__ */ hoverTooltip(lintTooltip, { hideOn: hideTooltip2 });
   var lintExtensions = [
     lintState,
     /* @__PURE__ */ EditorView.decorations.compute([lintState], (state2) => {
@@ -125792,10 +127069,10 @@ void main() {
     units, since the library does not track lookbehind.
     */
     peek(offset) {
-      let idx2 = this.chunkOff + offset, pos, result;
-      if (idx2 >= 0 && idx2 < this.chunk.length) {
+      let idx = this.chunkOff + offset, pos, result;
+      if (idx >= 0 && idx < this.chunk.length) {
         pos = this.pos + offset;
-        result = this.chunk.charCodeAt(idx2);
+        result = this.chunk.charCodeAt(idx);
       } else {
         let resolved = this.resolveOffset(offset, 1);
         if (resolved == null)
@@ -132160,13 +133437,13 @@ void main() {
     }]
   };
   function parseRow(cx, line, startI = 0, elts, offset = 0) {
-    let count2 = 0, first = true, cellStart = -1, cellEnd = -1, esc = false;
+    let count2 = 0, first = true, cellStart = -1, cellEnd = -1, esc2 = false;
     let parseCell = () => {
       elts.push(cx.elt("TableCell", offset + cellStart, offset + cellEnd, cx.parser.parseInline(line.slice(cellStart, cellEnd), offset + cellStart)));
     };
     for (let i8 = startI; i8 < line.length; i8++) {
       let next = line.charCodeAt(i8);
-      if (next == 124 && !esc) {
+      if (next == 124 && !esc2) {
         if (!first || cellStart > -1)
           count2++;
         first = false;
@@ -132176,12 +133453,12 @@ void main() {
           elts.push(cx.elt("TableDelimiter", i8 + offset, i8 + offset + 1));
         }
         cellStart = cellEnd = -1;
-      } else if (esc || next != 32 && next != 9) {
+      } else if (esc2 || next != 32 && next != 9) {
         if (cellStart < 0)
           cellStart = i8;
         cellEnd = i8 + 1;
       }
-      esc = !esc && next == 92;
+      esc2 = !esc2 && next == 92;
     }
     if (cellStart > -1) {
       count2++;
@@ -135204,6 +136481,14 @@ void main() {
   });
 
   // renderer/src/session_inner.ts
+  init_context_menu();
+  var TABS_STORAGE_KEY = "session-sidebar-tabs";
+  function _saveTabs(tabs) {
+    try {
+      localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs.map((t3) => ({ id: t3.id, closable: t3.closable }))));
+    } catch {
+    }
+  }
   var NEW_TAB_OPTIONS = [
     { id: "terminal", icon: "terminal" },
     { id: "editor", icon: "code-2" },
@@ -135245,10 +136530,13 @@ void main() {
       this.tabAddBtn = null;
       this.tabAddDropdown = null;
       this.tabAddDocClickHandler = null;
-      this.tabs = [
-        { id: "info", closable: true }
-      ];
-      this.activeTab = "info";
+      this.tabs = [];
+      this.activeTab = "";
+      this._sessionTabs = /* @__PURE__ */ new Map();
+      this._sessionTerminals = /* @__PURE__ */ new Map();
+      this._sessionTermActiveIdx = /* @__PURE__ */ new Map();
+      /** Key used for storing sidebar tabs: "session:<sid>" or "workspace:<path>". */
+      this._tabKey = "";
       /* tab drag */
       this.dragEl = null;
       this.dragIdx = -1;
@@ -135315,11 +136603,53 @@ void main() {
       }
       this.el.style.setProperty("--sidebar-w", this.sidebarWidth + "px");
       document.getElementById("main-body")?.style.setProperty("--sidebar-w", this.sidebarWidth + "px");
-      subscribe2(() => this.render());
+      subscribe2(() => this._onStateChange());
       onLocaleChange(() => this.render());
       this.renderTabs();
       this.bindAddButton();
       this.bindResize();
+    }
+    /** Build the storage key: session-level in normal mode, workspace-level in ws mode. */
+    _tabStorageKey() {
+      const s15 = getState();
+      if (s15.activeWorkspace) return "ws:" + s15.activeWorkspace;
+      return "session:" + (s15.sessionId || "");
+    }
+    /** React to state changes: swap tab + terminal state on session/workspace
+     * switches, and refresh the live info panels when the same session mutates
+     * (plan items, artifacts, references, etc.). */
+    _onStateChange() {
+      const newKey = this._tabStorageKey();
+      if (newKey === this._tabKey) {
+        if (this.activeTab === "info") {
+          this.renderContent();
+        }
+        return;
+      }
+      if (this._tabKey) {
+        this._sessionTabs.set(this._tabKey, [...this.tabs]);
+        const termCopy = /* @__PURE__ */ new Map();
+        for (const [k2, arr] of this.panelTerminals) {
+          termCopy.set(k2, [...arr]);
+        }
+        this._sessionTerminals.set(this._tabKey, termCopy);
+        this._sessionTermActiveIdx.set(this._tabKey, new Map(this.panelActiveTermIdx));
+      }
+      this._tabKey = newKey;
+      const restoredTerminals = this._sessionTerminals.get(newKey);
+      const restoredActiveIdx = this._sessionTermActiveIdx.get(newKey);
+      this.panelTerminals = restoredTerminals ?? /* @__PURE__ */ new Map();
+      this.panelActiveTermIdx = restoredActiveIdx ?? /* @__PURE__ */ new Map();
+      const restored = this._sessionTabs.get(newKey);
+      if (restored) {
+        this.tabs = restored;
+      } else {
+        this.tabs = [];
+      }
+      this.activeTab = this.tabs.length > 0 ? this.tabs[0].id : "";
+      this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
+      this.renderTabs();
+      this.render();
     }
     /** Re-renders the active tab's content (reactive to state/locale). */
     render() {
@@ -135335,6 +136665,8 @@ void main() {
     renderForce() {
       if (this.tabs.length === 0) {
         this.renderHomePage();
+      } else {
+        this.renderTabs();
       }
       if (this.activeTab === "info") this.renderContent();
       const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]');
@@ -135376,7 +136708,7 @@ void main() {
       }
       const btn = document.createElement("button");
       btn.className = "tab-add-btn";
-      btn.title = t("sessionInner.newTab");
+      btn.dataset.tooltip = t("sessionInner.newTab");
       btn.innerHTML = `<i data-lucide="plus" class="lucide lucide-sm"></i>`;
       this.tabBar.appendChild(btn);
       this.tabAddBtn = btn;
@@ -135442,42 +136774,8 @@ void main() {
      * leak into the next.
      */
     async resetToDefaultTabs() {
-      const api = window.electronAPI;
-      for (const [, terms] of this.panelTerminals) {
-        for (const t3 of terms) {
-          try {
-            t3.cleanup();
-          } catch {
-          }
-          try {
-            t3.resizeObs.disconnect();
-          } catch {
-          }
-          try {
-            t3.term.dispose();
-          } catch {
-          }
-          try {
-            api?.terminalKill?.(t3.ptyId);
-          } catch {
-          }
-        }
-      }
-      this.panelTerminals.clear();
-      this.panelActiveTermIdx.clear();
-      this.panelShellPath.clear();
-      this.panelShellArgs.clear();
-      document.querySelectorAll(".si-term-shell-dropdown").forEach((el2) => el2.remove());
-      this.tabAddBtn?.remove();
-      this.tabAddBtn = null;
-      this.tabAddDropdown?.remove();
-      this.tabAddDropdown = null;
-      if (this.tabAddDocClickHandler) {
-        document.removeEventListener("click", this.tabAddDocClickHandler);
-        this.tabAddDocClickHandler = null;
-      }
       this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
-      this.tabs = [];
+      this.tabBody.innerHTML = "";
       this.activeTab = "";
       await this.renderTabs();
       this.bindAddButton();
@@ -135512,6 +136810,7 @@ void main() {
     async createTab(id2) {
       if (!this.tabs.some((tab2) => tab2.id === id2)) {
         this.tabs.push({ id: id2, closable: true });
+        _saveTabs(this.tabs);
       }
       this.activeTab = id2;
       await this.renderTabs();
@@ -135566,10 +136865,14 @@ void main() {
       panel.innerHTML = `<div class="si-terminal-wrap">
       <div class="tab-bar tab-bar--term">
         <div class="tab-list"></div>
-        <button class="tab-action-btn" title="${t("sessionInner.termNew")}"><i data-lucide="plus" class="lucide lucide-sm"></i></button>
-        <button class="tab-action-btn danger" title="${t("sessionInner.termKillAll")}"><i data-lucide="trash-2" class="lucide lucide-sm"></i></button>
+        <button class="tab-action-btn" data-tooltip="${t("sessionInner.termNew")}"><i data-lucide="plus" class="lucide lucide-sm"></i></button>
+        <button class="tab-action-btn danger" data-tooltip="${t("sessionInner.termKillAll")}"><i data-lucide="trash-2" class="lucide lucide-sm"></i></button>
       </div>
-      <div class="si-panel-empty si-term-empty" data-action="new"><i data-lucide="terminal" class="lucide"></i><span class="si-panel-empty-title">${t("sessionInner.termEmpty")}</span></div>
+      <div class="si-panel-empty si-term-empty">
+        <i data-lucide="terminal" class="lucide"></i>
+        <span class="si-panel-empty-title">${t("sessionInner.termEmpty")}</span>
+        <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
+      </div>
       <div class="si-terminal-body" style="display:none"></div>
     </div>`;
       const body = panel.querySelector(".si-terminal-body");
@@ -135581,8 +136884,10 @@ void main() {
       shellDropdown.className = "si-term-shell-dropdown hidden";
       document.body.appendChild(shellDropdown);
       const panelId = panel.dataset.panel || "terminal";
-      this.panelTerminals.set(panelId, []);
-      this.panelActiveTermIdx.set(panelId, 0);
+      if (!this.panelTerminals.has(panelId)) {
+        this.panelTerminals.set(panelId, []);
+        this.panelActiveTermIdx.set(panelId, 0);
+      }
       const api = window.electronAPI;
       if (!api) {
         body.innerHTML = `<div class="si-empty">${t("sessionInner.termNotAvailable")}</div>`;
@@ -135603,9 +136908,9 @@ void main() {
         const st3 = getState();
         const isLight = st3.theme === "light";
         return isLight ? {
-          background: "#f3f3f3",
-          foreground: "#1e1e1e",
-          cursor: "#000000",
+          background: "#ffffff",
+          foreground: "#1a1a1a",
+          cursor: "#1a1a1a",
           selectionBackground: "rgba(0,0,0,0.10)",
           black: "#000000",
           red: "#cd3131",
@@ -135624,9 +136929,9 @@ void main() {
           brightCyan: "#0598bc",
           brightWhite: "#a5a5a5"
         } : {
-          background: "#252526",
-          foreground: "#cccccc",
-          cursor: "#ffffff",
+          background: "#000000",
+          foreground: "#f5f5f7",
+          cursor: "#f5f5f7",
           selectionBackground: "rgba(255,255,255,0.15)",
           black: "#000000",
           red: "#cd3131",
@@ -135649,11 +136954,11 @@ void main() {
       const applyTheme = (term) => {
         term.options.theme = buildTheme2();
       };
-      const showTermEmpty = (show) => {
-        emptyEl.style.display = show ? "flex" : "none";
-        body.style.display = show ? "none" : "flex";
-        tabList.style.display = show ? "none" : "";
-        killAllBtn.style.display = show ? "none" : "";
+      const showTermEmpty = (show2) => {
+        emptyEl.style.display = show2 ? "flex" : "none";
+        body.style.display = show2 ? "none" : "flex";
+        tabList.style.display = show2 ? "none" : "";
+        killAllBtn.style.display = show2 ? "none" : "";
       };
       const spawnAndAttach = async () => {
         const sh = getShellPath();
@@ -135727,9 +137032,7 @@ void main() {
         term.element?.addEventListener("contextmenu", (ev) => {
           ev.preventDefault();
           ctxTermTarget = term;
-          ctxMenu.style.top = ev.clientY + "px";
-          ctxMenu.style.left = ev.clientX + "px";
-          ctxMenu.classList.remove("hidden");
+          showContextMenu(ctxMenu, ev.clientX, ev.clientY);
         });
         term.onData((data2) => {
           api.terminalWrite(ptyId, data2);
@@ -135773,24 +137076,24 @@ void main() {
         };
         return { term, ptyId, cleanup, resizeObs: obs };
       };
-      const switchTerminal = (pid, idx2, _termBody) => {
+      const switchTerminal = (pid, idx, _termBody) => {
         const terms = this.panelTerminals.get(pid) || [];
-        if (idx2 < 0 || idx2 >= terms.length) return;
-        this.panelActiveTermIdx.set(pid, idx2);
+        if (idx < 0 || idx >= terms.length) return;
+        this.panelActiveTermIdx.set(pid, idx);
         terms.forEach((ti3, i8) => {
-          ti3.term.element.style.display = i8 === idx2 ? "" : "none";
+          ti3.term.element.style.display = i8 === idx ? "" : "none";
         });
-        if (terms[idx2]) terms[idx2].term.focus();
+        if (terms[idx]) terms[idx].term.focus();
       };
-      const killLocal = (pid, idx2, _termBody) => {
+      const killLocal = (pid, idx, _termBody) => {
         const terms = this.panelTerminals.get(pid);
-        if (!terms || idx2 < 0 || idx2 >= terms.length) return;
-        const tobj = terms[idx2];
+        if (!terms || idx < 0 || idx >= terms.length) return;
+        const tobj = terms[idx];
         tobj.cleanup();
         tobj.resizeObs.disconnect();
         tobj.term.dispose();
         if (api) api.terminalKill(tobj.ptyId);
-        terms.splice(idx2, 1);
+        terms.splice(idx, 1);
         if (terms.length === 0) {
           this.panelActiveTermIdx.set(pid, -1);
           showTermEmpty(true);
@@ -135837,10 +137140,10 @@ void main() {
               spawnAndAttach().then((inst) => {
                 if (!inst) return;
                 const tms = this.panelTerminals.get(panelId) || [];
-                const idx2 = tms.length;
-                tms.push({ label: `${idx2 + 1}. ${t("sessionInner.termLabel")}`, ...inst });
+                const idx = tms.length;
+                tms.push({ label: `${idx + 1}. ${t("sessionInner.termLabel")}`, ...inst });
                 showTermEmpty(false);
-                switchTerminal(panelId, idx2, body);
+                switchTerminal(panelId, idx, body);
                 renderTermTabs();
               });
             }
@@ -135852,13 +137155,8 @@ void main() {
         e.stopPropagation();
         openShellDropdown(addBtn, true);
       });
-      emptyEl.addEventListener("click", (e) => {
-        if (shellDropdown.classList.contains("hidden")) {
-          openShellDropdown(addBtn, true);
-        }
-      });
       document.addEventListener("click", (e) => {
-        if (!addBtn.contains(e.target) && !shellDropdown.contains(e.target) && !emptyEl.contains(e.target)) {
+        if (!addBtn.contains(e.target) && !shellDropdown.contains(e.target)) {
           shellDropdown.classList.add("hidden");
         }
       });
@@ -135923,7 +137221,7 @@ void main() {
           const cls = i8 === activeIdx ? " active" : "";
           return `<div class="tab tab--term${cls}" data-idx="${i8}">
           <span class="tab-label">${this.esc(ti3.label)}</span>
-          <button class="tab-close" data-idx="${i8}" title="${t("sessionInner.termKill")}">\xD7</button>
+          <button class="tab-close" data-idx="${i8}" data-tooltip="${t("sessionInner.termKill")}">\xD7</button>
         </div>`;
         }).join("");
         tabList.querySelectorAll(".tab.tab--term").forEach((el2) => {
@@ -135933,18 +137231,19 @@ void main() {
               this._termDragMoved = false;
               return;
             }
-            const idx2 = parseInt(el2.dataset.idx || "0");
-            switchTerminal(panelId, idx2, body);
+            const idx = parseInt(el2.dataset.idx || "0");
+            switchTerminal(panelId, idx, body);
             renderTermTabs();
           });
           el2.addEventListener("mousedown", (e) => {
-            if (e.button !== 0) return;
-            if (e.target.closest(".tab-close")) return;
+            const ev = e;
+            if (ev.button !== 0) return;
+            if (ev.target.closest(".tab-close")) return;
             const dragEl = el2;
-            const startX = e.clientX;
+            const startX = ev.clientX;
             let moved = false;
-            const onMove = (ev) => {
-              if (!moved && Math.abs(ev.clientX - startX) < 5) return;
+            const onMove = (evMove) => {
+              if (!moved && Math.abs(evMove.clientX - startX) < 5) return;
               if (!moved) {
                 moved = true;
                 dragEl.classList.add("dragging");
@@ -135984,8 +137283,8 @@ void main() {
         tabList.querySelectorAll(".tab-close").forEach((el2) => {
           el2.addEventListener("click", (e) => {
             e.stopPropagation();
-            const idx2 = parseInt(el2.dataset.idx || "0");
-            killLocal(panelId, idx2, body);
+            const idx = parseInt(el2.dataset.idx || "0");
+            killLocal(panelId, idx, body);
             renderTermTabs();
           });
         });
@@ -136032,14 +137331,14 @@ void main() {
         </button>
         <div class="settings-dropdown si-review-action-dropdown" style="right:0;left:auto;min-width:210px"></div>
       </div>
-      <button class="settings-dropdown-trigger si-review-action-trigger si-review-collapse-btn" type="button" title="${t("sessionInner.reviewCollapse")}">
+      <button class="settings-dropdown-trigger si-review-action-trigger si-review-collapse-btn" type="button" data-tooltip="${t("sessionInner.reviewCollapse")}">
         <i data-lucide="minus" class="lucide lucide-sm"></i>
       </button>
-      <button class="settings-dropdown-trigger si-review-action-trigger si-review-split-btn" type="button" title="${t("sessionInner.reviewSplitView")}">
+      <button class="settings-dropdown-trigger si-review-action-trigger si-review-split-btn" type="button" data-tooltip="${t("sessionInner.reviewSplitView")}">
         <i data-lucide="list" class="lucide lucide-sm"></i>
       </button>
       <div class="settings-dropdown-wrap si-review-actions si-review-git-wrap">
-        <button class="settings-dropdown-trigger si-review-action-trigger si-review-git-trigger" type="button" title="${t("sessionInner.reviewActionCommit")}">
+        <button class="settings-dropdown-trigger si-review-action-trigger si-review-git-trigger" type="button" data-tooltip="${t("sessionInner.reviewActionCommit")}">
           <i data-lucide="git-commit-horizontal" class="lucide lucide-sm si-review-git-icon"></i>
           <i data-lucide="chevron-down" class="lucide lucide-xs settings-dropdown-chevron"></i>
         </button>
@@ -136492,7 +137791,7 @@ void main() {
         }
         const sel = gitActionItems.find((i8) => i8.action === this._reviewGitAction);
         gitIcon.setAttribute("data-lucide", sel?.icon || "git-commit-horizontal");
-        gitTrigger.title = sel ? t("sessionInner." + sel.labelKey) : "";
+        gitTrigger.dataset.tooltip = sel ? t("sessionInner." + sel.labelKey) : "";
         if (typeof window.lucide !== "undefined") {
           window.lucide.createIcons({ root: gitTrigger });
         }
@@ -136550,10 +137849,14 @@ void main() {
         if (!api2) return;
         if (this._reviewGitAction === "push") {
           const res = await api2.gitPush(ws4);
-          showToast(res.error ? res.error : res.output || t("sessionInner.reviewPushed"), res.error ? "error" : "success");
+          if (res.error) {
+            showToast(res.error, "error", void 0, "Review");
+          }
         } else if (this._reviewGitAction === "pull") {
           const res = await api2.gitPull(ws4);
-          showToast(res.error ? res.error : res.output || t("sessionInner.reviewPulled"), res.error ? "error" : "success");
+          if (res.error) {
+            showToast(res.error, "error", void 0, "Review");
+          }
         }
         if (currentReviewPath) load(currentReviewPath, true);
         else load(void 0, true);
@@ -136566,11 +137869,10 @@ void main() {
         if (!api2) return;
         api2.gitCommit(ws4, message).then((res) => {
           if (res.error) {
-            showToast(res.error, "error");
+            showToast(res.error, "error", void 0, "Review");
             return;
           }
           commitWrap.classList.add("hidden");
-          showToast(t("sessionInner.reviewCommitted"), "success");
           currentReviewPath = void 0;
           cachedEntries = null;
           cachedBranch = "";
@@ -136986,20 +138288,22 @@ void main() {
           this._switchEditorTab(path);
         });
         el2.addEventListener("auxclick", (e) => {
-          if (e.button === 1) {
-            e.preventDefault();
+          const ev = e;
+          if (ev.button === 1) {
+            ev.preventDefault();
             const path = el2.dataset.path;
             this._closeEditorTab(path);
           }
         });
         el2.addEventListener("mousedown", (e) => {
-          if (e.button !== 0) return;
-          if (e.target.closest(".tab-close")) return;
+          const ev = e;
+          if (ev.button !== 0) return;
+          if (ev.target.closest(".tab-close")) return;
           const dragEl = el2;
-          const startX = e.clientX;
+          const startX = ev.clientX;
           let moved = false;
-          const onMove = (ev) => {
-            if (!moved && Math.abs(ev.clientX - startX) < 5) return;
+          const onMove = (evMove) => {
+            if (!moved && Math.abs(evMove.clientX - startX) < 5) return;
             if (!moved) {
               moved = true;
               dragEl.classList.add("dragging");
@@ -137056,9 +138360,9 @@ void main() {
       await this._loadEditorFile(filePath);
     }
     async _closeEditorTab(filePath) {
-      const idx2 = this._editorTabs.findIndex((t3) => t3.path === filePath);
-      if (idx2 < 0) return;
-      this._editorTabs.splice(idx2, 1);
+      const idx = this._editorTabs.findIndex((t3) => t3.path === filePath);
+      if (idx < 0) return;
+      this._editorTabs.splice(idx, 1);
       if (this._editorTabs.length === 0) {
         this._activeEditorTab = "";
         const panel2 = this.tabBody.querySelector('[data-panel="editor"]');
@@ -137080,7 +138384,7 @@ void main() {
         return;
       }
       if (filePath === this._activeEditorTab) {
-        const next = this._editorTabs[Math.min(idx2, this._editorTabs.length - 1)];
+        const next = this._editorTabs[Math.min(idx, this._editorTabs.length - 1)];
         this._activeEditorTab = next.path;
         await this._loadEditorFile(next.path);
       }
@@ -137121,9 +138425,7 @@ void main() {
       container.oncontextmenu = (ev) => {
         ev.preventDefault();
         if (!this._editorCtxMenu) return;
-        this._editorCtxMenu.style.top = ev.clientY + "px";
-        this._editorCtxMenu.style.left = ev.clientX + "px";
-        this._editorCtxMenu.classList.remove("hidden");
+        showContextMenu(this._editorCtxMenu, ev.clientX, ev.clientY);
       };
     }
     cmTheme() {
@@ -137215,9 +138517,7 @@ void main() {
         const ext = path.split(".").pop()?.toLowerCase() || "";
         const isMd = !isDir && ext === "md";
         treeCtxMenu.innerHTML = isDir ? `<div class="context-menu-item" data-action="send-folder">${t("sessionInner.termSendToChat")}</div>` : `<div class="context-menu-item" data-action="send-file">${t("sessionInner.termSendToChat")}</div>` + (isMd ? `<div class="context-menu-divider"></div><div class="context-menu-item" data-action="preview">\u9884\u89C8</div>` : "");
-        treeCtxMenu.style.top = ev.clientY + "px";
-        treeCtxMenu.style.left = ev.clientX + "px";
-        treeCtxMenu.classList.remove("hidden");
+        showContextMenu(treeCtxMenu, ev.clientX, ev.clientY);
       };
       treeCtxMenu.addEventListener("click", async (ev) => {
         const item = ev.target.closest(".context-menu-item");
@@ -137502,8 +138802,18 @@ void main() {
         const id2 = tabEl.dataset.tab;
         if (id2) this.closeTab(id2);
       };
-      this.tabList.querySelectorAll(".tab").forEach((tab2) => {
+      this.tabList.addEventListener("wheel", (e) => {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          this.tabList.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+      this.tabList.querySelectorAll(".tab").forEach((tab2, idx) => {
         const el2 = tab2;
+        el2.dataset.idx = String(idx);
+        el2.addEventListener("mousedown", (e) => {
+          if (e.button === 1) e.preventDefault();
+        });
         const xBtn = el2.querySelector(".tab-close");
         if (xBtn) {
           xBtn.addEventListener("click", (e) => {
@@ -137531,9 +138841,9 @@ void main() {
           if (e.target.closest(".tab-close")) return;
           this.wasDragged = false;
           this.dragEl = el2;
-          this.dragIdx = idx;
+          this.dragIdx = parseInt(el2.dataset.idx ?? "-1");
           this.dragStartX = e.clientX;
-          this.dragOverIdx = idx;
+          this.dragOverIdx = this.dragIdx;
           el2.classList.add("dragging");
           e.preventDefault();
         });
@@ -137597,8 +138907,8 @@ void main() {
       }
     }
     closeTab(id2) {
-      const idx2 = this.tabs.findIndex((tab2) => tab2.id === id2);
-      if (idx2 < 0) return;
+      const idx = this.tabs.findIndex((tab2) => tab2.id === id2);
+      if (idx < 0) return;
       if (id2 === "terminal") {
         const terms = this.panelTerminals.get(id2);
         if (terms) {
@@ -137621,7 +138931,8 @@ void main() {
         this._editorTabs = [];
         this._activeEditorTab = "";
       }
-      this.tabs.splice(idx2, 1);
+      this.tabs.splice(idx, 1);
+      _saveTabs(this.tabs);
       if (this.tabs.length === 0) {
         this.tabs = [];
         this.activeTab = "";
@@ -137862,25 +139173,53 @@ void main() {
     /* ── References Panel ───────────────────────────────────────────── */
     renderReferencesPanel(st3) {
       const refs = st3.references || [];
-      let bodyHTML;
-      if (refs.length === 0) {
-        bodyHTML = `<div class="si-panel-empty">${t("sessionInner.noRefs")}</div>`;
-      } else {
-        const shown = refs.slice(-50).reverse();
-        bodyHTML = `<div class="si-ref-list">${shown.map((r) => {
+      const allowedKeywords = ["memory", "profile", "web_search", "web_fetch", "search", "grep", "glob", "find"];
+      const filteredRefs = refs.filter((r) => {
+        const t3 = r.tool.toLowerCase();
+        return t3.startsWith("mcp__") || allowedKeywords.some((k2) => t3.includes(k2));
+      });
+      if (filteredRefs.length === 0) {
+        const bodyHTML2 = `<div class="si-panel-empty">${t("sessionInner.noRefs")}</div>`;
+        return `<div class="si-panel">
+        ${this.panelHeader("references", t("sessionInner.references"), "link-2")}
+        <div class="si-panel-body${this.collapsedPanels.has("references") ? " hidden" : ""}"><div class="si-panel-inner">${bodyHTML2}</div></div>
+      </div>`;
+      }
+      const shown = filteredRefs.slice(-50).reverse();
+      const groups = [
+        { key: "ref-group-search", label: t("sessionInner.referencesSearch") || "Web & Search", icon: "globe", refs: [] },
+        { key: "ref-group-memory", label: t("sessionInner.referencesMemory") || "Memory", icon: "brain", refs: [] },
+        { key: "ref-group-mcp", label: t("sessionInner.referencesMcp") || "MCP", icon: "cable", refs: [] }
+      ];
+      for (const r of shown) {
+        const t3 = r.tool.toLowerCase();
+        if (t3.startsWith("mcp__")) {
+          groups[2].refs.push(r);
+        } else if (t3.includes("memory") || t3.includes("profile")) {
+          groups[1].refs.push(r);
+        } else {
+          groups[0].refs.push(r);
+        }
+      }
+      const bodyHTML = groups.filter((g) => g.refs.length > 0).map((g) => {
+        const listHTML = g.refs.map((r) => {
           const icon = r.icon || "zap";
           const toolLabel = r.tool.startsWith("mcp__") ? r.tool.split("__").slice(0, 2).join(":") : r.tool;
-          return `<div class="si-ref-item" title="${this.esc(r.tool)}">
-          <i data-lucide="${icon}" class="lucide si-ref-icon"></i>
-          <div class="si-ref-content">
-            <span class="si-ref-tool">${this.esc(toolLabel)}</span>
-            <span class="si-ref-summary">${this.esc(r.summary)}</span>
-          </div>
+          return `<div class="si-ref-item">
+            <i data-lucide="${icon}" class="lucide si-ref-icon"></i>
+            <div class="si-ref-content">
+              <span class="si-ref-tool">${this.esc(toolLabel)}</span>
+              <span class="si-ref-summary">${this.esc(r.summary)}</span>
+            </div>
+          </div>`;
+        }).join("");
+        return `<div class="si-ref-group">
+          ${this.panelHeader(g.key, g.label, g.icon, String(g.refs.length))}
+          <div class="si-panel-body${this.collapsedPanels.has(g.key) ? " hidden" : ""}"><div class="si-panel-inner si-ref-list">${listHTML}</div></div>
         </div>`;
-        }).join("")}</div>`;
-      }
+      }).join("");
       return `<div class="si-panel">
-      ${this.panelHeader("references", t("sessionInner.references"), "link-2", refs.length > 0 ? String(refs.length) : void 0)}
+      ${this.panelHeader("references", t("sessionInner.references"), "link-2", String(filteredRefs.length))}
       <div class="si-panel-body${this.collapsedPanels.has("references") ? " hidden" : ""}"><div class="si-panel-inner">${bodyHTML}</div></div>
     </div>`;
     }
@@ -137969,7 +139308,7 @@ void main() {
           </div>
         </div>
         <span style="font-size:11px;white-space:nowrap;min-width:32px;text-align:right;color:var(--text-secondary)">${pct}%</span>
-        <button id="${btnId}" class="si-panel-action-btn" style="flex-shrink:0;background:none;border:none;cursor:pointer;padding:2px;color:var(--text-secondary)" title="${t("settings.indexActions")}">
+        <button id="${btnId}" class="si-panel-action-btn" style="flex-shrink:0;background:none;border:none;cursor:pointer;padding:2px;color:var(--text-secondary)" data-tooltip="${t("settings.indexActions")}">
           <i data-lucide="settings-2" style="width:14px;height:14px;display:block;color:var(--text-secondary)"></i>
         </button>
       </div>`;
@@ -138016,7 +139355,7 @@ void main() {
           const matcher = this.esc(h3.matcher || "*");
           const cmd2 = this.esc(h3.command || "");
           const src = this.esc(h3.source_path || "");
-          return `<div class="si-hook-row" title="${src}">
+          return `<div class="si-hook-row" data-tooltip="${src}">
           <i data-lucide="zap" class="lucide lucide-sm si-hook-icon"></i>
           <div class="si-hook-body">
             <div class="si-hook-event">${evt} <span class="si-hook-matcher">${matcher}</span></div>
@@ -138046,74 +139385,6 @@ void main() {
   // renderer/src/app.ts
   init_i18n();
   init_dialog();
-
-  // renderer/src/shortcutDisplay.ts
-  init_state();
-  var _isMac = null;
-  function isMac() {
-    if (_isMac === null) {
-      _isMac = navigator.platform.includes("Mac") || navigator.userAgent.includes("Macintosh");
-    }
-    return _isMac;
-  }
-  var MOD_KEYS = {
-    ctrlcmd: { mac: "\u2318", win: "Ctrl" },
-    ctrl: { mac: "\u2303", win: "Ctrl" },
-    alt: { mac: "\u2325", win: "Alt" },
-    shift: { mac: "\u21E7", win: "Shift" }
-  };
-  function formatMod(mod) {
-    const m = MOD_KEYS[mod];
-    if (!m) return mod.charAt(0).toUpperCase() + mod.slice(1);
-    return isMac() ? m.mac : m.win;
-  }
-  var KEY_ALIASES = {
-    escape: "Esc",
-    backspace: "\u232B",
-    enter: "\u21B5",
-    up: "\u2191",
-    down: "\u2193",
-    left: "\u2190",
-    right: "\u2192",
-    tab: "Tab",
-    space: "Space",
-    "`": "`",
-    ",": ",",
-    ".": ".",
-    ";": ";",
-    "'": "'",
-    "[": "[",
-    "]": "]",
-    "\\": "\\",
-    "/": "/",
-    "=": "=",
-    "-": "-"
-  };
-  function formatKey(key) {
-    return KEY_ALIASES[key] || key.toUpperCase();
-  }
-  function formatShortcut(pattern) {
-    const parts = pattern.split("+");
-    const key = parts.pop() || "";
-    const mods = parts.map(formatMod);
-    if (isMac()) {
-      return [...mods, formatKey(key)].join("");
-    }
-    return [...mods, formatKey(key)].join("+");
-  }
-  function lookupShortcut(id2) {
-    const cfg = getState().settings.keybinds;
-    const binds = cfg?.keybinds || [];
-    const entry = binds.find((b2) => b2.id === id2);
-    if (!entry || !entry.keys || entry.keys.length === 0) return null;
-    return formatShortcut(entry.keys[0]);
-  }
-  function augmentTitle(existing, shortcut) {
-    if (!shortcut) return existing;
-    return `${existing} (${shortcut})`;
-  }
-
-  // renderer/src/app.ts
   init_slash_commands();
 
   // renderer/src/easter-egg.ts
@@ -138235,6 +139506,7 @@ void main() {
   }
 
   // renderer/src/app.ts
+  init_context_menu();
   window.__state_setActiveToolId = setActiveToolId;
   window.sendRetry = sendRetry;
   window.sendSwitchBranch = sendSwitchBranch;
@@ -138283,25 +139555,46 @@ void main() {
       this.automationPanel = new AutomationPanel();
       this.automation = new Automation();
       this.automationPanel.onShow = () => this.automation.render();
-      const showAutomationResult = (data2) => {
-        const curView = getState().subAgentView;
-        if (curView && curView.id === data2.id && curView.status === "completed") {
-          send({ type: "automation_list_jobs" });
+      const showAutomationResult = (data2, fromUserAction = false) => {
+        if (!fromUserAction) {
+          const curView = getState().subAgentView;
+          if (curView && curView.id === data2.id) {
+            if (data2.state === "FAILED") {
+              this._activeAutomationJobId = "";
+              window.__isAutomationView = false;
+              window.__closeSubAgentView = void 0;
+              setSubAgentView(null);
+              clearMessages();
+              this.chat.render();
+              this.automationPanel.show();
+              this.automation.showDetail(data2);
+            } else if (curView.status === "completed") {
+              send({ type: "automation_list_jobs" });
+            }
+          }
           return;
         }
-        this.automationPanel.hide();
-        clearMessages();
-        setSessionId("");
-        addUserMessage(data2.prompt || data2.name || "");
-        if (data2.job_id && data2.state !== "COMPLETED") {
-          this._activeAutomationJobId = data2.job_id;
+        this._activeAutomationJobId = data2.state === "RUNNING" || data2.state === "PENDING" ? data2.job_id || data2.id : "";
+        this.automation.showDetail({
+          id: data2.id || data2.job_id || "",
+          name: data2.name || t("app.automationDefaultName"),
+          messages: data2.messages || [],
+          state: data2.state,
+          result: data2.result || "",
+          session_id: data2.session_id || ""
+        });
+        if (data2.job_id || data2.id) {
+          const viewId = data2.job_id || data2.id;
+          const isActive = data2.state === "RUNNING" || data2.state === "PENDING";
+          this._activeAutomationJobId = isActive ? viewId : "";
           const tc2 = {
-            id: data2.job_id,
+            id: viewId,
             name: "agent",
             params: { agent_name: data2.name || t("app.automationDefaultName") },
-            status: "running",
+            status: isActive ? "running" : "completed",
             subAgentMessages: restoreMessages(data2.messages || []),
-            content: data2.result || ""
+            content: data2.result || "",
+            sessionId: data2.session_id || ""
           };
           const origClose = window.__closeSubAgentView;
           window.__closeSubAgentView = () => {
@@ -138314,6 +139607,7 @@ void main() {
           };
           window.__isAutomationView = true;
           setSubAgentView(tc2);
+          this.chat.render();
           return;
         }
         if (data2.messages && data2.messages.length > 0) {
@@ -138350,8 +139644,8 @@ void main() {
         };
         addMessage(msg);
       };
-      onAutomationShowResult((result) => showAutomationResult(result));
-      this.automation.onViewResult = (data2) => showAutomationResult(data2);
+      onAutomationShowResult((result) => showAutomationResult(result, false));
+      this.automation.onViewResult = (data2) => showAutomationResult(data2, true);
       onAutomationStreamEvent((event) => {
         const { job_id, event_type, event_data } = event;
         if (event_type === "start") {
@@ -138371,7 +139665,8 @@ void main() {
             params: { agent_name: data2.name || t("app.automationDefaultName") },
             status: "running",
             subAgentMessages: [],
-            content: ""
+            content: "",
+            sessionId: data2.session_id || ""
           };
           const origClose = window.__closeSubAgentView;
           window.__closeSubAgentView = () => {
@@ -138389,7 +139684,16 @@ void main() {
         if (this._activeAutomationJobId !== job_id) return;
         const view = getState().subAgentView;
         if (!view || view.id !== job_id) return;
-        if (event_type === "text_delta") {
+        if (event_type === "snapshot") {
+          const messages = event_data.messages;
+          if (Array.isArray(messages)) {
+            view.subAgentMessages = restoreMessages(messages);
+          }
+          if (event_data.session_id) {
+            view.sessionId = event_data.session_id;
+          }
+          setSubAgentView({ ...view });
+        } else if (event_type === "text_delta") {
           view.content = (view.content || "") + (event_data.text || "");
           setSubAgentView({ ...view });
         } else if (event_type === "thinking_delta") {
@@ -138416,6 +139720,11 @@ void main() {
         this.animateWelcomeTitle(getState().workspaceMode);
       };
       this.workspace.onModeChange = onAnyModeChange;
+      this.modeTransition = new ModeTransitionManager({
+        workspace: this.workspace,
+        automationPanel: this.automationPanel,
+        onModeChange: onAnyModeChange
+      });
       this.sessionInner = new SessionInner();
       this.chat.onViewChanges = (path) => {
         const st3 = getState();
@@ -138435,6 +139744,7 @@ void main() {
       this.bindKeyboardShortcuts();
       this.applyShortcutHints();
       this.initTheme();
+      initTooltip();
       this.bindResponsiveSidebar();
       const appEl = document.getElementById("app");
       if (appEl) {
@@ -138538,7 +139848,7 @@ void main() {
             this.workspace.onModeChange = () => {
               this.closeSessionInnerSidebar();
               this.cleanupContentArea({ keepAutomationFlag: false });
-              this.chat.render();
+              this.chat.renderForce();
               this.workspace.onModeChange = orig;
             };
             this.workspace.enter();
@@ -138549,12 +139859,17 @@ void main() {
             this.cleanupContentArea({ keepAutomationFlag: false });
           }
           setRequestedSessionId(sessionId, requestId);
-          if (wsPath && wsPath !== st3.activeWorkspace) {
+          const _norm = (p) => p.replace(/\\/g, "/").toLowerCase();
+          const _trayPath = wsPath ? _norm(wsPath) : "";
+          const _activePath = st3.activeWorkspace ? _norm(st3.activeWorkspace) : "";
+          if (_trayPath && _trayPath !== _activePath) {
             setSessionId("");
             send({ type: "open_workspace", path: wsPath, request_id: requestId });
           } else {
             setSessionId(sessionId);
             send({ type: "resume", session_id: sessionId, request_id: requestId });
+            delete window.__pendingTrayResume;
+            this.chat.render();
           }
         });
       }
@@ -138630,7 +139945,6 @@ void main() {
           this.sessionInner.saveWidth();
           panel.classList.add("hidden");
           mainBody.classList.add("sidebar-hidden");
-          this.sessionInner.resetToDefaultTabs();
         }
       });
       this.renderSlashDropdown();
@@ -138705,15 +140019,31 @@ void main() {
       }
     }
     _switchWebviewTab(index2) {
+      const tab2 = this._tabs[index2];
       const childViewEl = document.getElementById("child-view");
       if (!childViewEl) return;
-      childViewEl.innerHTML = "";
-      this.renderTabContent(this._tabs[index2]);
+      childViewEl.classList.remove("hidden");
+      if (tab2._contentEl) {
+        this._showTabContent(tab2);
+        return;
+      }
+      for (const t3 of this._tabs) {
+        if (t3._contentEl) t3._contentEl.style.display = "none";
+      }
+      this.renderTabContent(tab2);
+    }
+    _showTabContent(tab2) {
+      for (const t3 of this._tabs) {
+        if (t3._contentEl) t3._contentEl.style.display = t3 === tab2 ? "flex" : "none";
+      }
     }
     closeTab(index2) {
       const removed = this._tabs[index2];
       if (removed?._nebulaCleanup) {
         removed._nebulaCleanup();
+      }
+      if (removed?._contentEl) {
+        removed._contentEl.remove();
       }
       this._tabs.splice(index2, 1);
       if (this._tabs.length === 0) {
@@ -138740,16 +140070,20 @@ void main() {
       }).join("");
       let dragSrcIdx = null;
       tabsEl.querySelectorAll("button[data-index]").forEach((btn) => {
-        const idx2 = parseInt(btn.getAttribute("data-index"), 10);
+        const idx = parseInt(btn.getAttribute("data-index"), 10);
+        btn.addEventListener("mousedown", (e) => {
+          const me2 = e;
+          if (me2.button === 1) me2.preventDefault();
+        });
         btn.addEventListener("click", (e) => {
           if (e.target.closest(".tab-close")) return;
-          this.switchTab(idx2);
+          this.switchTab(idx);
         });
         btn.addEventListener("auxclick", (e) => {
           const ev = e;
           if (ev.button === 1) {
             ev.preventDefault();
-            this.closeTab(idx2);
+            this.closeTab(idx);
           }
         });
         const closeBtn = btn.querySelector(".tab-close");
@@ -138762,8 +140096,8 @@ void main() {
         }
         btn.addEventListener("dragstart", (e) => {
           const ev = e;
-          dragSrcIdx = idx2;
-          ev.dataTransfer?.setData("text/plain", String(idx2));
+          dragSrcIdx = idx;
+          ev.dataTransfer?.setData("text/plain", String(idx));
           btn.classList.add("dragging");
         });
         btn.addEventListener("dragend", () => {
@@ -138773,7 +140107,7 @@ void main() {
         });
         btn.addEventListener("dragover", (e) => {
           e.preventDefault();
-          if (dragSrcIdx !== null && dragSrcIdx !== idx2) {
+          if (dragSrcIdx !== null && dragSrcIdx !== idx) {
             tabsEl.querySelectorAll(".tab.drop-target").forEach((el2) => el2.classList.remove("drop-target"));
             btn.classList.add("drop-target");
           }
@@ -138784,14 +140118,14 @@ void main() {
         btn.addEventListener("drop", (e) => {
           e.preventDefault();
           btn.classList.remove("drop-target");
-          if (dragSrcIdx !== null && dragSrcIdx !== idx2) {
+          if (dragSrcIdx !== null && dragSrcIdx !== idx) {
             const [moved] = this._tabs.splice(dragSrcIdx, 1);
-            this._tabs.splice(idx2, 0, moved);
+            this._tabs.splice(idx, 0, moved);
             if (this._activeTabIndex === dragSrcIdx) {
-              this._activeTabIndex = idx2;
-            } else if (dragSrcIdx < idx2 && this._activeTabIndex > dragSrcIdx && this._activeTabIndex <= idx2) {
+              this._activeTabIndex = idx;
+            } else if (dragSrcIdx < idx && this._activeTabIndex > dragSrcIdx && this._activeTabIndex <= idx) {
               this._activeTabIndex--;
-            } else if (dragSrcIdx > idx2 && this._activeTabIndex >= idx2 && this._activeTabIndex < dragSrcIdx) {
+            } else if (dragSrcIdx > idx && this._activeTabIndex >= idx && this._activeTabIndex < dragSrcIdx) {
               this._activeTabIndex++;
             }
             this.renderTabBar();
@@ -138800,26 +140134,28 @@ void main() {
           dragSrcIdx = null;
         });
       });
+      tabsEl.addEventListener("wheel", (e) => {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          tabsEl.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
     }
     renderTabContent(tab2) {
       const childViewEl = document.getElementById("child-view");
       if (!childViewEl) return;
       childViewEl.classList.remove("hidden");
-      if (tab2._rendered) {
-        childViewEl.innerHTML = tab2._html || "";
-        if (tab2.webview && tab2.view.startsWith("http")) {
-          const wrap = childViewEl.querySelector(".child-webview-wrap");
-          if (wrap && !wrap.contains(tab2.webview)) {
-            wrap.insertBefore(tab2.webview, wrap.firstChild);
-          }
-        }
+      if (tab2._contentEl) {
+        this._showTabContent(tab2);
         return;
       }
-      tab2._rendered = true;
-      childViewEl.innerHTML = "";
+      const container = document.createElement("div");
+      container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;";
+      tab2._contentEl = container;
+      childViewEl.appendChild(container);
       if (tab2.view.startsWith("http://") || tab2.view.startsWith("https://") || tab2.view === "about:blank") {
         const startUrl = tab2.view === "about:blank" ? "" : tab2.view;
-        childViewEl.innerHTML = `
+        container.innerHTML = `
         <div class="child-nav-bar">
           <button class="child-nav-btn" data-nav="back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
           <button class="child-nav-btn" data-nav="forward"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
@@ -138846,15 +140182,15 @@ void main() {
             </div>
           </div>
         </div>`;
-        const wv = childViewEl.querySelector("webview");
+        const wv = container.querySelector("webview");
         if (wv) {
           tab2.webview = wv;
-          const statusEl = childViewEl.querySelector("#child-webview-status");
-          const loadingEl = childViewEl.querySelector("#child-status-loading");
-          const errorEl = childViewEl.querySelector("#child-status-error");
-          const overlayTitle = childViewEl.querySelector("#child-overlay-title");
-          const overlayDesc = childViewEl.querySelector("#child-overlay-desc");
-          const retryBtn = childViewEl.querySelector("#child-overlay-retry");
+          const statusEl = container.querySelector("#child-webview-status");
+          const loadingEl = container.querySelector("#child-status-loading");
+          const errorEl = container.querySelector("#child-status-error");
+          const overlayTitle = container.querySelector("#child-overlay-title");
+          const overlayDesc = container.querySelector("#child-overlay-desc");
+          const retryBtn = container.querySelector("#child-overlay-retry");
           let loader = null;
           let loadTimer = null;
           let _showedError = false;
@@ -138902,7 +140238,6 @@ void main() {
             });
           }
           wv.addEventListener("page-title-updated", (e) => {
-            tab2.title = e.title;
             this.renderTabBar();
           });
           wv.addEventListener("new-window", (e) => {
@@ -138997,7 +140332,7 @@ void main() {
             } catch {
             }
           });
-          childViewEl.querySelectorAll("[data-nav]").forEach((btn) => {
+          container.querySelectorAll("[data-nav]").forEach((btn) => {
             btn.addEventListener("click", () => {
               if (!wv) return;
               const action = btn.getAttribute("data-nav");
@@ -139013,7 +140348,7 @@ void main() {
               }
             });
           });
-          const urlInput = childViewEl.querySelector(".child-url-input");
+          const urlInput = container.querySelector(".child-url-input");
           if (urlInput) {
             const navigate = () => {
               let url = urlInput.value.trim();
@@ -139040,15 +140375,15 @@ void main() {
           }
         }
       } else if (tab2.view === "license") {
-        childViewEl.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">Loading...</pre></div>`;
+        container.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">Loading...</pre></div>`;
         if (window.electronAPI) {
           window.electronAPI.getLicenseContent().then((content2) => {
-            const pre = childViewEl.querySelector(".child-raw-text");
+            const pre = container.querySelector(".child-raw-text");
             if (pre) pre.textContent = content2;
           });
         }
       } else if (tab2.view === "privacy" || tab2.view === "terms" || tab2.view === "thanks" || tab2.view === "data-rules" || tab2.view === "minors") {
-        childViewEl.innerHTML = `
+        container.innerHTML = `
         <div class="child-doc-container">
           <div class="child-doc-toolbar">
             <div class="settings-dropdown-wrap" id="child-region-wrap">
@@ -139065,14 +140400,14 @@ void main() {
           <div class="child-view-content"><div class="child-view-body msg-text"><p>Loading...</p></div></div>
         </div>`;
         if (typeof window.lucide !== "undefined") {
-          window.lucide.createIcons({ root: childViewEl });
+          window.lucide.createIcons({ root: container });
         }
         const loadDoc = (region) => {
-          const body = childViewEl.querySelector(".child-view-body");
+          const body = container.querySelector(".child-view-body");
           if (body) body.innerHTML = "<p>Loading...</p>";
           if (window.electronAPI) {
             window.electronAPI.getDocumentContent(tab2.view, region).then((content2) => {
-              const bodyEl = childViewEl.querySelector(".child-view-body");
+              const bodyEl = container.querySelector(".child-view-body");
               if (bodyEl) bodyEl.innerHTML = renderMarkdown(content2);
             });
           }
@@ -139083,71 +140418,134 @@ void main() {
         });
         loadDoc(this._region);
       } else if (tab2.view === "easter-egg") {
-        childViewEl.innerHTML = `<div class="easter-egg-container" style="position:absolute;inset:0;overflow:hidden;background:#000"></div>`;
-        const container = childViewEl.querySelector(".easter-egg-container");
-        if (container) {
-          tab2._nebulaCleanup = mountNebula(container);
+        container.innerHTML = `<div class="easter-egg-container" style="position:absolute;inset:0;overflow:hidden;background:#000"></div>`;
+        const eggEl = container.querySelector(".easter-egg-container");
+        if (eggEl) {
+          tab2._nebulaCleanup = mountNebula(eggEl);
         }
       } else if (tab2.view === "logs") {
-        childViewEl.innerHTML = `
-        <div id="settings-content-wrap">
-          <div class="settings-card" style="padding:0">
-            <div class="model-table" id="logger-table">
-              <div class="model-table-header">
-                <div class="model-table-cell model-cell-provider" style="flex:1">${t("settings.aboutLogContent") || "Content"}</div>
-                <div class="model-table-cell model-cell-actions" style="width:96px;justify-content:flex-end;gap:4px">
-                  <button class="btn-icon" id="logger-copy-btn" title="Copy all"><i data-lucide="clipboard-copy" class="lucide"></i></button>
-                  <button class="btn-icon" id="logger-open-btn" title="Open folder"><i data-lucide="folder-open" class="lucide"></i></button>
-                </div>
-              </div>
-              <div class="logger-scroll" id="logger-scroll">
-                <div id="logger-rows"></div>
-              </div>
+        container.innerHTML = `
+        <div class="log-view">
+          <div class="log-table">
+            <div class="log-table-header">
+              <div class="log-cell log-cell-ts">${t("settings.aboutLogTimestamp")}</div>
+              <div class="log-cell log-cell-lvl">${t("settings.aboutLogLevel")}</div>
+              <div class="log-cell log-cell-src">${t("settings.aboutLogSource")}</div>
+              <div class="log-cell log-cell-msg">${t("settings.aboutLogMessage")}</div>
+            </div>
+            <div class="log-table-body" id="log-table-body">
+              <div class="log-loading">${t("settings.aboutLogLoading")}</div>
             </div>
           </div>
-        </div>`;
+        </div>
+        <div class="context-menu hidden" id="log-context-menu"></div>`;
         if (typeof window.lucide !== "undefined") {
-          window.lucide.createIcons({ root: childViewEl });
+          window.lucide.createIcons({ root: container });
         }
-        const api = window.electronAPI;
-        if (api) {
-          api.getDiagnostics().then((diag) => {
-            const rowsEl = document.getElementById("logger-rows");
-            const copyBtn = document.getElementById("logger-copy-btn");
-            const openBtn = document.getElementById("logger-open-btn");
-            if (!rowsEl) return;
-            rowsEl.innerHTML = diag.recentLogs.length === 0 ? `<div class="model-table-row"><div class="model-table-cell model-cell-provider" style="flex:1;color:var(--text-muted)">(no logs)</div><div class="model-table-cell model-cell-actions" style="width:96px"></div></div>` : diag.recentLogs.map(
-              (line) => `<div class="model-table-row">
-                  <div class="model-table-cell model-cell-provider" style="flex:1;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-all;color:var(--text-secondary)">${this.esc(line)}</div>
-                  <div class="model-table-cell model-cell-actions" style="width:96px"></div>
-                </div>`
-            ).join("");
-            if (copyBtn) {
-              copyBtn.addEventListener("click", () => {
-                navigator.clipboard.writeText(diag.recentLogs.join("\n")).catch(() => {
-                });
-              });
-            }
-            if (openBtn) {
-              openBtn.addEventListener("click", () => {
-                api?.openLogs();
-              });
-            }
-          });
-        }
+        this._initLogView(container);
       } else if (tab2.view.startsWith("mailto:")) {
         window.location.href = tab2.view;
       } else {
-        childViewEl.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px">
+        container.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px">
         <i data-lucide="file-question" class="lucide" style="width:32px;height:32px;color:var(--text-muted)"></i>
         <div class="si-panel-empty-title">${this.esc(tab2.label)}</div>
         <div class="si-panel-empty-sub" style="font-size:12px;color:var(--text-muted)">Coming soon</div>
       </div>`;
         if (typeof window.lucide !== "undefined") {
-          window.lucide.createIcons({ root: childViewEl });
+          window.lucide.createIcons({ root: container });
         }
       }
-      tab2._html = childViewEl.innerHTML;
+    }
+    _initLogView(container) {
+      const bodyEl = container.querySelector("#log-table-body");
+      const ctxMenu = container.querySelector("#log-context-menu");
+      let allEntries = [];
+      let ctxEntry = null;
+      const render = () => {
+        if (!bodyEl) return;
+        ctxMenu?.classList.add("hidden");
+        if (allEntries.length === 0) {
+          bodyEl.innerHTML = `<div class="log-empty">${t("settings.aboutLogNoLogs")}</div>`;
+          return;
+        }
+        bodyEl.innerHTML = allEntries.map((e) => {
+          const levelClass = "log-lvl-" + e.level.toLowerCase();
+          const ts2 = e.timestamp.replace(/,\d{3}$/, "");
+          return `<div class="log-row">
+          <div class="log-cell log-cell-ts">${ts2}</div>
+          <div class="log-cell log-cell-lvl"><span class="log-level-badge ${levelClass}">${e.level}</span></div>
+          <div class="log-cell log-cell-src">${this.esc(e.source)}</div>
+          <div class="log-cell log-cell-msg"><span class="log-msg-text">${this.esc(e.message)}</span></div>
+        </div>`;
+        }).join("");
+      };
+      const onCtx = (ev) => {
+        const row = ev.target.closest(".log-row");
+        if (!row || !ctxMenu) return;
+        const idx = Array.from(bodyEl?.querySelectorAll(".log-row") || []).indexOf(row);
+        const entry = allEntries[idx];
+        if (!entry) return;
+        ctxEntry = entry;
+        ctxMenu.innerHTML = `
+        <div class="context-menu-item" data-action="copy-row">${t("settings.aboutLogCopyRow")}</div>
+        <div class="context-menu-item" data-action="copy-all">${t("settings.aboutLogCopyAll")}</div>`;
+        showContextMenu(ctxMenu, ev.clientX, ev.clientY);
+        ev.preventDefault();
+      };
+      const boundCtx = onCtx.bind(this);
+      document.addEventListener("contextmenu", boundCtx);
+      if (ctxMenu) {
+        ctxMenu.addEventListener("click", (ev) => {
+          const item = ev.target.closest(".context-menu-item");
+          if (!item) return;
+          const action = item.getAttribute("data-action");
+          ctxMenu.classList.add("hidden");
+          if (action === "copy-row" && ctxEntry) {
+            navigator.clipboard.writeText(`[${ctxEntry.timestamp}] [${ctxEntry.level}] ${ctxEntry.source}: ${ctxEntry.message}`).catch(() => {
+            });
+          } else if (action === "copy-all") {
+            const text2 = allEntries.map((e) => `[${e.timestamp}] [${e.level}] ${e.source}: ${e.message}`).join("\n");
+            navigator.clipboard.writeText(text2).catch(() => {
+            });
+          }
+        });
+      }
+      document.addEventListener("click", () => ctxMenu?.classList.add("hidden"), false);
+      const api = window.electronAPI;
+      if (api) {
+        let loadedCount = 0;
+        let total = 0;
+        let loading = false;
+        const BATCH = 500;
+        const loadMore = async () => {
+          if (loading) return;
+          if (total > 0 && loadedCount >= total) return;
+          loading = true;
+          try {
+            const result = await api.getLogs({ offset: loadedCount, limit: BATCH });
+            if (result.entries && result.entries.length > 0) {
+              allEntries.push(...result.entries);
+              loadedCount += result.entries.length;
+              total = result.total;
+              render();
+            }
+          } catch {
+            if (loadedCount === 0 && bodyEl) {
+              bodyEl.innerHTML = `<div class="log-empty">${t("settings.aboutLogNoLogs")}</div>`;
+            }
+          }
+          loading = false;
+        };
+        loadMore();
+        if (bodyEl) {
+          bodyEl.addEventListener("scroll", () => {
+            const scrollBottom = bodyEl.scrollTop + bodyEl.clientHeight;
+            if (scrollBottom >= bodyEl.scrollHeight - 200) {
+              loadMore();
+            }
+          });
+        }
+      }
     }
     bindChildRegionDropdown(id2, onChange) {
       const wrap = document.getElementById(`${id2}-wrap`);
@@ -139192,13 +140590,12 @@ void main() {
       const totalAll = totalIn + totalOut;
       if (s15.telemetry) {
         this.tokenCountEl.textContent = t("app.toolsTokens", { count: s15.telemetry.total_tool_calls, tokens: this.fmtTokens(totalAll) });
-        this.tokenCountEl.title = t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) }) + ` | ${t("app.turns")}: ${s15.telemetry.total_turns} | ${t("app.duration")}: ${s15.telemetry.session_duration_s.toFixed(0)}s`;
+        this.tokenCountEl.dataset.tooltip = t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) }) + ` | ${t("app.turns")}: ${s15.telemetry.total_turns} | ${t("app.duration")}: ${s15.telemetry.session_duration_s.toFixed(0)}s`;
       } else if (totalAll > 0) {
         this.tokenCountEl.textContent = `${this.fmtTokens(totalAll)} ${t("app.tokens")}`;
-        this.tokenCountEl.title = t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) });
+        this.tokenCountEl.dataset.tooltip = t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) });
       } else {
         this.tokenCountEl.textContent = "";
-        this.tokenCountEl.title = "";
       }
     }
     fmtTokens(n) {
@@ -139211,7 +140608,8 @@ void main() {
       const nameEl = document.getElementById("session-bar-name");
       if (!bar) return;
       const hasMessages = s15.messages.length > 0;
-      bar.style.display = hasMessages ? "" : "none";
+      const isSubAgentActive = !!(s15.subAgentView || s15.subAgentBreadcrumb.length > 0);
+      bar.style.display = hasMessages || isSubAgentActive ? "" : "none";
       if (!nameEl) return;
       const isAutomationView = !!window.__isAutomationView;
       const rootLabel = isAutomationView ? t("automation.title") : s15.tempChat ? t("session.tempChatActive") : (() => {
@@ -139224,17 +140622,32 @@ void main() {
       const breadcrumb = s15.subAgentBreadcrumb;
       const _truncate = (s16, max = 18) => s16.length > max ? s16.slice(0, max) + "\u2026" : s16;
       const isSubAgentView = !!(s15.subAgentView || breadcrumb.length > 0);
+      const autoBackBtn = document.getElementById("btn-automation-back");
+      const toggleBtn = document.getElementById("btn-toggle-sidebar");
+      const searchBtn = document.getElementById("btn-sidebar-search");
+      const isAutomationSubAgent = isAutomationView && isSubAgentView;
+      if (autoBackBtn && toggleBtn && searchBtn) {
+        if (isAutomationSubAgent) {
+          autoBackBtn.classList.remove("hidden");
+          toggleBtn.style.display = "none";
+          searchBtn.style.display = "none";
+        } else {
+          autoBackBtn.classList.add("hidden");
+          toggleBtn.style.display = "";
+          searchBtn.style.display = "";
+        }
+      }
       if (isSubAgentView) {
-        let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" title="${this.esc(rootLabel)}">${this.esc(_truncate(rootLabel))}</button>`;
+        let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" data-tooltip="${this.esc(rootLabel)}">${this.esc(_truncate(rootLabel))}</button>`;
         for (let i8 = 0; i8 < breadcrumb.length; i8++) {
           const entry = breadcrumb[i8];
           const isLast = i8 === breadcrumb.length - 1;
           const label = formatAgentLabel(entry.name);
           crumbsHtml += `<span class="session-crumb-sep">/</span>`;
           if (isLast && !s15.subAgentView) {
-            crumbsHtml += `<span class="session-crumb-current" title="${this.esc(label)}">${this.esc(_truncate(label))}</span>`;
+            crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</span>`;
           } else {
-            crumbsHtml += `<button class="session-crumb" data-crumb-index="${i8}" type="button" title="${this.esc(label)}">${this.esc(_truncate(label))}</button>`;
+            crumbsHtml += `<button class="session-crumb" data-crumb-index="${i8}" type="button" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</button>`;
           }
         }
         if (s15.subAgentView) {
@@ -139243,16 +140656,16 @@ void main() {
           );
           crumbsHtml += `<span class="session-crumb-sep">/</span>`;
           const curLabel = formatAgentLabel(rawName);
-          crumbsHtml += `<span class="session-crumb-current" title="${this.esc(curLabel)}">${this.esc(_truncate(curLabel))}</span>`;
+          crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(curLabel)}">${this.esc(_truncate(curLabel))}</span>`;
         }
         nameEl.innerHTML = crumbsHtml;
         nameEl.querySelectorAll("[data-crumb-index]").forEach((btn) => {
           btn.addEventListener("click", () => {
-            const idx2 = parseInt(btn.dataset.crumbIndex || "-1", 10);
-            if (idx2 < 0) {
+            const idx = parseInt(btn.dataset.crumbIndex || "-1", 10);
+            if (idx < 0) {
               window.__closeSubAgentView?.();
             } else {
-              window.__navigateToBreadcrumb?.(idx2);
+              window.__navigateToBreadcrumb?.(idx);
             }
           });
         });
@@ -139288,7 +140701,7 @@ void main() {
       body.innerHTML = s15.queuedPrompts.map(
         (p, i8) => `<div class="queue-item">
         <span class="queue-item-text">${this.esc(p.text)}</span>
-        <button class="queue-item-remove" data-queue-index="${i8}" title="${t("dialog.cancel")}">
+        <button class="queue-item-remove" data-queue-index="${i8}">
           <i data-lucide="x" class="lucide"></i>
         </button>
       </div>`
@@ -139299,8 +140712,8 @@ void main() {
       body.querySelectorAll(".queue-item-remove").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          const idx2 = parseInt(btn.dataset.queueIndex || "0", 10);
-          removeQueuedPromptAt(idx2);
+          const idx = parseInt(btn.dataset.queueIndex || "0", 10);
+          removeQueuedPromptAt(idx);
         });
       });
     }
@@ -139405,6 +140818,12 @@ void main() {
         this.resizeInput();
         this.updatePlaceholder();
         this.updateSendButton();
+      });
+      this.input.addEventListener("paste", (e) => {
+        e.preventDefault();
+        const text2 = e.clipboardData?.getData("text/plain") ?? "";
+        if (!text2) return;
+        document.execCommand("insertText", false, text2);
       });
       const chipObserver = new MutationObserver(() => {
         const mode = this.getCurrentMode();
@@ -139525,7 +140944,6 @@ void main() {
         send({ type: "new_session", request_id: requestId });
       };
       commandActions["keyboard-shortcuts"] = () => {
-        showToast(t("general.keyboardShortcuts"), t("general.shortcutsDesc"), "info");
       };
     }
     bindGlobalLinkInterceptor() {
@@ -139557,21 +140975,29 @@ void main() {
         this.userToggledSidebar = true;
         document.getElementById("app")?.classList.toggle("sidebar-collapsed");
       });
+      document.getElementById("btn-automation-back")?.addEventListener("click", () => {
+        window.__closeSubAgentView?.();
+      });
       const modeSeg = document.getElementById("mode-seg");
       if (modeSeg) {
         const items = modeSeg.querySelectorAll(".seg-item");
         items.forEach((item) => {
           item.addEventListener("click", () => {
             const mode = item.getAttribute("data-mode");
-            if (mode === "iwork") {
-              this.workspace?.enter();
-            } else if (mode === "normal") {
-              this.workspace?.exit();
+            if (mode === "automation") {
+              this.modeTransition.toggleAutomation();
+            } else {
+              this.modeTransition.switchMode(mode);
             }
           });
         });
         const syncSegFromState = () => {
-          const active = getState().workspaceMode === "iwork" ? "iwork" : "normal";
+          let active;
+          if (this.automationPanel.isActive) {
+            active = "automation";
+          } else {
+            active = getState().workspaceMode === "iwork" ? "iwork" : "normal";
+          }
           items.forEach((el2) => {
             const isActive = el2.getAttribute("data-mode") === active;
             el2.classList.toggle("active", isActive);
@@ -139580,11 +141006,12 @@ void main() {
         };
         syncSegFromState();
         subscribe2(syncSegFromState);
+        this.automationPanel.onHide = syncSegFromState;
       }
       const newTaskBtn = document.querySelector('.nav-item[data-view="chat"]');
-      newTaskBtn?.addEventListener("click", () => {
+      newTaskBtn?.addEventListener("click", async () => {
         if (this.automationPanel.isActive) {
-          this.automationPanel.toggleAutomationView();
+          await this.automationPanel.hide();
         }
         this.exitTempChat();
         this.cleanupContentArea({ keepAutomationFlag: false });
@@ -139837,40 +141264,170 @@ void main() {
       const selector = document.getElementById("input-model-selector");
       const dropdown = document.getElementById("input-model-dropdown");
       if (!selector || !dropdown) return;
-      const render = () => {
+      const formatLevel = (lvl) => {
+        if (!lvl || lvl === "default") return t("settings.thinkingDefault") || "Default";
+        return lvl.charAt(0).toUpperCase() + lvl.slice(1);
+      };
+      const getThinkingLevels = () => {
+        return ["low", "medium", "high"];
+      };
+      const isThinkingSelectable = (m) => {
+        if (!m) return false;
+        const tc2 = m.thinking_config;
+        return tc2 ? tc2.selectable === true : false;
+      };
+      const getCurrentLevel = (m) => {
+        if (!m) return "default";
+        const tc2 = m.thinking_config;
+        const lvl = tc2?.level || "";
+        return lvl || "default";
+      };
+      const renderMainPage = (mainPage) => {
         const st3 = getState();
         const allModels = st3.modelConfigs || [];
         const activeIdx = st3.activeModelIndex;
         const active = allModels[activeIdx];
-        const models = allModels.filter((m, i8) => m.enabled !== false || i8 === activeIdx);
-        selector.textContent = active?.name || active?.model_id || t("app.model");
-        if (models.length === 0) {
-          dropdown.innerHTML = `<div class="settings-dropdown-item muted">${t("app.noModelsConfigured")}</div>`;
-          return;
+        const models = allModels.filter((m) => m.enabled !== false);
+        const isActiveUsable = active && active.enabled !== false;
+        selector.textContent = isActiveUsable ? active.name || active.model_id : "NONE";
+        let thinkingEntry = "";
+        if (isActiveUsable && isThinkingSelectable(active)) {
+          const lvlLabel = formatLevel(getCurrentLevel(active));
+          thinkingEntry = `
+          <button class="mention-dropdown-item" data-action="sub-thinking">
+            <span>${t("settings.thinkingLevel")}</span>
+            <span style="margin-left:auto;color:var(--text-muted);font-size:12px">${this.esc(lvlLabel)}</span>
+            <i data-lucide="chevron-right" class="lucide"></i>
+          </button>`;
         }
-        dropdown.innerHTML = models.map((m, i8) => {
-          const origIdx = allModels.indexOf(m);
-          const sel = origIdx === activeIdx ? " selected" : "";
-          const disabled = m.enabled === false ? " muted" : "";
-          return `<div class="settings-dropdown-item${sel}${disabled}" data-idx="${origIdx}">${this.esc(m.name || m.model_id)}</div>`;
-        }).join("");
-        dropdown.querySelectorAll(".settings-dropdown-item[data-idx]").forEach((item) => {
+        let modelsHtml = "";
+        if (models.length === 0) {
+          modelsHtml = `<button class="mention-dropdown-item muted" disabled>${t("app.noModelsConfigured")}</button>`;
+        } else {
+          modelsHtml = models.map((m) => {
+            const origIdx = allModels.indexOf(m);
+            const sel = origIdx === activeIdx ? " active" : "";
+            return `<button class="mention-dropdown-item${sel}" data-idx="${origIdx}">${this.esc(m.name || m.model_id)}</button>`;
+          }).join("");
+        }
+        const divider = models.length > 0 ? `<div class="mention-dropdown-divider"></div>` : "";
+        mainPage.innerHTML = modelsHtml + divider + thinkingEntry + `
+        <button class="mention-dropdown-item add-model-btn" data-action="add-model">
+          <i data-lucide="plus" class="lucide"></i>
+          <span>${t("settings.addModel")}</span>
+        </button>`;
+        if (typeof window.lucide !== "undefined") {
+          window.lucide.createIcons({ root: mainPage });
+        }
+        mainPage.querySelectorAll(".mention-dropdown-item[data-idx]").forEach((item) => {
           item.addEventListener("click", (e) => {
             e.stopPropagation();
-            const idx2 = parseInt(item.dataset.idx || "0");
-            send({ type: "set_active_model", model_index: idx2 });
-            selector.textContent = allModels[idx2]?.name || allModels[idx2]?.model_id || t("app.model");
+            const idx = parseInt(item.dataset.idx || "0");
+            send({ type: "set_active_model", model_index: idx });
+            selector.textContent = allModels[idx]?.name || allModels[idx]?.model_id || t("app.model");
             dropdown.classList.add("hidden");
           });
         });
+        const thinkingBtn = mainPage.querySelector('[data-action="sub-thinking"]');
+        if (thinkingBtn) {
+          thinkingBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            mainPage.classList.add("hidden");
+            const thinkingPage = dropdown.querySelector('[data-page="thinking"]');
+            if (thinkingPage) {
+              renderThinkingPage(thinkingPage);
+              thinkingPage.classList.remove("hidden");
+            }
+          });
+        }
+        const addBtn = mainPage.querySelector('[data-action="add-model"]');
+        if (addBtn) {
+          addBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            dropdown.classList.add("hidden");
+            this.settings.openModelCreate();
+          });
+        }
       };
+      const renderThinkingPage = (thinkingPage) => {
+        const st3 = getState();
+        const active = st3.modelConfigs[st3.activeModelIndex];
+        const currentLvl = getCurrentLevel(active);
+        const levels = getThinkingLevels();
+        const backBtn = `<button class="mention-dropdown-item" data-action="back-model-main">
+        <i data-lucide="arrow-left" class="lucide"></i>
+        <span>${t("input.selectThinkingLevel")}</span>
+      </button>`;
+        const items = levels.map((lvl) => `<button class="mention-dropdown-item${lvl === currentLvl ? " active" : ""}" data-level="${lvl}">${this.esc(formatLevel(lvl))}</button>`).join("");
+        thinkingPage.innerHTML = backBtn + `<div class="mention-dropdown-divider"></div>` + items;
+        if (typeof window.lucide !== "undefined") {
+          window.lucide.createIcons({ root: thinkingPage });
+        }
+        const backEl = thinkingPage.querySelector('[data-action="back-model-main"]');
+        if (backEl) {
+          backEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            thinkingPage.classList.add("hidden");
+            const mainPage = dropdown.querySelector('[data-page="main"]');
+            if (mainPage) {
+              renderMainPage(mainPage);
+              mainPage.classList.remove("hidden");
+            }
+          });
+        }
+        thinkingPage.querySelectorAll(".mention-dropdown-item[data-level]").forEach((lvlItem) => {
+          lvlItem.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            const lvl = lvlItem.dataset.level || "medium";
+            const currentState = getState();
+            const idx = currentState.activeModelIndex;
+            const modelsCopy = [...currentState.modelConfigs];
+            if (idx < 0 || idx >= modelsCopy.length) return;
+            const updated = {
+              ...modelsCopy[idx],
+              thinking_config: { type: "enabled", enabled: true, level: lvl, selectable: true }
+            };
+            modelsCopy[idx] = updated;
+            setModelConfigs(modelsCopy, currentState.activeModelIndex);
+            send({ type: "update_models", models: modelsCopy, active_model_index: currentState.activeModelIndex });
+            thinkingPage.classList.add("hidden");
+            const mainPage = dropdown.querySelector('[data-page="main"]');
+            if (mainPage) {
+              renderMainPage(mainPage);
+              mainPage.classList.remove("hidden");
+            }
+          });
+        });
+      };
+      const render = () => {
+        let mainPage = dropdown.querySelector('[data-page="main"]');
+        let thinkingPage = dropdown.querySelector('[data-page="thinking"]');
+        if (!mainPage) {
+          mainPage = document.createElement("div");
+          mainPage.className = "mention-page";
+          mainPage.setAttribute("data-page", "main");
+          dropdown.appendChild(mainPage);
+        }
+        if (!thinkingPage) {
+          thinkingPage = document.createElement("div");
+          thinkingPage.className = "mention-page hidden";
+          thinkingPage.setAttribute("data-page", "thinking");
+          dropdown.appendChild(thinkingPage);
+        }
+        thinkingPage.classList.add("hidden");
+        mainPage.classList.remove("hidden");
+        renderMainPage(mainPage);
+      };
+      if (selector.dataset.modelSelectorBound === "true") {
+        render();
+        return;
+      }
+      selector.dataset.modelSelectorBound = "true";
       selector.addEventListener("click", (e) => {
         e.stopPropagation();
-        console.log("[model-selector] clicked, hidden=", dropdown.classList.contains("hidden"));
         if (dropdown.classList.contains("hidden")) {
           render();
           dropdown.classList.remove("hidden");
-          console.log("[model-selector] opened, items=", dropdown.querySelectorAll("[data-idx]").length);
         } else {
           dropdown.classList.add("hidden");
         }
@@ -140200,7 +141757,6 @@ void main() {
         this.sessionInner?.saveWidth?.();
         sessionInnerSidebar.classList.add("hidden");
       }
-      if (this.sessionInner) this.sessionInner.resetToDefaultTabs();
       const mainBody = document.getElementById("main-body");
       if (mainBody) mainBody.classList.add("sidebar-hidden");
       this._welcomeTitleAnimating = false;
@@ -140212,7 +141768,7 @@ void main() {
         this.welcomeScreen.classList.remove("hidden");
         const title = this.welcomeScreen.querySelector(".welcome-title");
         if (title) {
-          title.textContent = t("welcome.title");
+          title.textContent = "";
           title.style.transition = "";
           title.style.transform = "";
           title.style.opacity = "";
@@ -140229,10 +141785,15 @@ void main() {
         automationView.style.top = "";
         automationView.style.left = "";
       }
-      const automationBack = document.getElementById("btn-automation-back");
-      if (automationBack) automationBack.classList.add("hidden");
       const sidebarToggle = document.getElementById("btn-toggle-sidebar");
-      if (sidebarToggle) sidebarToggle.classList.remove("hidden");
+      const searchBtn = document.getElementById("btn-sidebar-search");
+      const autoBackBtn = document.getElementById("btn-automation-back");
+      if (sidebarToggle) {
+        sidebarToggle.classList.remove("hidden");
+        sidebarToggle.style.display = "";
+      }
+      if (searchBtn) searchBtn.style.display = "";
+      if (autoBackBtn) autoBackBtn.classList.add("hidden");
       const childView = document.getElementById("child-view");
       if (childView) {
         childView.classList.add("hidden");
@@ -140450,7 +142011,16 @@ ${first.content}
       startAssistantMessage();
       setRunning(true);
       this.updateUIState(true);
-      const attachments = st3.attachments.length > 0 ? st3.attachments.map((a2) => a2.mime_type === "text/x-terminal" ? { ...a2, content: `<terminal>
+      const activeModel = st3.modelConfigs.length > 0 ? st3.modelConfigs[Math.min(st3.activeModelIndex, st3.modelConfigs.length - 1)] : void 0;
+      const multimodal = activeModel?.multimodal === true;
+      const mediaTypes = ["image/", "video/", "audio/"];
+      const attachments = st3.attachments.length > 0 ? st3.attachments.filter((a2) => {
+        if (!multimodal && mediaTypes.some((t3) => a2.mime_type?.startsWith(t3))) {
+          showToast(t("files.skippedMedia") + ": " + (a2.name || ""), "", "warning", "Files");
+          return false;
+        }
+        return true;
+      }).map((a2) => a2.mime_type === "text/x-terminal" ? { ...a2, content: `<terminal>
 ${a2.content}
 </terminal>` } : { ...a2, content: "", is_binary: false }) : void 0;
       const payload = {
@@ -140574,16 +142144,16 @@ ${a2.content}
         const sessions = getState().sessionsList;
         if (!sessions || sessions.length === 0) return;
         const currentId = getState().sessionId;
-        const idx2 = sessions.findIndex((s15) => s15.session_id === currentId);
-        const next = sessions[(idx2 + 1) % sessions.length];
+        const idx = sessions.findIndex((s15) => s15.session_id === currentId);
+        const next = sessions[(idx + 1) % sessions.length];
         if (next) resumeSession(next.session_id);
       };
       a2["prev_session"] = () => {
         const sessions = getState().sessionsList;
         if (!sessions || sessions.length === 0) return;
         const currentId = getState().sessionId;
-        const idx2 = sessions.findIndex((s15) => s15.session_id === currentId);
-        const prev = sessions[(idx2 - 1 + sessions.length) % sessions.length];
+        const idx = sessions.findIndex((s15) => s15.session_id === currentId);
+        const prev = sessions[(idx - 1 + sessions.length) % sessions.length];
         if (prev) resumeSession(prev.session_id);
       };
       a2["delete_session"] = async () => {
@@ -140676,7 +142246,7 @@ ${a2.content}
         document.getElementById("app")?.classList.toggle("sidebar-collapsed");
       };
       a2["view_chat"] = () => this.viewManager.switchTo("chat");
-      a2["view_automation"] = () => this.automationPanel.toggleAutomationView();
+      a2["view_automation"] = () => this.modeTransition.toggleAutomation();
       a2["attach_file"] = () => {
         this.files.promptForFiles();
       };
@@ -140731,23 +142301,22 @@ ${a2.content}
         const tabs = this.sessionInner.getTabs();
         if (tabs.length < 2) return;
         const active = this.sessionInner.getActiveTab();
-        const idx2 = tabs.findIndex((t3) => t3.id === active);
-        const prev = tabs[(idx2 - 1 + tabs.length) % tabs.length];
+        const idx = tabs.findIndex((t3) => t3.id === active);
+        const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
         this.sessionInner.activateTab(prev.id);
       };
       a2["next_tab"] = () => {
         const tabs = this.sessionInner.getTabs();
         if (tabs.length < 2) return;
         const active = this.sessionInner.getActiveTab();
-        const idx2 = tabs.findIndex((t3) => t3.id === active);
-        const next = tabs[(idx2 + 1) % tabs.length];
+        const idx = tabs.findIndex((t3) => t3.id === active);
+        const next = tabs[(idx + 1) % tabs.length];
         this.sessionInner.activateTab(next.id);
       };
       a2["toggle_theme"] = () => {
         const current = getState().themePreference || "system";
         const next = current === "dark" ? "light" : current === "light" ? "system" : "dark";
-        const label = next === "dark" ? "\u6DF1\u8272" : next === "light" ? "\u6D45\u8272" : "\u8DDF\u968F\u7CFB\u7EDF";
-        Dialog.confirm("\u5207\u6362\u4E3B\u9898", `\u786E\u5B9A\u5207\u6362\u5230\u300C${label}\u300D\u4E3B\u9898\uFF1F`).then((ok) => {
+        Dialog.confirm(t("theme.switchTitle"), t("theme.switchConfirm", { label: t(`theme.${next}`) })).then((ok) => {
           if (!ok) return;
           setThemePreference(next);
           if (next === "system") {
@@ -140762,8 +142331,7 @@ ${a2.content}
       a2["toggle_language"] = () => {
         const current = getState().settings.language || "zh";
         const next = current === "zh" ? "en" : "zh";
-        const label = next === "zh" ? "\u4E2D\u6587" : "English";
-        Dialog.confirm("\u5207\u6362\u8BED\u8A00", `\u786E\u5B9A\u5207\u6362\u5230\u300C${label}\u300D\uFF1F`).then((ok) => {
+        Dialog.confirm(t("language.switchTitle"), t("language.switchConfirm", { label: t(`language.${next}`) })).then((ok) => {
           if (!ok) return;
           const settings = { ...getState().settings, language: next };
           setSettings(settings);
@@ -140771,7 +142339,7 @@ ${a2.content}
           send({ type: "configure", config: { language: next } });
         });
       };
-      a2["automation_open"] = () => this.automationPanel.toggleAutomationView();
+      a2["automation_open"] = () => this.modeTransition.toggleAutomation();
       a2["automation_new"] = () => {
         document.getElementById("automation-create-btn")?.click();
       };
@@ -140886,6 +142454,14 @@ ${a2.content}
     }
     bindKeyboardShortcuts() {
       document.addEventListener("keydown", (e) => {
+        if (document.documentElement.dataset.shortcutRecording === "true") return;
+        if (document.documentElement.dataset.shortcutPanelActive === "true") {
+          if (e.key === "Escape") {
+            this.settings.close();
+            setActiveToolId(null);
+          }
+          return;
+        }
         const key = e.key;
         const mod = e.ctrlKey || e.metaKey;
         const alt = e.altKey;
@@ -140905,6 +142481,9 @@ ${a2.content}
         }
         const keybindsCfg = getState().settings.keybinds;
         const binds = keybindsCfg?.keybinds || [];
+        if (mappedKey.match(/^f(1[0-2]|[1-9])$/) || binds.some((kb) => kb.keys && kb.keys.includes(pattern))) {
+          e.preventDefault();
+        }
         for (const kb of binds) {
           if (kb.keys && kb.keys.includes(pattern)) {
             if (kb.id === "search_settings") {

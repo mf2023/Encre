@@ -135,6 +135,10 @@ class OpenAICompatibleBackend(OpenAISSEBackend):
         own backend subclass that overrides this method, so they are
         unaffected.
         """
+        if not self.thinking_enabled:
+            return None
+        if self.reasoning_effort:
+            return {"reasoning_effort": self.reasoning_effort}
         return None
 
     # ── Context window ──────────────────────────────────────────────────

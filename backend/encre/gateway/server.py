@@ -220,10 +220,10 @@ class GatewayServer:
             logger.warning("[gateway] %s submit failed -- engine not ready", conn.name)
             await self._send(ws, GatewayMessage.error("Engine not ready"))
             return
-        if not session_id and hasattr(self._engine, "ensure_adapter_session"):
-            session_id = await self._engine.ensure_adapter_session(conn.name)
         try:
             async with router.iclaw_context():
+                if not session_id and hasattr(self._engine, "ensure_adapter_session"):
+                    session_id = await self._engine.ensure_adapter_session(conn.name)
                 result = await router.submit(
                     conn.name, prompt,
                     session_id=session_id,
@@ -231,7 +231,7 @@ class GatewayServer:
                 )
                 if isinstance(result, str) and result:
                     logger.info("[gateway] %s submit response len=%d session=%s", conn.name, len(result), session_id or "?")
-                    await self._send(ws, GatewayMessage(session_id or "", data={"text": result}))
+                    await self._send(ws, GatewayMessage.text_delta(result, session_id=session_id or ""))
                 else:
                     logger.info("[gateway] %s submit empty response", conn.name)
         except Exception as e:
@@ -252,11 +252,11 @@ class GatewayServer:
             logger.warning("[gateway] %s submit_stream failed -- engine not ready", conn.name)
             await self._send(ws, GatewayMessage.error("Engine not ready"))
             return
-        if not session_id and hasattr(self._engine, "ensure_adapter_session"):
-            session_id = await self._engine.ensure_adapter_session(conn.name)
         text_len = 0
         try:
             async with router.iclaw_context():
+                if not session_id and hasattr(self._engine, "ensure_adapter_session"):
+                    session_id = await self._engine.ensure_adapter_session(conn.name)
                 async for event in router.submit_stream(
                     conn.name, prompt,
                     session_id=session_id,
@@ -264,7 +264,7 @@ class GatewayServer:
                 ):
                     if isinstance(event, TextDelta) and event.text:
                         text_len += len(event.text)
-                        await self._send(ws, GatewayMessage.text_delta(event.text))
+                        await self._send(ws, GatewayMessage.text_delta(event.text, session_id=session_id or ""))
                     elif isinstance(event, ToolResult):
                         await self._send(ws, GatewayMessage.tool_result(
                             event.id or "", event.content or "", event.is_error

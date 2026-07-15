@@ -516,6 +516,7 @@ class AdaptiveThinking:
     min_tokens: int = 1024
     max_tokens: int = 8192
     budget_ratio: float = 0.5
+    level: str = ""  # "low", "medium", "high", "max" (backend-specific)
 
 
 @dataclass
@@ -523,12 +524,15 @@ class EnabledThinking:
     """Fixed-budget thinking mode."""
     enabled: bool = True
     budget_tokens: int = 4096
+    level: str = ""  # "low", "medium", "high", "max" (backend-specific)
+    selectable: bool = True  # whether the user can change the level in the UI
 
 
 @dataclass
 class DisabledThinking:
     """Thinking turned off entirely."""
     enabled: bool = False
+    level: str = ""
 
 
 # Selectable thinking/Reasoning configuration variants.

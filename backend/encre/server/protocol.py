@@ -595,6 +595,8 @@ class ClientValidateModel:
     name: str = ""
     # Index of the model being edited; -1 (default) means "add new".
     model_index: int = -1
+    multimodal: bool = False
+    thinking_config: dict[str, Any] | None = field(default_factory=lambda: {"type": "enabled", "enabled": True})
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ClientValidateModel":
@@ -607,6 +609,8 @@ class ClientValidateModel:
             max_tokens=d.get("max_tokens", 4096),
             name=d.get("name", ""),
             model_index=d.get("model_index", -1),
+            multimodal=d.get("multimodal", False),
+            thinking_config=d.get("thinking_config") if d.get("thinking_config") is not None else {"type": "enabled", "enabled": True},
         )
 
 
@@ -1197,6 +1201,19 @@ class ClientAutomationDeleteJob:
         )
 
 
+@dataclass
+class ClientAutomationDeleteExecution:
+    type: str = "automation_delete_execution"
+    entry_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientAutomationDeleteExecution":
+        return cls(
+            type="automation_delete_execution",
+            entry_id=d.get("entry_id", ""),
+        )
+
+
 # The discriminated union of every client message type understood by the handler.
 # ``parse_client_message`` returns one of these based on the wire ``type`` field.
 ClientMessage = (
@@ -1271,6 +1288,7 @@ ClientMessage = (
     | ClientAutomationToggleJob
     | ClientAutomationUpdateJob
     | ClientAutomationDeleteJob
+    | ClientAutomationDeleteExecution
 )
 
 
@@ -1369,6 +1387,7 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "automation_toggle_job": ClientAutomationToggleJob,
         "automation_update_job": ClientAutomationUpdateJob,
         "automation_delete_job": ClientAutomationDeleteJob,
+        "automation_delete_execution": ClientAutomationDeleteExecution,
         "engine_install_response": ClientEngineInstallResponse,
     }
     cls = parsers.get(msg_type)
@@ -1645,8 +1664,8 @@ def encode_rollback_log(session_id: str, commits: list[dict[str, Any]]) -> str:
     return encode_server_message("rollback_log", session_id=session_id, commits=commits)
 
 
-def encode_rollback_checkout(session_id: str, commit_hash: str, messages: list[dict[str, Any]], turn_count: int, plan_items: list[dict[str, Any]] | None = None, artifacts: list[dict[str, Any]] | None = None) -> str:
-    return encode_server_message("rollback_checkout", session_id=session_id, commit_hash=commit_hash, messages=messages, turn_count=turn_count, plan_items=plan_items or [], artifacts=artifacts or [])
+def encode_rollback_checkout(session_id: str, commit_hash: str, messages: list[dict[str, Any]], turn_count: int, plan_items: list[dict[str, Any]] | None = None, artifacts: list[dict[str, Any]] | None = None, references: list[dict[str, Any]] | None = None) -> str:
+    return encode_server_message("rollback_checkout", session_id=session_id, commit_hash=commit_hash, messages=messages, turn_count=turn_count, plan_items=plan_items or [], artifacts=artifacts or [], references=references or [])
 
 
 def encode_messages_updated(messages: list[dict[str, Any]], session_id: str, commit_hash: str = "") -> str:

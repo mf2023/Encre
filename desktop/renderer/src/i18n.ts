@@ -166,7 +166,7 @@ export function applyI18n(): void {
   document.querySelectorAll("[data-i18n-title]").forEach((el) => {
     const key = el.getAttribute("data-i18n-title");
     if (key) {
-      el.setAttribute("title", t(key));
+      el.setAttribute("data-tooltip", t(key));
     }
   });
 }

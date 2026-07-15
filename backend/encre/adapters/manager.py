@@ -49,10 +49,13 @@ Architecture:
     enabling the AI agent to interact with users across all enabled platforms.
 """
 
+import json
 import logging
+import pathlib
 from collections.abc import Callable
 from typing import Any
 
+from encre.config import get_data_dir
 from encre.gateway.server import GatewayServer
 
 logger = logging.getLogger("encre.adapters.manager")
@@ -220,8 +223,11 @@ class AdapterManager:
         self._last_errors: dict[str, str] = {}
         # Stored credentials for adapters (allows enable toggle without re-sending secrets)
         self._stored_configs: dict[str, dict[str, Any]] = {}
-        # Fixed session_id per adapter -- all messages from the same adapter share one session
+        # Fixed session_id per adapter -- all messages from the same adapter share one session.
+        # Persisted across restarts so adapter conversations keep their context.
         self._adapter_sessions: dict[str, str] = {}
+        self._adapter_sessions_path = pathlib.Path(get_data_dir()) / "iclaw" / "adapter_sessions.json"
+        self._load_adapter_sessions()
         self._status_callback = status_callback
         self._running = False
 
@@ -498,6 +504,37 @@ class AdapterManager:
             config=self._router._default_config
         )
         self._adapter_sessions[adapter_name] = info.session_id
+        self._save_adapter_sessions()
         logger.info("[adapter-manager] created fixed session %s for adapter %s",
                      info.session_id, adapter_name)
         return info.session_id
+
+    def _load_adapter_sessions(self) -> None:
+        """Load the adapter -> session_id map from disk.
+
+        Falls back to an empty map if the file is missing or corrupt.
+        """
+        try:
+            if self._adapter_sessions_path.exists():
+                with open(self._adapter_sessions_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    self._adapter_sessions = {str(k): str(v) for k, v in data.items()}
+                    logger.info("[adapter-manager] loaded %d adapter session mappings",
+                                len(self._adapter_sessions))
+        except Exception as e:
+            logger.warning("[adapter-manager] failed to load adapter sessions: %s", e)
+
+    def _save_adapter_sessions(self) -> None:
+        """Persist the adapter -> session_id map to disk.
+
+        Writes atomically so a crash midway does not corrupt the file.
+        """
+        try:
+            self._adapter_sessions_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self._adapter_sessions_path.with_suffix(".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self._adapter_sessions, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(self._adapter_sessions_path)
+        except Exception as e:
+            logger.warning("[adapter-manager] failed to save adapter sessions: %s", e)

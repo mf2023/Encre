@@ -294,6 +294,7 @@ export interface UsageStatsSessionEntry {
   /** "active" = currently configured, "deleted" = no longer in config,
    *  "unknown" = session had no recorded model. */
   model_status?: "active" | "deleted" | "unknown";
+  channel?: string;
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
@@ -441,6 +442,7 @@ export type ClientMessage =
   | ClientAutomationUpdateJob
   | ClientAutomationCreateJob
   | ClientAutomationDeleteJob
+  | ClientAutomationDeleteExecution
   | ClientAutomationToggleJob
   | ClientSteer;
 
@@ -490,6 +492,11 @@ export interface ClientAutomationCreateJob {
 export interface ClientAutomationDeleteJob {
   type: "automation_delete_job";
   job_id: string;
+}
+
+export interface ClientAutomationDeleteExecution {
+  type: "automation_delete_execution";
+  entry_id: string;
 }
 
 export interface ClientAutomationToggleJob {
@@ -580,6 +587,8 @@ export interface ClientValidateModel {
   name?: string;
   /** Index of the model being edited; omit or -1 to add a new model. */
   model_index?: number;
+  multimodal?: boolean;
+  thinking_config?: ThinkingConfigData;
 }
 
 export interface ClientUpdateSkills {
@@ -691,6 +700,17 @@ export interface ClientUpdateSubAgents {
   agents: SubAgentConfig[];
 }
 
+export interface ThinkingConfigData {
+  type: "enabled" | "disabled" | "adaptive";
+  enabled?: boolean;
+  level?: string;
+  selectable?: boolean;
+  budget_tokens?: number;
+  min_tokens?: number;
+  max_tokens?: number;
+  budget_ratio?: number;
+}
+
 export interface ModelConfigMeta {
   name: string;
   model_id: string;
@@ -700,6 +720,8 @@ export interface ModelConfigMeta {
   max_tokens: number;
   context_window: number;
   enabled: boolean;
+  multimodal: boolean;
+  thinking_config?: ThinkingConfigData;
 }
 
 export interface ContextUsageEvent {
@@ -919,6 +941,7 @@ export interface RollbackCheckoutEvent {
   turn_count: number;
   plan_items?: PlanItem[];
   artifacts?: any[];
+  references?: ReferenceItem[];
   user_input?: string;
 }
 
@@ -929,6 +952,7 @@ export interface MessagesUpdated {
   messages: Array<{ role: string; content: string | Array<{ type: string; text: string }>; tool_calls?: any[]; reasoning_content?: string }>;
   plan_items?: PlanItem[];
   artifacts?: any[];
+  references?: ReferenceItem[];
 }
 
 export interface SessionDeleted {
@@ -1766,6 +1790,7 @@ export interface NotificationItem {
   source?: string;
   timestamp: number;
   read: boolean;
+  media?: { type: "image" | "video"; src: string };
 }
 
 // ── App State ─────────────────────────────────────────────────────────────

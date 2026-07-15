@@ -296,6 +296,24 @@ class WebSocketChannel(Channel):
                     "config": config_data,
                 }, ensure_ascii=False))
 
+        elif action == "clear_logs":
+            from encre.config import get_data_dir
+            import os
+            log_path = get_data_dir() / "yimd.log"
+            try:
+                with open(log_path, "w") as f:
+                    f.truncate(0)
+                await ws.send(json.dumps({
+                    "type": "logs_cleared",
+                    "success": True,
+                }, ensure_ascii=False))
+            except Exception as e:
+                await ws.send(json.dumps({
+                    "type": "logs_cleared",
+                    "success": False,
+                    "error": str(e),
+                }, ensure_ascii=False))
+
         else:
             await self._send_error(ws, f"Unknown action: {action}")
 

@@ -387,7 +387,18 @@ export function formatAgentLabel(rawName: string): string {
 
 function buildSubAgentTimeline(msgs: Message[]): TimelineItem[] {
   const timeline = buildTimeline(msgs);
-  // Keep only the first ai_header — sub-agent thinking/text/tool segments
+  // When the sub-agent view is running, suppress action buttons (copy, retry)
+  // on all messages so they only appear after the turn is truly finished.
+  const subView = getState().subAgentView;
+  const subRunning = !!(subView && (subView.status === "running" || subView.status === "pending"));
+  if (subRunning) {
+    for (const item of timeline) {
+      if (item.kind === "assistant_text") {
+        (item as any).showActions = false;
+      }
+    }
+  }
+  // Keep only the first ai_header - sub-agent thinking/text/tool segments
   // belong to a single assistant turn, not individual turns per segment.
   let seenHeader = false;
   return timeline.filter(item => {
@@ -594,7 +605,7 @@ function _lineSimilarity(a: string, b: string): number {
 }
 
 function _toolStatusHtml(status: string): string {
-  if (status === "running") return `<span class="tool-status-dot running" title="Running"><span class="tool-spinner"></span></span>`;
+  if (status === "running") return `<span class="tool-status-dot running"></span></span>`;
   return "";
 }
 
@@ -1119,8 +1130,8 @@ export class Chat {
         // preview mode -> show code icon (click to view code)
         // code mode -> show eye icon (click to view preview)
         const nextIcon = nextMode === "code" ? "code" : "eye";
-        btn.title = t(nextMode === "code" ? "chat.infoCode" : "chat.infoRender");
         btn.dataset.mode = nextMode;
+        btn.dataset.tooltip = t(nextMode === "code" ? "chat.infoCode" : "chat.infoRender");
         // Re-create the <i> element because Lucide replaces it with an SVG.
         btn.innerHTML = `<i data-lucide="${nextIcon}" class="info-btn-icon"></i>`;
         if (typeof (window as any).lucide !== "undefined") {
@@ -1134,9 +1145,8 @@ export class Chat {
       const source = card.getAttribute("data-source") || "";
       try {
         await navigator.clipboard.writeText(source);
-        showToast(t("chat.infoCopied"), "", "success");
       } catch {
-        showToast(t("chat.infoCopyFailed"), "", "error");
+        showToast(t("chat.infoCopyFailed"), "", "error", "Chat");
       }
     };
 
@@ -1335,11 +1345,11 @@ export class Chat {
       html += `<div class="turn">${turnMid}`;
       if (turnActions) {
         html += `<div class="assistant-actions turn-actions">`;
-        html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" title="${t("chat.copy")}">
+        html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
           <i data-lucide="copy" class="lucide lucide-sm"></i>
         </button>`;
         if (turnRetry) {
-          html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" title="${t("chat.retry")}">
+          html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
             <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
           </button>`;
         }
@@ -1614,19 +1624,21 @@ export class Chat {
     // happens once when the stream ends.
     if (lastAssistantIndex >= 0) {
       const assistantItem = timeline[lastAssistantIndex] as Extract<TimelineItem, { kind: "assistant_text" }>;
-      if (assistantItem.content.trim().length > 0) {
-        const el = this.ml.querySelector(`[data-id="${assistantItem.id}"]`) as HTMLElement | null;
-        if (el) {
-          const contentEl = el.querySelector(".msg-text") as HTMLElement | null;
-          if (contentEl) {
-            const rawText = contentEl.textContent || "";
-            const newText = assistantItem.content;
-            if (rawText !== newText) {
-              const newHtml = renderMarkdown(newText);
-              if (contentEl.innerHTML !== newHtml) {
-                contentEl.innerHTML = newHtml;
-              }
-            }
+      const newText = assistantItem.content;
+      const el = this.ml.querySelector(`[data-id="${assistantItem.id}"]`) as HTMLElement | null;
+      if (!el) {
+        // DOM and state are out of sync (e.g. the assistant message was
+        // created for a tool call before any text segment existed). Force a
+        // full render so the produced content actually appears.
+        this.renderForce();
+        return;
+      }
+      if (newText.trim().length > 0) {
+        const contentEl = el.querySelector(".msg-text") as HTMLElement | null;
+        if (contentEl) {
+          const newHtml = renderMarkdown(newText);
+          if (contentEl.innerHTML !== newHtml) {
+            contentEl.innerHTML = newHtml;
           }
         }
       }
@@ -1688,13 +1700,13 @@ export class Chat {
           ${modeBadge}
           ${displayContent}</div>
         <div class="user-actions">
-          <button class="btn-icon btn-icon--msg msg-copy-btn" title="${t("chat.copy")}">
+          <button class="btn-icon btn-icon--msg msg-copy-btn" data-tooltip="${t("chat.copy")}">
             <i data-lucide="copy" class="lucide lucide-sm"></i>
           </button>
-          ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" title="${t("chat.rollbackEdit")}">
+          ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" data-tooltip="${t("chat.rollbackEdit")}">
             <i data-lucide="history" class="lucide lucide-sm"></i>
           </button>
-          <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" title="${t("chat.delete")}">
+          <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" data-tooltip="${t("chat.delete")}">
             <i data-lucide="trash-2" class="lucide lucide-sm"></i>
           </button>`}
         </div>
@@ -1707,13 +1719,13 @@ export class Chat {
       <div class="user-bubble">
         ${modeBadge}${termCard}${fileCards}${contentHtml}</div>
       <div class="user-actions">
-        <button class="btn-icon btn-icon--msg msg-copy-btn" title="${t("chat.copy")}">
+        <button class="btn-icon btn-icon--msg msg-copy-btn" data-tooltip="${t("chat.copy")}">
           <i data-lucide="copy" class="lucide lucide-sm"></i>
         </button>
-        ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" title="${t("chat.rollbackEdit")}">
+        ${isSubAgent ? "" : `<button class="btn-icon btn-icon--msg msg-rollback-btn" data-tooltip="${t("chat.rollbackEdit")}">
           <i data-lucide="history" class="lucide lucide-sm"></i>
         </button>
-        <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" title="${t("chat.delete")}">
+        <button class="btn-icon btn-icon--msg msg-delete-btn btn-icon--danger" data-tooltip="${t("chat.delete")}">
           <i data-lucide="trash-2" class="lucide lucide-sm"></i>
         </button>`}
       </div>
@@ -1884,7 +1896,7 @@ export class Chat {
             <span class="info-card-title">${escapeHtml(title || t("chat.toolInfo"))}</span>
           </div>
           <div class="info-card-actions">
-            <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" title="${t("chat.infoCopy")}">
+            <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" data-tooltip="${t("chat.infoCopy")}">
               <i data-lucide="copy" class="info-btn-icon"></i>
             </button>
           </div>
@@ -1923,10 +1935,10 @@ export class Chat {
           ${fragmentBadge}
         </div>
         <div class="info-card-actions">
-          <button class="info-btn" data-action="toggle-view" data-mode="${isCode ? "render" : "code"}" onclick="window.__toggleInfoView('${cardId}')" title="${isCode ? t("chat.infoRender") : t("chat.infoCode")}">
+          <button class="info-btn" data-action="toggle-view" data-mode="${isCode ? "render" : "code"}" onclick="window.__toggleInfoView('${cardId}')" data-tooltip="${isCode ? t("chat.infoRender") : t("chat.infoCode")}">
             <i data-lucide="${isCode ? "eye" : "code"}" class="info-btn-icon"></i>
           </button>
-          <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" title="${t("chat.infoCopy")}">
+          <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" data-tooltip="${t("chat.infoCopy")}">
             <i data-lucide="copy" class="info-btn-icon"></i>
           </button>
         </div>
@@ -2191,7 +2203,7 @@ export class Chat {
         : t.status === "failed" ? "wf-dot--failed"
         : t.status === "skipped" ? "wf-dot--skipped"
         : "wf-dot--pending";
-      const dot = `<span class="wf-dot ${dotCls}" title="${escapeHtml(t.taskName)}: ${t.status}"></span>`;
+      const dot = `<span class="wf-dot ${dotCls}" data-tooltip="${escapeHtml(t.taskName)}: ${t.status}"></span>`;
       return `<div class="wf-task">
         ${dot}
         <span class="wf-task-name">${escapeHtml(t.taskName || t.taskId)}</span>
@@ -2264,7 +2276,7 @@ export class Chat {
       const code = codeCopyBtn.getAttribute("data-code") || "";
       navigator.clipboard.writeText(code)
         .then(() => { codeCopyBtn.textContent = t("chat.copied"); setTimeout(() => { codeCopyBtn.textContent = t("chat.copy"); }, 2000); })
-        .catch(() => showToast(t("chat.copyFailed"), "", "error"));
+        .catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
       return;
     }
 
@@ -2278,7 +2290,7 @@ export class Chat {
       if (!isNaN(idx) && userMsgs[idx]) {
         navigator.clipboard.writeText(userMsgs[idx].content)
           .then(() => flashCopyButton(copyBtn as HTMLElement))
-          .catch(() => showToast(t("chat.copyFailed"), "", "error"));
+          .catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
       }
       return;
     }
@@ -2355,7 +2367,7 @@ export class Chat {
       if (msg) {
         navigator.clipboard.writeText(msg.content)
           .then(() => flashCopyButton(assistantCopyBtn as HTMLElement))
-          .catch(() => showToast(t("chat.copyFailed"), "", "error"));
+          .catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
       }
       return;
     }

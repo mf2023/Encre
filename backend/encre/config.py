@@ -31,7 +31,76 @@ from pathlib import Path
 from typing import Any
 
 from encre.crypto import decrypt, encrypt
-from encre.utils.types import PermissionMode, ThinkingConfig
+from encre.utils.types import (
+    AdaptiveThinking,
+    DisabledThinking,
+    EnabledThinking,
+    PermissionMode,
+    ThinkingConfig,
+)
+
+
+def _thinking_config_to_dict(config: ThinkingConfig | None) -> dict[str, Any] | None:
+    """Serialize a ThinkingConfig union into a plain dictionary."""
+    if config is None:
+        return None
+    if isinstance(config, AdaptiveThinking):
+        return {
+            "type": "adaptive",
+            **{
+                k: v
+                for k, v in {
+                    "enabled": config.enabled,
+                    "min_tokens": config.min_tokens,
+                    "max_tokens": config.max_tokens,
+                    "budget_ratio": config.budget_ratio,
+                    "level": config.level,
+                }.items()
+                if v or k == "enabled"
+            },
+        }
+    if isinstance(config, EnabledThinking):
+        return {
+            "type": "enabled",
+            **{
+                k: v
+                for k, v in {
+                    "enabled": config.enabled,
+                    "budget_tokens": config.budget_tokens,
+                    "level": config.level,
+                    "selectable": config.selectable,
+                }.items()
+                if v or k in ("enabled", "selectable")
+            },
+        }
+    if isinstance(config, DisabledThinking):
+        return {"type": "disabled", "enabled": config.enabled}
+    return None
+
+
+def _thinking_config_from_dict(d: Any) -> ThinkingConfig | None:
+    """Deserialize a plain dictionary into a ThinkingConfig union."""
+    if not isinstance(d, dict):
+        return None
+    kind = str(d.get("type", "")).lower()
+    if kind == "adaptive":
+        return AdaptiveThinking(
+            enabled=bool(d.get("enabled", True)),
+            min_tokens=int(d.get("min_tokens", 1024)),
+            max_tokens=int(d.get("max_tokens", 8192)),
+            budget_ratio=float(d.get("budget_ratio", 0.5)),
+            level=str(d.get("level", "")),
+        )
+    if kind == "enabled":
+        return EnabledThinking(
+            enabled=bool(d.get("enabled", True)),
+            budget_tokens=int(d.get("budget_tokens", 4096)),
+            level=str(d.get("level", "")),
+            selectable=bool(d.get("selectable", True)),
+        )
+    if kind == "disabled":
+        return DisabledThinking(enabled=bool(d.get("enabled", False)))
+    return None
 
 
 @dataclass
@@ -86,6 +155,8 @@ class ModelConfig:
     max_tokens: int = 4096
     context_window: int = 0  # 0 = auto-detect from model/backend, >0 = explicit override
     enabled: bool = True
+    multimodal: bool = False
+    thinking_config: ThinkingConfig | None = None
 
     def to_dict(self, encrypt_api_keys: bool = True) -> dict[str, Any]:
         encrypted_key = ""
@@ -96,7 +167,7 @@ class ModelConfig:
                 encrypted_key = self.api_key
         else:
             encrypted_key = self.api_key
-        return {
+        result: dict[str, Any] = {
             "name": self.name,
             "model_id": self.model_id,
             "backend_type": self.backend_type,
@@ -105,7 +176,12 @@ class ModelConfig:
             "max_tokens": self.max_tokens,
             "context_window": self.context_window,
             "enabled": self.enabled,
+            "multimodal": self.multimodal,
         }
+        tc = _thinking_config_to_dict(self.thinking_config)
+        if tc is not None:
+            result["thinking_config"] = tc
+        return result
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ModelConfig":
@@ -125,6 +201,8 @@ class ModelConfig:
             max_tokens=int(d.get("max_tokens", 4096)),
             context_window=int(d.get("context_window", 0)),
             enabled=bool(d.get("enabled", True)),
+            multimodal=bool(d.get("multimodal", False)),
+            thinking_config=_thinking_config_from_dict(d.get("thinking_config")),
         )
 
 # Data directory -- all Encre data lives under this single tree.
@@ -252,9 +330,9 @@ class EncreConfig:
     backend_kwargs: dict[str, Any] = field(default_factory=dict)
     enable_prompt_caching: bool = True
     enable_streaming_tool_execution: bool = True
-    enable_multi_stage_compact: bool = False
+    enable_multi_stage_compact: bool = True
     enable_unified_recovery: bool = False
-    enable_context_collapse: bool = False
+    enable_context_collapse: bool = True
     enable_project_rules: bool = True
     enable_file_watcher: bool = False
     # Fallback model: auto-switched when the primary model fails (rate limit,
@@ -323,8 +401,19 @@ class EncreConfig:
     permission_settings: dict[str, str] = field(default_factory=dict)
 
     def get_active_model(self) -> ModelConfig:
-        if self.models and 0 <= self.active_model_index < len(self.models):
-            return self.models[self.active_model_index]
+        if self.models:
+            # Prefer the currently selected index if it is enabled; otherwise fall
+            # back to the first enabled model in the list. Disabled models are
+            # ignored by agent runs and gateway adapters.
+            candidates = []
+            if 0 <= self.active_model_index < len(self.models):
+                candidates.append(self.models[self.active_model_index])
+            for i, m in enumerate(self.models):
+                if i != self.active_model_index:
+                    candidates.append(m)
+            for m in candidates:
+                if getattr(m, "enabled", True):
+                    return m
         return ModelConfig(
             name=self.model,
             model_id=self.model,
@@ -364,9 +453,14 @@ class EncreConfig:
         if found.exists():
             raw_text = found.read_text(encoding="utf-8").strip()
             if raw_text:
-                decrypted = decrypt(raw_text)
-                import json as _json
-                config_dict = _json.loads(decrypted)
+                try:
+                    decrypted = decrypt(raw_text)
+                    import json as _json
+                    config_dict = _json.loads(decrypted)
+                except Exception:
+                    # Corrupted or stale encrypted config (e.g. key changed) -
+                    # start fresh instead of crashing the whole service.
+                    config_dict = {}
 
         valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
         kwargs: dict[str, Any] = {}

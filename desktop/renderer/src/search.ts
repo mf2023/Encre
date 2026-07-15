@@ -414,8 +414,8 @@ export class Search {
             is_binary: result.is_binary,
           }]);
         }
-      } catch {
-        // silent
+      } catch (e) {
+        console.warn("[search] readFile failed:", e);
       }
     }
     this.insertPromptText(t("search.readFile", { path }));

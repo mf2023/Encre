@@ -688,6 +688,15 @@ export function setRunning(v: boolean, sessionId = state.sessionId): void {
       e.session_id === sid ? { ...e, is_running: v } : e
     );
     window.electronAPI?.traySessionsUpdate?.(state.sessionsList);
+    // Also update the dual-mode tray cache so the popup sees the
+    // real-time is_running indicator (green dot) immediately.
+    traySessionsCache.normal = traySessionsCache.normal.map(e =>
+      e.session_id === sid ? { ...e, is_running: v } : e
+    );
+    traySessionsCache.iwork = traySessionsCache.iwork.map(e =>
+      e.session_id === sid ? { ...e, is_running: v } : e
+    );
+    window.electronAPI?.traySessionsBothUpdate?.({ normal: traySessionsCache.normal, iwork: traySessionsCache.iwork });
   }
 }
 
@@ -937,18 +946,6 @@ export function addCompactEvent(evt: import("./types.js").CompactInfo, sessionId
   snapshot.compactEvents = [...snapshot.compactEvents, evt];
   syncSessionState(sessionId);
   emit();
-  // Notify the user that context was just compacted; the silent
-  // timeline-only insertion was too easy to miss.
-  if (sessionId === state.sessionId) {
-    const reductionPct = evt.old_tokens > 0
-      ? Math.round((1 - evt.new_tokens / evt.old_tokens) * 100)
-      : 0;
-    showToast(
-      "Context compacted",
-      `${evt.old_count} → ${evt.new_count} messages, ${reductionPct}% tokens reduced`,
-      "info",
-    );
-  }
 }
 
 /** Sets the agent-state snapshot for the (active) session. */

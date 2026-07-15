@@ -74,14 +74,15 @@ class TencentBackend(OpenAISSEBackend):
         Hunyuan-Pro / Standard models do not accept this parameter, so
         we only send it for thinking-capable model IDs.
         """
-        if self.model:
-            m = self.model.lower()
-            # Heuristic: send the thinking toggle for Hunyuan reasoning
-            # variants (``-think``/``-t1``/``-a13b``).  Other SKUs reject the
-            # parameter, so we omit it for them.
-            if "think" in m or "t1" in m or "a13b" in m:
-                # Only Hunyuan reasoning-capable SKUs accept this parameter.
-                return {"enable_thinking": True}
+        if not self.thinking_enabled or not self.model:
+            return None
+        m = self.model.lower()
+        # Heuristic: send the thinking toggle for Hunyuan reasoning
+        # variants (``-think``/``-t1``/``-a13b``).  Other SKUs reject the
+        # parameter, so we omit it for them.
+        if "think" in m or "t1" in m or "a13b" in m:
+            # Only Hunyuan reasoning-capable SKUs accept this parameter.
+            return {"enable_thinking": True}
         return None
 
     def context_window_size(self) -> int:

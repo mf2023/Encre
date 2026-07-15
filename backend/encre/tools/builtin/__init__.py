@@ -58,6 +58,22 @@ from encre.tools.builtin.glob import EncreGlobTool
 from encre.tools.builtin.grep import EncreGrepTool
 from encre.tools.builtin.image import EncreImageTool
 from encre.tools.builtin.info import EncreInfoTool
+from encre.tools.builtin.generate_image import (
+    EncreGenerateImageTool,
+    EncreEditImageTool,
+    EncreImageVariationTool,
+)
+from encre.tools.builtin.media_api import (
+    EncreTranscribeAudioTool,
+    EncreTranslateAudioTool,
+    EncreCreateEmbeddingsTool,
+    EncreCreateModerationTool,
+)
+from encre.tools.builtin.platform_api import (
+    EncreFileApiTool,
+    EncreBatchApiTool,
+    EncreFineTuneApiTool,
+)
 from encre.tools.builtin.lint_format import EncreLintFormatTool
 from encre.tools.builtin.lsp import EncreLSPTool
 from encre.tools.builtin.media import EncreMediaTool
@@ -96,10 +112,13 @@ __all__ = [
     "EncreBashListTool",
     "EncreBashOutputTool",
     "EncreBashTool",
+    "EncreBatchApiTool",
     "EncreBrowserTool",
     "EncreCodebaseContextTool",
     "EncreCodebaseSearchTool",
     "EncreComputerUseTool",
+    "EncreCreateEmbeddingsTool",
+    "EncreCreateModerationTool",
     "EncreCronCreateTool",
     "EncreCronDeleteTool",
     "EncreCronListTool",
@@ -108,14 +127,19 @@ __all__ = [
     "EncreDesktopTool",
     "EncreDockerTool",
     "EncreDocumentTool",
+    "EncreEditImageTool",
+    "EncreFileApiTool",
     "EncreFileEditTool",
     "EncreFileReadTool",
     "EncreFileWriteTool",
     "EncreFindToolTool",
+    "EncreFineTuneApiTool",
+    "EncreGenerateImageTool",
     "EncreGitTool",
     "EncreGlobTool",
     "EncreGrepTool",
     "EncreImageTool",
+    "EncreImageVariationTool",
     "EncreInfoTool",
     "EncreLSPTool",
     "EncreLintFormatTool",
@@ -141,6 +165,8 @@ __all__ = [
     "EncreTaskUpdateTool",
     "EncreTestRunTool",
     "EncreTodoTool",
+    "EncreTranscribeAudioTool",
+    "EncreTranslateAudioTool",
     "EncreVLMComputerUseTool",
     "EncreWebFetchTool",
     "EncreWebSearchTool",

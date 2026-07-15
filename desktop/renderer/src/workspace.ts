@@ -37,6 +37,7 @@ import { t, onLocaleChange, applyI18n } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { TransitionHelper } from "./transition-helper.js";
 import type { WorkspaceEntry, SessionEntryData } from "./types.js";
+import { showContextMenu } from "./context-menu.js";
 
 /**
  * Manages the workspace tree and iWork mode transitions.
@@ -53,6 +54,11 @@ export class Workspace {
   private _lastWsTreeJson: string = "";
   private _lastSid: string = "";
   private _transitioning = false;
+  /** Public read-only access to the workspace mode flag. */
+  public get isInWorkspaceModePublic(): boolean {
+    return this.isInWorkspaceMode;
+  }
+
   /** Callback fired after entering/exiting iWork mode so the app can refresh the content area. */
   public onModeChange: (() => void) | null = null;
 
@@ -74,14 +80,27 @@ export class Workspace {
       this.treeSectionEl.style.transition = "";
       this.treeSectionEl.style.transform = "";
       this.treeSectionEl.style.opacity = "";
+      this.treeSectionEl.style.position = "";
+      this.treeSectionEl.style.top = "";
+      this.treeSectionEl.style.left = "";
+      this.treeSectionEl.style.width = "";
+      this.treeSectionEl.style.height = "";
+      this.treeSectionEl.style.maxHeight = "";
       this.treeSectionEl.classList.add("hidden");
     }
     if (this._sessionSectionEl) {
       this._sessionSectionEl.style.transition = "";
       this._sessionSectionEl.style.transform = "";
       this._sessionSectionEl.style.opacity = "";
+      this._sessionSectionEl.style.position = "";
+      this._sessionSectionEl.style.top = "";
+      this._sessionSectionEl.style.left = "";
+      this._sessionSectionEl.style.width = "";
+      this._sessionSectionEl.style.height = "";
       this._sessionSectionEl.classList.remove("hidden");
     }
+    const parentForce = this._sessionSectionEl?.parentElement;
+    if (parentForce) parentForce.style.position = "";
     const oldWs = getState().activeWorkspace;
     setActiveWorkspace("");
     setWorkspaceMode("normal");
@@ -91,6 +110,14 @@ export class Workspace {
       send({ type: "close_workspace", path: oldWs, request_id: requestId });
     }
     send({ type: "list_sessions" });
+    // Reset temp chat button inline styles
+    const tempBtnForce = document.getElementById("btn-temp-chat");
+    if (tempBtnForce) {
+      tempBtnForce.style.transition = "";
+      tempBtnForce.style.opacity = "";
+      tempBtnForce.style.transform = "";
+      tempBtnForce.style.pointerEvents = "";
+    }
     this.syncFirstNavActive();
     setTimeout(() => { this._exiting = false; }, 100);
   }
@@ -117,26 +144,26 @@ export class Workspace {
     this.syncFirstNavActive();
   }
 
-  private toggleWorkspaceMode(): void {
+  private async toggleWorkspaceMode(): Promise<void> {
     if (this._transitioning) return;
     if (this.isInWorkspaceMode) {
-      this.exitWorkspaceMode();
+      await this.exitWorkspaceMode();
     } else {
-      this.enterWorkspaceMode();
+      await this.enterWorkspaceMode();
     }
   }
 
-  enter(): void {
+  async enter(): Promise<void> {
     if (!this.isInWorkspaceMode && !this._transitioning) {
-      this.enterWorkspaceMode();
+      await this.enterWorkspaceMode();
     }
   }
 
   /** Public exit — used by the header mode switch to leave workspace mode
    *  with the same animation pipeline as the internal toggle button. */
-  exit(): void {
+  async exit(): Promise<void> {
     if (this.isInWorkspaceMode && !this._transitioning) {
-      this.exitWorkspaceMode();
+      await this.exitWorkspaceMode();
     }
   }
 
@@ -162,7 +189,7 @@ export class Workspace {
   }
 
   private onStateChange(): void {
-    if (this._exiting || this._transitioning) return;
+    if (this._exiting) return;
     if (!this.isInWorkspaceMode) return;
     const st = getState();
     const currentJson = JSON.stringify({ workspaces: st.workspaces, activeWorkspace: st.activeWorkspace, sessions: st.sessionsList });
@@ -193,16 +220,42 @@ export class Workspace {
     // Unified slide transition:
     //   - 退出: session 分段向左滑出
     //   - 进入: workspace tree 从右侧滑入
-    await TransitionHelper.slide({
-      exit: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
-      enter: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
-      setup: () => {
-        if (this.treeSectionEl) {
-          this.treeSectionEl.classList.add("active");
-          this.treeSectionEl.style.maxHeight = "1000px";
-        }
-      },
+    try {
+      await TransitionHelper.slide({
+        exit: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
+        enter: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
+        setup: () => {
+          const parent = this._sessionSectionEl?.parentElement;
+          if (parent) parent.style.position = "relative";
+          [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
+            if (!el) return;
+            el.style.position = "absolute";
+            el.style.top = "0";
+            el.style.left = "0";
+            el.style.width = "100%";
+            el.style.height = "100%";
+          });
+          if (this.treeSectionEl) {
+            this.treeSectionEl.classList.add("active");
+            this.treeSectionEl.style.maxHeight = "1000px";
+          }
+        },
+      });
+    } catch (e) {
+      console.error("[workspace] slide transition failed:", e);
+    }
+
+    // Cleanup absolute positioning
+    const parentEnter = this._sessionSectionEl?.parentElement;
+    [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
+      if (!el) return;
+      el.style.position = "";
+      el.style.top = "";
+      el.style.left = "";
+      el.style.width = "";
+      el.style.height = "";
     });
+    if (parentEnter) parentEnter.style.position = "";
 
     // Activate the first workspace if none active
     const workspaces = getState().workspaces;
@@ -215,16 +268,23 @@ export class Workspace {
       const requestId = crypto.randomUUID();
       setRequestedSessionId("", requestId);
       send({ type: "open_workspace", path: workspaces[0].path, request_id: requestId });
-    } else if (activeWs) {
-      this.expandedWsPaths.add(activeWs);
+      // open_workspace triggers session_ready → list_all_sessions, so the tree
+      // will be populated with sessions for all workspaces.
+    } else {
+      // Already have an active workspace (or empty); send list_all_sessions
+      // explicitly so the tree picks up any new sessions from other workspaces.
+      send({ type: "list_all_sessions" });
+      if (activeWs) this.expandedWsPaths.add(activeWs);
     }
 
-    // Hide automation button in workspace mode
-    const autoBtn = document.getElementById("btn-automation");
-    if (autoBtn) autoBtn.classList.add("hidden");
-    // Hide temp chat button in workspace mode
+    // Slide-hide temp chat button in workspace mode (exit left, consistent with all other transitions)
     const tempBtn = document.getElementById("btn-temp-chat");
-    if (tempBtn) tempBtn.classList.add("hidden");
+    if (tempBtn) {
+      tempBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
+      tempBtn.style.opacity = "0";
+      tempBtn.style.transform = "translateX(-20px)";
+      tempBtn.style.pointerEvents = "none";
+    }
 
     this.syncFirstNavActive();
     this._transitioning = false;
@@ -239,20 +299,47 @@ export class Workspace {
     // Unified slide transition:
     //   - 退出: workspace tree 向左滑出
     //   - 进入: session 分段从右侧滑入
-    await TransitionHelper.slide({
-      exit: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
-      enter: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
-      setup: () => {
-        if (this.treeSectionEl) {
-          this.treeSectionEl.classList.remove("active");
-        }
-      },
+    try {
+      await TransitionHelper.slide({
+        exit: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
+        enter: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
+        setup: () => {
+          const parent = this._sessionSectionEl?.parentElement;
+          if (parent) parent.style.position = "relative";
+          [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
+            if (!el) return;
+            el.style.position = "absolute";
+            el.style.top = "0";
+            el.style.left = "0";
+            el.style.width = "100%";
+            el.style.height = "100%";
+          });
+          if (this.treeSectionEl) {
+            this.treeSectionEl.classList.remove("active");
+          }
+        },
+      });
+    } catch (e) {
+      console.error("[workspace] exit slide transition failed:", e);
+    }
+
+    // Cleanup absolute positioning
+    const parentExit = this._sessionSectionEl?.parentElement;
+    [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
+      if (!el) return;
+      el.style.position = "";
+      el.style.top = "";
+      el.style.left = "";
+      el.style.width = "";
+      el.style.height = "";
     });
+    if (parentExit) parentExit.style.position = "";
 
     this._exiting = true;
     this.isInWorkspaceMode = false;
     this.batchMode = false;
     this.selectedPaths.clear();
+    this._saveExpandedState();
     this.expandedWsPaths.clear();
 
     const oldWs = getState().activeWorkspace;
@@ -268,12 +355,20 @@ export class Workspace {
     setWorkspaceMode("normal");
     this.onModeChange?.();
 
-    // Show automation button when exiting workspace mode
-    const autoBtn = document.getElementById("btn-automation");
-    if (autoBtn) autoBtn.classList.remove("hidden");
-    // Show temp chat button when exiting workspace mode
+    // Slide-show temp chat button when exiting workspace mode (enter from right)
     const tempBtn = document.getElementById("btn-temp-chat");
-    if (tempBtn) tempBtn.classList.remove("hidden");
+    if (tempBtn) {
+      tempBtn.style.transition = "none";
+      tempBtn.style.transform = "translateX(100%)";
+      tempBtn.style.opacity = "0";
+      requestAnimationFrame(() => {
+        tempBtn.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
+        tempBtn.style.transform = "translateX(0)";
+        tempBtn.style.opacity = "";
+        tempBtn.style.pointerEvents = "";
+        setTimeout(() => { if (tempBtn) tempBtn.style.transition = ""; }, 330);
+      });
+    }
 
     setTimeout(() => { this._exiting = false; }, 100);
   }
@@ -287,6 +382,17 @@ export class Workspace {
     const sessionSection = document.getElementById("session-section");
     if (!sessionSection) return;
 
+    // Create a transition wrapper so slide animations position correctly
+    // below the sidebar nav, not overlapping with the "New task" button.
+    let wrapper = document.getElementById("sidebar-section-wrapper");
+    if (!wrapper) {
+      wrapper = document.createElement("div");
+      wrapper.id = "sidebar-section-wrapper";
+      wrapper.style.cssText = "position:relative;flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0";
+      sessionSection.parentNode?.insertBefore(wrapper, sessionSection);
+      wrapper.appendChild(sessionSection);
+    }
+
     const section = document.createElement("div");
     section.id = "workspace-tree-section";
 
@@ -295,22 +401,22 @@ export class Workspace {
     header.innerHTML = `
       <span class="sidebar-section-title" data-i18n="search.sectionWorkspaces">Workspaces</span>
       <div class="workspace-tree-actions">
-        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder" title="Open Folder">
+        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder" data-tooltip="Open Folder">
           <i data-lucide="folder-plus" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage" title="Manage">
+        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage" data-tooltip="Manage">
           <i data-lucide="sliders-horizontal" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel" title="Cancel">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel" data-tooltip="Cancel">
           <i data-lucide="x" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll" title="Select All">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll" data-tooltip="Select All">
           <i data-lucide="check-square" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport" title="Export Selected">
+        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport" data-tooltip="Export Selected">
           <i data-lucide="download" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete" title="Delete Selected">
+        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete" data-tooltip="Delete Selected">
           <i data-lucide="trash-2" class="lucide"></i>
         </button>
       </div>`;
@@ -322,8 +428,8 @@ export class Workspace {
     section.appendChild(header);
     section.appendChild(list);
 
-    // Insert workspace tree BEFORE session-section
-    sessionSection.parentNode?.insertBefore(section, sessionSection);
+    // Insert workspace tree INTO the wrapper, before session-section
+    wrapper.insertBefore(section, sessionSection);
 
     this.treeSectionEl = section;
     this.treeListEl = list;
@@ -374,16 +480,12 @@ export class Workspace {
       const expandIcon = isExpanded ? "chevron-down" : "chevron-right";
 
       // Count sessions for this workspace from the full sessions list
-      const wsSessions = s.sessionsList.filter(sess => {
-        const wsPath = sess.metadata?.workspace || sess.metadata?.workspace_path || "";
-        return wsPath === ws.path;
-      });
+      const wsSessions = s.sessionsList.filter(sess => this.belongsToWorkspace(sess, ws.path));
 
       html += `<div class="ws-tree-node" data-ws-path="${this.esc(ws.path)}">
         <div class="ws-tree-node-header${isActive}" data-ws-path="${this.esc(ws.path)}">
           ${this.batchMode ? `<input type="checkbox" class="ws-checkbox" data-path="${this.esc(ws.path)}" ${this.selectedPaths.has(ws.path) ? "checked" : ""} />` : ""}
           <i data-lucide="${expandIcon}" class="lucide lucide-xs ws-chevron"></i>
-          <i data-lucide="folder" class="lucide lucide-sm ws-folder-icon${isActive ? " ws-folder-active" : ""}"></i>
           <span class="ws-name">${this.esc(ws.name)}</span>
           <span class="ws-session-count">${wsSessions.length}</span>
         </div>
@@ -409,24 +511,15 @@ export class Workspace {
     let html = "";
     for (const sess of sessions) {
       const active = sess.session_id === activeSid ? " active" : "";
-      const ts = (sess.last_active || sess.created_at || 0) * 1000;
-      const date = new Date(ts);
-      const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
-      // Full timestamp for the hover tooltip; empty when invalid.
-      const fullTs = ts > 0 ? date.toLocaleString() : "";
       const displayName = sess.name || sess.preview || t("general.emptySessionName");
-      const msgCount = sess.message_count ?? 0;
       const runningBadge = sess.is_running ? '<span class="session-running"></span>' : "";
-      const badge = this.channelBadge(sess.channel);
 
-      html += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}" title="${this.esc(fullTs)}">
+      html += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}">
         <div class="session-item-top">
           ${this.batchMode ? `<input type="checkbox" class="session-checkbox" data-sid="${sess.session_id}" ${this.selectedPaths.has(sess.session_id) ? "checked" : ""} />` : ""}
           <span class="session-preview">${this.esc(displayName)}</span>
           ${runningBadge}
         </div>
-        <span class="ws-session-meta">${dateStr} ${time} · ${msgCount} ${t("session.messages")} ${badge}</span>
       </div>`;
     }
     return html;
@@ -458,6 +551,12 @@ export class Workspace {
           return;
         }
         if ((e.target as HTMLElement).closest("input")) return;
+
+        // Chevron click: only toggle collapse/expand, don't activate
+        if ((e.target as HTMLElement).closest(".ws-chevron")) {
+          this.toggleExpand(path);
+          return;
+        }
 
         if (this.expandedWsPaths.has(path)) {
           this.expandedWsPaths.delete(path);
@@ -585,8 +684,7 @@ export class Workspace {
     if (selectedWs.length === 0) return covered;
     for (const wsPath of selectedWs) {
       for (const s of st.sessionsList) {
-        const owner = s.metadata?.workspace || s.metadata?.workspace_path || "";
-        if (owner === wsPath) covered.add(s.session_id);
+        if (this.belongsToWorkspace(s, wsPath)) covered.add(s.session_id);
       }
     }
     return covered;
@@ -620,7 +718,7 @@ export class Workspace {
       // Selecting a workspace cascades to every session under it (and
       // deselecting clears them), mirroring parent/child selection.
       const childSids = st.sessionsList
-        .filter((s) => (s.metadata?.workspace || s.metadata?.workspace_path || "") === path)
+        .filter((s) => this.belongsToWorkspace(s, path))
         .map((s) => s.session_id);
       const willSelect = !this.selectedPaths.has(path);
       if (willSelect) {
@@ -695,6 +793,19 @@ export class Workspace {
     return el.innerHTML;
   }
 
+  /** Normalize a file path for comparison (case-insensitive on Windows). */
+  private normalizePath(p: string): string {
+    // On Linux/Mac the filesystem is case-sensitive; on Windows it's not.
+    // Lowercasing is a safe cross-platform heuristic.
+    return p.replace(/\\/g, "/").toLowerCase();
+  }
+
+  /** Check whether a session belongs to a given workspace path. */
+  private belongsToWorkspace(sess: SessionEntryData, wsPath: string): boolean {
+    const owner = (sess.metadata?.workspace || sess.metadata?.workspace_path || "") as string;
+    return this.normalizePath(owner) === this.normalizePath(wsPath);
+  }
+
   /** Build a short badge label for the session's channel/mode. */
   private channelBadge(channel?: string): string {
     if (!channel || channel === "normal") return "";
@@ -718,9 +829,7 @@ export class Workspace {
         <i data-lucide="trash-2" class="lucide lucide-sm"></i>
         <span>${this.esc(t("workspace.remove"))}</span>
       </div>`;
-    menuEl.style.left = `${x}px`;
-    menuEl.style.top = `${y}px`;
-    menuEl.classList.remove("hidden");
+    showContextMenu(menuEl, x, y);
 
     document.getElementById("ctx-ws-delete")?.addEventListener("click", async () => {
       menuEl.classList.add("hidden");

@@ -291,9 +291,10 @@ class GoogleBackend(BaseBackend):
             return None
         if self._is_gemini_3():
             # Gemini 3.0+: thinking_level controls effort.
+            # The Gemini API expects uppercase values (LOW / HIGH).
             if self.thinking_level:
-                level = self.thinking_level.lower()
-                if level in {"minimal", "low", "medium", "high"}:
+                level = self.thinking_level.upper()
+                if level in {"LOW", "HIGH"}:
                     return {"thinking_level": level}
             return None  # let the model decide
         # Gemini 2.5: thinking_budget (integer or -1 for dynamic).
@@ -499,6 +500,7 @@ class GoogleBackend(BaseBackend):
             current_idx = 0
             finish_reason: str = "stop"
             accumulated_text: dict[int, str] = {}
+            _usage_metadata: dict[str, Any] | None = None
 
             # Gemini streams SSE "data: {json}" lines; parse each candidate.
             async for line in resp.aiter_lines():
@@ -516,6 +518,8 @@ class GoogleBackend(BaseBackend):
 
                 candidates = chunk.get("candidates", [])
                 if not candidates:
+                    if "usageMetadata" in chunk:
+                        _usage_metadata = chunk["usageMetadata"]
                     continue
 
                 candidate = candidates[0]
@@ -574,6 +578,11 @@ class GoogleBackend(BaseBackend):
                 if finish:
                     finish_reason = self._map_finish_reason(finish)
 
+                if "usageMetadata" in chunk:
+                    _usage_metadata = chunk["usageMetadata"]
+                elif candidate.get("usageMetadata"):
+                    _usage_metadata = candidate["usageMetadata"]
+
             for idx in sorted(tool_call_buffers.keys()):
                 buf = tool_call_buffers[idx]
                 yield create_backend_tool_call(
@@ -582,7 +591,13 @@ class GoogleBackend(BaseBackend):
                     arguments=buf["arguments"],
                 )
 
-            yield create_backend_finish(finish_reason)
+            _usage = None
+            if _usage_metadata:
+                _usage = {
+                    "input_tokens": _usage_metadata.get("promptTokenCount", 0),
+                    "output_tokens": _usage_metadata.get("candidatesTokenCount", 0),
+                }
+            yield create_backend_finish(finish_reason, usage=_usage)
 
     async def _do_non_stream(
         self, url: str, body: dict[str, Any]
@@ -644,7 +659,14 @@ class GoogleBackend(BaseBackend):
                 arguments=buf["arguments"],
             )
 
-        yield create_backend_finish(mapped_reason)
+        usage_meta = data.get("usageMetadata", {})
+        _usage = None
+        if usage_meta:
+            _usage = {
+                "input_tokens": usage_meta.get("promptTokenCount", 0),
+                "output_tokens": usage_meta.get("candidatesTokenCount", 0),
+            }
+        yield create_backend_finish(mapped_reason, usage=_usage)
 
     def _map_finish_reason(self, reason: str) -> str:
         """Map Google finish reasons to unified finish reasons.

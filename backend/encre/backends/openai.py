@@ -129,14 +129,15 @@ class OpenAIBackend(OpenAISSEBackend):
         models (GPT-4.1 family, GPT-4o legacy, GPT-5-chat-latest) do not
         accept a thinking toggle, so we omit the parameter to avoid a 400.
         """
-        if not self.model:
+        if not self.model or not self.thinking_enabled:
             return None
         m = self.model.lower()
+        effort = self.reasoning_effort or "medium"
         # Reasoning-capable families.
         if m.startswith("o3") or m.startswith("o4") or m.startswith("o5"):
-            return {"reasoning_effort": "medium"}
+            return {"reasoning_effort": effort}
         if m.startswith("gpt-5") and "chat-latest" not in m:
-            return {"reasoning_effort": "medium"}
+            return {"reasoning_effort": effort}
         # Non-reasoning models: do not send the parameter.
         return None
 

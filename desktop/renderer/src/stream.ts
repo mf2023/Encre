@@ -344,7 +344,7 @@ export function handleEvent(event: ServerEvent): void {
         state.setBranches(event.branches, event.active_branch_id, event.session_id);
       }
       // Re-render when session changes (skip sub-agent sessions)
-      chat?.render?.();
+      chat?.renderForce?.();
       (window as any).__sessionInner?.render?.();
       send({ type: "list_sessions" });
       send({ type: "list_all_sessions" });
@@ -666,6 +666,7 @@ export function handleEvent(event: ServerEvent): void {
         type: "error",
         title: t("stream.notificationError"),
         message: event.message,
+        source: "System",
         timestamp: Date.now(),
         read: false,
       });
@@ -833,6 +834,17 @@ export function handleEvent(event: ServerEvent): void {
       const cfgAny = cfg as any;
       if (cfgAny.keybinds && typeof cfgAny.keybinds === "object" && Array.isArray(cfgAny.keybinds.keybinds)) {
         state.setSettings({ ...state.getState().settings, keybinds: cfgAny.keybinds });
+      } else {
+        // Backend sent no keybinds or corrupted data — try localStorage fallback
+        try {
+          const saved = localStorage.getItem("encre_keybinds");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed.keybinds)) {
+              state.setSettings({ ...state.getState().settings, keybinds: parsed });
+            }
+          }
+        } catch { /* ignore */ }
       }
       // Sync adapter_* keys from backend config into settings (for gateway panel)
       const _adapterKeys = Object.keys(cfgAny).filter(k => k.startsWith("adapter_"));
@@ -949,9 +961,19 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "document_added":
+      send({ type: "list_documents" } as any);
+      break;
+
     case "document_updated":
+      send({ type: "list_documents" } as any);
+      break;
+
     case "document_removed":
+      send({ type: "list_documents" } as any);
+      break;
+
     case "document_error":
+      state.showToast(t("common.documentError"), "", "error", "Index");
       send({ type: "list_documents" } as any);
       break;
 
@@ -1058,11 +1080,11 @@ export function handleEvent(event: ServerEvent): void {
       state.setRunning(false, _eventSessionId(event));
       state.loadSessionMessages(state.applyPendingRollbackEdit(event.messages || []), _eventSessionId(event));
       state.setPlanItems(event.plan_items || [], _eventSessionId(event));
-      if ((event as any).artifacts) {
-        state.setArtifacts((event as any).artifacts, _eventSessionId(event));
+      if (event.artifacts) {
+        state.setArtifacts(event.artifacts, _eventSessionId(event));
       }
-      if ((event as any).references) {
-        state.setReferences((event as any).references, _eventSessionId(event));
+      if (event.references) {
+        state.setReferences(event.references, _eventSessionId(event));
       }
       chat?.render();
       (window as any).__sessionInner?.render?.();
@@ -1081,11 +1103,11 @@ export function handleEvent(event: ServerEvent): void {
       state.setRunning(false, _eventSessionId(event));
       state.loadSessionMessages(state.applyPendingRollbackEdit(event.messages || []), _eventSessionId(event));
       state.setPlanItems(event.plan_items || [], _eventSessionId(event));
-      if ((event as any).artifacts) {
-        state.setArtifacts((event as any).artifacts, _eventSessionId(event));
+      if (event.artifacts) {
+        state.setArtifacts(event.artifacts, _eventSessionId(event));
       }
-      if ((event as any).references) {
-        state.setReferences((event as any).references, _eventSessionId(event));
+      if (event.references) {
+        state.setReferences(event.references, _eventSessionId(event));
       }
       _syncSessionEntry(event.session_id, state.getState());
       // Restore the last user message into the input box for re-editing
@@ -1154,6 +1176,7 @@ export function handleEvent(event: ServerEvent): void {
 
     case "session_renamed":
       send({ type: "list_sessions" });
+      send({ type: "list_all_sessions" });
       (window as any).__sessionInner?.render?.();
       break;
 
@@ -1187,16 +1210,16 @@ export function handleEvent(event: ServerEvent): void {
         );
       }
       // If a tray-driven resume is pending after opening this workspace, fire it.
-      // IMPORTANT: list_sessions is NOT sent here — it fires AFTER resume's
-      // session_ready completes (see session_ready handler), ensuring the
-      // target session is already in memory when the sidebar tree queries it.
       const pending = (window as any).__pendingTrayResume;
       if (pending && pending.sessionId) {
         (window as any).__pendingTrayResume = null;
         state.setSessionId(pending.sessionId);
         send({ type: "resume", session_id: pending.sessionId, request_id: pending.requestId });
       }
-      // Refresh tray dual cache so both normal and iwork lists are complete
+      // Refresh tray dual cache + populate sidebar tree immediately.
+      // list_sessions returns sessions from ALL workspace directories on disk,
+      // so the tree is populated without waiting for session_ready.
+      send({ type: "list_sessions" });
       send({ type: "list_all_sessions" });
       (window as any).__sessionInner?.render?.();
       break;
@@ -1323,8 +1346,8 @@ export function handleEvent(event: ServerEvent): void {
     case "automation_job_update":
       // A job's state changed (e.g. running → completed) — refresh lists
       // Use inline history data so the view updates immediately
-      if ((event as any).history && _automationHistoryCallback) {
-        _automationHistoryCallback((event as any).history);
+      if ((event as any).history) {
+        state.setAutomationHistory((event as any).history);
       }
       // If the backend included result data, show it in the chat area
       if ((event as any).result && _automationShowResultCallback) {
@@ -1447,6 +1470,10 @@ function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getSta
         last_active: derivedLastActive,
         is_running: isRunning,
         channel: st.workspaceMode === "iwork" ? "iwork" : "normal",
+        metadata: {
+          workspace: st.activeWorkspace || undefined,
+          workspace_path: st.activeWorkspace || undefined,
+        },
       }];
   state.setSessionsList(updated);
 }

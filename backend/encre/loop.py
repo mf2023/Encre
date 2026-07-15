@@ -98,7 +98,7 @@ from encre.tracing import (
     trace_llm_call,
     trace_tool_call,
 )
-from encre.utils.tokens import count_message_tokens
+from encre.utils.tokens import count_message_tokens, estimate_tokens
 from encre.utils.types import (
     AgentEvent,
     Artifact,
@@ -288,6 +288,27 @@ def _args_summary(args: dict[str, Any]) -> str:
         return str(args)[:600]
 
 
+def _turn_to_message_index(
+    messages: list[dict[str, Any]], target_turn: int,
+) -> int | None:
+    """P1 helper: convert an absolute turn index to a message index.
+
+    The loop tracks ``turn_count`` as the number of assistant turns so
+    far; messages and turns are not 1:1.  This walks messages in order
+    and returns the index of the *N*-th assistant message (or ``None``
+    if the conversation has fewer turns than requested).
+    """
+    if target_turn <= 0:
+        return 0
+    seen = 0
+    for i, m in enumerate(messages):
+        if m.get("role") == "assistant":
+            seen += 1
+            if seen == target_turn:
+                return i
+    return None
+
+
 def _permission_reason(tool_name: str) -> str:
     return f"Tool {tool_name} requires permission"
 
@@ -312,8 +333,16 @@ def _extract_apply_patch_paths(result: str) -> list[str]:
 
 
 def _is_reference_tool(tool_name: str) -> bool:
-    """Only memory and MCP tools generate sidebar references."""
-    return tool_name.startswith("mcp__") or tool_name.startswith("memory_")
+    """Memory, MCP, search, and web tools generate sidebar references."""
+    name = tool_name.lower()
+    if tool_name.startswith("mcp__") or name.startswith("memory_"):
+        return True
+    # Treat any search/web-discovery tool as a reference source so it appears
+    # in the references panel.
+    for keyword in ("web_search", "web_fetch", "search", "grep", "glob", "find"):
+        if keyword in name:
+            return True
+    return False
 
 
 def _extract_ref_summary(tool_name: str, args: dict[str, Any], result: str) -> str:
@@ -556,8 +585,10 @@ class EncreLoop:
         self._code_index: EncreCodeIndex | None = code_index
         self._pending_code_scan: EncreCodeIndex | None = None
 
-        # Auto-resolve thinking config based on model if not explicitly set
-        self._thinking_config = config.thinking_config
+        # Auto-resolve thinking config based on model if not explicitly set.
+        # Per-model config takes precedence over the global config.
+        active_model = config.get_active_model()
+        self._thinking_config = active_model.thinking_config or config.thinking_config
         if self._thinking_config is None:
             self._thinking_config = resolve_thinking_config(
                 None, config.model, backend_type=config.backend_type
@@ -568,6 +599,7 @@ class EncreLoop:
             base_url=config.base_url,
             model=config.model,
             models=config.models,
+            thinking_config=self._thinking_config,
             **config.backend_kwargs,
         )
         self.safety = safety or EncreSafetyEngine(config)
@@ -659,6 +691,12 @@ class EncreLoop:
         self.session.metadata.setdefault("turn_summaries", [])
         self.session.metadata.setdefault("tool_semantics", {})
         self.session.metadata.setdefault("stuck_events", [])
+        # P1: milestone summarisation state.  ``_milestone_last_turn`` is
+        # the last turn_count at which we wrote a milestone; when the
+        # current turn exceeds it by MILESTONE_INTERVAL we trigger a
+        # fresh milestone write.
+        self.session.metadata.setdefault("milestone_summaries", [])
+        self._milestone_last_turn: int = -1
 
     def _cache_fresh(self, built_at: float, ttl: float = _PROMPT_CACHE_TTL_SECONDS) -> bool:
         return (time.time() - built_at) < ttl
@@ -678,6 +716,83 @@ class EncreLoop:
             "timestamp": time.time(),
         })
         self.session.metadata["task_stage"] = stage
+
+    # ── P1 milestone summarisation ─────────────────────────────────────
+
+    async def _maybe_write_milestone(
+        self, context_msgs: list[dict[str, Any]],
+    ) -> None:
+        """Periodically snapshot the conversation into a small milestone.
+
+        Strategy:
+        - Trigger when ``turn_count - _milestone_last_turn >= MILESTONE_INTERVAL``
+        - Slice the messages from the last milestone to now
+        - Summarise that slice via the compact engine (cheap, since the
+          slice is small)
+        - Append the result to ``session.metadata["milestone_summaries"]``
+          so the next full compact pass only needs to summarise
+          ``messages[since_last_milestone:]``.
+        - Cap the list at MILESTONE_MAX_ENTRIES to keep the metadata small.
+        """
+        from encre.compact.engine import MILESTONE_INTERVAL, MILESTONE_MAX_ENTRIES
+        if MILESTONE_INTERVAL <= 0:
+            return
+        turn = self.session.turn_count
+        if turn - self._milestone_last_turn < MILESTONE_INTERVAL:
+            return
+        start_turn = (
+            max(0, turn - MILESTONE_INTERVAL)
+            if self._milestone_last_turn < 0
+            else self._milestone_last_turn
+        )
+        # Convert turn count to message index by counting assistant
+        # messages from the end.  ``start_turn`` is an absolute turn
+        # index; we approximate the message boundary.
+        boundary = _turn_to_message_index(context_msgs, start_turn)
+        if boundary is None or boundary >= len(context_msgs) - 2:
+            # Nothing new to milestone
+            self._milestone_last_turn = turn
+            return
+        slice_msgs = context_msgs[boundary:]
+        if len(slice_msgs) < 4:
+            self._milestone_last_turn = turn
+            return
+        try:
+            summary = await self.compact_engine.compact(
+                slice_msgs,
+                backend=self.backend,
+                turn_count=turn,
+                session_id=self.session.id or "",
+            )
+        except Exception as exc:
+            logger.warning("[milestone] compact call failed: %s", exc)
+            return
+        if not summary:
+            return
+        # Pull the generated summary out of the compacted list (it's
+        # marked is_compact_summary) and store just the text.
+        summary_text = ""
+        for m in summary:
+            if m.get("is_compact_summary"):
+                summary_text = str(m.get("content", ""))
+                break
+        if not summary_text:
+            return
+        entries = self.session.metadata.setdefault("milestone_summaries", [])
+        entries.append({
+            "from_turn": start_turn,
+            "to_turn": turn,
+            "text": summary_text[:8_000],
+            "ts": time.time(),
+        })
+        if len(entries) > MILESTONE_MAX_ENTRIES:
+            # Drop oldest; we only need recent context for the next compact.
+            del entries[: len(entries) - MILESTONE_MAX_ENTRIES]
+        self._milestone_last_turn = turn
+        logger.info(
+            "[milestone] wrote turn=%d slice=%d entries=%d",
+            turn, len(slice_msgs), len(entries),
+        )
 
     def _infer_task_stage(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> str:
         current = str(self.session.metadata.get("task_stage", "discover"))
@@ -2467,6 +2582,17 @@ class EncreLoop:
 
                 self._compact_task = asyncio.create_task(_do_compact())
 
+            # P1: milestone summarisation.  Every MILESTONE_INTERVAL turns
+            # we write a compact "milestone" into session metadata.  The
+            # next full compact then only needs to summarise the slice
+            # AFTER the last milestone, so each compaction pass deals
+            # with a much smaller window -- reducing summary loss and
+            # avoiding the "summary of summary" cascade.
+            try:
+                await self._maybe_write_milestone(context_msgs)
+            except Exception as _m_err:
+                logger.warning("[milestone] failed turn=%d: %s", self.session.turn_count, _m_err)
+
             tools = None
             if self.backend.supports_tool_calling():
                 tools = self.discovery.get_active_tools_payload(self.session.id, fmt="openai")
@@ -3826,11 +3952,38 @@ class EncreLoop:
                         return await _execute_safe(p)
 
                 safe_tasks = [_execute_safe_bounded(p) for p in safe_tools]
-                completed = await asyncio.gather(*safe_tasks, return_exceptions=True)
+                # Cancel-aware gather: if the user hits Stop, cancel all
+                # in-flight safe tool tasks immediately.
+                cancel_watcher = asyncio.create_task(self._cancel_event.wait())
+                gather_task = asyncio.ensure_future(asyncio.gather(*safe_tasks, return_exceptions=True))
+                done, pending = await asyncio.wait(
+                    {gather_task, cancel_watcher},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                cancel_watcher.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await cancel_watcher
+
+                if cancel_watcher in done and self._cancelled():
+                    gather_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await gather_task
+                    completed = [None] * len(safe_tools)
+                else:
+                    try:
+                        completed = gather_task.result()
+                    except BaseException:
+                        completed = [None] * len(safe_tools)
                 for idx, item in enumerate(completed):
-                    if isinstance(item, BaseException):
-                        p = safe_tools[idx]
-                        err_msg = f"Tool execution crashed: {type(item).__name__}: {item}"
+                    p = safe_tools[idx]
+                    if item is None or isinstance(item, BaseException):
+                        # Cancelled (None) or crashed (BaseException): emit
+                        # a tombstone result so the UI tool tag closes
+                        # properly and the session history stays consistent.
+                        if isinstance(item, BaseException):
+                            err_msg = f"Tool execution crashed: {type(item).__name__}: {item}"
+                        else:
+                            err_msg = "[Cancelled by user]"
                         yield create_tool_result(id=p["client_id"], content=err_msg, is_error=True)
                         self.session.add_tool_result(p["id"], err_msg, is_error=True, client_id=p["client_id"])
                         turn_events += 1
@@ -3838,10 +3991,6 @@ class EncreLoop:
                         self.telemetry.record_tool_call(
                             tool_name=p["name"], latency_ms=0.0,
                             success=False, error_message=err_msg,
-                        )
-                        self.learner.record_error(
-                            tool_name=p["name"], error_type="unhandled_exception",
-                            context=p["args_summary"], correction="",
                         )
                         yield create_tool_call_end(id=p["client_id"])
                         turn_events += 1
@@ -3938,6 +4087,8 @@ class EncreLoop:
 
             # ── Execute unsafe tools sequentially ──
             for p in unsafe_tools:
+                if self._cancelled():
+                    break
                 tool_start = time.time()
                 yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
 
@@ -3964,8 +4115,38 @@ class EncreLoop:
                                 await progress_queue.put(None)
 
                         agent_task = asyncio.create_task(_run_agent_tool())
+                        _agent_cancel = asyncio.create_task(self._cancel_event.wait())
                         while True:
-                            live_messages = await progress_queue.get()
+                            get_task = asyncio.create_task(progress_queue.get())
+                            done, _ = await asyncio.wait(
+                                {get_task, _agent_cancel}, return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            if _agent_cancel in done:
+                                agent_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await agent_task
+                                get_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await get_task
+                                _agent_cancel.cancel()
+                                result = "[Cancelled by user]"
+                                tool_error = True
+                                self.session.add_tool_result(p["id"], result, is_error=True, client_id=p.get("client_id", ""))
+                                yield create_tool_result(id=p["client_id"], content=result, is_error=True)
+                                yield create_tool_call_end(id=p["client_id"])
+                                turn_events += 1
+                                break
+                            if get_task in done:
+                                live_messages = get_task.result()
+                            else:
+                                get_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await get_task
+                                continue
+                            _agent_cancel.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await _agent_cancel
+                            _agent_cancel = asyncio.create_task(self._cancel_event.wait())
                             if live_messages is None:
                                 break
                             yield create_tool_progress(
@@ -3974,7 +4155,12 @@ class EncreLoop:
                                 status="running",
                                 sub_agent_messages=live_messages,
                             )
-                        result_obj = await agent_task
+                        else:
+                            _agent_cancel.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await _agent_cancel
+                        if not tool_error:
+                            result_obj = await agent_task
                         if isinstance(result_obj, dict):
                             sub_agent_messages = result_obj.get("messages")
                             sub_agent_session_id = result_obj.get("session_id")
@@ -4006,8 +4192,38 @@ class EncreLoop:
                                 await progress_queue.put(None)
 
                         wf_task = asyncio.create_task(_run_wf_tool())
+                        _wf_cancel = asyncio.create_task(self._cancel_event.wait())
                         while True:
-                            live_messages = await progress_queue.get()
+                            get_task = asyncio.create_task(progress_queue.get())
+                            done, _ = await asyncio.wait(
+                                {get_task, _wf_cancel}, return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            if _wf_cancel in done:
+                                wf_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await wf_task
+                                get_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await get_task
+                                _wf_cancel.cancel()
+                                result = "[Cancelled by user]"
+                                tool_error = True
+                                self.session.add_tool_result(p["id"], result, is_error=True, client_id=p.get("client_id", ""))
+                                yield create_tool_result(id=p["client_id"], content=result, is_error=True)
+                                yield create_tool_call_end(id=p["client_id"])
+                                turn_events += 1
+                                break
+                            if get_task in done:
+                                live_messages = get_task.result()
+                            else:
+                                get_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await get_task
+                                continue
+                            _wf_cancel.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await _wf_cancel
+                            _wf_cancel = asyncio.create_task(self._cancel_event.wait())
                             if live_messages is None:
                                 break
                             for msg in live_messages:
@@ -4045,21 +4261,55 @@ class EncreLoop:
                                         status="running",
                                         sub_agent_messages=sub_agent_messages,
                                     )
-                        result_obj = await wf_task
-                        sub_agent_messages = None
-                        if isinstance(result_obj, dict):
-                            sub_agent_messages = result_obj.get("messages")
-                            result = str(result_obj.get("content", ""))
                         else:
-                            result = str(result_obj)
-                        result = self.safety.validate_tool_output(p["name"], result)
+                            _wf_cancel.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await _wf_cancel
+                        if not tool_error:
+                            result_obj = await wf_task
+                            sub_agent_messages = None
+                            if isinstance(result_obj, dict):
+                                sub_agent_messages = result_obj.get("messages")
+                                result = str(result_obj.get("content", ""))
+                            else:
+                                result = str(result_obj)
+                            result = self.safety.validate_tool_output(p["name"], result)
                     else:
                         executor = RetryableExecutor(self.recovery_engine)
-                        state = await executor.execute(
-                            tool_name=p["name"],
-                            tool_args=p["args"],
-                            execute_fn=lambda args, p=p: p["tool"].execute(**args),
+                        # Wrap execution in a cancel-aware wait so the user's
+                        # Stop button takes effect immediately, even if the
+                        # tool is mid-execution (e.g. long-running bash command).
+                        exec_task = asyncio.create_task(
+                            executor.execute(
+                                tool_name=p["name"],
+                                tool_args=p["args"],
+                                execute_fn=lambda args, p=p: p["tool"].execute(**args),
+                            )
                         )
+                        cancel_task = asyncio.create_task(self._cancel_event.wait())
+                        done, pending = await asyncio.wait(
+                            {exec_task, cancel_task},
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        cancel_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await cancel_task
+                        if exec_task in done:
+                            state = exec_task.result()
+                        else:
+                            # Cancelled: abort the tool execution
+                            exec_task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await exec_task
+                            result = "[Cancelled by user]"
+                            tool_error = True
+                            self.session.add_tool_result(
+                                p["id"], result, is_error=True, client_id=p.get("client_id", ""),
+                            )
+                            yield create_tool_result(id=p["client_id"], content=result, is_error=True)
+                            yield create_tool_call_end(id=p["client_id"])
+                            turn_events += 1
+                            continue
                         if state.succeeded:
                             result = state.final_result
                             if isinstance(result, dict):
@@ -4575,12 +4825,17 @@ class EncreLoop:
                         self._set_task_stage("discover", reason="stuck loop recovery")
                         self._refresh_working_set(prompt, prepared)
 
+            if not _backend_usage:
+                _input_est = estimate_tokens(prompt or "")
+                _output_est = estimate_tokens(assistant_content or "")
+                _backend_usage = {"input_tokens": _input_est, "output_tokens": _output_est}
             self.telemetry.record_turn(
                 turn_number=self.session.turn_count,
                 event_count=turn_events,
                 latency_ms=turn_latency,
-                token_usage=_backend_usage or {},
+                token_usage=_backend_usage,
                 model=self.config.model,
+                channel=self.session.metadata.get("channel", "normal"),
             )
 
             # Evolution: reflex + meta-cognition
@@ -4638,7 +4893,8 @@ class EncreLoop:
                               base_url: str = "",
                               tool_policy: str = "all",
                               progress_callback: Any = None,
-                              event_callback: Any = None) -> dict[str, Any]:
+                              event_callback: Any = None,
+                              session_id: str | None = None) -> dict[str, Any]:
         """Run a sub-agent as a fully isolated session.
 
         The sub-agent is ALWAYS an EncreAgent spawned from this loop. The
@@ -4757,9 +5013,12 @@ class EncreLoop:
         # Add the prompt as a user message, exactly like ws.py does for normal input
         sub_agent.add_message("user", prompt)
 
-        # Give the sub-agent a proper session ID
+        # Give the sub-agent a proper session ID. Callers such as the
+        # automation scheduler can pre-allocate one so its live execution
+        # record, stream events, and persisted transcript all share the same
+        # identifier from the first event onward.
         import uuid
-        sub_agent.session.id = sub_agent.session.id or str(uuid.uuid4())
+        sub_agent.session.id = session_id or sub_agent.session.id or str(uuid.uuid4())
         saved_session_id = sub_agent.session.id
         sub_agent.session.metadata["channel"] = "sub_agent"
         sub_agent.session.parent_session_id = self.session.id or ""
@@ -4875,130 +5134,132 @@ class EncreLoop:
         # the parent terminates the entire agent tree (the parent's
         # ``cancel()`` walks ``_child_loops``).
         self._child_loops.add(sub_agent.loop)
-        async for event in sub_agent.run(prompt=prompt, system_prompt=system_prompt or None):
-            # Forward the raw event to an optional caller-side observer
-            # (e.g. the automation scheduler) BEFORE folding it into the
-            # draft. Callers that don't need raw events simply leave
-            # ``event_callback=None``.
-            if event_callback is not None:
-                try:
-                    await event_callback(event)
-                except Exception:
-                    logger.warning("[sub_agent] event_callback raised", exc_info=True)
-            if isinstance(event, TextDelta):
-                text_buffer += event.text
-                draft_content.append(event.text)
-                if draft_segments and draft_segments[-1].get("kind") == "text":
-                    draft_segments[-1]["text"] = (
-                        str(draft_segments[-1].get("text") or "") + event.text
-                    )
-                else:
-                    draft_segments.append({"kind": "text", "text": event.text})
-                await _emit_live()
-            elif isinstance(event, ThinkingDelta):
-                _flush_text_buffer()
-                thought = event.text.strip()
-                if thought:
-                    result_parts.append(f"### Thought\n{thought}\n")
-                    draft_reasoning.append(event.text)
-                    if draft_segments and draft_segments[-1].get("kind") == "thinking":
+        cancelled = False
+        try:
+            async for event in sub_agent.run(prompt=prompt, system_prompt=system_prompt or None):
+                # Forward the raw event to an optional caller-side observer
+                # (e.g. the automation scheduler) BEFORE folding it into the
+                # draft. Callers that don't need raw events simply leave
+                # ``event_callback=None``.
+                if event_callback is not None:
+                    try:
+                        await event_callback(event)
+                    except Exception:
+                        logger.warning("[sub_agent] event_callback raised", exc_info=True)
+                if isinstance(event, TextDelta):
+                    text_buffer += event.text
+                    draft_content.append(event.text)
+                    if draft_segments and draft_segments[-1].get("kind") == "text":
                         draft_segments[-1]["text"] = (
                             str(draft_segments[-1].get("text") or "") + event.text
                         )
                     else:
-                        draft_segments.append({"kind": "thinking", "text": event.text})
+                        draft_segments.append({"kind": "text", "text": event.text})
                     await _emit_live()
-            elif isinstance(event, ToolCallStart):
-                _flush_text_buffer()
-                result_parts.append(f"### Tool Start\n- id: `{event.id}`\n- name: `{event.name}`\n")
-                tc_dict = {
-                    "id": event.id,
-                    "type": "function",
-                    "function": {"name": event.name, "arguments": "{}"},
-                }
-                draft_tool_calls.append(tc_dict)
-                draft_tool_id_to_idx[event.id] = len(draft_tool_calls) - 1
-                draft_segments.append({"kind": "tool", "tool_id": event.id})
-                await _emit_live()
-            elif isinstance(event, ToolProgress):
-                _flush_text_buffer()
-                result_parts.append(f"### Tool Progress\n- id: `{event.id}`\n- name: `{event.tool_name}`\n- status: `{event.status}`\n")
-                # Forward nested sub-agent messages so the frontend sees
-                # live progress from sub-sub-agents all the way up.
-                if progress_callback is not None and event.sub_agent_messages:
-                    with contextlib.suppress(Exception):
-                        await progress_callback(event.sub_agent_messages)
-                else:
-                    await _emit_live()
-            elif isinstance(event, ToolCallEnd):
-                _flush_text_buffer()
-                result_parts.append(f"### Tool End\n- id: `{event.id}`\n")
-                await _emit_live()
-            elif isinstance(event, ToolResult):
-                _flush_text_buffer()
-                content = event.content.strip()
-                if len(content) > 2000:
-                    content = f"{content[:2000]}\n... (truncated)"
-                result_parts.append(
-                    f"### Tool Result\n- id: `{event.id}`\n- error: `{'yes' if event.is_error else 'no'}`\n\n```text\n{content}\n```\n"
-                )
-                # Tool results are already persisted into sub_agent.session.messages
-                # by the sub-agent's own loop. The snapshot builder picks them up
-                # directly so we do NOT maintain a separate live_messages list.
-                await _emit_live()
-            elif isinstance(event, Reference):
-                if event.reference:
-                    sub_refs.append(event.reference)
-            elif isinstance(event, Finish):
-                _flush_text_buffer()
-                await _emit_live()
-                if event.reason == "error":
-                    _save()
-                    return {
-                        "content": "Error: Sub-agent failed",
-                        "messages": sub_agent.session.messages,
-                        "session_id": saved_session_id,
-                        "references": sub_refs,
+                elif isinstance(event, ThinkingDelta):
+                    _flush_text_buffer()
+                    thought = event.text.strip()
+                    if thought:
+                        result_parts.append(f"### Thought\n{thought}\n")
+                        draft_reasoning.append(event.text)
+                        if draft_segments and draft_segments[-1].get("kind") == "thinking":
+                            draft_segments[-1]["text"] = (
+                                str(draft_segments[-1].get("text") or "") + event.text
+                            )
+                        else:
+                            draft_segments.append({"kind": "thinking", "text": event.text})
+                        await _emit_live()
+                elif isinstance(event, ToolCallStart):
+                    _flush_text_buffer()
+                    result_parts.append(f"### Tool Start\n- id: `{event.id}`\n- name: `{event.name}`\n")
+                    tc_dict = {
+                        "id": event.id,
+                        "type": "function",
+                        "function": {"name": event.name, "arguments": "{}"},
                     }
-
-        # Always unregister the child from the parent's active set on
-        # every exit path (normal, error, or exception).  We wrap the
-        # final save + return in try/finally so cancellation / exceptions
-        # also trigger the unregister.
-        try:
-            _save()
-            # Extract the sub-agent's final response: prefer text content, fall back
-            # to reasoning content, then to "Tool calls executed" if only tools ran.
-            final_text = ""
-            for msg in reversed(sub_agent.session.messages):
-                if msg.get("role") != "assistant":
-                    continue
-                txt = str(msg.get("content") or "")
-                if txt.strip():
-                    final_text = txt
-                    break
-                # No text content -- check reasoning
-                rsn = str(msg.get("reasoning_content") or "")
-                if rsn.strip():
-                    final_text = f"[Thinking]\n{rsn}"
-                    break
-                # No text or reasoning -- check tool calls
-                tcs = msg.get("tool_calls") or []
-                if tcs:
-                    names = [tc.get("function", {}).get("name", "?") for tc in tcs]
-                    final_text = f"[Tool calls executed: {', '.join(names)}]"
-                    break
-            logger.info("[sub_agent] done session_id={sid} final_len={flen} msgs={mcount}",
-                          sid=saved_session_id, flen=len(final_text), mcount=len(sub_agent.session.messages))
-            logger.info("[sub_agent] final_text={t:.200s}", t=final_text)
-            return {
-                "content": final_text or "No output from sub-agent",
-                "messages": sub_agent.session.messages,
-                "session_id": saved_session_id,
-                "references": sub_refs,
-            }
+                    draft_tool_calls.append(tc_dict)
+                    draft_tool_id_to_idx[event.id] = len(draft_tool_calls) - 1
+                    draft_segments.append({"kind": "tool", "tool_id": event.id})
+                    await _emit_live()
+                elif isinstance(event, ToolProgress):
+                    _flush_text_buffer()
+                    result_parts.append(f"### Tool Progress\n- id: `{event.id}`\n- name: `{event.tool_name}`\n- status: `{event.status}`\n")
+                    # Forward nested sub-agent messages so the frontend sees
+                    # live progress from sub-sub-agents all the way up.
+                    if progress_callback is not None and event.sub_agent_messages:
+                        with contextlib.suppress(Exception):
+                            await progress_callback(event.sub_agent_messages)
+                    else:
+                        await _emit_live()
+                elif isinstance(event, ToolCallEnd):
+                    _flush_text_buffer()
+                    result_parts.append(f"### Tool End\n- id: `{event.id}`\n")
+                    await _emit_live()
+                elif isinstance(event, ToolResult):
+                    _flush_text_buffer()
+                    content = event.content.strip()
+                    if len(content) > 2000:
+                        content = f"{content[:2000]}\n... (truncated)"
+                    result_parts.append(
+                        f"### Tool Result\n- id: `{event.id}`\n- error: `{'yes' if event.is_error else 'no'}`\n\n```text\n{content}\n```\n"
+                    )
+                    # Tool results are already persisted into sub_agent.session.messages
+                    # by the sub-agent's own loop. The snapshot builder picks them up
+                    # directly so we do NOT maintain a separate live_messages list.
+                    await _emit_live()
+                elif isinstance(event, Reference):
+                    if event.reference:
+                        sub_refs.append(event.reference)
+                elif isinstance(event, Finish):
+                    _flush_text_buffer()
+                    await _emit_live()
+                    if event.reason == "error":
+                        _save()
+                        return {
+                            "content": "Error: Sub-agent failed",
+                            "messages": sub_agent.session.messages,
+                            "session_id": saved_session_id,
+                            "references": sub_refs,
+                        }
+        except asyncio.CancelledError:
+            cancelled = True
+            logger.info("[sub_agent] cancelled by parent, session_id={sid}", sid=saved_session_id)
         finally:
+            # ALWAYS save the sub-agent session so it can be viewed later,
+            # even on cancellation or exception.
+            _save()
             self._child_loops.discard(sub_agent.loop)
+
+        # Extract the sub-agent's final response: prefer text content, fall back
+        # to reasoning content, then to "Tool calls executed" if only tools ran.
+        final_text = ""
+        for msg in reversed(sub_agent.session.messages):
+            if msg.get("role") != "assistant":
+                continue
+            txt = str(msg.get("content") or "")
+            if txt.strip():
+                final_text = txt
+                break
+            # No text content -- check reasoning
+            rsn = str(msg.get("reasoning_content") or "")
+            if rsn.strip():
+                final_text = f"[Thinking]\n{rsn}"
+                break
+            # No text or reasoning -- check tool calls
+            tcs = msg.get("tool_calls") or []
+            if tcs:
+                names = [tc.get("function", {}).get("name", "?") for tc in tcs]
+                final_text = f"[Tool calls executed: {', '.join(names)}]"
+                break
+        logger.info("[sub_agent] done session_id={sid} final_len={flen} msgs={mcount} cancelled={c}",
+                      sid=saved_session_id, flen=len(final_text), mcount=len(sub_agent.session.messages), c=cancelled)
+        logger.info("[sub_agent] final_text={t:.200s}", t=final_text)
+        return {
+            "content": final_text or ("[Cancelled by user]" if cancelled else "No output from sub-agent"),
+            "messages": sub_agent.session.messages,
+            "session_id": saved_session_id,
+            "references": sub_refs,
+        }
 
 
 # ── Terminal session cleanup (called at end of each turn) ──────────

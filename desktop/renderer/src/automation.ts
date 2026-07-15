@@ -41,6 +41,7 @@ import {
   onAutomationJobCancelled,
   downloadMarkdownFile,
 } from "./stream.js";
+import { renderMarkdown } from "./chat.js";
 
 interface TaskTemplate {
   id: string;
@@ -81,6 +82,18 @@ interface HistoryEntry {
   fail_count: number;
   session_id?: string;
   messages?: any[];
+}
+
+interface AutomationViewResult {
+  id: string;
+  job_id: string;
+  name: string;
+  prompt: string;
+  result: string;
+  tag: string;
+  state: string;
+  session_id?: string;
+  messages: any[];
 }
 
 const TEMPLATES: TaskTemplate[] = [
@@ -228,9 +241,13 @@ export class Automation {
   private createWrap: HTMLElement;
   private createBtn: HTMLElement;
   private createDropdown: HTMLElement;
+  private detailEl: HTMLElement;
+  private detailContentEl: HTMLElement;
+  private detailBreadcrumbEl: HTMLElement;
+  private detailBackEl: HTMLElement;
   private activeTab = "history";
 
-  public onViewResult?: (data: { id: string; name: string; prompt: string; result: string; tag: string; messages?: any[] }) => void;
+  public onViewResult?: (data: AutomationViewResult) => void;
   private jobs: BackendJob[] = [];
   // History filter state
   private historyStatus: string = "";   // "" = all, or "SUCCESS"/"FAILED"/"RUNNING"/"PENDING"
@@ -254,11 +271,18 @@ export class Automation {
     this.createWrap = document.getElementById("automation-create-wrap")!;
     this.createBtn = document.getElementById("automation-create-btn")!;
     this.createDropdown = document.getElementById("automation-create-dropdown")!;
+    this.detailEl = this.el.querySelector(".automation-detail")! as HTMLElement;
+    this.detailContentEl = document.getElementById("automation-detail-content")!;
+    this.detailBreadcrumbEl = document.getElementById("automation-detail-breadcrumb")!;
+    this.detailBackEl = document.getElementById("automation-detail-back")!;
 
     this.bindTabs();
     this.bindCallbacks();
     this.bindCreateButton();
     this.bindHistoryFilters();
+
+    // Back button: go back to history list
+    this.detailBackEl.addEventListener("click", () => this.hideDetail());
 
     // Close any open history dropdowns when clicking outside
     document.addEventListener("click", (e) => {
@@ -270,6 +294,92 @@ export class Automation {
         });
       }
     });
+  }
+
+  // ── Detail view (sub-agent result inside automation panel) ──────
+
+  /** Show the detail panel for a sub-agent result. */
+  showDetail(data: { name: string; messages?: any[]; state?: string; result?: string }): void {
+    // Populate breadcrumb
+    this.detailBreadcrumbEl.innerHTML = `<span class="automation-detail-breadcrumb-label">${this.escapeHtml(data.name || "")}</span>`;
+    // Render messages
+    if (data.messages && data.messages.length > 0) {
+      this.renderDetailMessages(data.messages);
+    } else if (data.state === "FAILED") {
+      // Forbidden/error empty state matching the sidebar panel pattern
+      // (same as terminal/editor/etc. empty states).
+      this.detailContentEl.innerHTML = `
+        <div class="si-panel-empty" style="flex:1;gap:14px;">
+          <i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i>
+          <div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div>
+          <div class="si-panel-empty-sub">${this.escapeHtml(data.result || "")}</div>
+        </div>`;
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: this.detailContentEl });
+      }
+    } else {
+      this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="padding:40px 20px;">${t("automation.noMessages") || "No messages"}</div>`;
+    }
+    // Show detail, hide panels
+    this.panelsEl.style.display = "none";
+    this.detailEl.classList.add("active");
+    this.detailEl.style.display = "flex";
+    // Hide tabs bar for cleaner look
+    this.tabsEl.style.display = "none";
+  }
+
+  /** Hide the detail panel and return to the list. */
+  hideDetail(): void {
+    this.detailEl.classList.remove("active");
+    this.detailEl.style.display = "none";
+    this.panelsEl.style.display = "";
+    this.tabsEl.style.display = "";
+    this.detailContentEl.innerHTML = "";
+    this.detailBreadcrumbEl.innerHTML = "";
+  }
+
+  /** Render a flat message array as bubbles inside the detail content area. */
+  private renderDetailMessages(rawMessages: any[]): void {
+    const html: string[] = [];
+    for (const msg of rawMessages) {
+      if (msg.role === "user") {
+        const text = typeof msg.content === "string" ? msg.content : msg.content?.[0]?.text || "";
+        html.push(`<div class="user-item"><div class="user-bubble">${this.escapeHtml(text)}</div></div>`);
+      } else if (msg.role === "assistant" || msg.role === "tool") {
+        // Show thinking if present
+        const thinking = msg.reasoning_content || msg.reasoning || (msg.content && typeof msg.content === "object" ? "" : "");
+        if (thinking && typeof thinking === "string" && thinking.length > 0) {
+          html.push(`<details class="thinking-strip"><summary>Thinking</summary><div class="thought-body">${renderMarkdown(thinking)}</div></details>`);
+        }
+        // Show text content
+        let text = "";
+        if (typeof msg.content === "string") {
+          text = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          text = msg.content.map((c: any) => c.text || "").join("\n");
+        }
+        if (text.trim()) {
+          html.push(`<div class="assistant-text"><div class="msg-text">${renderMarkdown(text)}</div></div>`);
+        }
+        // Show tool calls as simple cards
+        if (msg.tool_calls) {
+          for (const tc of msg.tool_calls) {
+            html.push(`<div class="tool-call">${this.escapeHtml(tc.function?.name || tc.name || "tool")}</div>`);
+          }
+        }
+      }
+    }
+    this.detailContentEl.innerHTML = html.join("\n");
+    // Create lucide icons if available
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.detailContentEl });
+    }
+  }
+
+  private escapeHtml(text: string): string {
+    const div = document.createElement("div");
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
   }
 
   /** Refreshes the panel by requesting the jobs list and run history. */
@@ -396,9 +506,14 @@ export class Automation {
             <label class="model-form-label">${t("automation.pushGateways")}</label>
             <div id="auto-dlg-push-gateways" style="margin-top:4px"></div>
           </div>
-          <div class="model-form-row">
+          <div class="model-form-row" style="flex-direction:column;align-items:stretch">
             <label class="model-form-label">${t("automation.whatToDo")}</label>
-            <textarea id="auto-dlg-prompt" class="model-form-input" rows="8">${escapeHtml(editJob?.prompt || template.defaultPrompt)}</textarea>
+            <div class="input-wrapper input-wrapper--dialog">
+              <div class="input-row">
+                <div id="auto-dlg-prompt" class="prompt-input" contenteditable="true" role="textbox" aria-multiline="true" style="min-height:56px;max-height:300px">${escapeHtml(editJob?.prompt || template.defaultPrompt)}</div>
+                <div class="prompt-placeholder" style="left:14px;top:10px">${t("automation.whatToDo")}</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="dialog-footer">
@@ -411,6 +526,20 @@ export class Automation {
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: overlay });
     }
+
+    // Auto-resize contenteditable prompt inputs
+    overlay.querySelectorAll(".prompt-input[contenteditable]").forEach((el) => {
+      const ph = el.parentElement?.querySelector(".prompt-placeholder") as HTMLElement;
+      const update = () => {
+        (el as HTMLElement).style.height = "auto";
+        (el as HTMLElement).style.height = Math.min((el as HTMLElement).scrollHeight, 300) + "px";
+        if (ph) {
+          ph.classList.toggle("hidden", (el.textContent || "").trim().length > 0);
+        }
+      };
+      el.addEventListener("input", update);
+      update();
+    });
 
     let scheduleValue = parsed.scheduleType;
     let timeValue = parsed.time;
@@ -587,7 +716,7 @@ export class Automation {
       const name = (document.getElementById("auto-dlg-name") as HTMLInputElement)?.value.trim();
       if (!name) return;
 
-      const prompt = (document.getElementById("auto-dlg-prompt") as HTMLTextAreaElement)?.value.trim() || template.defaultPrompt;
+      const prompt = (document.getElementById("auto-dlg-prompt") as HTMLElement)?.textContent?.trim() || template.defaultPrompt;
 
       const time = timeValue || "09:00";
       const [h, m] = time.split(":").map(s => s.padStart(2, "0"));
@@ -750,10 +879,10 @@ export class Automation {
           <div class="model-table-cell model-cell-provider">${formatSchedule(job.cron)}</div>
           <div class="model-table-cell model-cell-actions">
             ${stateTag(job.state, job.suspended)}
-            <button class="btn-icon" data-action="edit" title="${t("general.edit")}">
+            <button class="btn-icon" data-action="edit" data-tooltip="${t("general.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" title="${t("general.delete")}">
+            <button class="btn-icon" data-action="delete" data-tooltip="${t("general.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -1043,25 +1172,10 @@ export class Automation {
   private renderHistory(): void {
     const filtersEl = document.getElementById("history-filters")!;
 
-    // Show configured jobs that haven't run yet as pending entries
+    // Only show actual execution history -- do NOT synthesize pending
+    // entries for configured-but-not-yet-run jobs. A job that hasn't
+    // executed has no history record and should not appear here.
     let displayHistory = [...getState().automationHistory];
-    if (this.jobs.length > 0) {
-      const historyJobIds = new Set(displayHistory.map(h => h.job_id));
-      for (const job of this.jobs) {
-        if (!historyJobIds.has(job.id)) {
-          displayHistory.push({
-            id: `${job.id}_pending`,
-            job_id: job.id,
-            name: job.name,
-            tag: job.tag || "",
-            time: job.created_at,
-            state: "PENDING",
-            last_result: "",
-            fail_count: 0,
-          });
-        }
-      }
-    }
 
     // ── Apply filters ──
     const fromTs = this.historyDateFrom ? new Date(this.historyDateFrom + "T00:00:00").getTime() / 1000 : null;
@@ -1149,17 +1263,25 @@ export class Automation {
         const entry = getState().automationHistory.find(h => h.id === entryId);
         if (!entry) return;
         const job = this.jobs.find(j => j.id === entry.job_id);
-        this.onViewResult?.({
+        const data: AutomationViewResult = {
           id: entry.id,
           name: entry.name,
           prompt: job?.prompt || entry.name,
           result: entry.last_result || "",
           tag: entry.tag,
-          messages: (entry as any).messages,
+          messages: entry.messages || [],
           state: entry.state,
           job_id: entry.job_id,
           session_id: entry.session_id,
-        } as any);
+        };
+        // Failed entries: show error state inside the automation detail panel
+        // (no sub-agent session to render, so the sub-agent view would spin forever).
+        if (data.state === "FAILED") {
+          this.showDetail(data);
+        } else {
+          // Completed and running entries: delegate to app.ts sub-agent view
+          this.onViewResult?.(data);
+        }
       });
     });
 
@@ -1167,8 +1289,31 @@ export class Automation {
       (item as HTMLElement).addEventListener("contextmenu", (e: MouseEvent) => {
         e.preventDefault();
         const sid = (item as HTMLElement).getAttribute("data-sid");
-        if (sid) {
+        const entryId = (item as HTMLElement).getAttribute("data-entry-id");
+        const entry = getState().automationHistory.find(h => h.id === entryId);
+        const isFailed = !!entry && entry.state === "FAILED";
+        if (sid && !isFailed) {
           showSessionContextMenu(sid, e.clientX, e.clientY, true);
+        } else if (sid && isFailed) {
+          // Failed entries: reuse session context menu but hide export
+          // (no session data to export) and override delete to remove the
+          // execution record instead of the session.
+          showSessionContextMenu(sid, e.clientX, e.clientY, true, true, () => {
+            if (entryId) {
+              Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
+                if (confirmed) {
+                  send({ type: "automation_delete_execution", entry_id: entryId });
+                }
+              });
+            }
+          });
+        } else if (entryId) {
+          // No sub-agent session — delete execution record directly via confirm
+          Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
+            if (confirmed) {
+              send({ type: "automation_delete_execution", entry_id: entryId });
+            }
+          });
         }
       });
     });

@@ -183,7 +183,11 @@ class RouterBackend(BaseBackend):
         track_costs: bool = True,
         auth_manager: AuthManager | None = None,
         connection_monitor: ConnectionHealthMonitor | None = None,
+        **kwargs: Any,
     ) -> None:
+        # ``create_backend`` forwards per-model thinking kwargs that do not
+        # apply to the router itself; ignore them safely.
+        _ = kwargs
         self._routes: dict[str, Route] = {}
         for category, backend in routes.items():
             self._routes[category] = Route(category=category, backend=backend)

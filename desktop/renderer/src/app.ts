@@ -54,8 +54,10 @@ import {
   getTraySessions,
   removeBranchMessages,
   clearAllNotifications,
+  setModelConfigs,
 } from "./state.js";
 import { Chat, formatAgentLabel } from "./chat.js";
+import { initTooltip } from "./tooltip.js";
 import { SplashScreen } from "./splash.js";
 import { Tools } from "./tools.js";
 import { Settings, type PanelId } from "./settings.js";
@@ -70,24 +72,25 @@ import { Permissions } from "./permissions.js";
 import { AutomationPanel } from "./iclaw.js";
 import { Automation } from "./automation.js";
 import { TransitionHelper } from "./transition-helper.js";
+import { ModeTransitionManager, type AppMode } from "./mode-transition.js";
 import { SessionInner, TabDef } from "./session_inner.js";
 import { renderMarkdown } from "./chat.js";
 import { EALoader } from "./ealoader.js";
-import { t, onLocaleChange, applyI18n, setLocale } from "./i18n.js";
+import { t, getLocale, onLocaleChange, applyI18n, setLocale } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { lookupShortcut, augmentTitle, formatShortcut, platformLabel } from "./shortcutDisplay.js";
 import type { Message } from "./types.js";
 import { SLASH_COMMANDS, parseSlashInput, type SlashCommand } from "./slash_commands.js";
 import { mountNebula } from "./easter-egg.js";
+import { showContextMenu } from "./context-menu.js";
 
 type ChildTab = {
   view: string;
   label: string;
   title?: string;
   webview?: any;
+  _contentEl?: HTMLElement;
   _nebulaCleanup?: () => void;
-  _rendered?: boolean;
-  _html?: string;
 };
 
 (window as any).__state_setActiveToolId = setActiveToolId;
@@ -108,6 +111,7 @@ class App {
   private workspace: Workspace;
   private automationPanel: AutomationPanel;
   private automation: Automation;
+  private modeTransition!: ModeTransitionManager;
   private sessionInner: SessionInner;
   private search: Search;
   private input: HTMLTextAreaElement;
@@ -179,31 +183,56 @@ class App {
     // Refresh automation data each time the panel opens
     this.automationPanel.onShow = () => this.automation.render();
 
-    // Show automation job results in the chat area when they complete
-    const showAutomationResult = (data: any): void => {
-      // If a live streaming view for this job already exists, skip creating a new one
-      const curView = getState().subAgentView;
-      if (curView && curView.id === data.id && (curView.status as string) === "completed") {
-        send({ type: "automation_list_jobs" });
+    // Show automation job results in the chat area when they complete.
+    // Called both from the backend push (automation_job_update) and from
+    // the user explicitly clicking a history entry (onViewResult).
+    const showAutomationResult = (data: any, fromUserAction: boolean = false): void => {
+      // When the backend pushes a result update for a background automation
+      // that the user isn't actively watching, do NOT disrupt their current
+      // view — just silently refresh the history and live-stream callbacks
+      // handle the rest.
+      if (!fromUserAction) {
+        const curView = getState().subAgentView;
+        if (curView && curView.id === data.id) {
+          if (data.state === "FAILED") {
+            // Job failed while user was watching: close the sub-agent view
+            // (which would otherwise keep showing a loading animation) and
+            // show the failure detail in the automation panel instead.
+            this._activeAutomationJobId = "";
+            (window as any).__isAutomationView = false;
+            (window as any).__closeSubAgentView = undefined;
+            setSubAgentView(null);
+            clearMessages();
+            this.chat.render();
+            this.automationPanel.show();
+            this.automation.showDetail(data);
+          } else if ((curView.status as string) === "completed") {
+            send({ type: "automation_list_jobs" });
+          }
+        }
         return;
       }
+
+      // ── User-initiated: open the automation result ──────────────
       this.automationPanel.hide();
       clearMessages();
       setSessionId("");
-      addUserMessage(data.prompt || data.name || "");
       // Running/in-progress automation entry — show live sub-agent view
       // connected to the real-time stream events. Check this BEFORE the
       // messages check so a running job with partial messages still gets
       // the correct running sub-agent view (with stream event wiring).
-      if (data.job_id && data.state !== "COMPLETED") {
-        this._activeAutomationJobId = data.job_id;
+      if (data.job_id || data.id) {
+        const viewId = data.job_id || data.id;
+        const isActive = data.state === "RUNNING" || data.state === "PENDING";
+        this._activeAutomationJobId = isActive ? viewId : "";
         const tc: any = {
-          id: data.job_id,
+          id: viewId,
           name: "agent",
           params: { agent_name: data.name || t("app.automationDefaultName") },
-          status: "running",
+          status: isActive ? "running" : "completed",
           subAgentMessages: restoreMessages(data.messages || []),
           content: data.result || "",
+          sessionId: data.session_id || "",
         };
         const origClose = (window as any).__closeSubAgentView;
         (window as any).__closeSubAgentView = () => {
@@ -216,6 +245,7 @@ class App {
         };
         (window as any).__isAutomationView = true;
         setSubAgentView(tc);
+        this.chat.render();
         return;
       }
       // If we have full messages from the sub-agent execution, use sub-agent view
@@ -254,8 +284,8 @@ class App {
       };
       addMessage(msg);
     };
-    onAutomationShowResult((result: any) => showAutomationResult(result));
-    this.automation.onViewResult = (data) => showAutomationResult(data);
+    onAutomationShowResult((result: any) => showAutomationResult(result, false));
+    this.automation.onViewResult = (data) => showAutomationResult(data, true);
 
     // ── Real-time automation execution streaming ─────────────────────
     onAutomationStreamEvent((event) => {
@@ -288,6 +318,7 @@ class App {
           status: "running",
           subAgentMessages: [],
           content: "",
+          sessionId: data.session_id || "",
         };
         const origClose = (window as any).__closeSubAgentView;
         (window as any).__closeSubAgentView = () => {
@@ -308,7 +339,16 @@ class App {
       const view = getState().subAgentView;
       if (!view || view.id !== job_id) return;
 
-      if (event_type === "text_delta") {
+      if (event_type === "snapshot") {
+        const messages = (event_data as any).messages;
+        if (Array.isArray(messages)) {
+          view.subAgentMessages = restoreMessages(messages);
+        }
+        if ((event_data as any).session_id) {
+          (view as any).sessionId = (event_data as any).session_id;
+        }
+        setSubAgentView({ ...view });
+      } else if (event_type === "text_delta") {
         (view as any).content = ((view as any).content || "") + ((event_data as any).text || "");
         setSubAgentView({ ...view });
       } else if (event_type === "thinking_delta") {
@@ -349,6 +389,11 @@ class App {
       this.animateWelcomeTitle(getState().workspaceMode);
     };
     this.workspace.onModeChange = onAnyModeChange;
+    this.modeTransition = new ModeTransitionManager({
+      workspace: this.workspace,
+      automationPanel: this.automationPanel,
+      onModeChange: onAnyModeChange,
+    });
     this.sessionInner = new SessionInner();
     this.chat.onViewChanges = (path: string) => {
       const st = getState();
@@ -369,6 +414,7 @@ class App {
     this.bindKeyboardShortcuts();
     this.applyShortcutHints();
     this.initTheme();
+    initTooltip();
     this.bindResponsiveSidebar();
 
     // Mirror sidebar collapse state to body so sibling elements can style
@@ -504,7 +550,7 @@ class App {
           this.workspace.onModeChange = () => {
             this.closeSessionInnerSidebar();
             this.cleanupContentArea({ keepAutomationFlag: false });
-            this.chat.render();
+            this.chat.renderForce();
             this.workspace.onModeChange = orig;
           };
           this.workspace.enter();
@@ -520,12 +566,18 @@ class App {
           this.cleanupContentArea({ keepAutomationFlag: false });
         }
         setRequestedSessionId(sessionId, requestId);
-        if (wsPath && wsPath !== st.activeWorkspace) {
+        // Normalize paths for Windows case/slash-insensitive comparison.
+        const _norm = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+        const _trayPath = wsPath ? _norm(wsPath) : "";
+        const _activePath = st.activeWorkspace ? _norm(st.activeWorkspace) : "";
+        if (_trayPath && _trayPath !== _activePath) {
           setSessionId("");
           send({ type: "open_workspace", path: wsPath, request_id: requestId });
         } else {
           setSessionId(sessionId);
           send({ type: "resume", session_id: sessionId, request_id: requestId });
+          delete (window as any).__pendingTrayResume;
+          this.chat.render();
         }
       });
     }
@@ -563,7 +615,7 @@ class App {
       this.automation.render();
       this.updateStats();
       this.bindInputModelSelector();
-    });
+  });
 
     // Apply startup mode only on initial connection + config_data received.
     // Wait until startup_session_mode appears in settings (set by config_data
@@ -616,15 +668,11 @@ class App {
         app.classList.add("sidebar-collapsed");
         this.sessionInner.renderForce();
       } else {
-        // Closing: hide the panel AND tear down the dynamic tabs so the
-        // next open starts from the default "info" tab.  Without this,
-        // re-opening the sidebar would resurrect terminals/editors from
-        // the previous session — they keep running in the background
-        // burning CPU and the user sees stale output.
+        // Hide the panel but keep tabs/terminals alive (like browser tabs).
+        // Re-opening shows everything exactly where it was.
         this.sessionInner.saveWidth();
         panel.classList.add("hidden");
         mainBody.classList.add("sidebar-hidden");
-        this.sessionInner.resetToDefaultTabs();
       }
     });
 
@@ -717,17 +765,33 @@ class App {
   }
 
   private _switchWebviewTab(index: number): void {
-    // Tear down the old webview if any, then create the new one.
+    const tab = this._tabs[index];
     const childViewEl = document.getElementById("child-view");
     if (!childViewEl) return;
-    childViewEl.innerHTML = "";
-    this.renderTabContent(this._tabs[index]);
+    childViewEl.classList.remove("hidden");
+    if (tab._contentEl) {
+      this._showTabContent(tab);
+      return;
+    }
+    for (const t of this._tabs) {
+      if (t._contentEl) t._contentEl.style.display = "none";
+    }
+    this.renderTabContent(tab);
+  }
+
+  private _showTabContent(tab: ChildTab): void {
+    for (const t of this._tabs) {
+      if (t._contentEl) t._contentEl.style.display = t === tab ? "flex" : "none";
+    }
   }
 
   private closeTab(index: number): void {
     const removed = this._tabs[index];
     if (removed?._nebulaCleanup) {
       removed._nebulaCleanup();
+    }
+    if (removed?._contentEl) {
+      removed._contentEl.remove();
     }
     this._tabs.splice(index, 1);
     if (this._tabs.length === 0) {
@@ -757,6 +821,11 @@ class App {
     let dragSrcIdx: number | null = null;
     tabsEl.querySelectorAll("button[data-index]").forEach(btn => {
       const idx = parseInt(btn.getAttribute("data-index")!, 10);
+
+      btn.addEventListener("mousedown", (e: Event) => {
+        const me = e as MouseEvent;
+        if (me.button === 1) me.preventDefault();
+      });
 
       // Click to switch
       btn.addEventListener("click", (e) => {
@@ -824,6 +893,12 @@ class App {
         dragSrcIdx = null;
       });
     });
+    tabsEl.addEventListener("wheel", (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        tabsEl.scrollLeft += e.deltaY;
+      }
+    }, { passive: false });
   }
 
   private renderTabContent(tab: ChildTab): void {
@@ -831,22 +906,19 @@ class App {
     if (!childViewEl) return;
     childViewEl.classList.remove("hidden");
 
-    if (tab._rendered) {
-      childViewEl.innerHTML = tab._html || "";
-      if (tab.webview && tab.view.startsWith("http")) {
-        const wrap = childViewEl.querySelector(".child-webview-wrap");
-        if (wrap && !wrap.contains(tab.webview)) {
-          wrap.insertBefore(tab.webview, wrap.firstChild);
-        }
-      }
+    if (tab._contentEl) {
+      this._showTabContent(tab);
       return;
     }
-    tab._rendered = true;
-    childViewEl.innerHTML = "";
+
+    const container = document.createElement("div");
+    container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;";
+    tab._contentEl = container;
+    childViewEl.appendChild(container);
 
     if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.view === "about:blank") {
       const startUrl = tab.view === "about:blank" ? "" : tab.view;
-      childViewEl.innerHTML = `
+      container.innerHTML = `
         <div class="child-nav-bar">
           <button class="child-nav-btn" data-nav="back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
           <button class="child-nav-btn" data-nav="forward"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
@@ -873,15 +945,15 @@ class App {
             </div>
           </div>
         </div>`;
-        const wv = childViewEl.querySelector("webview") as any;
+        const wv = container.querySelector("webview") as any;
         if (wv) {
           tab.webview = wv;
-          const statusEl = childViewEl.querySelector("#child-webview-status") as HTMLElement | null;
-          const loadingEl = childViewEl.querySelector("#child-status-loading") as HTMLElement | null;
-          const errorEl = childViewEl.querySelector("#child-status-error") as HTMLElement | null;
-          const overlayTitle = childViewEl.querySelector("#child-overlay-title") as HTMLElement | null;
-          const overlayDesc = childViewEl.querySelector("#child-overlay-desc") as HTMLElement | null;
-          const retryBtn = childViewEl.querySelector("#child-overlay-retry") as HTMLButtonElement | null;
+          const statusEl = container.querySelector("#child-webview-status") as HTMLElement | null;
+          const loadingEl = container.querySelector("#child-status-loading") as HTMLElement | null;
+          const errorEl = container.querySelector("#child-status-error") as HTMLElement | null;
+          const overlayTitle = container.querySelector("#child-overlay-title") as HTMLElement | null;
+          const overlayDesc = container.querySelector("#child-overlay-desc") as HTMLElement | null;
+          const retryBtn = container.querySelector("#child-overlay-retry") as HTMLButtonElement | null;
           let loader: EALoader | null = null;
           let loadTimer: number | null = null;
           let _showedError = false;
@@ -925,7 +997,6 @@ class App {
           }
           // Track page title
           wv.addEventListener("page-title-updated", (e: any) => {
-            tab.title = e.title;
             this.renderTabBar();
           });
         // Intercept new windows (popups, target=_blank) — open as new tab
@@ -1020,7 +1091,7 @@ class App {
           } catch {}
         });
         // Nav buttons
-        childViewEl.querySelectorAll("[data-nav]").forEach(btn => {
+        container.querySelectorAll("[data-nav]").forEach(btn => {
           btn.addEventListener("click", () => {
             if (!wv) return;
             const action = btn.getAttribute("data-nav");
@@ -1031,7 +1102,7 @@ class App {
           });
         });
         // URL input in nav bar
-        const urlInput = childViewEl.querySelector(".child-url-input") as HTMLInputElement;
+        const urlInput = container.querySelector(".child-url-input") as HTMLInputElement;
         if (urlInput) {
           const navigate = () => {
             let url = urlInput.value.trim();
@@ -1059,15 +1130,15 @@ class App {
         }
       }
     } else if (tab.view === "license") {
-      childViewEl.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">Loading...</pre></div>`;
+      container.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">Loading...</pre></div>`;
       if (window.electronAPI) {
         window.electronAPI.getLicenseContent().then((content: string) => {
-          const pre = childViewEl.querySelector(".child-raw-text");
+          const pre = container.querySelector(".child-raw-text");
           if (pre) pre.textContent = content;
         });
       }
     } else if (tab.view === "privacy" || tab.view === "terms" || tab.view === "thanks" || tab.view === "data-rules" || tab.view === "minors") {
-      childViewEl.innerHTML = `
+      container.innerHTML = `
         <div class="child-doc-container">
           <div class="child-doc-toolbar">
             <div class="settings-dropdown-wrap" id="child-region-wrap">
@@ -1085,15 +1156,15 @@ class App {
         </div>`;
 
       if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: childViewEl });
+        (window as any).lucide.createIcons({ root: container });
       }
 
       const loadDoc = (region: string) => {
-        const body = childViewEl.querySelector(".child-view-body");
+        const body = container.querySelector(".child-view-body");
         if (body) body.innerHTML = "<p>Loading...</p>";
         if (window.electronAPI) {
           window.electronAPI.getDocumentContent(tab.view, region).then((content: string) => {
-            const bodyEl = childViewEl.querySelector(".child-view-body");
+            const bodyEl = container.querySelector(".child-view-body");
             if (bodyEl) bodyEl.innerHTML = renderMarkdown(content);
           });
         }
@@ -1106,75 +1177,145 @@ class App {
 
       loadDoc(this._region);
     } else if (tab.view === "easter-egg") {
-      childViewEl.innerHTML = `<div class="easter-egg-container" style="position:absolute;inset:0;overflow:hidden;background:#000"></div>`;
-      const container = childViewEl.querySelector(".easter-egg-container") as HTMLElement;
-      if (container) {
-        tab._nebulaCleanup = mountNebula(container);
+      container.innerHTML = `<div class="easter-egg-container" style="position:absolute;inset:0;overflow:hidden;background:#000"></div>`;
+      const eggEl = container.querySelector(".easter-egg-container") as HTMLElement;
+      if (eggEl) {
+        tab._nebulaCleanup = mountNebula(eggEl);
       }
     } else if (tab.view === "logs") {
-      childViewEl.innerHTML = `
-        <div id="settings-content-wrap">
-          <div class="settings-card" style="padding:0">
-            <div class="model-table" id="logger-table">
-              <div class="model-table-header">
-                <div class="model-table-cell model-cell-provider" style="flex:1">${t("settings.aboutLogContent") || "Content"}</div>
-                <div class="model-table-cell model-cell-actions" style="width:96px;justify-content:flex-end;gap:4px">
-                  <button class="btn-icon" id="logger-copy-btn" title="Copy all"><i data-lucide="clipboard-copy" class="lucide"></i></button>
-                  <button class="btn-icon" id="logger-open-btn" title="Open folder"><i data-lucide="folder-open" class="lucide"></i></button>
-                </div>
-              </div>
-              <div class="logger-scroll" id="logger-scroll">
-                <div id="logger-rows"></div>
-              </div>
+      container.innerHTML = `
+        <div class="log-view">
+          <div class="log-table">
+            <div class="log-table-header">
+              <div class="log-cell log-cell-ts">${t("settings.aboutLogTimestamp")}</div>
+              <div class="log-cell log-cell-lvl">${t("settings.aboutLogLevel")}</div>
+              <div class="log-cell log-cell-src">${t("settings.aboutLogSource")}</div>
+              <div class="log-cell log-cell-msg">${t("settings.aboutLogMessage")}</div>
+            </div>
+            <div class="log-table-body" id="log-table-body">
+              <div class="log-loading">${t("settings.aboutLogLoading")}</div>
             </div>
           </div>
-        </div>`;
+        </div>
+        <div class="context-menu hidden" id="log-context-menu"></div>`;
       if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: childViewEl });
+        (window as any).lucide.createIcons({ root: container });
       }
-      const api = window.electronAPI;
-      if (api) {
-        api.getDiagnostics().then(diag => {
-          const rowsEl = document.getElementById("logger-rows");
-          const copyBtn = document.getElementById("logger-copy-btn");
-          const openBtn = document.getElementById("logger-open-btn");
-          if (!rowsEl) return;
-          // Render log lines as plain model-table rows, exactly like the
-          // model list: one row per log line, content fills the cell.
-          rowsEl.innerHTML = diag.recentLogs.length === 0
-            ? `<div class="model-table-row"><div class="model-table-cell model-cell-provider" style="flex:1;color:var(--text-muted)">(no logs)</div><div class="model-table-cell model-cell-actions" style="width:96px"></div></div>`
-            : diag.recentLogs.map(line =>
-                `<div class="model-table-row">
-                  <div class="model-table-cell model-cell-provider" style="flex:1;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-all;color:var(--text-secondary)">${this.esc(line)}</div>
-                  <div class="model-table-cell model-cell-actions" style="width:96px"></div>
-                </div>`
-              ).join("");
-          if (copyBtn) {
-            copyBtn.addEventListener("click", () => {
-              navigator.clipboard.writeText(diag.recentLogs.join("\n")).catch(() => {});
-            });
-          }
-          if (openBtn) {
-            openBtn.addEventListener("click", () => {
-              api?.openLogs();
-            });
-          }
-        });
-      }
+      this._initLogView(container);
     } else if (tab.view.startsWith("mailto:")) {
       window.location.href = tab.view;
     } else {
-      childViewEl.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px">
+      container.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px">
         <i data-lucide="file-question" class="lucide" style="width:32px;height:32px;color:var(--text-muted)"></i>
         <div class="si-panel-empty-title">${this.esc(tab.label)}</div>
         <div class="si-panel-empty-sub" style="font-size:12px;color:var(--text-muted)">Coming soon</div>
       </div>`;
       if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: childViewEl });
+        (window as any).lucide.createIcons({ root: container });
       }
     }
-    // Save HTML so switching back preserves state without recreating webviews.
-    tab._html = childViewEl.innerHTML;
+  }
+
+  private _initLogView(container: HTMLElement): void {
+    const bodyEl = container.querySelector("#log-table-body") as HTMLElement | null;
+    const ctxMenu = container.querySelector("#log-context-menu") as HTMLElement | null;
+
+    let allEntries: { timestamp: string; level: string; source: string; message: string }[] = [];
+    let ctxEntry: typeof allEntries[0] | null = null;
+
+    const render = () => {
+      if (!bodyEl) return;
+      ctxMenu?.classList.add("hidden");
+      if (allEntries.length === 0) {
+        bodyEl.innerHTML = `<div class="log-empty">${t("settings.aboutLogNoLogs")}</div>`;
+        return;
+      }
+      bodyEl.innerHTML = allEntries.map((e) => {
+        const levelClass = "log-lvl-" + e.level.toLowerCase();
+        const ts = e.timestamp.replace(/,\d{3}$/, "");
+        return `<div class="log-row">
+          <div class="log-cell log-cell-ts">${ts}</div>
+          <div class="log-cell log-cell-lvl"><span class="log-level-badge ${levelClass}">${e.level}</span></div>
+          <div class="log-cell log-cell-src">${this.esc(e.source)}</div>
+          <div class="log-cell log-cell-msg"><span class="log-msg-text">${this.esc(e.message)}</span></div>
+        </div>`;
+      }).join("");
+    };
+
+    // ── Context menu on .log-row right-click ────────────────────────
+    const onCtx = (ev: MouseEvent) => {
+      const row = (ev.target as HTMLElement).closest(".log-row") as HTMLElement | null;
+      if (!row || !ctxMenu) return;
+      const idx = Array.from(bodyEl?.querySelectorAll(".log-row") || []).indexOf(row);
+      const entry = allEntries[idx];
+      if (!entry) return;
+      ctxEntry = entry;
+      ctxMenu.innerHTML = `
+        <div class="context-menu-item" data-action="copy-row">${t("settings.aboutLogCopyRow")}</div>
+        <div class="context-menu-item" data-action="copy-all">${t("settings.aboutLogCopyAll")}</div>`;
+      showContextMenu(ctxMenu, ev.clientX, ev.clientY);
+      ev.preventDefault();
+    };
+    const boundCtx = onCtx.bind(this);
+    document.addEventListener("contextmenu", boundCtx);
+
+    // ── Context menu item clicks ────────────────────────────────────
+    if (ctxMenu) {
+      ctxMenu.addEventListener("click", (ev) => {
+        const item = (ev.target as HTMLElement).closest(".context-menu-item") as HTMLElement | null;
+        if (!item) return;
+        const action = item.getAttribute("data-action");
+        ctxMenu.classList.add("hidden");
+        if (action === "copy-row" && ctxEntry) {
+          navigator.clipboard.writeText(`[${ctxEntry.timestamp}] [${ctxEntry.level}] ${ctxEntry.source}: ${ctxEntry.message}`).catch(() => {});
+        } else if (action === "copy-all") {
+          const text = allEntries.map(e => `[${e.timestamp}] [${e.level}] ${e.source}: ${e.message}`).join("\n");
+          navigator.clipboard.writeText(text).catch(() => {});
+        }
+      });
+    }
+
+    document.addEventListener("click", () => ctxMenu?.classList.add("hidden"), false);
+
+    // ── Lazy / windowed loading (scroll triggers backend batch fetch) ──
+    const api = window.electronAPI;
+    if (api) {
+      let loadedCount = 0;
+      let total = 0;
+      let loading = false;
+      const BATCH = 500;
+
+      const loadMore = async () => {
+        if (loading) return;
+        if (total > 0 && loadedCount >= total) return;
+        loading = true;
+        try {
+          const result = await api.getLogs({ offset: loadedCount, limit: BATCH });
+          if (result.entries && result.entries.length > 0) {
+            allEntries.push(...result.entries);
+            loadedCount += result.entries.length;
+            total = result.total;
+            render();
+          }
+        } catch {
+          if (loadedCount === 0 && bodyEl) {
+            bodyEl.innerHTML = `<div class="log-empty">${t("settings.aboutLogNoLogs")}</div>`;
+          }
+        }
+        loading = false;
+      };
+
+      loadMore();
+
+      if (bodyEl) {
+        bodyEl.addEventListener("scroll", () => {
+          const scrollBottom = bodyEl.scrollTop + bodyEl.clientHeight;
+          if (scrollBottom >= bodyEl.scrollHeight - 200) {
+            loadMore();
+          }
+        });
+      }
+    }
   }
 
   private bindChildRegionDropdown(id: string, onChange: (val: string) => void): void {
@@ -1224,16 +1365,12 @@ class App {
     const totalAll = totalIn + totalOut;
     if (s.telemetry) {
       this.tokenCountEl.textContent = t("app.toolsTokens", { count: s.telemetry.total_tool_calls, tokens: this.fmtTokens(totalAll) });
-      this.tokenCountEl.title =
-        t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) }) +
-        ` | ${t("app.turns")}: ${s.telemetry.total_turns} | ` +
-        `${t("app.duration")}: ${s.telemetry.session_duration_s.toFixed(0)}s`;
+      this.tokenCountEl.dataset.tooltip = t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) }) + ` | ${t("app.turns")}: ${s.telemetry.total_turns} | ` + `${t("app.duration")}: ${s.telemetry.session_duration_s.toFixed(0)}s`;
     } else if (totalAll > 0) {
       this.tokenCountEl.textContent = `${this.fmtTokens(totalAll)} ${t("app.tokens")}`;
-      this.tokenCountEl.title = t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) });
+      this.tokenCountEl.dataset.tooltip = t("app.inputOutput", { input: this.fmtTokens(totalIn), output: this.fmtTokens(totalOut) });
     } else {
       this.tokenCountEl.textContent = "";
-      this.tokenCountEl.title = "";
     }
   }
 
@@ -1250,7 +1387,8 @@ class App {
     if (!bar) return;
 
     const hasMessages = s.messages.length > 0;
-    bar.style.display = hasMessages ? "" : "none";
+    const isSubAgentActive = !!(s.subAgentView || s.subAgentBreadcrumb.length > 0);
+    bar.style.display = (hasMessages || isSubAgentActive) ? "" : "none";
 
     if (!nameEl) return;
     const isAutomationView = !!(window as any).__isAutomationView;
@@ -1270,9 +1408,26 @@ class App {
     const breadcrumb = s.subAgentBreadcrumb;
     const _truncate = (s: string, max = 18) => s.length > max ? s.slice(0, max) + "…" : s;
     const isSubAgentView = !!(s.subAgentView || breadcrumb.length > 0);
+    // Show/hide the automation back button in the header bar
+    const autoBackBtn = document.getElementById("btn-automation-back");
+    const toggleBtn = document.getElementById("btn-toggle-sidebar");
+    const searchBtn = document.getElementById("btn-sidebar-search");
+    const isAutomationSubAgent = isAutomationView && isSubAgentView;
+    if (autoBackBtn && toggleBtn && searchBtn) {
+      if (isAutomationSubAgent) {
+        autoBackBtn.classList.remove("hidden");
+        toggleBtn.style.display = "none";
+        searchBtn.style.display = "none";
+      } else {
+        autoBackBtn.classList.add("hidden");
+        toggleBtn.style.display = "";
+        searchBtn.style.display = "";
+      }
+    }
+
     if (isSubAgentView) {
       // Build breadcrumb HTML: root / sub1 / sub2 / ... / current
-      let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" title="${this.esc(rootLabel)}">${this.esc(_truncate(rootLabel))}</button>`;
+      let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" data-tooltip="${this.esc(rootLabel)}">${this.esc(_truncate(rootLabel))}</button>`;
       for (let i = 0; i < breadcrumb.length; i++) {
         const entry = breadcrumb[i];
         const isLast = i === breadcrumb.length - 1;
@@ -1280,9 +1435,9 @@ class App {
         crumbsHtml += `<span class="session-crumb-sep">/</span>`;
         if (isLast && !s.subAgentView) {
           // Last crumb and no active sub-agent view = currently viewing this level
-          crumbsHtml += `<span class="session-crumb-current" title="${this.esc(label)}">${this.esc(_truncate(label))}</span>`;
+          crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</span>`;
         } else {
-          crumbsHtml += `<button class="session-crumb" data-crumb-index="${i}" type="button" title="${this.esc(label)}">${this.esc(_truncate(label))}</button>`;
+          crumbsHtml += `<button class="session-crumb" data-crumb-index="${i}" type="button" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</button>`;
         }
       }
       // If a sub-agent view is active, show the current agent name
@@ -1292,7 +1447,7 @@ class App {
         );
         crumbsHtml += `<span class="session-crumb-sep">/</span>`;
         const curLabel = formatAgentLabel(rawName);
-        crumbsHtml += `<span class="session-crumb-current" title="${this.esc(curLabel)}">${this.esc(_truncate(curLabel))}</span>`;
+        crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(curLabel)}">${this.esc(_truncate(curLabel))}</span>`;
       }
       nameEl.innerHTML = crumbsHtml;
       // Bind click handlers for each breadcrumb level
@@ -1342,7 +1497,7 @@ class App {
     body.innerHTML = s.queuedPrompts.map((p, i) =>
       `<div class="queue-item">
         <span class="queue-item-text">${this.esc(p.text)}</span>
-        <button class="queue-item-remove" data-queue-index="${i}" title="${t("dialog.cancel")}">
+        <button class="queue-item-remove" data-queue-index="${i}">
           <i data-lucide="x" class="lucide"></i>
         </button>
       </div>`
@@ -1481,6 +1636,14 @@ class App {
       this.updateSendButton();
     });
 
+    // Strip all formatting on paste so the composer always contains plain text.
+    this.input.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+      document.execCommand("insertText", false, text);
+    });
+
     // Watch for mode-chip removal so we can clean up state when user deletes it
     const chipObserver = new MutationObserver(() => {
       const mode = this.getCurrentMode();
@@ -1590,7 +1753,6 @@ class App {
       send({ type: "new_session", request_id: requestId });
     };
     commandActions["keyboard-shortcuts"] = () => {
-      showToast(t("general.keyboardShortcuts"), t("general.shortcutsDesc"), "info");
     };
   }
 
@@ -1625,29 +1787,34 @@ class App {
       document.getElementById("app")?.classList.toggle("sidebar-collapsed");
     });
 
+    // Automation back button: returns to the automation panel
+    document.getElementById("btn-automation-back")?.addEventListener("click", () => {
+      (window as any).__closeSubAgentView?.();
+    });
+
     // ── Header mode switch (shared .seg component with the tray popup) ──
-    // The switch lives in the top tab bar; clicking it toggles between the
-    // normal (chats) and iwork (workspace) modes by reusing the existing
-    // workspace enter / exit flows so all animation, persistence and IPC
-    // behavior stays in one place.
+    // Unified through ModeTransitionManager so all transitions are properly
+    // sequenced (no racing between automation hide and workspace enter/exit).
     const modeSeg = document.getElementById("mode-seg");
     if (modeSeg) {
       const items = modeSeg.querySelectorAll<HTMLElement>(".seg-item");
       items.forEach((item) => {
         item.addEventListener("click", () => {
           const mode = item.getAttribute("data-mode");
-          if (mode === "iwork") {
-            this.workspace?.enter();
-          } else if (mode === "normal") {
-            this.workspace?.exit();
+          if (mode === "automation") {
+            this.modeTransition.toggleAutomation();
+          } else {
+            this.modeTransition.switchMode(mode as AppMode);
           }
         });
       });
-      // Keep the seg in sync with the canonical workspaceMode state. This
-      // handles the case where the mode is changed by another path (e.g. a
-      // workspace session being auto-resumed) or by the tray popup.
       const syncSegFromState = () => {
-        const active = getState().workspaceMode === "iwork" ? "iwork" : "normal";
+        let active: string;
+        if (this.automationPanel.isActive) {
+          active = "automation";
+        } else {
+          active = getState().workspaceMode === "iwork" ? "iwork" : "normal";
+        }
         items.forEach((el) => {
           const isActive = el.getAttribute("data-mode") === active;
           el.classList.toggle("active", isActive);
@@ -1655,16 +1822,15 @@ class App {
         });
       };
       syncSegFromState();
-      // Re-sync whenever the workspace mode changes from anywhere in the
-      // app (workspace enter/exit, IPC, tray popup, etc.).
       subscribe(syncSegFromState);
+      this.automationPanel.onHide = syncSegFromState;
     }
 
     const newTaskBtn = document.querySelector('.nav-item[data-view="chat"]');
-    newTaskBtn?.addEventListener("click", () => {
-      // Hide automation view if active
+    newTaskBtn?.addEventListener("click", async () => {
+      // Hide automation view if active (no mode switch - just clean up)
       if (this.automationPanel.isActive) {
-        this.automationPanel.toggleAutomationView();
+        await this.automationPanel.hide();
       }
       this.exitTempChat();
       this.cleanupContentArea({ keepAutomationFlag: false });
@@ -1943,29 +2109,77 @@ class App {
     const dropdown = document.getElementById("input-model-dropdown");
     if (!selector || !dropdown) return;
 
-    const render = () => {
+    const formatLevel = (lvl: string): string => {
+      if (!lvl || lvl === "default") return t("settings.thinkingDefault") || "Default";
+      return lvl.charAt(0).toUpperCase() + lvl.slice(1);
+    };
+
+    const getThinkingLevels = (): string[] => {
+      return ["low", "medium", "high"];
+    };
+
+    const isThinkingSelectable = (m: import("./types.js").ModelConfigMeta | undefined): boolean => {
+      if (!m) return false;
+      const tc = m.thinking_config;
+      return tc ? tc.selectable === true : false;
+    };
+
+    const getCurrentLevel = (m: import("./types.js").ModelConfigMeta | undefined): string => {
+      if (!m) return "default";
+      const tc = m.thinking_config;
+      const lvl = tc?.level || "";
+      return lvl || "default";
+    };
+
+    const renderMainPage = (mainPage: HTMLElement) => {
       const st = getState();
       const allModels = st.modelConfigs || [];
       const activeIdx = st.activeModelIndex;
       const active = allModels[activeIdx];
-      // Show only enabled models (fallback: show active model even if disabled)
-      const models = allModels.filter((m, i) => m.enabled !== false || i === activeIdx);
-      selector.textContent = active?.name || active?.model_id || t("app.model");
+      const models = allModels.filter((m) => m.enabled !== false);
+      const isActiveUsable = active && active.enabled !== false;
+      selector.textContent = isActiveUsable ? active.name || active.model_id : "NONE";
 
-      if (models.length === 0) {
-        dropdown.innerHTML = `<div class="settings-dropdown-item muted">${t("app.noModelsConfigured")}</div>`;
-        return;
+      // Thinking level entry -- only if active model supports it
+      let thinkingEntry = "";
+      if (isActiveUsable && isThinkingSelectable(active)) {
+        const lvlLabel = formatLevel(getCurrentLevel(active));
+        thinkingEntry = `
+          <button class="mention-dropdown-item" data-action="sub-thinking">
+            <span>${t("settings.thinkingLevel")}</span>
+            <span style="margin-left:auto;color:var(--text-muted);font-size:12px">${this.esc(lvlLabel)}</span>
+            <i data-lucide="chevron-right" class="lucide"></i>
+          </button>`;
       }
 
-      dropdown.innerHTML = models
-        .map((m, i) => {
+      // Model list
+      let modelsHtml = "";
+      if (models.length === 0) {
+        modelsHtml = `<button class="mention-dropdown-item muted" disabled>${t("app.noModelsConfigured")}</button>`;
+      } else {
+        modelsHtml = models
+          .map((m) => {
             const origIdx = allModels.indexOf(m);
-            const sel = origIdx === activeIdx ? " selected" : "";
-            const disabled = m.enabled === false ? " muted" : "";
-            return `<div class="settings-dropdown-item${sel}${disabled}" data-idx="${origIdx}">${this.esc(m.name || m.model_id)}</div>`;
+            const sel = origIdx === activeIdx ? " active" : "";
+            return `<button class="mention-dropdown-item${sel}" data-idx="${origIdx}">${this.esc(m.name || m.model_id)}</button>`;
           })
           .join("");
-      dropdown.querySelectorAll(".settings-dropdown-item[data-idx]").forEach((item) => {
+      }
+
+      const divider = models.length > 0 ? `<div class="mention-dropdown-divider"></div>` : "";
+
+      mainPage.innerHTML = modelsHtml + divider + thinkingEntry + `
+        <button class="mention-dropdown-item add-model-btn" data-action="add-model">
+          <i data-lucide="plus" class="lucide"></i>
+          <span>${t("settings.addModel")}</span>
+        </button>`;
+
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: mainPage });
+      }
+
+      // Model item click
+      mainPage.querySelectorAll(".mention-dropdown-item[data-idx]").forEach((item) => {
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           const idx = parseInt((item as HTMLElement).dataset.idx || "0");
@@ -1974,15 +2188,130 @@ class App {
           dropdown.classList.add("hidden");
         });
       });
+
+      // Thinking entry -> navigate to thinking page
+      const thinkingBtn = mainPage.querySelector('[data-action="sub-thinking"]') as HTMLElement | null;
+      if (thinkingBtn) {
+        thinkingBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          mainPage.classList.add("hidden");
+          const thinkingPage = dropdown.querySelector('[data-page="thinking"]') as HTMLElement;
+          if (thinkingPage) {
+            renderThinkingPage(thinkingPage);
+            thinkingPage.classList.remove("hidden");
+          }
+        });
+      }
+
+      // Add model
+      const addBtn = mainPage.querySelector('[data-action="add-model"]') as HTMLElement | null;
+      if (addBtn) {
+        addBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          dropdown.classList.add("hidden");
+          this.settings.openModelCreate();
+        });
+      }
     };
+
+    const renderThinkingPage = (thinkingPage: HTMLElement) => {
+      const st = getState();
+      const active = st.modelConfigs[st.activeModelIndex];
+      const currentLvl = getCurrentLevel(active);
+      const levels = getThinkingLevels();
+
+      const backBtn = `<button class="mention-dropdown-item" data-action="back-model-main">
+        <i data-lucide="arrow-left" class="lucide"></i>
+        <span>${t("input.selectThinkingLevel")}</span>
+      </button>`;
+
+      const items = levels
+        .map((lvl) => `<button class="mention-dropdown-item${lvl === currentLvl ? " active" : ""}" data-level="${lvl}">${this.esc(formatLevel(lvl))}</button>`)
+        .join("");
+
+      thinkingPage.innerHTML = backBtn + `<div class="mention-dropdown-divider"></div>` + items;
+
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: thinkingPage });
+      }
+
+      // Back button
+      const backEl = thinkingPage.querySelector('[data-action="back-model-main"]') as HTMLElement | null;
+      if (backEl) {
+        backEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          thinkingPage.classList.add("hidden");
+          const mainPage = dropdown.querySelector('[data-page="main"]') as HTMLElement;
+          if (mainPage) {
+            renderMainPage(mainPage);
+            mainPage.classList.remove("hidden");
+          }
+        });
+      }
+
+      // Level selection
+      thinkingPage.querySelectorAll(".mention-dropdown-item[data-level]").forEach((lvlItem) => {
+        lvlItem.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const lvl = (lvlItem as HTMLElement).dataset.level || "medium";
+          const currentState = getState();
+          const idx = currentState.activeModelIndex;
+          const modelsCopy = [...currentState.modelConfigs];
+          if (idx < 0 || idx >= modelsCopy.length) return;
+          const updated: import("./types.js").ModelConfigMeta = {
+            ...modelsCopy[idx],
+            thinking_config: { type: "enabled", enabled: true, level: lvl, selectable: true },
+          };
+          modelsCopy[idx] = updated;
+          setModelConfigs(modelsCopy, currentState.activeModelIndex);
+          send({ type: "update_models", models: modelsCopy, active_model_index: currentState.activeModelIndex });
+          // Go back to main page
+          thinkingPage.classList.add("hidden");
+          const mainPage = dropdown.querySelector('[data-page="main"]') as HTMLElement;
+          if (mainPage) {
+            renderMainPage(mainPage);
+            mainPage.classList.remove("hidden");
+          }
+        });
+      });
+    };
+
+    const render = () => {
+      // Ensure page structure exists
+      let mainPage = dropdown.querySelector('[data-page="main"]') as HTMLElement | null;
+      let thinkingPage = dropdown.querySelector('[data-page="thinking"]') as HTMLElement | null;
+
+      if (!mainPage) {
+        mainPage = document.createElement("div");
+        mainPage.className = "mention-page";
+        mainPage.setAttribute("data-page", "main");
+        dropdown.appendChild(mainPage);
+      }
+      if (!thinkingPage) {
+        thinkingPage = document.createElement("div");
+        thinkingPage.className = "mention-page hidden";
+        thinkingPage.setAttribute("data-page", "thinking");
+        dropdown.appendChild(thinkingPage);
+      }
+
+      // Always show main page on render, reset thinking page
+      thinkingPage.classList.add("hidden");
+      mainPage.classList.remove("hidden");
+      renderMainPage(mainPage);
+    };
+
+    // Only bind event listeners once
+    if (selector.dataset.modelSelectorBound === "true") {
+      render();
+      return;
+    }
+    selector.dataset.modelSelectorBound = "true";
 
     selector.addEventListener("click", (e) => {
       e.stopPropagation();
-      console.log("[model-selector] clicked, hidden=", dropdown.classList.contains("hidden"));
       if (dropdown.classList.contains("hidden")) {
         render();
         dropdown.classList.remove("hidden");
-        console.log("[model-selector] opened, items=", dropdown.querySelectorAll("[data-idx]").length);
       } else {
         dropdown.classList.add("hidden");
       }
@@ -2419,7 +2748,7 @@ class App {
       this.sessionInner?.saveWidth?.();
       sessionInnerSidebar.classList.add("hidden");
     }
-    if (this.sessionInner) this.sessionInner.resetToDefaultTabs();
+    // Keep tabs alive across session switches (like browser tabs).
     const mainBody = document.getElementById("main-body");
     if (mainBody) mainBody.classList.add("sidebar-hidden");
 
@@ -2439,13 +2768,12 @@ class App {
     }
     if (this.welcomeScreen) {
       this.welcomeScreen.classList.remove("hidden");
-      // Reset the welcome title text so animateWelcomeTitle() can drive
-      // it from scratch on the next paint.  Without this the second
-      // mode-switch can land on a stale (already-animated) string and
-      // the slide-in transition is skipped.
+      // Reset the welcome title text so animateWelcomeTitle() can always
+      // detect a text change and play the slide-in animation on every
+      // mode switch.  Use an empty string so it never matches any mode text.
       const title = this.welcomeScreen.querySelector(".welcome-title") as HTMLElement | null;
       if (title) {
-        title.textContent = t("welcome.title");
+        title.textContent = "";
         title.style.transition = "";
         title.style.transform = "";
         title.style.opacity = "";
@@ -2473,10 +2801,15 @@ class App {
       automationView.style.top = "";
       automationView.style.left = "";
     }
-    const automationBack = document.getElementById("btn-automation-back");
-    if (automationBack) automationBack.classList.add("hidden");
     const sidebarToggle = document.getElementById("btn-toggle-sidebar");
-    if (sidebarToggle) sidebarToggle.classList.remove("hidden");
+    const searchBtn = document.getElementById("btn-sidebar-search");
+    const autoBackBtn = document.getElementById("btn-automation-back");
+    if (sidebarToggle) {
+      sidebarToggle.classList.remove("hidden");
+      sidebarToggle.style.display = "";
+    }
+    if (searchBtn) searchBtn.style.display = "";
+    if (autoBackBtn) autoBackBtn.classList.add("hidden");
 
     // ── 17. Clear #child-view content ──────────────────────────────
     // The child view hosts sub-windows (license, easter-egg, logs, etc.).
@@ -2785,7 +3118,19 @@ class App {
     setRunning(true);
     this.updateUIState(true);
 
-    const attachments = st.attachments.length > 0 ? st.attachments.map(a => a.mime_type === "text/x-terminal" ? { ...a, content: `<terminal>\n${a.content}\n</terminal>` } : { ...a, content: "", is_binary: false }) : undefined;
+    const activeModel = st.modelConfigs.length > 0 ? st.modelConfigs[Math.min(st.activeModelIndex, st.modelConfigs.length - 1)] : undefined;
+    const multimodal = activeModel?.multimodal === true;
+    const mediaTypes = ["image/", "video/", "audio/"];
+
+    const attachments = st.attachments.length > 0 ? st.attachments
+      .filter((a) => {
+        if (!multimodal && mediaTypes.some((t) => a.mime_type?.startsWith(t))) {
+          showToast(t("files.skippedMedia") + ": " + (a.name || ""), "", "warning", "Files");
+          return false;
+        }
+        return true;
+      })
+      .map(a => a.mime_type === "text/x-terminal" ? { ...a, content: `<terminal>\n${a.content}\n</terminal>` } : { ...a, content: "", is_binary: false }) : undefined;
     const payload: Record<string, any> = {
       type: "run",
       prompt: text,
@@ -3036,7 +3381,7 @@ class App {
       document.getElementById("app")?.classList.toggle("sidebar-collapsed");
     };
     a["view_chat"] = () => this.viewManager.switchTo("chat");
-    a["view_automation"] = () => this.automationPanel.toggleAutomationView();
+    a["view_automation"] = () => this.modeTransition.toggleAutomation();
 
     // ── Input Area ───────────────────────────────────────────────────
     a["attach_file"] = () => { this.files.promptForFiles(); };
@@ -3110,8 +3455,7 @@ class App {
     a["toggle_theme"] = () => {
       const current = getState().themePreference || "system";
       const next = current === "dark" ? "light" : current === "light" ? "system" : "dark";
-      const label = next === "dark" ? "深色" : next === "light" ? "浅色" : "跟随系统";
-      Dialog.confirm("切换主题", `确定切换到「${label}」主题？`).then(ok => {
+      Dialog.confirm(t("theme.switchTitle"), t("theme.switchConfirm", { label: t(`theme.${next}`) })).then(ok => {
         if (!ok) return;
         setThemePreference(next);
         if (next === "system") {
@@ -3126,8 +3470,7 @@ class App {
     a["toggle_language"] = () => {
       const current = (getState().settings.language as string) || "zh";
       const next = current === "zh" ? "en" : "zh";
-      const label = next === "zh" ? "中文" : "English";
-      Dialog.confirm("切换语言", `确定切换到「${label}」？`).then(ok => {
+      Dialog.confirm(t("language.switchTitle"), t("language.switchConfirm", { label: t(`language.${next}`) })).then(ok => {
         if (!ok) return;
         const settings = { ...getState().settings, language: next };
         setSettings(settings);
@@ -3136,7 +3479,7 @@ class App {
       });
     };
     // ── Automation ───────────────────────────────────────────────────
-    a["automation_open"] = () => this.automationPanel.toggleAutomationView();
+    a["automation_open"] = () => this.modeTransition.toggleAutomation();
     a["automation_new"] = () => {
       document.getElementById("automation-create-btn")?.click();
     };
@@ -3269,6 +3612,17 @@ class App {
 
   private bindKeyboardShortcuts(): void {
     document.addEventListener("keydown", (e) => {
+      // Skip when shortcut recording is active in settings
+      if (document.documentElement.dataset.shortcutRecording === "true") return;
+      // When shortcuts panel is open, only allow Escape to close settings
+      if (document.documentElement.dataset.shortcutPanelActive === "true") {
+        if (e.key === "Escape") {
+          this.settings.close();
+          setActiveToolId(null);
+        }
+        return;
+      }
+
       const key = e.key;
       const mod = e.ctrlKey || e.metaKey;
       const alt = e.altKey;
@@ -3305,6 +3659,13 @@ class App {
 
       const keybindsCfg = (getState().settings.keybinds as any);
       const binds: any[] = keybindsCfg?.keybinds || [];
+
+      // Block native browser handling for any key that's in the keybinds list
+      // and for function keys (F1-F12) that are commonly used as shortcuts
+      if (mappedKey.match(/^f(1[0-2]|[1-9])$/) || binds.some((kb) => kb.keys && kb.keys.includes(pattern))) {
+        e.preventDefault();
+      }
+
       for (const kb of binds) {
         if (kb.keys && kb.keys.includes(pattern)) {
           if (kb.id === "search_settings") {

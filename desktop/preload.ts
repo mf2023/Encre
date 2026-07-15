@@ -45,6 +45,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   readDirectory: (dirPath: string) =>
     ipcRenderer.invoke("readDirectory", dirPath),
 
+  readFileBase64: (filePath: string) =>
+    ipcRenderer.invoke("readFileBase64", filePath),
+
   writeFile: (filePath: string, data: string): Promise<boolean> =>
     ipcRenderer.invoke("writeFile", filePath, data),
 
@@ -116,8 +119,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Service
   getServiceStatus: (): Promise<{ running: boolean; pid: number | null; port: number }> =>
     ipcRenderer.invoke("getServiceStatus"),
-  restartService: (): Promise<{ success: boolean }> =>
+  restartService: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("restartService"),
+  openFolder: (folderPath: string): Promise<boolean> =>
+    ipcRenderer.invoke("openFolder", folderPath),
 
   // Auto-start
   getAutoStart: (): Promise<boolean> =>
@@ -207,4 +212,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
     logFile: string;
     recentLogs: string[];
   }> => ipcRenderer.invoke("getDiagnostics"),
+
+  getLogs: (filters: {
+    fromDate?: string;
+    toDate?: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<{
+    entries: { timestamp: string; level: string; source: string; message: string }[];
+    total: number;
+    fileExists: boolean;
+    rawLines: number;
+  }> => ipcRenderer.invoke("getLogs", filters),
+
+  clearLogs: (): Promise<{ success: boolean }> => ipcRenderer.invoke("clearLogs"),
+
+  setWinKeyCapture: (enabled: boolean): Promise<void> => ipcRenderer.invoke("setWinKeyCapture", enabled),
+
+  onRestartProgress: (callback: (data: { progress: number }) => void): (() => void) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on("restart-progress", handler);
+    return () => { ipcRenderer.removeListener("restart-progress", handler); };
+  },
 });

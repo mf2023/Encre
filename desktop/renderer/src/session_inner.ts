@@ -42,6 +42,7 @@ import { EditorView, basicSetup } from "codemirror";
 import { EditorState } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
+import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
@@ -56,11 +57,25 @@ import { xml } from "@codemirror/lang-xml";
 import { sql } from "@codemirror/lang-sql";
 import { yaml } from "@codemirror/lang-yaml";
 import { renderDiffHtml } from "./diff_render.js";
+import { showContextMenu } from "./context-menu.js";
 
 /** Definition of a sidebar tab (id + whether it can be closed). */
 export interface TabDef {
   id: string;
   closable: boolean;
+}
+
+const TABS_STORAGE_KEY = "session-sidebar-tabs";
+
+function _loadTabs(): TabDef[] {
+  try {
+    const raw = localStorage.getItem(TABS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+function _saveTabs(tabs: TabDef[]): void {
+  try { localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs.map(t => ({id: t.id, closable: t.closable})))); } catch {}
 }
 
 interface NewTabOption {
@@ -110,10 +125,67 @@ export class SessionInner {
   private tabAddBtn: HTMLButtonElement | null = null;
   private tabAddDropdown: HTMLDivElement | null = null;
   private tabAddDocClickHandler: ((e: MouseEvent) => void) | null = null;
-  private tabs: TabDef[] = [
-    { id: "info", closable: true },
-  ];
-  private activeTab: string = "info";
+  private tabs: TabDef[] = [];
+  private activeTab: string = "";
+  private _sessionTabs = new Map<string, TabDef[]>();
+  private _sessionTerminals = new Map<string, Map<string, Array<{ label: string; ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>>();
+  private _sessionTermActiveIdx = new Map<string, Map<string, number>>();
+  /** Key used for storing sidebar tabs: "session:<sid>" or "workspace:<path>". */
+  private _tabKey = "";
+
+  /** Build the storage key: session-level in normal mode, workspace-level in ws mode. */
+  private _tabStorageKey(): string {
+    const s = getState();
+    if (s.activeWorkspace) return "ws:" + s.activeWorkspace;
+    return "session:" + (s.sessionId || "");
+  }
+
+  /** React to state changes: swap tab + terminal state on session/workspace
+   * switches, and refresh the live info panels when the same session mutates
+   * (plan items, artifacts, references, etc.). */
+  private _onStateChange(): void {
+    const newKey = this._tabStorageKey();
+    if (newKey === this._tabKey) {
+      // Same session/workspace but state mutated (e.g. plan progress, new
+      // artifacts, references). Keep the info panels live without rebuilding
+      // the whole tab skeleton.
+      if (this.activeTab === "info") {
+        this.renderContent();
+      }
+      return;
+    }
+
+    // Save current state to old key.
+    if (this._tabKey) {
+      this._sessionTabs.set(this._tabKey, [...this.tabs]);
+      // Deep-copy terminals map so each session gets its own Map instance.
+      const termCopy = new Map<string, Array<{ label: string; ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>();
+      for (const [k, arr] of this.panelTerminals) {
+        termCopy.set(k, [...arr]);
+      }
+      this._sessionTerminals.set(this._tabKey, termCopy);
+      this._sessionTermActiveIdx.set(this._tabKey, new Map(this.panelActiveTermIdx));
+    }
+    this._tabKey = newKey;
+
+    // Restore terminals for the new key, or create fresh.
+    const restoredTerminals = this._sessionTerminals.get(newKey);
+    const restoredActiveIdx = this._sessionTermActiveIdx.get(newKey);
+    this.panelTerminals = restoredTerminals ?? new Map();
+    this.panelActiveTermIdx = restoredActiveIdx ?? new Map();
+
+    const restored = this._sessionTabs.get(newKey);
+    if (restored) {
+      this.tabs = restored;
+    } else {
+      this.tabs = [];
+    }
+    this.activeTab = this.tabs.length > 0 ? this.tabs[0].id : "";
+    // Force panels to re-render so terminal panel reflects restored state.
+    this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
+    this.renderTabs();
+    this.render();
+  }
 
   /* tab drag */
   private dragEl: HTMLElement | null = null;
@@ -147,7 +219,7 @@ export class SessionInner {
     this.tabList.className = "header-tabs";
     this.tabBody = this.el.querySelector(".tab-body")!;
 
-    // Default tabs �?only summary by default, others via +
+    // Start empty — the home page (terminal/editor/review cards) shows.
     this.tabs = [];
     this.activeTab = "";
 
@@ -158,7 +230,7 @@ export class SessionInner {
     this.el.style.setProperty("--sidebar-w", this.sidebarWidth + "px");
     document.getElementById("main-body")?.style.setProperty("--sidebar-w", this.sidebarWidth + "px");
 
-    subscribe(() => this.render());
+    subscribe(() => this._onStateChange());
     onLocaleChange(() => this.render());
     this.renderTabs();
     this.bindAddButton();
@@ -178,8 +250,13 @@ export class SessionInner {
   }
 
   renderForce(): void {
+    // When re-opening the sidebar, the .tab-panel elements were removed from
+    // DOM by resetToDefaultTabs. Re-render tab state so panels come back.
     if (this.tabs.length === 0) {
       this.renderHomePage();
+    } else {
+      // Re-bind events and let renderTabs recreate panels.
+      this.renderTabs();
     }
     if (this.activeTab === "info") this.renderContent();
     const agentPanel = this.tabBody.querySelector('.tab-panel[data-panel="agent"]') as HTMLElement | null;
@@ -230,7 +307,7 @@ export class SessionInner {
 
     const btn = document.createElement("button");
     btn.className = "tab-add-btn";
-    btn.title = t("sessionInner.newTab");
+    btn.dataset.tooltip = t("sessionInner.newTab");
     btn.innerHTML = `<i data-lucide="plus" class="lucide lucide-sm"></i>`;
     this.tabBar.appendChild(btn);
     this.tabAddBtn = btn;
@@ -304,44 +381,10 @@ export class SessionInner {
    * leak into the next.
    */
   public async resetToDefaultTabs(): Promise<void> {
-    // Dispose all open terminal PTYs and the xterm instances bound to
-    // them.  Skipping this leaks WebGL contexts and zombie rAF loops.
-    const api = (window as any).electronAPI;
-    for (const [, terms] of this.panelTerminals) {
-      for (const t of terms) {
-        try { t.cleanup(); } catch { /* noop */ }
-        try { t.resizeObs.disconnect(); } catch { /* noop */ }
-        try { t.term.dispose(); } catch { /* noop */ }
-        try { api?.terminalKill?.(t.ptyId); } catch { /* noop */ }
-      }
-    }
-    this.panelTerminals.clear();
-    this.panelActiveTermIdx.clear();
-    this.panelShellPath.clear();
-    this.panelShellArgs.clear();
-
-    // Remove the per-panel shell dropdown that setupTerminalPanel()
-    // appended to document.body — it is not a child of #session-inner-sidebar
-    // so querySelector'ing inside that container would not find it.
-    document.querySelectorAll(".si-term-shell-dropdown").forEach((el) => el.remove());
-
-    // Rebuild the "+" tab affordance after reset. Its dropdown lives on
-    // document.body, so removing it without rebinding leaves the button inert.
-    this.tabAddBtn?.remove();
-    this.tabAddBtn = null;
-    this.tabAddDropdown?.remove();
-    this.tabAddDropdown = null;
-    if (this.tabAddDocClickHandler) {
-      document.removeEventListener("click", this.tabAddDocClickHandler);
-      this.tabAddDocClickHandler = null;
-    }
-
-    // Remove every panel DOM node; renderTabs() will recreate the default
-    // "info" tab from scratch on the next render cycle.
+    // Hide panels from the DOM so the sidebar shows the home page.
+    // Keep this.tabs intact so re-opening restores everything.
     this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
-
-    // Reset the in-memory tab list to default (empty).
-    this.tabs = [];
+    this.tabBody.innerHTML = "";
     this.activeTab = "";
     await this.renderTabs();
     this.bindAddButton();
@@ -383,6 +426,7 @@ export class SessionInner {
   public async createTab(id: string): Promise<void> {
     if (!this.tabs.some((tab) => tab.id === id)) {
       this.tabs.push({ id, closable: true });
+      _saveTabs(this.tabs);
     }
     this.activeTab = id;
     await this.renderTabs();
@@ -445,10 +489,14 @@ export class SessionInner {
     panel.innerHTML = `<div class="si-terminal-wrap">
       <div class="tab-bar tab-bar--term">
         <div class="tab-list"></div>
-        <button class="tab-action-btn" title="${t("sessionInner.termNew")}"><i data-lucide="plus" class="lucide lucide-sm"></i></button>
-        <button class="tab-action-btn danger" title="${t("sessionInner.termKillAll")}"><i data-lucide="trash-2" class="lucide lucide-sm"></i></button>
+        <button class="tab-action-btn" data-tooltip="${t("sessionInner.termNew")}"><i data-lucide="plus" class="lucide lucide-sm"></i></button>
+        <button class="tab-action-btn danger" data-tooltip="${t("sessionInner.termKillAll")}"><i data-lucide="trash-2" class="lucide lucide-sm"></i></button>
       </div>
-      <div class="si-panel-empty si-term-empty" data-action="new"><i data-lucide="terminal" class="lucide"></i><span class="si-panel-empty-title">${t("sessionInner.termEmpty")}</span></div>
+      <div class="si-panel-empty si-term-empty">
+        <i data-lucide="terminal" class="lucide"></i>
+        <span class="si-panel-empty-title">${t("sessionInner.termEmpty")}</span>
+        <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
+      </div>
       <div class="si-terminal-body" style="display:none"></div>
     </div>`;
 
@@ -464,8 +512,12 @@ export class SessionInner {
     document.body.appendChild(shellDropdown);
 
     const panelId = panel.dataset.panel || "terminal";
-    this.panelTerminals.set(panelId, []);
-    this.panelActiveTermIdx.set(panelId, 0);
+    // Only initialize if not already present - otherwise we'd wipe terminals
+    // when switching back to a session that already has them.
+    if (!this.panelTerminals.has(panelId)) {
+      this.panelTerminals.set(panelId, []);
+      this.panelActiveTermIdx.set(panelId, 0);
+    }
 
     const api = (window as any).electronAPI;
     if (!api) {
@@ -492,7 +544,7 @@ export class SessionInner {
       const st = getState();
       const isLight = st.theme === "light";
       return isLight ? {
-        background: "#f3f3f3", foreground: "#1e1e1e", cursor: "#000000",
+        background: "#ffffff", foreground: "#1a1a1a", cursor: "#1a1a1a",
         selectionBackground: "rgba(0,0,0,0.10)",
         black: "#000000", red: "#cd3131", green: "#00bc00",
         yellow: "#949800", blue: "#0451a5", magenta: "#bc05bc",
@@ -501,7 +553,7 @@ export class SessionInner {
         brightYellow: "#b5ba00", brightBlue: "#0451a5", brightMagenta: "#bc05bc",
         brightCyan: "#0598bc", brightWhite: "#a5a5a5",
       } : {
-        background: "#252526", foreground: "#cccccc", cursor: "#ffffff",
+        background: "#000000", foreground: "#f5f5f7", cursor: "#f5f5f7",
         selectionBackground: "rgba(255,255,255,0.15)",
         black: "#000000", red: "#cd3131", green: "#0dbc79",
         yellow: "#e5e510", blue: "#2472c8", magenta: "#bc3fbc",
@@ -593,9 +645,7 @@ export class SessionInner {
       term.element?.addEventListener("contextmenu", (ev: MouseEvent) => {
         ev.preventDefault();
         ctxTermTarget = term;
-        ctxMenu.style.top = ev.clientY + "px";
-        ctxMenu.style.left = ev.clientX + "px";
-        ctxMenu.classList.remove("hidden");
+        showContextMenu(ctxMenu, ev.clientX, ev.clientY);
       });
 
       term.onData((data: string) => {
@@ -715,15 +765,8 @@ export class SessionInner {
       openShellDropdown(addBtn, true);
     });
 
-    /* Click on the empty state also creates a terminal */
-    emptyEl.addEventListener("click", (e) => {
-      if (shellDropdown.classList.contains("hidden")) {
-        openShellDropdown(addBtn, true);
-      }
-    });
-
     document.addEventListener("click", (e) => {
-      if (!addBtn.contains(e.target as Node) && !shellDropdown.contains(e.target as Node) && !emptyEl.contains(e.target as Node)) {
+      if (!addBtn.contains(e.target as Node) && !shellDropdown.contains(e.target as Node)) {
         shellDropdown.classList.add("hidden");
       }
     });
@@ -790,7 +833,7 @@ export class SessionInner {
         const cls = i === activeIdx ? " active" : "";
         return `<div class="tab tab--term${cls}" data-idx="${i}">
           <span class="tab-label">${this.esc(ti.label)}</span>
-          <button class="tab-close" data-idx="${i}" title="${t("sessionInner.termKill")}">×</button>
+          <button class="tab-close" data-idx="${i}" data-tooltip="${t("sessionInner.termKill")}">×</button>
         </div>`;
       }).join("");
 
@@ -803,13 +846,14 @@ export class SessionInner {
           renderTermTabs();
         });
         el.addEventListener("mousedown", (e) => {
-          if (e.button !== 0) return;
-          if ((e.target as HTMLElement).closest(".tab-close")) return;
+          const ev = e as MouseEvent;
+          if (ev.button !== 0) return;
+          if ((ev.target as HTMLElement).closest(".tab-close")) return;
           const dragEl = el as HTMLElement;
-          const startX = e.clientX;
+          const startX = ev.clientX;
           let moved = false;
-          const onMove = (ev: MouseEvent) => {
-            if (!moved && Math.abs(ev.clientX - startX) < 5) return;
+          const onMove = (evMove: MouseEvent) => {
+            if (!moved && Math.abs(evMove.clientX - startX) < 5) return;
             if (!moved) { moved = true; dragEl.classList.add("dragging"); (this as any)._termDragMoved = true; }
             tabList.querySelectorAll(".tab.tab--term.drop-target").forEach((t) => t.classList.remove("drop-target"));
             const over = Array.from(tabList.querySelectorAll(".tab.tab--term")).find((t) => {
@@ -901,14 +945,14 @@ export class SessionInner {
         </button>
         <div class="settings-dropdown si-review-action-dropdown" style="right:0;left:auto;min-width:210px"></div>
       </div>
-      <button class="settings-dropdown-trigger si-review-action-trigger si-review-collapse-btn" type="button" title="${t("sessionInner.reviewCollapse")}">
+      <button class="settings-dropdown-trigger si-review-action-trigger si-review-collapse-btn" type="button" data-tooltip="${t("sessionInner.reviewCollapse")}">
         <i data-lucide="minus" class="lucide lucide-sm"></i>
       </button>
-      <button class="settings-dropdown-trigger si-review-action-trigger si-review-split-btn" type="button" title="${t("sessionInner.reviewSplitView")}">
+      <button class="settings-dropdown-trigger si-review-action-trigger si-review-split-btn" type="button" data-tooltip="${t("sessionInner.reviewSplitView")}">
         <i data-lucide="list" class="lucide lucide-sm"></i>
       </button>
       <div class="settings-dropdown-wrap si-review-actions si-review-git-wrap">
-        <button class="settings-dropdown-trigger si-review-action-trigger si-review-git-trigger" type="button" title="${t("sessionInner.reviewActionCommit")}">
+        <button class="settings-dropdown-trigger si-review-action-trigger si-review-git-trigger" type="button" data-tooltip="${t("sessionInner.reviewActionCommit")}">
           <i data-lucide="git-commit-horizontal" class="lucide lucide-sm si-review-git-icon"></i>
           <i data-lucide="chevron-down" class="lucide lucide-xs settings-dropdown-chevron"></i>
         </button>
@@ -1460,7 +1504,7 @@ export class SessionInner {
       // Update the trigger icon to the currently-selected action.
       const sel = gitActionItems.find((i) => i.action === this._reviewGitAction);
       gitIcon.setAttribute("data-lucide", sel?.icon || "git-commit-horizontal");
-      gitTrigger.title = sel ? t("sessionInner." + sel.labelKey) : "";
+      gitTrigger.dataset.tooltip = sel ? t("sessionInner." + sel.labelKey) : "";
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: gitTrigger });
       }
@@ -1506,7 +1550,7 @@ export class SessionInner {
       const item = target.closest(".settings-dropdown-item") as HTMLElement;
       if (!item) return;
       e.stopPropagation();
-      const action = (item.getAttribute("data-git-action") || "commit") as "commit" | "push" | "pr";
+      const action = (item.getAttribute("data-git-action") || "commit") as "commit" | "push" | "pull";
       this._reviewGitAction = action;
       gitDropdown.classList.remove("open");
       buildGitActionItems();
@@ -1528,10 +1572,10 @@ export class SessionInner {
       if (!api) return;
       if (this._reviewGitAction === "push") {
         const res = await api.gitPush(ws);
-        showToast(res.error ? res.error : (res.output || t("sessionInner.reviewPushed")), res.error ? "error" : "success");
+        if (res.error) { showToast(res.error, "error", undefined, "Review"); }
       } else if (this._reviewGitAction === "pull") {
         const res = await api.gitPull(ws);
-        showToast(res.error ? res.error : (res.output || t("sessionInner.reviewPulled")), res.error ? "error" : "success");
+        if (res.error) { showToast(res.error, "error", undefined, "Review"); }
       }
       if (currentReviewPath) load(currentReviewPath, true);
       else load(undefined, true);
@@ -1545,9 +1589,8 @@ export class SessionInner {
       const api = (window as any).electronAPI;
       if (!api) return;
       api.gitCommit(ws, message).then((res: any) => {
-        if (res.error) { showToast(res.error, "error"); return; }
+        if (res.error) { showToast(res.error, "error", undefined, "Review"); return; }
         commitWrap.classList.add("hidden");
-        showToast(t("sessionInner.reviewCommitted"), "success");
         currentReviewPath = undefined;
         cachedEntries = null;
         cachedBranch = "";
@@ -2001,21 +2044,23 @@ export class SessionInner {
         this._switchEditorTab(path);
       });
       el.addEventListener("auxclick", (e) => {
-        if (e.button === 1) {
-          e.preventDefault();
+        const ev = e as MouseEvent;
+        if (ev.button === 1) {
+          ev.preventDefault();
           const path = (el as HTMLElement).dataset.path!;
           this._closeEditorTab(path);
         }
       });
       // Drag to reorder editor tabs.
       el.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        if ((e.target as HTMLElement).closest(".tab-close")) return;
+        const ev = e as MouseEvent;
+        if (ev.button !== 0) return;
+        if ((ev.target as HTMLElement).closest(".tab-close")) return;
         const dragEl = el as HTMLElement;
-        const startX = e.clientX;
+        const startX = ev.clientX;
         let moved = false;
-        const onMove = (ev: MouseEvent) => {
-          if (!moved && Math.abs(ev.clientX - startX) < 5) return;
+        const onMove = (evMove: MouseEvent) => {
+          if (!moved && Math.abs(evMove.clientX - startX) < 5) return;
           if (!moved) { moved = true; dragEl.classList.add("dragging"); (this as any)._editorDragMoved = true; }
           const rect = tabBar.getBoundingClientRect();
           const over = Array.from(tabBar.querySelectorAll(".tab--editor")).find((t) => {
@@ -2130,9 +2175,7 @@ export class SessionInner {
     container.oncontextmenu = (ev: MouseEvent) => {
       ev.preventDefault();
       if (!this._editorCtxMenu) return;
-      this._editorCtxMenu.style.top = ev.clientY + "px";
-      this._editorCtxMenu.style.left = ev.clientX + "px";
-      this._editorCtxMenu.classList.remove("hidden");
+      showContextMenu(this._editorCtxMenu, ev.clientX, ev.clientY);
     };
   }
 
@@ -2214,9 +2257,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         ? `<div class="context-menu-item" data-action="send-folder">${t("sessionInner.termSendToChat")}</div>`
         : `<div class="context-menu-item" data-action="send-file">${t("sessionInner.termSendToChat")}</div>`
         + (isMd ? `<div class="context-menu-divider"></div><div class="context-menu-item" data-action="preview">预览</div>` : "");
-      treeCtxMenu.style.top = ev.clientY + "px";
-      treeCtxMenu.style.left = ev.clientX + "px";
-      treeCtxMenu.classList.remove("hidden");
+      showContextMenu(treeCtxMenu, ev.clientX, ev.clientY);
     };
 
     treeCtxMenu.addEventListener("click", async (ev) => {
@@ -2494,7 +2535,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
   private _reviewSplitView = false;    // two-column split diff
   private _reviewCollapsed = false;    // collapse all diff bodies
   // Selected git action for the commit/push/pr trigger.
-  private _reviewGitAction: "commit" | "push" | "pr" = "commit";
+  private _reviewGitAction: "commit" | "push" | "pull" = "commit";
   // How many side buttons are currently merged into the ⋯ overflow menu.
   private _reviewOverflow = 0;
   private _reviewDiffEl: HTMLElement | null = null;  // ref for CSS class toggling
@@ -2555,8 +2596,19 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       const id = tabEl.dataset.tab;
       if (id) this.closeTab(id);
     };
-    this.tabList.querySelectorAll(".tab").forEach((tab) => {
+    this.tabList.addEventListener("wheel", (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        this.tabList.scrollLeft += e.deltaY;
+      }
+    }, { passive: false });
+    this.tabList.querySelectorAll(".tab").forEach((tab, idx) => {
       const el = tab as HTMLElement;
+      el.dataset.idx = String(idx);
+
+      el.addEventListener("mousedown", (e) => {
+        if (e.button === 1) e.preventDefault();
+      });
       const xBtn = el.querySelector(".tab-close");
       if (xBtn) {
         xBtn.addEventListener("click", (e) => {
@@ -2585,9 +2637,9 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         if ((e.target as HTMLElement).closest(".tab-close")) return;
         this.wasDragged = false;
         this.dragEl = el;
-        this.dragIdx = idx;
+        this.dragIdx = parseInt(el.dataset.idx ?? "-1");
         this.dragStartX = e.clientX;
-        this.dragOverIdx = idx;
+        this.dragOverIdx = this.dragIdx;
         el.classList.add("dragging");
         e.preventDefault();
       });
@@ -2688,6 +2740,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       this._activeEditorTab = "";
     }
     this.tabs.splice(idx, 1);
+    _saveTabs(this.tabs);
     if (this.tabs.length === 0) {
       this.tabs = [];
       this.activeTab = "";
@@ -2956,27 +3009,64 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
 
   private renderReferencesPanel(st: ReturnType<typeof getState>): string {
     const refs = st.references || [];
-    let bodyHTML: string;
-    if (refs.length === 0) {
-      bodyHTML = `<div class="si-panel-empty">${t("sessionInner.noRefs")}</div>`;
-    } else {
-      // Show most recent references first, limit to 50
-      const shown = refs.slice(-50).reverse();
-      bodyHTML = `<div class="si-ref-list">${shown.map((r: ReferenceItem) => {
-        const icon = r.icon || "zap";
-        const toolLabel = r.tool.startsWith("mcp__") ? r.tool.split("__").slice(0, 2).join(":") : r.tool;
-        return `<div class="si-ref-item" title="${this.esc(r.tool)}">
-          <i data-lucide="${icon}" class="lucide si-ref-icon"></i>
-          <div class="si-ref-content">
-            <span class="si-ref-tool">${this.esc(toolLabel)}</span>
-            <span class="si-ref-summary">${this.esc(r.summary)}</span>
-          </div>
-        </div>`;
-      }).join("")}</div>`;
+    // The references panel only shows memory, search, and MCP references.
+    const allowedKeywords = ["memory", "profile", "web_search", "web_fetch", "search", "grep", "glob", "find"];
+    const filteredRefs = refs.filter((r: ReferenceItem) => {
+      const t = r.tool.toLowerCase();
+      return t.startsWith("mcp__") || allowedKeywords.some((k) => t.includes(k));
+    });
+
+    if (filteredRefs.length === 0) {
+      const bodyHTML = `<div class="si-panel-empty">${t("sessionInner.noRefs")}</div>`;
+      return `<div class="si-panel">
+        ${this.panelHeader("references", t("sessionInner.references"), "link-2")}
+        <div class="si-panel-body${this.collapsedPanels.has("references") ? " hidden" : ""}"><div class="si-panel-inner">${bodyHTML}</div></div>
+      </div>`;
     }
 
+    // Show most recent references first, limit to 50
+    const shown = filteredRefs.slice(-50).reverse();
+
+    // Group references by broad category so each class can be collapsed.
+    const groups: { key: string; label: string; icon: string; refs: ReferenceItem[] }[] = [
+      { key: "ref-group-search", label: t("sessionInner.referencesSearch") || "Web & Search", icon: "globe", refs: [] },
+      { key: "ref-group-memory", label: t("sessionInner.referencesMemory") || "Memory", icon: "brain", refs: [] },
+      { key: "ref-group-mcp", label: t("sessionInner.referencesMcp") || "MCP", icon: "cable", refs: [] },
+    ];
+    for (const r of shown) {
+      const t = r.tool.toLowerCase();
+      if (t.startsWith("mcp__")) {
+        groups[2].refs.push(r);
+      } else if (t.includes("memory") || t.includes("profile")) {
+        groups[1].refs.push(r);
+      } else {
+        // web_search, web_fetch, search, grep, glob, find
+        groups[0].refs.push(r);
+      }
+    }
+
+    const bodyHTML = groups
+      .filter((g) => g.refs.length > 0)
+      .map((g) => {
+        const listHTML = g.refs.map((r: ReferenceItem) => {
+          const icon = r.icon || "zap";
+          const toolLabel = r.tool.startsWith("mcp__") ? r.tool.split("__").slice(0, 2).join(":") : r.tool;
+          return `<div class="si-ref-item">
+            <i data-lucide="${icon}" class="lucide si-ref-icon"></i>
+            <div class="si-ref-content">
+              <span class="si-ref-tool">${this.esc(toolLabel)}</span>
+              <span class="si-ref-summary">${this.esc(r.summary)}</span>
+            </div>
+          </div>`;
+        }).join("");
+        return `<div class="si-ref-group">
+          ${this.panelHeader(g.key, g.label, g.icon, String(g.refs.length))}
+          <div class="si-panel-body${this.collapsedPanels.has(g.key) ? " hidden" : ""}"><div class="si-panel-inner si-ref-list">${listHTML}</div></div>
+        </div>`;
+      }).join("");
+
     return `<div class="si-panel">
-      ${this.panelHeader("references", t("sessionInner.references"), "link-2", refs.length > 0 ? String(refs.length) : undefined)}
+      ${this.panelHeader("references", t("sessionInner.references"), "link-2", String(filteredRefs.length))}
       <div class="si-panel-body${this.collapsedPanels.has("references") ? " hidden" : ""}"><div class="si-panel-inner">${bodyHTML}</div></div>
     </div>`;
   }
@@ -3089,7 +3179,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
           </div>
         </div>
         <span style="font-size:11px;white-space:nowrap;min-width:32px;text-align:right;color:var(--text-secondary)">${pct}%</span>
-        <button id="${btnId}" class="si-panel-action-btn" style="flex-shrink:0;background:none;border:none;cursor:pointer;padding:2px;color:var(--text-secondary)" title="${t("settings.indexActions")}">
+        <button id="${btnId}" class="si-panel-action-btn" style="flex-shrink:0;background:none;border:none;cursor:pointer;padding:2px;color:var(--text-secondary)" data-tooltip="${t("settings.indexActions")}">
           <i data-lucide="settings-2" style="width:14px;height:14px;display:block;color:var(--text-secondary)"></i>
         </button>
       </div>`;
@@ -3139,7 +3229,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         const matcher = this.esc(h.matcher || "*");
         const cmd = this.esc(h.command || "");
         const src = this.esc(h.source_path || "");
-        return `<div class="si-hook-row" title="${src}">
+        return `<div class="si-hook-row" data-tooltip="${src}">
           <i data-lucide="zap" class="lucide lucide-sm si-hook-icon"></i>
           <div class="si-hook-body">
             <div class="si-hook-event">${evt} <span class="si-hook-matcher">${matcher}</span></div>

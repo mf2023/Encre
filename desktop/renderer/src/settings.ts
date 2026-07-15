@@ -30,14 +30,35 @@ import { t, initLocale, setLocale, getLocale, clearLocaleCache, onLocaleChange, 
 import { applyServerCommands } from "./slash_commands.js";
 import { renderMarkdown } from "./chat.js";
 import { PLATFORM_ICONS } from "./icons.js";
+import { formatShortcut } from "./shortcutDisplay.js";
 import { Chart, registerables } from "chart.js";
 Chart.register(...registerables);
+import { showTooltipAt, hideTooltip } from "./tooltip.js";
+
+/** Wraps an async operation with a loading spinner on the button. */
+export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T>): Promise<T> {
+  const origText = btn.textContent || "";
+  const origDisabled = btn.disabled;
+  btn.innerHTML = `<span class="btn-loading-icon"><i data-lucide="loader" style="width:14px;height:14px"></i></span> ${origText}`;
+  btn.classList.add("btn-loading");
+  btn.disabled = true;
+  if (typeof (window as any).lucide !== "undefined") {
+    (window as any).lucide.createIcons({ root: btn });
+  }
+  try {
+    return await fn();
+  } finally {
+    btn.innerHTML = origText;
+    btn.classList.remove("btn-loading");
+    btn.disabled = origDisabled;
+  }
+}
 
 initLocale();
 
 const APP_VERSION = "0.1.5-pre.1";
 
-export type PanelId = "general" | "usage" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory";
+export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory";
 
 const DEV_MODE_STORAGE_KEY = "encre-dev-mode";
 const DEV_TAP_THRESHOLD = 7;
@@ -85,12 +106,17 @@ export class Settings {
     labels: string[];
     datasets: any[];
   } | null = null;
+  private _usageGroupBy: "model" | "channel" = "model";
+  private _recordingShortcutId: string | null = null;
+  private _captureHandler: ((ev: KeyboardEvent) => void) | null = null;
 
   constructor() {
     this.nav = document.querySelector(".sidebar-settings-items")!;
     this.panels = {
       general: document.getElementById("panel-general")!,
       usage: document.getElementById("panel-usage")!,
+      shortcuts: document.getElementById("panel-shortcuts")!,
+      storage: document.getElementById("panel-storage")!,
       model: document.getElementById("panel-model")!,
       gateway: document.getElementById("panel-gateway")!,
       index: document.getElementById("panel-index")!,
@@ -276,13 +302,18 @@ export class Settings {
 
     });
 
-    // ── Model panel: edit, delete, enable/disable toggle ──────────────
+    // ── Model panel: edit, delete, enable/disable ───────────────────
     this.panels.model.addEventListener("change", (e) => {
       const cb = (e.target as HTMLInputElement).closest(".model-enable-toggle") as HTMLInputElement | null;
       if (!cb) return;
       const idx = parseInt(cb.getAttribute("data-idx") || "0");
       const currentModels = [...getState().modelConfigs];
-      if (idx >= 0 && idx < currentModels.length) {
+      if (idx < 0 || idx >= currentModels.length) return;
+
+      const isMultimodal = cb.classList.contains("model-multimodal-toggle");
+      if (isMultimodal) {
+        currentModels[idx] = { ...currentModels[idx], multimodal: cb.checked };
+      } else {
         const newEnabled = cb.checked;
         currentModels[idx] = { ...currentModels[idx], enabled: newEnabled };
         let activeIdx = getState().activeModelIndex;
@@ -291,8 +322,8 @@ export class Settings {
           if (nextIdx >= 0) activeIdx = nextIdx;
         }
         setModelConfigs(currentModels, activeIdx);
-        send({ type: "update_models", models: currentModels, active_model_index: activeIdx });
       }
+      send({ type: "update_models", models: currentModels, active_model_index: getState().activeModelIndex });
     });
 
     this.panels.model.addEventListener("click", (e) => {
@@ -603,15 +634,7 @@ export class Settings {
 
     // Handle adapter test results
     onAdapterTestResult((event) => {
-      // Store result for persistent display in the description
       this._adapterTestResults[event.adapter_id] = { success: event.success, message: event.message };
-      // Show toast notification (like model validation)
-      if (event.success) {
-        showToast(t("common.connectionSuccess"), event.message, "success");
-      } else {
-        showToast(t("common.connectionFailed"), event.message, "error");
-      }
-      // Re-render to update the unified status and description
       if (this.currentPanel === "gateway") {
         this.renderGateway();
       }
@@ -665,11 +688,6 @@ export class Settings {
       if (devNav && typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: devNav });
       }
-      showToast(
-        t("settings.aboutAppName") + " " + APP_VERSION,
-        t("settings.devModeUnlocked"),
-        "success"
-      );
     }
   }
 
@@ -709,10 +727,18 @@ export class Settings {
     }
   }
 
+  public openModelCreate(): void {
+    this.open();
+    this.switchPanel("model");
+    this.showModelCreate();
+  }
+
   private updateSidebarNav(): void {
     const labelMap: Record<string, string> = {
       general: t("sidebar.general"),
       usage: t("sidebar.usage"),
+      shortcuts: t("sidebar.shortcuts"),
+      storage: t("sidebar.storage"),
       model: t("sidebar.models"),
       gateway: t("sidebar.gateway"),
       agent: t("sidebar.agent"),
@@ -739,6 +765,10 @@ export class Settings {
 
   close(): void {
     document.getElementById("app")?.classList.remove("settings-mode");
+    delete document.documentElement.dataset.shortcutPanelActive;
+    delete document.documentElement.dataset.shortcutRecording;
+    (window as any).electronAPI?.setWinKeyCapture?.(false);
+    this._recordingShortcutId = null;
     this._cleanupTransientOverlays();
     if (typeof (window as any).__appCleanupContentArea === "function") {
       (window as any).__appCleanupContentArea();
@@ -835,6 +865,34 @@ export class Settings {
       }
       setTimeout(() => this.highlightInPanel(firstPanelId as PanelId, lower), 150);
     }
+
+    this._updateDividerVisibility();
+  }
+
+  /** Hide dividers that separate groups where all items are hidden by search. */
+  private _updateDividerVisibility(): void {
+    const children = this.nav.children;
+    let lastVisibleIdx = -1;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i] as HTMLElement;
+      if (child.classList.contains("settings-nav-item")) {
+        if (child.style.display !== "none") {
+          lastVisibleIdx = i;
+        }
+      } else if (child.classList.contains("settings-nav-divider")) {
+        let hasVisibleAfter = false;
+        for (let j = i + 1; j < children.length; j++) {
+          const next = children[j] as HTMLElement;
+          if (next.classList.contains("settings-nav-divider")) break;
+          if (next.classList.contains("settings-nav-item") && next.style.display !== "none") {
+            hasVisibleAfter = true;
+            break;
+          }
+        }
+        const hasVisibleBefore = lastVisibleIdx >= 0;
+        child.style.display = hasVisibleBefore && hasVisibleAfter ? "" : "none";
+      }
+    }
   }
 
   private highlightInPanel(panelId: PanelId, query: string): void {
@@ -898,6 +956,8 @@ export class Settings {
   switchPanel(id: PanelId): void {
     this.currentPanel = id;
     this.modelCreateActive = false;
+    delete document.documentElement.dataset.shortcutPanelActive;
+    (window as any).electronAPI?.setWinKeyCapture?.(false);
 
     this.nav.querySelectorAll(".settings-nav-item").forEach((item) => {
       item.classList.toggle("active", item.getAttribute("data-panel") === id);
@@ -931,6 +991,14 @@ export class Settings {
       this.panels.usage.classList.add("active");
       this._renderUsageSection();
       send({ type: "get_usage_stats" });
+    } else if (id === "shortcuts") {
+      this.panels.shortcuts.classList.add("active");
+      this.renderShortcuts();
+      document.documentElement.dataset.shortcutPanelActive = "true";
+      (window as any).electronAPI?.setWinKeyCapture?.(true);
+    } else if (id === "storage") {
+      this.panels.storage.classList.add("active");
+      this.renderStorage();
     } else if (id === "index") {
       console.log("[DEBUG switchPanel] index panel, docsList:", getState().docsList.length, "items");
       this.panels.index.classList.add("active");
@@ -991,6 +1059,7 @@ export class Settings {
   renderAll(): void {
     this.renderGeneral();
     this._renderUsageSection();
+    this.renderShortcuts();
     this.renderModel();
     this.renderGateway();
     this.renderIndex();
@@ -1019,7 +1088,7 @@ export class Settings {
   }
 
   private modeHint(modeKey: string): string {
-    return `<span class="mode-hint-icon" title="${this.esc(t(modeKey))}">
+    return `<span class="mode-hint-icon" data-tooltip="${this.esc(t(modeKey))}">
       <i data-lucide="circle-alert" class="lucide"></i>
     </span>`;
   }
@@ -1233,19 +1302,6 @@ export class Settings {
             </label>
           </div>
         </div>
-      </div>
-
-      <div class="settings-section-title"><i data-lucide="database" class="lucide section-title-icon"></i> ${t("settings.dataManagement")}</div>
-      <div class="settings-card">
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.browserData")}</div>
-            <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <button class="btn btn--danger" id="btn-clear-sessions">${t("settings.clear")}</button>
-          </div>
-        </div>
       </div>`;
 
     // Bind dropdowns
@@ -1275,21 +1331,6 @@ export class Settings {
       this.saveSetting("automation_auto_open_view", checked ? "true" : "false");
     });
 
-    // Bind data actions
-    document.getElementById("btn-clear-sessions")?.addEventListener("click", async () => {
-      const confirmed = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));
-      if (!confirmed) return;
-      const api = (window as any).electronAPI;
-      if (api?.browserClearData) {
-        const result = await api.browserClearData();
-        if (result.success) {
-          Dialog.alert(t("settings.dataManagement"), t("settings.dataCleared"));
-        } else {
-          Dialog.alert(t("settings.dataManagement"), t("settings.dataClearError") + (result.error ? ": " + result.error : ""));
-        }
-      }
-    });
-
     // Auto-start toggle
     const electronAPI = window.electronAPI;
     if (electronAPI) {
@@ -1304,7 +1345,7 @@ export class Settings {
               const result = await window.electronAPI!.setAutoStart(enabled);
               if (!result.success) {
                 if (typeof showToast === "function") {
-                  showToast("Error", result.error || "", "error");
+                  showToast("Error", result.error || "", "error", "Settings");
                 }
                 checkbox.checked = !enabled;
               }
@@ -1319,6 +1360,167 @@ export class Settings {
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: this.panels.general });
     }
+  }
+
+  private renderShortcuts(): void {
+    const keybindsCfg = (getState().settings.keybinds as any);
+    const binds: any[] = keybindsCfg?.keybinds || [];
+
+    const categories = new Map<string, Array<{ id: string; keys: string[]; desc: string }>>();
+    for (const b of binds) {
+      const cat = b.category || "general";
+      if (!categories.has(cat)) categories.set(cat, []);
+      categories.get(cat)!.push({ id: b.id, keys: b.keys, desc: b.description || b.id });
+    }
+
+    const CAT_LABELS: Record<string, string> = {
+      application: t("settings.shortcutCategoryApplication"),
+      session: t("settings.shortcutCategorySession"),
+      messages: t("settings.shortcutCategoryMessages"),
+      input: t("settings.shortcutCategoryInput"),
+      modes: t("settings.shortcutCategoryModes"),
+      navigation: t("settings.shortcutCategoryNavigation"),
+      search: t("settings.shortcutCategorySearch"),
+      settings: t("settings.shortcutCategorySettings"),
+      panels: t("settings.shortcutCategoryPanels"),
+      automation: t("settings.shortcutCategoryAutomation"),
+      workspace: t("settings.shortcutCategoryWorkspace"),
+      notifications: t("settings.shortcutCategoryNotifications"),
+      appearance: t("settings.shortcutCategoryAppearance"),
+      general: t("settings.shortcutCategoryGeneral"),
+    };
+
+    let rowsHtml = "";
+    for (const [cat, items] of categories) {
+      rowsHtml += `<div class="shortcut-category-label">${this.esc(CAT_LABELS[cat] || cat)}</div>`;
+      for (const item of items) {
+        const displayKeys = item.keys && item.keys.length > 0 ? formatShortcut(item.keys[0]) : "—";
+        const desc = t("shortcuts." + item.id) || item.desc;
+        const isRecording = this._recordingShortcutId === item.id;
+        rowsHtml += `
+        <div class="settings-item-row shortcut-row" data-id="${item.id}">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${this.esc(desc)}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="shortcut-key-btn${isRecording ? " recording" : ""}" data-id="${item.id}">${isRecording ? "..." : this.esc(displayKeys)}</button>
+          </div>
+        </div>`;
+      }
+    }
+
+    this.panels.shortcuts.innerHTML = `
+      <div class="settings-section-title"><i data-lucide="keyboard" class="lucide section-title-icon"></i> ${t("settings.keyboardShortcuts")}</div>
+      <div class="settings-item-desc" style="margin: -8px 0 16px; padding: 0 2px;">${t("settings.shortcutsDisabledDesc")}</div>
+      <div class="settings-card" id="shortcuts-card">${rowsHtml}</div>`;
+
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.panels.shortcuts });
+    }
+
+    // Bind key capture
+    const card = document.getElementById("shortcuts-card");
+    if (!card) return;
+
+    card.querySelectorAll<HTMLButtonElement>(".shortcut-key-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+
+        // Cancel current recording and start new one
+        if (this._recordingShortcutId) {
+          document.removeEventListener("keydown", this._captureHandler as any, true);
+        }
+
+        this._recordingShortcutId = id;
+        document.documentElement.dataset.shortcutRecording = "true";
+        const allBtns = card.querySelectorAll<HTMLButtonElement>(".shortcut-key-btn");
+        allBtns.forEach((b) => b.classList.remove("recording"));
+        btn.classList.add("recording");
+        btn.textContent = "...";
+
+        const stopRecording = () => {
+          this._recordingShortcutId = null;
+          delete document.documentElement.dataset.shortcutRecording;
+        };
+
+        this._captureHandler = async (ev: KeyboardEvent) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+
+          if (ev.repeat) return;
+
+          // Ignore modifier-only key presses
+          if (ev.key === "Control" || ev.key === "Meta" || ev.key === "Alt" || ev.key === "Shift") {
+            return;
+          }
+
+          const parts: string[] = [];
+          if (ev.ctrlKey || ev.metaKey) parts.push("ctrlcmd");
+          if (ev.altKey) parts.push("alt");
+          if (ev.shiftKey) parts.push("shift");
+
+          const key = ev.key;
+          const mappedKey = key === "Escape" ? "escape"
+            : key === " " ? "space"
+            : key === "," ? ","
+            : key === "." ? "."
+            : key === "`" ? "`"
+            : key === "=" ? "="
+            : key === "-" ? "-"
+            : key === "[" ? "["
+            : key === "]" ? "]"
+            : key === ";" ? ";"
+            : key === "'" ? "'"
+            : key === "\\" ? "\\"
+            : key === "/" ? "/"
+            : key.toLowerCase();
+          parts.push(mappedKey);
+          const pattern = parts.join("+");
+
+          stopRecording();
+
+          const cfg = (getState().settings.keybinds as any);
+          const allBinds: any[] = cfg?.keybinds ? [...cfg.keybinds] : [];
+          const target = allBinds.find((b: any) => b.id === id);
+
+          // Conflict detection — check if another shortcut already uses this key combo
+          if (target) {
+            const conflict = allBinds.find((b: any) => b.id !== id && b.keys && b.keys.includes(pattern));
+            if (conflict) {
+              const conflictName = t(`shortcuts.${conflict.id}` as any) || conflict.description || conflict.id;
+              const msg = t("settings.shortcutConflict").replace("{0}", conflictName);
+              const ok = await Dialog.confirm(t("settings.shortcutConflictTitle"), msg);
+              if (!ok) {
+this.renderShortcuts();
+    this.renderStorage();
+                document.removeEventListener("keydown", this._captureHandler!, true);
+                return;
+              }
+              // Remove the conflicting key from the other shortcut
+              conflict.keys = conflict.keys.filter((k: string) => k !== pattern);
+            }
+
+            const existingIdx = target.keys.indexOf(pattern);
+            if (existingIdx >= 0) target.keys.splice(existingIdx, 1);
+            if (target.keys.length === 0) target.keys = [pattern];
+            else target.keys[0] = pattern;
+          }
+
+          const updated = { ...cfg, keybinds: allBinds };
+          setSettings({ ...getState().settings, keybinds: updated });
+          send({ type: "configure", config: { keybinds: updated } });
+          // localStorage fallback — survive backend crypto failure across restarts
+          try { localStorage.setItem("encre_keybinds", JSON.stringify(updated)); } catch { /* ignore */ }
+          this.renderShortcuts();
+
+          document.removeEventListener("keydown", this._captureHandler!, true);
+        };
+
+        document.addEventListener("keydown", this._captureHandler, true);
+      });
+    });
   }
 
   private saveSetting(key: string, value: string): void {
@@ -1379,10 +1581,10 @@ export class Settings {
           </div>
           <div class="model-table-cell model-cell-provider">${this.esc(m.backend_type)}</div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit" data-idx="${i}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit" data-idx="${i}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" data-idx="${i}" title="${t("settings.delete")}">
+            <button class="btn-icon" data-action="delete" data-idx="${i}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -1734,16 +1936,21 @@ export class Settings {
               config[f.key] = input.value;
             }
           }
-          // Also include enable state
           const enableInput = document.getElementById(`adapter-enable-${def.id}`) as HTMLInputElement;
           config.enabled = enableInput ? enableInput.checked : false;
 
-          const statusEl = document.getElementById(`adapter-test-status-${def.id}`);
-          if (statusEl) {
-            statusEl.innerHTML = `<span style="color:var(--text-muted)">${t("settings.adapterTesting")}...</span>`;
-          }
-          testBtn.disabled = true;
-          send({ type: "test_adapter", adapter_id: def.id, config });
+          delete this._adapterTestResults[def.id];
+          withLoading(testBtn, () => new Promise<void>((resolve) => {
+            const poll = () => {
+              if (this._adapterTestResults[def.id] !== undefined) {
+                resolve();
+              } else {
+                setTimeout(poll, 100);
+              }
+            };
+            setTimeout(poll, 100);
+            send({ type: "test_adapter", adapter_id: def.id, config });
+          }));
         });
       }
 
@@ -1863,6 +2070,9 @@ private _bindModelSelect(): void {
       initialTokens = this._maxTokensDefault(initialProviderId);
     }
 
+    const initialThinkingConfig = existing?.thinking_config;
+    const initialThinkingEnabled = initialThinkingConfig ? initialThinkingConfig.selectable !== false : true;
+
     const bodyHtml = `
       <div class="model-form-row">
         <label class="model-form-label" for="model-create-backend">
@@ -1877,8 +2087,12 @@ private _bindModelSelect(): void {
         <label class="model-form-label" for="new-model-select">
           <span class="model-form-required">*</span>${t("settings.model")}
         </label>
-        <div class="model-form-dropdown-row">
+        <div class="model-form-dropdown-row" style="display:flex;align-items:center;gap:10px">
           ${modelOptions.length > 0 ? this.renderDropdown("new-model-select", modelOptions, initialModelSelectValue, () => {}) : `<div class="model-form-hint">${t("settings.customModelIdHint")}</div>`}
+          <label class="toggle-switch">
+            <input type="checkbox" id="new-model-multimodal" ${existing?.multimodal ? "checked" : ""} />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
       <div class="model-form-row" id="model-id-row"${isCurated ? ` style="display:none"` : ""}>
@@ -1907,6 +2121,13 @@ private _bindModelSelect(): void {
       <div class="model-form-row">
         <label class="model-form-label" for="new-model-tokens">${t("settings.maxTokens")}</label>
         <input type="number" id="new-model-tokens" class="model-form-input" min="1" value="${initialTokens}" ${isCurated ? "readonly" : ""} />
+      </div>
+      <div class="model-form-row model-form-row-inline">
+        <label class="model-form-label" for="new-model-thinking-enabled">${t("settings.enableThinkingLevel")}</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="new-model-thinking-enabled" ${initialThinkingEnabled ? "checked" : ""} />
+          <span class="toggle-slider"></span>
+        </label>
       </div>`;
 
     const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
@@ -2035,22 +2256,36 @@ private _bindModelSelect(): void {
       console.log("[model-create] modelIdEl exists=", !!modelIdEl, "value=", modelIdEl?.value, "display=", modelIdEl?.style?.display);
       if (!name || !modelId || !apiKey) {
         console.warn("[model-create] validation failed — name=%s modelId=%s apiKey=%s", name ? "ok" : "MISSING", modelId ? "ok" : "MISSING", apiKey ? "ok" : "MISSING");
-        showToast(t("common.pleaseFillRequired"), "", "error");
+        showToast(t("common.pleaseFillRequired"), "", "error", "Settings");
         return;
       }
 
-      showToast(t("common.validatingConnection"), "", "info");
+      const multimodalInput = document.getElementById("new-model-multimodal") as HTMLInputElement;
+      const thinkingEnabledInput = document.getElementById("new-model-thinking-enabled") as HTMLInputElement;
+      const thinkingLevelEnabled = thinkingEnabledInput?.checked ?? true;
+      const previousLevel = initialThinkingConfig?.level || "medium";
+      const thinkingConfig = thinkingLevelEnabled
+        ? { type: "enabled" as const, enabled: true, level: previousLevel, selectable: true }
+        : { type: "enabled" as const, enabled: true, level: "", selectable: false };
       send({
         type: "validate_model", backend_type: backend, api_key: apiKey,
         base_url: baseUrl, model_id: modelId, max_tokens: maxTokens,
         name, model_index: isEdit && editIdx !== undefined ? editIdx : -1,
+        multimodal: multimodalInput?.checked ?? false,
+        thinking_config: thinkingConfig,
       });
-      try {
-        await waitForModelValidation();
-      } catch (e: any) {
-        showToast(t("common.connectionFailed") + (e ? `: ${e}` : ""), "", "error");
-        return;
-      }
+
+      let validated = false;
+      await withLoading(okBtn, async () => {
+        try {
+          await waitForModelValidation();
+          validated = true;
+        } catch (e: any) {
+          showToast(t("common.connectionFailed") + (e ? `: ${e}` : ""), "", "error", "Settings");
+        }
+      });
+
+      if (!validated) return;
 
       // Validation succeeded: the backend has already persisted the model and
       // pushed the authoritative list via models_updated (which updated state
@@ -2138,7 +2373,7 @@ private _bindModelSelect(): void {
             <div class="skill-aliases-sub">${sizeStr}</div>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon btn-doc-remove" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" title="${tFn("settings.delete")}">
+            <button class="btn-icon btn-doc-remove" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" data-tooltip="${tFn("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -2248,6 +2483,29 @@ private _bindModelSelect(): void {
       </div>`;
     document.body.appendChild(overlay);
 
+    overlay.querySelectorAll("textarea").forEach((ta) => {
+      const autoResize = () => {
+        ta.style.height = "auto";
+        ta.style.height = Math.min(ta.scrollHeight, 300) + "px";
+      };
+      ta.addEventListener("input", autoResize);
+      autoResize();
+    });
+
+    // Auto-resize contenteditable prompt-inputs in dialogs
+    overlay.querySelectorAll(".prompt-input[contenteditable]").forEach((el) => {
+      const ph = el.parentElement?.querySelector(".prompt-placeholder") as HTMLElement;
+      const update = () => {
+        (el as HTMLElement).style.height = "auto";
+        (el as HTMLElement).style.height = Math.min((el as HTMLElement).scrollHeight, 300) + "px";
+        if (ph) {
+          ph.classList.toggle("hidden", (el.textContent || "").trim().length > 0);
+        }
+      };
+      el.addEventListener("input", update);
+      update();
+    });
+
     const close = () => overlay.remove();
     overlay.querySelector("#dialog-form-cancel")?.addEventListener("click", close);
     // No "click outside to dismiss" -- the form has unsaved edits and the
@@ -2287,13 +2545,13 @@ private _bindModelSelect(): void {
             ${aliases ? `<div class="skill-aliases-sub">${t("settings.aliases")}: ${this.esc(aliases)}</div>` : ""}
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="view-skill" data-name="${this.esc(sk.name)}" title="${t("settings.view")}">
+            <button class="btn-icon" data-action="view-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.view")}">
               <i data-lucide="eye" class="lucide"></i>
             </button>
-            ${isUser ? `<button class="btn-icon" data-action="edit-skill" data-name="${this.esc(sk.name)}" title="${t("settings.edit")}">
+            ${isUser ? `<button class="btn-icon" data-action="edit-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>` : ""}
-            ${canDelete ? `<button class="btn-icon" data-action="delete-skill" data-name="${this.esc(sk.name)}" title="${t("settings.delete")}">
+            ${canDelete ? `<button class="btn-icon" data-action="delete-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>` : ""}
             <label class="toggle-switch toggle-sm">
@@ -2367,10 +2625,10 @@ private _bindModelSelect(): void {
             <div class="skill-aliases-sub">${this.esc(cmd.description)}</div>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit-command" data-name="${this.esc(cmd.name)}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-command" data-name="${this.esc(cmd.name)}" title="${t("settings.delete")}">
+            <button class="btn-icon" data-action="delete-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -2473,7 +2731,6 @@ private _bindModelSelect(): void {
     const st = getState();
     const updated = st.customCommands.filter(c => c.name !== name);
     this.saveCustomCommands(updated);
-    showToast(t("settings.commandRemoved"), "");
     this.renderSkills();
   }
 
@@ -2565,7 +2822,7 @@ private _bindModelSelect(): void {
         const isZip = name.toLowerCase().endsWith(".zip");
         const isMd = name.toLowerCase().endsWith(".md");
         if (!isMd && !isZip) {
-          showToast(t("settings.skillFileError"), "", "error");
+          showToast(t("settings.skillFileError"), "", "error", "Settings");
           continue;
         }
         if (isZip) {
@@ -2579,7 +2836,7 @@ private _bindModelSelect(): void {
         }
       }
     } catch (e: any) {
-      showToast(t("settings.failedInstallSkill"), e.message || String(e), "error");
+      showToast(t("settings.failedInstallSkill"), e.message || String(e), "error", "Settings");
     }
   }
 
@@ -2603,10 +2860,10 @@ private _bindModelSelect(): void {
             <span class="mcp-transport-tag">${transportTag}</span>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit-mcp" data-idx="${i}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit-mcp" data-idx="${i}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-mcp" data-idx="${i}" title="${t("settings.removeServer")}">
+            <button class="btn-icon" data-action="delete-mcp" data-idx="${i}" data-tooltip="${t("settings.removeServer")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -2796,7 +3053,7 @@ private _bindModelSelect(): void {
       const textarea = overlay.querySelector("#mcp-import-textarea") as HTMLTextAreaElement;
       const raw = textarea?.value.trim();
       if (!raw) {
-        showToast(t("common.pleaseFillRequired"), "", "error");
+        showToast(t("common.pleaseFillRequired"), "", "error", "Settings");
         return;
       }
 
@@ -2804,13 +3061,13 @@ private _bindModelSelect(): void {
       try {
         parsed = JSON.parse(raw);
       } catch (e) {
-        showToast(t("settings.importMcpJsonParseError"), String(e), "error");
+        showToast(t("settings.importMcpJsonParseError"), String(e), "error", "Settings");
         return;
       }
 
       const servers = this._parseMcpJsonToServers(parsed);
       if (servers.length === 0) {
-        showToast(t("settings.importMcpJsonParseError"), t("settings.noMcpServers"), "error");
+        showToast(t("settings.importMcpJsonParseError"), t("settings.noMcpServers"), "error", "Settings");
         return;
       }
 
@@ -2862,10 +3119,10 @@ private _bindModelSelect(): void {
             ${new Date(r.modified * 1000).toLocaleString()}
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit-rule" data-name="${this._escapeHtml(r.name)}" title="${t("settings.edit")}">
+            <button class="btn-icon" data-action="edit-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" title="${t("settings.delete")}">
+            <button class="btn-icon" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -2885,7 +3142,7 @@ private _bindModelSelect(): void {
         </div>`;
 
     this.panels.rules.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="globe" class="lucide section-title-icon"></i> ${t("settings.globalRules")}</div>
+      <div class="settings-section-title"><i data-lucide="file-check" class="lucide section-title-icon"></i> ${t("settings.globalRules")}</div>
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${t("settings.globalRulesDesc")}</div>
@@ -3026,7 +3283,6 @@ private _bindModelSelect(): void {
     const capsHtml = renderRows("capabilities", capEntries);
 
     this.panels.permissions.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="shield" class="lucide section-title-icon"></i> ${t("permissions.settings.title")}</div>
       <div class="settings-section-title"><i data-lucide="wrench" class="lucide section-title-icon"></i> ${t("permissions.settings.tools")}</div>
       <div class="settings-card">${toolsHtml}</div>
 
@@ -3063,7 +3319,6 @@ private _bindModelSelect(): void {
             }
           }
           setPermissionPolicies(next);
-          showToast(t("permissions.settings.saved"), "");
         });
       }
     }
@@ -3109,7 +3364,7 @@ private _bindModelSelect(): void {
         </div>`;
 
     this.panels.agent.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="bot" class="lucide section-title-icon"></i> ${t("settings.agentManagement")}</div>
+      <div class="settings-section-title"><i data-lucide="sparkles" class="lucide section-title-icon"></i> ${t("settings.agentManagement")}</div>
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${t("settings.agentInstructions")}</div>
@@ -3196,7 +3451,7 @@ private _bindModelSelect(): void {
             ${memType}
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="view-memory" data-path="${this.esc(entry.path)}" title="${tFn("settings.view")}">
+            <button class="btn-icon" data-action="view-memory" data-path="${this.esc(entry.path)}" data-tooltip="${tFn("settings.view")}">
               <i data-lucide="eye" class="lucide"></i>
             </button>
           </div>
@@ -3219,7 +3474,7 @@ private _bindModelSelect(): void {
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${tFn("settings.memoryDesc")}</div>
-          <button class="btn-add-model-top" id="btn-refresh-memory" title="${tFn("settings.refresh")}">
+          <button class="btn-add-model-top" id="btn-refresh-memory">
             <i data-lucide="refresh-cw" class="lucide"></i>
             <span>${tFn("settings.refresh")}</span>
           </button>
@@ -3278,8 +3533,9 @@ private _bindModelSelect(): void {
       return;
     }
 
-    // ── Group sessions by (day, model) for a unified chart ──
+    // ── Group sessions by (day, model|channel) for a unified chart ──
     const sessions = stats.sessions || [];
+    const groupBy = this._usageGroupBy;
     // Collect every day that has any session, sorted ascending.
     const daySet = new Set<string>();
     for (const s of sessions) {
@@ -3293,31 +3549,30 @@ private _bindModelSelect(): void {
     const BAR_CHART_DAY_LIMIT = 60;
     const days = allDays.slice(-BAR_CHART_DAY_LIMIT);
 
-    // Collect every model that appears, sort by total tokens descending so
-    // the legend reads largest-first.
-    const modelTotals: Record<string, { tokens: number; status?: string }> = {};
+    // Collect every group (model or channel) that appears, sort by total tokens descending
+    const groupTotals: Record<string, { tokens: number; status?: string }> = {};
     for (const s of sessions) {
-      const m = s.model || "(unknown model)";
-      if (!modelTotals[m]) modelTotals[m] = { tokens: 0, status: s.model_status };
-      modelTotals[m].tokens += s.total_tokens || 0;
+      const g = groupBy === "model" ? (s.model || "(unknown model)") : this._channelDisplayName(s.channel || "normal");
+      if (!groupTotals[g]) groupTotals[g] = { tokens: 0, status: s.model_status };
+      groupTotals[g].tokens += s.total_tokens || 0;
     }
-    const modelOrder = Object.keys(modelTotals).sort(
-      (a, b) => (modelTotals[b].tokens - modelTotals[a].tokens) || a.localeCompare(b)
+    const groupOrder = Object.keys(groupTotals).sort(
+      (a, b) => (groupTotals[b].tokens - groupTotals[a].tokens) || a.localeCompare(b)
     );
-    const modelColor: Record<string, string> = {};
-    modelOrder.forEach((m, i) => {
-      modelColor[m] = Settings.CHART_COLORS[i % Settings.CHART_COLORS.length];
+    const groupColor: Record<string, string> = {};
+    groupOrder.forEach((g, i) => {
+      groupColor[g] = Settings.CHART_COLORS[i % Settings.CHART_COLORS.length];
     });
 
-    // Build (day, model) → { tokens, count, turns, tools } matrix.
+    // Build (day, group) → { tokens, count, turns, tools } matrix.
     const cellMap: Record<string, Record<string, { tokens: number; count: number; turns: number; tools: number }>> = {};
     for (const s of sessions) {
       const dk = this._formatDayKey(s.first_active);
       if (!dk) continue;
-      const m = s.model || "(unknown model)";
+      const g = groupBy === "model" ? (s.model || "(unknown model)") : this._channelDisplayName(s.channel || "normal");
       if (!cellMap[dk]) cellMap[dk] = {};
-      if (!cellMap[dk][m]) cellMap[dk][m] = { tokens: 0, count: 0, turns: 0, tools: 0 };
-      const cell = cellMap[dk][m];
+      if (!cellMap[dk][g]) cellMap[dk][g] = { tokens: 0, count: 0, turns: 0, tools: 0 };
+      const cell = cellMap[dk][g];
       cell.tokens += s.total_tokens || 0;
       cell.count += 1;
       cell.turns += s.turns || 0;
@@ -3325,14 +3580,14 @@ private _bindModelSelect(): void {
     }
 
     const truncated = allDays.length > days.length;
-    const unifiedChart = this._renderUnifiedDailyBarChart(days, modelOrder, cellMap, modelColor, muted, modelTotals, truncated);
+    const unifiedChart = this._renderUnifiedDailyBarChart(days, groupOrder, cellMap, groupColor, muted, groupTotals, truncated, groupBy);
     const heatmap = this._renderUsageHeatmap(sessions, muted);
 
     el.innerHTML = `
       <div class="settings-section-title">
         <i data-lucide="chart-column" class="lucide section-title-icon"></i>
         ${t("settings.usageStats")}
-        <button class="btn-icon" id="btn-refresh-usage" style="margin-left:auto" title="${t("settings.refresh")}">
+        <button class="btn-icon" id="btn-refresh-usage" style="margin-left:auto" data-tooltip="${t("settings.refresh")}">
           <i data-lucide="refresh-cw" class="lucide"></i>
         </button>
       </div>
@@ -3391,21 +3646,31 @@ private _bindModelSelect(): void {
           animation: { duration: 250 },
           plugins: {
             legend: { display: false },
-            tooltip: {
-              backgroundColor: "rgba(20,20,28,0.95)",
-              titleColor: "#fff",
-              bodyColor: "#d1d3db",
-              borderColor: "rgba(255,255,255,0.1)",
-              borderWidth: 1,
-              padding: 10,
-              callbacks: {
-                label: (ctx: any) => `${ctx.dataset.label}: ${this._formatNumber(ctx.parsed.y || 0)}`,
-                footer: (items: any[]) => {
-                  const total = items.reduce((s, it) => s + (it.parsed.y || 0), 0);
-                  return `Total: ${this._formatNumber(total)}`;
-                },
-              },
-            },
+            // Native Chart.js tooltip disabled in favour of our global custom
+            // tooltip (see tooltip.ts) which matches the app's design system.
+            tooltip: { enabled: false },
+          },
+          onHover: (event: any, activeElements: any[]) => {
+            if (!activeElements || activeElements.length === 0) {
+              hideTooltip();
+              return;
+            }
+            const idx = activeElements[0].index;
+            const day = data.labels[idx];
+            const lines = [`${day}`];
+            let total = 0;
+            for (const ds of data.datasets) {
+              const v = (ds.data as any[])[idx] || 0;
+              if (v > 0) {
+                lines.push(`${ds.label}: ${this._formatNumber(v)}`);
+                total += v;
+              }
+            }
+            lines.push(`${t("settings.chartTotal")}: ${this._formatNumber(total)}`);
+            const rect = canvas.getBoundingClientRect();
+            const x = rect.left + (event?.x ?? rect.width / 2);
+            const y = rect.top + (event?.y ?? 0);
+            showTooltipAt(lines.join("\n"), x, y);
           },
           scales: {
             x: {
@@ -3428,8 +3693,21 @@ private _bindModelSelect(): void {
       });
     }
 
+    canvas?.addEventListener("mouseleave", () => hideTooltip());
+
     document.getElementById("btn-refresh-usage")?.addEventListener("click", () => {
       send({ type: "get_usage_stats" });
+    });
+
+    // Mode toggle for chart grouping
+    el.querySelectorAll(".usage-groupby-seg .seg-item").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = (btn as HTMLElement).getAttribute("data-groupby") as "model" | "channel";
+        if (mode && mode !== this._usageGroupBy) {
+          this._usageGroupBy = mode;
+          this._renderUsageSection();
+        }
+      });
     });
 
     if (typeof (window as any).lucide !== "undefined") {
@@ -3437,7 +3715,17 @@ private _bindModelSelect(): void {
     }
   }
 
-  /** Render a granular bar chart for one model: X = time (daily), Y = tokens per day. */
+  /** Map channel identifier to a display label. */
+  private _channelDisplayName(channel: string): string {
+    const labels: Record<string, string> = {
+      normal: t("settings.modeNormal"),
+      iwork: "iWork",
+      iclaw: "iClaw",
+      sub_agent: t("settings.modeAutomation"),
+    };
+    return labels[channel] || channel;
+  }
+
   /** YYYY-MM-DD key for grouping sessions by calendar day (local time). */
   private _formatDayKey(timestamp: number): string {
     if (!timestamp || timestamp <= 0) return "";
@@ -3459,23 +3747,23 @@ private _bindModelSelect(): void {
    */
   private _renderUnifiedDailyBarChart(
     days: string[],
-    modelOrder: string[],
+    groupOrder: string[],
     cellMap: Record<string, Record<string, { tokens: number; count: number; turns: number; tools: number }>>,
-    modelColor: Record<string, string>,
+    groupColor: Record<string, string>,
     muted: string,
-    modelTotals: Record<string, { tokens: number; status?: string }>,
+    groupTotals: Record<string, { tokens: number; status?: string }>,
     truncated: boolean = false,
+    groupBy: "model" | "channel" = "model",
   ): string {
-    if (days.length === 0 || modelOrder.length === 0) return "";
+    if (days.length === 0 || groupOrder.length === 0) return "";
 
-    // Build Chart.js datasets: one stacked bar per model, all sharing
-    // the same x-axis (one stack per day).  The renderer attaches the
-    // actual Chart instance to the canvas after innerHTML runs.
-    const datasets = modelOrder.map((m) => ({
-      label: m,
-      data: days.map((d) => cellMap[d]?.[m]?.tokens || 0),
-      backgroundColor: modelColor[m],
-      borderColor: modelColor[m],
+    // Build Chart.js datasets: one stacked bar per group, all sharing
+    // the same x-axis (one stack per day).
+    const datasets = groupOrder.map((g) => ({
+      label: g,
+      data: days.map((d) => cellMap[d]?.[g]?.tokens || 0),
+      backgroundColor: groupColor[g],
+      borderColor: groupColor[g],
       borderWidth: 0,
       borderRadius: 2,
       maxBarThickness: 28,
@@ -3484,18 +3772,17 @@ private _bindModelSelect(): void {
     const labels = days.map((d) => this._shortDay(d));
     this._usageBarChartData = { labels, datasets };
 
-    // Legend: every model gets a swatch + name + total.  Wraps via
-    // flex-wrap so a long model list doesn't overflow horizontally.
-    const legendItems = modelOrder.map((m) => {
-      const color = modelColor[m];
-      const total = modelTotals[m]?.tokens || 0;
-      const status = modelTotals[m]?.status;
-      const tag = status === "deleted" ? `<span class="usage-model-tag usage-model-tag--deleted">${t("settings.deletedModel") || "deleted"}</span>`
-                 : status === "unknown" ? `<span class="usage-model-tag usage-model-tag--unknown">${t("settings.unknownModel") || "unknown"}</span>`
+    // Legend: every group gets a swatch + name + total.
+    const legendItems = groupOrder.map((g) => {
+      const color = groupColor[g];
+      const total = groupTotals[g]?.tokens || 0;
+      const status = groupTotals[g]?.status;
+      const tag = groupBy === "model" && status === "deleted" ? `<span class="usage-model-tag usage-model-tag--deleted">${t("settings.deletedModel")}</span>`
+                 : groupBy === "model" && status === "unknown" ? `<span class="usage-model-tag usage-model-tag--unknown">${t("settings.unknownModel")}</span>`
                  : "";
-      const display = m.length > 32 ? this.esc(m.slice(0, 32) + "...") : this.esc(m);
+      const display = g.length > 32 ? this.esc(g.slice(0, 32) + "...") : this.esc(g);
       return `
-        <div class="usage-legend-item" title="${this.esc(m)}">
+        <div class="usage-legend-item">
           <span class="usage-model-dot" style="background:${color}"></span>
           <span class="usage-legend-name">${display}</span>
           ${tag}
@@ -3503,14 +3790,20 @@ private _bindModelSelect(): void {
         </div>`;
     }).join("");
 
+    const titleKey = groupBy === "model" ? "settings.dailyUsageByModel" : "settings.dailyUsageByChannel";
+
     return `
       <div class="usage-chart-box">
         <div class="usage-chart-title">
           <i data-lucide="bar-chart-3" class="lucide"></i>
-          ${t("settings.dailyUsageByModel") || "Daily token usage by model"}
+          ${t(titleKey)}
+          <div class="seg usage-groupby-seg">
+            <button class="seg-item${groupBy === "model" ? " active" : ""}" data-groupby="model" aria-selected="${groupBy === "model" ? "true" : "false"}">${t("settings.usageGroupByModel")}</button>
+            <button class="seg-item${groupBy === "channel" ? " active" : ""}" data-groupby="channel" aria-selected="${groupBy === "channel" ? "true" : "false"}">${t("settings.usageGroupByMode")}</button>
+          </div>
         </div>
         <div class="usage-heatmap-stats">
-          ${truncated ? `<div class="usage-heatmap-stat"><span>${t("settings.olderDaysHidden") || "older days hidden"}</span></div>` : ""}
+          ${truncated ? `<div class="usage-heatmap-stat"><span>${t("settings.olderDaysHidden")}</span></div>` : ""}
         </div>
         <div class="usage-chart-canvas-wrap">
           <canvas id="usage-bar-chart"></canvas>
@@ -3530,11 +3823,11 @@ private _bindModelSelect(): void {
   }
 
   /**
-   * Render a 24-hour activity heatmap.  24 rows (one per hour of day,
-   * 0:00 at the top, 23:00 at the bottom) × N day columns (one per
-   * calendar day, newest on the right).  Cell color encodes total
-   * tokens consumed during that hour of that day, summed across every
-   * model.
+    * Render a daily activity heatmap.  Each day is one column with 6
+    * rows, one per 4-hour block of the day (00:00 at the top, 20:00 at
+    * the bottom) × N day columns (one per calendar day, newest on the
+    * right).  Cell color encodes total tokens consumed during that
+    * 4-hour block of that day, summed across every model.
    *
    * Color scale: empty = light/neutral, more activity = deeper brand
    * green.  The user wanted "less = white, more = green", which means
@@ -3550,7 +3843,11 @@ private _bindModelSelect(): void {
     if (!sessions || sessions.length === 0) return "";
     const loc = getLocale() === "zh" ? "zh-CN" : "en-US";
 
-    // Aggregate sessions by (day, hour) -- 24 buckets per day.
+    // Aggregate sessions by (day, 4-hour block).  Each day is one column
+    // with BLOCKS rows; every row spans 4 hours of the day so the chart
+    // stays compact (6 rows instead of 24 tiny hourly boxes).
+    const BLOCK_HOURS = 4;
+    const BLOCKS = Math.floor(24 / BLOCK_HOURS); // 6 rows
     const cellTokens: Record<string, number> = {};
     for (const s of sessions) {
       if (!s.first_active) continue;
@@ -3558,14 +3855,14 @@ private _bindModelSelect(): void {
       if (isNaN(d.getTime())) continue;
       const dayKey = this._formatDayKey(s.first_active);
       if (!dayKey) continue;
-      const hour = d.getHours();
-      cellTokens[`${dayKey}|${hour}`] = (cellTokens[`${dayKey}|${hour}`] || 0) + (s.total_tokens || 0);
+      const block = Math.floor(d.getHours() / BLOCK_HOURS);
+      cellTokens[`${dayKey}|${block}`] = (cellTokens[`${dayKey}|${block}`] || 0) + (s.total_tokens || 0);
     }
 
     // Determine the date range.  Always show at least MIN_DAYS of
     // calendar so a user with one session doesn't see a single bar.
     const MIN_DAYS = 30;    // minimum visible days (~1 month)
-    const MAX_DAYS = 90;    // cap so a 3-year history doesn't make a thin strip
+    const MAX_DAYS = 92;    // cap at the recent 3 months (this month + previous 2)
     const latestMs = Math.max(...sessions.filter(s => s.first_active).map(s => s.first_active * 1000));
     const earliestMs = Math.min(...sessions.filter(s => s.first_active).map(s => s.first_active * 1000));
     const latestDate = new Date(latestMs);
@@ -3600,27 +3897,24 @@ private _bindModelSelect(): void {
       maxCell = 1;
     }
 
-    // Layout -- small, evenly-spaced squares.  Cell = 11px square with a
-    // 3px gap so the boxes read as distinct squares (not a dense smear).
-    // Hour labels are 9px font; day labels are 9px font.  A 90-day chart
-    // is about 90 * 14 = 1260px wide (scrolls), 24 * 14 = 336px tall.
+    // Layout -- square cells that fill the panel width.  With only
+    // BLOCKS (6) rows the chart stays short; each cell spans 4 hours.
+    // The chart is capped at the recent 3 months (this month + the
+    // previous two) and scales to fit the panel (no horizontal scroll),
+    // so the cells spread out to fill the available width.
     const cellW = 11, cellH = 11, cellGap = 3;
-    const cellRadius = 0;
-    const PL = 36, PR = 6, PT = 18, PB = 18;
-    // Stretch the chart to fill the container when the day count is
-    // small -- otherwise 7 days of activity looks like a 100px-tall
-    // strip in a 700px panel.  Each day gets a minimum stride of
-    // MIN_DAY_STRIDE so the chart always looks substantial.
-    const MIN_DAY_STRIDE = 16; // min px per day column
-    const TARGET_TOTAL_W = 720; // preferred full width
+    const cellRadius = 1;
+    const PL = 40, PR = 6, PT = 18, PB = 18;
+    // Stretch the day columns to fill the panel: a wider per-day stride
+    // for short histories (so it isn't a narrow strip) and a tighter one
+    // for the full 3 months (so it still fits without scrolling).
+    const MIN_DAY_STRIDE = 9; // min px per day column
+    const TARGET_TOTAL_W = 1100; // preferred full width
     const naturalStride = cellW + cellGap;
-    // Use the larger of MIN_DAY_STRIDE and (TARGET_TOTAL_W / numDays)
-    // capped at 2x natural.  This keeps long histories dense and
-    // short histories reasonably wide.
     const idealStride = Math.max(MIN_DAY_STRIDE, Math.min(naturalStride * 2, TARGET_TOTAL_W / numDays));
     const stride = Math.max(MIN_DAY_STRIDE, Math.min(naturalStride * 2, idealStride));
     const W = PL + numDays * stride - cellGap + PR;
-    const H = PT + 24 * (cellH + cellGap) - cellGap + PB;
+    const H = PT + BLOCKS * (cellH + cellGap) - cellGap + PB;
 
     // Today marker -- highlight the column for today.
     const todayKey = this._formatDayKey(Math.floor(Date.now() / 1000));
@@ -3653,76 +3947,76 @@ private _bindModelSelect(): void {
       return ramp[idx];
     };
 
-    // Hour labels on the left: 0 / 6 / 12 / 18 / 24 -- only every 6th
-    // row to keep noise down.  Font 9px to match the new compactness.
+    // Hour labels on the left: one per 4-hour block (00 / 04 / 08 / 12 /
+    // 16 / 20).  Font 12px for readability.
     const hourLabels: string[] = [];
-    for (let h = 0; h < 24; h += 6) {
-      const y = PT + h * (cellH + cellGap) + cellH / 2 + 3;
+    for (let b = 0; b < BLOCKS; b++) {
+      const y = PT + b * (cellH + cellGap) + cellH / 2 + 4;
       hourLabels.push(
         `<text x="${PL - 6}" y="${y.toFixed(1)}" text-anchor="end" ` +
         `fill="var(--text-text-tertiary, #666b75)" ` +
-        `style="font-size:9px;font-family:var(--font-family-default);">` +
-        `${String(h).padStart(2, "0")}:00</text>`
+        `style="font-size:12px;font-family:var(--font-family-default);">` +
+        `${String(b * BLOCK_HOURS).padStart(2, "0")}:00</text>`
       );
     }
 
-    // Day labels along the bottom: show a tick every ~7 days and on
-    // every month boundary.  9px font.
+    // Day labels along the bottom: ONLY month names (e.g. "7月"),
+    // shown once at the first column of each month.  No day numbers, no
+    // weekly ticks -- the user explicitly wants month-only axis labels.
     const dayLabels: string[] = [];
     let lastMonth = -1;
     for (let d = 0; d < numDays; d++) {
       const colDate = new Date(startDate);
       colDate.setDate(colDate.getDate() + d);
       const m = colDate.getMonth();
-      const isMonthStart = m !== lastMonth;
-      // Show tick at month-start OR every 7 days (whichever is rarer).
-      const isWeek = d % 7 === 0;
-      if (isMonthStart || (d > 0 && isWeek && d % 14 === 0)) {
+      if (m !== lastMonth) {
+        lastMonth = m;
         const x = PL + d * stride + cellW / 2;
-        const label = isMonthStart
-          ? colDate.toLocaleDateString(loc, { month: "short" })
-          : String(colDate.getDate());
+        const label = colDate.toLocaleDateString(loc, { month: "short" });
         dayLabels.push(
-          `<text x="${x.toFixed(1)}" y="${(PT + 24 * (cellH + cellGap) + 10).toFixed(1)}" ` +
+           `<text x="${x.toFixed(1)}" y="${(PT + BLOCKS * (cellH + cellGap) + 13).toFixed(1)}" ` +
           `text-anchor="middle" ` +
-          `fill="${isMonthStart ? "var(--text-text-secondary, #9599a6)" : "var(--text-text-tertiary, #666b75)"}" ` +
-          `style="font-size:9px;${isMonthStart ? "font-weight:var(--font-weight-medium,500);" : ""}font-family:var(--font-family-default);">` +
+          `fill="var(--text-text-secondary, #9599a6)" ` +
+          `style="font-size:12px;font-weight:var(--font-weight-medium,500);font-family:var(--font-family-default);">` +
           `${label}</text>`
         );
-        if (isMonthStart) lastMonth = m;
       }
     }
 
-    // Cells: one per (day, hour).  Only render cells inside the data
-    // range; padding cells stay empty (drawn with the empty color).
+    // Cells: one per (day, 4-hour block).  Only render cells inside the
+    // data range; padding cells stay empty (drawn with the empty color).
+    // The native SVG <title> is replaced by data-tooltip so our global
+    // custom tooltip (tooltip.ts) renders the hover hint instead.
     const cells: string[] = [];
     for (let d = 0; d < numDays; d++) {
       const colDate = new Date(startDate);
       colDate.setDate(colDate.getDate() + d);
       const dayKey = this._formatDayKey(Math.floor(colDate.getTime() / 1000));
       const isToday = dayKey === todayKey;
-      for (let h = 0; h < 24; h++) {
-        const v = cellTokens[`${dayKey}|${h}`] || 0;
+      for (let b = 0; b < BLOCKS; b++) {
+        const v = cellTokens[`${dayKey}|${b}`] || 0;
         const x = PL + d * stride;
-        const y = PT + h * (cellH + cellGap);
+        const y = PT + b * (cellH + cellGap);
         const fill = pickColor(v);
+        const startH = b * BLOCK_HOURS;
+        const endH = startH + BLOCK_HOURS;
         const tooltip = v > 0
-          ? `${dayKey} ${String(h).padStart(2, "0")}:00\n${this._formatNumber(v)} tokens`
-          : `${dayKey} ${String(h).padStart(2, "0")}:00\nNo activity`;
+          ? `${dayKey} ${String(startH).padStart(2, "0")}:00–${String(endH).padStart(2, "0")}:00\n${this._formatNumber(v)} tokens`
+          : `${dayKey} ${String(startH).padStart(2, "0")}:00–${String(endH).padStart(2, "0")}:00\nNo activity`;
         // Empty cells get a hairline border so the grid is visible
         // even on a fully-empty day.  Today's column gets a slightly
-        // thicker green ring on the topmost cell (h=0) to anchor the
+        // thicker green ring on the topmost block (b=0) to anchor the
         // eye.
-        const stroke = isToday && h === 0
+        const stroke = isToday && b === 0
           ? "var(--bg-bg-brand, #32f08c)"
           : "var(--border-border-neutral-l1, rgba(224,226,242,0.18))";
-        const strokeW = isToday && h === 0 ? 1 : 0.4;
+        const strokeW = isToday && b === 0 ? 1 : 0.4;
         cells.push(
           `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cellW}" height="${cellH}" ` +
           `rx="${cellRadius}" ry="${cellRadius}" fill="${fill}" ` +
           `stroke="${stroke}" stroke-width="${strokeW}" class="usage-hm-cell" ` +
-          `data-day="${this.esc(dayKey)}" data-hour="${h}">` +
-          `<title>${this.esc(tooltip)}</title></rect>`
+          `data-day="${this.esc(dayKey)}" data-block="${b}" ` +
+          `data-tooltip="${this.esc(tooltip)}"></rect>`
         );
       }
     }
@@ -3889,7 +4183,7 @@ private _bindModelSelect(): void {
       const displayName = name === "unknown" ? "Unknown" : name;
       return `<div class="donut-legend-item">
         <span class="donut-legend-dot" style="background:${Settings.CHART_COLORS[i % Settings.CHART_COLORS.length]}"></span>
-        <span class="donut-legend-label" title="${this.esc(name)}">${this.esc(displayName.length > 24 ? displayName.slice(0, 24) + "..." : displayName)}</span>
+        <span class="donut-legend-label" : displayName)}</span>
         <span class="donut-legend-value">${pct}%</span>
       </div>`;
     }).join("");
@@ -3930,11 +4224,12 @@ private _bindModelSelect(): void {
   private _formatSessionDate(timestamp: number): string {
     if (!timestamp || timestamp <= 0) return "";
     const d = new Date(timestamp * 1000);
+    const loc = getLocale() === "zh" ? "zh-CN" : "en-US";
     const now = Date.now();
     if (now - timestamp * 1000 < 86400000) {
-      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
     }
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return d.toLocaleDateString(loc, { month: "short", day: "numeric" });
   }
 
   private _formatNumber(n: number): string {
@@ -3945,8 +4240,18 @@ private _bindModelSelect(): void {
 
   private renderDeveloper(): void {
     this.panels.developer.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="terminal" class="lucide section-title-icon"></i> ${t("settings.devPanelTitle")}</div>
+      <div class="settings-section-title"><i data-lucide="code" class="lucide section-title-icon"></i> ${t("settings.devPanelTitle")}</div>
       <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.devDevToolsTitle")}</div>
+            <div class="settings-item-desc">${t("settings.devDevToolsDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="dev-open-devtools">${t("settings.devDevToolsBtn")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
         <div class="settings-item-row">
           <div class="settings-item-info">
             <div class="settings-item-title">${t("settings.devCloseTitle")}</div>
@@ -3956,14 +4261,26 @@ private _bindModelSelect(): void {
             <button class="btn btn-sm" id="dev-close-mode" style="color:var(--error)">${t("settings.devCloseBtn")}</button>
           </div>
         </div>
+      </div>
+      <div class="settings-section-title" style="margin-top:24px"><i data-lucide="rotate-ccw" class="lucide section-title-icon"></i> ${t("settings.devRestartTitle")}</div>
+      <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.devRestartAppTitle")}</div>
+            <div class="settings-item-desc">${t("settings.devRestartAppDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="dev-reset-state" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
+          </div>
+        </div>
         <div class="settings-item-divider"></div>
         <div class="settings-item-row">
           <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.devDevToolsTitle")}</div>
-            <div class="settings-item-desc">${t("settings.devDevToolsDesc")}</div>
+            <div class="settings-item-title">${t("settings.devRestartServerTitle")}</div>
+            <div class="settings-item-desc">${t("settings.devRestartServerDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-open-devtools">${t("settings.devDevToolsBtn")}</button>
+            <button class="btn btn-sm" id="dev-restart-server" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
           </div>
         </div>
       </div>`;
@@ -3976,11 +4293,127 @@ private _bindModelSelect(): void {
       setDevModeEnabled(false);
       this.updateSidebarNav();
       this.switchPanel("general");
-      showToast("Developer mode disabled", "");
     });
 
     document.getElementById("dev-open-devtools")?.addEventListener("click", () => {
       window.electronAPI?.toggleDevTools();
+    });
+
+    document.getElementById("dev-reset-state")?.addEventListener("click", async () => {
+      const confirmed = await Dialog.confirm(t("settings.devRestartAppTitle"), t("settings.devRestartAppDesc"));
+      if (!confirmed) return;
+      localStorage.clear();
+      location.reload();
+    });
+
+    document.getElementById("dev-restart-server")?.addEventListener("click", async () => {
+      const running = getState().running;
+      if (running) {
+        const ok = await Dialog.confirm(t("settings.devRestartRunningTitle"), t("settings.devRestartRunningDesc"));
+        if (!ok) return;
+      }
+      const confirmed = await Dialog.confirm(t("settings.devRestartTitle"), t("settings.devRestartServerDesc"));
+      if (!confirmed) return;
+      const prog = Dialog.progress(t("settings.devRestartProgressTitle"), "");
+      const cleanup = (window as any).electronAPI?.onRestartProgress?.((data: { progress: number }) => {
+        const p = data.progress;
+        let msg: string;
+        if (p <= 20) msg = t("settings.devRestartPhaseKill");
+        else if (p <= 50) msg = t("settings.devRestartPhasePort");
+        else msg = t("settings.devRestartPhaseStart");
+        prog.update(p, msg);
+      });
+      try {
+        const result = await window.electronAPI?.restartService?.();
+        if (result?.success) {
+          prog.succeed(t("settings.devRestartSucceed"));
+        } else {
+          prog.fail(t("settings.devRestartFailed") + (result?.error ? ": " + result.error : ""));
+        }
+      } catch (err) {
+        prog.fail(t("settings.devRestartFailed") + ": " + String(err));
+      } finally {
+        if (cleanup) cleanup();
+      }
+    });
+  }
+
+  private renderStorage(): void {
+    this.panels.storage.innerHTML = `
+      <div class="settings-section-title"><i data-lucide="hard-drive" class="lucide section-title-icon"></i> ${t("settings.storage")}</div>
+      <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.aboutLogs")}</div>
+            <div class="settings-item-desc">${t("settings.aboutLogsDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-open-logs">${t("settings.aboutLogs")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.storageDataDir")}</div>
+            <div class="settings-item-desc">${t("settings.aboutOpenDataDir")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-open-data-dir">${t("settings.aboutOpenDataDir")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.storageSessions")}</div>
+            <div class="settings-item-desc">${t("settings.storageSessionsDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-clear-sessions" style="color:var(--error)">${t("settings.storageClearSessions")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.browserData")}</div>
+            <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="storage-clear-browser" style="color:var(--error)">${t("settings.clear")}</button>
+          </div>
+        </div>
+      </div>`;
+
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.panels.storage });
+    }
+
+    // Open data directory
+    document.getElementById("storage-open-data-dir")?.addEventListener("click", async () => {
+      const appPath = await window.electronAPI?.getAppPath?.();
+      if (appPath) {
+        window.electronAPI?.openFolder?.(appPath);
+      }
+    });
+
+    // Clear sessions
+    document.getElementById("storage-clear-sessions")?.addEventListener("click", async () => {
+      const ok = await Dialog.confirm(t("common.confirmClearSessionsTitle"), t("common.confirmClearSessions"));
+      if (ok) {
+        send({ type: "clear_all_sessions" } as any);
+      }
+    });
+
+    // Clear browser data
+    document.getElementById("storage-clear-browser")?.addEventListener("click", async () => {
+      const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));
+      if (ok) {
+        window.electronAPI?.browserClearData?.();
+      }
+    });
+
+    // Open logs
+    document.getElementById("storage-open-logs")?.addEventListener("click", async () => {
+      await window.electronAPI?.openChildWindow("logs", t("settings.aboutLogs") || "Logs");
     });
   }
 
@@ -4046,20 +4479,11 @@ private _bindModelSelect(): void {
         <div class="about-links-divider"></div>
         <div class="about-links-group-title">${tFn("settings.aboutSupportTitle")}</div>
         ${supportHtml}
-      </div>
-
-      <div class="about-actions">
-        <button class="about-action-btn" type="button" data-action="check-update">
-          <span class="about-action-icon"><i data-lucide="refresh-cw"></i></span>
-          <span class="about-action-label">${tFn("settings.aboutCheckUpdate")}</span>
-        </button>
-        <button class="about-action-btn" type="button" data-action="open-datadir">
-          <span class="about-action-icon"><i data-lucide="folder-open"></i></span>
-          <span class="about-action-label">${tFn("settings.aboutOpenDataDir")}</span>
-        </button>
-        <button class="about-action-btn" type="button" data-action="logs">
-          <span class="about-action-icon"><i data-lucide="scroll-text"></i></span>
-          <span class="about-action-label">${tFn("settings.aboutLogs")}</span>
+        <div class="about-links-divider"></div>
+        <button class="about-link-row" type="button" data-action="check-update">
+          <span class="about-link-icon"><i data-lucide="refresh-cw"></i></span>
+          <span class="about-link-label">${tFn("settings.aboutCheckUpdate")}</span>
+          <span class="about-link-chevron"><i data-lucide="chevron-right"></i></span>
         </button>
       </div>
 
@@ -4101,20 +4525,5 @@ private _bindModelSelect(): void {
       });
     });
 
-    // Wire action buttons
-    this.panels.about.querySelectorAll<HTMLButtonElement>(".about-action-btn[data-action]").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const action = btn.getAttribute("data-action");
-        const label = btn.querySelector(".about-action-label")?.textContent || action || "";
-        if (!action) return;
-        switch (action) {
-          case "logs":
-            await window.electronAPI?.openChildWindow("logs", tFn("settings.aboutLogs") || "Logs");
-            break;
-          default:
-            window.electronAPI?.openChildWindow(action, label);
-        }
-      });
-    });
-  }
+    }
 }

@@ -83,13 +83,17 @@ class GLMBackend(OpenAISSEBackend):
         only emit the parameter for models that look reasoning-capable.
         """
         if not self.model:
-            return {"thinking": {"type": "enabled"}}
+            return None
         m = self.model.lower()
         # GLM-4.5+ and GLM-5.x are reasoning-capable.
         # Unknown/older SKUs skip the thinking toggle to avoid a 400.
         if "glm-4.5" in m or "glm-4.6" in m or "glm-4.7" in m or "glm-5" in m:
             # GLM-4.5+ and GLM-5.x expose the DeepSeek-style thinking toggle.
-            return {"thinking": {"type": "enabled"}}
+            return {
+                "thinking": {
+                    "type": "enabled" if self.thinking_enabled else "disabled",
+                }
+            }
         return None
 
     def context_window_size(self) -> int:

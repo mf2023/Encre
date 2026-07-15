@@ -47,8 +47,9 @@ def _tokenize(text: str) -> list[str]:
     """Split text into normalised tokens for similarity scoring.
 
     Lowercases the input and extracts runs of at least two alphanumeric or
-    CJK characters (Unicode range U+4E00-U+9FFF), so both English and
-    Chinese memory content contribute to the vocabulary.
+    underscore characters. CJK characters (Unicode range U+4E00-U+9FFF) are
+    split into overlapping bigrams so that both English and Chinese memory
+    content contribute to the vocabulary.
 
     Args:
         text: Raw text to tokenize.
@@ -56,7 +57,21 @@ def _tokenize(text: str) -> list[str]:
     Returns:
         List of lowercased token strings.
     """
-    return re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{2,}", text.lower())
+    text = text.lower()
+    tokens: list[str] = []
+
+    # Alphanumeric tokens (words separated by spaces/punctuation)
+    tokens.extend(re.findall(r"[A-Za-z0-9_]{2,}", text))
+
+    # CJK bigrams: split each run of CJK characters into overlapping pairs
+    for run in re.findall(r"[\u4e00-\u9fff]+", text):
+        if len(run) >= 2:
+            for i in range(len(run) - 1):
+                tokens.append(run[i:i + 2])
+        elif len(run) == 1:
+            tokens.append(run)
+
+    return tokens
 
 
 def _build_idf(corpus: list[str]) -> dict[str, float]:
@@ -237,7 +252,10 @@ class SemanticMemorySearch:
 
         Skips ``MEMORY.md``, dotfiles, underscore-prefixed internals, and
         non-markdown files, then delegates to :meth:`index`.
+        Memory files are encrypted at rest; they are decrypted before indexing.
         """
+        from encre.crypto import decrypt
+
         files: dict[str, str] = {}
         try:
             with os.scandir(self._memory_dir) as entries:
@@ -248,9 +266,19 @@ class SemanticMemorySearch:
                         continue
                     try:
                         with open(entry.path, encoding="utf-8") as f:
-                            files[entry.name] = f.read()
+                            raw = f.read().strip()
                     except (OSError, UnicodeDecodeError):
-                        pass
+                        continue
+                    if not raw:
+                        continue
+                    # Legacy plaintext (starts with YAML frontmatter)
+                    if raw.startswith("---"):
+                        files[entry.name] = raw
+                        continue
+                    try:
+                        files[entry.name] = decrypt(raw)
+                    except Exception:
+                        files[entry.name] = raw  # plaintext fallback (legacy / test)
         except OSError:
             pass
         self.index(files)
