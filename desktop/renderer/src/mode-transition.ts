@@ -45,6 +45,10 @@ export class ModeTransitionManager {
   private _workspace: Workspace;
   private _automationPanel: AutomationPanel;
   private _onModeChange: () => void;
+  /** Invoked when leaving the automation view, before it slides away, so the
+   *  in-panel sub-agent detail (breadcrumb, activeExecution, header buttons)
+   *  can be torn down first and not leak into the target mode. */
+  private _onLeaveAutomation: () => void;
   private _transitioning = false;
   private _preAutomationMode: AppMode = "normal";
   /** Saved active workspace path so re-entering iWork restores it. */
@@ -54,10 +58,12 @@ export class ModeTransitionManager {
     workspace: Workspace;
     automationPanel: AutomationPanel;
     onModeChange: () => void;
+    onLeaveAutomation?: () => void;
   }) {
     this._workspace = opts.workspace;
     this._automationPanel = opts.automationPanel;
     this._onModeChange = opts.onModeChange;
+    this._onLeaveAutomation = opts.onLeaveAutomation ?? (() => {});
   }
 
   get isTransitioning(): boolean {
@@ -73,6 +79,14 @@ export class ModeTransitionManager {
     const current = this.getCurrentMode();
     if (target === current || this._transitioning) return;
     this._transitioning = true;
+
+    // When leaving automation, first close the in-panel sub-agent detail
+    // (breadcrumb, activeExecution, header buttons) BEFORE the panel slides
+    // away, so no detail state leaks into the target mode. Sequence matches
+    // "exit the current view, then exit automation, then switch mode".
+    if (current === "automation") {
+      this._onLeaveAutomation();
+    }
 
     // Suppress workspace's internal onModeChange — we call it ourselves
     // at the right time to avoid double-cleanup and ensure the welcome

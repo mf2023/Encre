@@ -115,6 +115,8 @@ export type ServerEvent =
   | AutomationJobToggled
   | AutomationJobUpdated
   | AutomationJobDeleted
+  | AutomationExecutionDeleted
+  | AutomationExecutionRenamed
   | AutomationStreamEvent
   | WorkflowStarted
   | WorkflowTask
@@ -372,6 +374,17 @@ export interface AutomationJobDeleted {
   type: "automation_job_deleted";
 }
 
+export interface AutomationExecutionDeleted {
+  type: "automation_execution_deleted";
+  entry_id: string;
+}
+
+export interface AutomationExecutionRenamed {
+  type: "automation_execution_renamed";
+  entry_id: string;
+  new_name: string;
+}
+
 export interface AutomationStreamEvent {
   type: "automation_stream_event";
   job_id: string;
@@ -443,6 +456,7 @@ export type ClientMessage =
   | ClientAutomationCreateJob
   | ClientAutomationDeleteJob
   | ClientAutomationDeleteExecution
+  | ClientAutomationRenameExecution
   | ClientAutomationToggleJob
   | ClientSteer;
 
@@ -497,6 +511,12 @@ export interface ClientAutomationDeleteJob {
 export interface ClientAutomationDeleteExecution {
   type: "automation_delete_execution";
   entry_id: string;
+}
+
+export interface ClientAutomationRenameExecution {
+  type: "automation_rename_execution";
+  entry_id: string;
+  new_name: string;
 }
 
 export interface ClientAutomationToggleJob {
@@ -1347,7 +1367,10 @@ export interface Message {
   interruptedReason?: string;
   turnStatusText?: string;  // e.g. "任务完成" from backend
   cancelledText?: string;   // set when user presses stop button (reason="cancelled")
-  mode?: string;  // "plan" | "spec" | "terminal" for mode-based messages
+  mode?: string;  // "plan" | "spec" | "terminal" | "task_divider" for mode-based messages
+  taskIndex?: number;   // parallel sub-agent: 0-based task ordinal (task_divider only)
+  taskName?: string;    // parallel sub-agent: task label / agent name (task_divider only)
+  taskStatus?: string;  // parallel sub-agent: "running" | "done" | "error" (task_divider only)
   fileRefs?: { name: string; size: number; icon: string; path?: string; mime_type?: string }[];
   tokenUsage?: { input_tokens: number; output_tokens: number; total_tokens: number };
   _index?: number;
@@ -1358,6 +1381,8 @@ export interface Message {
 /** The resolved state of a single tool call (status, params, result). */
 export interface ToolCallState {
   id: string;
+  /** Backend protocol id retained when renderer events use a synthetic client id. */
+  backendId?: string;
   name: string;
   params: Record<string, unknown>;
   result?: string;
@@ -1365,6 +1390,10 @@ export interface ToolCallState {
   subAgentSessionId?: string;
   isError?: boolean;
   status: "pending" | "running" | "done";
+  /** When a single agent tool call executed multiple parallel tasks, this
+   *  indexes the task currently being viewed (0-based). Undefined means the
+   *  whole combined run. */
+  taskIndex?: number;
 }
 
 export interface DocumentEntry {

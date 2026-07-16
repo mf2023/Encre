@@ -195,7 +195,7 @@
             </div>
           </div>
           <!-- Chat view -->
-          <div id="chat-view">
+          <div id="chat-view" class="chat-view">
             <div id="chat-container">
               <!-- Welcome screen (shown when no messages) -->
               <div id="welcome-screen">
@@ -355,19 +355,19 @@
         </div>
         <!-- Automation view -->
           <div id="automation-view" class="hidden">
-            <div class="automation-container">
-              <div class="automation-tabs">
-                <button class="automation-tab" data-automation-tab="configured" data-i18n="automation.configured">已配置</button>
-                <button class="automation-tab active" data-automation-tab="history" data-i18n="automation.history">执行历史</button>
-                <div class="automation-create-wrap" id="automation-create-wrap">
-                  <button class="btn-add-model-top" id="automation-create-btn" type="button">
-                    <i data-lucide="plus" class="lucide"></i>
-                    <span data-i18n="automation.create">创建</span>
-                    <i data-lucide="chevron-down" class="lucide"></i>
-                  </button>
-                  <div class="settings-dropdown" id="automation-create-dropdown"></div>
-                </div>
+            <div class="automation-tabs">
+              <button class="automation-tab" data-automation-tab="configured" data-i18n="automation.configured">已配置</button>
+              <button class="automation-tab active" data-automation-tab="history" data-i18n="automation.history">执行历史</button>
+              <div class="automation-create-wrap" id="automation-create-wrap">
+                <button class="btn-add-model-top" id="automation-create-btn" type="button">
+                  <i data-lucide="plus" class="lucide"></i>
+                  <span data-i18n="automation.create">创建</span>
+                  <i data-lucide="chevron-down" class="lucide"></i>
+                </button>
+                <div class="settings-dropdown" id="automation-create-dropdown"></div>
               </div>
+            </div>
+            <div class="automation-container">
               <div class="automation-panels">
                 <div class="automation-panel" data-automation-panel="configured">
                   <div class="configured-list" id="configured-list"></div>
@@ -404,17 +404,16 @@
                   <div class="history-timeline" id="history-timeline"></div>
                 </div>
               </div>
-              <!-- Automation detail view (replaces panels when viewing a result) -->
+            </div>
+              <!-- Automation detail: renders sub-agent result using chat's renderSubAgentInto -->
               <div class="automation-detail hidden">
                 <div class="automation-detail-bar">
-                  <button type="button" class="automation-detail-back btn-icon" id="automation-detail-back">
-                    <i data-lucide="arrow-left" class="lucide"></i>
-                  </button>
                   <div class="automation-detail-breadcrumb" id="automation-detail-breadcrumb"></div>
                 </div>
-                <div class="automation-detail-content" id="automation-detail-content"></div>
+                <div class="automation-detail-scroll" id="automation-detail-scroll">
+                  <div class="automation-detail-content chat-view" id="automation-detail-content"></div>
+                </div>
               </div>
-            </div>
           </div>
           <!-- /Automation view -->
 

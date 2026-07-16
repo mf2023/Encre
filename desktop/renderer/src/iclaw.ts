@@ -149,7 +149,10 @@ export class AutomationPanel {
       }
     }
 
-    // Smoothly fade+slide the sidebar toggle button instead of instant hide
+    // Smoothly fade+slide the sidebar toggle button instead of instant hide.
+    // The toggle button becomes the "back" button in the detail view, so we
+    // only fade it here for the list view; the search button is never touched
+    // - it stays in place across the automation list and detail views.
     if (this._toggleBtn) {
       this._toggleBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
       this._toggleBtn.style.opacity = "0";

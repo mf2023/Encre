@@ -151,6 +151,70 @@ function extractMessageText(content: string | Array<{ type: string; text: string
   return "";
 }
 
+/** A renderer tool-call id may differ from the backend protocol id after resume. */
+export function toolCallMatchesId(tc: ToolCallState, id: string | undefined): boolean {
+  return !!id && (tc.id === id || tc.backendId === id);
+}
+
+type ParallelTaskGroup = {
+  index: number;
+  divider: Message;
+  messages: Message[];
+};
+
+function splitParallelTaskGroups(messages: Message[]): ParallelTaskGroup[] {
+  const groups = new Map<number, ParallelTaskGroup>();
+  let fallbackIndex = 0;
+  let current: ParallelTaskGroup | null = null;
+
+  for (const message of messages) {
+    if (message.mode === "task_divider") {
+      const index = Number.isInteger(message.taskIndex) ? message.taskIndex! : fallbackIndex;
+      fallbackIndex = Math.max(fallbackIndex, index + 1);
+      current = { index, divider: message, messages: [] };
+      // A resumed stream can replay a divider. The newest divider has the
+      // current task status/name, so it deliberately replaces earlier metadata.
+      groups.set(index, current);
+    } else if (current) {
+      current.messages.push(message);
+    }
+  }
+
+  return [...groups.values()].sort((a, b) => a.index - b.index);
+}
+
+/**
+ * Merges partial parallel-sub-agent snapshots without letting one task erase
+ * its siblings. Non-parallel calls keep the normal replace-on-update behavior.
+ */
+export function mergeSubAgentMessages(existing: Message[] | undefined, incoming: Message[]): Message[] {
+  if (!existing || existing.length === 0) return incoming;
+
+  const existingHasDividers = existing.some((message) => message.mode === "task_divider");
+  const incomingHasDividers = incoming.some((message) => message.mode === "task_divider");
+  if (!existingHasDividers && !incomingHasDividers) return incoming;
+  if (!incomingHasDividers) return existing;
+  if (!existingHasDividers) return incoming;
+
+  const merged = new Map<number, ParallelTaskGroup>();
+  for (const group of splitParallelTaskGroups(existing)) {
+    merged.set(group.index, group);
+  }
+  for (const group of splitParallelTaskGroups(incoming)) {
+    const previous = merged.get(group.index);
+    // Some reconnect/progress packets contain just a refreshed divider. Keep
+    // already-rendered transcript data until this task sends a real snapshot.
+    merged.set(group.index, {
+      ...group,
+      messages: group.messages.length > 0 || !previous ? group.messages : previous.messages,
+    });
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => a.index - b.index)
+    .flatMap((group) => [group.divider, ...group.messages]);
+}
+
 function restoreToolCalls(rawToolCalls: any[] | undefined): ToolCallState[] {
   const restoredToolCalls: ToolCallState[] = [];
   if (!rawToolCalls || !Array.isArray(rawToolCalls)) return restoredToolCalls;
@@ -174,6 +238,7 @@ function restoreToolCalls(rawToolCalls: any[] | undefined): ToolCallState[] {
     const clientId = tc._client_id;
     restoredToolCalls.push({
       id: clientId || tc.id || crypto.randomUUID(),
+      backendId: tc.id && tc.id !== clientId ? tc.id : undefined,
       name: func.name || "unknown",
       params,
       result: undefined,
@@ -184,31 +249,54 @@ function restoreToolCalls(rawToolCalls: any[] | undefined): ToolCallState[] {
   return restoredToolCalls;
 }
 
+function indexToolCalls(toolCallsById: Map<string, ToolCallState>, toolCalls: ToolCallState[]): void {
+  for (const toolCall of toolCalls) {
+    toolCallsById.set(toolCall.id, toolCall);
+    if (toolCall.backendId) toolCallsById.set(toolCall.backendId, toolCall);
+  }
+}
+
+function findRestoredToolCall(
+  raw: { tool_call_id?: string; _client_id?: string },
+  toolCallsById: Map<string, ToolCallState>,
+  fallbackAssistant?: Message,
+): ToolCallState | undefined {
+  const clientId = raw._client_id;
+  const toolCallId = raw.tool_call_id;
+  const target = (clientId ? toolCallsById.get(clientId) : undefined)
+    || (toolCallId ? toolCallsById.get(toolCallId) : undefined);
+
+  if (target) return target;
+  if (clientId || toolCallId) {
+    console.warn("[state] Unable to restore tool result", {
+      clientId,
+      toolCallId,
+      knownToolCallIds: [...toolCallsById.keys()],
+    });
+    return undefined;
+  }
+
+  // Legacy history without a tool-call id can only be paired by position.
+  return fallbackAssistant?.toolCalls[fallbackAssistant.toolCalls.length - 1];
+}
+
 /** Reconciles a raw message list into `Message` objects (used on resume). */
 export function restoreMessages(rawMessages: Array<{ role: string; content: string | Array<{ type: string; text: string }>; tool_calls?: any[]; reasoning_content?: string; segments?: Array<{kind: string; text?: string; tool_id?: string}>; created_at?: number; mode?: string }>): Message[] {
   const messages: Message[] = [];
+  const toolCallsById = new Map<string, ToolCallState>();
+  let latestAssistantWithToolCalls: Message | undefined;
   for (const raw of rawMessages || []) {
     if (raw.role === "system") continue;
     if (raw.role === "tool") {
-      const lastAssistant = messages[messages.length - 1];
-      if (lastAssistant?.role === "assistant") {
-        const toolCallId = (raw as any).tool_call_id;
-        const clientId = (raw as any)._client_id;
-        // See the streaming-path comment for why client_id is preferred.
-        const target = clientId
-          ? lastAssistant.toolCalls.find((tc) => tc.id === clientId)
-          : toolCallId
-            ? lastAssistant.toolCalls.find((tc) => tc.id === toolCallId)
-            : lastAssistant.toolCalls[lastAssistant.toolCalls.length - 1];
-        if (target) {
-          const toolText = extractMessageText(raw.content);
-          target.result = toolText;
-          target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
-          target.status = "done";
-          const subAgentMessages = (raw as any).sub_agent_messages;
-          if (Array.isArray(subAgentMessages)) {
-            target.subAgentMessages = restoreMessages(subAgentMessages);
-          }
+      const target = findRestoredToolCall(raw as any, toolCallsById, latestAssistantWithToolCalls);
+      if (target) {
+        const toolText = extractMessageText(raw.content);
+        target.result = toolText;
+        target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
+        target.status = "done";
+        const subAgentMessages = (raw as any).sub_agent_messages;
+        if (Array.isArray(subAgentMessages)) {
+          target.subAgentMessages = restoreMessages(subAgentMessages);
         }
       }
       continue;
@@ -220,7 +308,10 @@ export function restoreMessages(rawMessages: Array<{ role: string; content: stri
           const next = s.kind === "thinking"
             ? { kind: "thinking" as const, text: s.text ?? "" }
             : s.kind === "tool"
-              ? { kind: "tool" as const, toolId: s.tool_id || "" }
+              ? {
+                  kind: "tool" as const,
+                  toolId: toolCalls.find((toolCall) => toolCallMatchesId(toolCall, s.tool_id))?.id || s.tool_id || "",
+                }
               : { kind: "text" as const, text: s.text ?? "" };
           const prev = acc[acc.length - 1];
           if (prev?.kind === "thinking" && next.kind === "thinking") {
@@ -237,7 +328,7 @@ export function restoreMessages(rawMessages: Array<{ role: string; content: stri
           ...((extractMessageText(raw.content).trim() ? [{ kind: "text" as const, text: extractMessageText(raw.content) }] : [])),
           ...toolCalls.map((tc) => ({ kind: "tool" as const, toolId: tc.id })),
         ];
-    messages.push({
+    const message: Message = {
       id: crypto.randomUUID(),
       role: raw.role === "assistant" ? "assistant" : "user",
       content: extractMessageText(raw.content),
@@ -247,8 +338,16 @@ export function restoreMessages(rawMessages: Array<{ role: string; content: stri
       timestamp: raw.created_at || Date.now(),
       thinking: raw.reasoning_content,
       mode: raw.mode,
+      taskIndex: (raw as any).task_index,
+      taskName: (raw as any).task_name,
+      taskStatus: (raw as any).task_status,
       serverId: (raw as any).id,
-    });
+    };
+    messages.push(message);
+    if (message.role === "assistant" && toolCalls.length > 0) {
+      indexToolCalls(toolCallsById, toolCalls);
+      latestAssistantWithToolCalls = message;
+    }
   }
   if (rawMessages && rawMessages.length > 0) { console.log("[restoreMessages] input=" + rawMessages.length + " output=" + messages.length + " roles=" + JSON.stringify(messages.map(m => m.role))); }
   return messages;
@@ -257,6 +356,8 @@ export function restoreMessages(rawMessages: Array<{ role: string; content: stri
 /** Loads a session's raw messages into the active session snapshot. */
 export function loadSessionMessages(rawMessages: Array<{ role: string; content: string | Array<{ type: string; text: string }>; tool_calls?: any[]; reasoning_content?: string }>, sessionId = state.sessionId): void {
   const messages: Message[] = [];
+  const toolCallsById = new Map<string, ToolCallState>();
+  let latestAssistantWithToolCalls: Message | undefined;
   let totalInput = 0;
   let totalOutput = 0;
 
@@ -264,30 +365,17 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
     if (raw.role === "system") continue;
 
     if (raw.role === "tool") {
-      const lastAssistant = messages[messages.length - 1];
-      if (lastAssistant?.role === "assistant" && lastAssistant.toolCalls.length > 0) {
-        const toolCallId = (raw as any).tool_call_id;
-        const clientId = (raw as any)._client_id;
+      const target = findRestoredToolCall(raw as any, toolCallsById, latestAssistantWithToolCalls);
+      if (target) {
         const toolText = extractMessageText(raw.content);
-        // Prefer matching by client_id: tc.id was overridden to client_id
-        // during restore (see restoreToolCalls).  Fall back to the
-        // backend tool_call_id for messages saved before the _client_id
-        // annotation was added.
-        const target = clientId
-          ? lastAssistant.toolCalls.find((tc) => tc.id === clientId)
-          : toolCallId
-            ? lastAssistant.toolCalls.find((tc) => tc.id === toolCallId)
-            : lastAssistant.toolCalls[lastAssistant.toolCalls.length - 1];
-        if (target) {
-          target.result = toolText;
-          target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
-          target.status = "done";
-          const subAgentMessages = (raw as any).sub_agent_messages;
-          if (Array.isArray(subAgentMessages)) {
-            target.subAgentMessages = restoreMessages(subAgentMessages);
-          }
-          target.subAgentSessionId = (raw as any).sub_agent_session_id;
+        target.result = toolText;
+        target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
+        target.status = "done";
+        const subAgentMessages = (raw as any).sub_agent_messages;
+        if (Array.isArray(subAgentMessages)) {
+          target.subAgentMessages = restoreMessages(subAgentMessages);
         }
+        target.subAgentSessionId = (raw as any).sub_agent_session_id;
       }
       continue;
     }
@@ -315,7 +403,7 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
         if (s.kind === "thinking") return { kind: "thinking" as const, text: s.text ?? "" };
         if (s.kind === "text") return { kind: "text" as const, text: s.text ?? "" };
         if (s.kind === "tool") {
-          const tc = toolCalls.find(t => t.id === s.tool_id);
+          const tc = toolCalls.find(t => toolCallMatchesId(t, s.tool_id));
           return { kind: "tool" as const, toolId: tc?.id || s.tool_id || "" };
         }
         return { kind: "text" as const, text: "" };
@@ -347,7 +435,7 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
       } catch {}
     }
 
-    messages.push({
+    const message: Message = {
       id: crypto.randomUUID(),
       role: raw.role === "assistant" ? "assistant" : "user",
       content: cleanContent,
@@ -359,17 +447,103 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
       tokenUsage: tu,
       serverId: (raw as any).id,
       mode: msgMode,
+      taskIndex: (raw as any).task_index,
+      taskName: (raw as any).task_name,
+      taskStatus: (raw as any).task_status,
       fileRefs: rawFileRefs,
       errorMessage: (raw as any).errorMessage,
       errorCode: (raw as any).errorCode,
       interruptedReason: (raw as any).interruptedReason,
       turnStatusText: (raw as any).turnStatusText,
       cancelledText: (raw as any).cancelledText,
-    });
+    };
+    messages.push(message);
+    if (message.role === "assistant" && toolCalls.length > 0) {
+      indexToolCalls(toolCallsById, toolCalls);
+      latestAssistantWithToolCalls = message;
+    }
   }
   const snapshot = getOrCreateSessionSnapshot(sessionId);
+  
+  // Preserve previously-streamed sub-agent messages from the old snapshot.
+  // When the backend serialises a running session the tool messages may not
+  // carry ``sub_agent_messages`` (they are only persisted on ``tool_result``
+  // delivery), so a fresh ``loadSessionMessages`` would otherwise lose every
+  // sub-agent message already delivered through ``tool_progress``.
+  const oldSubAgentData = new Map<string, { messages?: Message[]; sessionId?: string }>();
+  for (const msg of snapshot.messages) {
+    for (const tc of msg.toolCalls) {
+      if (tc.subAgentMessages && tc.subAgentMessages.length > 0) {
+        const old = {
+          messages: tc.subAgentMessages,
+          sessionId: tc.subAgentSessionId,
+        };
+        oldSubAgentData.set(tc.id, old);
+        if (tc.backendId) oldSubAgentData.set(tc.backendId, old);
+        console.log("[loadSessionMessages] Saved old subAgentMessages for tc.id:", tc.id, "backendId:", tc.backendId, "count:", tc.subAgentMessages.length);
+      }
+    }
+  }
+  console.log("[loadSessionMessages] Total old subAgentData saved:", oldSubAgentData.size);
+
   const hadTokenUsage = snapshot.tokenUsage;
+
+  // A running session can occasionally return a partial assistant snapshot
+  // while sibling agent calls are still executing. Keep those live cards in
+  // the matching assistant message until the backend sends their result.
+  if (snapshot.running) {
+    const incomingToolCallIds = new Set<string>();
+    for (const message of messages) {
+      for (const toolCall of message.toolCalls) {
+        incomingToolCallIds.add(toolCall.id);
+        if (toolCall.backendId) incomingToolCallIds.add(toolCall.backendId);
+      }
+    }
+
+    for (const oldMessage of snapshot.messages) {
+      if (oldMessage.role !== "assistant" || !oldMessage.serverId) continue;
+      const restoredMessage = messages.find(
+        (message) => message.role === "assistant" && message.serverId === oldMessage.serverId,
+      );
+      if (!restoredMessage) continue;
+
+      for (const oldToolCall of oldMessage.toolCalls) {
+        const isMissing = !incomingToolCallIds.has(oldToolCall.id)
+          && (!oldToolCall.backendId || !incomingToolCallIds.has(oldToolCall.backendId));
+        if (oldToolCall.name !== "agent" || oldToolCall.result !== undefined || !isMissing) continue;
+
+        restoredMessage.toolCalls.push({ ...oldToolCall });
+        restoredMessage.segments.push({ kind: "tool", toolId: oldToolCall.id });
+        incomingToolCallIds.add(oldToolCall.id);
+        if (oldToolCall.backendId) incomingToolCallIds.add(oldToolCall.backendId);
+        console.warn("[loadSessionMessages] Restored missing live agent tool call", {
+          id: oldToolCall.id,
+          backendId: oldToolCall.backendId,
+          assistantId: oldMessage.serverId,
+        });
+      }
+    }
+  }
+
   snapshot.messages = messages;
+
+  // Re-apply sub-agent messages from the old snapshot to the new tool calls.
+  // A running session can return a partial parallel snapshot (for example,
+  // only the task that most recently emitted progress), so merge by task
+  // index instead of replacing a complete in-memory snapshot.
+  for (const msg of snapshot.messages) {
+    for (const tc of msg.toolCalls) {
+      const old = oldSubAgentData.get(tc.id) || (tc.backendId ? oldSubAgentData.get(tc.backendId) : undefined);
+      if (old) {
+        tc.subAgentMessages = mergeSubAgentMessages(old.messages, tc.subAgentMessages ?? []);
+        tc.subAgentSessionId = tc.subAgentSessionId || old.sessionId;
+        console.log("[loadSessionMessages] Merged subAgentMessages for tc.id:", tc.id, "count:", tc.subAgentMessages?.length ?? 0);
+      }
+      // Tool calls have no explicit in-progress record in persisted history.
+      // A running session plus no tool result means this call is still active.
+      if (snapshot.running && tc.result === undefined) tc.status = "running";
+    }
+  }
   snapshot.artifacts = [];
   snapshot.compactEvents = [];
   if (totalInput > 0 || totalOutput > 0) {
@@ -664,7 +838,7 @@ export function updateToolCall(
   if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   for (const msg of snapshot.messages) {
-    const tc = msg.toolCalls.find((t) => t.id === id);
+    const tc = msg.toolCalls.find((t) => toolCallMatchesId(t, id));
     if (tc) {
       Object.assign(tc, patch);
       syncSessionState(sessionId);
@@ -801,7 +975,7 @@ export function findToolCall(id: string, sessionId = state.sessionId): ToolCallS
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   for (const msg of snapshot.messages) {
     for (const tc of msg.toolCalls) {
-      if (tc.id === id) return tc;
+      if (toolCallMatchesId(tc, id)) return tc;
     }
   }
   return null;

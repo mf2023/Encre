@@ -185,6 +185,8 @@ class JobExecution:
     result: str
     session_id: str | None = None
     fail_count: int = 0
+    name: str = ""
+    job_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -193,6 +195,8 @@ class JobExecution:
             "result": self.result,
             "session_id": self.session_id,
             "fail_count": self.fail_count,
+            "name": self.name,
+            "job_id": self.job_id,
         }
 
     @classmethod
@@ -203,6 +207,8 @@ class JobExecution:
             result=d.get("result", ""),
             session_id=d.get("session_id"),
             fail_count=d.get("fail_count", 0),
+            name=d.get("name", ""),
+            job_id=d.get("job_id", ""),
         )
 
 
@@ -257,7 +263,6 @@ class ScheduledJob:
             "metadata": self.metadata,
             "model_index": self.model_index,
             "session_id": self.session_id,
-            "executions": [e.to_dict() for e in self.executions],
             "agent_config": self._agent_config,
             "dag_definition": self.dag_definition,
             "push_gateways": list(self.push_gateways),
@@ -286,9 +291,13 @@ class ScheduledJob:
         )
         job.session_id = data.get("session_id")
         job._agent_config = data.get("agent_config")
-        # Restore execution history (empty list for older saved jobs)
-        execs = data.get("executions") or []
-        job.executions = [JobExecution.from_dict(e) for e in execs]
+        # Executions are now stored in a separate global history file.
+        # The legacy ``executions`` field is only used for one-time migration
+        # when _load() detects it.
+        job.executions = [
+            JobExecution.from_dict(execution)
+            for execution in (data.get("executions") or [])
+        ]
         return job
 
 
@@ -318,9 +327,16 @@ class EncreScheduler:
             from encre.config import get_data_dir
             durable_path = str(get_data_dir() / "jobs.json")
         self._durable_path = Path(durable_path)
+        self._history_path = self._durable_path.with_name("automation_history.json")
+        self._executions: list[JobExecution] = []
         self._poll_interval = poll_interval_seconds
         self._running = False
         self._task: asyncio.Task[Any] | None = None
+        # Background tasks for in-flight automation jobs. Automations are
+        # unrestricted: any number may run concurrently (bounded only by the
+        # machine), so each due job is launched as its own task and tracked
+        # here to keep a strong reference and surface any crash.
+        self._job_tasks: set[asyncio.Task[Any]] = set()
         self._agent_factory: Callable[[dict[str, Any] | None], Any] | None = None
         self._on_complete: Callable[[ScheduledJob], None] | None = None
         self._on_progress: Callable[[ScheduledJob, str, dict[str, Any]], Awaitable[None]] | None = None
@@ -467,7 +483,7 @@ class EncreScheduler:
         return True
 
     def delete_job(self, job_id: str) -> bool:
-        """Remove a job entirely. Returns True on success."""
+        """Remove a job configuration. Execution history is preserved."""
         if job_id not in self._jobs:
             return False
         del self._jobs[job_id]
@@ -476,17 +492,16 @@ class EncreScheduler:
         return True
 
     def delete_job_execution_by_session_id(self, session_id: str) -> bool:
-        """Delete any execution record with the given session_id across all jobs.
+        """Delete any execution record with the given session_id.
 
         Returns True if an execution was found and removed.
         """
-        for job in self._jobs.values():
-            for i, exec_entry in enumerate(job.executions):
-                if exec_entry.session_id == session_id:
-                    del job.executions[i]
-                    if self._durable_path:
-                        self._save()
-                    return True
+        for i, exec_entry in enumerate(self._executions):
+            if exec_entry.session_id == session_id:
+                del self._executions[i]
+                if self._durable_path:
+                    self._save_history()
+                return True
         return False
 
     def delete_job_execution(self, entry_id: str) -> str | None:
@@ -500,17 +515,44 @@ class EncreScheduler:
             exec_time = float(time_str)
         except (ValueError, IndexError):
             return None
-        job = self._jobs.get(job_id)
-        if job is None:
-            return None
-        for i, exec_entry in enumerate(job.executions):
-            if abs(exec_entry.time - exec_time) < 0.001:
+        for i, exec_entry in enumerate(self._executions):
+            if (
+                exec_entry.job_id == job_id
+                and exec_entry.time is not None
+                and abs(exec_entry.time - exec_time) < 0.001
+            ):
                 sid = exec_entry.session_id
-                del job.executions[i]
+                del self._executions[i]
                 if self._durable_path:
-                    self._save()
+                    self._save_history()
                 return sid
         return None
+
+    def rename_job_execution(self, entry_id: str, new_name: str) -> bool:
+        """Rename a single execution record by entry_id (format: job_id_timestamp).
+
+        Returns True if the entry was found and renamed, False otherwise.
+        """
+        try:
+            job_id, time_str = entry_id.rsplit("_", 1)
+            exec_time = float(time_str)
+        except (ValueError, IndexError):
+            return False
+        for exec_entry in self._executions:
+            if (
+                exec_entry.job_id == job_id
+                and exec_entry.time is not None
+                and abs(exec_entry.time - exec_time) < 0.001
+            ):
+                exec_entry.name = new_name.strip()[:64]
+                if self._durable_path:
+                    self._save_history()
+                return True
+        return False
+
+    def get_execution_history(self) -> list[JobExecution]:
+        """Return all execution records sorted by time (newest first)."""
+        return sorted(self._executions, key=lambda e: e.time or 0, reverse=True)
 
     def cancel_all(self) -> int:
         """Cancel all jobs. Returns count of cancelled jobs."""
@@ -575,6 +617,13 @@ class EncreScheduler:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        # Cancel any automation jobs still in flight so shutdown is clean.
+        if self._job_tasks:
+            for t in list(self._job_tasks):
+                t.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.gather(*self._job_tasks, return_exceptions=True)
+            self._job_tasks.clear()
 
     async def _loop(self) -> None:
         """Main scheduler loop -- polls for due jobs."""
@@ -617,7 +666,11 @@ class EncreScheduler:
 
                 for job in due_jobs:
                     logger.info("[scheduler] executing job {} (name={})", job.id, job.name)
-                    await self._execute_job(job)
+                    # Automations are unrestricted: launch each due job as an
+                    # independent background task so any number can run in
+                    # parallel (limited only by the machine), instead of
+                    # serializing them one-after-another behind ``await``.
+                    self._spawn_job(job)
 
                 if self._durable_path:
                     self._save()
@@ -626,6 +679,26 @@ class EncreScheduler:
             except Exception as e:
                 logger.exception("[scheduler] _loop iteration crashed: {}", e)
                 await asyncio.sleep(self._poll_interval)
+
+    def _spawn_job(self, job: ScheduledJob) -> None:
+        """Launch a job as an independent, unrestricted background task.
+
+        Automations run in parallel with no artificial concurrency cap: the
+        only limit is what the machine can handle. The task is tracked so it
+        keeps a strong reference (otherwise it could be garbage-collected
+        mid-run) and so any unhandled exception is logged instead of lost.
+        """
+        task = asyncio.create_task(self._execute_job(job))
+        self._job_tasks.add(task)
+
+        def _done(t: asyncio.Task[Any]) -> None:
+            self._job_tasks.discard(t)
+            if not t.cancelled():
+                exc = t.exception()
+                if exc is not None:
+                    logger.error("[scheduler] job {} crashed: {}", job.id, exc)
+
+        task.add_done_callback(_done)
 
     async def _execute_job(self, job: ScheduledJob) -> None:
         """Execute a single scheduled job.
@@ -649,8 +722,8 @@ class EncreScheduler:
             logger.warning("[scheduler] _agent_factory is None, cannot execute job {}", job.id)
             return
 
-        logger.info("[scheduler] _execute_job {} (name={}) starting, state={}, cron={}, last_fired={}",
-                      job.id, job.name, job.state, job.cron.to_expression() if job.cron else None, job.last_fired)
+        logger.debug("[scheduler] _execute_job {} (name={}) starting, state={}, cron={}, last_fired={}",
+                     job.id, job.name, job.state, job.cron.to_expression() if job.cron else None, job.last_fired)
 
         job.state = JobState.RUNNING
         job.last_fired = time.time()
@@ -663,11 +736,14 @@ class EncreScheduler:
             result="",
             session_id=uuid.uuid4().hex,
             fail_count=0,
+            name=job.name,
+            job_id=job.id,
         )
-        job.executions.append(exec_entry)
+        self._executions.append(exec_entry)
         job.session_id = exec_entry.session_id
         if self._durable_path:
             self._save()
+            self._save_history()
 
         # Notify frontend immediately that the job is now RUNNING so the
         # automation panel can update its state (status → RUNNING, history
@@ -805,7 +881,9 @@ class EncreScheduler:
             logger.exception("[scheduler] job execution failed: job={} name={} error={}", job.id, job.name, e)
             job.fail_count += 1
             job.last_result = f"Error: {e}"
-            exec_entry.state = "FAILED" if job.fail_count >= job.max_failures else "PENDING"
+            # This execution is terminal even when the recurring job itself
+            # remains pending for a later retry.
+            exec_entry.state = "FAILED"
             exec_entry.result = job.last_result
             exec_entry.fail_count = job.fail_count
             if job.fail_count >= job.max_failures:
@@ -817,8 +895,9 @@ class EncreScheduler:
         if self._on_progress:
             try:
                 await self._on_progress(job, "finish", {
-                    "state": job.state.name,
+                    "state": exec_entry.state,
                     "result": (job.last_result or "")[:2000],
+                    "error_code": "AUTOMATION_EXECUTION_FAILED" if exec_entry.state == "FAILED" else "",
                 })
             except Exception:
                 logger.warning("[scheduler] progress callback failed for 'finish' event", exc_info=True)
@@ -834,6 +913,7 @@ class EncreScheduler:
         # ONE_SHOT stays COMPLETED/FAILED
         if self._durable_path:
             self._save()
+            self._save_history()
 
     async def _emit_execution_snapshot(
         self,
@@ -981,6 +1061,19 @@ class EncreScheduler:
             f.write(payload)
         tmp_path.replace(self._durable_path)
 
+    def _save_history(self) -> None:
+        if not self._history_path:
+            return
+        self._history_path.parent.mkdir(parents=True, exist_ok=True)
+        data = [e.to_dict() for e in self._executions]
+        payload = json.dumps(data, indent=2, ensure_ascii=False)
+        with contextlib.suppress(Exception):
+            payload = encrypt(payload)
+        tmp_path = self._history_path.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(payload)
+        tmp_path.replace(self._history_path)
+
     def _load(self) -> None:
         if not self._durable_path or not self._durable_path.exists():
             return
@@ -1006,6 +1099,57 @@ class EncreScheduler:
                         job.state = JobState.FAILED
                         job.fail_count += 1
                 self._jobs[job.id] = job
+                # Migrate legacy executions stored inside the job into the
+                # global history store. This preserves history when upgrading
+                # from older versions and removes duplication.
+                for exec_entry in job.executions:
+                    if exec_entry.job_id == "":
+                        exec_entry.job_id = job.id
+                    if exec_entry.name == "":
+                        exec_entry.name = job.name
+                    # Avoid adding the same execution twice by checking
+                    # the job_id + time composite key.
+                    if not any(
+                        e.job_id == exec_entry.job_id
+                        and e.time is not None
+                        and exec_entry.time is not None
+                        and abs(e.time - exec_entry.time) < 0.001
+                        for e in self._executions
+                    ):
+                        self._executions.append(exec_entry)
+                job.executions = []
+            # Also load the dedicated history file if it exists.
+            if self._history_path.exists():
+                with open(self._history_path, encoding="utf-8") as f:
+                    raw_history = f.read().strip()
+                if raw_history:
+                    if raw_history and not raw_history.startswith("["):
+                        with contextlib.suppress(Exception):
+                            raw_history = decrypt(raw_history)
+                    history_data = json.loads(raw_history)
+                    for item in history_data:
+                        exec_entry = JobExecution.from_dict(item)
+                        # The dedicated history file is authoritative. It can
+                        # contain a user-renamed execution that has the same
+                        # identity as a legacy record migrated from jobs.json.
+                        # Replace that legacy record instead of discarding the
+                        # newer, user-edited one.
+                        for i, existing in enumerate(self._executions):
+                            if (
+                                existing.job_id == exec_entry.job_id
+                                and existing.time is not None
+                                and exec_entry.time is not None
+                                and abs(existing.time - exec_entry.time) < 0.001
+                            ):
+                                self._executions[i] = exec_entry
+                                break
+                        else:
+                            self._executions.append(exec_entry)
+            # Persist the migrated history so the legacy executions are not
+            # lost even if the old job file is overwritten.
+            if self._durable_path and self._executions:
+                self._save_history()
+                self._save()
         except json.JSONDecodeError as e:
             logger.warning(f"Could not parse durable job store {self._durable_path}: {e} - resetting to empty")
             self._jobs = {}

@@ -80,6 +80,7 @@ from encre.server.protocol import (
     ClientAutomationDeleteExecution,
     ClientAutomationGetHistory,
     ClientAutomationListJobs,
+    ClientAutomationRenameExecution,
     ClientAutomationToggleJob,
     ClientAutomationUpdateJob,
     ClientCancel,
@@ -271,6 +272,15 @@ class EncreWSHandler:
             # WebSocket disconnected -- cancel any running agent
             self._cancel_current_task()
 
+    @staticmethod
+    def _renderer_session_messages(session: Any) -> list[dict[str, Any]]:
+        """Return visible history without dropping renderer-only tool IDs."""
+        return [
+            message
+            for message in session.get_renderer_messages()
+            if message.get("role") != "system"
+        ]
+
     def _resolve_startup_mode(self) -> str:
         """Resolve startup_session_mode: settings.json takes priority (runtime changes),
         fall back to config default."""
@@ -363,8 +373,7 @@ class EncreWSHandler:
                     self._current_session_id = resumed.session_id
                     sess = resumed.agent.session
                     sess.rebuild_artifacts_from_messages()
-                    context = sess.get_context_messages()
-                    msgs = [m for m in context if m.get("role") != "system"]
+                    msgs = self._renderer_session_messages(sess)
                     plan = sess.plan_items
                     arts = sess.artifacts
                     branches_list = [b.__dict__ for b in sess.branches.values()]
@@ -709,6 +718,11 @@ class EncreWSHandler:
                         self._current_session_id = session.session_id
                     else:
                         session = self._get_or_create_session()
+                        # Temp chat: mark ephemeral sessions immediately so
+                        # nothing is persisted even if a save is triggered
+                        # before the run loop starts.
+                        if msg.temp_chat:
+                            session.agent.session.metadata["temp_chat"] = True
 
                     self._manager.touch(session.session_id)
 
@@ -1796,8 +1810,7 @@ class EncreWSHandler:
 
                     sess = info.agent.session
                     sess.rebuild_artifacts_from_messages()
-                    context = sess.get_context_messages()
-                    msgs = [m for m in context if m.get("role") != "system"]
+                    msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=info.session_id, messages=msgs,
                                      plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
@@ -1856,8 +1869,7 @@ class EncreWSHandler:
                     await self._send(ws, "workspace_closed")
                     sess = info.agent.session
                     sess.rebuild_artifacts_from_messages()
-                    context = sess.get_context_messages()
-                    msgs = [m for m in context if m.get("role") != "system"]
+                    msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=info.session_id, messages=msgs,
                                      plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
@@ -2205,8 +2217,7 @@ class EncreWSHandler:
                     sess = session.agent.session
                     sess.mark_messages_dirty()
                     sess.rebuild_artifacts_from_messages()
-                    context = sess.get_context_messages()
-                    msgs = [m for m in context if m.get("role") != "system"]
+                    msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=session.session_id, messages=msgs,
                                      plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
@@ -2221,8 +2232,7 @@ class EncreWSHandler:
                             existing = router.session_manager.try_resume_most_recent(
                                 config=replace(self._default_config, workspace=""))
                             if existing is not None:
-                                ctx = existing.agent.session.get_context_messages()
-                                msgs = [m for m in ctx if m.get("role") != "system"]
+                                msgs = self._renderer_session_messages(existing.agent.session)
                                 self._current_session_id = existing.session_id
                                 await self._send(ws, "session_ready",
                                     session_id=existing.session_id, messages=msgs)
@@ -2370,8 +2380,7 @@ class EncreWSHandler:
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     # Send the correct messages for the new branch so the frontend
                     # can render only the active branch's messages.
-                    context_msgs = sess.get_context_messages()
-                    msgs = [m for m in context_msgs if m.get("role") != "system"]
+                    msgs = self._renderer_session_messages(sess)
                     await self._send(ws, "branch_updated",
                         session_id=sid,
                         active_branch_id=sess.active_branch_id,
@@ -2444,8 +2453,7 @@ class EncreWSHandler:
                                          session_id=sid)
                         continue
                     sess.switch_branch(msg.branch_id)
-                    context_msgs = sess.get_context_messages()
-                    msgs = [m for m in context_msgs if m.get("role") != "system"]
+                    msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "branch_switched",
                         session_id=sid,
@@ -2505,8 +2513,7 @@ class EncreWSHandler:
                         self._tasks.add(_t)
                     except Exception:
                         pass
-                    context_msgs = sess.get_context_messages()
-                    msgs = [m for m in context_msgs if m.get("role") != "system"]
+                    msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "branch_switched",
                         session_id=sid,
@@ -2652,6 +2659,10 @@ class EncreWSHandler:
                         continue
                     ok = self._scheduler.delete_job(msg.job_id)
                     if ok:
+                        # The scheduler keeps execution history separately from
+                        # job definitions. Broadcast the new job list together
+                        # with that retained history immediately.
+                        self.broadcast_automation_update()
                         await self._send(ws, "automation_job_deleted", job_id=msg.job_id)
                     else:
                         await self._send(ws, "error",
@@ -2675,6 +2686,23 @@ class EncreWSHandler:
                         await self._send(ws, "error",
                             message="Execution not found", code="execution_not_found")
 
+                elif isinstance(msg, ClientAutomationRenameExecution):
+                    info = self._get_or_create_session()
+                    self._manager.touch(info.session_id)
+                    if self._scheduler is None:
+                        await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
+                        continue
+                    new_name = (msg.new_name or "").strip()
+                    if not new_name:
+                        await self._send(ws, "error", message="Name cannot be empty", code="invalid_request")
+                        continue
+                    ok = self._scheduler.rename_job_execution(msg.entry_id, new_name)
+                    if ok:
+                        self.broadcast_automation_update()
+                        await self._send(ws, "automation_execution_renamed", entry_id=msg.entry_id, new_name=new_name)
+                    else:
+                        await self._send(ws, "error",
+                            message="Execution not found", code="execution_not_found")
 
                 elif isinstance(msg, ClientAutomationGetHistory):
                     info = self._get_or_create_session()
@@ -2682,37 +2710,11 @@ class EncreWSHandler:
                     if self._scheduler is None:
                         await self._send(ws, "automation_job_history", history=[])
                         continue
-                    jobs = self._scheduler.list_jobs(include_finished=True)
-                    history = []
-                    for j in jobs:
-                        for exec_entry in j.executions:
-                            entry: dict[str, Any] = {
-                                "id": f"{j.id}_{exec_entry.time}",
-                                "job_id": j.id,
-                                "name": j.name,
-                                "tag": j.metadata.get("tag", ""),
-                                "time": exec_entry.time,
-                                "state": exec_entry.state,
-                                "last_result": exec_entry.result[:500] if exec_entry.result else "",
-                                "fail_count": exec_entry.fail_count,
-                            }
-                            if exec_entry.session_id:
-                                entry["session_id"] = exec_entry.session_id
-                                # The sub-agent session is the canonical
-                                # source of truth. Load its messages so
-                                # the frontend history view can show the
-                                # full transcript without re-running the
-                                # job.
-                                messages = self._load_sub_agent_messages(exec_entry.session_id)
-                                entry["messages"] = messages or []
-                            else:
-                                entry["messages"] = []
-                            history.append(entry)
-                    # Older failed executions may have no timestamp. Keep
-                    # them in history without letting one legacy record block
-                    # the entire websocket response.
-                    history.sort(key=lambda h: h["time"] or 0, reverse=True)
-                    await self._send(ws, "automation_job_history", history=history)
+                    await self._send(
+                        ws,
+                        "automation_job_history",
+                        history=self._build_automation_history(),
+                    )
 
                 elif isinstance(msg, ClientGetUsageStats):
                     try:
@@ -3134,38 +3136,7 @@ class EncreWSHandler:
         """
         closed: list[Any] = []
 
-        # Build history list with session_ids and per-execution messages
-        history: list[dict[str, Any]] = []
-        if self._scheduler:
-            for j in self._scheduler.list_jobs(include_finished=True):
-                for exec_entry in j.executions:
-                    entry: dict[str, Any] = {
-                        "id": f"{j.id}_{exec_entry.time}",
-                        "job_id": j.id,
-                        "name": j.name,
-                        "tag": j.metadata.get("tag", ""),
-                        "time": exec_entry.time,
-                        "state": exec_entry.state,
-                        "last_result": exec_entry.result[:500] if exec_entry.result else "",
-                        "fail_count": exec_entry.fail_count,
-                    }
-                    if exec_entry.session_id:
-                        entry["session_id"] = exec_entry.session_id
-                        messages = self._load_sub_agent_messages(exec_entry.session_id)
-                        if messages:
-                            # Ensure messages are JSON-serializable (session
-                            # objects may contain datetime or other non-primitive types)
-                            try:
-                                json.dumps(messages, ensure_ascii=False)
-                                entry["messages"] = messages
-                            except (TypeError, ValueError) as e:
-                                logger.warning("[automation] messages not serializable for session %s: %s", exec_entry.session_id, e)
-                                messages = None
-                        entry["messages"] = messages or []
-                    else:
-                        entry["messages"] = []
-                    history.append(entry)
-            history.sort(key=lambda h: h["time"] or 0, reverse=True)
+        history = self._build_automation_history()
 
         # Result data for frontend display -- pull messages from the
         # sub-agent session, not from JobExecution.
@@ -3180,16 +3151,21 @@ class EncreWSHandler:
                     except (TypeError, ValueError) as e:
                         logger.warning("[automation] result messages not serializable for session %s: %s", job.session_id, e)
                         messages = None
+            execution_failed = job.last_result.startswith("Error:")
             result_data = {
-                "action": "completed" if job.state.name == "COMPLETED" else "failed",
+                "action": "failed" if execution_failed else "completed",
                 "id": job.id,
                 "job_id": job.id,
                 "name": job.name,
                 "prompt": job.prompt,
                 "result": job.last_result[:2000],
                 "messages": messages or [],
-                "state": job.state.name,
+                "state": "FAILED" if execution_failed else job.state.name,
             }
+            if execution_failed:
+                # Keep raw exception text out of the UI while still providing
+                # a stable code that identifies the failed automation state.
+                result_data["error_code"] = "AUTOMATION_EXECUTION_FAILED"
             if getattr(job, "session_id", None):
                 result_data["session_id"] = job.session_id
 
@@ -3206,12 +3182,12 @@ class EncreWSHandler:
                     # Use the adapter's auto-detected default push target (e.g. the
                     # most recently active chat).  No manual configuration needed.
                     push_chat_id = getattr(adapter, "default_push_chat_id", None)
-                    logger.info("[automation] push gateway %s adapter=%s default_push=%s", gw_id, type(adapter).__name__, push_chat_id)
+                    logger.debug("[automation] push gateway %s adapter=%s default_push=%s", gw_id, type(adapter).__name__, push_chat_id)
                     if not push_chat_id:
                         logger.warning("[automation] push gateway %s has no push target, skipping", gw_id)
                         continue
                     self._tasks.add(asyncio.create_task(adapter.send(push_chat_id, push_text)))
-                    logger.info("[automation] pushed result to gateway %s (chat=%s)", gw_id, push_chat_id)
+                    logger.debug("[automation] pushed result to gateway %s (chat=%s)", gw_id, push_chat_id)
                 except Exception as exc:
                     logger.warning("[automation] failed to push to gateway %s: %s", gw_id, exc)
 
@@ -3228,6 +3204,47 @@ class EncreWSHandler:
                 closed.append(ws)
         for ws in closed:
             self._connections.remove(ws)
+
+    def _build_automation_history(self) -> list[dict[str, Any]]:
+        """Serialize global execution history without requiring a live job."""
+        if self._scheduler is None:
+            return []
+
+        jobs = self._scheduler.list_jobs(include_finished=True)
+        job_map = {job.id: job for job in jobs}
+        history: list[dict[str, Any]] = []
+        for execution in self._scheduler.get_execution_history():
+            job = job_map.get(execution.job_id)
+            entry: dict[str, Any] = {
+                "id": f"{execution.job_id}_{execution.time}",
+                "job_id": execution.job_id,
+                "name": execution.name or (job.name if job else "Deleted automation"),
+                "tag": job.metadata.get("tag", "") if job else "",
+                "time": execution.time,
+                "state": execution.state,
+                "last_result": execution.result[:500] if execution.result else "",
+                "fail_count": execution.fail_count,
+                "messages": [],
+            }
+            if execution.state == "FAILED":
+                entry["error_code"] = "AUTOMATION_EXECUTION_FAILED"
+            if execution.session_id:
+                entry["session_id"] = execution.session_id
+                messages = self._load_sub_agent_messages(execution.session_id)
+                if messages:
+                    try:
+                        json.dumps(messages, ensure_ascii=False)
+                    except (TypeError, ValueError) as exc:
+                        logger.warning(
+                            "[automation] messages not serializable for session %s: %s",
+                            execution.session_id,
+                            exc,
+                        )
+                    else:
+                        entry["messages"] = messages
+            history.append(entry)
+        history.sort(key=lambda entry: entry["time"] or 0, reverse=True)
+        return history
 
     async def broadcast_automation_progress(self, job: Any = None, event_type: str = "", event_data: dict[str, Any] | None = None) -> None:
         """Broadcast a real-time streaming event from an automation job execution.
@@ -3489,7 +3506,7 @@ class EncreWSHandler:
                     break
             name = full_text.strip().strip('"').strip("'").strip("「").strip("」").strip("『").strip("』")[:8]
             if len(name) < 2:
-                logger.debug("[session] auto-name: generated name too short: '{}'", full_text[:50])
+                logger.debug("[session] auto-name: generated name too short: '%s'", full_text[:50])
                 return ""
             return name
         except Exception as e:
@@ -3502,12 +3519,17 @@ class EncreWSHandler:
             name = await asyncio.wait_for(
                 self._auto_name_session(session, prompt), timeout=15.0)
             if name:
-                self._manager.rename_session(session.session_id, name)
-                logger.info("[session] auto-named {} -> {}", session.session_id[:8], name)
+                # A user may rename the session while title generation is still
+                # running. Never let this late background result replace it.
+                live_session = self._manager.get_session(session.session_id)
+                if live_session and live_session.metadata.get("name_manually_renamed"):
+                    return
+                self._manager.rename_session(session.session_id, name, manual=False)
+                logger.info("[session] auto-named %s -> %s", session.session_id[:8], name)
         except TimeoutError:
             logger.debug("[session] auto-name timed out (15s)")
         except Exception as e:
-            logger.debug("[session] auto-name failed: {}", e)
+            logger.debug("[session] auto-name failed: %s", e)
 
     @staticmethod
     async def _build_skills_list(info: Any) -> list[dict[str, Any]]:

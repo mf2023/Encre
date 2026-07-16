@@ -106,7 +106,7 @@ class ProfileInferrer:
                     inferred["common_goals"] = goals
                 return inferred, confidences
         except Exception as e:
-            logger.warning("Profile inference call failed: {}", e)
+            logger.warning("Profile inference call failed: %s", e)
 
         return None
 

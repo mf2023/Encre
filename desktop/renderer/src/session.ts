@@ -396,6 +396,55 @@ export class Session {
  * @param y       - Screen Y for menu placement.
  * @param noRename - When `true`, hide the rename item (e.g. for workspace sessions).
  */
+export interface RenameConfirmCallback {
+  (newName: string): void;
+}
+
+/**
+ * Shows a generic rename dialog and calls `onConfirm` with the trimmed new name.
+ * The dialog is the same visual component used for session renaming.
+ *
+ * @param currentName - The initial value in the input field.
+ * @param onConfirm   - Called when the user confirms a non-empty name.
+ */
+export function showRenameDialog(currentName: string, onConfirm: RenameConfirmCallback): void {
+  const overlayEl = document.getElementById("rename-dialog-overlay")!;
+  overlayEl.innerHTML = `
+    <div id="rename-dialog">
+      <div class="rename-dialog-header">
+        <h3>${escHtml(t("session.renameDialogTitle"))}</h3>
+      </div>
+      <input type="text" id="rename-dialog-input" placeholder="${escHtml(t("session.renamePlaceholder"))}" value="${escHtml(currentName)}" />
+      <div class="rename-dialog-actions">
+        <button id="rename-dialog-cancel" class="btn">${escHtml(t("session.cancel"))}</button>
+        <button id="rename-dialog-confirm" class="btn btn--primary">${escHtml(t("session.rename"))}</button>
+      </div>
+    </div>`;
+  overlayEl.classList.remove("hidden");
+
+  const input = document.getElementById("rename-dialog-input") as HTMLInputElement;
+
+  const hideRename = () => {
+    overlayEl.classList.add("hidden");
+    overlayEl.innerHTML = "";
+  };
+  const confirmRename = () => {
+    const newName = input?.value.trim();
+    if (newName) {
+      onConfirm(newName);
+    }
+    hideRename();
+  };
+
+  document.getElementById("rename-dialog-cancel")?.addEventListener("click", hideRename);
+  document.getElementById("rename-dialog-confirm")?.addEventListener("click", confirmRename);
+  input?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") confirmRename();
+    if (e.key === "Escape") hideRename();
+  });
+  setTimeout(() => input?.focus(), 50);
+}
+
 export function showSessionContextMenu(
   sid: string,
   x: number,
@@ -403,6 +452,7 @@ export function showSessionContextMenu(
   noRename?: boolean,
   noExport?: boolean,
   deleteOverride?: () => void,
+  renameOverride?: () => void,
 ): void {
   const menuEl = document.getElementById("session-context-menu")!;
   const currentSid = sid;
@@ -435,7 +485,16 @@ export function showSessionContextMenu(
   if (!noRename) {
     document.getElementById("ctx-rename-ws")?.addEventListener("click", () => {
       menuEl.classList.add("hidden");
-      showRenameDialogForSession(currentSid);
+      if (renameOverride) {
+        renameOverride();
+        return;
+      }
+      const sessions = getState().sessionsList;
+      const s = sessions.find((x) => x.session_id === currentSid);
+      const currentName = s?.name || s?.preview || "";
+      showRenameDialog(currentName, (newName) => {
+        send({ type: "rename_session", session_id: currentSid, new_name: newName });
+      });
     });
   }
   if (!noExport) {

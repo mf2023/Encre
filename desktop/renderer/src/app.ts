@@ -56,7 +56,7 @@ import {
   clearAllNotifications,
   setModelConfigs,
 } from "./state.js";
-import { Chat, formatAgentLabel } from "./chat.js";
+import { Chat, formatAgentLabel, getAgentName } from "./chat.js";
 import { initTooltip } from "./tooltip.js";
 import { SplashScreen } from "./splash.js";
 import { Tools } from "./tools.js";
@@ -179,191 +179,36 @@ class App {
     this.workspace = new Workspace();
     this.automationPanel = new AutomationPanel();
     this.automation = new Automation();
+    this.automation.setChatRenderer(this.chat);
 
     // Refresh automation data each time the panel opens
     this.automationPanel.onShow = () => this.automation.render();
 
-    // Show automation job results in the chat area when they complete.
-    // Called both from the backend push (automation_job_update) and from
-    // the user explicitly clicking a history entry (onViewResult).
-    const showAutomationResult = (data: any, fromUserAction: boolean = false): void => {
-      // When the backend pushes a result update for a background automation
-      // that the user isn't actively watching, do NOT disrupt their current
-      // view — just silently refresh the history and live-stream callbacks
-      // handle the rest.
-      if (!fromUserAction) {
-        const curView = getState().subAgentView;
-        if (curView && curView.id === data.id) {
-          if (data.state === "FAILED") {
-            // Job failed while user was watching: close the sub-agent view
-            // (which would otherwise keep showing a loading animation) and
-            // show the failure detail in the automation panel instead.
-            this._activeAutomationJobId = "";
-            (window as any).__isAutomationView = false;
-            (window as any).__closeSubAgentView = undefined;
-            setSubAgentView(null);
-            clearMessages();
-            this.chat.render();
-            this.automationPanel.show();
-            this.automation.showDetail(data);
-          } else if ((curView.status as string) === "completed") {
-            send({ type: "automation_list_jobs" });
-          }
-        }
-        return;
-      }
-
-      // ── User-initiated: open the automation result ──────────────
-      this.automationPanel.hide();
-      clearMessages();
-      setSessionId("");
-      // Running/in-progress automation entry — show live sub-agent view
-      // connected to the real-time stream events. Check this BEFORE the
-      // messages check so a running job with partial messages still gets
-      // the correct running sub-agent view (with stream event wiring).
-      if (data.job_id || data.id) {
-        const viewId = data.job_id || data.id;
-        const isActive = data.state === "RUNNING" || data.state === "PENDING";
-        this._activeAutomationJobId = isActive ? viewId : "";
-        const tc: any = {
-          id: viewId,
-          name: "agent",
-          params: { agent_name: data.name || t("app.automationDefaultName") },
-          status: isActive ? "running" : "completed",
-          subAgentMessages: restoreMessages(data.messages || []),
-          content: data.result || "",
-          sessionId: data.session_id || "",
-        };
-        const origClose = (window as any).__closeSubAgentView;
-        (window as any).__closeSubAgentView = () => {
-          setSubAgentView(null);
-          clearMessages();
-          this._activeAutomationJobId = "";
-          (window as any).__isAutomationView = false;
-          (window as any).__closeSubAgentView = origClose;
-          this.automationPanel.toggleAutomationView();
-        };
-        (window as any).__isAutomationView = true;
-        setSubAgentView(tc);
-        this.chat.render();
-        return;
-      }
-      // If we have full messages from the sub-agent execution, use sub-agent view
-      if (data.messages && data.messages.length > 0) {
-        const tc: any = {
-          id: crypto.randomUUID(),
-          name: "agent",
-          params: { agent_name: data.name || t("app.automationDefaultName") },
-          status: "completed",
-          subAgentMessages: restoreMessages(data.messages),
-          content: data.result || "",
-        };
-        const origClose = (window as any).__closeSubAgentView;
-        (window as any).__closeSubAgentView = () => {
-          setSubAgentView(null);
-          clearMessages();
-          (window as any).__isAutomationView = false;
-          (window as any).__closeSubAgentView = origClose;
-          this.automationPanel.toggleAutomationView();
-        };
-        setSubAgentView(tc);
-        (window as any).__isAutomationView = true;
-        return;
-      }
-      // Fallback: show as plain text assistant message
-      const msg: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.result || "",
-        thinking: "",
-        thinkingElapsed: 0,
-        segments: [],
-        isStreaming: false,
-        toolCalls: [],
-        timestamp: Date.now(),
-      };
-      addMessage(msg);
-    };
-    onAutomationShowResult((result: any) => showAutomationResult(result, false));
-    this.automation.onViewResult = (data) => showAutomationResult(data, true);
+    // Update the automation panel's detail view when a job completes.
+    onAutomationShowResult((result: any) => {
+      this.automation.updateExecutionResult(result);
+    });
 
     // ── Real-time automation execution streaming ─────────────────────
     onAutomationStreamEvent((event) => {
       const { job_id, event_type, event_data } = event;
 
       if (event_type === "start") {
-        // New automation job started. The ``automation_auto_open_view``
-        // setting (default OFF) decides whether we jump to the live
-        // sub-agent view immediately or just track it silently in
-        // ``_activeAutomationJobId`` and let the user open it later
-        // from the history.
-        const data = event_data as any;
         this._activeAutomationJobId = job_id;
+        const data = event_data as any;
         const autoOpen = isEnabled(getState().settings?.automation_auto_open_view);
-        if (!autoOpen) {
-          // Silent tracking: the automation panel badge / history will
-          // be updated via the automation_job_update event. The user
-          // can still click an execution row to open the sub-agent
-          // view manually (that path is not gated).
-          return;
-        }
-        this.automationPanel.hide();
-        clearMessages();
-        setSessionId("");
-        addUserMessage(data.prompt || data.name || "");
-        const tc: any = {
-          id: job_id,
-          name: "agent",
-          params: { agent_name: data.name || t("app.automationDefaultName") },
-          status: "running",
-          subAgentMessages: [],
-          content: "",
-          sessionId: data.session_id || "",
-        };
-        const origClose = (window as any).__closeSubAgentView;
-        (window as any).__closeSubAgentView = () => {
-          setSubAgentView(null);
-          clearMessages();
-          this._activeAutomationJobId = "";
-          (window as any).__isAutomationView = false;
-          (window as any).__closeSubAgentView = origClose;
-          this.automationPanel.toggleAutomationView();
-        };
-        (window as any).__isAutomationView = true;
-        setSubAgentView(tc);
+        if (!autoOpen) return;
+        this.automationPanel.show();
+        this.automation.openExecution({
+          id: job_id, job_id, name: data.name || t("app.automationDefaultName"),
+          prompt: data.prompt || "", result: "", tag: "", state: "RUNNING",
+          session_id: data.session_id, messages: [],
+        });
         return;
       }
 
-      // Ignore events for jobs we're not currently viewing
-      if (this._activeAutomationJobId !== job_id) return;
-      const view = getState().subAgentView;
-      if (!view || view.id !== job_id) return;
-
-      if (event_type === "snapshot") {
-        const messages = (event_data as any).messages;
-        if (Array.isArray(messages)) {
-          view.subAgentMessages = restoreMessages(messages);
-        }
-        if ((event_data as any).session_id) {
-          (view as any).sessionId = (event_data as any).session_id;
-        }
-        setSubAgentView({ ...view });
-      } else if (event_type === "text_delta") {
-        (view as any).content = ((view as any).content || "") + ((event_data as any).text || "");
-        setSubAgentView({ ...view });
-      } else if (event_type === "thinking_delta") {
-        // Ignore thinking deltas in the automation view
-      } else if (event_type === "tool_progress" || event_type === "tool_result") {
-        const ed = event_data as any;
-        if (ed.sub_agent_messages && ed.sub_agent_messages.length > 0) {
-          view.subAgentMessages = restoreMessages(ed.sub_agent_messages);
-          setSubAgentView({ ...view });
-        }
-      } else if (event_type === "finish") {
-        (view as any).status = "completed";
-        (view as any).content = (view as any).content || ((event_data as any).result || "");
-        setSubAgentView({ ...view });
-      }
+      this.automation.updateExecution(job_id, event_type, event_data as Record<string, unknown>);
+      if (event_type === "finish") this._activeAutomationJobId = "";
     });
 
     // Mode change callbacks — refresh content, close session sidebar, animate welcome
@@ -393,6 +238,9 @@ class App {
       workspace: this.workspace,
       automationPanel: this.automationPanel,
       onModeChange: onAnyModeChange,
+      onLeaveAutomation: () => {
+        if (this.automation.isDetailVisible()) this.automation.hideDetail();
+      },
     });
     this.sessionInner = new SessionInner();
     this.chat.onViewChanges = (path: string) => {
@@ -1412,9 +1260,18 @@ class App {
     const autoBackBtn = document.getElementById("btn-automation-back");
     const toggleBtn = document.getElementById("btn-toggle-sidebar");
     const searchBtn = document.getElementById("btn-sidebar-search");
-    const isAutomationSubAgent = isAutomationView && isSubAgentView;
+    // isDetailVisible(): we're inside an automation execution's sub-agent
+    // detail view. The header shows the Back button + the sidebar Search
+    // button (so search is reachable), and the sidebar-toggle stays
+    // hidden because the sidebar is force-collapsed in automation.
+    const isAutomationDetail = this.automation.isDetailVisible();
+    const isAutomationSubAgent = (isAutomationView && isSubAgentView) || isAutomationDetail;
     if (autoBackBtn && toggleBtn && searchBtn) {
-      if (isAutomationSubAgent) {
+      if (isAutomationDetail) {
+        autoBackBtn.classList.remove("hidden");
+        toggleBtn.style.display = "none";
+        searchBtn.style.display = "";
+      } else if (isAutomationSubAgent) {
         autoBackBtn.classList.remove("hidden");
         toggleBtn.style.display = "none";
         searchBtn.style.display = "none";
@@ -1427,26 +1284,42 @@ class App {
 
     if (isSubAgentView) {
       // Build breadcrumb HTML: root / sub1 / sub2 / ... / current
-      let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" data-tooltip="${this.esc(rootLabel)}">${this.esc(_truncate(rootLabel))}</button>`;
+      // The root crumb represents the session that spawned the first sub-agent.
+      // For a session-backed sub-agent the active session IS the sub-agent's
+      // own session, so `rootLabel` (derived from the current session) would
+      // mislabel the root — resolve the real parent label from the first
+      // breadcrumb entry's stored sessionId instead.
+      let rootCrumbLabel = rootLabel;
+      const rootCrumbSessionId = breadcrumb.length > 0 ? breadcrumb[0].sessionId : s.sessionId;
+      if (rootCrumbSessionId && rootCrumbSessionId !== s.sessionId) {
+        const rootEntry = s.sessionsList.find((x) => x.session_id === rootCrumbSessionId);
+        rootCrumbLabel = rootEntry?.name || rootEntry?.preview || rootCrumbSessionId.slice(0, 8);
+      }
+      let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" data-tooltip="${this.esc(rootCrumbLabel)}">${this.esc(_truncate(rootCrumbLabel))}</button>`;
+      // Track whether the last breadcrumb entry IS the current sub-agent view
+      // to avoid visual duplicates (breadcrumb button + current span for same level).
+      let lastBreadcrumbIsCurrent = false;
       for (let i = 0; i < breadcrumb.length; i++) {
         const entry = breadcrumb[i];
         const isLast = i === breadcrumb.length - 1;
         const label = formatAgentLabel(entry.name);
         crumbsHtml += `<span class="session-crumb-sep">/</span>`;
-        if (isLast && !s.subAgentView) {
-          // Last crumb and no active sub-agent view = currently viewing this level
+        if (isLast && (!s.subAgentView || entry.toolCallId === s.subAgentView.id)) {
+          // Last crumb either has no active sub-agent view (currently at this level),
+          // or it IS the active sub-agent view — render as current, not a button.
           crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</span>`;
+          if (entry.toolCallId === s.subAgentView?.id) {
+            lastBreadcrumbIsCurrent = true;
+          }
         } else {
           crumbsHtml += `<button class="session-crumb" data-crumb-index="${i}" type="button" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</button>`;
         }
       }
-      // If a sub-agent view is active, show the current agent name
-      if (s.subAgentView) {
-        const rawName = String(
-          s.subAgentView.params.agent_name || s.subAgentView.params.name || s.subAgentView.params.mode || "agent"
-        );
+      // If a sub-agent view is active and NOT already shown as the last breadcrumb,
+      // show the current agent name.
+      if (s.subAgentView && !lastBreadcrumbIsCurrent) {
+        const curLabel = formatAgentLabel(getAgentName(s.subAgentView));
         crumbsHtml += `<span class="session-crumb-sep">/</span>`;
-        const curLabel = formatAgentLabel(rawName);
         crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(curLabel)}">${this.esc(_truncate(curLabel))}</span>`;
       }
       nameEl.innerHTML = crumbsHtml;
@@ -1455,7 +1328,7 @@ class App {
         btn.addEventListener("click", () => {
           const idx = parseInt((btn as HTMLElement).dataset.crumbIndex || "-1", 10);
           if (idx < 0) {
-            (window as any).__closeSubAgentView?.();
+            (window as any).__goToRootView?.();
           } else {
             (window as any).__navigateToBreadcrumb?.(idx);
           }
@@ -1789,7 +1662,11 @@ class App {
 
     // Automation back button: returns to the automation panel
     document.getElementById("btn-automation-back")?.addEventListener("click", () => {
-      (window as any).__closeSubAgentView?.();
+      if (this.automation.isDetailVisible()) {
+        this.automation.hideDetail();
+      } else {
+        (window as any).__closeSubAgentView?.();
+      }
     });
 
     // ── Header mode switch (shared .seg component with the tray popup) ──
@@ -2088,14 +1965,50 @@ class App {
       el.innerHTML = `<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">${t("sessionInner.noRefs")}</div>`;
       return;
     }
-    const shown = refs.slice(-8).reverse();
-    el.innerHTML = shown.map((r: any) => {
-      const iconSrc = r.icon || "link-2";
+    const shown = refs.slice(-12).reverse();
+
+    const groups: { label: string; icon: string; refs: any[] }[] = [
+      { label: t("sessionInner.referencesWeb") || "Web", icon: "globe", refs: [] },
+      { label: t("sessionInner.referencesMemory") || "Memory", icon: "brain", refs: [] },
+      { label: t("sessionInner.referencesMcp") || "MCP", icon: "cable", refs: [] },
+    ];
+    for (const r of shown) {
+      const t = r.tool.toLowerCase();
+      if (t.startsWith("mcp__")) {
+        groups[2].refs.push(r);
+      } else if (t.includes("memory") || t.includes("profile")) {
+        groups[1].refs.push(r);
+      } else {
+        groups[0].refs.push(r);
+      }
+    }
+
+    const renderItem = (r: any) => {
+      const iconSrc = r.icon || "zap";
       return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary)">
         <i data-lucide="${iconSrc}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px;opacity:0.6"></i>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(r.summary)}</span>
       </div>`;
-    }).join("");
+    };
+
+    const parts: string[] = [];
+    for (const g of groups) {
+      if (g.refs.length === 0) continue;
+      const allHtml = g.refs.map(renderItem).join("");
+      parts.push(`<div>
+        <div class="sp-ref-header" onclick="this.parentElement.classList.toggle('collapsed')">
+          <i data-lucide="${g.icon}" class="lucide lucide-sm sp-ref-header-icon"></i>
+          <span class="sp-ref-header-label">${g.label}</span>
+          <i data-lucide="chevron-down" class="lucide lucide-sm sp-ref-chevron"></i>
+        </div>
+        <div class="sp-ref-body">${allHtml}</div>
+      </div>`);
+    }
+
+    el.innerHTML = parts.join("");
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: el });
+    }
   }
 
   private esc(s: string): string {
@@ -2625,22 +2538,36 @@ class App {
    * @param opts - Optional flags controlling cleanup behaviour.
    */
   private cleanupContentArea(opts?: { keepAutomationFlag?: boolean }): void {
+    // ── 0. Automation in-panel sub-agent detail ─────────────────────
+    // Tear down an open execution detail (breadcrumb, activeExecution,
+    // header buttons) first so it cannot leak into the next mode/session.
+    // The mode-switch path already closes it via ModeTransitionManager's
+    // onLeaveAutomation before the panel slides away; this is the safety
+    // net for every other caller (tray switch, new session, temp chat…).
+    if (this.automation.isDetailVisible()) this.automation.hideDetail();
+
     // ── 1. Sub-agent view + breadcrumb ──────────────────────────────
     // These gate the inline "sub-agent" overlay in #message-list and the
     // breadcrumb chips in the session bar.  Without clearing them, switching
     // sessions leaves a phantom sub-agent header and a stale "X / Y / Z" trail
     // pointing at the previous session's nested agent.
+    //
+    // NOTE: only the *state* is reset here.  The window navigation handlers
+    // (__openSubAgentView / __closeSubAgentView / __goToRootView /
+    // __navigateToBreadcrumb) live on the persistent ChatView singleton and
+    // read fresh state via getState() at call-time.  They are bound once in
+    // the ChatView constructor and must NOT be nulled here: opening a
+    // session-backed sub-agent performs a session switch which runs this
+    // cleanup, and nulling them would leave the breadcrumb clicks dead (they
+    // no-op through `?.`), making it impossible to navigate back to the main
+    // agent.
     setSubAgentView(null);
     clearSubAgentBreadcrumb();
-    (window as any).__closeSubAgentView = undefined;
-    (window as any).__navigateToBreadcrumb = undefined;
 
     // ── 2. Automation panel state ──────────────────────────────────
     if (!opts?.keepAutomationFlag) {
       (window as any).__isAutomationView = false;
       (window as any).__activeAutomationJobId = "";
-      // Restore automation sub-agent close-handler to the no-op default.
-      (window as any).__closeSubAgentView = undefined;
     }
 
     // ── 3. Tool detail panel (right-side aside) ─────────────────────
@@ -2807,8 +2734,20 @@ class App {
     if (sidebarToggle) {
       sidebarToggle.classList.remove("hidden");
       sidebarToggle.style.display = "";
+      // AutomationPanel fades these via opacity on enter; clear it so the
+      // button is fully visible again after leaving automation.
+      sidebarToggle.style.opacity = "";
+      sidebarToggle.style.transform = "";
+      sidebarToggle.style.transition = "";
+      sidebarToggle.style.pointerEvents = "";
     }
-    if (searchBtn) searchBtn.style.display = "";
+    if (searchBtn) {
+      searchBtn.style.display = "";
+      searchBtn.style.opacity = "";
+      searchBtn.style.transform = "";
+      searchBtn.style.transition = "";
+      searchBtn.style.pointerEvents = "";
+    }
     if (autoBackBtn) autoBackBtn.classList.add("hidden");
 
     // ── 17. Clear #child-view content ──────────────────────────────

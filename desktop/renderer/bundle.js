@@ -557,6 +557,7 @@
           skillsManagement: "Skills \u7BA1\u7406",
           skillsInstructions: "\u542F\u7528\u6216\u7981\u7528 Skills\u3002\u4F7F\u7528 /skill-name \u5728\u5BF9\u8BDD\u4E2D\u6FC0\u6D3B\u6280\u80FD\u3002",
           noSkills: "\u672A\u914D\u7F6E\u81EA\u5B9A\u4E49 Skills",
+          skillDir: "Skill \u5B58\u50A8\u76EE\u5F55",
           skillDeleteConfirm: '\u786E\u5B9A\u8981\u5220\u9664 Skill "{name}" \u5417\uFF1F',
           commandRemoveConfirm: '\u786E\u5B9A\u8981\u79FB\u9664\u547D\u4EE4 "/{name}" \u5417\uFF1F',
           remove: "\u79FB\u9664",
@@ -832,6 +833,9 @@
           totalInputTokens: "\u8F93\u5165 Token",
           totalOutputTokens: "\u8F93\u51FA Token",
           totalToolCalls: "\u5DE5\u5177\u8C03\u7528\u603B\u6570",
+          modelBreakdown: "\u6309\u6A21\u578B",
+          toolBreakdown: "By Tool",
+          sessionBreakdown: "\u6309\u4F1A\u8BDD",
           dailyUsageByModel: "\u6BCF\u65E5\u7528\u91CF\uFF08\u6309\u6A21\u578B\u5806\u53E0\uFF09",
           dailyUsageByChannel: "\u6BCF\u65E5\u7528\u91CF\uFF08\u6309\u6A21\u5F0F\u5806\u53E0\uFF09",
           usageGroupByModel: "\u6309\u6A21\u578B",
@@ -846,9 +850,18 @@
           activeDays: "\u6D3B\u8DC3\u5929\u6570",
           weeks: "\u5468",
           hoursPerDay: "\u5C0F\u65F6/\u5929",
+          longestStreak: "\u6700\u957F\u8FDE\u7EED",
+          currentStreak: "\u5F53\u524D\u8FDE\u7EED",
+          peak: "\u5CF0\u503C",
           days: "\u5929",
+          models: "\u6A21\u578B",
           olderDaysHidden: "\u66F4\u65E9\u7684\u6570\u636E\u5DF2\u9690\u85CF",
           chartTotal: "\u603B\u8BA1",
+          tokenTrend: "Token \u8D8B\u52BF",
+          noToolData: "No tool calls yet",
+          tokens: "Tokens",
+          turnCount: "\u8F6E\u6B21",
+          toolCallCount: "Tool Calls",
           noUsageData: "\u6682\u65E0\u7528\u91CF\u6570\u636E\uFF0C\u5F00\u59CB\u5BF9\u8BDD\u540E\u81EA\u52A8\u7EDF\u8BA1",
           // 网关
           gatewayManagement: "\u7F51\u5173",
@@ -897,6 +910,12 @@
           fieldAgentId: "\u5E94\u7528 ID",
           fieldToken: "\u4EE4\u724C",
           fieldEncodingAesKey: "Encoding AES Key",
+          enabled: "\u5DF2\u542F\u7528",
+          disabled: "\u5DF2\u7981\u7528",
+          error: "\u9519\u8BEF",
+          memoryTime: "\u8BB0\u5FC6\u65F6\u95F4",
+          priority: "\u4F18\u5148\u7EA7",
+          skillContent: "Skill \u5185\u5BB9",
           // 网关适配器名称
           adapterNameQqbot: "QQ \u673A\u5668\u4EBA",
           adapterNameTelegram: "Telegram",
@@ -948,7 +967,46 @@
           reloading: "\u6B63\u5728\u52A0\u8F7D\u2026",
           retry: "\u91CD\u65B0\u52A0\u8F7D"
         },
+        app: {
+          automationDefaultName: "\u81EA\u52A8\u5316",
+          toolsTokens: "{count} \u4E2A\u5DE5\u5177 \xB7 {tokens} tokens",
+          inputOutput: "\u8F93\u5165\uFF1A{input} | \u8F93\u51FA\uFF1A{output}",
+          turns: "\u8F6E\u6B21",
+          duration: "\u65F6\u957F",
+          comingSoon: "\u656C\u8BF7\u671F\u5F85",
+          noModelsConfigured: "\u672A\u914D\u7F6E\u4EFB\u4F55\u6A21\u578B",
+          model: "\u6A21\u578B",
+          commands: "\u547D\u4EE4",
+          tokens: "Tokens",
+          slashActivated: "\u5DF2\u6FC0\u6D3B"
+        },
+        engineInstall: {
+          cancel: "\u53D6\u6D88",
+          download: "\u4E0B\u8F7D\u5F15\u64CE",
+          fallbackHint: "\u82E5\u672A\u63A5\u53D7\uFF0C\u5C06\u4F9D\u6B21\u5C1D\u8BD5\uFF1A{remaining}\u3002",
+          configuring: "\u6B63\u5728\u914D\u7F6E\u6D4F\u89C8\u5668\u5F15\u64CE",
+          downloading: "\u6B63\u5728\u4E0B\u8F7D Playwright Chromium \u5F15\u64CE\u2026",
+          downloadingSub: "\u7EA6 {size}\uFF0C\u6839\u636E\u7F51\u7EDC\u60C5\u51B5\u53EF\u80FD\u8017\u65F6 1-5 \u5206\u949F",
+          stillDownloading: "\u4ECD\u5728\u4E0B\u8F7D\u2026\uFF08\u5DF2\u7B49\u5F85 {elapsed} \u79D2\uFF09",
+          downloadSuccess: "Chromium \u5F15\u64CE\u5B89\u88C5\u6210\u529F",
+          downloadFailed: "\u5F15\u64CE\u4E0B\u8F7D\u5931\u8D25\uFF08\u9000\u51FA\u7801 {code}\uFF09",
+          downloadFailedSub: "playwright install \u4EE5\u4EE3\u7801 {code} \u9000\u51FA",
+          verifyFailed: "\u4E0B\u8F7D\u5B8C\u6210\u4F46\u65E0\u6CD5\u542F\u52A8 Chromium\u3002{error}",
+          dialogTitle: "\u5B89\u88C5 Playwright \u6D4F\u89C8\u5668\u5F15\u64CE",
+          dialogBody: "\u672A\u5B89\u88C5 Playwright \u81EA\u5E26\u7684 Chromium\u3002\n\u4E0B\u8F7D\u4EE5\u542F\u7528\u6D4F\u89C8\u5668\u81EA\u52A8\u5316\u3002\n\u6216\u8005\uFF0C\u4F7F\u7528\u672C\u5730 Edge (CDP) \u6216 WebDriver\u3002",
+          dialogHint: "cdn.playwright.dev \xB7 chromium-1187 \xB7 \u7EA6 200 MB",
+          optDownload: "\u4E0B\u8F7D",
+          optDownloadDesc: "\u7EA6 200 MB\uFF0C\u9884\u8BA1 1-3 \u5206\u949F",
+          optLocalEdge: "\u672C\u5730 Edge (CDP)",
+          optLocalEdgeDesc: "\u4F7F\u7528\u672C\u673A\u5DF2\u5B89\u88C5\u7684 Edge\u3002",
+          optWebDriver: "WebDriver",
+          optWebDriverDesc: "msedgedriver \u534F\u8BAE\uFF0C\u542F\u52A8\u8F83\u6162\u3002",
+          optCancel: "\u53D6\u6D88",
+          optCancelDesc: "\u6D4F\u89C8\u5668\u81EA\u52A8\u5316\u5C06\u4E0D\u53EF\u7528\u3002"
+        },
         chat: {
+          thought: "Thought",
+          thinkingProcess: "Thinking Process",
           showReasoning: "\u663E\u793A\u63A8\u7406",
           deepThinking: "\u6DF1\u5EA6\u601D\u8003",
           operated: "",
@@ -992,35 +1050,40 @@
           artifactsCount: "\u672C\u6B21\u5BF9\u8BDD\u4E2D\u521B\u5EFA\u4E86 {count} \u4E2A\u4EA7\u7269",
           compact: "\u538B\u7F29",
           toolBash: "Bash",
-          toolBashOutput: "Bash \u8F93\u51FA",
+          toolBashOutput: "Bash Output",
           toolShell: "Shell",
-          toolTerminal: "\u7EC8\u7AEF",
-          toolWebSearch: "\u7F51\u9875\u641C\u7D22",
-          toolWebFetch: "\u7F51\u9875\u6293\u53D6",
-          toolFindTool: "\u67E5\u627E\u5DE5\u5177",
-          toolReadFile: "\u8BFB\u53D6\u6587\u4EF6",
-          toolWriteFile: "\u5199\u5165\u6587\u4EF6",
-          toolEditFile: "\u7F16\u8F91\u6587\u4EF6",
-          toolApplyPatch: "\u5E94\u7528\u8865\u4E01",
+          toolTerminal: "Terminal",
+          toolWebSearch: "Web Search",
+          toolWebFetch: "Web Fetch",
+          toolFindTool: "Find Tool",
+          toolReadFile: "Read File",
+          toolWriteFile: "Write File",
+          toolEditFile: "Edit File",
+          toolApplyPatch: "Apply Patch",
           toolMcp: "MCP",
           toolLsp: "LSP",
           toolGit: "Git",
-          toolMemory: "\u8BB0\u5FC6",
-          toolTask: "\u4EFB\u52A1",
-          toolCron: "\u5B9A\u65F6\u4EFB\u52A1",
+          toolMemory: "Memory",
+          toolTask: "Task",
+          toolCron: "Cron",
           toolRestClient: "Rest Client",
-          toolDesktop: "\u684C\u9762",
-          toolQuestion: "\u95EE\u9898",
-          toolInfo: "\u4FE1\u606F\u5361\u7247",
+          toolDesktop: "Desktop",
+          toolQuestion: "Question",
+          toolInfo: "Info Card",
           infoWaiting: "\u6B63\u5728\u751F\u6210\u5361\u7247\u5185\u5BB9\u2026",
           infoRender: "\u6E32\u67D3",
           infoCode: "\u4EE3\u7801",
           infoCopy: "\u590D\u5236\u6E90\u7801",
           infoCopied: "\u5DF2\u590D\u5236\u5230\u526A\u8D34\u677F",
           infoCopyFailed: "\u590D\u5236\u5931\u8D25",
-          toolFailed: "\u5931\u8D25",
-          toolMemoryProfile: "\u8BB0\u5FC6\u753B\u50CF",
+          toolFailed: "Failed",
+          toolMemoryProfile: "Memory Profile",
           noSubAgentOutput: "\u5B50\u667A\u80FD\u4F53\u65E0\u8F93\u51FA",
+          parallelTasks: "\u5E76\u884C\u4EFB\u52A1 \xB7 {n}",
+          taskRunning: "\u8FD0\u884C\u4E2D",
+          taskDone: "\u5DF2\u5B8C\u6210",
+          taskError: "\u5931\u8D25",
+          taskWaiting: "\u7B49\u5F85\u8F93\u51FA\u2026",
           workflowRunning: "\u8FD0\u884C\u4E2D",
           workflowDone: "\u5DF2\u5B8C\u6210",
           workflowFailed: "\u5931\u8D25",
@@ -1122,6 +1185,9 @@
           changedFiles: "\u53D8\u66F4\u6587\u4EF6",
           viewAllChanges: "\u67E5\u770B\u6240\u6709\u6539\u52A8",
           references: "\u5F15\u7528",
+          referencesWeb: "Web",
+          referencesMemory: "Memory",
+          referencesMcp: "MCP",
           noRefs: "\u6682\u65E0\u5F15\u7528",
           canvas: "\u753B\u5E03",
           noProjectRules: "\u5DE5\u4F5C\u533A\u4E2D\u6682\u65E0\u9879\u76EE\u89C4\u5219\u6587\u4EF6",
@@ -1287,6 +1353,7 @@
           noReason: "\uFF08\u672A\u63D0\u4F9B\u539F\u56E0\uFF09",
           settings: {
             title: "\u6743\u9650",
+            subtitle: "\u7BA1\u7406\u5DE5\u5177\u4E0E\u80FD\u529B\u7684\u5141\u8BB8/\u7981\u6B62/\u8BE2\u95EE\u7B56\u7565\u3002",
             tools: "\u5DE5\u5177",
             capabilities: "\u80FD\u529B",
             default: "\u9ED8\u8BA4\uFF08\u5141\u8BB8\uFF09",
@@ -1338,6 +1405,7 @@
         },
         automation: {
           title: "\u81EA\u52A8\u5316",
+          executionFailed: "\u6267\u884C\u5931\u8D25",
           backToChat: "\u8FD4\u56DE\u5BF9\u8BDD",
           configured: "\u5DF2\u914D\u7F6E",
           history: "\u6267\u884C\u5386\u53F2",
@@ -2344,6 +2412,11 @@
           toolFailed: "Failed",
           toolMemoryProfile: "Memory Profile",
           noSubAgentOutput: "No output from sub-agent",
+          parallelTasks: "Parallel tasks \xB7 {n}",
+          taskRunning: "Running",
+          taskDone: "Done",
+          taskError: "Failed",
+          taskWaiting: "Waiting for output\u2026",
           workflowRunning: "Running",
           workflowDone: "Completed",
           workflowFailed: "Failed",
@@ -2446,6 +2519,9 @@
           changedFiles: "Changed files",
           viewAllChanges: "View all changes",
           references: "References",
+          referencesWeb: "Web",
+          referencesMemory: "Memory",
+          referencesMcp: "MCP",
           noRefs: "No references",
           canvas: "Canvas",
           noProjectRules: "No project rule files in this workspace",
@@ -2663,6 +2739,7 @@
         },
         automation: {
           title: "Automation",
+          executionFailed: "Execution Failed",
           backToChat: "Back to Chat",
           configured: "Configured",
           history: "History",
@@ -3170,6 +3247,45 @@
     }
     return "";
   }
+  function toolCallMatchesId(tc2, id2) {
+    return !!id2 && (tc2.id === id2 || tc2.backendId === id2);
+  }
+  function splitParallelTaskGroups(messages) {
+    const groups = /* @__PURE__ */ new Map();
+    let fallbackIndex = 0;
+    let current = null;
+    for (const message of messages) {
+      if (message.mode === "task_divider") {
+        const index2 = Number.isInteger(message.taskIndex) ? message.taskIndex : fallbackIndex;
+        fallbackIndex = Math.max(fallbackIndex, index2 + 1);
+        current = { index: index2, divider: message, messages: [] };
+        groups.set(index2, current);
+      } else if (current) {
+        current.messages.push(message);
+      }
+    }
+    return [...groups.values()].sort((a2, b2) => a2.index - b2.index);
+  }
+  function mergeSubAgentMessages(existing, incoming) {
+    if (!existing || existing.length === 0) return incoming;
+    const existingHasDividers = existing.some((message) => message.mode === "task_divider");
+    const incomingHasDividers = incoming.some((message) => message.mode === "task_divider");
+    if (!existingHasDividers && !incomingHasDividers) return incoming;
+    if (!incomingHasDividers) return existing;
+    if (!existingHasDividers) return incoming;
+    const merged = /* @__PURE__ */ new Map();
+    for (const group of splitParallelTaskGroups(existing)) {
+      merged.set(group.index, group);
+    }
+    for (const group of splitParallelTaskGroups(incoming)) {
+      const previous = merged.get(group.index);
+      merged.set(group.index, {
+        ...group,
+        messages: group.messages.length > 0 || !previous ? group.messages : previous.messages
+      });
+    }
+    return [...merged.values()].sort((a2, b2) => a2.index - b2.index).flatMap((group) => [group.divider, ...group.messages]);
+  }
   function restoreToolCalls(rawToolCalls) {
     const restoredToolCalls = [];
     if (!rawToolCalls || !Array.isArray(rawToolCalls)) return restoredToolCalls;
@@ -3184,6 +3300,7 @@
       const clientId = tc2._client_id;
       restoredToolCalls.push({
         id: clientId || tc2.id || crypto.randomUUID(),
+        backendId: tc2.id && tc2.id !== clientId ? tc2.id : void 0,
         name: func.name || "unknown",
         params,
         result: void 0,
@@ -3193,25 +3310,43 @@
     }
     return restoredToolCalls;
   }
+  function indexToolCalls(toolCallsById, toolCalls) {
+    for (const toolCall of toolCalls) {
+      toolCallsById.set(toolCall.id, toolCall);
+      if (toolCall.backendId) toolCallsById.set(toolCall.backendId, toolCall);
+    }
+  }
+  function findRestoredToolCall(raw, toolCallsById, fallbackAssistant) {
+    const clientId = raw._client_id;
+    const toolCallId = raw.tool_call_id;
+    const target = (clientId ? toolCallsById.get(clientId) : void 0) || (toolCallId ? toolCallsById.get(toolCallId) : void 0);
+    if (target) return target;
+    if (clientId || toolCallId) {
+      console.warn("[state] Unable to restore tool result", {
+        clientId,
+        toolCallId,
+        knownToolCallIds: [...toolCallsById.keys()]
+      });
+      return void 0;
+    }
+    return fallbackAssistant?.toolCalls[fallbackAssistant.toolCalls.length - 1];
+  }
   function restoreMessages(rawMessages) {
     const messages = [];
+    const toolCallsById = /* @__PURE__ */ new Map();
+    let latestAssistantWithToolCalls;
     for (const raw of rawMessages || []) {
       if (raw.role === "system") continue;
       if (raw.role === "tool") {
-        const lastAssistant = messages[messages.length - 1];
-        if (lastAssistant?.role === "assistant") {
-          const toolCallId = raw.tool_call_id;
-          const clientId = raw._client_id;
-          const target = clientId ? lastAssistant.toolCalls.find((tc2) => tc2.id === clientId) : toolCallId ? lastAssistant.toolCalls.find((tc2) => tc2.id === toolCallId) : lastAssistant.toolCalls[lastAssistant.toolCalls.length - 1];
-          if (target) {
-            const toolText = extractMessageText(raw.content);
-            target.result = toolText;
-            target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
-            target.status = "done";
-            const subAgentMessages = raw.sub_agent_messages;
-            if (Array.isArray(subAgentMessages)) {
-              target.subAgentMessages = restoreMessages(subAgentMessages);
-            }
+        const target = findRestoredToolCall(raw, toolCallsById, latestAssistantWithToolCalls);
+        if (target) {
+          const toolText = extractMessageText(raw.content);
+          target.result = toolText;
+          target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
+          target.status = "done";
+          const subAgentMessages = raw.sub_agent_messages;
+          if (Array.isArray(subAgentMessages)) {
+            target.subAgentMessages = restoreMessages(subAgentMessages);
           }
         }
         continue;
@@ -3219,7 +3354,10 @@
       const toolCalls = restoreToolCalls(raw.tool_calls);
       const rawSegments = raw.segments;
       const segments = rawSegments?.length ? rawSegments.reduce((acc, s15) => {
-        const next = s15.kind === "thinking" ? { kind: "thinking", text: s15.text ?? "" } : s15.kind === "tool" ? { kind: "tool", toolId: s15.tool_id || "" } : { kind: "text", text: s15.text ?? "" };
+        const next = s15.kind === "thinking" ? { kind: "thinking", text: s15.text ?? "" } : s15.kind === "tool" ? {
+          kind: "tool",
+          toolId: toolCalls.find((toolCall) => toolCallMatchesId(toolCall, s15.tool_id))?.id || s15.tool_id || ""
+        } : { kind: "text", text: s15.text ?? "" };
         const prev = acc[acc.length - 1];
         if (prev?.kind === "thinking" && next.kind === "thinking") {
           prev.text = (prev.text || "") + (next.text || "");
@@ -3234,7 +3372,7 @@
         ...extractMessageText(raw.content).trim() ? [{ kind: "text", text: extractMessageText(raw.content) }] : [],
         ...toolCalls.map((tc2) => ({ kind: "tool", toolId: tc2.id }))
       ];
-      messages.push({
+      const message = {
         id: crypto.randomUUID(),
         role: raw.role === "assistant" ? "assistant" : "user",
         content: extractMessageText(raw.content),
@@ -3244,8 +3382,16 @@
         timestamp: raw.created_at || Date.now(),
         thinking: raw.reasoning_content,
         mode: raw.mode,
+        taskIndex: raw.task_index,
+        taskName: raw.task_name,
+        taskStatus: raw.task_status,
         serverId: raw.id
-      });
+      };
+      messages.push(message);
+      if (message.role === "assistant" && toolCalls.length > 0) {
+        indexToolCalls(toolCallsById, toolCalls);
+        latestAssistantWithToolCalls = message;
+      }
     }
     if (rawMessages && rawMessages.length > 0) {
       console.log("[restoreMessages] input=" + rawMessages.length + " output=" + messages.length + " roles=" + JSON.stringify(messages.map((m) => m.role)));
@@ -3254,27 +3400,24 @@
   }
   function loadSessionMessages(rawMessages, sessionId = state.sessionId) {
     const messages = [];
+    const toolCallsById = /* @__PURE__ */ new Map();
+    let latestAssistantWithToolCalls;
     let totalInput = 0;
     let totalOutput = 0;
     for (const raw of rawMessages) {
       if (raw.role === "system") continue;
       if (raw.role === "tool") {
-        const lastAssistant = messages[messages.length - 1];
-        if (lastAssistant?.role === "assistant" && lastAssistant.toolCalls.length > 0) {
-          const toolCallId = raw.tool_call_id;
-          const clientId = raw._client_id;
+        const target = findRestoredToolCall(raw, toolCallsById, latestAssistantWithToolCalls);
+        if (target) {
           const toolText = extractMessageText(raw.content);
-          const target = clientId ? lastAssistant.toolCalls.find((tc2) => tc2.id === clientId) : toolCallId ? lastAssistant.toolCalls.find((tc2) => tc2.id === toolCallId) : lastAssistant.toolCalls[lastAssistant.toolCalls.length - 1];
-          if (target) {
-            target.result = toolText;
-            target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
-            target.status = "done";
-            const subAgentMessages = raw.sub_agent_messages;
-            if (Array.isArray(subAgentMessages)) {
-              target.subAgentMessages = restoreMessages(subAgentMessages);
-            }
-            target.subAgentSessionId = raw.sub_agent_session_id;
+          target.result = toolText;
+          target.isError = /^error:/i.test(toolText) || /^permission denied/i.test(toolText);
+          target.status = "done";
+          const subAgentMessages = raw.sub_agent_messages;
+          if (Array.isArray(subAgentMessages)) {
+            target.subAgentMessages = restoreMessages(subAgentMessages);
           }
+          target.subAgentSessionId = raw.sub_agent_session_id;
         }
         continue;
       }
@@ -3298,7 +3441,7 @@
           if (s15.kind === "thinking") return { kind: "thinking", text: s15.text ?? "" };
           if (s15.kind === "text") return { kind: "text", text: s15.text ?? "" };
           if (s15.kind === "tool") {
-            const tc2 = toolCalls.find((t3) => t3.id === s15.tool_id);
+            const tc2 = toolCalls.find((t3) => toolCallMatchesId(t3, s15.tool_id));
             return { kind: "tool", toolId: tc2?.id || s15.tool_id || "" };
           }
           return { kind: "text", text: "" };
@@ -3329,7 +3472,7 @@
         } catch {
         }
       }
-      messages.push({
+      const message = {
         id: crypto.randomUUID(),
         role: raw.role === "assistant" ? "assistant" : "user",
         content: cleanContent,
@@ -3341,17 +3484,80 @@
         tokenUsage: tu,
         serverId: raw.id,
         mode: msgMode,
+        taskIndex: raw.task_index,
+        taskName: raw.task_name,
+        taskStatus: raw.task_status,
         fileRefs: rawFileRefs,
         errorMessage: raw.errorMessage,
         errorCode: raw.errorCode,
         interruptedReason: raw.interruptedReason,
         turnStatusText: raw.turnStatusText,
         cancelledText: raw.cancelledText
-      });
+      };
+      messages.push(message);
+      if (message.role === "assistant" && toolCalls.length > 0) {
+        indexToolCalls(toolCallsById, toolCalls);
+        latestAssistantWithToolCalls = message;
+      }
     }
     const snapshot = getOrCreateSessionSnapshot(sessionId);
+    const oldSubAgentData = /* @__PURE__ */ new Map();
+    for (const msg of snapshot.messages) {
+      for (const tc2 of msg.toolCalls) {
+        if (tc2.subAgentMessages && tc2.subAgentMessages.length > 0) {
+          const old = {
+            messages: tc2.subAgentMessages,
+            sessionId: tc2.subAgentSessionId
+          };
+          oldSubAgentData.set(tc2.id, old);
+          if (tc2.backendId) oldSubAgentData.set(tc2.backendId, old);
+          console.log("[loadSessionMessages] Saved old subAgentMessages for tc.id:", tc2.id, "backendId:", tc2.backendId, "count:", tc2.subAgentMessages.length);
+        }
+      }
+    }
+    console.log("[loadSessionMessages] Total old subAgentData saved:", oldSubAgentData.size);
     const hadTokenUsage = snapshot.tokenUsage;
+    if (snapshot.running) {
+      const incomingToolCallIds = /* @__PURE__ */ new Set();
+      for (const message of messages) {
+        for (const toolCall of message.toolCalls) {
+          incomingToolCallIds.add(toolCall.id);
+          if (toolCall.backendId) incomingToolCallIds.add(toolCall.backendId);
+        }
+      }
+      for (const oldMessage of snapshot.messages) {
+        if (oldMessage.role !== "assistant" || !oldMessage.serverId) continue;
+        const restoredMessage = messages.find(
+          (message) => message.role === "assistant" && message.serverId === oldMessage.serverId
+        );
+        if (!restoredMessage) continue;
+        for (const oldToolCall of oldMessage.toolCalls) {
+          const isMissing = !incomingToolCallIds.has(oldToolCall.id) && (!oldToolCall.backendId || !incomingToolCallIds.has(oldToolCall.backendId));
+          if (oldToolCall.name !== "agent" || oldToolCall.result !== void 0 || !isMissing) continue;
+          restoredMessage.toolCalls.push({ ...oldToolCall });
+          restoredMessage.segments.push({ kind: "tool", toolId: oldToolCall.id });
+          incomingToolCallIds.add(oldToolCall.id);
+          if (oldToolCall.backendId) incomingToolCallIds.add(oldToolCall.backendId);
+          console.warn("[loadSessionMessages] Restored missing live agent tool call", {
+            id: oldToolCall.id,
+            backendId: oldToolCall.backendId,
+            assistantId: oldMessage.serverId
+          });
+        }
+      }
+    }
     snapshot.messages = messages;
+    for (const msg of snapshot.messages) {
+      for (const tc2 of msg.toolCalls) {
+        const old = oldSubAgentData.get(tc2.id) || (tc2.backendId ? oldSubAgentData.get(tc2.backendId) : void 0);
+        if (old) {
+          tc2.subAgentMessages = mergeSubAgentMessages(old.messages, tc2.subAgentMessages ?? []);
+          tc2.subAgentSessionId = tc2.subAgentSessionId || old.sessionId;
+          console.log("[loadSessionMessages] Merged subAgentMessages for tc.id:", tc2.id, "count:", tc2.subAgentMessages?.length ?? 0);
+        }
+        if (snapshot.running && tc2.result === void 0) tc2.status = "running";
+      }
+    }
     snapshot.artifacts = [];
     snapshot.compactEvents = [];
     if (totalInput > 0 || totalOutput > 0) {
@@ -3556,7 +3762,7 @@
     if (sessionId && state.sessionId && sessionId !== state.sessionId) return;
     const snapshot = getOrCreateSessionSnapshot(sessionId);
     for (const msg of snapshot.messages) {
-      const tc2 = msg.toolCalls.find((t3) => t3.id === id2);
+      const tc2 = msg.toolCalls.find((t3) => toolCallMatchesId(t3, id2));
       if (tc2) {
         Object.assign(tc2, patch);
         syncSessionState(sessionId);
@@ -3640,7 +3846,7 @@
     const snapshot = getOrCreateSessionSnapshot(sessionId);
     for (const msg of snapshot.messages) {
       for (const tc2 of msg.toolCalls) {
-        if (tc2.id === id2) return tc2;
+        if (toolCallMatchesId(tc2, id2)) return tc2;
       }
     }
     return null;
@@ -4812,6 +5018,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const text2 = typeof lastAfter.content === "string" ? lastAfter.content : "";
       if (text2) {
         _activeStreamSessionId = st3.sessionId || "";
+        window.__subAgentAutoOpenDismissed = false;
         send({ type: "run", prompt: text2, session_id: st3.sessionId || void 0 });
       }
     }
@@ -4877,11 +5084,15 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const previousSid = getState().sessionId;
         const nextSid = event.session_id || "";
         const switched = previousSid && previousSid !== nextSid;
+        const pendingSubAgent = window.__pendingSubAgentView;
+        const isPendingSubSwitch = !!(pendingSubAgent && pendingSubAgent.sessionId === nextSid);
         if (switched) {
           _activeStreamSessionId = "";
           _toolCallGeneration = {};
-          setSubAgentView(null);
-          clearSubAgentBreadcrumb();
+          if (!isPendingSubSwitch) {
+            setSubAgentView(null);
+            clearSubAgentBreadcrumb();
+          }
         }
         console.log("[stream] session_ready received, messages:", event.messages?.length ?? 0, "session_id:", event.session_id, "gen:", _sessionGeneration);
         setSessionId(event.session_id);
@@ -4895,8 +5106,31 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (event.messages && event.messages.length > 0) {
           loadSessionMessages(event.messages, event.session_id);
           console.log("[stream] loadSessionMessages done, state.messages.length:", getState().messages.length);
+          const currentMessages = getState().messages;
+          let tcCount = 0;
+          for (const msg of currentMessages) {
+            for (const tc2 of msg.toolCalls) {
+              _toolCallGeneration[tc2.id] = _sessionGeneration;
+              if (tc2.backendId) _toolCallGeneration[tc2.backendId] = _sessionGeneration;
+              tcCount++;
+              if (tc2.name === "agent") {
+                console.log("[stream] Registered agent tc.id:", tc2.id, "hasSubAgentMsg:", !!tc2.subAgentMessages, "subAgentMsgCount:", tc2.subAgentMessages?.length ?? 0);
+              }
+            }
+          }
+          console.log("[stream] Repopulated _toolCallGeneration with", tcCount, "tool calls, sessionGen:", _sessionGeneration, "tc_ids:", Object.keys(_toolCallGeneration).filter((k2) => k2.startsWith("call_")).join(","));
         } else {
           clearMessages(event.session_id);
+        }
+        if (isPendingSubSwitch) {
+          const toolCall = {
+            ...pendingSubAgent.toolCall,
+            subAgentMessages: getState().messages,
+            status: event.is_running ? "running" : "done"
+          };
+          setSubAgentView(toolCall);
+          window.__activeSubAgentSessionId = event.session_id;
+          window.__pendingSubAgentView = void 0;
         }
         if (event.plan_items) {
           setPlanItems(event.plan_items, event.session_id);
@@ -4965,7 +5199,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             const raw = getState().settings?.sub_agent_auto_open_view;
             const autoOpen = raw === void 0 ? true : isEnabled(raw);
             const cur2 = getState().subAgentView;
-            if (autoOpen && cur2 == null) {
+            const dismissed = !!window.__subAgentAutoOpenDismissed;
+            if (autoOpen && cur2 == null && !dismissed) {
               setSubAgentView(tcf);
               chat?.renderForce?.();
             }
@@ -5013,25 +5248,47 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         break;
       }
       case "tool_progress":
-        if (_toolCallGeneration[event.id] !== _sessionGeneration) break;
-        updateToolCall(event.id, {
-          status: event.status === "done" ? "done" : "running",
-          subAgentMessages: event.sub_agent_messages ? restoreMessages(event.sub_agent_messages) : void 0,
-          subAgentSessionId: event.sub_agent_session_id
-        }, _eventSessionId(event));
+        if (_toolCallGeneration[event.id] !== _sessionGeneration) {
+          console.log("[stream] tool_progress REJECTED by generation check, id:", event.id, "tc_gen:", _toolCallGeneration[event.id], "session_gen:", _sessionGeneration);
+          break;
+        }
+        console.log("[stream] tool_progress accepted, id:", event.id, "sub_agent_messages:", event.sub_agent_messages?.length ?? 0);
+        const progressPatch = {
+          status: event.status === "done" ? "done" : "running"
+        };
+        if (event.sub_agent_messages && event.sub_agent_messages.length > 0) {
+          const current = findToolCall(event.id, _eventSessionId(event));
+          progressPatch.subAgentMessages = mergeSubAgentMessages(
+            current?.subAgentMessages,
+            restoreMessages(event.sub_agent_messages)
+          );
+        }
+        if (event.sub_agent_session_id) {
+          progressPatch.subAgentSessionId = event.sub_agent_session_id;
+        }
+        updateToolCall(event.id, progressPatch, _eventSessionId(event));
         _syncSubAgentView(event.id);
         tools?.requestRender();
         chat?.renderForce?.();
         break;
       case "tool_result":
         if (_toolCallGeneration[event.id] !== void 0 && _toolCallGeneration[event.id] !== _sessionGeneration) break;
-        updateToolCall(event.id, {
+        const resultPatch = {
           result: event.content,
           isError: event.is_error,
-          status: "done",
-          subAgentMessages: event.sub_agent_messages ? restoreMessages(event.sub_agent_messages) : void 0,
-          subAgentSessionId: event.sub_agent_session_id
-        }, _eventSessionId(event));
+          status: "done"
+        };
+        if (event.sub_agent_messages && event.sub_agent_messages.length > 0) {
+          const current = findToolCall(event.id, _eventSessionId(event));
+          resultPatch.subAgentMessages = mergeSubAgentMessages(
+            current?.subAgentMessages,
+            restoreMessages(event.sub_agent_messages)
+          );
+        }
+        if (event.sub_agent_session_id) {
+          resultPatch.subAgentSessionId = event.sub_agent_session_id;
+        }
+        updateToolCall(event.id, resultPatch, _eventSessionId(event));
         _syncSubAgentView(event.id);
         tools?.requestRender();
         chat?.render();
@@ -5727,6 +5984,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         send({ type: "automation_list_jobs" });
         send({ type: "automation_get_history" });
         break;
+      case "automation_execution_deleted":
+        send({ type: "automation_get_history" });
+        break;
+      case "automation_execution_renamed":
+        send({ type: "automation_get_history" });
+        break;
       case "automation_stream_event":
         _automationStreamCallback?.(event);
         break;
@@ -5786,10 +6049,15 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   function _syncSubAgentView(toolCallId) {
     const st3 = getState();
     const view = st3.subAgentView;
-    if (!view || view.id !== toolCallId) return;
+    if (!view || !toolCallMatchesId(view, toolCallId)) return;
     const fresh = findToolCall(toolCallId);
     if (!fresh) return;
-    setSubAgentView(fresh);
+    const dividerCount = fresh.subAgentMessages?.filter((m) => m.mode === "task_divider").length ?? 0;
+    if (dividerCount >= 2 && view.taskIndex === void 0) {
+      setSubAgentView(null);
+      return;
+    }
+    setSubAgentView({ ...fresh, taskIndex: view.taskIndex });
   }
   function _syncSessionEntry(sessionId, st3) {
     if (!sessionId) return;
@@ -57724,10 +57992,45 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   var session_exports = {};
   __export(session_exports, {
     Session: () => Session,
+    showRenameDialog: () => showRenameDialog,
     showRenameDialogForSession: () => showRenameDialogForSession,
     showSessionContextMenu: () => showSessionContextMenu
   });
-  function showSessionContextMenu(sid, x, y, noRename, noExport, deleteOverride) {
+  function showRenameDialog(currentName, onConfirm) {
+    const overlayEl = document.getElementById("rename-dialog-overlay");
+    overlayEl.innerHTML = `
+    <div id="rename-dialog">
+      <div class="rename-dialog-header">
+        <h3>${escHtml(t("session.renameDialogTitle"))}</h3>
+      </div>
+      <input type="text" id="rename-dialog-input" placeholder="${escHtml(t("session.renamePlaceholder"))}" value="${escHtml(currentName)}" />
+      <div class="rename-dialog-actions">
+        <button id="rename-dialog-cancel" class="btn">${escHtml(t("session.cancel"))}</button>
+        <button id="rename-dialog-confirm" class="btn btn--primary">${escHtml(t("session.rename"))}</button>
+      </div>
+    </div>`;
+    overlayEl.classList.remove("hidden");
+    const input = document.getElementById("rename-dialog-input");
+    const hideRename = () => {
+      overlayEl.classList.add("hidden");
+      overlayEl.innerHTML = "";
+    };
+    const confirmRename = () => {
+      const newName = input?.value.trim();
+      if (newName) {
+        onConfirm(newName);
+      }
+      hideRename();
+    };
+    document.getElementById("rename-dialog-cancel")?.addEventListener("click", hideRename);
+    document.getElementById("rename-dialog-confirm")?.addEventListener("click", confirmRename);
+    input?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") confirmRename();
+      if (e.key === "Escape") hideRename();
+    });
+    setTimeout(() => input?.focus(), 50);
+  }
+  function showSessionContextMenu(sid, x, y, noRename, noExport, deleteOverride, renameOverride) {
     const menuEl = document.getElementById("session-context-menu");
     const currentSid = sid;
     let items = "";
@@ -57758,7 +58061,16 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     if (!noRename) {
       document.getElementById("ctx-rename-ws")?.addEventListener("click", () => {
         menuEl.classList.add("hidden");
-        showRenameDialogForSession(currentSid);
+        if (renameOverride) {
+          renameOverride();
+          return;
+        }
+        const sessions = getState().sessionsList;
+        const s15 = sessions.find((x2) => x2.session_id === currentSid);
+        const currentName = s15?.name || s15?.preview || "";
+        showRenameDialog(currentName, (newName) => {
+          send({ type: "rename_session", session_id: currentSid, new_name: newName });
+        });
       });
     }
     if (!noExport) {
@@ -64522,16 +64834,35 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   }
   function getAgentName(tc2) {
     const configuredName = tc2.params.agent_name || tc2.params.name;
-    return configuredName || t("chat.agent");
+    return configuredName && configuredName.trim() || "Agent";
   }
   function formatAgentLabel(rawName) {
-    const name2 = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
-    return /\bagent\b/i.test(name2) ? name2 : `${name2} Agent`;
+    const name2 = (rawName || "").trim();
+    if (!name2) return "Agent";
+    return name2.charAt(0).toUpperCase() + name2.slice(1);
   }
-  function buildSubAgentTimeline(msgs) {
-    const timeline = buildTimeline(msgs);
+  function selectSubAgentTaskMessages(msgs, taskIndex) {
+    if (taskIndex === void 0) return msgs;
+    const groups = /* @__PURE__ */ new Map();
+    let fallbackIndex = 0;
+    let current = null;
+    for (const m of msgs) {
+      if (m.mode === "task_divider") {
+        const index2 = Number.isInteger(m.taskIndex) ? m.taskIndex : fallbackIndex;
+        fallbackIndex = Math.max(fallbackIndex, index2 + 1);
+        current = [];
+        groups.set(index2, current);
+      } else if (current) {
+        current.push(m);
+      }
+    }
+    return groups.get(taskIndex) ?? [];
+  }
+  function buildSubAgentTimeline(msgs, isRunning) {
+    const clean = msgs.filter((m) => m.mode !== "task_divider");
+    const timeline = buildTimeline(clean);
     const subView = getState().subAgentView;
-    const subRunning = !!(subView && (subView.status === "running" || subView.status === "pending"));
+    const subRunning = isRunning ?? !!(subView && (subView.status === "running" || subView.status === "pending"));
     if (subRunning) {
       for (const item of timeline) {
         if (item.kind === "assistant_text") {
@@ -64539,14 +64870,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
       }
     }
-    let seenHeader = false;
-    return timeline.filter((item) => {
-      if (item.kind === "ai_header") {
-        if (seenHeader) return false;
-        seenHeader = true;
-      }
-      return true;
-    });
+    return timeline;
   }
   function getToolBodyText(tc2) {
     if (!tc2.result) return "";
@@ -64863,7 +65187,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               }
               textSegIndex++;
             } else if (seg.kind === "tool") {
-              const tc2 = seg.toolId ? msg.toolCalls.find((t3) => t3.id === seg.toolId) : void 0;
+              const tc2 = seg.toolId ? msg.toolCalls.find((t3) => toolCallMatchesId(t3, seg.toolId)) : void 0;
               if (tc2) {
                 items.push({ kind: "tool", id: `tc-${tc2.id}`, tc: tc2, messageId: msg.id });
               }
@@ -64912,7 +65236,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (i8.kind === "ai_header") return { k: "ah", t: i8.time };
       if (i8.kind === "thinking") return { k: "th", id: i8.id };
       if (i8.kind === "tool") {
-        return { k: "tc", id: i8.id, n: i8.tc.name, r: i8.tc.result ? 1 : 0 };
+        const taskDividers = i8.tc.subAgentMessages ? i8.tc.subAgentMessages.filter((message) => message.mode === "task_divider").map((message, index2) => ({
+          index: message.taskIndex ?? index2,
+          name: message.taskName || "",
+          status: message.taskStatus || ""
+        })) : [];
+        return { k: "tc", id: i8.id, n: i8.tc.name, r: i8.tc.result ? 1 : 0, d: taskDividers };
       }
       if (i8.kind === "compact") return { k: "cp" };
       if (i8.kind === "workflow") {
@@ -64965,6 +65294,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.liveLoader = null;
       /** Callback invoked when the user clicks "View Changes" on an artifact file. */
       this.onViewChanges = null;
+      this._parallelRenderTimer = null;
+      this._pendingParallelRender = false;
       this._currentQuote = null;
       this.ml = document.getElementById("message-list");
       this.welcomeScreen = document.getElementById("welcome-screen");
@@ -64972,7 +65303,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.statusBar = document.getElementById("chat-status-bar");
       this.scrollIndicator = new ChatScrollIndicator(this.container);
       const w = window;
-      w.__openSubAgentView = (toolCallId) => {
+      w.__openSubAgentView = (toolCallId, taskIndex) => {
         const st3 = getState();
         const MAX_DEPTH = 4;
         if (st3.subAgentBreadcrumb.length >= MAX_DEPTH) {
@@ -64981,9 +65312,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
         for (const msg of st3.messages) {
           for (const tc2 of msg.toolCalls) {
-            if (tc2.id === toolCallId) {
+            if (toolCallMatchesId(tc2, toolCallId)) {
+              w.__subAgentAutoOpenDismissed = false;
               const parentToolCallId = st3.subAgentView ? st3.subAgentView.id : null;
-              const agentName = tc2.name === "agent" ? String(tc2.params.agent_name || tc2.params.name || tc2.params.mode || "agent") : tc2.name;
+              const agentName = getAgentName(tc2);
+              const taskDividers = this._agentTaskDividers(tc2);
+              const selectedTask = taskIndex === void 0 ? void 0 : taskDividers.find((task) => task.index === taskIndex);
+              const taskName = selectedTask ? selectedTask.name : "";
+              const crumbName = taskName ? `${agentName} \xB7 ${taskName}` : agentName;
               const existingIdx = st3.subAgentBreadcrumb.findIndex(
                 (c) => c.toolCallId === toolCallId
               );
@@ -64992,16 +65328,23 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               } else {
                 pushSubAgentBreadcrumb({
                   sessionId: st3.sessionId,
-                  name: agentName,
+                  name: crumbName,
                   toolCallId,
                   parentToolCallId
                 });
               }
               if (tc2.subAgentMessages && tc2.subAgentMessages.length > 0) {
-                setSubAgentView(tc2);
+                const viewTc = { ...tc2, taskIndex };
+                w.__activeSubAgentSessionId = void 0;
+                setSubAgentView(viewTc);
                 this.render();
               } else if (tc2.subAgentSessionId) {
                 const requestId = crypto.randomUUID();
+                w.__pendingSubAgentView = {
+                  toolCall: tc2,
+                  sessionId: tc2.subAgentSessionId,
+                  requestId
+                };
                 setRequestedSessionId(tc2.subAgentSessionId, requestId);
                 send({ type: "resume", session_id: tc2.subAgentSessionId, request_id: requestId });
               } else {
@@ -65015,6 +65358,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       };
       w.__closeSubAgentView = () => {
         const crumb = popSubAgentBreadcrumb();
+        w.__pendingSubAgentView = void 0;
+        w.__activeSubAgentSessionId = void 0;
+        if (!crumb) w.__subAgentAutoOpenDismissed = true;
         setSubAgentView(null);
         if (crumb) {
           const requestId = crypto.randomUUID();
@@ -65026,6 +65372,28 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           requestAnimationFrame(() => this.render());
         }
       };
+      w.__goToRootView = () => {
+        const st3 = getState();
+        w.__activeSubAgentSessionId = void 0;
+        w.__pendingSubAgentView = void 0;
+        w.__subAgentAutoOpenDismissed = true;
+        if (st3.subAgentBreadcrumb.length === 0) {
+          setSubAgentView(null);
+          this.render();
+          return;
+        }
+        const rootSessionId = st3.subAgentBreadcrumb[0].sessionId;
+        clearSubAgentBreadcrumb();
+        setSubAgentView(null);
+        if (rootSessionId !== st3.sessionId) {
+          const requestId = crypto.randomUUID();
+          setRequestedSessionId(rootSessionId, requestId);
+          send({ type: "resume", session_id: rootSessionId, request_id: requestId });
+        }
+        this.renderedKey = "";
+        this.ml.innerHTML = "";
+        this.render();
+      };
       w.__navigateToBreadcrumb = (index2) => {
         const st3 = getState();
         const target = resetToSubAgentBreadcrumbIndex(index2);
@@ -65033,7 +65401,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const stNow = getState();
         for (const msg of stNow.messages) {
           for (const tc2 of msg.toolCalls) {
-            if (tc2.id === target.toolCallId) {
+            if (toolCallMatchesId(tc2, target.toolCallId)) {
               setSubAgentView(tc2);
               this.render();
               return;
@@ -65197,8 +65565,25 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       });
     }
     renderForce() {
-      this.renderedKey = "";
-      this.render();
+      const st3 = getState();
+      const subTc = st3.subAgentView;
+      const dividerCount = subTc?.subAgentMessages ? subTc.subAgentMessages.filter((m) => m.mode === "task_divider").length : 0;
+      const isParallelRunning = subTc && (subTc.status === "running" || subTc.status === "pending") && dividerCount >= 2;
+      if (!isParallelRunning) {
+        this.render();
+        return;
+      }
+      this._pendingParallelRender = true;
+      if (this._parallelRenderTimer === null) {
+        this.render();
+        this._parallelRenderTimer = window.setTimeout(() => {
+          this._parallelRenderTimer = null;
+          if (this._pendingParallelRender) {
+            this._pendingParallelRender = false;
+            this.render();
+          }
+        }, 100);
+      }
     }
     /** Re-renders the message list from current state (RAF-throttled). */
     render() {
@@ -65212,7 +65597,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (crumb.sessionId === state2.sessionId) {
           for (const msg of state2.messages) {
             for (const tc2 of msg.toolCalls) {
-              if (tc2.id === crumb.toolCallId) {
+              if (toolCallMatchesId(tc2, crumb.toolCallId)) {
                 setSubAgentView(tc2);
                 break;
               }
@@ -65224,18 +65609,32 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (state2.subAgentView) {
         this.toggleWelcome(false);
         const subTc = state2.subAgentView;
-        const subMsgs = subTc.subAgentMessages || [];
-        const hasInlineData = subMsgs.length > 0;
-        const isStreaming = subTc.status === "running" || subTc.status === "pending";
+        const sessionBacked = window.__activeSubAgentSessionId === state2.sessionId;
+        let subMsgs = subTc.subAgentMessages?.length ? subTc.subAgentMessages : sessionBacked ? state2.messages : [];
+        const selectedMsgs = selectSubAgentTaskMessages(subMsgs, subTc.taskIndex);
+        const hasInlineData = selectedMsgs.length > 0;
+        const isStreaming = sessionBacked ? state2.running : subTc.status === "running" || subTc.status === "pending";
         this.renderedKey = "__subagent__";
         if (hasInlineData) {
-          const timeline2 = buildSubAgentTimeline(subMsgs);
-          this.fullRender(timeline2, subMsgs);
+          const timeline2 = buildSubAgentTimeline(selectedMsgs, isStreaming);
+          this.fullRender(timeline2, selectedMsgs);
         } else if (isStreaming) {
           this.ml.innerHTML = "";
           this.liveLoader = new EALoader(this.ml);
+        } else if (subTc.isError) {
+          const errorCode = String(subTc.result || "AUTOMATION_EXECUTION_FAILED");
+          this.ml.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;">
+          <i data-lucide="ban" class="lucide"></i>
+          <div class="si-panel-empty-title">${t("automation.executionFailed") || "Automation execution error"}</div>
+          <div class="si-panel-empty-sub">${escapeHtml4(errorCode)}</div>
+        </div>`;
         } else {
-          this.ml.innerHTML = `<div class="sub-agent-empty"><p>${t("chat.noSubAgentOutput")}</p></div>`;
+          const resultText = typeof subTc.result === "string" ? subTc.result.trim() : "";
+          if (resultText) {
+            this.ml.innerHTML = `<div class="sub-agent-result-fallback">${renderMarkdown(resultText)}</div>`;
+          } else {
+            this.ml.innerHTML = `<div class="sub-agent-empty"><p>${t("chat.noSubAgentOutput")}</p></div>`;
+          }
         }
         createLucideIcons();
         this._updateStatusBar(false);
@@ -65260,7 +65659,199 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
       this._updateStatusBar(state2.running);
     }
+    /**
+     * Build the timeline HTML for sub-agent messages and render it into
+     * an arbitrary container element. Reuses the same rendering pipeline
+     * as the main chat's fullRender, so the result looks identical to the
+     * chat sub-agent view.
+     *
+     * Used by the automation panel to render execution results inside
+     * #automation-detail-content without switching to chat mode.
+     */
+    renderSubAgentInto(container, messages, isRunning) {
+      const timeline = buildSubAgentTimeline(messages, isRunning);
+      const st3 = getState();
+      const autoExpand = isEnabled(st3.settings.auto_expand);
+      this.applyAutoExpand(timeline, autoExpand);
+      const html2 = this.buildTimelineHTML(timeline, messages, true);
+      container.innerHTML = html2;
+      createLucideIcons();
+    }
+    /**
+     * Shared auto-expand pass used by both fullRender and renderSubAgentInto
+     * so the two never drift. Auto-expands thinking strips and agent tool
+     * cards unless the user manually collapsed them.
+     */
+    applyAutoExpand(timeline, autoExpand) {
+      for (const item of timeline) {
+        if (item.kind === "thinking") {
+          const id2 = item.id;
+          if (autoExpand && !this.userCollapsedItems.has(id2)) {
+            this.expandedItems.add(id2);
+          } else if (this.userCollapsedItems.has(id2)) {
+            this.expandedItems.delete(id2);
+          }
+        } else if (item.kind === "tool" && item.tc.name === "agent") {
+          const id2 = item.id;
+          if (autoExpand && !this.userCollapsedItems.has(id2)) {
+            this.expandedItems.add(id2);
+          } else if (this.userCollapsedItems.has(id2)) {
+            this.expandedItems.delete(id2);
+          }
+        }
+      }
+    }
+    /**
+     * Build the timeline's inner HTML (turns + standalone cards) - the shared
+     * body of fullRender. Extracted so renderSubAgentInto produces byte-identical
+     * markup to the main chat's sub-agent view instead of a parallel copy.
+     *
+     * @param treatAsSubAgent When true, user bubbles are folded into the
+     *   current turn (matching chat.render()'s sub-agent path). When false,
+     *   the live subAgentView/__parentSessionId flags decide - the normal
+     *   chat behaviour.
+     */
+    buildTimelineHTML(timeline, allMsgs, treatAsSubAgent = false) {
+      let html2 = "";
+      let turnMid = "";
+      let turnActions = false;
+      let turnRetry = false;
+      let turnBranchSwitcher = false;
+      const _this = this;
+      function closeTurn() {
+        if (!turnMid) return;
+        html2 += `<div class="turn">${turnMid}`;
+        if (turnActions) {
+          html2 += `<div class="assistant-actions turn-actions">`;
+          html2 += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
+          <i data-lucide="copy" class="lucide lucide-sm"></i>
+        </button>`;
+          if (turnRetry) {
+            html2 += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
+            <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+          </button>`;
+          }
+          if (turnBranchSwitcher) {
+            html2 += _this.renderBranchSwitcher();
+          }
+          html2 += `</div>`;
+        }
+        html2 += `</div>`;
+        turnMid = "";
+        turnActions = false;
+        turnRetry = false;
+        turnBranchSwitcher = false;
+      }
+      const inSubAgent = treatAsSubAgent || !!getState().subAgentView || !!window.__parentSessionId;
+      for (let i8 = 0; i8 < timeline.length; i8++) {
+        const item = timeline[i8];
+        if (item.kind === "compact" || item.kind === "workflow" || item.kind === "user" && !inSubAgent) {
+          closeTurn.call(_this);
+          html2 += this.renderItemHTML(item);
+        } else if (item.kind === "ai_header") {
+          closeTurn.call(_this);
+          turnMid += this.renderItemHTML(item);
+        } else {
+          if (item.kind === "assistant_text") {
+            if (item.showBranchSwitcher) turnBranchSwitcher = true;
+            const _sa = item.showActions;
+            const _shouldShowActions = _sa !== void 0 ? _sa : !item.isStreaming;
+            if (_shouldShowActions) {
+              turnActions = true;
+              if (!inSubAgent) {
+                if (allMsgs) {
+                  for (let mi3 = allMsgs.length - 1; mi3 >= 0; mi3--) {
+                    if (allMsgs[mi3].role === "assistant") {
+                      if (item.messageId === allMsgs[mi3].id) turnRetry = true;
+                      break;
+                    }
+                  }
+                } else {
+                  turnRetry = true;
+                }
+              }
+            }
+          }
+          turnMid += this.renderItemHTML(item);
+        }
+      }
+      closeTurn.call(_this);
+      return html2;
+    }
+    /**
+     * Render a parallel sub-agent run: one ``agent`` tool that executed several
+     * tasks concurrently. The transcript is a flat list delimited by structured
+     * ``task_divider`` markers (``mode === "task_divider"``); we split it back
+     * into per-task groups and tile them into split regions -- like a window
+     * snap layout -- so "one agent, many jobs" reads as distinct panes:
+     *   1 task  -> fills the whole tape
+     *   2 tasks -> left / right
+     *   3 tasks -> one across the top, two side-by-side below
+     *   4 tasks -> 2x2 grid
+     * Regions are separated by faint dashed lines (CSS). At most 4 tiles are
+     * drawn -- more would deform and can't be laid out cleanly.
+     */
+    fullRenderParallel(subMsgs, isStreaming) {
+      const groupsByIndex = /* @__PURE__ */ new Map();
+      let fallbackIndex = 0;
+      let current = null;
+      for (const m of subMsgs) {
+        if (m.mode === "task_divider") {
+          const index2 = Number.isInteger(m.taskIndex) ? m.taskIndex : fallbackIndex;
+          fallbackIndex = Math.max(fallbackIndex, index2 + 1);
+          current = { divider: m, body: [] };
+          groupsByIndex.set(index2, current);
+        } else if (current) {
+          current.body.push(m);
+        }
+      }
+      const groups = [...groupsByIndex.entries()].sort(([left], [right]) => left - right).map(([, group]) => group);
+      const statusMeta = (s15) => {
+        if (s15 === "done") return { icon: "check", label: t("chat.taskDone") || "Done", cls: "is-done" };
+        if (s15 === "error") return { icon: "x", label: t("chat.taskError") || "Failed", cls: "is-error" };
+        if (s15 === "queued") return { icon: "clock", label: t("chat.taskQueued") || "Queued", cls: "is-queued" };
+        return { icon: "loader", label: t("chat.taskRunning") || "Running", cls: "is-running" };
+      };
+      const shown = groups.slice(0, 4);
+      const count2 = shown.length;
+      const tileBodies = [];
+      for (const g of shown) {
+        const isRunning = statusMeta(g.divider.taskStatus).cls === "is-running";
+        const bodyTimeline = buildSubAgentTimeline(g.body, isRunning);
+        const bodyHtml = g.body.length > 0 ? this.buildTimelineHTML(bodyTimeline, g.body, true) : `<div class="parallel-task-pending">${t("chat.taskWaiting") || "Waiting for output\u2026"}</div>`;
+        tileBodies.push(bodyHtml);
+      }
+      const wrapTile = (idx) => `<section class="parallel-tile"><div class="parallel-tile-body">${tileBodies[idx]}</div></section>`;
+      let html2 = `<div class="parallel-sub-agent" data-count="${count2}">`;
+      if (count2 === 3) {
+        html2 += wrapTile(0);
+        html2 += `<div class="parallel-sub-agent-stack">`;
+        html2 += wrapTile(1);
+        html2 += wrapTile(2);
+        html2 += `</div>`;
+      } else {
+        for (let i8 = 0; i8 < count2; i8++) {
+          html2 += wrapTile(i8);
+        }
+      }
+      html2 += `</div>`;
+      this.ml.classList.add("parallel-active");
+      const existing = this.ml.querySelector(":scope > .parallel-sub-agent");
+      if (existing && existing.dataset.count === String(count2)) {
+        const bodies = existing.querySelectorAll(".parallel-tile-body");
+        let idx = 0;
+        for (const body of Array.from(bodies)) {
+          if (idx < tileBodies.length && body.innerHTML !== tileBodies[idx]) {
+            body.innerHTML = tileBodies[idx];
+          }
+          idx++;
+        }
+      } else {
+        this.ml.innerHTML = html2;
+      }
+    }
     fullRender(timeline, allMsgs) {
+      this.ml.classList.remove("parallel-active");
       const st3 = getState();
       const autoExpand = isEnabled(st3.settings.auto_expand);
       for (const item of timeline) {
@@ -65443,19 +66034,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             this.expandedItems.delete(toolItem.id);
           }
         }
-        if (toolItem.tc.name === "agent") {
-          const previewEl = el2.querySelector(".agent-card-preview");
-          if (previewEl && toolItem.tc.subAgentMessages) {
-            let lastText = "";
-            for (const m of toolItem.tc.subAgentMessages) {
-              if (m.role !== "assistant") continue;
-              if (m.content && m.content.trim()) lastText = m.content;
-            }
-            const preview = lastText ? lastText.replace(/\s+/g, " ").slice(0, 80) : "";
-            const newPreview = preview + (lastText.length > 80 ? "\u2026" : "");
-            if (previewEl.textContent !== newPreview) {
-              previewEl.textContent = newPreview;
-            }
+        if (expandTool) {
+          const iconEl = el2.querySelector(".agent-card-icon");
+          if (iconEl) {
+            const st3 = getState();
+            const isAgentRunning = st3.running && (toolItem.tc.status === "running" || toolItem.tc.status === "pending");
+            iconEl.classList.toggle("spinning", isAgentRunning);
           }
         }
       }
@@ -65869,32 +66453,61 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     </div>`;
     }
     renderAgent(tc2, itemId) {
-      const id2 = `tc-${tc2.id}`;
       const rawAgentName = getAgentName(tc2);
       const agentName = formatAgentLabel(rawAgentName);
-      const statusHtml = _toolStatusHtml(tc2.status);
       const isPlanSpec = tc2.params.mode === "plan" || tc2.params.mode === "spec";
-      const agentIcon = isPlanSpec ? "list-checks" : "zap";
-      const subMsgs = tc2.subAgentMessages;
-      let summaryHtml = "";
-      if (subMsgs && subMsgs.length > 0) {
-        let lastText = "";
-        for (const m of subMsgs) {
-          if (m.role !== "assistant") continue;
-          if (m.content && m.content.trim()) lastText = m.content;
+      const agentIcon = isPlanSpec ? "list-checks" : "sparkles";
+      const statusHtml = _toolStatusHtml(tc2.status);
+      const _cardIcon = (status) => {
+        const stillRunning = getState().running;
+        if ((status === "running" || status === "pending") && stillRunning) {
+          return { name: "loader", cls: "agent-card-icon spinning" };
         }
-        const preview = lastText ? lastText.replace(/\s+/g, " ").slice(0, 80) : "";
-        summaryHtml = preview ? `<div class="agent-card-summary"><span class="agent-card-preview">${escapeHtml4(preview)}${lastText.length > 80 ? "\u2026" : ""}</span></div>` : "";
+        return { name: agentIcon, cls: "agent-card-icon" };
+      };
+      const tasks = this._agentTaskDividers(tc2);
+      if (tasks.length > 1) {
+        return tasks.map((task, idx) => {
+          const taskName = task.name || `${agentName} ${idx + 1}`;
+          const taskStatus = task.status || tc2.status;
+          const { name: icon2, cls: iconCls2 } = _cardIcon(taskStatus);
+          return `<div class="agent-card" data-task-index="${task.index}" onclick="window.__openSubAgentView('${tc2.id}', ${task.index})">
+          <i data-lucide="${icon2}" class="${iconCls2}"></i>
+          <span class="agent-card-name">${escapeHtml4(taskName)}</span>
+          <span class="agent-card-status" data-status="${taskStatus}">${_toolStatusHtml(taskStatus)}</span>
+          <span class="agent-card-open">
+            <i data-lucide="square-arrow-out-up-right" class="agent-card-open-icon"></i>
+          </span>
+        </div>`;
+        }).join("");
       }
+      const id2 = `tc-${tc2.id}`;
+      const { name: icon, cls: iconCls } = _cardIcon(tc2.status);
       return `<div class="agent-card" data-id="${id2}" onclick="window.__openSubAgentView('${tc2.id}')">
-      <i data-lucide="${agentIcon}" class="agent-card-icon"></i>
+      <i data-lucide="${icon}" class="${iconCls}"></i>
       <span class="agent-card-name">${escapeHtml4(agentName)}</span>
       <span class="agent-card-status" data-status="${tc2.status}">${statusHtml}</span>
-      ${summaryHtml}
       <span class="agent-card-open">
         <i data-lucide="square-arrow-out-up-right" class="agent-card-open-icon"></i>
       </span>
     </div>`;
+    }
+    _agentTaskDividers(tc2) {
+      const msgs = tc2.subAgentMessages;
+      if (!msgs || msgs.length === 0) return [];
+      const dividers = /* @__PURE__ */ new Map();
+      let fallbackIndex = 0;
+      for (const message of msgs) {
+        if (message.mode !== "task_divider") continue;
+        const index2 = Number.isInteger(message.taskIndex) ? message.taskIndex : fallbackIndex;
+        fallbackIndex = Math.max(fallbackIndex, index2 + 1);
+        dividers.set(index2, {
+          index: index2,
+          name: message.taskName || "",
+          status: message.taskStatus
+        });
+      }
+      return [...dividers.values()].sort((a2, b2) => a2.index - b2.index);
     }
     renderAssistantText(item) {
       const errorClass = item.hasError ? " has-error" : "";
@@ -81385,7 +81998,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
   }
   initLocale();
-  var APP_VERSION = "0.1.5-pre.1";
+  var APP_VERSION = "0.2.0-pre.1";
   var DEV_MODE_STORAGE_KEY = "encre-dev-mode";
   var DEV_TAP_THRESHOLD = 7;
   var DEV_TAP_RESET_MS = 2500;
@@ -84791,7 +85404,7 @@ ${content2}`;
       }
       const cellW = 11, cellH = 11, cellGap = 3;
       const cellRadius = 1;
-      const PL = 40, PR = 6, PT = 18, PB = 18;
+      const PL = 6, PR = 6, PT = 18, PB = 18;
       const MIN_DAY_STRIDE = 9;
       const TARGET_TOTAL_W = 1100;
       const naturalStride = cellW + cellGap;
@@ -84818,13 +85431,6 @@ ${content2}`;
         else if (t3 > 0.25) idx = 2;
         return ramp[idx];
       };
-      const hourLabels = [];
-      for (let b2 = 0; b2 < BLOCKS; b2++) {
-        const y = PT + b2 * (cellH + cellGap) + cellH / 2 + 4;
-        hourLabels.push(
-          `<text x="${PL - 6}" y="${y.toFixed(1)}" text-anchor="end" fill="var(--text-text-tertiary, #666b75)" style="font-size:12px;font-family:var(--font-family-default);">${String(b2 * BLOCK_HOURS).padStart(2, "0")}:00</text>`
-        );
-      }
       const dayLabels = [];
       let lastMonth = -1;
       for (let d = 0; d < numDays; d++) {
@@ -84891,7 +85497,6 @@ No activity`;
         <div class="usage-heatmap-stats usage-heatmap-stats--compact">${captionHtml}</div>
         <div class="usage-heatmap-scroll">
           <svg viewBox="0 0 ${W} ${H3}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMid meet" style="width:100%;height:auto;display:block">
-            ${hourLabels.join("")}
             ${cells.join("")}
             ${dayLabels.join("")}
           </svg>
@@ -87868,33 +88473,48 @@ No activity`;
   var MediaViewer = class {
     constructor(el2, media) {
       this.videoEl = null;
+      this.blobUrl = null;
       this.el = el2;
       this.media = media;
-      this.render();
+      this.init();
     }
-    render() {
+    init() {
       if (this.media.type === "image") {
         this.renderImage();
       } else if (this.media.type === "video") {
-        this.renderVideo();
+        this.el.innerHTML = `<video class="media-viewer-video" autoplay loop muted playsinline webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"></video>`;
+        this.videoEl = this.el.querySelector(".media-viewer-video");
+        this.loadVideo();
       }
     }
     renderImage() {
       this.el.innerHTML = `<img class="media-viewer-img" src="${esc(resolveUrl(this.media.src))}" />`;
     }
-    renderVideo() {
-      const url = resolveUrl(this.media.src);
-      this.el.innerHTML = `<video class="media-viewer-video" src="${esc(url)}" autoplay loop muted playsinline webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"></video>`;
-      this.videoEl = this.el.querySelector(".media-viewer-video");
-      if (!this.videoEl) return;
-      this.videoEl.volume = 1;
-      this.videoEl.muted = false;
+    async loadVideo() {
+      try {
+        const result = await window.electronAPI?.readFileBase64(this.media.src);
+        if (!result) return;
+        const binaryStr = atob(result.data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i8 = 0; i8 < binaryStr.length; i8++) bytes[i8] = binaryStr.charCodeAt(i8);
+        const blob = new Blob([bytes], { type: result.mime_type });
+        this.blobUrl = URL.createObjectURL(blob);
+        if (!this.videoEl) return;
+        this.videoEl.src = this.blobUrl;
+        this.videoEl.volume = 1;
+        this.videoEl.muted = false;
+      } catch {
+      }
     }
     destroy() {
       if (this.videoEl) {
         this.videoEl.pause();
         this.videoEl.removeAttribute("src");
         this.videoEl.load();
+      }
+      if (this.blobUrl) {
+        URL.revokeObjectURL(this.blobUrl);
+        this.blobUrl = null;
       }
       this.el.innerHTML = "";
     }
@@ -88044,20 +88664,6 @@ No activity`;
     /** Opens the slide-out notification panel anchored to the bell. */
     openPanel() {
       if (!this.bell) return;
-      dismissNotification("demo-activity");
-      addNotification({
-        id: "demo-activity",
-        type: "info",
-        title: t("notifications.demoTitle"),
-        message: t("notifications.demoMessage"),
-        source: t("notifications.demoSource"),
-        timestamp: Date.now(),
-        read: false,
-        media: {
-          type: "video",
-          src: "D:\\Downloads\\911Mothers_2010W-480p.mp4"
-        }
-      });
       this._detailId = null;
       this.panel = document.createElement("div");
       this.panel.className = "notification-panel";
@@ -89232,6 +89838,7 @@ No activity`;
   init_dialog();
   init_state();
   init_session();
+  init_context_menu();
   init_stream();
   var TEMPLATES = [
     {
@@ -89355,6 +89962,8 @@ No activity`;
      */
     constructor() {
       this.activeTab = "history";
+      this.activeExecution = null;
+      this.chatRenderer = null;
       this.jobs = [];
       // History filter state
       this.historyStatus = "";
@@ -89372,6 +89981,7 @@ No activity`;
       this.el = document.getElementById("automation-view");
       this.tabsEl = this.el.querySelector(".automation-tabs");
       this.panelsEl = this.el.querySelector(".automation-panels");
+      this.containerEl = this.el.querySelector(".automation-container");
       this.configuredListEl = document.getElementById("configured-list");
       this.historyTimelineEl = document.getElementById("history-timeline");
       this.createWrap = document.getElementById("automation-create-wrap");
@@ -89380,12 +89990,10 @@ No activity`;
       this.detailEl = this.el.querySelector(".automation-detail");
       this.detailContentEl = document.getElementById("automation-detail-content");
       this.detailBreadcrumbEl = document.getElementById("automation-detail-breadcrumb");
-      this.detailBackEl = document.getElementById("automation-detail-back");
       this.bindTabs();
       this.bindCallbacks();
       this.bindCreateButton();
       this.bindHistoryFilters();
-      this.detailBackEl.addEventListener("click", () => this.hideDetail());
       document.addEventListener("click", (e) => {
         const target = e.target;
         const filtersEl = document.getElementById("history-filters");
@@ -89395,78 +90003,118 @@ No activity`;
           });
         }
       });
-    }
-    // ── Detail view (sub-agent result inside automation panel) ──────
-    /** Show the detail panel for a sub-agent result. */
-    showDetail(data2) {
-      this.detailBreadcrumbEl.innerHTML = `<span class="automation-detail-breadcrumb-label">${this.escapeHtml(data2.name || "")}</span>`;
-      if (data2.messages && data2.messages.length > 0) {
-        this.renderDetailMessages(data2.messages);
-      } else if (data2.state === "FAILED") {
-        this.detailContentEl.innerHTML = `
-        <div class="si-panel-empty" style="flex:1;gap:14px;">
-          <i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i>
-          <div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div>
-          <div class="si-panel-empty-sub">${this.escapeHtml(data2.result || "")}</div>
-        </div>`;
-        if (typeof window.lucide !== "undefined") {
-          window.lucide.createIcons({ root: this.detailContentEl });
+      onLocaleChange(() => {
+        if (this.isDetailVisible() && this.activeExecution) {
+          this.showDetail(this.activeExecution);
         }
-      } else {
-        this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="padding:40px 20px;">${t("automation.noMessages") || "No messages"}</div>`;
-      }
-      this.panelsEl.style.display = "none";
-      this.detailEl.classList.add("active");
-      this.detailEl.style.display = "flex";
-      this.tabsEl.style.display = "none";
+      });
     }
-    /** Hide the detail panel and return to the list. */
-    hideDetail() {
-      this.detailEl.classList.remove("active");
-      this.detailEl.style.display = "none";
-      this.panelsEl.style.display = "";
-      this.tabsEl.style.display = "";
-      this.detailContentEl.innerHTML = "";
-      this.detailBreadcrumbEl.innerHTML = "";
-    }
-    /** Render a flat message array as bubbles inside the detail content area. */
-    renderDetailMessages(rawMessages) {
-      const html2 = [];
-      for (const msg of rawMessages) {
-        if (msg.role === "user") {
-          const text2 = typeof msg.content === "string" ? msg.content : msg.content?.[0]?.text || "";
-          html2.push(`<div class="user-item"><div class="user-bubble">${this.escapeHtml(text2)}</div></div>`);
-        } else if (msg.role === "assistant" || msg.role === "tool") {
-          const thinking = msg.reasoning_content || msg.reasoning || (msg.content && typeof msg.content === "object" ? "" : "");
-          if (thinking && typeof thinking === "string" && thinking.length > 0) {
-            html2.push(`<details class="thinking-strip"><summary>Thinking</summary><div class="thought-body">${renderMarkdown(thinking)}</div></details>`);
-          }
-          let text2 = "";
-          if (typeof msg.content === "string") {
-            text2 = msg.content;
-          } else if (Array.isArray(msg.content)) {
-            text2 = msg.content.map((c) => c.text || "").join("\n");
-          }
-          if (text2.trim()) {
-            html2.push(`<div class="assistant-text"><div class="msg-text">${renderMarkdown(text2)}</div></div>`);
-          }
-          if (msg.tool_calls) {
-            for (const tc2 of msg.tool_calls) {
-              html2.push(`<div class="tool-call">${this.escapeHtml(tc2.function?.name || tc2.name || "tool")}</div>`);
-            }
-          }
-        }
-      }
-      this.detailContentEl.innerHTML = html2.join("\n");
-      if (typeof window.lucide !== "undefined") {
-        window.lucide.createIcons({ root: this.detailContentEl });
-      }
+    /** Set the Chat instance used to render sub-agent detail timelines. */
+    setChatRenderer(chat2) {
+      this.chatRenderer = chat2;
     }
     escapeHtml(text2) {
       const div = document.createElement("div");
       div.appendChild(document.createTextNode(text2));
       return div.innerHTML;
     }
+    // ── Detail view (sub-agent result inside automation panel) ──────
+    /** Open an execution in the sub-agent detail container. */
+    openExecution(data2) {
+      this.activeExecution = {
+        ...data2,
+        messages: Array.isArray(data2.messages) ? data2.messages : []
+      };
+      this.showDetail(this.activeExecution);
+    }
+    /** Apply a live event to the execution currently open. */
+    updateExecution(jobId, eventType, eventData) {
+      if (!this.activeExecution || this.activeExecution.job_id !== jobId) return;
+      if (eventType === "start") {
+        this.activeExecution = { ...this.activeExecution, state: "RUNNING", name: String(eventData.name || this.activeExecution.name), prompt: String(eventData.prompt || this.activeExecution.prompt), session_id: String(eventData.session_id || this.activeExecution.session_id || "") || void 0 };
+      } else if (eventType === "snapshot") {
+        const msgs = eventData.messages;
+        this.activeExecution = { ...this.activeExecution, state: "RUNNING", messages: Array.isArray(msgs) ? msgs : this.activeExecution.messages, session_id: String(eventData.session_id || this.activeExecution.session_id || "") || void 0 };
+      } else if (eventType === "tool_progress" || eventType === "tool_result") {
+        const msgs = eventData.sub_agent_messages;
+        if (Array.isArray(msgs)) this.activeExecution = { ...this.activeExecution, state: "RUNNING", messages: msgs };
+      } else if (eventType === "finish") {
+        const failed = eventData.state === "FAILED" || !!eventData.error_code;
+        this.activeExecution = { ...this.activeExecution, state: failed ? "FAILED" : "COMPLETED", messages: failed ? [] : this.activeExecution.messages, result: failed ? "" : String(eventData.result || this.activeExecution.result || ""), error_code: failed ? String(eventData.error_code || "AUTOMATION_EXECUTION_FAILED") : void 0 };
+      } else {
+        return;
+      }
+      if (this.isDetailVisible()) this.showDetail(this.activeExecution);
+    }
+    /** Apply a final job-update payload. */
+    updateExecutionResult(data2) {
+      if (!this.activeExecution) return;
+      const jobId = data2.job_id || data2.id;
+      if (!jobId || jobId !== this.activeExecution.job_id) return;
+      const failed = data2.state === "FAILED" || data2.action === "failed";
+      this.activeExecution = { ...this.activeExecution, ...data2, job_id: this.activeExecution.job_id, state: failed ? "FAILED" : data2.state || this.activeExecution.state, messages: failed ? [] : Array.isArray(data2.messages) ? data2.messages : this.activeExecution.messages, error_code: failed ? data2.error_code || "AUTOMATION_EXECUTION_FAILED" : void 0 };
+      if (this.isDetailVisible()) this.showDetail(this.activeExecution);
+    }
+    showDetail(data2) {
+      if (data2.state === "FAILED") {
+        const errorCode = data2.error_code || "AUTOMATION_EXECUTION_FAILED";
+        this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;"><i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i><div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div><div class="si-panel-empty-sub">${this.escapeHtml(errorCode)}</div></div>`;
+        if (typeof window.lucide !== "undefined") window.lucide.createIcons({ root: this.detailContentEl });
+      } else if (data2.messages && data2.messages.length > 0) {
+        this.renderSubAgentTimeline(data2.messages);
+      } else if (data2.state === "RUNNING" || data2.state === "PENDING") {
+        this.detailContentEl.innerHTML = `<div class="automation-detail-loader"><i data-lucide="loader-circle" class="lucide" style="animation:historySpin 1s linear infinite;"></i></div>`;
+        if (typeof window.lucide !== "undefined") window.lucide.createIcons({ root: this.detailContentEl });
+      } else {
+        this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="padding:40px 20px;">${t("automation.noMessages") || "No messages"}</div>`;
+      }
+      this.containerEl.style.display = "none";
+      this.detailEl.classList.remove("hidden");
+      this.detailEl.classList.add("active");
+      this.tabsEl.style.display = "none";
+      this.renderDetailBreadcrumb(data2.name || "");
+      const autoBack = document.getElementById("btn-automation-back");
+      const toggle = document.getElementById("btn-toggle-sidebar");
+      if (autoBack) autoBack.classList.remove("hidden");
+      if (toggle) toggle.style.display = "none";
+    }
+    /**
+     * Render the detail breadcrumb reusing the exact same session-crumb
+     * markup the main chat ("tape") uses for its sub-agent view, so the
+     * two are visually identical. Root crumb returns to the list.
+     */
+    renderDetailBreadcrumb(name2) {
+      const rootLabel = t("automation.title") || "Automation";
+      const trunc = (s15, max = 18) => s15.length > max ? s15.slice(0, max) + "\u2026" : s15;
+      this.detailBreadcrumbEl.innerHTML = `<button class="session-crumb session-crumb-root" type="button" data-tooltip="${this.escapeHtml(rootLabel)}">${this.escapeHtml(trunc(rootLabel))}</button><span class="session-crumb-sep">/</span><span class="session-crumb-current" data-tooltip="${this.escapeHtml(name2)}">${this.escapeHtml(trunc(name2))}</span>`;
+      const root = this.detailBreadcrumbEl.querySelector(".session-crumb-root");
+      if (root) root.addEventListener("click", () => this.hideDetail());
+    }
+    hideDetail() {
+      this.detailEl.classList.remove("active");
+      this.detailEl.classList.add("hidden");
+      this.containerEl.style.display = "";
+      this.tabsEl.style.display = "";
+      this.detailContentEl.innerHTML = "";
+      this.detailBreadcrumbEl.innerHTML = "";
+      this.activeExecution = null;
+      const autoBack = document.getElementById("btn-automation-back");
+      const toggle = document.getElementById("btn-toggle-sidebar");
+      if (autoBack) autoBack.classList.add("hidden");
+      if (toggle) {
+        toggle.style.display = "";
+      }
+    }
+    isDetailVisible() {
+      return this.detailEl.classList.contains("active");
+    }
+    renderSubAgentTimeline(messages) {
+      if (this.chatRenderer) {
+        const isRunning = this.activeExecution?.state === "RUNNING" || this.activeExecution?.state === "PENDING";
+        this.chatRenderer.renderSubAgentInto(this.detailContentEl, restoreMessages(messages), !!isRunning);
+      }
+    }
+    // ── Rendering ───────────────────────────────────────────────────
     /** Refreshes the panel by requesting the jobs list and run history. */
     render() {
       this.requestJobsList();
@@ -89893,17 +90541,11 @@ No activity`;
     renderConfigured() {
       const wrap = this.configuredListEl;
       if (this.jobs.length === 0) {
-        wrap.innerHTML = `
-        <div class="settings-card">
-          <div class="model-manage-header">
-            <div class="model-manage-desc">${t("automation.configuredDesc")}</div>
-          </div>
-          <div class="configured-empty">
-            <i data-lucide="calendar" class="lucide"></i>
-            <div class="empty-title">${t("automation.noTasks")}</div>
-            <div class="empty-sub">${t("automation.noTasksHint")}</div>
-          </div>
-        </div>`;
+        wrap.innerHTML = `<div class="configured-empty">
+        <i data-lucide="calendar" class="lucide"></i>
+        <div class="empty-title">${t("automation.noTasks")}</div>
+        <div class="empty-sub">${t("automation.noTasksHint")}</div>
+      </div>`;
         if (typeof window.lucide !== "undefined") {
           window.lucide.createIcons({ root: wrap });
         }
@@ -90275,11 +90917,7 @@ No activity`;
             job_id: entry.job_id,
             session_id: entry.session_id
           };
-          if (data2.state === "FAILED") {
-            this.showDetail(data2);
-          } else {
-            this.onViewResult?.(data2);
-          }
+          this.openExecution(data2);
         });
       });
       this.historyTimelineEl.querySelectorAll(".history-timeline-item").forEach((item) => {
@@ -90289,27 +90927,57 @@ No activity`;
           const entryId = item.getAttribute("data-entry-id");
           const entry = getState().automationHistory.find((h3) => h3.id === entryId);
           const isFailed = !!entry && entry.state === "FAILED";
-          if (sid && !isFailed) {
-            showSessionContextMenu(sid, e.clientX, e.clientY, true);
-          } else if (sid && isFailed) {
-            showSessionContextMenu(sid, e.clientX, e.clientY, true, true, () => {
+          const doRename = () => {
+            if (!entry) return;
+            showRenameDialog(entry.name || "", (newName) => {
               if (entryId) {
-                Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
-                  if (confirmed) {
-                    send({ type: "automation_delete_execution", entry_id: entryId });
-                  }
-                });
+                send({ type: "automation_rename_execution", entry_id: entryId, new_name: newName });
               }
             });
+          };
+          const doDelete = () => {
+            if (entryId) {
+              Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
+                if (confirmed) {
+                  send({ type: "automation_delete_execution", entry_id: entryId });
+                }
+              });
+            }
+          };
+          if (sid && !isFailed) {
+            showSessionContextMenu(sid, e.clientX, e.clientY, true, false, void 0, doRename);
+          } else if (sid && isFailed) {
+            showSessionContextMenu(sid, e.clientX, e.clientY, true, true, doDelete, doRename);
           } else if (entryId) {
-            Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
-              if (confirmed) {
-                send({ type: "automation_delete_execution", entry_id: entryId });
-              }
-            });
+            this.showAutomationHistoryContextMenu(e.clientX, e.clientY, doRename, doDelete);
           }
         });
       });
+    }
+    showAutomationHistoryContextMenu(x, y, doRename, doDelete) {
+      const menuEl = document.getElementById("session-context-menu");
+      menuEl.innerHTML = `
+      <div class="context-menu-item" id="ctx-automation-rename">
+        <i data-lucide="pencil" class="lucide lucide-sm"></i>
+        <span>${this.escapeHtml(t("session.rename"))}</span>
+      </div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-item context-menu-item-danger" id="ctx-automation-delete">
+        <i data-lucide="trash-2" class="lucide lucide-sm"></i>
+        <span>${this.escapeHtml(t("session.delete"))}</span>
+      </div>`;
+      showContextMenu(menuEl, x, y);
+      document.getElementById("ctx-automation-rename")?.addEventListener("click", () => {
+        menuEl.classList.add("hidden");
+        doRename();
+      });
+      document.getElementById("ctx-automation-delete")?.addEventListener("click", () => {
+        menuEl.classList.add("hidden");
+        doDelete();
+      });
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: menuEl });
+      }
     }
     onConfiguredAction(id2, action) {
       if (action === "delete") {
@@ -90355,6 +91023,8 @@ No activity`;
       this._workspace = opts.workspace;
       this._automationPanel = opts.automationPanel;
       this._onModeChange = opts.onModeChange;
+      this._onLeaveAutomation = opts.onLeaveAutomation ?? (() => {
+      });
     }
     get isTransitioning() {
       return this._transitioning;
@@ -90367,6 +91037,9 @@ No activity`;
       const current = this.getCurrentMode();
       if (target === current || this._transitioning) return;
       this._transitioning = true;
+      if (current === "automation") {
+        this._onLeaveAutomation();
+      }
       const origOnModeChange = this._workspace.onModeChange;
       this._workspace.onModeChange = null;
       try {
@@ -139173,10 +139846,9 @@ void main() {
     /* ── References Panel ───────────────────────────────────────────── */
     renderReferencesPanel(st3) {
       const refs = st3.references || [];
-      const allowedKeywords = ["memory", "profile", "web_search", "web_fetch", "search", "grep", "glob", "find"];
       const filteredRefs = refs.filter((r) => {
         const t3 = r.tool.toLowerCase();
-        return t3.startsWith("mcp__") || allowedKeywords.some((k2) => t3.includes(k2));
+        return t3.startsWith("mcp__") || t3.startsWith("memory_") || t3.startsWith("web_") || t3.includes("profile");
       });
       if (filteredRefs.length === 0) {
         const bodyHTML2 = `<div class="si-panel-empty">${t("sessionInner.noRefs")}</div>`;
@@ -139187,7 +139859,7 @@ void main() {
       }
       const shown = filteredRefs.slice(-50).reverse();
       const groups = [
-        { key: "ref-group-search", label: t("sessionInner.referencesSearch") || "Web & Search", icon: "globe", refs: [] },
+        { key: "ref-group-web", label: t("sessionInner.referencesWeb") || "Web", icon: "globe", refs: [] },
         { key: "ref-group-memory", label: t("sessionInner.referencesMemory") || "Memory", icon: "brain", refs: [] },
         { key: "ref-group-mcp", label: t("sessionInner.referencesMcp") || "MCP", icon: "cable", refs: [] }
       ];
@@ -139554,160 +140226,34 @@ void main() {
       this.workspace = new Workspace();
       this.automationPanel = new AutomationPanel();
       this.automation = new Automation();
+      this.automation.setChatRenderer(this.chat);
       this.automationPanel.onShow = () => this.automation.render();
-      const showAutomationResult = (data2, fromUserAction = false) => {
-        if (!fromUserAction) {
-          const curView = getState().subAgentView;
-          if (curView && curView.id === data2.id) {
-            if (data2.state === "FAILED") {
-              this._activeAutomationJobId = "";
-              window.__isAutomationView = false;
-              window.__closeSubAgentView = void 0;
-              setSubAgentView(null);
-              clearMessages();
-              this.chat.render();
-              this.automationPanel.show();
-              this.automation.showDetail(data2);
-            } else if (curView.status === "completed") {
-              send({ type: "automation_list_jobs" });
-            }
-          }
-          return;
-        }
-        this._activeAutomationJobId = data2.state === "RUNNING" || data2.state === "PENDING" ? data2.job_id || data2.id : "";
-        this.automation.showDetail({
-          id: data2.id || data2.job_id || "",
-          name: data2.name || t("app.automationDefaultName"),
-          messages: data2.messages || [],
-          state: data2.state,
-          result: data2.result || "",
-          session_id: data2.session_id || ""
-        });
-        if (data2.job_id || data2.id) {
-          const viewId = data2.job_id || data2.id;
-          const isActive = data2.state === "RUNNING" || data2.state === "PENDING";
-          this._activeAutomationJobId = isActive ? viewId : "";
-          const tc2 = {
-            id: viewId,
-            name: "agent",
-            params: { agent_name: data2.name || t("app.automationDefaultName") },
-            status: isActive ? "running" : "completed",
-            subAgentMessages: restoreMessages(data2.messages || []),
-            content: data2.result || "",
-            sessionId: data2.session_id || ""
-          };
-          const origClose = window.__closeSubAgentView;
-          window.__closeSubAgentView = () => {
-            setSubAgentView(null);
-            clearMessages();
-            this._activeAutomationJobId = "";
-            window.__isAutomationView = false;
-            window.__closeSubAgentView = origClose;
-            this.automationPanel.toggleAutomationView();
-          };
-          window.__isAutomationView = true;
-          setSubAgentView(tc2);
-          this.chat.render();
-          return;
-        }
-        if (data2.messages && data2.messages.length > 0) {
-          const tc2 = {
-            id: crypto.randomUUID(),
-            name: "agent",
-            params: { agent_name: data2.name || t("app.automationDefaultName") },
-            status: "completed",
-            subAgentMessages: restoreMessages(data2.messages),
-            content: data2.result || ""
-          };
-          const origClose = window.__closeSubAgentView;
-          window.__closeSubAgentView = () => {
-            setSubAgentView(null);
-            clearMessages();
-            window.__isAutomationView = false;
-            window.__closeSubAgentView = origClose;
-            this.automationPanel.toggleAutomationView();
-          };
-          setSubAgentView(tc2);
-          window.__isAutomationView = true;
-          return;
-        }
-        const msg = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data2.result || "",
-          thinking: "",
-          thinkingElapsed: 0,
-          segments: [],
-          isStreaming: false,
-          toolCalls: [],
-          timestamp: Date.now()
-        };
-        addMessage(msg);
-      };
-      onAutomationShowResult((result) => showAutomationResult(result, false));
-      this.automation.onViewResult = (data2) => showAutomationResult(data2, true);
+      onAutomationShowResult((result) => {
+        this.automation.updateExecutionResult(result);
+      });
       onAutomationStreamEvent((event) => {
         const { job_id, event_type, event_data } = event;
         if (event_type === "start") {
-          const data2 = event_data;
           this._activeAutomationJobId = job_id;
+          const data2 = event_data;
           const autoOpen = isEnabled(getState().settings?.automation_auto_open_view);
-          if (!autoOpen) {
-            return;
-          }
-          this.automationPanel.hide();
-          clearMessages();
-          setSessionId("");
-          addUserMessage(data2.prompt || data2.name || "");
-          const tc2 = {
+          if (!autoOpen) return;
+          this.automationPanel.show();
+          this.automation.openExecution({
             id: job_id,
-            name: "agent",
-            params: { agent_name: data2.name || t("app.automationDefaultName") },
-            status: "running",
-            subAgentMessages: [],
-            content: "",
-            sessionId: data2.session_id || ""
-          };
-          const origClose = window.__closeSubAgentView;
-          window.__closeSubAgentView = () => {
-            setSubAgentView(null);
-            clearMessages();
-            this._activeAutomationJobId = "";
-            window.__isAutomationView = false;
-            window.__closeSubAgentView = origClose;
-            this.automationPanel.toggleAutomationView();
-          };
-          window.__isAutomationView = true;
-          setSubAgentView(tc2);
+            job_id,
+            name: data2.name || t("app.automationDefaultName"),
+            prompt: data2.prompt || "",
+            result: "",
+            tag: "",
+            state: "RUNNING",
+            session_id: data2.session_id,
+            messages: []
+          });
           return;
         }
-        if (this._activeAutomationJobId !== job_id) return;
-        const view = getState().subAgentView;
-        if (!view || view.id !== job_id) return;
-        if (event_type === "snapshot") {
-          const messages = event_data.messages;
-          if (Array.isArray(messages)) {
-            view.subAgentMessages = restoreMessages(messages);
-          }
-          if (event_data.session_id) {
-            view.sessionId = event_data.session_id;
-          }
-          setSubAgentView({ ...view });
-        } else if (event_type === "text_delta") {
-          view.content = (view.content || "") + (event_data.text || "");
-          setSubAgentView({ ...view });
-        } else if (event_type === "thinking_delta") {
-        } else if (event_type === "tool_progress" || event_type === "tool_result") {
-          const ed = event_data;
-          if (ed.sub_agent_messages && ed.sub_agent_messages.length > 0) {
-            view.subAgentMessages = restoreMessages(ed.sub_agent_messages);
-            setSubAgentView({ ...view });
-          }
-        } else if (event_type === "finish") {
-          view.status = "completed";
-          view.content = view.content || (event_data.result || "");
-          setSubAgentView({ ...view });
-        }
+        this.automation.updateExecution(job_id, event_type, event_data);
+        if (event_type === "finish") this._activeAutomationJobId = "";
       });
       const onAnyModeChange = () => {
         this.automationPanel.hide();
@@ -139723,7 +140269,10 @@ void main() {
       this.modeTransition = new ModeTransitionManager({
         workspace: this.workspace,
         automationPanel: this.automationPanel,
-        onModeChange: onAnyModeChange
+        onModeChange: onAnyModeChange,
+        onLeaveAutomation: () => {
+          if (this.automation.isDetailVisible()) this.automation.hideDetail();
+        }
       });
       this.sessionInner = new SessionInner();
       this.chat.onViewChanges = (path) => {
@@ -140625,9 +141174,14 @@ void main() {
       const autoBackBtn = document.getElementById("btn-automation-back");
       const toggleBtn = document.getElementById("btn-toggle-sidebar");
       const searchBtn = document.getElementById("btn-sidebar-search");
-      const isAutomationSubAgent = isAutomationView && isSubAgentView;
+      const isAutomationDetail = this.automation.isDetailVisible();
+      const isAutomationSubAgent = isAutomationView && isSubAgentView || isAutomationDetail;
       if (autoBackBtn && toggleBtn && searchBtn) {
-        if (isAutomationSubAgent) {
+        if (isAutomationDetail) {
+          autoBackBtn.classList.remove("hidden");
+          toggleBtn.style.display = "none";
+          searchBtn.style.display = "";
+        } else if (isAutomationSubAgent) {
           autoBackBtn.classList.remove("hidden");
           toggleBtn.style.display = "none";
           searchBtn.style.display = "none";
@@ -140638,24 +141192,31 @@ void main() {
         }
       }
       if (isSubAgentView) {
-        let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" data-tooltip="${this.esc(rootLabel)}">${this.esc(_truncate(rootLabel))}</button>`;
+        let rootCrumbLabel = rootLabel;
+        const rootCrumbSessionId = breadcrumb.length > 0 ? breadcrumb[0].sessionId : s15.sessionId;
+        if (rootCrumbSessionId && rootCrumbSessionId !== s15.sessionId) {
+          const rootEntry = s15.sessionsList.find((x) => x.session_id === rootCrumbSessionId);
+          rootCrumbLabel = rootEntry?.name || rootEntry?.preview || rootCrumbSessionId.slice(0, 8);
+        }
+        let crumbsHtml = `<button class="session-crumb session-crumb-root" data-crumb-index="-1" type="button" data-tooltip="${this.esc(rootCrumbLabel)}">${this.esc(_truncate(rootCrumbLabel))}</button>`;
+        let lastBreadcrumbIsCurrent = false;
         for (let i8 = 0; i8 < breadcrumb.length; i8++) {
           const entry = breadcrumb[i8];
           const isLast = i8 === breadcrumb.length - 1;
           const label = formatAgentLabel(entry.name);
           crumbsHtml += `<span class="session-crumb-sep">/</span>`;
-          if (isLast && !s15.subAgentView) {
+          if (isLast && (!s15.subAgentView || entry.toolCallId === s15.subAgentView.id)) {
             crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</span>`;
+            if (entry.toolCallId === s15.subAgentView?.id) {
+              lastBreadcrumbIsCurrent = true;
+            }
           } else {
             crumbsHtml += `<button class="session-crumb" data-crumb-index="${i8}" type="button" data-tooltip="${this.esc(label)}">${this.esc(_truncate(label))}</button>`;
           }
         }
-        if (s15.subAgentView) {
-          const rawName = String(
-            s15.subAgentView.params.agent_name || s15.subAgentView.params.name || s15.subAgentView.params.mode || "agent"
-          );
+        if (s15.subAgentView && !lastBreadcrumbIsCurrent) {
+          const curLabel = formatAgentLabel(getAgentName(s15.subAgentView));
           crumbsHtml += `<span class="session-crumb-sep">/</span>`;
-          const curLabel = formatAgentLabel(rawName);
           crumbsHtml += `<span class="session-crumb-current" data-tooltip="${this.esc(curLabel)}">${this.esc(_truncate(curLabel))}</span>`;
         }
         nameEl.innerHTML = crumbsHtml;
@@ -140663,7 +141224,7 @@ void main() {
           btn.addEventListener("click", () => {
             const idx = parseInt(btn.dataset.crumbIndex || "-1", 10);
             if (idx < 0) {
-              window.__closeSubAgentView?.();
+              window.__goToRootView?.();
             } else {
               window.__navigateToBreadcrumb?.(idx);
             }
@@ -140976,7 +141537,11 @@ void main() {
         document.getElementById("app")?.classList.toggle("sidebar-collapsed");
       });
       document.getElementById("btn-automation-back")?.addEventListener("click", () => {
-        window.__closeSubAgentView?.();
+        if (this.automation.isDetailVisible()) {
+          this.automation.hideDetail();
+        } else {
+          window.__closeSubAgentView?.();
+        }
       });
       const modeSeg = document.getElementById("mode-seg");
       if (modeSeg) {
@@ -141246,14 +141811,46 @@ void main() {
         el2.innerHTML = `<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">${t("sessionInner.noRefs")}</div>`;
         return;
       }
-      const shown = refs.slice(-8).reverse();
-      el2.innerHTML = shown.map((r) => {
-        const iconSrc = r.icon || "link-2";
+      const shown = refs.slice(-12).reverse();
+      const groups = [
+        { label: t("sessionInner.referencesWeb") || "Web", icon: "globe", refs: [] },
+        { label: t("sessionInner.referencesMemory") || "Memory", icon: "brain", refs: [] },
+        { label: t("sessionInner.referencesMcp") || "MCP", icon: "cable", refs: [] }
+      ];
+      for (const r of shown) {
+        const t3 = r.tool.toLowerCase();
+        if (t3.startsWith("mcp__")) {
+          groups[2].refs.push(r);
+        } else if (t3.includes("memory") || t3.includes("profile")) {
+          groups[1].refs.push(r);
+        } else {
+          groups[0].refs.push(r);
+        }
+      }
+      const renderItem = (r) => {
+        const iconSrc = r.icon || "zap";
         return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary)">
         <i data-lucide="${iconSrc}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px;opacity:0.6"></i>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(r.summary)}</span>
       </div>`;
-      }).join("");
+      };
+      const parts = [];
+      for (const g of groups) {
+        if (g.refs.length === 0) continue;
+        const allHtml = g.refs.map(renderItem).join("");
+        parts.push(`<div>
+        <div class="sp-ref-header" onclick="this.parentElement.classList.toggle('collapsed')">
+          <i data-lucide="${g.icon}" class="lucide lucide-sm sp-ref-header-icon"></i>
+          <span class="sp-ref-header-label">${g.label}</span>
+          <i data-lucide="chevron-down" class="lucide lucide-sm sp-ref-chevron"></i>
+        </div>
+        <div class="sp-ref-body">${allHtml}</div>
+      </div>`);
+      }
+      el2.innerHTML = parts.join("");
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: el2 });
+      }
     }
     esc(s15) {
       const el2 = document.createElement("span");
@@ -141680,14 +142277,12 @@ void main() {
      * @param opts - Optional flags controlling cleanup behaviour.
      */
     cleanupContentArea(opts) {
+      if (this.automation.isDetailVisible()) this.automation.hideDetail();
       setSubAgentView(null);
       clearSubAgentBreadcrumb();
-      window.__closeSubAgentView = void 0;
-      window.__navigateToBreadcrumb = void 0;
       if (!opts?.keepAutomationFlag) {
         window.__isAutomationView = false;
         window.__activeAutomationJobId = "";
-        window.__closeSubAgentView = void 0;
       }
       setActiveToolId(null);
       const detailPanel = document.getElementById("detail-panel");
@@ -141791,8 +142386,18 @@ void main() {
       if (sidebarToggle) {
         sidebarToggle.classList.remove("hidden");
         sidebarToggle.style.display = "";
+        sidebarToggle.style.opacity = "";
+        sidebarToggle.style.transform = "";
+        sidebarToggle.style.transition = "";
+        sidebarToggle.style.pointerEvents = "";
       }
-      if (searchBtn) searchBtn.style.display = "";
+      if (searchBtn) {
+        searchBtn.style.display = "";
+        searchBtn.style.opacity = "";
+        searchBtn.style.transform = "";
+        searchBtn.style.transition = "";
+        searchBtn.style.pointerEvents = "";
+      }
       if (autoBackBtn) autoBackBtn.classList.add("hidden");
       const childView = document.getElementById("child-view");
       if (childView) {

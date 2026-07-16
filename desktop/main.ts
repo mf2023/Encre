@@ -1709,13 +1709,29 @@ app.whenReady().then(async () => {
 
   // Register local:// protocol to serve local files (for notification media, etc.)
   protocol.handle("local", (request) => {
-    const filePath = decodeURIComponent(request.url.slice("local://".length)).replace(/^\//, "");
-    const resolved = path.resolve(filePath);
+    const rawPath = decodeURIComponent(request.url.slice("local://".length)).replace(/^\//, "");
+    const filePath = path.resolve(rawPath);
+
     try {
-      fs.accessSync(resolved);
-      return net.fetch("file:///" + resolved.replace(/\\/g, "/"));
+      const data = fs.readFileSync(filePath);
+
+      const ext = path.extname(filePath).toLowerCase();
+      const mime: Record<string, string> = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+        ".gif": "image/gif", ".webp": "image/webp",
+        ".mp4": "video/mp4", ".webm": "video/webm", ".ogg": "video/ogg",
+      };
+      const contentType = mime[ext] || "application/octet-stream";
+
+      return new Response(data, {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Length": String(data.length),
+        },
+      });
     } catch {
-      return new Response("Not found", { status: 404 });
+      return new Response("File not found", { status: 404 });
     }
   });
 

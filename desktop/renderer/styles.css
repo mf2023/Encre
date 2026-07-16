@@ -1365,7 +1365,7 @@ body {
   min-height: 0;
 }
 
-#main-content-clip > #chat-view,
+#main-content-clip > .chat-view,
 #main-content-clip > #search-view,
 #main-content-clip > #agents-view,
 #main-content-clip > #settings-view,
@@ -2426,6 +2426,48 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* ── Summary Panel Reference Groups ──────────────────────── */
+.sp-ref-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.sp-ref-header:hover {
+  color: var(--text-secondary);
+}
+
+.sp-ref-header-icon {
+  flex-shrink: 0;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+.sp-ref-header-label {
+  flex: 1;
+  font-weight: 500;
+}
+
+.sp-ref-chevron {
+  flex-shrink: 0;
+  width: 12px !important;
+  height: 12px !important;
+  transition: transform 0.2s ease;
+}
+
+.collapsed .sp-ref-chevron {
+  transform: rotate(-90deg);
+}
+
+.collapsed .sp-ref-body {
+  display: none;
 }
 
 /* ── Summary Panel Todo Items ─────────────────────────────── */
@@ -3642,7 +3684,10 @@ body {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: #8b5cf6;
+  color: var(--text-secondary);
+}
+.agent-card-icon.spinning {
+  animation: historySpin 1s linear infinite;
 }
 .agent-card-name {
   font-size: 12px;
@@ -4906,7 +4951,7 @@ body {
   display: none !important;
 }
 
-#app.settings-mode #chat-view,
+#app.settings-mode .chat-view,
 #app.settings-mode #search-view,
 #app.settings-mode #agents-view,
 #app.settings-mode #session-bar,
@@ -6722,7 +6767,7 @@ body.child-mode #header-bar {
 }
 
 /* ── View Containers ─────────────────────────────────────────────── */
-#chat-view,
+.chat-view,
 #search-view,
 #agents-view {
   flex: 1 1 0;
@@ -6732,13 +6777,13 @@ body.child-mode #header-bar {
   min-height: 0;
 }
 
-#main-content.sub-agent-active #chat-view {
+#main-content.sub-agent-active .chat-view {
   height: 100%;
   flex: 1 1 0;
   min-height: 0;
 }
 
-#chat-view {
+.chat-view {
   position: relative;
   flex: 1 1 0;
   display: flex;
@@ -6778,8 +6823,9 @@ body.child-mode #header-bar {
 .automation-tabs {
   display: flex;
   gap: 24px;
+  padding: 0 32px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
 .automation-tab {
@@ -6832,7 +6878,9 @@ body.child-mode #header-bar {
   min-height: 0;
 }
 
-/* ── Automation detail view (result display) ──────────────── */
+
+
+/* ── Automation detail ──────────────────────────────────── */
 .automation-detail {
   flex: 1;
   display: none;
@@ -6842,84 +6890,45 @@ body.child-mode #header-bar {
 .automation-detail.active {
   display: flex;
 }
-
 .automation-detail-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 0 12px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
-}
-
-.automation-detail-back {
+  height: 40px;
+  padding: 0 16px;
   flex-shrink: 0;
-  padding: 4px 8px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--text-tertiary);
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
 }
-.automation-detail-back:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
 .automation-detail-breadcrumb {
-  flex: 1;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-size: 13px;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--text-primary);
   min-width: 0;
   overflow: hidden;
-}
-
-.automation-detail-content {
   flex: 1;
-  overflow-y: auto;
+  padding-left: 0;
+  letter-spacing: 0.01em;
+}
+.automation-detail-content {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 12px;
+  max-width: 780px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px 24px 42px;
 }
-
-.automation-detail-content .turn {
-  /* reuse chat turn grouping */
-}
-.automation-detail-content .user-item {
-  margin: 8px 0;
-}
-.automation-detail-content .user-bubble {
-  background: var(--bg-message-user, var(--bg-subtle));
-  border-radius: 12px;
-  padding: 10px 14px;
-  max-width: 75%;
-  line-height: 1.5;
-  font-size: 14px;
-  word-wrap: break-word;
-}
-.automation-detail-content .ai-header {
-  margin: 12px 0 4px;
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-.automation-detail-content .assistant-text {
-  margin: 8px 0;
-  line-height: 1.6;
-}
-.automation-detail-content .assistant-text .msg-text {
-  font-size: 14px;
-}
-.automation-detail-content .thinking-strip {
-  margin: 4px 0;
-}
-.automation-detail-content .tool-call {
-  margin: 4px 0;
+.automation-detail-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  /* Matches #chat-view > #chat-container — full-width scroll container with
+     centered content inside, so the scrollbar sits at the far right of the
+     panel, identical to the normal sub-agent view. */
 }
 .automation-detail-loader {
   display: flex;
@@ -6929,7 +6938,6 @@ body.child-mode #header-bar {
   color: var(--text-tertiary);
   font-size: 14px;
 }
-/* ── end automation detail ───────────────────────────────── */
 
 .configured-list,
 .history-timeline {
@@ -9502,11 +9510,11 @@ body.child-mode #header-bar {
 .ai-header:hover .ai-time { display: inline; }
 
 /* Timeline hard override: keep the real chat as compact as timeline-demo.html. */
-#chat-view #chat-container {
+.chat-view #chat-container {
   background: var(--bg-primary);
 }
 
-#chat-view #message-list {
+.chat-view #message-list {
   width: 100%;
   max-width: 780px;
   margin: 0 auto;
@@ -9514,7 +9522,7 @@ body.child-mode #header-bar {
   gap: 12px;
 }
 
-#chat-view .ai-header {
+.chat-view .ai-header {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -9522,14 +9530,14 @@ body.child-mode #header-bar {
   margin: 0;
 }
 
-#chat-view .ai-name {
+.chat-view .ai-name {
   font-size: 16px;
   font-weight: 700;
   color: #6b6b70;
   letter-spacing: 0;
 }
 
-#chat-view .user-item {
+.chat-view .user-item {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -9537,7 +9545,7 @@ body.child-mode #header-bar {
   margin: 0;
 }
 
-#chat-view .user-bubble {
+.chat-view .user-bubble {
   max-width: 640px;
   padding: 10px 16px;
   border: 0;
@@ -9548,7 +9556,7 @@ body.child-mode #header-bar {
   line-height: 1.65;
 }
 
-[data-theme="light"] #chat-view .user-bubble {
+[data-theme="light"] .chat-view .user-bubble {
   background: #e3f8ed;
 }
 
@@ -9574,75 +9582,75 @@ body.child-mode #header-bar {
   font-size: 0.9em;
 }
 
-#chat-view .strip-item,
-#chat-view .tool-item,
-#chat-view .terminal-card,
-#chat-view .file-card,
-#chat-view .agent-wrap,
-#chat-view .agent-card,
-#chat-view .artifacts-card,
-#chat-view .takeover-card,
-#chat-view .assistant-text {
+.chat-view .strip-item,
+.chat-view .tool-item,
+.chat-view .terminal-card,
+.chat-view .file-card,
+.chat-view .agent-wrap,
+.chat-view .agent-card,
+.chat-view .artifacts-card,
+.chat-view .takeover-card,
+.chat-view .assistant-text {
   width: 100%;
   max-width: 100%;
   margin: 0;
 }
 
-#chat-view .strip,
-#chat-view .tool-item {
+.chat-view .strip,
+.chat-view .tool-item {
   min-height: 20px;
   padding: 1px 0;
   gap: 5px;
 }
 
-#chat-view .terminal-card,
-#chat-view .file-card,
-#chat-view .agent-card,
-#chat-view .artifacts-card,
-#chat-view .takeover-card {
+.chat-view .terminal-card,
+.chat-view .file-card,
+.chat-view .agent-card,
+.chat-view .artifacts-card,
+.chat-view .takeover-card {
   background: var(--bg-tertiary);
   border: 0;
   border-radius: 6px;
   box-shadow: none;
 }
 
-#chat-view .artifacts-card {
+.chat-view .artifacts-card {
   margin: 0;
 }
 
-#chat-view .artifacts-label {
+.chat-view .artifacts-label {
   margin-bottom: 6px;
 }
 
-[data-theme="light"] #chat-view .terminal-card,
-[data-theme="light"] #chat-view .file-card,
-[data-theme="light"] #chat-view .agent-card,
-[data-theme="light"] #chat-view .artifacts-card,
-[data-theme="light"] #chat-view .takeover-card {
+[data-theme="light"] .chat-view .terminal-card,
+[data-theme="light"] .chat-view .file-card,
+[data-theme="light"] .chat-view .agent-card,
+[data-theme="light"] .chat-view .artifacts-card,
+[data-theme="light"] .chat-view .takeover-card {
   background: #f0f0f0;
 }
 
-#chat-view .terminal-card-header,
-#chat-view .agent-card-header,
-#chat-view .artifacts-header {
+.chat-view .terminal-card-header,
+.chat-view .agent-card-header,
+.chat-view .artifacts-header {
   min-height: 28px;
   padding: 7px 12px;
   gap: 8px;
 }
 
-#chat-view .strip-name {
+.chat-view .strip-name {
   font-size: 11.5px;
   font-weight: 400;
   color: var(--tool-text);
   line-height: 1.35;
 }
 
-#chat-view .terminal-card .strip-name,
-#chat-view .file-card-name {
+.chat-view .terminal-card .strip-name,
+.chat-view .file-card-name {
   color: var(--text-primary);
 }
 
-#chat-view .strip-summary {
+.chat-view .strip-summary {
   min-width: 0;
   color: var(--tool-text);
   opacity: 0.85;
@@ -9653,7 +9661,7 @@ body.child-mode #header-bar {
   white-space: nowrap;
 }
 
-#chat-view .strip-summary code {
+.chat-view .strip-summary code {
   max-width: 100%;
   padding: 1px 4px;
   border: 0;
@@ -9663,11 +9671,11 @@ body.child-mode #header-bar {
   font-size: 10.5px;
 }
 
-#chat-view .icon-wrap,
-#chat-view .icon-wrap .semantic,
-#chat-view .icon-wrap .arrow,
-#chat-view .tool-item-icon,
-#chat-view .strip-icon {
+.chat-view .icon-wrap,
+.chat-view .icon-wrap .semantic,
+.chat-view .icon-wrap .arrow,
+.chat-view .tool-item-icon,
+.chat-view .strip-icon {
   width: 12px;
   height: 12px;
 }
@@ -9675,26 +9683,26 @@ body.child-mode #header-bar {
 /* Tool-item icons and strip-icons share the tool text color so the
    whole tool row reads as one unit. tool-item-icon is slightly faded
    (passive info) while strip-icon is full strength (action tools). */
-#chat-view .tool-item-icon {
+.chat-view .tool-item-icon {
   color: var(--tool-text);
   opacity: 0.8;
   stroke-width: 1.9;
 }
-#chat-view .strip-icon {
+.chat-view .strip-icon {
   color: var(--tool-text);
   stroke-width: 1.9;
 }
 
 /* Question-card icon should stand out with accent color. */
-#chat-view .question-card-icon {
+.chat-view .question-card-icon {
   color: var(--accent);
 }
 
-#chat-view .terminal-card .semantic {
+.chat-view .terminal-card .semantic {
   color: #0891b2;
 }
 
-#chat-view .strip-body {
+.chat-view .strip-body {
   display: none;
   padding: 4px 22px 8px 22px;
   color: var(--text-secondary);
@@ -9706,11 +9714,11 @@ body.child-mode #header-bar {
   overflow-x: hidden;
 }
 
-#chat-view .strip-item.expanded .strip-body {
+.chat-view .strip-item.expanded .strip-body {
   display: block;
 }
 
-#chat-view .strip-body .diff-container {
+.chat-view .strip-body .diff-container {
   max-width: 100%;
   /* The strip-body uses pre-wrap for terminal text, which would render the
      newlines/indentation inside the diff-container template as visible blank
@@ -9718,12 +9726,12 @@ body.child-mode #header-bar {
   white-space: normal;
 }
 
-#chat-view .strip-body .diff-body {
+.chat-view .strip-body .diff-body {
   max-height: 340px;
   overflow-y: auto;
 }
 
-#chat-view .compact-body {
+.chat-view .compact-body {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -9731,34 +9739,34 @@ body.child-mode #header-bar {
   font-size: 11px;
   font-family: var(--font-mono);
 }
-#chat-view .compact-row {
+.chat-view .compact-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-#chat-view .compact-label {
+.chat-view .compact-label {
   color: var(--text-tertiary);
   min-width: 56px;
   font-weight: 500;
 }
-#chat-view .compact-value {
+.chat-view .compact-value {
   color: var(--text-secondary);
 }
-#chat-view .compact-saved {
+.chat-view .compact-saved {
   color: var(--success);
   font-weight: 600;
 }
 
-#chat-view .terminal-body {
+.chat-view .terminal-body {
   display: none;
   border-top: 1px solid var(--border);
 }
 
-#chat-view .terminal-card.expanded .terminal-body {
+.chat-view .terminal-card.expanded .terminal-body {
   display: block;
 }
 
-#chat-view .terminal-output {
+.chat-view .terminal-output {
   padding: 8px 10px;
   margin: 0;
   background: var(--bg-primary);
@@ -9772,49 +9780,49 @@ body.child-mode #header-bar {
   border-radius: 0;
 }
 
-#chat-view .file-card {
+.chat-view .file-card {
   min-height: 36px;
   padding: 6px 12px;
   gap: 8px;
 }
 
 /* ── Turn Wrapper (chat-view overrides) ───────────────────────── */
-#chat-view .turn {
+.chat-view .turn {
   display: flex;
   flex-direction: column;
   gap: 5px;
   margin: 0;
 }
 
-#chat-view .turn > .ai-header,
-#chat-view .turn > .strip-item,
-#chat-view .turn > .tool-item,
-#chat-view .turn > .terminal-card,
-#chat-view .turn > .file-card,
-#chat-view .turn > .agent-wrap,
-#chat-view .turn > .agent-card,
-#chat-view .turn > .artifacts-card,
-#chat-view .turn > .assistant-text,
-#chat-view .turn > .assistant-actions {
+.chat-view .turn > .ai-header,
+.chat-view .turn > .strip-item,
+.chat-view .turn > .tool-item,
+.chat-view .turn > .terminal-card,
+.chat-view .turn > .file-card,
+.chat-view .turn > .agent-wrap,
+.chat-view .turn > .agent-card,
+.chat-view .turn > .artifacts-card,
+.chat-view .turn > .assistant-text,
+.chat-view .turn > .assistant-actions {
   margin: 0;
   /* visual cards keep their own internal padding from card rules */
 }
 
-#chat-view .turn > .strip-item,
-#chat-view .turn > .tool-item,
-#chat-view .turn > .assistant-text,
-#chat-view .turn > .assistant-actions,
-#chat-view .turn > .ai-header {
+.chat-view .turn > .strip-item,
+.chat-view .turn > .tool-item,
+.chat-view .turn > .assistant-text,
+.chat-view .turn > .assistant-actions,
+.chat-view .turn > .ai-header {
   padding: 0;
   margin: 0;
 }
 
-#chat-view .file-card-icon {
+.chat-view .file-card-icon {
   width: 12px;
   height: 12px;
 }
 
-#chat-view .file-view-btn {
+.chat-view .file-view-btn {
   padding: 5px 14px;
   border-radius: 5px;
   font-size: 12px;
@@ -9825,7 +9833,7 @@ body.child-mode #header-bar {
   transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base);
 }
 
-#chat-view .file-view-btn:hover {
+.chat-view .file-view-btn:hover {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
@@ -9846,6 +9854,120 @@ body.child-mode #header-bar {
   padding: 48px 24px;
   color: var(--text-muted);
   font-size: 14px;
+}
+
+/* Fallback rendering of the aggregated tool result when the inline
+   sub-agent transcript could not be restored (see chat.ts render()). */
+.sub-agent-result-fallback {
+  padding: 16px 20px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Parallel sub-agent view (one agent, multiple concurrent tasks) ----
+   Windows-style snap layout: panes tile edge-to-edge with no outer frame.
+     1 task  -> fills the whole tape
+     2 tasks -> left / right (50/50)
+     3 tasks -> one large pane on the left (50%), two stacked panes on the right
+     4 tasks -> 2x2 grid (25% each)
+   Split ratios are fixed; panes cannot be resized by dragging.             */
+#message-list.parallel-active {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.parallel-sub-agent {
+  flex: 1 1 auto;
+  align-self: stretch;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.parallel-sub-agent[data-count="1"] {
+  flex-direction: row;
+}
+.parallel-sub-agent[data-count="1"] .parallel-tile {
+  flex: 1 1 100%;
+}
+.parallel-sub-agent[data-count="2"] {
+  flex-direction: row;
+}
+.parallel-sub-agent[data-count="2"] .parallel-tile {
+  flex: 1 1 50%;
+}
+.parallel-sub-agent[data-count="2"] .parallel-tile:first-child {
+  border-right: 1px solid var(--border-subtle, rgba(128,128,128,.28));
+}
+.parallel-sub-agent[data-count="3"] {
+  flex-direction: row;
+}
+.parallel-sub-agent[data-count="3"] > .parallel-tile:first-child {
+  flex: 0 0 50%;
+  border-right: 1px solid var(--border-subtle, rgba(128,128,128,.28));
+}
+.parallel-sub-agent-stack {
+  flex: 0 0 50%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.parallel-sub-agent-stack .parallel-tile {
+  flex: 1 1 50%;
+}
+.parallel-sub-agent-stack .parallel-tile:first-child {
+  border-bottom: 1px solid var(--border-subtle, rgba(128,128,128,.28));
+}
+.parallel-sub-agent[data-count="4"] {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.parallel-sub-agent[data-count="4"] .parallel-tile {
+  flex: 1 1 50%;
+  height: 50%;
+}
+.parallel-sub-agent[data-count="4"] .parallel-tile:nth-child(1),
+.parallel-sub-agent[data-count="4"] .parallel-tile:nth-child(3) {
+  border-right: 1px solid var(--border-subtle, rgba(128,128,128,.28));
+}
+.parallel-sub-agent[data-count="4"] .parallel-tile:nth-child(1),
+.parallel-sub-agent[data-count="4"] .parallel-tile:nth-child(2) {
+  border-bottom: 1px solid var(--border-subtle, rgba(128,128,128,.28));
+}
+.parallel-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+.parallel-tile-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 12px;
+}
+.parallel-task-pending {
+  padding: 12px 4px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 /* Animated EA brand loader.  Renders the EN-W / EN-B animated svg
@@ -9881,27 +10003,7 @@ body.child-mode #header-bar {
 }
 .q-option-card.selected { border-color: var(--success); background: var(--accent-light); }
 
-/* Inline summary preview rendered inside the parent agent card.
-   Only the preview text is shown; counts and "running" chips are
-   intentionally hidden to keep the card compact. */
-.agent-card-summary {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 1 auto;
-  min-width: 0;
-  margin-left: 4px;
-  font-size: 10.5px;
-  color: var(--text-muted);
-}
-.agent-card-preview {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 240px;
-  color: var(--text-muted);
-}
-
-#chat-view .assistant-text {
+.chat-view .assistant-text {
   position: relative;
   padding: 4px 0 12px;
   color: var(--text-primary);
@@ -9909,35 +10011,35 @@ body.child-mode #header-bar {
   line-height: 1.75;
 }
 
-#chat-view .assistant-text.intermediate-text {
+.chat-view .assistant-text.intermediate-text {
   padding-bottom: 0;
 }
 
-#chat-view .assistant-text .msg-text {
+.chat-view .assistant-text .msg-text {
   font-size: 14px;
   line-height: 1.75;
 }
 
-#chat-view .msg-text p {
+.chat-view .msg-text p {
   margin: 0 0 6px;
 }
 
-#chat-view .code-block-wrapper {
+.chat-view .code-block-wrapper {
   border-radius: 6px;
 }
 
-#chat-view .code-block-header {
+.chat-view .code-block-header {
   padding: 6px 12px;
 }
 
-#chat-view .code-block-wrapper pre code {
+.chat-view .code-block-wrapper pre code {
   padding: 14px 16px;
   font-size: 13px;
   line-height: 1.65;
 }
 
 @media (max-width: 640px) {
-  #chat-view #message-list {
+  .chat-view #message-list {
     padding: 18px 14px 32px;
     gap: 10px;
   }

@@ -371,6 +371,33 @@ class TestEncreSessionUtility:
         ctx.append({"role": "assistant", "content": "extra"})
         assert len(session.messages) == 1  # original unchanged
 
+    def test_renderer_messages_preserve_client_tool_ids(self):
+        """Renderer history retains IDs used to match streamed tool events."""
+        config = EncreConfig()
+        session = EncreSession(config)
+        session.add_message(
+            "assistant",
+            "",
+            tool_calls=[{
+                "id": "backend-call",
+                "_client_id": "call_1_0",
+                "function": {"name": "agent", "arguments": "{}"},
+            }],
+        )
+        session.add_tool_result(
+            "backend-call",
+            "running",
+            client_id="call_1_0",
+        )
+
+        renderer_messages = session.get_renderer_messages()
+        context_messages = session.get_context_messages()
+
+        assert renderer_messages[0]["tool_calls"][0]["_client_id"] == "call_1_0"
+        assert renderer_messages[1]["_client_id"] == "call_1_0"
+        assert "_client_id" not in context_messages[0]["tool_calls"][0]
+        assert "_client_id" not in context_messages[1]
+
     def test_from_dict_roundtrip(self):
         """Verifies that from dict roundtrip."""
         config = EncreConfig()

@@ -1214,6 +1214,21 @@ class ClientAutomationDeleteExecution:
         )
 
 
+@dataclass
+class ClientAutomationRenameExecution:
+    type: str = "automation_rename_execution"
+    entry_id: str = ""
+    new_name: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientAutomationRenameExecution":
+        return cls(
+            type="automation_rename_execution",
+            entry_id=d.get("entry_id", ""),
+            new_name=d.get("new_name", ""),
+        )
+
+
 # The discriminated union of every client message type understood by the handler.
 # ``parse_client_message`` returns one of these based on the wire ``type`` field.
 ClientMessage = (
@@ -1289,6 +1304,7 @@ ClientMessage = (
     | ClientAutomationUpdateJob
     | ClientAutomationDeleteJob
     | ClientAutomationDeleteExecution
+    | ClientAutomationRenameExecution
 )
 
 
@@ -1388,6 +1404,7 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "automation_update_job": ClientAutomationUpdateJob,
         "automation_delete_job": ClientAutomationDeleteJob,
         "automation_delete_execution": ClientAutomationDeleteExecution,
+        "automation_rename_execution": ClientAutomationRenameExecution,
         "engine_install_response": ClientEngineInstallResponse,
     }
     cls = parsers.get(msg_type)

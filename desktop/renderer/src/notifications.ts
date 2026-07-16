@@ -213,22 +213,6 @@ export class Notifications {
   openPanel(): void {
     if (!this.bell) return;
 
-    // Inject demo activity notification with latest fields
-    dismissNotification("demo-activity");
-    addNotification({
-      id: "demo-activity",
-      type: "info",
-      title: t("notifications.demoTitle"),
-      message: t("notifications.demoMessage"),
-      source: t("notifications.demoSource"),
-      timestamp: Date.now(),
-      read: false,
-      media: {
-        type: "video",
-        src: "D:\\Downloads\\911Mothers_2010W-480p.mp4",
-      },
-    });
-
     this._detailId = null;
     this.panel = document.createElement("div");
     this.panel.className = "notification-panel";

@@ -578,7 +578,12 @@ class EncreSession:
     def _get_next_seq(self, branch_id: str) -> int:
         return self._branch_last_seq.get(branch_id, -1) + 1
 
-    def get_branch_messages(self, branch_id: str) -> list[dict[str, Any]]:
+    def get_branch_messages(
+        self,
+        branch_id: str,
+        *,
+        sanitize_for_model: bool = True,
+    ) -> list[dict[str, Any]]:
         lineage: list[str] = []
         current = self.branches.get(branch_id)
         while current:
@@ -630,6 +635,9 @@ class EncreSession:
                     seen_ids.add(mid)
                 result.append(m)
 
+        if not sanitize_for_model:
+            return result
+
         # Sanitize: drop renderer-only annotations before the messages
         # reach the LLM.  These are the ``_client_id`` keys attached by
         # ``add_message`` (assistant tool_calls) and ``add_tool_result``
@@ -659,6 +667,14 @@ class EncreSession:
                 mm.pop("_client_id", None)
             sanitized.append(mm)
         return sanitized
+
+    def get_renderer_messages(self) -> list[dict[str, Any]]:
+        """Return active-branch messages with renderer correlation metadata."""
+        messages = self.get_branch_messages(
+            self.active_branch_id,
+            sanitize_for_model=False,
+        )
+        return [dict(message) for message in messages]
 
     def create_branch(self, from_branch_id: str, fork_point_message_id: str) -> BranchMeta:
         self._branch_counter += 1

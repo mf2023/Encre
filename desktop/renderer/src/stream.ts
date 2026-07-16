@@ -208,6 +208,9 @@ function _ensureAssistantMessage(sessionId?: string): void {
       // Use the explicit session id passed in (already validated above
       // to match st.sessionId) so we always record the right owner.
       _activeStreamSessionId = st.sessionId || "";
+      // A brand-new turn: reset the auto-open dismiss guard so the first
+      // sub-agent of this turn opens live again (per the auto-open setting).
+      (window as any).__subAgentAutoOpenDismissed = false;
       send({ type: "run", prompt: text, session_id: st.sessionId || undefined } as any);
     }
   }
@@ -304,14 +307,26 @@ export function handleEvent(event: ServerEvent): void {
       const previousSid = state.getState().sessionId;
       const nextSid = event.session_id || "";
       const switched = previousSid && previousSid !== nextSid;
+      // When this switch is the result of the user opening a *session-backed*
+      // sub-agent from its parent tool-call card, the breadcrumb pushed by
+      // __openSubAgentView already records the parent session (and the exact
+      // tool-call id) so the user can navigate back and switch between sibling
+      // sub-agents.  Clearing it here would strand the user inside the
+      // sub-agent session with no way back to the parent and make two
+      // same-type sub-agents indistinguishable during navigation.  Preserve
+      // the sub-agent view + breadcrumb for that specific requested switch.
+      const pendingSubAgent = (window as any).__pendingSubAgentView;
+      const isPendingSubSwitch = !!(pendingSubAgent && pendingSubAgent.sessionId === nextSid);
       // Drop the stale active-stream pointer unless the new session is
       // explicitly continuing the same run.  Also discard any sub-agent view
       // state from the previous session so it cannot bleed into the new one.
       if (switched) {
         _activeStreamSessionId = "";
         _toolCallGeneration = {};
-        state.setSubAgentView(null);
-        state.clearSubAgentBreadcrumb();
+        if (!isPendingSubSwitch) {
+          state.setSubAgentView(null);
+          state.clearSubAgentBreadcrumb();
+        }
       }
       console.log("[stream] session_ready received, messages:", event.messages?.length ?? 0, "session_id:", event.session_id, "gen:", _sessionGeneration);
       state.setSessionId(event.session_id);
@@ -325,8 +340,42 @@ export function handleEvent(event: ServerEvent): void {
       if (event.messages && event.messages.length > 0) {
         state.loadSessionMessages(event.messages, event.session_id);
         console.log("[stream] loadSessionMessages done, state.messages.length:", state.getState().messages.length);
+        // Repopulate _toolCallGeneration for the current session's tool calls.
+        // This is critical for running sub-agents: after switching back to this
+        // session, subsequent tool_progress events must pass the generation check
+        // to update subAgentMessages. Without this, the cards show merged/empty.
+        const currentMessages = state.getState().messages;
+        let tcCount = 0;
+        for (const msg of currentMessages) {
+          for (const tc of msg.toolCalls) {
+            // Register both renderer and backend ids. Resumed sessions may
+            // receive progress using either id while the card itself uses the
+            // renderer-facing client id.
+            _toolCallGeneration[tc.id] = _sessionGeneration;
+            if (tc.backendId) _toolCallGeneration[tc.backendId] = _sessionGeneration;
+            tcCount++;
+            if (tc.name === "agent") {
+              console.log("[stream] Registered agent tc.id:", tc.id, "hasSubAgentMsg:", !!tc.subAgentMessages, "subAgentMsgCount:", tc.subAgentMessages?.length ?? 0);
+            }
+          }
+        }
+        console.log("[stream] Repopulated _toolCallGeneration with", tcCount, "tool calls, sessionGen:", _sessionGeneration, "tc_ids:", Object.keys(_toolCallGeneration).filter(k => k.startsWith("call_")).join(","));
       } else {
         state.clearMessages(event.session_id);
+      }
+      // A session-backed sub-agent is opened from its parent tool call.  The
+      // session swap above deliberately clears normal sub-agent state, so
+      // restore that view only for the matching, user-requested child reply.
+      // (``pendingSubAgent`` / ``isPendingSubSwitch`` were resolved above.)
+      if (isPendingSubSwitch) {
+        const toolCall = {
+          ...pendingSubAgent.toolCall,
+          subAgentMessages: state.getState().messages,
+          status: (event as any).is_running ? "running" : "done",
+        };
+        state.setSubAgentView(toolCall);
+        (window as any).__activeSubAgentSessionId = event.session_id;
+        (window as any).__pendingSubAgentView = undefined;
       }
       if (event.plan_items) {
         state.setPlanItems(event.plan_items, event.session_id);
@@ -423,7 +472,13 @@ export function handleEvent(event: ServerEvent): void {
           // Only auto-open if no view is currently active.  If the user
           // already has a sub-agent open (or another tool_call_start
           // just opened one), do NOT overwrite their selection.
-          if (autoOpen && cur == null) {
+          //
+          // Dismiss guard: once the user has explicitly navigated back to
+          // the main agent during this run (breadcrumb / close), respect
+          // that choice -- do NOT keep yanking them back into a freshly
+          // spawned sub-agent on every subsequent ``agent`` tool_call_start.
+          const dismissed = !!(window as any).__subAgentAutoOpenDismissed;
+          if (autoOpen && cur == null && !dismissed) {
             state.setSubAgentView(tcf);
             chat?.renderForce?.();
           }
@@ -481,12 +536,25 @@ export function handleEvent(event: ServerEvent): void {
     }
 
     case "tool_progress":
-      if (_toolCallGeneration[event.id] !== _sessionGeneration) break;
-      state.updateToolCall(event.id, {
+      if (_toolCallGeneration[event.id] !== _sessionGeneration) {
+        console.log("[stream] tool_progress REJECTED by generation check, id:", event.id, "tc_gen:", _toolCallGeneration[event.id], "session_gen:", _sessionGeneration);
+        break;
+      }
+      console.log("[stream] tool_progress accepted, id:", event.id, "sub_agent_messages:", event.sub_agent_messages?.length ?? 0);
+      const progressPatch: Partial<import("./types.js").ToolCallState> = {
         status: event.status === "done" ? "done" : "running",
-        subAgentMessages: event.sub_agent_messages ? state.restoreMessages(event.sub_agent_messages) : undefined,
-        subAgentSessionId: (event as any).sub_agent_session_id,
-      }, _eventSessionId(event));
+      };
+      if (event.sub_agent_messages && event.sub_agent_messages.length > 0) {
+        const current = state.findToolCall(event.id, _eventSessionId(event));
+        progressPatch.subAgentMessages = state.mergeSubAgentMessages(
+          current?.subAgentMessages,
+          state.restoreMessages(event.sub_agent_messages),
+        );
+      }
+      if ((event as any).sub_agent_session_id) {
+        progressPatch.subAgentSessionId = (event as any).sub_agent_session_id;
+      }
+      state.updateToolCall(event.id, progressPatch, _eventSessionId(event));
       // Keep the sub-agent view's snapshot in sync with the latest tool
       // call state so the in-progress timeline keeps streaming.
       _syncSubAgentView(event.id);
@@ -496,13 +564,22 @@ export function handleEvent(event: ServerEvent): void {
 
     case "tool_result":
       if (_toolCallGeneration[event.id] !== undefined && _toolCallGeneration[event.id] !== _sessionGeneration) break;
-      state.updateToolCall(event.id, {
+      const resultPatch: Partial<import("./types.js").ToolCallState> = {
         result: event.content,
         isError: event.is_error,
         status: "done",
-        subAgentMessages: event.sub_agent_messages ? state.restoreMessages(event.sub_agent_messages) : undefined,
-        subAgentSessionId: (event as any).sub_agent_session_id,
-      }, _eventSessionId(event));
+      };
+      if (event.sub_agent_messages && event.sub_agent_messages.length > 0) {
+        const current = state.findToolCall(event.id, _eventSessionId(event));
+        resultPatch.subAgentMessages = state.mergeSubAgentMessages(
+          current?.subAgentMessages,
+          state.restoreMessages(event.sub_agent_messages),
+        );
+      }
+      if ((event as any).sub_agent_session_id) {
+        resultPatch.subAgentSessionId = (event as any).sub_agent_session_id;
+      }
+      state.updateToolCall(event.id, resultPatch, _eventSessionId(event));
       _syncSubAgentView(event.id);
       tools?.requestRender();
       chat?.render();
@@ -1339,6 +1416,14 @@ export function handleEvent(event: ServerEvent): void {
       send({ type: "automation_get_history" });
       break;
 
+    case "automation_execution_deleted":
+      send({ type: "automation_get_history" });
+      break;
+
+    case "automation_execution_renamed":
+      send({ type: "automation_get_history" });
+      break;
+
     case "automation_stream_event":
       _automationStreamCallback?.(event as import("./types.js").AutomationStreamEvent);
       break;
@@ -1412,10 +1497,18 @@ let _lastSync = "";
 function _syncSubAgentView(toolCallId: string): void {
   const st = state.getState();
   const view = st.subAgentView;
-  if (!view || view.id !== toolCallId) return;
+  if (!view || !state.toolCallMatchesId(view, toolCallId)) return;
   const fresh = state.findToolCall(toolCallId);
   if (!fresh) return;
-  state.setSubAgentView(fresh);
+  const dividerCount = fresh.subAgentMessages?.filter((m) => m.mode === "task_divider").length ?? 0;
+  // Parallel runs now surface each task as its own card in the parent
+  // transcript. Drop the combined sub-agent view unless the user already
+  // picked a specific task to inspect.
+  if (dividerCount >= 2 && view.taskIndex === undefined) {
+    state.setSubAgentView(null);
+    return;
+  }
+  state.setSubAgentView({ ...fresh, taskIndex: view.taskIndex });
 }
 
 /** Update the sidebar session entry to reflect current message count + preview.

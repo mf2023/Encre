@@ -56,7 +56,7 @@ export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T
 
 initLocale();
 
-const APP_VERSION = "0.1.5-pre.1";
+const APP_VERSION = "0.2.0-pre.1";
 
 export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory";
 
@@ -3904,7 +3904,7 @@ private _bindModelSelect(): void {
     // so the cells spread out to fill the available width.
     const cellW = 11, cellH = 11, cellGap = 3;
     const cellRadius = 1;
-    const PL = 40, PR = 6, PT = 18, PB = 18;
+    const PL = 6, PR = 6, PT = 18, PB = 18;
     // Stretch the day columns to fill the panel: a wider per-day stride
     // for short histories (so it isn't a narrow strip) and a tighter one
     // for the full 3 months (so it still fits without scrolling).
@@ -3947,18 +3947,8 @@ private _bindModelSelect(): void {
       return ramp[idx];
     };
 
-    // Hour labels on the left: one per 4-hour block (00 / 04 / 08 / 12 /
-    // 16 / 20).  Font 12px for readability.
-    const hourLabels: string[] = [];
-    for (let b = 0; b < BLOCKS; b++) {
-      const y = PT + b * (cellH + cellGap) + cellH / 2 + 4;
-      hourLabels.push(
-        `<text x="${PL - 6}" y="${y.toFixed(1)}" text-anchor="end" ` +
-        `fill="var(--text-text-tertiary, #666b75)" ` +
-        `style="font-size:12px;font-family:var(--font-family-default);">` +
-        `${String(b * BLOCK_HOURS).padStart(2, "0")}:00</text>`
-      );
-    }
+    // No left-axis hour labels (removed per user request); cells start
+    // at the panel edge.
 
     // Day labels along the bottom: ONLY month names (e.g. "7月"),
     // shown once at the first column of each month.  No day numbers, no
@@ -4056,7 +4046,6 @@ private _bindModelSelect(): void {
         <div class="usage-heatmap-stats usage-heatmap-stats--compact">${captionHtml}</div>
         <div class="usage-heatmap-scroll">
           <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMinYMid meet" style="width:100%;height:auto;display:block">
-            ${hourLabels.join("")}
             ${cells.join("")}
             ${dayLabels.join("")}
           </svg>

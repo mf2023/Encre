@@ -135,6 +135,10 @@ class SessionManager:
             self._sessions_dir = sessions_dir
             pathlib.Path(sessions_dir).mkdir(parents=True, exist_ok=True)
             self._load_index()
+            # Clean up any temp-chat leftovers from a previous run (index
+            # entries + on-disk directories) so they never appear in the
+            # sidebar after a restart.
+            self._purge_temp_chat_leftovers()
 
     # ── session change callbacks ───────────────────────────────────────────
 
@@ -253,6 +257,39 @@ class SessionManager:
     def _load_index(self) -> None:
         self._index = self._load_index_for_dir(self._get_sessions_dir())
 
+    def _purge_temp_chat_leftovers(self) -> None:
+        """Remove any temp-chat directories and index entries left from a previous run.
+
+        This is called once during startup so stale ephemeral sessions never
+        appear in the sidebar after a restart.
+        """
+        import shutil
+        sessions_dir = self._get_sessions_dir()
+        repaired = False
+        # Remove stray temp-chat directories on disk.
+        try:
+            for entry in os.scandir(sessions_dir):
+                if not entry.is_dir() or entry.name.startswith("."):
+                    continue
+                meta = EncreSession.read_meta(entry.path)
+                if meta and isinstance(meta, dict):
+                    meta_metadata = meta.get("metadata", {}) or {}
+                    if meta_metadata.get("temp_chat"):
+                        shutil.rmtree(entry.path, ignore_errors=True)
+                        if entry.name in self._index:
+                            self._index.pop(entry.name, None)
+                            repaired = True
+        except Exception:
+            pass
+        # Purge any temp_chat index entries that no longer have a directory.
+        stale = [sid for sid, idx in list(self._index.items())
+                 if idx.get("temp_chat")]
+        for sid in stale:
+            self._index.pop(sid, None)
+            repaired = True
+        if repaired:
+            self._save_index()
+
     def _save_index(self) -> None:
         if not self._index_dirty:
             return
@@ -261,6 +298,7 @@ class SessionManager:
 
     def _make_index_entry(self, info: SessionInfo, preview: str = "") -> dict[str, Any]:
         sess = info.agent.session
+        existing = self._index.get(info.session_id, {})
         msg_count, cached_preview = sess.get_summary()
         channel = sess.metadata.get("channel", info.metadata.get("channel", "normal"))
         # Persist workspace path so iWork sessions can be re-entered from disk.
@@ -284,6 +322,10 @@ class SessionManager:
             "workspace": workspace,
             "message_count": msg_count,
             "turn_count": sess.turn_count,
+            # A title is user-managed metadata, not something derived from the
+            # conversation. Preserve it whenever a normal session save refreshes
+            # the rest of this index entry.
+            "name": info.metadata.get("name", existing.get("name", "")),
         }
 
     def _index_add(self, info: SessionInfo, preview: str = "") -> None:
@@ -323,12 +365,21 @@ class SessionManager:
                 if not entry.is_dir() or entry.name.startswith("."):
                     continue
                 sid = entry.name
+                meta = EncreSession.read_meta(entry.path)
+                meta_metadata = meta.get("metadata", {}) if isinstance(meta, dict) else {}
+                # Temp chats are ephemeral: remove any leftover directories
+                # and index entries from previous versions/crashes.
+                if meta_metadata.get("temp_chat"):
+                    shutil.rmtree(entry.path, ignore_errors=True)
+                    if sid in self._index:
+                        self._index.pop(sid, None)
+                        repaired = True
+                    continue
                 # Repair existing index entries with empty preview, or whose
                 # message_count was previously computed from turn_count and is
                 # now stale after the backend started persisting user-message
                 # counts in meta.json.
                 existing = self._index.get(sid)
-                meta = EncreSession.read_meta(entry.path)
                 meta_message_count = meta.get("message_count") if isinstance(meta, dict) else None
                 needs_repair = (
                     existing is None
@@ -343,7 +394,6 @@ class SessionManager:
                 # Try to extract channel from session metadata (saved meta.json or in-memory)
                 channel = "normal"
                 if meta:
-                    meta_metadata = meta.get("metadata", {}) or {}
                     ch = meta_metadata.get("channel") or ""
                     if ch:
                         channel = ch
@@ -365,8 +415,8 @@ class SessionManager:
                 preview = EncreSession.load_preview(entry.path) or ""
                 # Recover workspace path from saved session metadata.
                 ws_path = (
-                    (meta.get("metadata", {}) or {}).get("workspace", "")
-                    if isinstance(meta.get("metadata"), dict)
+                    meta_metadata.get("workspace", "")
+                    if isinstance(meta_metadata, dict)
                     else ""
                 )
                 if meta.get("message_count") is not None:
@@ -384,6 +434,14 @@ class SessionManager:
                     "workspace": ws_path,
                 }
                 repaired = True
+            # Also purge stale temp_chat entries that no longer have a directory.
+            stale_temp_sids = [
+                sid for sid in list(self._index.keys())
+                if self._index[sid].get("temp_chat")
+            ]
+            for sid in stale_temp_sids:
+                self._index.pop(sid, None)
+                repaired = True
             if repaired:
                 self._save_index()
             self._bootstrapped = True
@@ -397,6 +455,10 @@ class SessionManager:
         _log = logging.getLogger("encre.server.session")
         try:
             sess = info.agent.session
+            # Temp chats are ephemeral and must never touch disk or the index.
+            if sess.metadata.get("temp_chat"):
+                return
+
             sessions_dir = info.sessions_dir or self._get_sessions_dir()
             dir_path = pathlib.Path(sessions_dir) / info.session_id
             sess.save_to_dir(str(dir_path))
@@ -405,7 +467,12 @@ class SessionManager:
             # Update the directory-specific index so background sessions save
             # to their own storage even when another mode is currently active.
             index = self._load_index_for_dir(sessions_dir)
-            index[info.session_id] = self._make_index_entry(info, preview)
+            entry = self._make_index_entry(info, preview)
+            # A background session can save while another directory is active,
+            # so preserve the title from that directory's own index as well.
+            if not entry.get("name"):
+                entry["name"] = index.get(info.session_id, {}).get("name", "")
+            index[info.session_id] = entry
             self._save_index_for_dir(sessions_dir, index)
         except Exception:
             _log.exception("Failed to save session %s", info.session_id)
@@ -579,7 +646,7 @@ class SessionManager:
             )
         return removed
 
-    def rename_session(self, session_id: str, new_name: str) -> bool:
+    def rename_session(self, session_id: str, new_name: str, *, manual: bool = True) -> bool:
         """Rename a session by updating its display name in the index."""
         self._get_sessions_dir()
         if session_id not in self._index:
@@ -597,6 +664,8 @@ class SessionManager:
         info = self._sessions.get(session_id)
         if info is not None:
             info.metadata["name"] = new_name
+            if manual:
+                info.metadata["name_manually_renamed"] = True
         self._fire_sessions_changed()
         return True
 

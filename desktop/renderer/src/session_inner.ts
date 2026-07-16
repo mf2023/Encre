@@ -3009,11 +3009,9 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
 
   private renderReferencesPanel(st: ReturnType<typeof getState>): string {
     const refs = st.references || [];
-    // The references panel only shows memory, search, and MCP references.
-    const allowedKeywords = ["memory", "profile", "web_search", "web_fetch", "search", "grep", "glob", "find"];
     const filteredRefs = refs.filter((r: ReferenceItem) => {
       const t = r.tool.toLowerCase();
-      return t.startsWith("mcp__") || allowedKeywords.some((k) => t.includes(k));
+      return t.startsWith("mcp__") || t.startsWith("memory_") || t.startsWith("web_") || t.includes("profile");
     });
 
     if (filteredRefs.length === 0) {
@@ -3029,7 +3027,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
 
     // Group references by broad category so each class can be collapsed.
     const groups: { key: string; label: string; icon: string; refs: ReferenceItem[] }[] = [
-      { key: "ref-group-search", label: t("sessionInner.referencesSearch") || "Web & Search", icon: "globe", refs: [] },
+      { key: "ref-group-web", label: t("sessionInner.referencesWeb") || "Web", icon: "globe", refs: [] },
       { key: "ref-group-memory", label: t("sessionInner.referencesMemory") || "Memory", icon: "brain", refs: [] },
       { key: "ref-group-mcp", label: t("sessionInner.referencesMcp") || "MCP", icon: "cable", refs: [] },
     ];
@@ -3040,7 +3038,6 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       } else if (t.includes("memory") || t.includes("profile")) {
         groups[1].refs.push(r);
       } else {
-        // web_search, web_fetch, search, grep, glob, find
         groups[0].refs.push(r);
       }
     }

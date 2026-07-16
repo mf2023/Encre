@@ -24,7 +24,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "encre"
-version = "0.1.5-pre.1"
+version = "0.2.0-pre.1"
 description = "Encre — Python agent framework (the core AI Agent package of the Encre project)"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
@@ -76,7 +76,7 @@ include = ["encre*"]
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.30"]
 ollama = ["ollama>=0.1"]
-native = ["encre-native==0.1.5-pre.1"]
+native = ["encre-native==0.2.0-pre.1"]
 aiohttp = ["aiohttp>=3.9"]
 discord = ["discord.py>=2.3"]
 slack = ["slack_bolt>=1.18", "slack_sdk>=3.27"]

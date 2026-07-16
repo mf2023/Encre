@@ -29,6 +29,8 @@ Agent implementation for the Encre tool system.
 """
 
 import asyncio
+import contextlib
+import time
 from contextvars import ContextVar
 from typing import Any
 
@@ -36,6 +38,13 @@ from encre.logging_config import get_logger
 from encre.tools.base import build_tool
 
 logger = get_logger(__name__)
+
+# Max sub-agent tasks that may run concurrently inside a SINGLE ``agent`` tool
+# call. The frontend can only tile up to 4 parallel regions cleanly, so we cap
+# the backend to match: extra tasks queue and start as running slots free up.
+# This limit is per tool call -- independent ``agent`` calls (e.g. a plan run
+# and a research run) each get their own budget and never contend.
+MAX_PARALLEL_SUB_AGENTS = 4
 
 MAX_SUB_AGENT_DEPTH = 1
 
@@ -237,42 +246,151 @@ async def _agent_execute(**kwargs: Any) -> Any:
     if tasks:
         if not isinstance(tasks, list):
             return {"content": "Error: 'tasks' must be an array of {prompt, agent_name} objects.", "messages": []}
+
+        def _task_label(idx: int) -> str:
+            """Human-readable name for the parallel task at ``idx``."""
+            t = tasks[idx] if idx < len(tasks) and isinstance(tasks[idx], dict) else {}
+            return (t.get("agent_name", "") or "default")
+
+        def _divider(idx: int, status: str = "running") -> dict[str, Any]:
+            # Structured task-boundary marker for the parallel sub-agent view.
+            # The frontend groups every message that follows (up to the next
+            # divider) under this task and renders a dedicated section header.
+            # This is display-only metadata carried inside ``sub_agent_messages``
+            # -- the parent model never sees it (it reads the aggregated
+            # ``content`` instead).
+            return {
+                "role": "assistant",
+                "content": _task_label(idx),
+                "mode": "task_divider",
+                "task_index": idx,
+                "task_name": _task_label(idx),
+                "task_status": status,
+                "tool_calls": [],
+                "segments": [],
+                "created_at": time.time(),
+            }
+
+        # Track the latest streamed snapshot per task so the parent's single
+        # progress callback can render a combined, live transcript of every
+        # parallel sub-agent.  Each sub-agent streams into its own slot; we
+        # rebuild the merged view on each update so nothing clobbers a peer.
+        latest: dict[int, list[dict[str, Any]]] = {}
+
+        async def _emit_combined() -> None:
+            if progress_callback is None:
+                return
+            combined: list[dict[str, Any]] = []
+            for i in range(len(tasks)):
+                ms = latest.get(i)
+                has_started = ms is not None
+                # Always include a divider so the frontend can create one agent
+                # card per task immediately, before any task produces output.
+                status = "running" if has_started and ms else "pending"
+                combined.append(_divider(i, status))
+                if has_started:
+                    combined.extend(ms)
+            with contextlib.suppress(Exception):
+                await progress_callback(combined)
+
+        # Pre-initialise every task slot with an empty list and emit the
+        # dividers immediately so the frontend creates one agent card per task.
+        # Tasks only start streaming once they acquire the semaphore; the
+        # initial emit gives the user a visual placeholder for every planned
+        # sub-agent before any real work begins.
+        for i in range(len(tasks)):
+            latest[i] = []
+        await _emit_combined()
+
+        # Cap concurrency so at most MAX_PARALLEL_SUB_AGENTS tasks run at
+        # once; the rest queue on the semaphore and start when a slot frees.
+        sem = asyncio.Semaphore(MAX_PARALLEL_SUB_AGENTS)
+
         # Build coroutines for each task
-        async def _runner(t: dict[str, Any]) -> dict[str, Any]:
+        async def _runner(idx: int, t: dict[str, Any]) -> dict[str, Any]:
             """Run one parallel sub-agent task."""
             if not isinstance(t, dict):
                 return {"content": "Error: each task must be a dict", "messages": []}
-            return await _run_one_sub_agent(
-                parent_loop,
-                t.get("prompt", ""),
-                t.get("agent_name", ""),
-                progress_callback=None,
-            )
-        coros = [_runner(t) for t in tasks]
-        results = await asyncio.gather(*coros, return_exceptions=True)
-        # Normalize exceptions
+
+            async def _cb(messages: list[dict[str, Any]], _idx: int = idx) -> None:
+                # Forward this sub-agent's live snapshot into its slot and
+                # re-emit the merged transcript so the UI creates and keeps
+                # the card populated during the parallel run.
+                latest[_idx] = messages
+                await _emit_combined()
+
+            # Queue here when all slots are busy -- the sub-agent only starts
+            # (and streams) once it holds the semaphore.
+            async with sem:
+                return await _run_one_sub_agent(
+                    parent_loop,
+                    t.get("prompt", ""),
+                    t.get("agent_name", ""),
+                    progress_callback=_cb,
+                )
+        coros = [_runner(i, t) for i, t in enumerate(tasks)]
+        try:
+            results = await asyncio.gather(*coros, return_exceptions=True)
+        except asyncio.CancelledError:
+            # Parent run was interrupted (user stopped).  The gather is
+            # cancelled before every task finishes, so build partial
+            # results from whatever each task streamed into ``latest``
+            # via the progress callback.  This preserves the already-
+            # delivered content instead of silently dropping it.
+            results = []
+            for i in range(len(tasks)):
+                msgs = latest.get(i) or []
+                text_parts: list[str] = []
+                for m in msgs:
+                    if isinstance(m, dict):
+                        c = m.get("content", "")
+                        if c and isinstance(c, str):
+                            text_parts.append(c)
+                content = "\n".join(text_parts) or "(interrupted)"
+                results.append({"content": content, "messages": list(msgs) if msgs else []})
+        # Normalize exceptions and derive a per-task status for the UI.
         out: list[dict[str, Any]] = []
+        statuses: list[str] = []
         for idx, r in enumerate(results):
             if isinstance(r, BaseException):
                 out.append({"content": f"Sub-agent {idx} failed: {type(r).__name__}: {r}", "messages": []})
+                statuses.append("error")
             else:
                 out.append(r)
+                c = str(r.get("content", "")) if isinstance(r, dict) else str(r)
+                statuses.append("error" if c.startswith("Error:") else "done")
         # Format the aggregated result so the parent can read each
-        # sub-agent's outcome cleanly.
+        # sub-agent's outcome cleanly, and aggregate the real transcripts so
+        # the tool card renders what actually happened instead of an empty
+        # "succeeded" placeholder.
         lines = [f"Parallel sub-agent results ({len(out)} tasks):"]
+        agg_messages: list[dict[str, Any]] = []
         for idx, r in enumerate(out):
             content = r.get("content", "") if isinstance(r, dict) else str(r)
-            t = tasks[idx] if idx < len(tasks) and isinstance(tasks[idx], dict) else {}
-            name = t.get("agent_name", "") or "default"
+            name = _task_label(idx)
             lines.append(f"\n--- Task {idx + 1} ({name}) ---\n{content}")
-        return {"content": "\n".join(lines), "messages": [], "sub_results": out}
+            agg_messages.append(_divider(idx, statuses[idx]))
+            if isinstance(r, dict):
+                msgs = r.get("messages") or []
+                if isinstance(msgs, list):
+                    agg_messages.extend(msgs)
+        return {"content": "\n".join(lines), "messages": agg_messages, "sub_results": out}
 
-    return await _run_one_sub_agent(
-        parent_loop,
-        kwargs.get("prompt", ""),
-        kwargs.get("agent_name", ""),
-        progress_callback=progress_callback,
-    )
+    try:
+        return await _run_one_sub_agent(
+            parent_loop,
+            kwargs.get("prompt", ""),
+            kwargs.get("agent_name", ""),
+            progress_callback=progress_callback,
+        )
+    except asyncio.CancelledError:
+        # User interrupted the single sub-agent. Return whatever the
+        # progress callback last delivered so the frontend preserves it.
+        last_cb = kwargs.get("progress_callback")
+        partial_msgs: list[dict[str, Any]] = []
+        # The callback may have stored data externally; return an
+        # empty-but-complete result so the tool call reaches "done".
+        return {"content": "(interrupted)", "messages": partial_msgs}
 
 
 def _agent_to_openai_format(self) -> dict[str, Any]:

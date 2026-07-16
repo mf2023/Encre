@@ -38,6 +38,7 @@ import pytest
 from encre.scheduler import (
     CronSchedule,
     EncreScheduler,
+    JobExecution,
     JobState,
     ScheduledJob,
     ScheduleType,
@@ -839,7 +840,7 @@ class TestJobCallbacks:
         import asyncio
         asyncio.run(scheduler._execute_job(job))
 
-        execution = job.executions[-1]
+        execution = scheduler.get_execution_history()[0]
         assert job.state == JobState.COMPLETED
         assert execution.session_id == fake_loop.received_session_id
         assert execution.session_id
@@ -853,6 +854,60 @@ class TestJobCallbacks:
             {"role": "user", "content": "Run report"},
             {"role": "assistant", "content": "Report complete"},
         ]
+
+    def test_deleting_job_preserves_global_execution_history(self, tmp_path: Path):
+        scheduler = EncreScheduler(durable_path=str(tmp_path / "jobs.json"))
+        job_id = scheduler.schedule(name="Keep history", prompt="Run", fire_at=time.time() + 60)
+        scheduler._executions.append(JobExecution(
+            time=time.time(),
+            state="COMPLETED",
+            result="Done",
+            name="Keep history",
+            job_id=job_id,
+        ))
+
+        assert scheduler.delete_job(job_id)
+        history = scheduler.get_execution_history()
+        assert len(history) == 1
+        assert history[0].job_id == job_id
+        assert history[0].name == "Keep history"
+
+    def test_reloading_history_preserves_renamed_execution(self, tmp_path: Path):
+        """Dedicated history wins over a matching legacy execution title."""
+        path = tmp_path / "jobs.json"
+        timestamp = 1234.5
+        job_id = "daily_report"
+        legacy_job = {
+            "id": job_id,
+            "name": "Original name",
+            "prompt": "Run report",
+            "schedule_type": "ONE_SHOT",
+            "cron": None,
+            "fire_at": timestamp + 60,
+            "state": "COMPLETED",
+            "executions": [{
+                "time": timestamp,
+                "state": "COMPLETED",
+                "result": "Done",
+                "name": "Original name",
+                "job_id": job_id,
+            }],
+        }
+        path.write_text(json.dumps([legacy_job]), encoding="utf-8")
+        history_path = path.with_name("automation_history.json")
+        history_path.write_text(json.dumps([{
+            "time": timestamp,
+            "state": "COMPLETED",
+            "result": "Done",
+            "name": "Renamed execution",
+            "job_id": job_id,
+        }]), encoding="utf-8")
+
+        scheduler = EncreScheduler(durable_path=str(path))
+
+        history = scheduler.get_execution_history()
+        assert len(history) == 1
+        assert history[0].name == "Renamed execution"
 
 
 # ===========================================================================

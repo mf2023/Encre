@@ -32,8 +32,9 @@
 import { t, getLocale, onLocaleChange } from "./i18n.js";
 import { send } from "./ws.js";
 import { Dialog } from "./dialog.js";
-import { getState, subscribe } from "./state.js";
-import { showSessionContextMenu } from "./session.js";
+import { getState, subscribe, restoreMessages } from "./state.js";
+import { showSessionContextMenu, showRenameDialog } from "./session.js";
+import { showContextMenu } from "./context-menu.js";
 import {
   onAutomationJobs,
   onAutomationJobCreated,
@@ -41,7 +42,8 @@ import {
   onAutomationJobCancelled,
   downloadMarkdownFile,
 } from "./stream.js";
-import { renderMarkdown } from "./chat.js";
+import { renderMarkdown, Chat } from "./chat.js";
+import type { Message } from "./types.js";
 
 interface TaskTemplate {
   id: string;
@@ -82,6 +84,7 @@ interface HistoryEntry {
   fail_count: number;
   session_id?: string;
   messages?: any[];
+  error_code?: string;
 }
 
 interface AutomationViewResult {
@@ -94,6 +97,7 @@ interface AutomationViewResult {
   state: string;
   session_id?: string;
   messages: any[];
+  error_code?: string;
 }
 
 const TEMPLATES: TaskTemplate[] = [
@@ -236,18 +240,24 @@ export class Automation {
   private el: HTMLElement;
   private tabsEl: HTMLElement;
   private panelsEl: HTMLElement;
+  private containerEl: HTMLElement;
   private configuredListEl: HTMLElement;
   private historyTimelineEl: HTMLElement;
   private createWrap: HTMLElement;
   private createBtn: HTMLElement;
-  private createDropdown: HTMLElement;
+private createDropdown: HTMLElement;
+  private activeTab = "history";
   private detailEl: HTMLElement;
   private detailContentEl: HTMLElement;
   private detailBreadcrumbEl: HTMLElement;
-  private detailBackEl: HTMLElement;
-  private activeTab = "history";
+  private activeExecution: AutomationViewResult | null = null;
+  private chatRenderer: Chat | null = null;
 
-  public onViewResult?: (data: AutomationViewResult) => void;
+  /** Set the Chat instance used to render sub-agent detail timelines. */
+  setChatRenderer(chat: Chat): void {
+    this.chatRenderer = chat;
+  }
+
   private jobs: BackendJob[] = [];
   // History filter state
   private historyStatus: string = "";   // "" = all, or "SUCCESS"/"FAILED"/"RUNNING"/"PENDING"
@@ -266,6 +276,7 @@ export class Automation {
     this.el = document.getElementById("automation-view")!;
     this.tabsEl = this.el.querySelector(".automation-tabs")! as HTMLElement;
     this.panelsEl = this.el.querySelector(".automation-panels")! as HTMLElement;
+    this.containerEl = this.el.querySelector(".automation-container")! as HTMLElement;
     this.configuredListEl = document.getElementById("configured-list")!;
     this.historyTimelineEl = document.getElementById("history-timeline")!;
     this.createWrap = document.getElementById("automation-create-wrap")!;
@@ -274,15 +285,11 @@ export class Automation {
     this.detailEl = this.el.querySelector(".automation-detail")! as HTMLElement;
     this.detailContentEl = document.getElementById("automation-detail-content")!;
     this.detailBreadcrumbEl = document.getElementById("automation-detail-breadcrumb")!;
-    this.detailBackEl = document.getElementById("automation-detail-back")!;
 
     this.bindTabs();
     this.bindCallbacks();
     this.bindCreateButton();
     this.bindHistoryFilters();
-
-    // Back button: go back to history list
-    this.detailBackEl.addEventListener("click", () => this.hideDetail());
 
     // Close any open history dropdowns when clicking outside
     document.addEventListener("click", (e) => {
@@ -294,93 +301,141 @@ export class Automation {
         });
       }
     });
-  }
 
-  // ── Detail view (sub-agent result inside automation panel) ──────
-
-  /** Show the detail panel for a sub-agent result. */
-  showDetail(data: { name: string; messages?: any[]; state?: string; result?: string }): void {
-    // Populate breadcrumb
-    this.detailBreadcrumbEl.innerHTML = `<span class="automation-detail-breadcrumb-label">${this.escapeHtml(data.name || "")}</span>`;
-    // Render messages
-    if (data.messages && data.messages.length > 0) {
-      this.renderDetailMessages(data.messages);
-    } else if (data.state === "FAILED") {
-      // Forbidden/error empty state matching the sidebar panel pattern
-      // (same as terminal/editor/etc. empty states).
-      this.detailContentEl.innerHTML = `
-        <div class="si-panel-empty" style="flex:1;gap:14px;">
-          <i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i>
-          <div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div>
-          <div class="si-panel-empty-sub">${this.escapeHtml(data.result || "")}</div>
-        </div>`;
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: this.detailContentEl });
+    // Re-render an open detail view when the locale changes so the
+    // reused breadcrumb ("Automation / …") and empty states translate.
+    onLocaleChange(() => {
+      if (this.isDetailVisible() && this.activeExecution) {
+        this.showDetail(this.activeExecution);
       }
-    } else {
-      this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="padding:40px 20px;">${t("automation.noMessages") || "No messages"}</div>`;
-    }
-    // Show detail, hide panels
-    this.panelsEl.style.display = "none";
-    this.detailEl.classList.add("active");
-    this.detailEl.style.display = "flex";
-    // Hide tabs bar for cleaner look
-    this.tabsEl.style.display = "none";
-  }
-
-  /** Hide the detail panel and return to the list. */
-  hideDetail(): void {
-    this.detailEl.classList.remove("active");
-    this.detailEl.style.display = "none";
-    this.panelsEl.style.display = "";
-    this.tabsEl.style.display = "";
-    this.detailContentEl.innerHTML = "";
-    this.detailBreadcrumbEl.innerHTML = "";
-  }
-
-  /** Render a flat message array as bubbles inside the detail content area. */
-  private renderDetailMessages(rawMessages: any[]): void {
-    const html: string[] = [];
-    for (const msg of rawMessages) {
-      if (msg.role === "user") {
-        const text = typeof msg.content === "string" ? msg.content : msg.content?.[0]?.text || "";
-        html.push(`<div class="user-item"><div class="user-bubble">${this.escapeHtml(text)}</div></div>`);
-      } else if (msg.role === "assistant" || msg.role === "tool") {
-        // Show thinking if present
-        const thinking = msg.reasoning_content || msg.reasoning || (msg.content && typeof msg.content === "object" ? "" : "");
-        if (thinking && typeof thinking === "string" && thinking.length > 0) {
-          html.push(`<details class="thinking-strip"><summary>Thinking</summary><div class="thought-body">${renderMarkdown(thinking)}</div></details>`);
-        }
-        // Show text content
-        let text = "";
-        if (typeof msg.content === "string") {
-          text = msg.content;
-        } else if (Array.isArray(msg.content)) {
-          text = msg.content.map((c: any) => c.text || "").join("\n");
-        }
-        if (text.trim()) {
-          html.push(`<div class="assistant-text"><div class="msg-text">${renderMarkdown(text)}</div></div>`);
-        }
-        // Show tool calls as simple cards
-        if (msg.tool_calls) {
-          for (const tc of msg.tool_calls) {
-            html.push(`<div class="tool-call">${this.escapeHtml(tc.function?.name || tc.name || "tool")}</div>`);
-          }
-        }
-      }
-    }
-    this.detailContentEl.innerHTML = html.join("\n");
-    // Create lucide icons if available
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.detailContentEl });
-    }
-  }
+    });
+}
 
   private escapeHtml(text: string): string {
     const div = document.createElement("div");
     div.appendChild(document.createTextNode(text));
     return div.innerHTML;
   }
+
+  // ── Detail view (sub-agent result inside automation panel) ──────
+
+  /** Open an execution in the sub-agent detail container. */
+  openExecution(data: AutomationViewResult): void {
+    this.activeExecution = {
+      ...data,
+      messages: Array.isArray(data.messages) ? data.messages : [],
+    };
+    this.showDetail(this.activeExecution);
+  }
+
+  /** Apply a live event to the execution currently open. */
+  updateExecution(jobId: string, eventType: string, eventData: Record<string, unknown>): void {
+    if (!this.activeExecution || this.activeExecution.job_id !== jobId) return;
+    if (eventType === "start") {
+      this.activeExecution = { ...this.activeExecution, state: "RUNNING", name: String(eventData.name || this.activeExecution.name), prompt: String(eventData.prompt || this.activeExecution.prompt), session_id: String(eventData.session_id || this.activeExecution.session_id || "") || undefined };
+    } else if (eventType === "snapshot") {
+      const msgs = eventData.messages;
+      this.activeExecution = { ...this.activeExecution, state: "RUNNING", messages: Array.isArray(msgs) ? msgs : this.activeExecution.messages, session_id: String(eventData.session_id || this.activeExecution.session_id || "") || undefined };
+    } else if (eventType === "tool_progress" || eventType === "tool_result") {
+      const msgs = eventData.sub_agent_messages;
+      if (Array.isArray(msgs)) this.activeExecution = { ...this.activeExecution, state: "RUNNING", messages: msgs };
+    } else if (eventType === "finish") {
+      const failed = eventData.state === "FAILED" || !!eventData.error_code;
+      this.activeExecution = { ...this.activeExecution, state: failed ? "FAILED" : "COMPLETED", messages: failed ? [] : this.activeExecution.messages, result: failed ? "" : String(eventData.result || this.activeExecution.result || ""), error_code: failed ? String(eventData.error_code || "AUTOMATION_EXECUTION_FAILED") : undefined };
+    } else { return; }
+    if (this.isDetailVisible()) this.showDetail(this.activeExecution);
+  }
+
+  /** Apply a final job-update payload. */
+  updateExecutionResult(data: Partial<AutomationViewResult> & { id?: string; job_id?: string; action?: string }): void {
+    if (!this.activeExecution) return;
+    const jobId = data.job_id || data.id;
+    if (!jobId || jobId !== this.activeExecution.job_id) return;
+    const failed = data.state === "FAILED" || data.action === "failed";
+    this.activeExecution = { ...this.activeExecution, ...data, job_id: this.activeExecution.job_id, state: failed ? "FAILED" : (data.state || this.activeExecution.state), messages: failed ? [] : (Array.isArray(data.messages) ? data.messages : this.activeExecution.messages), error_code: failed ? (data.error_code || "AUTOMATION_EXECUTION_FAILED") : undefined };
+    if (this.isDetailVisible()) this.showDetail(this.activeExecution);
+  }
+
+  private showDetail(data: { name: string; messages?: any[]; state?: string; result?: string; error_code?: string }): void {
+    if (data.state === "FAILED") {
+      const errorCode = data.error_code || "AUTOMATION_EXECUTION_FAILED";
+      this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;"><i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i><div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div><div class="si-panel-empty-sub">${this.escapeHtml(errorCode)}</div></div>`;
+      if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
+    } else if (data.messages && data.messages.length > 0) {
+      this.renderSubAgentTimeline(data.messages);
+    } else if (data.state === "RUNNING" || data.state === "PENDING") {
+      this.detailContentEl.innerHTML = `<div class="automation-detail-loader"><i data-lucide="loader-circle" class="lucide" style="animation:historySpin 1s linear infinite;"></i></div>`;
+      if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
+    } else {
+      this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="padding:40px 20px;">${t("automation.noMessages") || "No messages"}</div>`;
+    }
+    this.containerEl.style.display = "none";
+    this.detailEl.classList.remove("hidden");
+    this.detailEl.classList.add("active");
+    this.tabsEl.style.display = "none";
+    // Reuse the tape's session-crumb breadcrumb structure so the detail
+    // header is identical to the sub-agent view: Automation / <name>.
+    this.renderDetailBreadcrumb(data.name || "");
+    // Detail view: the Back button takes the sidebar-toggle's slot (toggle
+    // is hidden because the sidebar is force-collapsed in automation). The
+    // sidebar Search button is never touched - it stays in place.
+    const autoBack = document.getElementById("btn-automation-back");
+    const toggle = document.getElementById("btn-toggle-sidebar");
+    if (autoBack) autoBack.classList.remove("hidden");
+    if (toggle) toggle.style.display = "none";
+  }
+
+  /**
+   * Render the detail breadcrumb reusing the exact same session-crumb
+   * markup the main chat ("tape") uses for its sub-agent view, so the
+   * two are visually identical. Root crumb returns to the list.
+   */
+  private renderDetailBreadcrumb(name: string): void {
+    const rootLabel = t("automation.title") || "Automation";
+    const trunc = (s: string, max = 18) => (s.length > max ? s.slice(0, max) + "…" : s);
+    this.detailBreadcrumbEl.innerHTML =
+      `<button class="session-crumb session-crumb-root" type="button" data-tooltip="${this.escapeHtml(rootLabel)}">${this.escapeHtml(trunc(rootLabel))}</button>` +
+      `<span class="session-crumb-sep">/</span>` +
+      `<span class="session-crumb-current" data-tooltip="${this.escapeHtml(name)}">${this.escapeHtml(trunc(name))}</span>`;
+    const root = this.detailBreadcrumbEl.querySelector(".session-crumb-root");
+    if (root) root.addEventListener("click", () => this.hideDetail());
+  }
+
+  hideDetail(): void {
+    this.detailEl.classList.remove("active");
+    this.detailEl.classList.add("hidden");
+    this.containerEl.style.display = "";
+    this.tabsEl.style.display = "";
+    this.detailContentEl.innerHTML = "";
+    this.detailBreadcrumbEl.innerHTML = "";
+    this.activeExecution = null;
+    // Returning to the automation list view: hide the Back button and restore
+    // the sidebar-toggle to its "occupies space but invisible" state (opacity 0
+    // set by AutomationPanel). This keeps the header layout stable - without it,
+    // showDetail leaves toggle at display:none which removes its width from the
+    // flow, shifting the Search button and mode-switcher left on every return.
+    const autoBack = document.getElementById("btn-automation-back");
+    const toggle = document.getElementById("btn-toggle-sidebar");
+    if (autoBack) autoBack.classList.add("hidden");
+    if (toggle) {
+      toggle.style.display = "";
+    }
+  }
+
+  isDetailVisible(): boolean {
+    return this.detailEl.classList.contains("active");
+  }
+
+  private renderSubAgentTimeline(messages: any[]): void {
+    if (this.chatRenderer) {
+      const isRunning = this.activeExecution?.state === "RUNNING" || this.activeExecution?.state === "PENDING";
+      // Automation history and live snapshots are persisted server messages,
+      // while the shared renderer consumes normalized renderer Messages.
+      this.chatRenderer.renderSubAgentInto(this.detailContentEl, restoreMessages(messages), !!isRunning);
+    }
+  }
+
+  // ── Rendering ───────────────────────────────────────────────────
 
   /** Refreshes the panel by requesting the jobs list and run history. */
   render(): void {
@@ -841,17 +896,11 @@ export class Automation {
     const wrap = this.configuredListEl;
 
     if (this.jobs.length === 0) {
-      wrap.innerHTML = `
-        <div class="settings-card">
-          <div class="model-manage-header">
-            <div class="model-manage-desc">${t("automation.configuredDesc")}</div>
-          </div>
-          <div class="configured-empty">
-            <i data-lucide="calendar" class="lucide"></i>
-            <div class="empty-title">${t("automation.noTasks")}</div>
-            <div class="empty-sub">${t("automation.noTasksHint")}</div>
-          </div>
-        </div>`;
+      wrap.innerHTML = `<div class="configured-empty">
+        <i data-lucide="calendar" class="lucide"></i>
+        <div class="empty-title">${t("automation.noTasks")}</div>
+        <div class="empty-sub">${t("automation.noTasksHint")}</div>
+      </div>`;
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: wrap });
       }
@@ -1273,15 +1322,8 @@ export class Automation {
           state: entry.state,
           job_id: entry.job_id,
           session_id: entry.session_id,
-        };
-        // Failed entries: show error state inside the automation detail panel
-        // (no sub-agent session to render, so the sub-agent view would spin forever).
-        if (data.state === "FAILED") {
-          this.showDetail(data);
-        } else {
-          // Completed and running entries: delegate to app.ts sub-agent view
-          this.onViewResult?.(data);
-        }
+};
+        this.openExecution(data);
       });
     });
 
@@ -1292,31 +1334,71 @@ export class Automation {
         const entryId = (item as HTMLElement).getAttribute("data-entry-id");
         const entry = getState().automationHistory.find(h => h.id === entryId);
         const isFailed = !!entry && entry.state === "FAILED";
+        const doRename = () => {
+          if (!entry) return;
+          showRenameDialog(entry.name || "", (newName) => {
+            if (entryId) {
+              send({ type: "automation_rename_execution", entry_id: entryId, new_name: newName });
+            }
+          });
+        };
+        const doDelete = () => {
+          if (entryId) {
+            Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
+              if (confirmed) {
+                send({ type: "automation_delete_execution", entry_id: entryId });
+              }
+            });
+          }
+        };
         if (sid && !isFailed) {
-          showSessionContextMenu(sid, e.clientX, e.clientY, true);
+          // Completed entries with a real sub-agent session: keep export
+          // and session delete, but map rename to the execution record.
+          showSessionContextMenu(sid, e.clientX, e.clientY, true, false, undefined, doRename);
         } else if (sid && isFailed) {
           // Failed entries: reuse session context menu but hide export
-          // (no session data to export) and override delete to remove the
-          // execution record instead of the session.
-          showSessionContextMenu(sid, e.clientX, e.clientY, true, true, () => {
-            if (entryId) {
-              Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
-                if (confirmed) {
-                  send({ type: "automation_delete_execution", entry_id: entryId });
-                }
-              });
-            }
-          });
+          // (no session data to export) and override delete/remove to the
+          // execution record. Rename also targets the execution record.
+          showSessionContextMenu(sid, e.clientX, e.clientY, true, true, doDelete, doRename);
         } else if (entryId) {
-          // No sub-agent session — delete execution record directly via confirm
-          Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
-            if (confirmed) {
-              send({ type: "automation_delete_execution", entry_id: entryId });
-            }
-          });
+          // No sub-agent session — only rename/delete the execution record.
+          this.showAutomationHistoryContextMenu(e.clientX, e.clientY, doRename, doDelete);
         }
       });
     });
+  }
+
+  private showAutomationHistoryContextMenu(
+    x: number,
+    y: number,
+    doRename: () => void,
+    doDelete: () => void,
+  ): void {
+    const menuEl = document.getElementById("session-context-menu")!;
+    menuEl.innerHTML = `
+      <div class="context-menu-item" id="ctx-automation-rename">
+        <i data-lucide="pencil" class="lucide lucide-sm"></i>
+        <span>${this.escapeHtml(t("session.rename"))}</span>
+      </div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-item context-menu-item-danger" id="ctx-automation-delete">
+        <i data-lucide="trash-2" class="lucide lucide-sm"></i>
+        <span>${this.escapeHtml(t("session.delete"))}</span>
+      </div>`;
+    showContextMenu(menuEl, x, y);
+
+    document.getElementById("ctx-automation-rename")?.addEventListener("click", () => {
+      menuEl.classList.add("hidden");
+      doRename();
+    });
+    document.getElementById("ctx-automation-delete")?.addEventListener("click", () => {
+      menuEl.classList.add("hidden");
+      doDelete();
+    });
+
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: menuEl });
+    }
   }
 
   private onConfiguredAction(id: string, action: string): void {

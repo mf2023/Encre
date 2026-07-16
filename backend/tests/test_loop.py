@@ -496,6 +496,29 @@ class TestEncreLoopToolSemantics:
         }
         assert _tool_retry_allowed(p, [('grep:{"pattern":"todo"}',)]) is True
 
+    def test_retry_guard_allows_manual_first_call(self):
+        # A manual tool (e.g. `agent`) must run on its first invocation even
+        # when unrelated tools appeared in earlier turns.
+        p = {
+            "name": "agent",
+            "args_summary": '{"subagent_type":"Search"}',
+            "semantics": {"retryability": "manual"},
+        }
+        assert _tool_retry_allowed(p, []) is True
+        assert _tool_retry_allowed(p, [('grep:{"pattern":"todo"}',)]) is True
+
+    def test_retry_guard_blocks_manual_immediate_repeat(self):
+        # The same manual call issued back-to-back is a tight re-spawn loop.
+        p = {
+            "name": "agent",
+            "args_summary": '{"subagent_type":"Search"}',
+            "semantics": {"retryability": "manual"},
+        }
+        assert _tool_retry_allowed(p, [('agent:{"subagent_type":"Search"}',)]) is False
+
+    def test_agent_tool_is_manual_retryability(self):
+        assert EncreAgentTool.retryability == "manual"
+
     def test_core_tools_have_explicit_semantics(self):
         assert EncreBashTool.semantic_type == "exec"
         assert EncreFileReadTool.semantic_type == "read"

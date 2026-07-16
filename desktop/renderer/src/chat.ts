@@ -29,7 +29,7 @@
  * helpers used across the renderer.
  */
 
-import { getState, subscribe, showToast, addUserMessage, addAttachments, startAssistantMessage, setRunning, removeBranchMessages, restoreInputModeChip, truncateToUserMessage, setSubAgentView, pushSubAgentBreadcrumb, popSubAgentBreadcrumb, clearSubAgentBreadcrumb, resetToSubAgentBreadcrumbIndex, rememberRollbackEditTarget, isEnabled } from "./state.js";
+import { getState, subscribe, showToast, addUserMessage, addAttachments, startAssistantMessage, setRunning, removeBranchMessages, restoreInputModeChip, truncateToUserMessage, setSubAgentView, pushSubAgentBreadcrumb, popSubAgentBreadcrumb, clearSubAgentBreadcrumb, resetToSubAgentBreadcrumbIndex, rememberRollbackEditTarget, isEnabled, toolCallMatchesId } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
 import type { Message, ToolCallState, BranchMeta, AttachmentMeta } from "./types.js";
@@ -373,24 +373,58 @@ function getToolInlineSummary(tc: ToolCallState): string {
   return compactText(fromParams || getToolSummary(tc), 42);
 }
 
-function getAgentName(tc: ToolCallState): string {
+export function getAgentName(tc: ToolCallState): string {
+  // Backend must pass an English agent name via agent_name / name.
+  // Fall back to the literal "Agent" (English) so the label never
+  // degenerates into a localized string like "智能体".
   const configuredName = (tc.params.agent_name as string) || (tc.params.name as string);
-  return configuredName || t("chat.agent");
+  return (configuredName && configuredName.trim()) || "Agent";
 }
 
 /** Normalizes an agent/tool name into a human-friendly display label. */
 export function formatAgentLabel(rawName: string): string {
-  // Capitalize first letter, append AGENT label
-  const name = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
-  return /\bagent\b/i.test(name) ? name : `${name} Agent`;
+  // The backend supplies the agent name in English; preserve it as-is and
+  // only capitalize the first character. Do NOT append "Agent" or lowercase
+  // the rest, so names like "Code Reviewer" stay intact.
+  const name = (rawName || "").trim();
+  if (!name) return "Agent";
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-function buildSubAgentTimeline(msgs: Message[]): TimelineItem[] {
-  const timeline = buildTimeline(msgs);
+/**
+ * Select the messages that belong to a single parallel task.
+ * When ``taskIndex`` is provided, the flat ``sub_agent_messages`` list is
+ * split at ``task_divider`` markers and only the chosen task's body is
+ * returned. Otherwise the full list is returned unchanged.
+ */
+function selectSubAgentTaskMessages(msgs: Message[], taskIndex?: number): Message[] {
+  if (taskIndex === undefined) return msgs;
+  const groups = new Map<number, Message[]>();
+  let fallbackIndex = 0;
+  let current: Message[] | null = null;
+  for (const m of msgs) {
+    if (m.mode === "task_divider") {
+      const index = Number.isInteger(m.taskIndex) ? m.taskIndex! : fallbackIndex;
+      fallbackIndex = Math.max(fallbackIndex, index + 1);
+      current = [];
+      groups.set(index, current);
+    } else if (current) {
+      current.push(m);
+    }
+  }
+  return groups.get(taskIndex) ?? [];
+}
+
+export function buildSubAgentTimeline(msgs: Message[], isRunning?: boolean): TimelineItem[] {
+  // task_divider markers are only structural metadata used to split parallel
+  // runs in the parent transcript; they should never render inside a sub-agent
+  // view.
+  const clean = msgs.filter((m) => m.mode !== "task_divider");
+  const timeline = buildTimeline(clean);
   // When the sub-agent view is running, suppress action buttons (copy, retry)
   // on all messages so they only appear after the turn is truly finished.
   const subView = getState().subAgentView;
-  const subRunning = !!(subView && (subView.status === "running" || subView.status === "pending"));
+  const subRunning = isRunning ?? !!(subView && (subView.status === "running" || subView.status === "pending"));
   if (subRunning) {
     for (const item of timeline) {
       if (item.kind === "assistant_text") {
@@ -398,16 +432,10 @@ function buildSubAgentTimeline(msgs: Message[]): TimelineItem[] {
       }
     }
   }
-  // Keep only the first ai_header - sub-agent thinking/text/tool segments
-  // belong to a single assistant turn, not individual turns per segment.
-  let seenHeader = false;
-  return timeline.filter(item => {
-    if (item.kind === "ai_header") {
-      if (seenHeader) return false;
-      seenHeader = true;
-    }
-    return true;
-  });
+  // Sub-agent views render a single focused turn inline. The ai_header
+  // ("Encre Agent") shows at the top so the user knows which agent is
+  // producing the output -- only one header exists per task.
+  return timeline;
 }
 
 
@@ -653,7 +681,7 @@ function flashCopyButton(btn: HTMLElement): void {
   }, 2000);
 }
 
-type TimelineItem =
+export type TimelineItem =
   | { kind: "user"; id: string; content: string; index: number; showBranchSwitcher?: boolean; mode?: string; fileRefs?: { name: string; size: number; icon: string }[] }
   | { kind: "ai_header"; id: string; time: string }
   | { kind: "thinking"; id: string; text: string; elapsed?: number; messageId?: string }
@@ -822,7 +850,7 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
             }
             textSegIndex++;
           } else if (seg.kind === "tool") {
-            const tc = seg.toolId ? msg.toolCalls.find(t => t.id === seg.toolId) : undefined;
+            const tc = seg.toolId ? msg.toolCalls.find(t => toolCallMatchesId(t, seg.toolId)) : undefined;
             if (tc) {
               items.push({ kind: "tool", id: `tc-${tc.id}`, tc, messageId: msg.id });
             }
@@ -884,8 +912,21 @@ function buildRenderKey(timeline: TimelineItem[]): string {
     if (i.kind === "thinking") return { k: "th", id: i.id };
     if (i.kind === "tool") {
       // The result transition is structural (a body slot gets filled);
-      // status/params/error changes are handled incrementally.
-      return { k: "tc", id: i.id, n: i.tc.name, r: i.tc.result ? 1 : 0 };
+      // status/params/error changes are handled incrementally.  For
+      // agent tool calls, the task-divider count is structural too:
+      // when subAgentMessages arrive with new dividers (e.g. after a
+      // session switch restores empty state) the agent card layout
+      // must be rebuilt from scratch.
+      const taskDividers = i.tc.subAgentMessages
+        ? i.tc.subAgentMessages
+          .filter((message) => message.mode === "task_divider")
+          .map((message, index) => ({
+            index: message.taskIndex ?? index,
+            name: message.taskName || "",
+            status: message.taskStatus || "",
+          }))
+        : [];
+      return { k: "tc", id: i.id, n: i.tc.name, r: i.tc.result ? 1 : 0, d: taskDividers };
     }
     if (i.kind === "compact") return { k: "cp" };
     if (i.kind === "workflow") {
@@ -965,7 +1006,7 @@ export class Chat {
     this.scrollIndicator = new ChatScrollIndicator(this.container);
 
     const w = window as any;
-    w.__openSubAgentView = (toolCallId: string) => {
+    w.__openSubAgentView = (toolCallId: string, taskIndex?: number) => {
       const st = getState();
       const MAX_DEPTH = 4;
       // Enforce max nesting depth using breadcrumb length
@@ -975,15 +1016,23 @@ export class Chat {
       }
       for (const msg of st.messages) {
         for (const tc of msg.toolCalls) {
-          if (tc.id === toolCallId) {
+          if (toolCallMatchesId(tc, toolCallId)) {
+            // Explicit user navigation INTO a sub-agent re-enables auto-open.
+            w.__subAgentAutoOpenDismissed = false;
             // The parent tool call id is the currently-active sub-agent
             // view's tc id (when navigating from inside another sub-agent)
             // or null when navigating from the root main session.
             const parentToolCallId = st.subAgentView ? st.subAgentView.id : null;
             // Record current session as parent in the breadcrumb stack
-            const agentName = tc.name === "agent"
-              ? String(tc.params.agent_name || tc.params.name || tc.params.mode || "agent")
-              : tc.name;
+            const agentName = getAgentName(tc);
+            const taskDividers = this._agentTaskDividers(tc);
+            const selectedTask = taskIndex === undefined
+              ? undefined
+              : taskDividers.find((task) => task.index === taskIndex);
+            const taskName = selectedTask
+              ? selectedTask.name
+              : "";
+            const crumbName = taskName ? `${agentName} · ${taskName}` : agentName;
             // If the user already has a deeper view open and clicks
             // an ancestor's card, truncate the stack back to that level
             // so the breadcrumb reflects their actual navigation, not
@@ -996,16 +1045,31 @@ export class Chat {
             } else {
               pushSubAgentBreadcrumb({
                 sessionId: st.sessionId,
-                name: agentName,
+                name: crumbName,
                 toolCallId,
                 parentToolCallId,
               });
             }
             if (tc.subAgentMessages && tc.subAgentMessages.length > 0) {
-              setSubAgentView(tc);
+              // Viewing a single parallel task keeps the parent tool-call
+              // identity but narrows the transcript to that task.
+              const viewTc: ToolCallState = { ...tc, taskIndex };
+              // Inline sub-agents use the tool-call snapshot, not a resumed
+              // session. Clear any stale session-backed flag so the fallback
+              // path does not accidentally render the parent session messages.
+              w.__activeSubAgentSessionId = undefined;
+              setSubAgentView(viewTc);
               this.render();
             } else if (tc.subAgentSessionId) {
               const requestId = crypto.randomUUID();
+              // The sub-agent transcript is loaded by a session_ready reply.
+              // Keep the originating tool-call identity until that reply
+              // arrives so the renderer can re-enter the sub-agent view.
+              w.__pendingSubAgentView = {
+                toolCall: tc,
+                sessionId: tc.subAgentSessionId,
+                requestId,
+              };
               setRequestedSessionId(tc.subAgentSessionId, requestId);
               send({ type: "resume", session_id: tc.subAgentSessionId, request_id: requestId });
             } else {
@@ -1019,6 +1083,11 @@ export class Chat {
     };
     w.__closeSubAgentView = () => {
       const crumb = popSubAgentBreadcrumb();
+      w.__pendingSubAgentView = undefined;
+      w.__activeSubAgentSessionId = undefined;
+      // User deliberately stepped back toward the main agent: stop
+      // auto-opening freshly spawned sub-agents for the rest of this run.
+      if (!crumb) w.__subAgentAutoOpenDismissed = true;
       setSubAgentView(null);
       if (crumb) {
         const requestId = crypto.randomUUID();
@@ -1029,6 +1098,32 @@ export class Chat {
         this.ml.innerHTML = "";
         requestAnimationFrame(() => this.render());
       }
+    };
+    w.__goToRootView = () => {
+      const st = getState();
+      // Leaving every sub-agent level: drop the session-backed marker so the
+      // parent view is never mistaken for a sub-agent snapshot.
+      w.__activeSubAgentSessionId = undefined;
+      w.__pendingSubAgentView = undefined;
+      // User explicitly returned to the main agent: suppress auto-open of
+      // subsequently spawned sub-agents until they opt back in or a new turn.
+      w.__subAgentAutoOpenDismissed = true;
+      if (st.subAgentBreadcrumb.length === 0) {
+        setSubAgentView(null);
+        this.render();
+        return;
+      }
+      const rootSessionId = st.subAgentBreadcrumb[0].sessionId;
+      clearSubAgentBreadcrumb();
+      setSubAgentView(null);
+      if (rootSessionId !== st.sessionId) {
+        const requestId = crypto.randomUUID();
+        setRequestedSessionId(rootSessionId, requestId);
+        send({ type: "resume", session_id: rootSessionId, request_id: requestId });
+      }
+      this.renderedKey = "";
+      this.ml.innerHTML = "";
+      this.render();
     };
     w.__navigateToBreadcrumb = (index: number) => {
       const st = getState();
@@ -1043,7 +1138,7 @@ export class Chat {
       const stNow = getState();
       for (const msg of stNow.messages) {
         for (const tc of msg.toolCalls) {
-          if (tc.id === target.toolCallId) {
+          if (toolCallMatchesId(tc, target.toolCallId)) {
             // Breadcrumb navigation always stays inside the parent session
             // and reopens the inline sub-agent view. Resuming the sub-agent
             // session itself would break the breadcrumb stack.
@@ -1231,9 +1326,35 @@ export class Chat {
     });
   }
 
+  private _parallelRenderTimer: number | null = null;
+  private _pendingParallelRender = false;
+
   renderForce(): void {
-    this.renderedKey = "";
-    this.render();
+    const st = getState();
+    const subTc = st.subAgentView;
+    const dividerCount = subTc?.subAgentMessages
+      ? subTc.subAgentMessages.filter((m) => m.mode === "task_divider").length
+      : 0;
+    const isParallelRunning = subTc &&
+      (subTc.status === "running" || subTc.status === "pending") &&
+      dividerCount >= 2;
+    if (!isParallelRunning) {
+      this.render();
+      return;
+    }
+    // Throttle parallel sub-agent streaming renders so the main thread
+    // stays responsive enough for scrolling and window dragging.
+    this._pendingParallelRender = true;
+    if (this._parallelRenderTimer === null) {
+      this.render();
+      this._parallelRenderTimer = window.setTimeout(() => {
+        this._parallelRenderTimer = null;
+        if (this._pendingParallelRender) {
+          this._pendingParallelRender = false;
+          this.render();
+        }
+      }, 100);
+    }
   }
 
   /** Re-renders the message list from current state (RAF-throttled). */
@@ -1253,7 +1374,7 @@ export class Chat {
       if (crumb.sessionId === state.sessionId) {
         for (const msg of state.messages) {
           for (const tc of msg.toolCalls) {
-            if (tc.id === crumb.toolCallId) {
+            if (toolCallMatchesId(tc, crumb.toolCallId)) {
               setSubAgentView(tc);
               break;
             }
@@ -1265,25 +1386,55 @@ export class Chat {
     if (state.subAgentView) {
       this.toggleWelcome(false);
       const subTc = state.subAgentView;
-      const subMsgs = subTc.subAgentMessages || [];
-      const hasInlineData = subMsgs.length > 0;
-      const isStreaming = subTc.status === "running" || subTc.status === "pending";
+      // A session-backed sub-agent streams directly into the active session
+      // snapshot after its transcript has been resumed. Inline sub-agents use
+      // the tool-call snapshot instead.
+      const sessionBacked = (window as any).__activeSubAgentSessionId === state.sessionId;
+      // Prefer the inline snapshot when available; it survives navigation
+      // back to the parent session and re-entry into the sub-agent view.
+      let subMsgs = subTc.subAgentMessages?.length
+        ? subTc.subAgentMessages
+        : (sessionBacked ? state.messages : []);
+
+      // When the user clicked one card of a parallel agent run, show only
+      // that single task's transcript instead of the combined run.
+      const selectedMsgs = selectSubAgentTaskMessages(subMsgs, subTc.taskIndex);
+      const hasInlineData = selectedMsgs.length > 0;
+      const isStreaming = sessionBacked
+        ? state.running
+        : (subTc.status === "running" || subTc.status === "pending");
       this.renderedKey = "__subagent__";
       if (hasInlineData) {
         // Sub-agent snapshot arrived: render the real user + assistant
         // bubbles together.  The loader was already torn down at the
         // top of render(), so the message area is clean by now.
-        const timeline = buildSubAgentTimeline(subMsgs);
-        this.fullRender(timeline, subMsgs);
+        const timeline = buildSubAgentTimeline(selectedMsgs, isStreaming);
+        this.fullRender(timeline, selectedMsgs);
       } else if (isStreaming) {
         // Still waiting for the first snapshot: hide every message bubble
         // (no user box, no assistant box) and show only the centered EA
         // loader.  Both bubbles will appear together once data lands.
         this.ml.innerHTML = "";
         this.liveLoader = new EALoader(this.ml);
+      } else if (subTc.isError) {
+        const errorCode = String(subTc.result || "AUTOMATION_EXECUTION_FAILED");
+        this.ml.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;">
+          <i data-lucide="ban" class="lucide"></i>
+          <div class="si-panel-empty-title">${t("automation.executionFailed") || "Automation execution error"}</div>
+          <div class="si-panel-empty-sub">${escapeHtml(errorCode)}</div>
+        </div>`;
       } else {
-        // Finished (or never started) without producing any output.
-        this.ml.innerHTML = `<div class="sub-agent-empty"><p>${t("chat.noSubAgentOutput")}</p></div>`;
+        // No inline transcript survived (e.g. reopened after switching
+        // sessions before the snapshot was persisted). Fall back to the
+        // aggregated tool result text so the user still sees the real
+        // output instead of a bare "no output" placeholder.
+        const resultText = typeof subTc.result === "string" ? subTc.result.trim() : "";
+        if (resultText) {
+          this.ml.innerHTML = `<div class="sub-agent-result-fallback">${renderMarkdown(resultText)}</div>`;
+        } else {
+          // Finished (or never started) without producing any output.
+          this.ml.innerHTML = `<div class="sub-agent-empty"><p>${t("chat.noSubAgentOutput")}</p></div>`;
+        }
       }
       createLucideIcons();
       this._updateStatusBar(false);
@@ -1310,7 +1461,236 @@ export class Chat {
 
   }
 
+  /**
+   * Build the timeline HTML for sub-agent messages and render it into
+   * an arbitrary container element. Reuses the same rendering pipeline
+   * as the main chat's fullRender, so the result looks identical to the
+   * chat sub-agent view.
+   *
+   * Used by the automation panel to render execution results inside
+   * #automation-detail-content without switching to chat mode.
+   */
+  public renderSubAgentInto(container: HTMLElement, messages: Message[], isRunning: boolean): void {
+    const timeline = buildSubAgentTimeline(messages, isRunning);
+    const st = getState();
+    const autoExpand = isEnabled(st.settings.auto_expand);
+    this.applyAutoExpand(timeline, autoExpand);
+    // Treat the automation detail exactly like the tape's sub-agent view:
+    // user bubbles belong to the current turn (in-turn), not standalone
+    // blocks. Pass treatAsSubAgent=true so buildTimelineHTML matches what
+    // chat.render() produces when state.subAgentView is set.
+    const html = this.buildTimelineHTML(timeline, messages, true);
+    container.innerHTML = html;
+    createLucideIcons();
+  }
+
+  /**
+   * Shared auto-expand pass used by both fullRender and renderSubAgentInto
+   * so the two never drift. Auto-expands thinking strips and agent tool
+   * cards unless the user manually collapsed them.
+   */
+  private applyAutoExpand(timeline: TimelineItem[], autoExpand: boolean): void {
+    for (const item of timeline) {
+      if (item.kind === "thinking") {
+        const id = item.id;
+        if (autoExpand && !this.userCollapsedItems.has(id)) {
+          this.expandedItems.add(id);
+        } else if (this.userCollapsedItems.has(id)) {
+          this.expandedItems.delete(id);
+        }
+      } else if (item.kind === "tool" && item.tc.name === "agent") {
+        const id = item.id;
+        if (autoExpand && !this.userCollapsedItems.has(id)) {
+          this.expandedItems.add(id);
+        } else if (this.userCollapsedItems.has(id)) {
+          this.expandedItems.delete(id);
+        }
+      }
+    }
+  }
+
+  /**
+   * Build the timeline's inner HTML (turns + standalone cards) - the shared
+   * body of fullRender. Extracted so renderSubAgentInto produces byte-identical
+   * markup to the main chat's sub-agent view instead of a parallel copy.
+   *
+   * @param treatAsSubAgent When true, user bubbles are folded into the
+   *   current turn (matching chat.render()'s sub-agent path). When false,
+   *   the live subAgentView/__parentSessionId flags decide - the normal
+   *   chat behaviour.
+   */
+  private buildTimelineHTML(timeline: TimelineItem[], allMsgs?: Message[], treatAsSubAgent = false): string {
+    let html = "";
+    let turnMid = ""; // buffered items inside current turn
+    let turnActions = false;
+    let turnRetry = false;
+    let turnBranchSwitcher = false;
+    const _this = this;
+
+    function closeTurn() {
+      if (!turnMid) return;
+      html += `<div class="turn">${turnMid}`;
+      if (turnActions) {
+        html += `<div class="assistant-actions turn-actions">`;
+        html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
+          <i data-lucide="copy" class="lucide lucide-sm"></i>
+        </button>`;
+        if (turnRetry) {
+          html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
+            <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+          </button>`;
+        }
+        if (turnBranchSwitcher) {
+          html += _this.renderBranchSwitcher();
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+      turnMid = "";
+      turnActions = false;
+      turnRetry = false;
+      turnBranchSwitcher = false;
+    }
+
+    const inSubAgent = treatAsSubAgent || !!getState().subAgentView || !!(window as any).__parentSessionId;
+    for (let i = 0; i < timeline.length; i++) {
+      const item = timeline[i];
+
+      if (item.kind === "compact" || item.kind === "workflow" || (item.kind === "user" && !inSubAgent)) {
+        closeTurn.call(_this);
+        html += this.renderItemHTML(item);
+      } else if (item.kind === "ai_header") {
+        closeTurn.call(_this);
+        turnMid += this.renderItemHTML(item);
+      } else {
+        // thinking / assistant_text / tool - belongs to current turn
+        if (item.kind === "assistant_text") {
+          if ((item as any).showBranchSwitcher) turnBranchSwitcher = true;
+          const _sa = (item as any).showActions;
+          const _shouldShowActions = _sa !== undefined ? _sa : !item.isStreaming;
+          if (_shouldShowActions) {
+            // Every completed turn gets a copy button
+            turnActions = true;
+            // No retry button in sub-agent view
+            if (!inSubAgent) {
+              // Only show retry on the very last assistant message in the conversation
+              if (allMsgs) {
+                for (let mi = allMsgs.length - 1; mi >= 0; mi--) {
+                  if (allMsgs[mi].role === "assistant") {
+                    if (item.messageId === allMsgs[mi].id) turnRetry = true;
+                    break;
+                  }
+                }
+              } else {
+                turnRetry = true;
+              }
+            }
+          }
+        }
+        turnMid += this.renderItemHTML(item);
+      }
+    }
+    closeTurn.call(_this);
+    return html;
+  }
+
+  /**
+   * Render a parallel sub-agent run: one ``agent`` tool that executed several
+   * tasks concurrently. The transcript is a flat list delimited by structured
+   * ``task_divider`` markers (``mode === "task_divider"``); we split it back
+   * into per-task groups and tile them into split regions -- like a window
+   * snap layout -- so "one agent, many jobs" reads as distinct panes:
+   *   1 task  -> fills the whole tape
+   *   2 tasks -> left / right
+   *   3 tasks -> one across the top, two side-by-side below
+   *   4 tasks -> 2x2 grid
+   * Regions are separated by faint dashed lines (CSS). At most 4 tiles are
+   * drawn -- more would deform and can't be laid out cleanly.
+   */
+  private fullRenderParallel(subMsgs: Message[], isStreaming: boolean): void {
+    // Split the flat transcript by its stable backend task index. A reconnect
+    // may replay dividers out of order, so array position is not task identity.
+    const groupsByIndex = new Map<number, { divider: Message; body: Message[] }>();
+    let fallbackIndex = 0;
+    let current: { divider: Message; body: Message[] } | null = null;
+    for (const m of subMsgs) {
+      if (m.mode === "task_divider") {
+        const index = Number.isInteger(m.taskIndex) ? m.taskIndex! : fallbackIndex;
+        fallbackIndex = Math.max(fallbackIndex, index + 1);
+        current = { divider: m, body: [] };
+        groupsByIndex.set(index, current);
+      } else if (current) {
+        current.body.push(m);
+      }
+    }
+    const groups = [...groupsByIndex.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, group]) => group);
+
+    const statusMeta = (s: string | undefined): { icon: string; label: string; cls: string } => {
+      if (s === "done") return { icon: "check", label: t("chat.taskDone") || "Done", cls: "is-done" };
+      if (s === "error") return { icon: "x", label: t("chat.taskError") || "Failed", cls: "is-error" };
+      if (s === "queued") return { icon: "clock", label: t("chat.taskQueued") || "Queued", cls: "is-queued" };
+      return { icon: "loader", label: t("chat.taskRunning") || "Running", cls: "is-running" };
+    };
+
+    // Only the first 4 tasks get a region; the split grid can't draw more.
+    const shown = groups.slice(0, 4);
+    const count = shown.length;
+
+    // Build each tile body HTML up-front so we can diff against the
+    // existing DOM and only replace the tiles that actually changed.
+    const tileBodies: string[] = [];
+    for (const g of shown) {
+      const isRunning = statusMeta(g.divider.taskStatus).cls === "is-running";
+      const bodyTimeline = buildSubAgentTimeline(g.body, isRunning);
+      const bodyHtml = g.body.length > 0
+        ? this.buildTimelineHTML(bodyTimeline, g.body, true)
+        : `<div class="parallel-task-pending">${t("chat.taskWaiting") || "Waiting for output…"}</div>`;
+      tileBodies.push(bodyHtml);
+    }
+
+    // Windows-style snap layout: panes tile edge-to-edge with no outer frame.
+    // 1 task fills the tape; 2 tasks split left/right; 3 tasks put one large
+    // pane on the left and two stacked panes on the right; 4 tasks form a 2x2
+    // grid. Split ratios are fixed (no drag resize).
+    const wrapTile = (idx: number): string =>
+      `<section class="parallel-tile"><div class="parallel-tile-body">${tileBodies[idx]}</div></section>`;
+    let html = `<div class="parallel-sub-agent" data-count="${count}">`;
+    if (count === 3) {
+      html += wrapTile(0);
+      html += `<div class="parallel-sub-agent-stack">`;
+      html += wrapTile(1);
+      html += wrapTile(2);
+      html += `</div>`;
+    } else {
+      for (let i = 0; i < count; i++) {
+        html += wrapTile(i);
+      }
+    }
+    html += `</div>`;
+
+    this.ml.classList.add("parallel-active");
+    const existing = this.ml.querySelector(":scope > .parallel-sub-agent") as HTMLElement | null;
+    if (existing && existing.dataset.count === String(count)) {
+      // Diff update: only swap tile bodies whose content changed. This keeps
+      // scroll position, cursor selection, and expansion state intact for the
+      // tiles that are not currently streaming.
+      const bodies = existing.querySelectorAll(".parallel-tile-body");
+      let idx = 0;
+      for (const body of Array.from(bodies)) {
+        if (idx < tileBodies.length && body.innerHTML !== tileBodies[idx]) {
+          body.innerHTML = tileBodies[idx];
+        }
+        idx++;
+      }
+    } else {
+      this.ml.innerHTML = html;
+    }
+  }
+
   private fullRender(timeline: TimelineItem[], allMsgs?: Message[]): void {
+    this.ml.classList.remove("parallel-active");
     const st = getState();
     const autoExpand = isEnabled(st.settings.auto_expand);
 
@@ -1555,21 +1935,15 @@ export class Chat {
           this.expandedItems.delete(toolItem.id);
         }
       }
-
-      // 5) Agent card sub-agent preview text.
-      if (toolItem.tc.name === "agent") {
-        const previewEl = el.querySelector(".agent-card-preview") as HTMLElement | null;
-        if (previewEl && toolItem.tc.subAgentMessages) {
-          let lastText = "";
-          for (const m of toolItem.tc.subAgentMessages) {
-            if (m.role !== "assistant") continue;
-            if (m.content && m.content.trim()) lastText = m.content;
-          }
-          const preview = lastText ? lastText.replace(/\s+/g, " ").slice(0, 80) : "";
-          const newPreview = preview + (lastText.length > 80 ? "…" : "");
-          if (previewEl.textContent !== newPreview) {
-            previewEl.textContent = newPreview;
-          }
+      // 5) Agent card icon: toggle spin class in-place so the CSS animation
+      //    never restarts during streaming (the icon SVG survives through
+      //    incremental updates because the render key is no longer cleared).
+      if (expandTool) {
+        const iconEl = el.querySelector('.agent-card-icon') as HTMLElement | null;
+        if (iconEl) {
+          const st = getState();
+          const isAgentRunning = st.running && (toolItem.tc.status === "running" || toolItem.tc.status === "pending");
+          iconEl.classList.toggle('spinning', isAgentRunning);
         }
       }
     }
@@ -2033,37 +2407,71 @@ export class Chat {
   }
 
   private renderAgent(tc: ToolCallState, itemId: string): string {
-    const id = `tc-${tc.id}`;
     const rawAgentName = getAgentName(tc);
     const agentName = formatAgentLabel(rawAgentName);
-    const statusHtml = _toolStatusHtml(tc.status);
     const isPlanSpec = tc.params.mode === "plan" || tc.params.mode === "spec";
-    const agentIcon = isPlanSpec ? "list-checks" : "zap";
+    const agentIcon = isPlanSpec ? "list-checks" : "sparkles";
+    const statusHtml = _toolStatusHtml(tc.status);
+
+    /** Pick the icon name and spinning class based on status and overall run state. */
+    const _cardIcon = (status: string): { name: string; cls: string } => {
+      const stillRunning = getState().running;
+      if ((status === "running" || status === "pending") && stillRunning) {
+        return { name: "loader", cls: "agent-card-icon spinning" };
+      }
+      return { name: agentIcon, cls: "agent-card-icon" };
+    };
+
+    // If this agent tool ran several parallel tasks, show one card per task
+    // in the parent transcript instead of a single combined card.
+    const tasks = this._agentTaskDividers(tc);
+    if (tasks.length > 1) {
+      return tasks.map((task, idx) => {
+        const taskName = task.name || `${agentName} ${idx + 1}`;
+        const taskStatus = task.status || tc.status;
+        const { name: icon, cls: iconCls } = _cardIcon(taskStatus);
+        return `<div class="agent-card" data-task-index="${task.index}" onclick="window.__openSubAgentView('${tc.id}', ${task.index})">
+          <i data-lucide="${icon}" class="${iconCls}"></i>
+          <span class="agent-card-name">${escapeHtml(taskName)}</span>
+          <span class="agent-card-status" data-status="${taskStatus}">${_toolStatusHtml(taskStatus)}</span>
+          <span class="agent-card-open">
+            <i data-lucide="square-arrow-out-up-right" class="agent-card-open-icon"></i>
+          </span>
+        </div>`;
+      }).join("");
+    }
+
+    const id = `tc-${tc.id}`;
+    const { name: icon, cls: iconCls } = _cardIcon(tc.status);
     // Inline summary keeps ONLY the preview (last assistant text) so the
     // card stays compact. Thinking/tool counts are intentionally hidden in
     // the parent — they live in the sub-agent view.
-    const subMsgs = tc.subAgentMessages;
-    let summaryHtml = "";
-    if (subMsgs && subMsgs.length > 0) {
-      let lastText = "";
-      for (const m of subMsgs) {
-        if (m.role !== "assistant") continue;
-        if (m.content && m.content.trim()) lastText = m.content;
-      }
-      const preview = lastText ? lastText.replace(/\s+/g, " ").slice(0, 80) : "";
-      summaryHtml = preview
-        ? `<div class="agent-card-summary"><span class="agent-card-preview">${escapeHtml(preview)}${lastText.length > 80 ? "…" : ""}</span></div>`
-        : "";
-    }
     return `<div class="agent-card" data-id="${id}" onclick="window.__openSubAgentView('${tc.id}')">
-      <i data-lucide="${agentIcon}" class="agent-card-icon"></i>
+      <i data-lucide="${icon}" class="${iconCls}"></i>
       <span class="agent-card-name">${escapeHtml(agentName)}</span>
       <span class="agent-card-status" data-status="${tc.status}">${statusHtml}</span>
-      ${summaryHtml}
       <span class="agent-card-open">
         <i data-lucide="square-arrow-out-up-right" class="agent-card-open-icon"></i>
       </span>
     </div>`;
+  }
+
+  private _agentTaskDividers(tc: ToolCallState): Array<{ index: number; name: string; status?: string }> {
+    const msgs = tc.subAgentMessages;
+    if (!msgs || msgs.length === 0) return [];
+    const dividers = new Map<number, { index: number; name: string; status?: string }>();
+    let fallbackIndex = 0;
+    for (const message of msgs) {
+      if (message.mode !== "task_divider") continue;
+      const index = Number.isInteger(message.taskIndex) ? message.taskIndex! : fallbackIndex;
+      fallbackIndex = Math.max(fallbackIndex, index + 1);
+      dividers.set(index, {
+        index,
+        name: message.taskName || "",
+        status: message.taskStatus,
+      });
+    }
+    return [...dividers.values()].sort((a, b) => a.index - b.index);
   }
 
   private renderAssistantText(item: Extract<TimelineItem, { kind: "assistant_text" }>): string {
