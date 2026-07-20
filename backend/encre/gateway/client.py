@@ -192,6 +192,8 @@ class GatewayClient:
         prompt: str,
         session_id: str | None = None,
         system_prompt: str | None = None,
+        *,
+        source: dict[str, Any] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         logger.info("[gateway-client] %s submit_stream prompt=%.60s session=%s", self._name, prompt, session_id or "(new)")
         if not self._connected:
@@ -199,7 +201,7 @@ class GatewayClient:
                          self._name, self._ws is not None, self._running)
             yield Finish(reason="error", error="Gateway not connected")
             return
-        msg = GatewayMessage.submit_stream(prompt, session_id, system_prompt)
+        msg = GatewayMessage.submit_stream(prompt, session_id, system_prompt, source=source)
         await self._send(msg)
         text_len = 0
         timeout_count = 0

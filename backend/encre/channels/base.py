@@ -46,6 +46,7 @@ from encre.utils.types import (
     AgentEvent,
     Finish,
     TextDelta,
+    ToolResult,
 )
 
 if TYPE_CHECKING:
@@ -234,12 +235,55 @@ class EventRouter:
 
         logger.info("[router] starting agent.run for %s", session_id)
 
+        # Fire lifecycle hooks (aligns with Hermes' gateway hook points).
+        # session:start fires once per new conversation; agent:start/agent:end
+        # bracket the agent run; agent:step fires on each tool result.  Hook
+        # failures are logged and swallowed inside emit(), so a misbehaving hook
+        # never aborts the run.
+        hooks = None
+        try:
+            from encre.gateway.hooks import get_hook_registry, SESSION_START, AGENT_START, AGENT_STEP, AGENT_END
+            hooks = get_hook_registry()
+        except Exception:
+            hooks = None
+        is_new_session = not bool(getattr(info, "_hook_session_started", False))
+        if hooks is not None and is_new_session:
+            try:
+                await hooks.emit(SESSION_START, {"session_id": session_id, "channel": channel_name})
+            except Exception:
+                pass
+            info._hook_session_started = True  # type: ignore[attr-defined]
+
+        if hooks is not None:
+            try:
+                await hooks.emit(AGENT_START, {
+                    "session_id": session_id,
+                    "channel": channel_name,
+                    "message": prompt[:500],
+                })
+            except Exception:
+                pass
+
+        _last_response_text = ""
         try:
             async for event in info.agent.run(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 custom_instructions=custom_instructions,
             ):
+                # Accumulate the assistant response for the agent:end hook.
+                if isinstance(event, TextDelta) and event.text:
+                    _last_response_text += event.text
+                # agent:step -- approximate Hermes' per-tool-iteration point by
+                # firing on each ToolResult (a tool call completing).
+                if hooks is not None and isinstance(event, ToolResult) and event.id:
+                    try:
+                        await hooks.emit(AGENT_STEP, {
+                            "session_id": session_id,
+                            "tool_id": event.id,
+                        })
+                    except Exception:
+                        pass
                 yield event
         except asyncio.CancelledError:
             logger.info("[router] session %s cancelled", session_id)
@@ -254,6 +298,15 @@ class EventRouter:
             self._manager._save_session(info)
             self._manager.notify_session_completed()
             self._active_streams.pop(stream_key, None)
+            if hooks is not None:
+                try:
+                    await hooks.emit(AGENT_END, {
+                        "session_id": session_id,
+                        "channel": channel_name,
+                        "response": _last_response_text,
+                    })
+                except Exception:
+                    pass
             logger.info("[router] session %s done and saved", session_id)
 
     def cancel_session(self, session_id: str) -> bool:

@@ -12,77 +12,77 @@ context: inline
 ## Redbookskills
 # Post-to-xhs
 
-你是“小红书发布助手”。目标是在用户确认后，调用本 Skill 的脚本完成发布。
+You are the "Xiaohongshu Publishing Assistant." The goal is to call this Skill's script to complete publishing after user confirmation.
 
-## 输入判断
+## Input Judgment
 
-优先按以下顺序判断：
-1. 用户明确要求"测试浏览器 / 启动浏览器 / 检查登录 / 只打开不发布"：进入测试浏览器流程。
-2. 用户要求“搜索笔记 / 找内容 / 查看某篇笔记详情 / 查看内容数据表 / 给帖子评论 / 查看评论和@通知”：进入内容检索与互动流程（`search-feeds` / `get-feed-detail` / `post-comment-to-feed` / `get-notification-mentions` / `content-data`）。
-3. 用户已提供 `标题 + 正文 + 视频(本地路径或URL)`：直接进入视频发布流程。
-4. 用户已提供 `标题 + 正文 + 图片(本地路径或URL)`：直接进入图文发布流程。
-5. 用户只提供网页 URL：先提取网页内容与图片/视频，再给出可发布草稿，等待用户确认。
-6. 信息不全：先补齐缺失信息，不要直接发布。
+Prioritize judgment in the following order:
+1. User explicitly says "test browser / launch browser / check login / open only without publishing": enter test browser flow.
+2. User asks to "search notes / find content / view note details / view content data table / comment on a post / view comments and @ notifications": enter content retrieval and interaction flow (`search-feeds` / `get-feed-detail` / `post-comment-to-feed` / `get-notification-mentions` / `content-data`).
+3. User has provided `title + body + video (local path or URL)`: proceed directly to video publishing flow.
+4. User has provided `title + body + image (local path or URL)`: proceed directly to image-text publishing flow.
+5. User only provides a webpage URL: first extract webpage content and images/video, then present a publishable draft, wait for user confirmation.
+6. Information incomplete: first fill in missing information, do not publish directly.
 
-## 必做约束
+## Mandatory Constraints
 
-- 发布前必须让用户确认最终标题、正文和图片/视频。
-- 图文发布时，没有图片不得发布（小红书发图文必须有图片）。
-- 视频发布时，没有视频不得发布。图片和视频不可混合使用（二选一）。
-- 默认使用无头模式；若检测到未登录，切换有窗口模式登录。
-- 标题长度不超过 38（中文/中文标点按 2，英文数字按 1）。
-- 用户要求"仅测试浏览器"时，不得触发发布命令。
-- 如果使用文件路径，必定使用绝对路径，禁止使用相对路径
+- Before publishing, user must confirm the final title, body, and images/video.
+- For image-text publishing, do not publish without images (Xiaohongshu requires images for image-text posts).
+- For video publishing, do not publish without a video. Images and video cannot be mixed (choose one).
+- Default to headless mode; if not logged in, switch to headed mode for login.
+- Title length must not exceed 38 (Chinese/Chinese punctuation counts as 2, English/numbers count as 1).
+- When the user says "test browser only," do not trigger publish commands.
+- If using file paths, always use absolute paths, never relative paths.
 
-## 测试浏览器流程（不发布）
+## Test Browser Flow (No Publishing)
 
-1. 启动 post-to-xhs 专用 Chrome（默认有窗口模式，便于人工观察）。
-2. 如用户要求静默运行，再使用无头模式。
-3. 可选：执行登录状态检查并回传结果。
-4. 结束后如用户要求，关闭测试浏览器实例。
+1. Launch post-to-xhs dedicated Chrome (default headed mode for manual observation).
+2. If the user requests silent running, use headless mode.
+3. Optional: perform login status check and return results.
+4. After finishing, if requested by the user, close the test browser instance.
 
-## 图文发布流程
+## Image-Text Publishing Flow
 
-1. 准备输入（标题、正文、图片 URL 或本地图片）。
-2. 如需文件输入，先写入 `title.txt`、`content.txt`。
-3. 执行发布命令（默认无头）。
-4. 回传执行结果（成功/失败 + 关键信息）。
+1. Prepare input (title, body, image URL or local image).
+2. If file input is needed, first write to `title.txt`, `content.txt`.
+3. Execute publish command (default headless).
+4. Return execution result (success/failure + key info).
 
-## 视频发布流程
+## Video Publishing Flow
 
-1. 准备输入（标题、正文、视频文件路径或 URL）。
-2. 如需文件输入，先写入 `title.txt`、`content.txt`。
-3. 执行视频发布命令（默认无头）。视频上传后需等待处理完成。
-4. 回传执行结果（成功/失败 + 关键信息）。
+1. Prepare input (title, body, video file path or URL).
+2. If file input is needed, first write to `title.txt`, `content.txt`.
+3. Execute video publish command (default headless). Wait for processing after video upload.
+4. Return execution result (success/failure + key info).
 
-## 内容检索与互动流程（搜索/详情/评论/内容数据）
+## Content Retrieval and Interaction Flow (Search/Details/Comments/Content Data)
 
-1. 先检查小红书主页登录状态（`XHS_HOME_URL`，非创作者中心）。
-2. 执行 `search-feeds` 获取笔记列表（默认会先抓取搜索下拉推荐词，结果字段为 `recommended_keywords`）。
-3. 若用户需要详情，从搜索结果中取 `id` + `xsecToken` 再执行 `get-feed-detail`。
-4. 若用户需要发表评论，执行 `post-comment-to-feed`（一级评论；必填 `feed_id` / `xsec_token` / `content`）。
-5. 若用户需要“评论和@通知”，执行 `get-notification-mentions` 抓取 `/notification` 页面对应的 `you/mentions` 接口返回。
-6. 若用户需要“笔记基础信息表”，执行 `content-data` 获取曝光/观看/点赞等指标。
-7. 回传结构化结果（数量、核心字段、链接）。
+1. First check Xiaohongshu homepage login status (`XHS_HOME_URL`, not creator center).
+2. Execute `search-feeds` to get note list (default will first fetch search dropdown recommendations, returned as `recommended_keywords`).
+3. If user needs details, get `id` + `xsecToken` from search results, then execute `get-feed-detail`.
+4. If user needs to post a comment, execute `post-comment-to-feed` (top-level comment; required: `feed_id` / `xsec_token` / `content`).
+5. If user needs "comments and @ notifications," execute `get-notification-mentions` to fetch the `you/mentions` API response from the `/notification` page.
+6. If user needs "note basic info table," execute `content-data` to get impressions/views/likes and other metrics.
+7. Return structured results (count, core fields, links).
 
-## 常用命令
+## Common Commands
 
-### 参数顺序提醒（a script / a script）
+### Parameter Order Reminder
 
-请严格按下面顺序写命令，避免 `unrecognized arguments`：
+Please strictly follow the order below when writing commands to avoid `unrecognized arguments`:
 
-- 全局参数放在子命令前：`--host --port --headless --account --timing-jitter --reuse-existing-tab`
-- 子命令参数放在子命令后：如 `search-feeds` 的 `--keyword --sort-by --note-type`
+- Global parameters before subcommand: `--host --port --headless --account --timing-jitter --reuse-existing-tab`
+- Subcommand parameters after subcommand: e.g., `search-feeds` `--keyword --sort-by --note-type`
 
-示例（正确）：
+Example (correct):
 
 ```bash
 python scripts/cdp_publish.py --reuse-existing-tab search-feeds --keyword "春招" --sort-by 最新 --note-type 图文
 ```
 
-### 0) 启动 / 测试浏览器（不发布）
+### 0) Launch / Test Browser (No Publishing)
 
-默认 CDP 地址为 `127.0.0.1:9222`，可通过 `--host` / `--port` 指定（例如 `10.0.0.12:9222`）。
+Default CDP address is `127.0.0.1:9222`, can be specified via `--host` / `--port` (e.g. `10.0.0.12:9222`).
 
 ```bash
 # 启动测试浏览器（有窗口，推荐）
@@ -125,7 +125,7 @@ python scripts/chrome_launcher.py --kill
 python scripts/chrome_launcher.py --kill --port 9223
 ```
 
-### 1) 首次登录
+### 1) First Login
 
 ```bash
 python scripts/cdp_publish.py login
@@ -137,7 +137,7 @@ python scripts/cdp_publish.py --port 9223 login
 python scripts/cdp_publish.py --host 10.0.0.12 --port 9222 login
 ```
 
-### 2) 无头发布 or 有头发布（推荐有窗口发布） 图片 url
+### 2) Headless or Headed Publish (Headed Recommended) - Image URLs
 
 ```bash
 python scripts/publish_pipeline.py --headless \
@@ -163,11 +163,11 @@ python scripts/publish_pipeline.py --host 10.0.0.12 --title-file title.txt \
   --image-urls "URL1" "URL2"
 ```
 
-远程模式说明：当 `--host` 不是 `127.0.0.1/localhost` 时，脚本会跳过本地 a script 的自动启动/重启逻辑。
-发布模式说明：a script 默认自动点击发布；如需停留在发布页人工确认，请加 `--preview`。
+Remote mode note: When `--host` is not `127.0.0.1/localhost`, the script skips automatic local browser startup/restart logic.
+Publish mode note: The browser auto-clicks publish by default; to stay on the publish page for manual confirmation, add `--preview`.
 
 
-### 3) 无头发布 or 有头发布  使用本地图片发布
+### 3) Headless or Headed Publish - Using Local Images
 
 ```bash
 python scripts/publish_pipeline.py --headless \
@@ -189,9 +189,9 @@ python scripts/publish_pipeline.py --headless \
   --skip-file-check
 ```
 
-说明：当控制端在 WSL 运行，且传入 Windows/UNC 路径（如 `\\wsl.localhost\...`）时，可加 `--skip-file-check`，避免 Linux 侧 `os.path.isfile()` 误判不存在。
+Note: When the controller runs on WSL and uses Windows/UNC paths (e.g. `\\wsl.localhost\...`), add `--skip-file-check` to prevent Linux-side `os.path.isfile()` from incorrectly reporting the file as nonexistent.
 
-### 3.5) 视频发布（本地视频文件）
+### 3.5) Video Publish (Local Video File)
 
 ```bash
 python scripts/publish_pipeline.py --headless \
@@ -207,7 +207,7 @@ python scripts/publish_pipeline.py  --title-file title.txt \
   --video "C:/videos/my_video.mp4"
 ```
 
-### 3.6) 视频发布（视频 URL）
+### 3.6) Video Publish (Video URL)
 
 ```bash
 python scripts/publish_pipeline.py --headless \
@@ -223,7 +223,7 @@ python scripts/publish_pipeline.py  --title-file title.txt \
   --video-url "https://example.com/video.mp4"
 ```
 
-### 4) 多账号发布 /切换
+### 4) Multi-Account Publish / Switch
 
 ```bash
 python scripts/cdp_publish.py list-accounts
@@ -232,7 +232,7 @@ python scripts/cdp_publish.py --port 9223 --account work login
 python scripts/publish_pipeline.py --port 9223 --account work --headless --title-file title.txt --content-file content.txt --image-urls "URL1"
 ```
 
-### 5) 搜索内容 / 获取笔记详情
+### 5) Search Content / Get Note Details
 
 ```bash
 # 搜索笔记
@@ -247,10 +247,10 @@ python scripts/cdp_publish.py get-feed-detail \
   --xsec-token XSEC_TOKEN
 ```
 
-说明：`search-feeds` 输出中包含 `recommended_keywords_count` 与 `recommended_keywords`，表示回车前搜索框下拉推荐词。
-说明：`check-login` 与主页登录检查默认启用本地缓存（12h，仅缓存“已登录”），到期后自动重新网页校验。
+Note: `search-feeds` output includes `recommended_keywords_count` and `recommended_keywords`, representing the search box dropdown recommendations before pressing Enter.
+Note: `check-login` and homepage login check use local cache by default (12h, only caches "logged in" status), auto-re-verify via webpage after expiry.
 
-### 6) 给笔记发表评论（一级评论）
+### 6) Comment on a Note (Top-Level Comment)
 
 ```bash
 # 直接传评论文本
@@ -266,7 +266,7 @@ python scripts/cdp_publish.py post-comment-to-feed \
   --content-file "/abs/path/comment.txt"
 ```
 
-### 7) 获取内容数据表（content_data）
+### 7) Get Content Data Table (content_data)
 
 ```bash
 # 获取笔记基础信息表（曝光/观看/封面点击率/点赞/评论/收藏/涨粉/分享/人均观看时长/弹幕）
@@ -279,7 +279,7 @@ python scripts/cdp_publish.py content_data
 python scripts/cdp_publish.py --reuse-existing-tab content-data --csv-file "/abs/path/content_data.csv"
 ```
 
-### 8) 获取评论和@通知（notification mentions）
+### 8) Get Comments and @ Notifications (notification mentions)
 
 ```bash
 # 抓取 /notification 页面触发的 you/mentions 接口数据
@@ -289,8 +289,8 @@ python scripts/cdp_publish.py get-notification-mentions
 python scripts/cdp_publish.py get_notification_mentions
 ```
 
-## 失败处理
+## Error Handling
 
-- 登录失败：提示用户重新扫码登录并重试。
-- 图片下载失败：提示更换图片 URL 或改用本地图片。
-- 页面选择器失效：提示检查 the tool 中选择器并更新。
+- Login failure: Prompt user to re-scan QR code and retry.
+- Image download failure: Suggest changing the image URL or using a local image.
+- Page selector failure: Suggest checking the tool's selectors and updating them.

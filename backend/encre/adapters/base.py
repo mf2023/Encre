@@ -63,6 +63,7 @@ from datetime import datetime
 from typing import Any
 
 from encre.gateway.client import GatewayClient
+from encre.gateway.session import SessionSource, build_session_key
 from encre.utils.types import AgentEvent, Finish, TextDelta
 
 logger = logging.getLogger("encre.adapters.base")
@@ -120,6 +121,12 @@ class MessageEvent:
         internal: Flag indicating this event originated from within Encre (e.g.,
             a gateway-generated heartbeat) rather than an external user. Internal
             events can be filtered out to prevent echo loops.
+        source: Structured routing origin (platform / chat_id / chat_type / user /
+            thread / scope).  When populated, :meth:`BaseAdapter.handle_message`
+            builds a deterministic session key from it (see
+            :func:`encre.gateway.session.build_session_key`) so each conversation
+            resumes its own agent session.  ``None`` falls back to the legacy
+            user-to-session mapping.
     """
     text: str
     message_type: MessageType = MessageType.TEXT
@@ -133,6 +140,7 @@ class MessageEvent:
     raw: Any = None
     timestamp: datetime = field(default_factory=datetime.now)
     internal: bool = False
+    source: SessionSource | None = None
 
     def is_command(self) -> bool:
         """Check if this message is a command (starts with '/').
@@ -199,6 +207,14 @@ class SendResult:
         continuation_message_ids: For streaming responses that require multiple
             message parts (e.g., Discord's 2000-char limit), IDs of messages that
             should be edited/merged with this one when the stream completes.
+        retry_after: Server-requested retry delay in seconds (e.g. Telegram
+            FloodWait ``retry_after``).  When set, :meth:`BaseAdapter._send_with_retry`
+            honors it instead of its default backoff.
+        error_kind: Machine-readable send-failure category from
+            :data:`SEND_ERROR_KINDS` (or ``None`` when unset / not classified).
+            Lets the gateway decide -- in one place -- whether a failure is worth
+            surfacing to the user.  Producers should set this via
+            :func:`classify_send_error`.
     """
     success: bool
     message_id: str | None = None
@@ -206,6 +222,77 @@ class SendResult:
     raw: Any = None
     retryable: bool = False
     continuation_message_ids: tuple = ()
+    retry_after: float | None = None
+    error_kind: str | None = None
+
+
+# Machine-readable send-failure categories.  Kept platform-neutral so every
+# adapter can populate ``SendResult.error_kind`` from the same vocabulary and
+# the gateway can decide -- once, in one place -- whether a failure is worth
+# surfacing to the user.  Mirrors Hermes ``SEND_ERROR_KINDS``.
+#
+#   too_long      content exceeded the platform's per-message size cap; the
+#                 adapter typically recovers via continuation/split, so this is
+#                 informational rather than a hard failure.
+#   bad_format    the platform rejected the message markup/entities (parse
+#                 error); a plain-text retry is the actionable fix.
+#   forbidden     the bot is blocked, kicked, or lacks permission to post to the
+#                 target -- the bot CANNOT reach the user.
+#   not_found     the target chat/thread/message no longer exists.
+#   rate_limited  the platform throttled the send (flood control).
+#   transient     a connection-level failure that is safe to retry.
+#   unknown       classification did not match any known shape.
+SEND_ERROR_KINDS = frozenset(
+    {
+        "too_long",
+        "bad_format",
+        "forbidden",
+        "not_found",
+        "rate_limited",
+        "transient",
+        "unknown",
+    }
+)
+
+
+def classify_send_error(exc: BaseException | None = None, error_text: str = "") -> str:
+    """Map a send exception / error string to a :data:`SEND_ERROR_KINDS` value.
+
+    Platform-neutral: matches on the lowercased text of ``exc`` (and/or the
+    explicit ``error_text``) against the substrings the major messaging APIs
+    use.  Conservative -- anything unrecognized returns ``"unknown"`` so callers
+    never mistake an unclassified failure for a benign one.  Mirrors Hermes
+    ``classify_send_error``.
+    """
+    parts: list[str] = []
+    if error_text:
+        parts.append(str(error_text))
+    if exc is not None:
+        parts.append(str(exc))
+        parts.append(type(exc).__name__)
+    blob = " ".join(parts).lower()
+    if not blob.strip():
+        return "unknown"
+    if "message_too_long" in blob or "too long" in blob or "message is too long" in blob:
+        return "too_long"
+    if (
+        "can't parse entities" in blob
+        or "cant parse entities" in blob
+        or "can't find end" in blob
+        or "unsupported start tag" in blob
+        or ("entity" in blob and "parse" in blob)
+        or ("bad request" in blob and "entit" in blob)
+    ):
+        return "bad_format"
+    if "forbidden" in blob or "blocked" in blob or "kicked" in blob or "not enough rights" in blob:
+        return "forbidden"
+    if "not found" in blob or "chat not found" in blob or "message to edit not found" in blob:
+        return "not_found"
+    if "rate" in blob and "limit" in blob or "flood" in blob or "too many requests" in blob or "retry after" in blob or "retry_after" in blob:
+        return "rate_limited"
+    if "timeout" in blob or "timed out" in blob or "connection" in blob or "network" in blob or "transient" in blob:
+        return "transient"
+    return "unknown"
 
 
 class BaseAdapter(ABC):
@@ -249,6 +336,15 @@ class BaseAdapter(ABC):
     """
     name: str = "base"
 
+    # ── Delivery capability bits (overridable by subclasses) ──────────
+    # max_message_length: 0 = no per-message limit; >0 = platform char cap.
+    # Drives DeliveryRouter truncation (see encre.gateway.delivery).
+    max_message_length: int = 0
+    # splits_long_messages: True = the adapter chunks long content itself (the
+    # router passes the full payload); False = the router truncates + appends a
+    # "... [truncated]" note (and saves the full output to disk).
+    splits_long_messages: bool = False
+
     # HTTP User-Agent header value for platform API requests.
     _USER_AGENT = "Encre/1.0.0"
 
@@ -277,6 +373,10 @@ class BaseAdapter(ABC):
         self._fatal_error_message: str | None = None
         # Message event handler registered by the caller (usually the session manager)
         self._message_handler: Callable[[MessageEvent], Any] | None = None
+        # Authorization checker + pairing store (injected by AdapterManager;
+        # None = authorization disabled -- all users allowed, legacy behaviour).
+        self._authz: Any = None
+        self._pairing: Any = None
         # Active session tracking (chat_id -> asyncio.Event)
         self._active_sessions: dict[str, asyncio.Event] = {}
         # Messages pending delivery during streaming
@@ -398,6 +498,26 @@ class BaseAdapter(ABC):
         """
         self._message_handler = handler
 
+    def set_authz(self, checker: Any) -> None:
+        """Inject the gateway authorization checker.
+
+        When set, :meth:`handle_message` evaluates the 5-layer check (see
+        :mod:`encre.gateway.authz`) before dispatching; unauthorized messages
+        are rejected with a notice and never reach the agent loop.  ``None``
+        (the default) disables authorization entirely -- legacy behaviour where
+        every user is allowed.
+        """
+        self._authz = checker
+
+    def set_pairing(self, store: Any) -> None:
+        """Inject the DM-pairing store.
+
+        When set, the ``/pair`` slash command is available on this adapter:
+        ``/pair`` (authorized users) mints a code, ``/pair <code>`` redeems
+        one.  ``None`` disables pairing.
+        """
+        self._pairing = store
+
     def _mark_connected(self) -> None:
         """Mark the adapter as connected. Clears any previous fatal error state.
 
@@ -511,6 +631,7 @@ class BaseAdapter(ABC):
         *,
         session_id: str | None = None,
         system_prompt: str | None = None,
+        source: SessionSource | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Submit a prompt and stream the AI response as a sequence of events.
 
@@ -522,6 +643,11 @@ class BaseAdapter(ABC):
             prompt: The user's message text to send to the AI agent.
             session_id: Optional explicit AI session ID for continuing a conversation.
             system_prompt: Optional system prompt for this conversation turn.
+            source: Optional structured routing origin.  When provided, the
+                gateway server resolves the agent session per-conversation via
+                :class:`~encre.gateway.session.SessionStore` (replacing the
+                coarse per-adapter fixed session).  ``session_id`` is ignored
+                when ``source`` is set -- the server owns the resolution.
 
         Yields:
             AgentEvent instances -- typically TextDelta (incremental text) and
@@ -538,6 +664,7 @@ class BaseAdapter(ABC):
             prompt,
             session_id=session_id,
             system_prompt=system_prompt,
+            source=source.to_dict() if source else None,
         ):
             yield event
 
@@ -546,6 +673,8 @@ class BaseAdapter(ABC):
         content: str,
         chat_id: str,
         session_id: str | None = None,
+        *,
+        source: SessionSource | None = None,
     ) -> None:
         """Process an incoming message by streaming the AI response and sending it back.
 
@@ -556,20 +685,29 @@ class BaseAdapter(ABC):
         4. Sends the complete response back to the user via send()
 
         This method is typically called by platform-specific message handlers
-        after receiving and parsing an incoming message event.
+        after receiving and parsing an incoming message event.  New adapters
+        should prefer :meth:`handle_message` (which builds the source and runs
+        the two-level guard before delegating here); this method remains as the
+        legacy adapter-driven path.
 
         Args:
             content: The message text to send to the AI agent.
             chat_id: The platform chat/channel ID to send the response to.
             session_id: Optional explicit session ID. Falls back to the user's
-                stored session for this adapter if not provided.
+                stored session for this adapter if not provided.  Ignored when
+                ``source`` is set (the server resolves the session per-conversation).
+            source: Optional structured routing origin.  When provided, the
+                gateway server resolves the agent session via
+                :class:`~encre.gateway.session.SessionStore` instead of using
+                ``session_id`` / the user-to-session map.
         """
         await self._ensure_gateway()
-        session_id = session_id or self.get_session(chat_id)
+        if session_id is None and source is None:
+            session_id = self.get_session(chat_id)
         logger.info("[%s] process_with_stream chat=%s session=%s content=%.60s",
                      self.name, chat_id, session_id or "(none)", content)
         full_response: list[str] = []
-        async for event in self.submit_stream(content, session_id=session_id):
+        async for event in self.submit_stream(content, session_id=session_id, source=source):
             if isinstance(event, TextDelta) and event.text:
                 full_response.append(event.text)
                 await self.on_text_delta(chat_id, event.text)
@@ -675,6 +813,23 @@ class BaseAdapter(ABC):
             be returned via SendResult with retryable=True.
         """
         pass
+
+    async def get_chat_info(self, chat_id: str) -> dict[str, Any]:
+        """Return metadata about a chat (name, type).
+
+        Aligns with the Hermes ``BasePlatformAdapter.get_chat_info`` contract.
+        The base implementation returns a minimal ``{"name", "type"}`` derived
+        from the chat id; adapters that can resolve real chat metadata
+        (Telegram ``getChat``, Discord channel fetch, ...) should override.
+
+        Args:
+            chat_id: The platform-specific chat/channel/group identifier.
+
+        Returns:
+            Dict with at least ``name`` (human-readable) and ``type``
+            (``"dm"`` / ``"group"`` / ``"channel"``).
+        """
+        return {"name": chat_id, "type": "dm"}
 
     async def edit_message(
         self,
@@ -831,6 +986,254 @@ class BaseAdapter(ABC):
             self._last_push_chat_id = event.chat_id
         if self._message_handler:
             self._message_handler(event)
+
+    # Slash commands that must reach the handler even while a session is
+    # actively processing (they are NOT queued by the Level-1 guard).  Mirrors
+    # the Hermes bypass set (/stop /new /status /approve /deny /queue /cancel).
+    _BYPASS_COMMANDS: frozenset[str] = frozenset(
+        {"stop", "new", "reset", "status", "approve", "deny", "queue", "cancel", "restart"}
+    )
+
+    async def handle_message(self, event: MessageEvent) -> None:
+        """Canonical inbound entry point (aligns with Hermes ``handle_message``).
+
+        Replaces the legacy ``process_with_stream(content, chat_id)`` call site
+        in adapter listeners.  It:
+
+        1. Normalizes the message into a :class:`SessionSource` (synthesizing
+           one from ``chat_id``/``user_id`` when the adapter did not set it).
+        2. Runs the **Level-1 message guard**: if a session is already active
+           for this ``session_key`` and the message is not a bypass command,
+           it is queued in ``_pending_messages`` (and the active session's
+           interrupt event is set) instead of being dropped or rejected.
+        3. Dispatches: if a message handler is registered (gateway-driven
+           mode, set via :meth:`set_message_handler`), await it; otherwise
+           fall back to the legacy adapter-driven
+           :meth:`process_with_stream`, now forwarding ``source`` so the
+           gateway server routes per-conversation via
+           :class:`~encre.gateway.session.SessionStore`.
+        4. On completion, drains any queued messages for this session.
+
+        Adapters should migrate their inbound listeners from
+        ``await self.process_with_stream(content, chat_id)`` to
+        ``await self.handle_message(event)``.  ``process_with_stream`` stays
+        available as the legacy path, so migration is incremental and
+        non-breaking.
+
+        Args:
+            event: The normalized message event to route.
+        """
+        # Track the most recent non-internal chat for push delivery.
+        if not event.internal and event.chat_id:
+            self._last_push_chat_id = event.chat_id
+
+        # 1. Normalize source.
+        source = event.source
+        if source is None:
+            source = SessionSource(
+                platform=self.name,
+                chat_id=event.chat_id or "",
+                chat_type="dm",
+                user_id=event.user_id,
+            )
+            event.source = source
+
+        # 1a. /pair slash command -- handled before the authorization check so
+        #     an unauthorized user can redeem a code to become authorized.
+        if event.is_command() and event.get_command() == "pair":
+            await self._handle_pair_command(event, source)
+            return
+
+        # 1b. Authorization check -- reject unauthorized messages before the
+        #     two-level guard so they never reach the agent loop.
+        if self._authz is not None:
+            result = self._authz.is_authorized(source, self.name)
+            if not result.authorized:
+                logger.info(
+                    "[%s] denying %s:%s -- %s",
+                    self.name, source.platform, source.user_id, result.reason,
+                )
+                if event.chat_id:
+                    try:
+                        await self.send(event.chat_id, f"⛔ {result.reason}")
+                    except Exception as e:
+                        logger.warning("[%s] failed to send reject notice: %s", self.name, e)
+                return
+
+        # 1c. Slash-command decision hooks (command:<canonical> + command:*).
+        #     Handlers may return {"decision": ...} to control dispatch:
+        #       deny    -> reject the command (send a notice, abort).
+        #       handled -> the hook already responded; abort (no agent run).
+        #       rewrite -> replace the message text (the hook's "text") and
+        #                  continue with the rewritten event.
+        #     "allow" / None -> proceed normally.
+        if event.is_command():
+            action, new_event = await self._run_command_hooks(event, source, event.get_command() or "")
+            if action == "abort":
+                return
+            if new_event is not None:
+                event = new_event
+
+        session_key = build_session_key(source)
+
+        # 2. Level-1 guard: queue if a session is active and this is not a
+        #    bypass command.
+        is_bypass = bool(
+            event.is_command() and event.get_command() in self._BYPASS_COMMANDS
+        )
+        if session_key in self._active_sessions and not is_bypass:
+            queue = self._pending_messages.setdefault(session_key, [])
+            if isinstance(queue, list):
+                queue.append(event)
+            else:
+                # Legacy single-event slot -- normalize to a list.
+                self._pending_messages[session_key] = [queue, event]
+            logger.info(
+                "[%s] queueing message for active session %s (pending=%d)",
+                self.name, session_key, len(self._pending_messages[session_key]),
+            )
+            interrupt_evt = self._active_sessions.get(session_key)
+            if interrupt_evt is not None:
+                interrupt_evt.set()
+            return
+
+        # 3. Dispatch.
+        self._active_sessions[session_key] = asyncio.Event()
+        try:
+            if self._message_handler is not None:
+                await self._message_handler(event)
+            else:
+                await self.process_with_stream(
+                    event.text,
+                    event.chat_id or "",
+                    source=source,
+                )
+        finally:
+            # 4. Session no longer active; drain queued messages.
+            self._active_sessions.pop(session_key, None)
+            pending = self._pending_messages.pop(session_key, None)
+            if pending:
+                if isinstance(pending, MessageEvent):
+                    pending = [pending]
+                for queued in pending:
+                    _t = asyncio.ensure_future(self.handle_message(queued))
+                    self._background_tasks.add(_t)
+                    _t.add_done_callback(self._background_tasks.discard)
+
+    async def _handle_pair_command(self, event: MessageEvent, source: SessionSource) -> None:
+        """Handle the ``/pair`` slash command (DM-pairing flow).
+
+        - ``/pair`` (no arg): mint a new pairing code.  Only an already-authorized
+          user may mint (when authorization is enabled); otherwise the code could
+          be self-issued by an attacker.
+        - ``/pair <code>``: redeem the code, binding the sender's
+          ``(platform, user_id)`` to the authorized set.
+
+        No-op (with a notice) when pairing is not configured on this gateway.
+        """
+        chat_id = event.chat_id
+        if self._pairing is None:
+            if chat_id:
+                await self.send(chat_id, "Pairing is not enabled on this gateway.")
+            return
+        args = event.get_command_args().strip()
+        if not args:
+            # Mint -- caller must be authorized (when authz is on).
+            if self._authz is not None:
+                r = self._authz.is_authorized(source, self.name)
+                if not r.authorized:
+                    if chat_id:
+                        await self.send(chat_id, "⛔ Not authorized to mint pairing codes.")
+                    return
+            code = self._pairing.create_code()
+            if chat_id:
+                await self.send(
+                    chat_id,
+                    f"Pairing code: {code}\nShare it with the user to authorize.",
+                )
+            return
+        # Redeem.
+        ok = self._pairing.redeem(args, source.platform, source.user_id or "")
+        if chat_id:
+            if ok:
+                await self.send(chat_id, "✅ Paired! You're now authorized.")
+            else:
+                await self.send(chat_id, "❌ Invalid or expired pairing code.")
+
+    async def _run_command_hooks(
+        self,
+        event: MessageEvent,
+        source: SessionSource,
+        canonical: str,
+    ) -> tuple[str, MessageEvent | None]:
+        """Run the ``command:<canonical>`` + ``command:*`` decision hooks.
+
+        Returns ``(action, new_event)``:
+        - ``("continue", None)`` -- no hook decided; proceed with ``event``.
+        - ``("continue", new_event)`` -- a hook rewrote the message; proceed
+          with ``new_event``.
+        - ``("abort", None)`` -- a hook denied or handled the command; the
+          caller must return without dispatching.
+
+        Handler return shape: ``{"decision": "allow"|"deny"|"handled"|"rewrite",
+        "message": <notice>, "text": <rewritten text>}``.  The first decisive
+        non-allow value wins (deny > handled > rewrite > allow).
+        """
+        from encre.gateway.hooks import get_hook_registry
+
+        hooks = get_hook_registry()
+        ctx = {
+            "platform": source.platform,
+            "chat_id": source.chat_id,
+            "user_id": source.user_id,
+            "command": canonical,
+            "args": event.get_command_args(),
+            "text": event.text,
+        }
+        try:
+            # emit_collect("command:<canonical>") resolves both the exact
+            # handler and the "command:*" wildcard (via _resolve_handlers),
+            # so a single call covers both -- no separate command:* emit.
+            results = await hooks.emit_collect(f"command:{canonical}", ctx)
+        except Exception as e:
+            logger.warning("[%s] command hook error: %s", self.name, e)
+            return ("continue", None)
+
+        new_text: str | None = None
+        for res in results:
+            if not isinstance(res, dict):
+                continue
+            decision = str(res.get("decision", "")).lower()
+            if decision == "deny":
+                notice = str(res.get("message", "Command denied"))
+                if event.chat_id:
+                    await self.send(event.chat_id, f"⛔ {notice}")
+                return ("abort", None)
+            if decision == "handled":
+                # The hook already responded -- abort.
+                return ("abort", None)
+            if decision == "rewrite":
+                rewritten = res.get("text")
+                if isinstance(rewritten, str) and rewritten:
+                    new_text = rewritten
+        if new_text is not None:
+            rewritten_event = MessageEvent(
+                text=new_text,
+                message_type=event.message_type,
+                message_id=event.message_id,
+                chat_id=event.chat_id,
+                user_id=event.user_id,
+                reply_to_message_id=event.reply_to_message_id,
+                reply_to_text=event.reply_to_text,
+                media_urls=event.media_urls,
+                media_types=event.media_types,
+                raw=event.raw,
+                timestamp=event.timestamp,
+                internal=event.internal,
+                source=event.source,
+            )
+            return ("continue", rewritten_event)
+        return ("continue", None)
 
     @staticmethod
     def build_user_agent() -> str:

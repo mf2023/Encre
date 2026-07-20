@@ -57,7 +57,7 @@ except ImportError:
     aiohttp = None
     web = None
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.sms")
 
@@ -370,15 +370,27 @@ class SmsAdapter(BaseAdapter):
             chat_id=from_number,
             user_id=from_number,
             raw=form,
+            source=SessionSource(
+                platform=self.name,
+                chat_id=from_number,
+                chat_type="dm",
+                user_id=from_number,
+            ),
         )
 
-        self.dispatch_message(event)
-
-        task = asyncio.create_task(self._process_chat(from_number, text))
+        task = asyncio.create_task(self._dispatch_event(event))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
         return twiml
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and stream the response to chat."""

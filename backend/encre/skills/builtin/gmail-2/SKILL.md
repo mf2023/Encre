@@ -10,29 +10,29 @@ context: inline
 ---
 
 ## Gmail 2
-# Gmail 邮件（暂不可用）
+# Gmail (Currently Unavailable)
 
-> **状态：暂不可用** — Gmail 账号尚未链接，该工具暂时不可使用。如需启用，请通过 `mx_link` 工具链接 Gmail 账号（app: `gmail`）。
+> **Status: Currently Unavailable** — Gmail account not yet linked, this tool is temporarily unavailable. To enable, link your Gmail account via the `mx_link` tool (app: `gmail`).
 
-通过 `mx_gmail` 工具管理 Gmail 邮箱：读取、搜索、发送邮件，管理标签。
+Manage Gmail inbox via the `mx_gmail` tool: read, search, send emails, manage labels.
 
-## 前置条件
+## Prerequisites
 
-1. **安装插件**: `Encre plugins install Encre-morphixai`
-2. **获取 API Key**: 访问 [morphix.app/api-keys](https://morphix.app/api-keys) 生成 `mk_xxxxxx` 密钥
-3. **配置环境变量**: `export MORPHIXAI_API_KEY="mk_your_key_here"`
-4. **链接账号**: 访问 [morphix.app/connections](https://morphix.app/connections) 链接 Gmail 账号，或通过 `mx_link` 工具链接（app: `gmail`）
+1. **Install plugin**: `Encre plugins install Encre-morphixai`
+2. **Get API Key**: Visit [morphix.app/api-keys](https://morphix.app/api-keys) to generate a `mk_xxxxxx` key
+3. **Set environment variable**: `export MORPHIXAI_API_KEY="mk_your_key_here"`
+4. **Link account**: Visit [morphix.app/connections](https://morphix.app/connections) to link your Gmail account, or link via the `mx_link` tool (app: `gmail`)
 
-## 核心操作
+## Core Operations
 
-### 查看用户信息
+### View User Info
 
 ```
 mx_gmail:
   action: get_profile
 ```
 
-### 列出邮件
+### List Emails
 
 ```
 mx_gmail:
@@ -40,9 +40,9 @@ mx_gmail:
   max_results: 10
 ```
 
-> `list_messages` 只返回邮件 ID 列表，需用 `get_message` 获取完整内容。
+> `list_messages` only returns a list of email IDs; use `get_message` to retrieve full content.
 
-### 查看邮件详情
+### View Email Details
 
 ```
 mx_gmail:
@@ -50,7 +50,7 @@ mx_gmail:
   message_id: "18dxxxxxxxx"
 ```
 
-### 搜索邮件
+### Search Emails
 
 ```
 mx_gmail:
@@ -59,15 +59,15 @@ mx_gmail:
   max_results: 5
 ```
 
-> Gmail 搜索语法支持：
-> - `from:` / `to:` — 发件人/收件人
-> - `subject:` — 主题
-> - `is:unread` / `is:starred` — 未读/星标
-> - `newer_than:7d` / `older_than:30d` — 时间范围
-> - `has:attachment` — 有附件
-> - `label:` — 标签
+> Gmail search syntax supports:
+> - `from:` / `to:` — Sender / Recipient
+> - `subject:` — Subject
+> - `is:unread` / `is:starred` — Unread / Starred
+> - `newer_than:7d` / `older_than:30d` — Time range
+> - `has:attachment` — Has attachments
+> - `label:` — Label
 
-### 发送邮件
+### Send Email
 
 ```
 mx_gmail:
@@ -78,14 +78,14 @@ mx_gmail:
   cc: "manager@company.com"
 ```
 
-### 列出标签
+### List Labels
 
 ```
 mx_gmail:
   action: list_labels
 ```
 
-### 标记已读
+### Mark as Read
 
 ```
 mx_gmail:
@@ -93,7 +93,7 @@ mx_gmail:
   message_id: "18dxxxxxxxx"
 ```
 
-### 删除邮件（移入回收站）
+### Delete Email (Move to Trash)
 
 ```
 mx_gmail:
@@ -101,27 +101,27 @@ mx_gmail:
   message_id: "18dxxxxxxxx"
 ```
 
-## 常见工作流
+## Common Workflows
 
-### 查看未读邮件
+### View Unread Emails
 
 ```
 1. mx_gmail: list_messages, q: "is:unread", max_results: 5
-2. mx_gmail: get_message, message_id: "xxx"  → 逐条查看
-3. mx_gmail: mark_as_read, message_id: "xxx"  → 标记已读
+2. mx_gmail: get_message, message_id: "xxx"  → view one by one
+3. mx_gmail: mark_as_read, message_id: "xxx"  → mark as read
 ```
 
-### 搜索并回复（通过发送新邮件）
+### Search and Reply (by Sending New Email)
 
 ```
 1. mx_gmail: search_messages, query: "from:client@example.com"
-2. mx_gmail: get_message → 查看内容
+2. mx_gmail: get_message → view content
 3. mx_gmail: send_mail, to: "client@example.com", subject: "Re: xxx"
 ```
 
-## 注意事项
+## Notes
 
-- `list_messages` 返回的是邮件 ID 列表，需用 `get_message` 获取完整内容
-- 发送邮件内容为纯文本格式
-- Gmail 搜索语法功能强大，建议充分利用
-- `account_id` 参数通常省略，工具自动检测已链接的 Gmail 账号
+- `list_messages` returns a list of email IDs; use `get_message` to retrieve full content
+- Sent email content is plain text
+- Gmail search syntax is powerful, make full use of it
+- The `account_id` parameter is usually omitted; the tool auto-detects the linked Gmail account

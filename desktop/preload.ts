@@ -166,6 +166,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("switch-session", handler);
     return () => { ipcRenderer.removeListener("switch-session", handler); };
   },
+  onSwitchWorkspace: (callback: (path: string) => void): (() => void) => {
+    const handler = (_event: any, path: string) => callback(path);
+    ipcRenderer.on("switch-workspace", handler);
+    return () => { ipcRenderer.removeListener("switch-workspace", handler); };
+  },
 
   // Browser
   browserClearData: (): Promise<{ success: boolean; error?: string }> =>

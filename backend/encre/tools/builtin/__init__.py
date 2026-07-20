@@ -75,6 +75,7 @@ from encre.tools.builtin.platform_api import (
     EncreFineTuneApiTool,
 )
 from encre.tools.builtin.lint_format import EncreLintFormatTool
+from encre.tools.builtin.manage import EncreManageTool
 from encre.tools.builtin.lsp import EncreLSPTool
 from encre.tools.builtin.media import EncreMediaTool
 from encre.tools.builtin.memory import (
@@ -143,6 +144,7 @@ __all__ = [
     "EncreInfoTool",
     "EncreLSPTool",
     "EncreLintFormatTool",
+    "EncreManageTool",
     "EncreMediaTool",
     "EncreMemoryCreateTool",
     "EncreMemoryDeleteTool",

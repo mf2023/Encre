@@ -51,7 +51,7 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
     aiohttp = None
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.homeassistant")
 
@@ -365,9 +365,17 @@ class HomeAssistantAdapter(BaseAdapter):
             user_id="homeassistant",
             raw=event_data,
             timestamp=datetime.now(),
+            source=SessionSource(
+                platform=self.name,
+                chat_id="ha_events",
+                chat_type="dm",
+                user_id="homeassistant",
+            ),
         )
 
-        self.dispatch_message(msg_event)
+        task = asyncio.create_task(self._dispatch_event(msg_event))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     @staticmethod
     def _format_state_change(
@@ -429,6 +437,9 @@ class HomeAssistantAdapter(BaseAdapter):
         )
 
     # ── Outbound messaging ─────────────────────────────────────────────────
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        await self.handle_message(event)
 
     async def send(
         self,

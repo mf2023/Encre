@@ -224,6 +224,15 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
         "category": "meta",
         "triggers": ["find tool", "search tools", "discover tool"],
     },
+    "manage": {
+        "category": "meta",
+        "triggers": [
+            "install tool", "register tool", "create tool", "new tool",
+            "god tool", "manage", "install agent", "register agent",
+            "install skill", "register skill",
+            "install mcp", "connect mcp", "mcp server",
+        ],
+    },
     "question": {
         "category": "communication",
         "triggers": ["ask user", "question", "clarify", "confirm intent", "gather context"],
@@ -286,6 +295,7 @@ BASE_TOOLS: frozenset[str] = frozenset({
     "web_fetch",
     "skill",
     "agent",
+    "manage",
     "question",
     "memory_create",
     "memory_read",

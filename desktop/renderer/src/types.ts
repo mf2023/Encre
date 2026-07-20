@@ -107,6 +107,7 @@ export type ServerEvent =
   | GatewayStatusEvent
   | RunQueued
   | AdapterTestResultEvent
+  | WechatScanResultEvent
   | AutomationJobsList
   | AutomationJobHistory
   | AutomationJobCreated
@@ -338,6 +339,15 @@ export interface AdapterTestResultEvent {
   message: string;
 }
 
+/** Response from a WeChat QR code scan request.
+ *  Contains the QR code URL for the frontend to display. */
+export interface WechatScanResultEvent {
+  type: "wechat_scan_result";
+  qrcode_url: string;
+  success: boolean;
+  message: string;
+}
+
 export interface AutomationJobsList {
   type: "automation_jobs_list";
   jobs: any[];
@@ -450,6 +460,7 @@ export type ClientMessage =
   | ClientDeleteIndex
   | ClientGetUsageStats
   | ClientTestAdapter
+  | ClientWechatScan
   | ClientAutomationListJobs
   | ClientAutomationGetHistory
   | ClientAutomationUpdateJob
@@ -474,6 +485,11 @@ export interface ClientTestAdapter {
   type: "test_adapter";
   adapter_id: string;
   config: Record<string, unknown>;
+}
+
+export interface ClientWechatScan {
+  type: "wechat_scan";
+  adapter_id: string;
 }
 
 export interface ClientAutomationListJobs {
@@ -857,6 +873,27 @@ export interface WorkspaceRemoved {
   workspaces: WorkspaceEntry[];
 }
 
+/** Structured routing origin of a message (aligns with Hermes SessionSource).
+ *
+ *  Carried on sessions that originated from a platform adapter (Telegram,
+ *  Discord, ...); undefined for desktop/normal sessions.  The frontend renders
+ *  a platform badge from it when present.  Mirrors the wire shape of
+ *  ``encre.gateway.session.SessionSource.to_dict()``.
+ */
+export interface SessionSource {
+  platform: string;
+  chat_id: string;
+  chat_type: "dm" | "group" | "channel" | "thread" | "forum";
+  chat_name?: string | null;
+  user_id?: string | null;
+  user_name?: string | null;
+  thread_id?: string | null;
+  chat_topic?: string | null;
+  user_id_alt?: string;
+  chat_id_alt?: string;
+  scope_id?: string;
+}
+
 export interface SessionEntryData {
   session_id: string;
   created_at: number;
@@ -865,6 +902,10 @@ export interface SessionEntryData {
   preview?: string;
   name?: string;
   channel?: string;
+  /** Structured platform origin (Phase 5).  Undefined for desktop/normal
+   *  sessions; populated for adapter-sourced sessions.  Falls back to
+   *  ``channel`` for backward compatibility when absent. */
+  source?: SessionSource;
   message_count?: number;
   metadata?: Record<string, unknown>;
 }
@@ -872,6 +913,8 @@ export interface SessionEntryData {
 export interface SessionsList {
   type: "sessions_list";
   sessions: SessionEntryData[];
+  /** Snapshot mode, used to reject a response that arrived after a mode switch. */
+  channel?: "normal" | "iwork";
 }
 
 export interface SessionsAll {

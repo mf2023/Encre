@@ -309,13 +309,26 @@ class TestServerProtocol:
         assert msg is not None
 
     def test_encode_server_message(self):
-        """Test: Encode server message."""
+        """Test: Encode server message (plaintext path + encrypted round-trip)."""
+        import json
+
+        from encre.crypto import decrypt
         from encre.server.protocol import encode_server_message
-        encoded = encode_server_message("text_delta", text="Hello!")
-        # Verify: isinstance(encoded, str)
-        assert isinstance(encoded, str)
-        # Verify: "Hello!" in encoded
-        assert "Hello!" in encoded
+
+        # Plaintext path (encrypt=False) keeps the content readable on the wire.
+        plaintext = encode_server_message("text_delta", text="Hello!", encrypt=False)
+        assert isinstance(plaintext, str)
+        assert "Hello!" in plaintext
+
+        # Encrypted path (the default) round-trips via decrypt: the ciphertext
+        # is opaque (the content is NOT visible) and decrypting recovers the
+        # exact payload.  This guards against a regression where encryption
+        # produces undecryptable output.
+        encrypted = encode_server_message("text_delta", text="Hello!")
+        assert isinstance(encrypted, str)
+        assert "Hello!" not in encrypted
+        recovered = json.loads(decrypt(encrypted))
+        assert recovered == {"type": "text_delta", "text": "Hello!"}
 
 
 # ===========================================================================
@@ -379,12 +392,15 @@ class TestSessionManager:
         assert len(sessions) == 1
 
     def test_session_manager_remove(self):
-        """Test: Session manager remove."""
+        """Test: Session manager remove (remove_session is async -- awaiting
+        it must drop the session from the active set)."""
+        import asyncio
+
         from encre.config import EncreConfig
         from encre.server.session_manager import SessionManager
         sm = SessionManager()
         info = sm.create_session(EncreConfig(backend_type="openai", api_key="sk-fake"))
-        sm.remove_session(info.session_id)
+        asyncio.run(sm.remove_session(info.session_id))
         # Verify: sm.active_count == 0
         assert sm.active_count == 0
         # Verify: sm.get_session(info.session_id) is None

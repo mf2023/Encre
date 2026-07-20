@@ -2665,6 +2665,7 @@ class EncreLoop:
             #    right after the base system prompt -- without rewriting the
             #    prefix, so the cached base prompt stays stable.
             _system_msgs = self._steer_queue.drain_system()
+            _injected_system_entries: list[dict[str, str]] = []
             if _system_msgs:
                 # Insert after the leading system message(s) but before the
                 # user/assistant history.  ``backend_messages`` typically
@@ -2676,10 +2677,9 @@ class EncreLoop:
                     else:
                         break
                 for _offset, _sm in enumerate(_system_msgs):
-                    backend_messages.insert(
-                        _insert_at + _offset,
-                        {"role": "system", "content": _sm},
-                    )
+                    _entry = {"role": "system", "content": _sm}
+                    backend_messages.insert(_insert_at + _offset, _entry)
+                    _injected_system_entries.append(_entry)
                 logger.info(
                     "[run] injected %d mid-conversation system message(s) turn=%d",
                     len(_system_msgs), self.session.turn_count,
@@ -2687,8 +2687,8 @@ class EncreLoop:
 
             # 2. Steer injection: drain any queued /steer instructions
             _steer_msgs = self._steer_queue.drain()
-            if _steer_msgs:
-                _steer_text = build_steer_injection(_steer_msgs)
+            _steer_text = build_steer_injection(_steer_msgs)
+            if _steer_text:
                 backend_messages.append({"role": "user", "content": _steer_text})
                 logger.info("[run] injected %d steer instruction(s) turn=%d",
                             len(_steer_msgs), self.session.turn_count)
@@ -2700,7 +2700,7 @@ class EncreLoop:
             backend_messages = self.compact_engine.sanitize(backend_messages)
 
             # 4. Pre-API token pressure check
-            _context_window = getattr(self.backend, "context_window", 128000)
+            _context_window = self.backend.context_window_size()
             _pressure = check_token_pressure(
                 backend_messages, _context_window, _slot_budget if '_slot_budget' in dir() else self.config.max_tokens,
             )
@@ -2723,6 +2723,19 @@ class EncreLoop:
                             self.session.active_branch_id, _compacted
                         )
                         backend_messages = self.session.get_context_messages()
+                        # Re-inject system messages that were lost during session refresh
+                        if _injected_system_entries:
+                            _reinsert_at = 0
+                            for _i, _m in enumerate(backend_messages):
+                                if _m.get("role") == "system":
+                                    _reinsert_at = _i + 1
+                                else:
+                                    break
+                            for _offset, _entry in enumerate(_injected_system_entries):
+                                backend_messages.insert(_reinsert_at + _offset, dict(_entry))
+                        # Re-inject steer messages that were lost during session refresh
+                        if _steer_text:
+                            backend_messages.append({"role": "user", "content": _steer_text})
                         logger.info("[run] pre-API compact succeeded turn=%d", self.session.turn_count)
                 except Exception as _pc_err:
                     logger.warning("[run] pre-API compact failed: %s", _pc_err)
@@ -3014,6 +3027,12 @@ class EncreLoop:
                                     self._rsm.mark_recovered()
                                 _llm_span.set_attribute("llm.reactive_compact", "succeeded")
                                 _llm_span.end()
+                                # Refresh memory so the model sees current state on retry
+                                if self.memory_system is not None:
+                                    try:
+                                        self.memory_system.refresh()
+                                    except Exception:
+                                        logger.warning("[reactive] memory refresh failed", exc_info=True)
                                 # Don't yield error -- next turn picks up compacted messages
                                 continue
                         except Exception as _ce:
@@ -4723,7 +4742,7 @@ class EncreLoop:
             _post_tool_msgs = self.session.get_context_messages()
             if should_post_tool_compact(
                 _post_tool_msgs,
-                getattr(self.backend, "context_window", 128000),
+                self.backend.context_window_size(),
                 self.config.max_tokens,
             ):
                 logger.info(
@@ -4743,6 +4762,12 @@ class EncreLoop:
                             self.session.active_branch_id, _post_compacted
                         )
                         logger.info("[run] post-tool compact succeeded turn=%d", self.session.turn_count)
+                        # Refresh memory so next turn sees any new memories written this turn
+                        if self.memory_system is not None:
+                            try:
+                                self.memory_system.refresh()
+                            except Exception:
+                                logger.warning("[run] post-tool memory refresh failed", exc_info=True)
                 except Exception as _ptc_err:
                     logger.warning("[run] post-tool compact failed: %s", _ptc_err)
 

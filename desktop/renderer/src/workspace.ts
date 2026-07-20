@@ -30,7 +30,7 @@
  * export/delete. Also exposes `syncFirstNavActive` for sidebar nav state.
  */
 
-import { getState, subscribe, setActiveWorkspace, setSessionId, clearMessages, setWorkspaceMode } from "./state.js";
+import { getState, subscribe, setActiveWorkspace, setSessionId, setWorkspaceMode } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
 import { t, onLocaleChange, applyI18n } from "./i18n.js";
@@ -38,6 +38,7 @@ import { Dialog } from "./dialog.js";
 import { TransitionHelper } from "./transition-helper.js";
 import type { WorkspaceEntry, SessionEntryData } from "./types.js";
 import { showContextMenu } from "./context-menu.js";
+import { getWorkspaceSessionGroups, normalizeWorkspacePath } from "./session-projection.js";
 
 /**
  * Manages the workspace tree and iWork mode transitions.
@@ -54,6 +55,7 @@ export class Workspace {
   private _lastWsTreeJson: string = "";
   private _lastSid: string = "";
   private _transitioning = false;
+  private pendingWorkspacePath = "";
   /** Public read-only access to the workspace mode flag. */
   public get isInWorkspaceModePublic(): boolean {
     return this.isInWorkspaceMode;
@@ -159,6 +161,18 @@ export class Workspace {
     }
   }
 
+  /** Opens a workspace from an external entry point, such as the tray. */
+  public async open(path: string): Promise<void> {
+    if (!path || this._transitioning) return;
+    this.ensureExpanded(path);
+    if (!this.isInWorkspaceMode) {
+      this.pendingWorkspacePath = path;
+      await this.enterWorkspaceMode();
+      return;
+    }
+    this.activate(path);
+  }
+
   /** Public exit — used by the header mode switch to leave workspace mode
    *  with the same animation pipeline as the internal toggle button. */
   async exit(): Promise<void> {
@@ -257,10 +271,16 @@ export class Workspace {
     });
     if (parentEnter) parentEnter.style.position = "";
 
-    // Activate the first workspace if none active
     const workspaces = getState().workspaces;
     const activeWs = getState().activeWorkspace;
-    if ((window as any).__pendingTrayResume) {
+    const pendingWorkspacePath = this.pendingWorkspacePath;
+    this.pendingWorkspacePath = "";
+    if (pendingWorkspacePath) {
+      setActiveWorkspace(pendingWorkspacePath);
+      const requestId = crypto.randomUUID();
+      setRequestedSessionId("", requestId);
+      send({ type: "open_workspace", path: pendingWorkspacePath, request_id: requestId });
+    } else if ((window as any).__pendingTrayResume) {
       // Do nothing — onSwitchSession already handles opening the correct workspace.
       // Avoid overwriting _requestedSessionRequestId set by that handler.
     } else if (!activeWs && workspaces.length > 0 && workspaces[0].path) {
@@ -465,27 +485,26 @@ export class Workspace {
     if (!this.isInWorkspaceMode || !this.treeListEl || this._exiting) return;
 
     const s = getState();
-    const workspaces = s.workspaces.filter((w) => w.path && w.name);
+    const workspaceGroups = getWorkspaceSessionGroups(s.workspaces, s.sessionsList);
     const activeWs = s.activeWorkspace;
 
-    if (workspaces.length === 0) {
+    if (workspaceGroups.length === 0) {
       this.treeListEl.innerHTML = `<div class="workspace-tree-empty">${t("workspace.empty")}</div>`;
       return;
     }
 
     let html = "";
-    for (const ws of workspaces) {
+    for (const { workspace: ws, sessions: wsSessions } of workspaceGroups) {
       const isExpanded = this.expandedWsPaths.has(ws.path);
       const isActive = ws.path === activeWs ? " active" : "";
-      const expandIcon = isExpanded ? "chevron-down" : "chevron-right";
-
-      // Count sessions for this workspace from the full sessions list
-      const wsSessions = s.sessionsList.filter(sess => this.belongsToWorkspace(sess, ws.path));
-
       html += `<div class="ws-tree-node" data-ws-path="${this.esc(ws.path)}">
         <div class="ws-tree-node-header${isActive}" data-ws-path="${this.esc(ws.path)}">
           ${this.batchMode ? `<input type="checkbox" class="ws-checkbox" data-path="${this.esc(ws.path)}" ${this.selectedPaths.has(ws.path) ? "checked" : ""} />` : ""}
-          <i data-lucide="${expandIcon}" class="lucide lucide-xs ws-chevron"></i>
+          <button type="button" class="ws-expand-button"
+            aria-label="${isExpanded ? "Collapse workspace sessions" : "Expand workspace sessions"}"
+            aria-expanded="${isExpanded}">
+            <i data-lucide="chevron-right" class="lucide lucide-xs ws-chevron${isExpanded ? " open" : ""}"></i>
+          </button>
           <span class="ws-name">${this.esc(ws.name)}</span>
           <span class="ws-session-count">${wsSessions.length}</span>
         </div>
@@ -528,6 +547,20 @@ export class Workspace {
   private bindTreeEvents(): void {
     if (!this.treeListEl) return;
 
+    this.treeListEl.querySelectorAll(".ws-expand-button").forEach((button) => {
+      button.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this._exiting || this._transitioning) return;
+        const path = button.closest<HTMLElement>(".ws-tree-node-header")?.dataset.wsPath;
+        if (!path) return;
+        this.toggleExpand(path);
+        if (!this.batchMode && getState().activeWorkspace !== path) {
+          this.activate(path);
+        }
+      });
+    });
+
     this.treeListEl.querySelectorAll(".ws-tree-node-header").forEach((el) => {
       el.addEventListener("click", (e) => {
         if (this._exiting || this._transitioning) return;
@@ -535,11 +568,6 @@ export class Workspace {
         if (!path) return;
 
         if (this.batchMode) {
-          // The chevron still expands/collapses even in batch mode.
-          if ((e.target as HTMLElement).closest(".ws-chevron")) {
-            this.toggleExpand(path);
-            return;
-          }
           const cb = (e.target as HTMLElement).closest<HTMLInputElement>(".ws-checkbox");
           if (!cb) {
             const checkbox = el.querySelector<HTMLInputElement>(".ws-checkbox");
@@ -552,17 +580,6 @@ export class Workspace {
         }
         if ((e.target as HTMLElement).closest("input")) return;
 
-        // Chevron click: only toggle collapse/expand, don't activate
-        if ((e.target as HTMLElement).closest(".ws-chevron")) {
-          this.toggleExpand(path);
-          return;
-        }
-
-        if (this.expandedWsPaths.has(path)) {
-          this.expandedWsPaths.delete(path);
-        } else {
-          this.expandedWsPaths.add(path);
-        }
         this.activate(path);
       });
       el.addEventListener("contextmenu", (e) => {
@@ -793,17 +810,10 @@ export class Workspace {
     return el.innerHTML;
   }
 
-  /** Normalize a file path for comparison (case-insensitive on Windows). */
-  private normalizePath(p: string): string {
-    // On Linux/Mac the filesystem is case-sensitive; on Windows it's not.
-    // Lowercasing is a safe cross-platform heuristic.
-    return p.replace(/\\/g, "/").toLowerCase();
-  }
-
   /** Check whether a session belongs to a given workspace path. */
   private belongsToWorkspace(sess: SessionEntryData, wsPath: string): boolean {
-    const owner = (sess.metadata?.workspace || sess.metadata?.workspace_path || "") as string;
-    return this.normalizePath(owner) === this.normalizePath(wsPath);
+    const owner = String(sess.metadata?.workspace || sess.metadata?.workspace_path || "");
+    return normalizeWorkspacePath(owner) === normalizeWorkspacePath(wsPath);
   }
 
   /** Build a short badge label for the session's channel/mode. */

@@ -874,11 +874,18 @@
           adapterSaved: "\u5DF2\u4FDD\u5B58",
           adapterTest: "\u6D4B\u8BD5\u8FDE\u63A5",
           adapterTesting: "\u6B63\u5728\u6D4B\u8BD5\u8FDE\u63A5",
+          wechatScan: "\u626B\u7801\u8FDE\u63A5\u5FAE\u4FE1",
+          wechatScanning: "\u6B63\u5728\u83B7\u53D6\u4E8C\u7EF4\u7801...",
           adapterStatusConnected: "\u5DF2\u8FDE\u63A5",
           adapterStatusDisconnected: "\u672A\u8FDE\u63A5",
           adapterStatusError: "\u8FDE\u63A5\u9519\u8BEF",
           fieldAppId: "\u5E94\u7528 ID",
-          fieldClientSecret: "\u5BA2\u6237\u7AEF\u5BC6\u94A5",
+          fieldDingtalkClientId: "Client ID",
+          fieldDingtalkClientSecret: "Client Secret",
+          fieldWecomToken: "Token",
+          fieldWecomReceiveId: "Receive ID",
+          fieldVerifyToken: "Verify Token",
+          fieldWeixinApiUrl: "iLink Bot \u670D\u52A1\u7AEF\u5730\u5740",
           fieldBotToken: "\u673A\u5668\u4EBA\u4EE4\u724C",
           fieldWebhookUrl: "Webhook \u5730\u5740",
           fieldWebhookSecret: "Webhook \u5BC6\u94A5",
@@ -2199,10 +2206,18 @@
           adapterSaved: "Saved",
           adapterTest: "Test Connection",
           adapterTesting: "Testing connection",
+          wechatScan: "Scan QR Code to Connect",
+          wechatScanning: "Requesting QR code...",
           adapterStatusConnected: "Connected",
           adapterStatusDisconnected: "Disconnected",
           adapterStatusError: "Connection Error",
           fieldAppId: "App ID",
+          fieldDingtalkClientId: "Client ID",
+          fieldDingtalkClientSecret: "Client Secret",
+          fieldWecomToken: "Token",
+          fieldWecomReceiveId: "Receive ID",
+          fieldVerifyToken: "Verify Token",
+          fieldWeixinApiUrl: "iLink Bot Server URL",
           fieldClientSecret: "Client Secret",
           fieldBotToken: "Bot Token",
           fieldWebhookUrl: "Webhook URL",
@@ -3165,6 +3180,53 @@
     }
   });
 
+  // renderer/src/session-projection.ts
+  function normalizeWorkspacePath(path) {
+    return path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  }
+  function dedupeSessions(sessions) {
+    const byId = /* @__PURE__ */ new Map();
+    for (const session of sessions) {
+      if (!session?.session_id) continue;
+      const previous = byId.get(session.session_id);
+      if (!previous || (session.last_active || 0) >= (previous.last_active || 0)) {
+        byId.set(session.session_id, session);
+      }
+    }
+    return [...byId.values()];
+  }
+  function getWorkspaceSessionGroups(workspaces, sessions) {
+    const groups = [];
+    const groupByPath = /* @__PURE__ */ new Map();
+    for (const workspace of workspaces) {
+      if (!workspace.path || !workspace.name) continue;
+      const key = normalizeWorkspacePath(workspace.path);
+      if (!key || groupByPath.has(key)) continue;
+      const group = { workspace, sessions: [] };
+      groupByPath.set(key, group);
+      groups.push(group);
+    }
+    for (const session of dedupeSessions(sessions)) {
+      if ((session.message_count || 0) <= 0) continue;
+      const metadata = session.metadata || {};
+      const owner = String(metadata.workspace || metadata.workspace_path || "");
+      const group = groupByPath.get(normalizeWorkspacePath(owner));
+      if (group) group.sessions.push(session);
+    }
+    return groups;
+  }
+  function buildTraySessionData(normalSessions, iworkSessions, workspaces) {
+    return {
+      normal: dedupeSessions(normalSessions).filter((session) => (session.message_count || 0) > 0),
+      iwork: getWorkspaceSessionGroups(workspaces, iworkSessions)
+    };
+  }
+  var init_session_projection = __esm({
+    "renderer/src/session-projection.ts"() {
+      "use strict";
+    }
+  });
+
   // renderer/src/state.ts
   function getSessionKey(sessionId) {
     return sessionId ?? state.sessionId ?? "";
@@ -4092,14 +4154,24 @@
     }
   }
   function setSessionsList(sessions) {
-    update({ sessionsList: sessions });
+    const visible = dedupeSessions(sessions).filter((session) => (session.message_count || 0) > 0);
+    update({ sessionsList: visible });
   }
   function setTraySessions(normal, iwork) {
     traySessionsCache.normal = normal;
     traySessionsCache.iwork = iwork;
+    publishTraySessions();
   }
   function getTraySessions() {
     return traySessionsCache;
+  }
+  function publishTraySessions() {
+    const projected = buildTraySessionData(
+      traySessionsCache.normal,
+      traySessionsCache.iwork,
+      state.workspaces
+    );
+    window.electronAPI?.traySessionsBothUpdate?.(projected);
   }
   function removeSessionById(sessionId) {
     const sessions = state.sessionsList.filter((s15) => s15.session_id !== sessionId);
@@ -4191,6 +4263,7 @@
       setActiveWorkspace("");
     }
     update({ workspaces: valid });
+    publishTraySessions();
   }
   function setActiveWorkspace(path) {
     update({ activeWorkspace: path });
@@ -4338,6 +4411,7 @@
       init_types();
       init_i18n();
       init_slash_commands();
+      init_session_projection();
       state = createEmptyState();
       listeners = /* @__PURE__ */ new Set();
       pendingRollbackEdit = null;
@@ -4951,6 +5025,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   function onAdapterTestResult(cb) {
     _adapterTestCallback = cb;
   }
+  function onWechatScanResult(cb) {
+    _wechatScanCallback = cb;
+  }
   function onAutomationJobs(cb) {
     _automationJobsCallback = cb;
   }
@@ -5457,6 +5534,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           _adapterTestCallback(event);
         }
         break;
+      case "wechat_scan_result":
+        if (typeof _wechatScanCallback === "function") {
+          _wechatScanCallback(event);
+        }
+        break;
       case "plan_update":
         if (!_hasSessionId(event)) break;
         setPlanItems(event.plan_items, _eventSessionId(event));
@@ -5480,9 +5562,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       case "models_list":
         setAvailableModels(event.models);
         break;
-      case "sessions_list":
+      case "sessions_list": {
+        const currentChannel = getState().workspaceMode === "iwork" ? "iwork" : "normal";
+        if (event.channel && event.channel !== currentChannel) break;
         setSessionsList(event.sessions);
-        window.electronAPI?.traySessionsUpdate?.(event.sessions);
+        const isIworkMode = getState().workspaceMode === "iwork";
+        const freshSessions = event.sessions;
+        const trayCache = getTraySessions();
+        setTraySessions(
+          isIworkMode ? trayCache.normal : freshSessions,
+          isIworkMode ? freshSessions : trayCache.iwork
+        );
         if (getState().sessionId) {
           const cur2 = event.sessions.find(
             (s15) => s15.session_id === getState().sessionId
@@ -5492,11 +5582,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           }
         }
         break;
+      }
       case "sessions_all": {
         const normal = event.normal || [];
         const iwork = event.iwork || [];
         setTraySessions(normal, iwork);
-        window.electronAPI?.traySessionsBothUpdate?.({ normal, iwork });
         break;
       }
       case "config_data": {
@@ -5893,6 +5983,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           window.__pendingTrayResume = null;
           setSessionId(pending.sessionId);
           send({ type: "resume", session_id: pending.sessionId, request_id: pending.requestId });
+        } else {
+          setSessionId("");
+          clearMessages("");
+          window.__appCleanupContentArea?.({ keepAutomationFlag: false });
+          chat?.renderForce?.();
         }
         send({ type: "list_sessions" });
         send({ type: "list_all_sessions" });
@@ -6160,7 +6255,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     return null;
   }
-  var _adapterTestCallback, _automationJobsCallback, _automationJobCreatedCallback, _automationJobCancelledCallback, _automationJobUpdatedCallback, _automationShowResultCallback, _automationStreamCallback, chat, tools, permissions, _settings, permissionResolve, _sessionGeneration, _requestedSessionId, _requestedSessionRequestId, _activeStreamSessionId, _toolCallGeneration, _validationResolve, _validationReject, _lastSync;
+  var _adapterTestCallback, _wechatScanCallback, _automationJobsCallback, _automationJobCreatedCallback, _automationJobCancelledCallback, _automationJobUpdatedCallback, _automationShowResultCallback, _automationStreamCallback, chat, tools, permissions, _settings, permissionResolve, _sessionGeneration, _requestedSessionId, _requestedSessionRequestId, _activeStreamSessionId, _toolCallGeneration, _validationResolve, _validationReject, _lastSync;
   var init_stream = __esm({
     "renderer/src/stream.ts"() {
       "use strict";
@@ -6170,6 +6265,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       init_engine_install();
       init_slash_commands();
       _adapterTestCallback = null;
+      _wechatScanCallback = null;
       _automationJobsCallback = null;
       _automationJobCreatedCallback = null;
       _automationJobCancelledCallback = null;
@@ -58282,14 +58378,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           <div class="session-item-top">
             <input type="checkbox" class="session-checkbox" data-sid="${s15.session_id}" ${this.selectedIds.has(s15.session_id) ? "checked" : ""} />
             <span class="session-preview">${this.esc(displayName)}</span>
-            ${runningBadge}
+            ${runningBadge}${this.sourceBadge(s15.source)}
           </div>
         </div>`;
             } else {
               html2 += `<div class="ws-tree-session-item${active}" data-sid="${s15.session_id}">
           <div class="session-item-top">
             <span class="session-preview">${this.esc(displayName)}</span>
-            ${runningBadge}
+            ${runningBadge}${this.sourceBadge(s15.source)}
           </div>
         </div>`;
             }
@@ -58299,6 +58395,48 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           this.bindContextMenus();
           this.bindCheckboxes();
           this.updateBatchBarLabels();
+        }
+        /** Platform-origin badge for adapter-sourced sessions (Phase 5).
+         *
+         *  Renders a small pill showing the originating platform (and chat type)
+         *  when the session carries a structured {@link SessionSource}.  Returns an
+         *  empty string for desktop/normal sessions (no source) -- preserving the
+         *  prior badgeless appearance.  Aligns with Hermes' platform_hint projection
+         *  so a user can see at a glance which IM platform a conversation came from.
+         */
+        sourceBadge(source) {
+          if (!source || !source.platform) return "";
+          const platformLabels = {
+            qqbot: "QQ",
+            telegram: "Telegram",
+            webhook: "Webhook",
+            discord: "Discord",
+            slack: "Slack",
+            feishu: "Feishu",
+            dingtalk: "DingTalk",
+            wecom: "WeCom",
+            weixin: "WeChat",
+            whatsapp: "WhatsApp",
+            signal: "Signal",
+            matrix: "Matrix",
+            email: "Email",
+            sms: "SMS",
+            msgraph: "MS Graph",
+            yuanbao: "Yuanbao",
+            bluebubbles: "iMessage",
+            homeassistant: "HomeAssistant"
+          };
+          const chatTypeLabels = {
+            dm: "DM",
+            group: "Group",
+            channel: "Channel",
+            thread: "Thread",
+            forum: "Forum"
+          };
+          const plat = platformLabels[source.platform] || source.platform;
+          const ct2 = source.chat_type ? chatTypeLabels[source.chat_type] || source.chat_type : "";
+          const label = ct2 ? `${plat} \xB7 ${ct2}` : plat;
+          return `<span class="session-source-badge" data-platform="${this.esc(source.platform)}">${this.esc(label)}</span>`;
         }
         bindClicks() {
           const items = this.el.querySelectorAll(".ws-tree-session-item");
@@ -82479,6 +82617,66 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           this.renderGateway();
         }
       });
+      onWechatScanResult((event) => {
+        const img = document.getElementById("wechat-qr-img");
+        const statusEl = document.getElementById("wechat-qr-status");
+        const scanBtn = document.getElementById("wechat-scan-btn");
+        if (scanBtn) scanBtn.removeAttribute("disabled");
+        if (event.success && event.qrcode_url) {
+          if (img) {
+            img.src = event.qrcode_url;
+            img.style.display = "block";
+          }
+          if (statusEl) {
+            statusEl.style.display = "block";
+            statusEl.textContent = "120s";
+            let remain = 120;
+            if (this._qrCountdown) clearInterval(this._qrCountdown);
+            this._qrCountdown = setInterval(() => {
+              remain -= 1;
+              const el2 = document.getElementById("wechat-qr-status");
+              if (!el2) {
+                clearInterval(this._qrCountdown);
+                return;
+              }
+              if (remain <= 0) {
+                el2.textContent = "";
+                const i8 = document.getElementById("wechat-qr-img");
+                if (i8) i8.style.display = "none";
+                clearInterval(this._qrCountdown);
+                return;
+              }
+              el2.textContent = `${remain}s`;
+            }, 1e3);
+          }
+        } else {
+          if (img) img.style.display = "none";
+          if (statusEl) {
+            statusEl.style.display = "block";
+            statusEl.textContent = `\u274C ${event.message}`;
+          }
+        }
+      });
+    }
+    /** Show a standalone QR code popup window for WeChat login. */
+    _showWechatQrDialog() {
+      document.getElementById("wechat-qr-overlay")?.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "wechat-qr-overlay";
+      overlay.className = "toast-overlay";
+      overlay.innerHTML = `
+      <div class="toast-dialog" style="width:300px;text-align:center">
+        <div id="wechat-qr-status" style="font-size:14px;color:var(--text-muted);padding:120px 0">${t("settings.wechatScanning")}</div>
+        <img id="wechat-qr-img" style="display:none;width:240px;height:240px;margin:0 auto" />
+        <div style="margin-top:16px">
+          <button class="btn" id="wechat-qr-close" style="padding:6px 24px;font-size:13px">${t("header.close")}</button>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.querySelector("#wechat-qr-close")?.addEventListener("click", () => overlay.remove());
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) overlay.remove();
+      });
     }
     bindVersionTapUnlock() {
       this.panels.about.addEventListener("click", (e) => {
@@ -83375,25 +83573,21 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         { id: "discord", name: "Discord", desc: "\u96C6\u6210 Discord \u673A\u5668\u4EBA\uFF0C\u7BA1\u7406\u670D\u52A1\u5668\u9891\u9053\u6D88\u606F\u4E0E\u4EA4\u4E92", fields: [
           { key: "bot_token", labelKey: "fieldBotToken", type: "password" }
         ], docs: "https://discord.com/developers/applications" },
-        { id: "weixin", name: "\u5FAE\u4FE1", desc: "\u8FDE\u63A5\u5FAE\u4FE1\uFF0C\u6536\u53D1\u6D88\u606F\u5E76\u81EA\u52A8\u56DE\u590D", fields: [
-          { key: "app_id", labelKey: "fieldAppId", type: "text" },
-          { key: "app_secret", labelKey: "fieldAppSecret", type: "password" }
-        ], docs: "https://mp.weixin.qq.com/" },
-        { id: "wecom", name: "\u4F01\u4E1A\u5FAE\u4FE1", desc: "\u5BF9\u63A5\u4F01\u4E1A\u5FAE\u4FE1\u81EA\u5EFA\u5E94\u7528\uFF0C\u5B9E\u73B0\u4F01\u4E1A\u5185\u90E8\u6D88\u606F\u901A\u77E5\u4E0E\u534F\u4F5C", fields: [
-          { key: "corp_id", labelKey: "fieldCorpId", type: "text" },
-          { key: "agent_id", labelKey: "fieldAgentId", type: "text" },
-          { key: "secret", labelKey: "fieldSecret", type: "password" },
-          { key: "token", labelKey: "fieldToken", type: "text" },
-          { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" }
+        { id: "weixin", name: "\u5FAE\u4FE1", desc: "\u901A\u8FC7 iLink Bot \u626B\u7801\u7ED1\u5B9A\u5FAE\u4FE1\u4E2A\u4EBA\u53F7\uFF0C\u81EA\u52A8\u6536\u53D1\u6D88\u606F", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
+        { id: "wecom", name: "\u4F01\u4E1A\u5FAE\u4FE1", desc: "\u5BF9\u63A5\u4F01\u4E1A\u5FAE\u4FE1\u81EA\u5EFA\u5E94\u7528\u56DE\u8C03\uFF0C\u63A5\u6536\u6210\u5458\u6D88\u606F\u5E76\u81EA\u52A8\u56DE\u590D", fields: [
+          { key: "token", labelKey: "fieldWecomToken", type: "text" },
+          { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
+          { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" }
         ], docs: "https://developer.work.weixin.qq.com/document/" },
-        { id: "feishu", name: "\u98DE\u4E66", desc: "\u8FDE\u63A5\u98DE\u4E66\u5F00\u653E\u5E73\u53F0\uFF0C\u63A5\u6536\u673A\u5668\u4EBA\u4E8B\u4EF6\u5E76\u56DE\u590D\u6D88\u606F", fields: [
+        { id: "feishu", name: "\u98DE\u4E66", desc: "\u8FDE\u63A5\u98DE\u4E66\u5F00\u653E\u5E73\u53F0\u673A\u5668\u4EBA\uFF0C\u63A5\u6536\u673A\u5668\u4EBA\u4E8B\u4EF6\u5E76\u56DE\u590D\u6D88\u606F", fields: [
           { key: "app_id", labelKey: "fieldAppId", type: "text" },
-          { key: "app_secret", labelKey: "fieldAppSecret", type: "password" }
-        ], docs: "https://open.feishu.cn/" },
-        { id: "dingtalk", name: "\u9489\u9489", desc: "\u63A5\u5165\u9489\u9489\u81EA\u5B9A\u4E49\u673A\u5668\u4EBA Webhook\uFF0C\u53D1\u9001\u5DE5\u4F5C\u901A\u77E5\u4E0E\u7FA4\u6D88\u606F", fields: [
-          { key: "webhook_url", labelKey: "fieldWebhookUrl", type: "text" },
-          { key: "webhook_secret", labelKey: "fieldWebhookSecret", type: "password" }
-        ], docs: "https://open.dingtalk.com/" },
+          { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
+          { key: "verify_token", labelKey: "fieldVerifyToken", type: "password" }
+        ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
+        { id: "dingtalk", name: "\u9489\u9489", desc: "\u63A5\u5165\u9489\u9489\u5F00\u653E\u5E73\u53F0\u673A\u5668\u4EBA\uFF0C\u901A\u8FC7 WebSocket \u63A5\u6536\u4E8B\u4EF6\u5E76\u901A\u8FC7 OpenAPI \u56DE\u590D\u6D88\u606F", fields: [
+          { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
+          { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" }
+        ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
         { id: "slack", name: "Slack", desc: "\u96C6\u6210 Slack \u5DE5\u4F5C\u7A7A\u95F4\uFF0C\u901A\u8FC7 Bot Token \u76D1\u542C\u548C\u53D1\u9001\u9891\u9053\u6D88\u606F", fields: [
           { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
           { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" }
@@ -83505,20 +83699,29 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             </div>`;
           }
           configBodyHtml = `
-          <div style="padding:12px 16px 8px">
-            ${fieldsHtml}
-            <div id="adapter-test-status-${def.id}" style="font-size:12px;padding:4px 0;min-height:20px"></div>
-            <div style="padding-top:12px;display:flex;justify-content:flex-end;gap:8px">
-              <button class="btn btn-sm" id="adapter-test-${def.id}" style="padding:6px 20px;font-size:13px">
-                <i data-lucide="plug" style="width:14px;height:14px;margin-right:4px"></i>
-                ${t("settings.adapterTest")}
-              </button>
-              <button class="btn btn-primary btn-sm" id="adapter-save-${def.id}" style="padding:6px 20px;font-size:13px">
-                <i data-lucide="check" style="width:14px;height:14px;margin-right:4px"></i>
-                ${t("settings.adapterSave")}
-              </button>
-            </div>
-          </div>`;
+	          <div style="padding:12px 16px 8px">
+	            ${fieldsHtml}
+	            ${def.id === "weixin" ? `
+	            <div style="text-align:center;padding:16px 0 0">
+	              <button class="btn btn-primary" id="wechat-scan-btn" style="padding:8px 24px;font-size:14px">
+	                <i data-lucide="scan-qr-code" style="width:16px;height:16px;margin-right:6px"></i>
+	                ${t("settings.wechatScan")}
+	              </button>
+	            </div>
+	            ` : `
+	            <div id="adapter-test-status-${def.id}" style="font-size:12px;padding:4px 0;min-height:20px"></div>
+	            <div style="padding-top:12px;display:flex;justify-content:flex-end;gap:8px">
+	              <button class="btn btn-sm" id="adapter-test-${def.id}" style="padding:6px 20px;font-size:13px">
+	                <i data-lucide="plug" style="width:14px;height:14px;margin-right:4px"></i>
+	                ${t("settings.adapterTest")}
+	              </button>
+	              <button class="btn btn-primary btn-sm" id="adapter-save-${def.id}" style="padding:6px 20px;font-size:13px">
+	                <i data-lucide="check" style="width:14px;height:14px;margin-right:4px"></i>
+	                ${t("settings.adapterSave")}
+	              </button>
+	            </div>
+	            `}
+	          </div>`;
         }
         const iconData = PLATFORM_ICONS[def.id];
         const isMonoIcon = def.id === "matrix" || def.id === "sms" || def.id === "webhook";
@@ -83631,6 +83834,15 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             send({ type: "configure", config: config3 });
             delete this._adapterTestResults[def.id];
             this.renderGateway();
+          });
+        }
+        const scanBtn = document.getElementById("wechat-scan-btn");
+        if (scanBtn) {
+          scanBtn.addEventListener("click", () => {
+            scanBtn.setAttribute("disabled", "disabled");
+            this._showWechatQrDialog();
+            send({ type: "wechat_scan", adapter_id: "weixin" });
+            setTimeout(() => scanBtn.removeAttribute("disabled"), 3e4);
           });
         }
         const testBtn = document.getElementById(`adapter-test-${def.id}`);
@@ -88895,6 +89107,7 @@ No activity`;
 
   // renderer/src/workspace.ts
   init_context_menu();
+  init_session_projection();
   var Workspace = class {
     /**
      * Constructor: resolves DOM nodes, wires buttons and subscribes to state.
@@ -88911,6 +89124,7 @@ No activity`;
       this._lastWsTreeJson = "";
       this._lastSid = "";
       this._transitioning = false;
+      this.pendingWorkspacePath = "";
       /** Callback fired after entering/exiting iWork mode so the app can refresh the content area. */
       this.onModeChange = null;
       this._sessionSectionEl = document.getElementById("session-section");
@@ -89001,6 +89215,17 @@ No activity`;
         await this.enterWorkspaceMode();
       }
     }
+    /** Opens a workspace from an external entry point, such as the tray. */
+    async open(path) {
+      if (!path || this._transitioning) return;
+      this.ensureExpanded(path);
+      if (!this.isInWorkspaceMode) {
+        this.pendingWorkspacePath = path;
+        await this.enterWorkspaceMode();
+        return;
+      }
+      this.activate(path);
+    }
     /** Public exit — used by the header mode switch to leave workspace mode
      *  with the same animation pipeline as the internal toggle button. */
     async exit() {
@@ -89087,7 +89312,14 @@ No activity`;
       if (parentEnter) parentEnter.style.position = "";
       const workspaces = getState().workspaces;
       const activeWs = getState().activeWorkspace;
-      if (window.__pendingTrayResume) {
+      const pendingWorkspacePath = this.pendingWorkspacePath;
+      this.pendingWorkspacePath = "";
+      if (pendingWorkspacePath) {
+        setActiveWorkspace(pendingWorkspacePath);
+        const requestId = crypto.randomUUID();
+        setRequestedSessionId("", requestId);
+        send({ type: "open_workspace", path: pendingWorkspacePath, request_id: requestId });
+      } else if (window.__pendingTrayResume) {
       } else if (!activeWs && workspaces.length > 0 && workspaces[0].path) {
         setActiveWorkspace(workspaces[0].path);
         const requestId = crypto.randomUUID();
@@ -89253,22 +89485,24 @@ No activity`;
     renderTree() {
       if (!this.isInWorkspaceMode || !this.treeListEl || this._exiting) return;
       const s15 = getState();
-      const workspaces = s15.workspaces.filter((w) => w.path && w.name);
+      const workspaceGroups = getWorkspaceSessionGroups(s15.workspaces, s15.sessionsList);
       const activeWs = s15.activeWorkspace;
-      if (workspaces.length === 0) {
+      if (workspaceGroups.length === 0) {
         this.treeListEl.innerHTML = `<div class="workspace-tree-empty">${t("workspace.empty")}</div>`;
         return;
       }
       let html2 = "";
-      for (const ws4 of workspaces) {
+      for (const { workspace: ws4, sessions: wsSessions } of workspaceGroups) {
         const isExpanded = this.expandedWsPaths.has(ws4.path);
         const isActive = ws4.path === activeWs ? " active" : "";
-        const expandIcon = isExpanded ? "chevron-down" : "chevron-right";
-        const wsSessions = s15.sessionsList.filter((sess) => this.belongsToWorkspace(sess, ws4.path));
         html2 += `<div class="ws-tree-node" data-ws-path="${this.esc(ws4.path)}">
         <div class="ws-tree-node-header${isActive}" data-ws-path="${this.esc(ws4.path)}">
           ${this.batchMode ? `<input type="checkbox" class="ws-checkbox" data-path="${this.esc(ws4.path)}" ${this.selectedPaths.has(ws4.path) ? "checked" : ""} />` : ""}
-          <i data-lucide="${expandIcon}" class="lucide lucide-xs ws-chevron"></i>
+          <button type="button" class="ws-expand-button"
+            aria-label="${isExpanded ? "Collapse workspace sessions" : "Expand workspace sessions"}"
+            aria-expanded="${isExpanded}">
+            <i data-lucide="chevron-right" class="lucide lucide-xs ws-chevron${isExpanded ? " open" : ""}"></i>
+          </button>
           <span class="ws-name">${this.esc(ws4.name)}</span>
           <span class="ws-session-count">${wsSessions.length}</span>
         </div>
@@ -89305,16 +89539,25 @@ No activity`;
     }
     bindTreeEvents() {
       if (!this.treeListEl) return;
+      this.treeListEl.querySelectorAll(".ws-expand-button").forEach((button) => {
+        button.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (this._exiting || this._transitioning) return;
+          const path = button.closest(".ws-tree-node-header")?.dataset.wsPath;
+          if (!path) return;
+          this.toggleExpand(path);
+          if (!this.batchMode && getState().activeWorkspace !== path) {
+            this.activate(path);
+          }
+        });
+      });
       this.treeListEl.querySelectorAll(".ws-tree-node-header").forEach((el2) => {
         el2.addEventListener("click", (e) => {
           if (this._exiting || this._transitioning) return;
           const path = el2.getAttribute("data-ws-path");
           if (!path) return;
           if (this.batchMode) {
-            if (e.target.closest(".ws-chevron")) {
-              this.toggleExpand(path);
-              return;
-            }
             const cb = e.target.closest(".ws-checkbox");
             if (!cb) {
               const checkbox = el2.querySelector(".ws-checkbox");
@@ -89326,15 +89569,6 @@ No activity`;
             return;
           }
           if (e.target.closest("input")) return;
-          if (e.target.closest(".ws-chevron")) {
-            this.toggleExpand(path);
-            return;
-          }
-          if (this.expandedWsPaths.has(path)) {
-            this.expandedWsPaths.delete(path);
-          } else {
-            this.expandedWsPaths.add(path);
-          }
           this.activate(path);
         });
         el2.addEventListener("contextmenu", (e) => {
@@ -89540,14 +89774,10 @@ No activity`;
       el2.textContent = s15;
       return el2.innerHTML;
     }
-    /** Normalize a file path for comparison (case-insensitive on Windows). */
-    normalizePath(p) {
-      return p.replace(/\\/g, "/").toLowerCase();
-    }
     /** Check whether a session belongs to a given workspace path. */
     belongsToWorkspace(sess, wsPath) {
-      const owner = sess.metadata?.workspace || sess.metadata?.workspace_path || "";
-      return this.normalizePath(owner) === this.normalizePath(wsPath);
+      const owner = String(sess.metadata?.workspace || sess.metadata?.workspace_path || "");
+      return normalizeWorkspacePath(owner) === normalizeWorkspacePath(wsPath);
     }
     /** Build a short badge label for the session's channel/mode. */
     channelBadge(channel) {
@@ -140381,6 +140611,9 @@ void main() {
         }
       });
       if (window.electronAPI) {
+        window.electronAPI.onSwitchWorkspace((path) => {
+          void this.workspace.open(path);
+        });
         window.electronAPI.onSwitchSession((sessionId) => {
           const st3 = getState();
           if (!sessionId || sessionId === st3.sessionId) return;

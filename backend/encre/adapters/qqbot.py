@@ -45,7 +45,7 @@ import time
 import uuid
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.qqbot")
 
@@ -758,6 +758,13 @@ class QQBotAdapter(BaseAdapter):
         )
 
         self._chat_type_map[user_openid] = "c2c"
+        source = SessionSource(
+            platform=self.name,
+            chat_id=user_openid,
+            chat_type="dm",
+            user_id=user_openid,
+            user_name=str(author.get("user_openid", "")),
+        )
         event = MessageEvent(
             text=content,
             message_type=MessageType.TEXT,
@@ -765,10 +772,10 @@ class QQBotAdapter(BaseAdapter):
             chat_id=user_openid,
             user_id=user_openid,
             raw=d,
+            source=source,
         )
         self._last_msg_id[user_openid] = msg_id
-        self.dispatch_message(event)
-        self._bg_task(self._process_chat(user_openid, content))
+        self._bg_task(self._dispatch_event(event))
 
     async def _handle_group_message(
         self,
@@ -793,6 +800,13 @@ class QQBotAdapter(BaseAdapter):
         )
 
         self._chat_type_map[group_openid] = "group"
+        source = SessionSource(
+            platform=self.name,
+            chat_id=group_openid,
+            chat_type="group",
+            user_id=member_openid or group_openid,
+            user_name=str(author.get("member_openid", "")),
+        )
         event = MessageEvent(
             text=text,
             message_type=MessageType.TEXT,
@@ -800,10 +814,10 @@ class QQBotAdapter(BaseAdapter):
             chat_id=group_openid,
             user_id=member_openid or group_openid,
             raw=d,
+            source=source,
         )
         self._last_msg_id[group_openid] = msg_id
-        self.dispatch_message(event)
-        self._bg_task(self._process_chat(group_openid, text))
+        self._bg_task(self._dispatch_event(event))
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and stream the response."""
@@ -813,6 +827,15 @@ class QQBotAdapter(BaseAdapter):
         await self.send_typing(chat_id)
         await self.process_with_stream(content, chat_id, session_id=session_id)
         logger.info("[qqbot] _process_chat done for chat=%s", chat_id)
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        """Send a typing indicator, then route the event via handle_message."""
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     # ── Outbound messaging (REST API) ──────────────────────────────────────
 

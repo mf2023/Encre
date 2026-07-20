@@ -50,7 +50,7 @@ except ImportError:
     HTTPX_AVAILABLE = False
     httpx = None
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.matrix")
 
@@ -492,25 +492,28 @@ class MatrixAdapter(BaseAdapter):
                 reply_to_text=reply_to_text,
                 raw=event,
                 timestamp=timestamp,
+                source=SessionSource(
+                    platform=self.name,
+                    chat_id=room_id,
+                    chat_type="group",
+                    user_id=sender,
+                ),
             )
 
-            logger.debug(
-                "[matrix] Message from %s in %s: %s",
-                sender,
-                room_id,
-                body[:80],
-            )
-
-            self.dispatch_message(msg_event)
-
-            task = asyncio.create_task(
-                self._process_chat(room_id, body)
-            )
+            task = asyncio.create_task(self._dispatch_event(msg_event))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
 
         except Exception as e:
             logger.error("[matrix] Error handling room event: %s", e)
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and stream the response."""

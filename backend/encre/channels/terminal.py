@@ -97,7 +97,7 @@ class TerminalChannel(Channel):
                         self._running = False
                         break
                     if slash_command.name == "new":
-                        router.session_manager.remove_session(session_id)
+                        await router.session_manager.remove_session(session_id)
                         info = router.session_manager.create_session()
                         session_id = info.session_id
                         print(f"[new session: {session_id[:8]}]", flush=True)
@@ -126,7 +126,7 @@ class TerminalChannel(Channel):
                 continue
 
         # Clean up terminal session
-        router.session_manager.remove_session(session_id)
+        await router.session_manager.remove_session(session_id)
 
     async def stop(self) -> None:
         self._running = False

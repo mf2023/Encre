@@ -1,6 +1,6 @@
 ---
 name: wechat-auto-reply
-description: 半自动回复微信联系人消息（置信度>85%自动发送，否则确认），或主动发送指定内容。使用方式：wechat-auto-reply "联系人名称" 或 wechat-auto-reply "联系人名称" "消息内容"
+description: Semi-automatic reply to WeChat contact messages (auto-send when confidence >85%, otherwise confirm before sending), or proactively send specified content. Usage: wechat-auto-reply "contact name" or wechat-auto-reply "contact name" "message content"
 metadata:
   source: encre
   tags: 
@@ -12,11 +12,11 @@ context: inline
 ## Wechat Auto Reply
 # WeChat Auto Reply Skill
 
-半自动回复微信联系人消息（基于AI置信度智能判断），或主动发送指定内容。
+Semi-automatic reply to WeChat contact messages (intelligent judgment based on AI confidence), or proactively send specified content.
 
-## 🚀 安装
+## 🚀 Installation
 
-### 使用 Homebrew（推荐）
+### Using Homebrew (Recommended)
 
 ```bash
 # 一行安装
@@ -27,25 +27,25 @@ brew tap bjdzliu/Encre
 `bash brew install` wechat-auto-reply
 ```
 
-安装后会自动：
-- 安装所有依赖（`cliclick`, `python@3`, `pyobjc`）
-- 创建全局命令 `wechat-auto-reply`
-- 设置 Encre skill 链接到 `~/.Encre/workspace/skills/wechat-auto-reply`
+After installation, it will automatically:
+- Install all dependencies (`cliclick`, `python@3`, `pyobjc`)
+- Create global command `wechat-auto-reply`
+- Set Encre skill link to `~/.Encre/workspace/skills/wechat-auto-reply`
 
-## 💡 使用方式
+## 💡 Usage
 
 ```bash
-# OCR 半自动回复（查看聊天记录，智能判断回复内容）
+# OCR 半Auto Reply（查看聊天记录，智能判断回复内容）
 # 置信度 > 85% 自动发送，否则弹窗确认
-wechat-auto-reply "联系人名称"
+wechat-auto-reply "联系人名称" (contact name)
 
 # 主动发送（直接发送指定消息，不走 OCR）
-wechat-auto-reply "联系人名称" "消息内容"
+wechat-auto-reply "联系人名称" (contact name) "消息内容" (message content)
 ```
 
-**示例：**
+**Examples:**
 ```bash
-# 半自动回复模式
+# 半Auto Reply模式
 wechat-auto-reply "小李"      # 如果是"在吗"等高置信场景，自动发送
 wechat-auto-reply "小王"      # 如果是问题类，会弹窗让你确认或修改
 
@@ -54,59 +54,59 @@ wechat-auto-reply "小李" "什么时候下班"
 wechat-auto-reply "小王" "今天行情怎么样"
 ```
 
-## 功能描述
+## Features
 
-**两种模式：**
-1. **半自动回复模式**：搜索联系人 → OCR 识别聊天内容 → AI 判断回复
-   - 置信度 > 85% → 自动发送
-   - 置信度 ≤ 85% → 弹窗确认（可修改回复内容）
-2. **主动发送模式**：搜索联系人 → 直接发送指定消息
+**Two Modes:**
+1. **Semi-automatic Reply Mode**: Search contact → OCR recognize chat content → AI judge reply
+   - Confidence > 85% → Auto send
+   - Confidence ≤ 85% → Popup confirmation (can modify reply content)
+2. **Proactive Send Mode**: Search contact → Directly send specified message
 
-## 📂 文件位置
+## 📂 File Locations
 
-### Homebrew 安装后
-- **Skill 目录**: `$(brew --prefix)/share/Encre/skills/wechat-auto-reply`
-- **用户链接**: `~/.Encre/workspace/skills/wechat-auto-reply`
-- **全局命令**: `$(brew --prefix)/bin/wechat-auto-reply`
-- **配置文件**: `~/.Encre/workspace/skills/wechat-auto-reply/wechat-dm.applescript`
+### After Homebrew Installation
+- **Skill Directory**: `$(brew --prefix)/share/Encre/skills/wechat-auto-reply`
+- **User Link**: `~/.Encre/workspace/skills/wechat-auto-reply`
+- **Global Command**: `$(brew --prefix)/bin/wechat-auto-reply`
+- **Config File**: `~/.Encre/workspace/skills/wechat-auto-reply/wechat-dm.applescript`
 
-### 查看安装路径
+### View Installation Path
 ```bash
 which wechat-auto-reply
 ls -la ~/.Encre/workspace/skills/wechat-auto-reply
 ```
 
-## 环境准备
+## Environment Setup
 
-### 通过 Homebrew 安装（推荐）
+### Via Homebrew (Recommended)
 
-所有依赖会自动安装，无需手动配置。
+All dependencies are installed automatically, no manual configuration needed.
 
-### 手动安装依赖
+### Manual Dependency Installation
 
-#### 依赖工具
+#### Dependency Tools
 
-| 工具 | 安装方式 | 用途 |
-|------|----------|------|
-| `cliclick` | ``bash brew install` cliclick` | 稳定的鼠标点击 |
-| `screencapture` | macOS 内置 | 截图（可通过 `/usr/sbin/screencapture` 调用） |
-| Vision Framework | macOS 10.15+ | OCR 文本识别 |
+| Tool | Installation | Purpose |
+|------|-------------|---------|
+| `cliclick` | ``bash brew install` cliclick` | Stable mouse clicks |
+| `screencapture` | macOS Built-in | Screenshot (can be called via `/usr/sbin/screencapture`) |
+| Vision Framework | macOS 10.15+ | OCR text recognition |
 
-#### Python 依赖
+#### Python Dependencies
 
 ```bash
 pip3 install pyobjc
 ```
 
-## 实现原理
+## Implementation
 
-### 1. 激活微信
+### 1. Activate WeChat
 
 ```applescript
 tell application "WeChat" to activate
 ```
 
-### 2. 确保前台
+### 2. Ensure Foreground
 
 ```applescript
 tell app "System Events"
@@ -116,15 +116,15 @@ tell app "System Events"
 end tell
 ```
 
-### 3. 搜索联系人
+### 3. Search Contact
 
-- 使用 `Cmd+F` 打开搜索
-- 通过剪贴板粘贴联系人名称
-- 按回车进入聊天
+- Use `Cmd+F` to open search
+- Paste contact name via clipboard
+- Press Enter to enter chat
 
-### 4. OCR 截图
+### 4. OCR Screenshot
 
-使用 macOS Vision Framework 识别聊天内容：
+Use macOS Vision Framework to recognize chat content:
 
 ```python
 from Vision import VNRecognizeTextRequest, VNImageRequestHandler
@@ -133,48 +133,48 @@ theRequest.setRecognitionLanguages(["zh-Hans", "en-US"])
 theRequest.setUsesLanguageCorrection(True)
 ```
 
-### 5. 智能回复判断（带置信度）
+### 5. Intelligent Reply Judgment (with Confidence)
 
-根据聊天内容自动生成回复，每个回复都附带置信度评分：
+Automatically generate replies based on chat content, each reply comes with a confidence score:
 
-| 场景 | 关键词 | 回复内容 | 置信度 |
-|------|--------|----------|--------|
-| 询问在线 | "在吗"、"忙吗" | "在的，什么事？" | 95% |
-| 感谢回复 | "谢谢"、"感谢" | "不客气" | 95% |
-| 确认信息 | "收到"+"好的" | "好的" | 90% |
-| 投资讨论 | "投资"、"抄底"、"行情" | "不急，等稳一点" | 85% |
-| 问题咨询 | "?"、"？" | "我看看，稍等" | 75% |
-| 一般确认 | "好"、"OK" | "好的" | 80% |
-| 时间相关 | "明天"、"几点" | "我确认一下，回头告诉你" | 70% |
-| 默认回复 | 其他 | "收到" | 60% |
+| Scenario | Keywords | Reply Content | Confidence |
+|----------|----------|---------------|------------|
+| Asking if online | "" (Are you there), "" (Busy?) | "" (Yes, what's up?) | 95% |
+| Thanking reply | "" (Thanks), "" (Thank you) | "" (You're welcome) | 95% |
+| Confirming info | ""+"" (Got it + Okay) | "" (Okay) | 90% |
+| Investment discussion | "" (Invest), "" (Buy the dip), "" (Market) | "" (No rush, wait until stable) | 85% |
+| Question consultation | "?""" | "" (Let me check, hold on) | 75% |
+| General confirmation | "" (Ok), "OK" | "" (Okay) | 80% |
+| Time related | "" (Tomorrow), "" (What time) | "" (Let me confirm and get back to you) | 70% |
+| Default reply | Other | "" (Got it) | 60% |
 
-**置信度规则：**
-- **≥ 85%**：直接自动发送（高置信度场景）
-- **< 85%**：弹窗显示建议回复，需用户确认
-  - 可选择"确认发送"直接发送
-  - 可选择"修改回复"手动编辑内容
-  - 可选择"取消"不发送
+**Confidence Rules:**
+- **≥ 85%**: Direct auto-send (high confidence scenario)
+- **< 85%**: Popup shows suggested reply, needs user confirmation
+  - Can choose "Confirm Send" to send directly
+  - Can choose "Modify Reply" to manually edit content
+  - Can choose "Cancel" to not send
 
-### 6. 发送消息
+### 6. Send Message
 
-- 点击输入框获取焦点
-- 粘贴回复内容
-- 按回车发送
+- Click input box to get focus
+- Paste reply content
+- Press Enter to send
 
-## 注意事项
+## Important Notes
 
-- **输入框坐标**：默认 `{1000, 832}`，需根据实际屏幕调整
-- **OCR 识别**：支持中文和英文，设置 `["zh-Hans", "en-US"]`
-- **等待时间**：每次操作后建议等待 0.5-1s
-- **剪贴板**：使用 AppleScript `set the clipboard` 比 `pbcopy` 更可靠
-- **置信度阈值**：默认 85%，可在脚本中调整 `if confidence > 85` 这一行
-- **确认弹窗**：低置信度时会显示完整聊天内容和建议回复，支持手动修改
+- **Input Box Coordinates**: Default `{1000, 832}`, adjust based on actual screen
+- **OCR Recognition**: Supports Chinese and English, set `["zh-Hans", "en-US"]`
+- **Wait Time**: Recommended to wait 0.5-1s after each operation
+- **Clipboard**: Using AppleScript `set the clipboard` is more reliable than `pbcopy`
+- **Confidence Threshold**: Default 85%, can adjust the `if confidence > 85` line in the script
+- **Confirmation Popup**: At low confidence, shows full chat content and suggested reply, supports manual editing
 
-## 自定义配置
+## Custom Configuration
 
-### 修改输入框坐标
+### Modify Input Box Coordinates
 
-找到配置文件位置：
+Find the config file location:
 ```bash
 # Homebrew 安装
 vim ~/.Encre/workspace/skills/wechat-auto-reply/wechat-dm.applescript
@@ -183,36 +183,36 @@ vim ~/.Encre/workspace/skills/wechat-auto-reply/wechat-dm.applescript
 vim $(brew --prefix)/share/Encre/skills/wechat-auto-reply/wechat-dm.applescript
 ```
 
-修改坐标：
+Modify coordinates:
 ```applescript
-cliclick c:1000,832  # 修改为你的坐标
+cliclick c:1000,832  # 修改为你的坐标 (change to your coordinates)
 ```
 
-### 调整置信度阈值
+### Adjust Confidence Threshold
 
-编辑配置文件：
+Edit config file:
 ```applescript
-if confidence > 85 then  # 修改为你需要的阈值（0-100）
+if confidence > 85 then  # 修改为你需要的阈值（0-100）(change to your desired threshold)
   set autoSend to true
 ```
 
-### 添加自定义回复规则
+### Add Custom Reply Rules
 
-在智能回复判断部分添加：
+Add in the intelligent reply judgment section:
 ```applescript
-else if ocrResult contains "你的关键词" then
-  set replyText to "你的回复内容"
-  set confidence to 90  -- 设置置信度
+else if ocrResult contains "你的Keyword" (your keyword) then
+  set replyText to "你的回复内容" (your reply content)
+  set confidence to 90  -- 设置置信度 (set confidence)
 ```
 
-## 更新与卸载
+## Update & Uninstall
 
-### 更新
+### Update
 ```bash
 brew upgrade wechat-auto-reply
 ```
 
-### 卸载
+### Uninstall
 ```bash
 brew uninstall wechat-auto-reply
 
@@ -220,8 +220,8 @@ brew uninstall wechat-auto-reply
 brew untap bjdzliu/Encre
 ```
 
-## 错误处理
+## Error Handling
 
-- 微信未安装：提示安装微信
-- 搜索无结果：提示联系人不存在
-- OCR 失败：重试截图或使用备用方案
+- WeChat not installed: prompt to install WeChat
+- Search no results: prompt that contact does not exist
+- OCR failure: retry screenshot or use alternative method

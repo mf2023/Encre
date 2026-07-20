@@ -431,6 +431,48 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
             }
         }
 
+    @staticmethod
+    def _apply_prompt_caching_openai(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Split system messages at ``__PROMPT_CACHE_BOUNDARY__`` for prompt caching.
+
+        OpenAI/DeepSeek automatically cache the message prefix when it is
+        identical across requests.  By splitting a combined system message
+        ``[system(static + dynamic)]`` into two system messages
+        ``[system(static), system(dynamic)]``, the static prefix becomes a
+        stable first message that stays identical every turn, resulting in
+        automatic cache hits.  The dynamic content (memory, rules, stage)
+        changes per turn in the second system message.
+
+        Args:
+            messages: The conversation history to transform.
+
+        Returns:
+            A new message list with the system message split at the boundary.
+        """
+        result: list[dict[str, Any]] = []
+        for msg in messages:
+            if msg.get("role") != "system":
+                result.append(msg)
+                continue
+            content = msg.get("content", "")
+            if not isinstance(content, str):
+                result.append(msg)
+                continue
+            boundary = "__PROMPT_CACHE_BOUNDARY__"
+            if boundary not in content:
+                result.append(msg)
+                continue
+            prefix, suffix = content.split(boundary, 1)
+            prefix = prefix.strip()
+            suffix = suffix.strip()
+            if prefix:
+                result.append({"role": "system", "content": prefix})
+            if suffix:
+                result.append({"role": "system", "content": suffix})
+        return result
+
     def _prepare_request_kwargs(self) -> dict[str, Any]:
         """Return additional keyword arguments for the HTTP POST request.
 
@@ -501,13 +543,21 @@ class OpenAISSEBackend(MultimodalMixin, BaseBackend):
             temperature: Sampling temperature.
             max_tokens: Maximum tokens to generate.
             stream: Whether to use SSE streaming.
-            enable_caching: Ignored by the base class; subclasses (e.g.
-                Anthropic) may use this to enable prompt caching headers.
+            enable_caching: If True, applies prompt caching by splitting
+                system messages at ``__PROMPT_CACHE_BOUNDARY__`` so the
+                static prefix is automatically cached by OpenAI/DeepSeek.
 
         Yields:
             :class:`BackendText`, :class:`BackendToolCallDelta`,
             :class:`BackendToolCall`, :class:`BackendFinish`.
         """
+        if enable_caching:
+            try:
+                messages = self._apply_prompt_caching_openai(messages)
+            except Exception:
+                logger = logging.getLogger("encre.backend")
+                logger.warning("[caching] _apply_prompt_caching_openai failed, using original messages", exc_info=True)
+
         client = self._get_client()
         headers = self._build_headers()
         data = self._build_request_data(

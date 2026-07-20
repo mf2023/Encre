@@ -12,7 +12,7 @@ context: inline
 ## Wecom
 # WeCom Skill
 
-Send text and markdown messages to `WeCom` (`企业微信`) via incoming webhooks (ENV: `WECOM_WEBHOOK_URL`).
+Send text and markdown messages to `WeCom` (Enterprise WeChat) via incoming webhooks (ENV: `WECOM_WEBHOOK_URL`).
 
 `WeCom` is the enterprise version (using in office) of the famous all-in-on IM `WeChat` envied by Elon Musk.
 

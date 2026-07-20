@@ -34,14 +34,14 @@ You are helping the user find and compare lodging: **{{args}}**
 - TripAdvisor - reviews aggregator (cross-source)
 
 **Domestic (China):**
-- Ctrip (ctrip.com / 携程) - dominant, hotel + reviews
-- Fliggy (fliggy.com / 飞猪) - Alibaba OTA
-- Meituan (meituan.com / 美团) - strong for budget/business hotels and domestic reviews
-- Tujia (tujia.com / 途家) - China's Airbnb equivalent
+- Ctrip (ctrip.com) - dominant, hotel + reviews
+- Fliggy (fliggy.com) - Alibaba OTA
+- Meituan (meituan.com) - strong for budget/business hotels and domestic reviews
+- Tujia (tujia.com) - China's Airbnb equivalent
 
 ### Search Workflow
 1. **Confirm params** -> destination city + area preference, check-in date, check-out date (compute nights), guest count + room count, budget range, must-haves (free wifi, breakfast, parking, pet-friendly, near a specific station/landmark).
-2. **Search aggregators** -> `web_search` `hotels in <area> <check-in> <check-out>` or `<目的> 酒店 <入住> <离店> 携程`, then `web_fetch` the listing page.
+2. **Search aggregators** -> `web_search` `hotels in <area> <check-in> <check-out>` or `<> <Check-in> <> ` (destination hotel check-in check-out Ctrip), then `web_fetch` the listing page.
 3. **Parse the results** -> property name, star rating, guest score, price/night + total, location/distance to a landmark, key amenities, free-cancellation flag. Present as a table.
 4. **Cross-check 2 aggregators** -> the same property is often priced differently on Booking vs Agoda vs Ctrip; surface the cheapest for the same property.
 5. **Read reviews** -> if the user is deciding between 2-3, fetch the TripAdvisor / Meituan review summary and cite the common praise + complaints.

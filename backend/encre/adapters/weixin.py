@@ -38,6 +38,7 @@ from __future__ import annotations
 #   - _derive_api_base
 #
 import asyncio
+import io
 import logging
 import os
 import time
@@ -45,7 +46,7 @@ import uuid
 from contextlib import suppress
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 try:
     import httpx
@@ -68,6 +69,14 @@ _RECONNECT_BACKOFF = [1, 2, 5, 10, 30]
 _POLL_TIMEOUT = 30.0
 _SEND_TIMEOUT = 15.0
 _MESSAGE_DEDUP_TTL_SECONDS = 300
+
+
+ILINK_BASE_URL = "https://ilinkai.weixin.qq.com"
+ILINK_APP_ID = "bot"
+ILINK_APP_CLIENT_VERSION = (2 << 16) | (2 << 8) | 0
+EP_GET_BOT_QR = "ilink/bot/get_bot_qrcode"
+EP_GET_QR_STATUS = "ilink/bot/get_qrcode_status"
+QR_TIMEOUT_MS = 35_000
 
 
 def _derive_api_base(gateway_url: str) -> str:
@@ -124,18 +133,19 @@ class WeixinAdapter(BaseAdapter):
         self,
         app_id: str = "",
         token: str = "",
+        *,
+        api_url: str = "",
         gateway_url: str = "ws://127.0.0.1:18792/gateway",
     ) -> None:
-        """
-        Initialize the instance..
+        """Initialize the WeChat adapter.
 
         Args:
-            app_id (str):
-            token (str):
-            gateway_url (str):
-
-        Returns:
-            None
+            app_id: Application ID from the iLink Bot server.
+            token: Authentication token from the iLink Bot server.
+            api_url: Base URL of the iLink Bot HTTP API server, e.g.
+                ``http://127.0.0.1:8080``.  When empty, falls back to deriving
+                from ``gateway_url`` (legacy behaviour).
+            gateway_url: WebSocket URL of the Encre agent gateway.
         """
         super().__init__(gateway_url=gateway_url, capabilities=["text"])
         if not HTTPX_AVAILABLE:
@@ -144,7 +154,7 @@ class WeixinAdapter(BaseAdapter):
             )
         self._app_id = app_id
         self._token = token
-        self._api_base = _derive_api_base(gateway_url)
+        self._api_base = api_url.rstrip("/") if api_url else _derive_api_base(gateway_url)
 
         self._http_client: httpx.AsyncClient | None = None
         self._poll_task: asyncio.Task[Any] | None = None
@@ -373,13 +383,25 @@ class WeixinAdapter(BaseAdapter):
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
             raw=update,
+            source=SessionSource(
+                platform=self.name,
+                chat_id=str(chat_id),
+                chat_type="dm",
+                user_id=str(user_id),
+            ),
         )
 
-        self.dispatch_message(event)
-
-        task = asyncio.create_task(self._process_chat(str(chat_id), str(text)))
+        task = asyncio.create_task(self._dispatch_event(event))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and stream the response to chat."""
@@ -466,3 +488,64 @@ class WeixinAdapter(BaseAdapter):
             )
         except Exception as exc:
             logger.warning("[%s] send_typing error: %s", self.name, exc)
+
+    async def get_qrcode_url(self) -> str:
+        """Fetch a WeChat login QR code from the iLink Bot cloud API.
+
+        Calls ``https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode`` to
+        get a scannable liteapp URL, then renders it as a base64 data URI so
+        the frontend can display it as an inline image.  The QR code is
+        scannable for ~120 seconds.
+
+        Returns:
+            A ``data:image/png;base64,...`` string the frontend can put in an
+            ``<img src>`` directly.
+        """
+        import httpx
+        try:
+            import qrcode  # type: ignore
+        except ImportError:
+            qrcode = None  # type: ignore
+        # Prefer the configured api_url (if it points at a local iLink mirror),
+        # otherwise use the official Tencent cloud endpoint.  The legacy
+        # _derive_api_base produces a 127.0.0.1 address (the Encre WS gateway),
+        # which is NOT the iLink Bot API -- override it here.
+        base = ILINK_BASE_URL
+        if self._api_base and not self._api_base.startswith("http://127.0.0.1"):
+            base = self._api_base
+        headers = {
+            "iLink-App-Id": ILINK_APP_ID,
+            "iLink-App-ClientVersion": str(ILINK_APP_CLIENT_VERSION),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=QR_TIMEOUT_MS / 1000, follow_redirects=True) as client:
+                resp = await client.get(
+                    f"{base.rstrip('/')}/{EP_GET_BOT_QR}",
+                    params={"bot_type": "3"},
+                    headers=headers,
+                )
+                if resp.status_code != 200:
+                    raise RuntimeError(f"iLink HTTP {resp.status_code}: {resp.text[:200]}")
+                data = resp.json()
+            qrcode_value = str(data.get("qrcode") or "")
+            qrcode_url = str(data.get("qrcode_img_content") or "")
+            if not qrcode_value:
+                raise RuntimeError("iLink response missing qrcode token")
+            # qrcode_img_content is the full scannable liteapp URL; qrcode is
+            # just the hex token.  WeChat scans the full URL.
+            scan_data = qrcode_url if qrcode_url else qrcode_value
+            if qrcode is not None:
+                # Render to a PNG data URI so the frontend can inline it.
+                img = qrcode.make(scan_data)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                b64 = buf.getvalue().hex()
+                # Build data URI without base64 codec (hex is fine for PNG).
+                import base64 as _b64
+                return "data:image/png;base64," + _b64.b64encode(buf.getvalue()).decode("ascii")
+            # No qrcode lib: return the raw URL; the frontend renders it itself.
+            return scan_data
+        except httpx.ConnectError:
+            raise RuntimeError("Cannot connect to iLink Bot server (https://ilinkai.weixin.qq.com)")
+        except httpx.TimeoutException:
+            raise RuntimeError("iLink Bot server timed out")

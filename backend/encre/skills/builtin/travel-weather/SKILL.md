@@ -28,12 +28,12 @@ You are helping the user with weather for travel: **{{args}}**
 **Open API (prefer when available):**
 - OpenWeatherMap (openweathermap.org) - free-tier forecast API; usable via `rest_client` with a key, or `web_fetch` the page
 - WeatherAPI (weatherapi.com) - free tier, good forecast
-- QWeather (qweather.com / 和风天气) - China-focused, free developer tier; good for Chinese cities
+- QWeather (qweather.com / Hefeng Weather) - China-focused, free developer tier; good for Chinese cities
 
 **Web (search + fetch):**
 - AccuWeather (accuweather.com) - 15-day + long-range seasonal
 - Weather.com (weather.com) - forecast + radar
-- China Weather (weather.com.cn / 中国天气网) - authoritative for China
+- China Weather (weather.com.cn / China Weather Network) - authoritative for China
 - TimeAndDate (timeanddate.com/weather) - clean forecast tables, good for parsing
 
 ### Search Workflow

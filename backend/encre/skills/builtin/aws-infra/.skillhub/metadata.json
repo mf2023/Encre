@@ -1,0 +1,8 @@
+{
+  "registry": "https://skill.xfyun.cn",
+  "namespace": "global",
+  "slug": "aws-infra",
+  "version": "20260316.130415",
+  "agent": "custom",
+  "installedAt": "2026-07-20T08:03:44.278Z"
+}

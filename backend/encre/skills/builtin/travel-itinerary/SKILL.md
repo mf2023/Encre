@@ -33,14 +33,14 @@ You are helping the user plan a trip: **{{args}}**
 - Google Travel (google.com/travel) - high-level trip planning
 
 **Domestic (China):**
-- Mafengwo (mafengwo.cn / 马蜂窝) - user travelogues + guides, strong for domestic + popular intl
-- Xiaohongshu (xiaohongshu.com / 小红书) - visual guides, trendy spots, real recent experience
-- Qyer (qyer.com / 穷游) - budget-focused international travel guides
+- Mafengwo (mafengwo.cn) - user travelogues + guides, strong for domestic + popular intl
+- Xiaohongshu (xiaohongshu.com) - visual guides, trendy spots, real recent experience
+- Qyer (qyer.com) - budget-focused international travel guides
 - Ctrip / Fliggy destination guides
 
 ### Search Workflow
 1. **Confirm the trip skeleton** -> destination(s), duration (nights), traveler type (solo/couple/family), budget tier, interests (food / history / nature / shopping / nightlife), pace preference (packed vs relaxed). Ask if any are missing.
-2. **Research activities** -> `web_search` `<destination> things to do` / `<目的> 必去景点 攻略`, `web_fetch` TripAdvisor / Mafengwo / Xiaohongshu results. Collect a candidate list with location + approx time + cost.
+2. **Research activities** -> `web_search` `<destination> things to do` / `<> ` (destination must-see attractions guide), `web_fetch` TripAdvisor / Mafengwo / Xiaohongshu results. Collect a candidate list with location + approx time + cost.
 3. **Cluster by area** -> group activities that are near each other to minimize transit; assign one cluster per day.
 4. **Sequence for logistics** -> use Rome2Rio / Amap to estimate travel time between activities; order them to minimize backtracking. Leave buffer (meals, rest, transport delays).
 5. **Produce the plan** -> day-by-day: morning / afternoon / evening blocks, with the activity, location, approx time, transport to next, and a meal suggestion.

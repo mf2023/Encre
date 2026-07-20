@@ -143,6 +143,7 @@ from encre.server.protocol import (
     ClientTerminalSpawn,
     ClientTerminalWrite,
     ClientTestAdapter,
+    ClientWechatScan,
     ClientUninstallSkill,
     ClientUpdateAgent,
     ClientUpdateMCP,
@@ -438,7 +439,8 @@ class EncreWSHandler:
 
                 elif isinstance(msg, ClientListSessions):
                     sessions = self._list_all_sessions()
-                    await self._send(ws, "sessions_list", sessions=sessions)
+                    channel = "iwork" if self._workspace_path else "normal"
+                    await self._send(ws, "sessions_list", sessions=sessions, channel=channel)
 
                 elif isinstance(msg, ClientListAllSessions):
                     # Tray popup needs both modes' sessions at once.
@@ -559,6 +561,40 @@ class EncreWSHandler:
                                 logger.info("[configure] applied permission_settings (%d tools, %d capabilities)", len(tools), len(capabilities))
                     self._persist_settings(session)
                     await self._send(ws, "configured", config=msg.config)
+
+                elif isinstance(msg, ClientWechatScan):
+                    if not self._adapter_manager:
+                        await self._send(ws, "wechat_scan_result",
+                            qrcode_url="", success=False,
+                            message="Server not ready")
+                        continue
+                    try:
+                        # Prefer a running adapter instance; otherwise build a
+                        # temporary one so get_qrcode_url() uses the correct
+                        # api_base derived from the gateway_url.
+                        instances = getattr(self._adapter_manager, "_instances", {}) or {}
+                        adapter = instances.get("weixin")
+                        if adapter is None:
+                            from encre.adapters.manager import _ADAPTER_CLASSES
+                            cls = _ADAPTER_CLASSES.get("weixin")
+                            if cls is None:
+                                await self._send(ws, "wechat_scan_result",
+                                    qrcode_url="", success=False,
+                                    message="WeChat adapter class not found")
+                                continue
+                            adapter = cls()
+                        if not hasattr(adapter, "get_qrcode_url"):
+                            await self._send(ws, "wechat_scan_result",
+                                qrcode_url="", success=False,
+                                message="WeChat adapter does not support QR login")
+                            continue
+                        url = await adapter.get_qrcode_url()
+                        await self._send(ws, "wechat_scan_result",
+                            qrcode_url=url, success=True, message="")
+                    except Exception as e:
+                        await self._send(ws, "wechat_scan_result",
+                            qrcode_url="", success=False,
+                            message=str(e))
 
                 elif isinstance(msg, ClientTestAdapter):
                     if not self._adapter_manager:
@@ -1022,7 +1058,7 @@ class EncreWSHandler:
                     else:
                         info = self._get_or_create_session()
                     if info and info.agent and info.agent.loop:
-                        info.agent.loop._steer_queue.add(msg.prompt or "")
+                        info.agent.loop._steer_queue.push(msg.prompt or "")
                         logger.info("[steer] queued instruction for session=%s", info.session_id)
                         await self._send(ws, "steer_queued", session_id=info.session_id)
                     else:
@@ -3171,25 +3207,19 @@ class EncreWSHandler:
 
         # ── Push result through configured gateways ─────────────────
         if job and job.last_result and hasattr(job, "push_gateways") and job.push_gateways and self._adapter_manager:
-            push_text = f"🤖 {job.name}\n\n{job.last_result[:1500]}"
-            for gw_id in job.push_gateways:
-                try:
-                    instances = getattr(self._adapter_manager, "_instances", {})
-                    adapter = instances.get(gw_id)
-                    if adapter is None:
-                        logger.warning("[automation] push gateway %s not running", gw_id)
-                        continue
-                    # Use the adapter's auto-detected default push target (e.g. the
-                    # most recently active chat).  No manual configuration needed.
-                    push_chat_id = getattr(adapter, "default_push_chat_id", None)
-                    logger.debug("[automation] push gateway %s adapter=%s default_push=%s", gw_id, type(adapter).__name__, push_chat_id)
-                    if not push_chat_id:
-                        logger.warning("[automation] push gateway %s has no push target, skipping", gw_id)
-                        continue
-                    self._tasks.add(asyncio.create_task(adapter.send(push_chat_id, push_text)))
-                    logger.debug("[automation] pushed result to gateway %s (chat=%s)", gw_id, push_chat_id)
-                except Exception as exc:
-                    logger.warning("[automation] failed to push to gateway %s: %s", gw_id, exc)
+            # Route through the DeliveryRouter for unified truncation + audit
+            # (aligns with Hermes delivery.py).  Each entry in push_gateways is
+            # either "platform:chat_id" (explicit chat) or a bare adapter id
+            # (resolved to the adapter's default push target).
+            push_text = f"🤖 {job.name}\n\n{job.last_result}"
+            try:
+                router = self._adapter_manager.delivery
+                self._tasks.add(asyncio.create_task(
+                    router.deliver(push_text, list(job.push_gateways))
+                ))
+                logger.debug("[automation] routed push to %s via DeliveryRouter", job.push_gateways)
+            except Exception as exc:
+                logger.warning("[automation] DeliveryRouter push failed: %s", exc)
 
         logger.debug("[broadcast_automation_update] job=%s state=%s connections=%s history_len=%s",
                     getattr(job, 'id', None) if job else None,
@@ -3280,15 +3310,21 @@ class EncreWSHandler:
         if not self._connections:
             logger.info("[broadcast] skipping -- no connections")
             return
-        sessions = self._list_all_sessions()
+        channel = "iwork" if self._workspace_path else "normal"
+        sessions = self._list_all_sessions(channel_filter=channel)
         logger.info("[broadcast] %d sessions to %d connection(s)",
                     len(sessions), len(self._connections))
 
-        async def _try_send(ws_conn: Any, payload_sessions: list) -> None:
+        async def _try_send(ws_conn: Any, payload_sessions: list, payload_channel: str) -> None:
             """Send sessions_list to one connection without cascading to _cancel_current_task."""
             encrypt = self._client_encrypted if self._client_encrypted is not None else False
             try:
-                payload = encode_server_message("sessions_list", encrypt=encrypt, sessions=payload_sessions)
+                payload = encode_server_message(
+                    "sessions_list",
+                    encrypt=encrypt,
+                    sessions=payload_sessions,
+                    channel=payload_channel,
+                )
                 await ws_conn.send(payload)
             except Exception as exc:
                 logger.warning("[broadcast] send failed (will remove connection): %s", exc)
@@ -3296,7 +3332,7 @@ class EncreWSHandler:
         closed: list[Any] = []
         for ws in self._connections:
             try:
-                _t = asyncio.ensure_future(_try_send(ws, sessions))
+                _t = asyncio.ensure_future(_try_send(ws, sessions, channel))
                 self._tasks.add(_t)
             except Exception as exc:
                 logger.warning("[broadcast] schedule send failed: %s", exc)

@@ -1,6 +1,6 @@
 ---
 name: weixin-connect
-description: 连接个人微信（不是企业微信）。用户说"连接个人微信"、"接入个人微信"、"绑定个人微信"、"个人微信扫码"时使用本 skill。注意：如果用户说的是"企业微信"或"企微"，本 skill 不适用，请使用 wecom-connect skill。一旦匹配本 skill，必须严格按流程执行到底，不...
+description: Connect personal WeChat (not Enterprise WeChat). Used when user says "connect personal WeChat", "integrate personal WeChat", "bind personal WeChat", "scan personal WeChat QR code". Note: If user says "Enterprise WeChat" or "WeCom", this skill is not applicable, use wecom-connect skill. Once this skill is matched, must strictly follow the process to completion.
 metadata:
   source: encre
   tags: 
@@ -10,57 +10,57 @@ context: inline
 ---
 
 ## Weixin Connect
-# 个人微信 Connect Skill
+# Personal WeChat Connect Skill
 
-## ⚠️ 匹配规则（严格区分，不得混淆）
+## ⚠️ Matching Rules (Strictly Differentiate, Do Not Confuse)
 
-**本 skill 仅适用于个人微信，以下关键词触发：**
-- "连接个人微信" / "接入个人微信" / "绑定个人微信"
-- "个人微信扫码" / "微信扫码登录"
-- "连接微信"（未带"企业"二字时，默认为个人微信）
+**This skill only applies to personal WeChat, triggered by the following keywords:**
+- "Connect personal WeChat" / "Integrate personal WeChat" / "Bind personal WeChat"
+- "Personal WeChat QR scan" / "WeChat QR code login"
+- "Connect WeChat" (when not accompanied by "Enterprise", defaults to personal WeChat)
 
-**以下关键词不属于本 skill，禁止触发：**
-- "企业微信" / "企微" / "wecom" / "WeCom" → 使用 wecom-connect skill
+**The following keywords do NOT belong to this skill, triggering is prohibited:**
+- "Enterprise WeChat" / "WeCom" / "wecom" / "WeCom" → Use wecom-connect skill
 
-**一旦读取本 skill，必须严格按下方流程从第 0 步执行到底，不得跳步、不得自由发挥、不得读取其他文档。**
+**Once this skill is read, must strictly follow the process below from Step 0 to completion, no skipping steps, no improvisation, no reading other documents.**
 
-## 核心原则
+## Core Principles
 
-- **严格按步骤走，不要加戏。**
-- **二维码展示优先 CDN，同时始终保存 workspace 备份。**
-- **不要自动轮询。** 给完二维码等用户说"扫完了"再轮询。
-- **不要手动改写 `Encre.json`。**
+- **Strictly follow the steps, don't add anything extra.**
+- **QR code display prioritizes CDN, always keep workspace backup.**
+- **Do not auto-poll.** After giving the QR code, wait for the user to say "scanned" then poll.
+- **Do not manually modify `Encre.json`.**
 
-## 执行流程（写死，照抄执行）
+## Execution Flow (Hardcoded, Follow Exactly)
 
-### 第 0 步：检查插件，未装则装
+### Step 0: Check Plugin, Install if Missing
 
 ```bash
 ls ~/.Encre/extensions/Encre-weixin/package.json 2>/dev/null && echo "INSTALLED" || echo "NOT_INSTALLED"
 ```
 
-- `INSTALLED` → 跳到第 1 步
-- `NOT_INSTALLED` → 安装：
+- `INSTALLED` → Skip to Step 1
+- `NOT_INSTALLED` → Install:
 
 ```bash
 npx -y @tencent-weixin/Encre-weixin-cli install 2>&1
 ```
 
-装完验证 `ls ~/.Encre/extensions/Encre-weixin/package.json`，确认 `INSTALLED` 后继续。
+After installation, verify `ls ~/.Encre/extensions/Encre-weixin/package.json`, confirm `INSTALLED` then continue.
 
-### 第 1 步：调用 ilink API 获取二维码
+### Step 1: Call ilink API to Get QR Code
 
 ```bash
 curl -s "https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3"
 ```
 
-从返回 JSON 提取：
-- `qrcode` — 保存，轮询用
-- `qrcode_img_content` — 二维码 URL，生成 PNG 用
+Extract from returned JSON:
+- `qrcode` — Save, used for polling
+- `qrcode_img_content` — QR code URL, used to generate PNG
 
-### 第 2 步：生成 PNG → upload_to_cdn + workspace 双保险
+### Step 2: Generate PNG → upload_to_cdn + workspace Dual Backup
 
-**一气呵成。**
+**Do it all in one go.**
 
 ```bash
 cd /tmp && npm install qrcode 2>/dev/null | tail -1
@@ -70,87 +70,87 @@ cd /tmp && npm install qrcode 2>/dev/null | tail -1
 cd /tmp && node -e "const qr=require('qrcode'); qr.toFile('/tmp/weixin_qr.png','<qrcode_img_content>',{width:400,margin:2},(e)=>{if(e)console.error(e);else console.log('saved');})"
 ```
 
-**同时做两件事：**
+**Do both things simultaneously:**
 
-1. upload_to_cdn：
+1. upload_to_cdn:
 
 ```
 upload_to_cdn /tmp/weixin_qr.png
 ```
 
-2. 保存 workspace 备份（无论 CDN 是否成功）：
+2. Save workspace backup (regardless of CDN success):
 
 ```bash
 cp /tmp/weixin_qr.png ~/workspace/weixin_qr.png
 ```
 
-CDN 结果处理：
-- **成功** → 第 3 步用 CDN URL 展示
-- **失败** → 重试 upload_to_cdn，最多 3 次
-- **3 次仍失败** → 用 workspace 备份兜底
+CDN result handling:
+- **Success** → Step 3 uses CDN URL for display
+- **Failure** → Retry upload_to_cdn, max 3 times
+- **3 times still fail** → Use workspace backup as fallback
 
-禁止任何替代上传方案（0x0.st、catbox、imgbb、base64、canvas、Encre upload 等全部禁止）。
+No alternative upload methods allowed (0x0.st, catbox, imgbb, base64, canvas, Encre upload, etc. all prohibited).
 
-### 第 3 步：展示二维码，等用户扫码
+### Step 3: Display QR Code, Wait for User to Scan
 
-**CDN 成功时（推荐引导语）：**
-
----
-
-## 微信扫码登录
-
-用**微信**扫一扫下面的二维码：
-
-<CDN 图片 URL>
-
-（已保存备用图片至 ~/workspace/weixin_qr.png）
-
-**操作步骤：**
-1. 打开手机**微信** App
-2. 扫一扫上面的二维码
-3. 在手机上确认登录
-4. 扫完告诉我"ok"，我会继续后续步骤
-
-⏱ 有效期：约 1 分钟
+**When CDN succeeds (recommended guidance):**
 
 ---
 
-**CDN 失败（workspace 兜底时）：**
+## WeChat QR Code Login
+
+Use **WeChat** to scan the QR code below:
+
+<CDN image URL>
+
+(Backup image saved to ~/workspace/weixin_qr.png)
+
+**Steps:**
+1. Open **WeChat** App on your phone
+2. Scan the QR code above
+3. Confirm login on your phone
+4. After scanning, tell me "ok", I'll continue with the next steps
+
+⏱ Valid for approximately 1 minute
 
 ---
 
-## 微信扫码登录
-
-二维码已保存到 `~/workspace/weixin_qr.png`，请打开文件后用**微信**扫码。
-
-扫完在手机上确认登录，然后告诉我"ok"。
-
-⏱ 有效期：约 1 分钟
+**When CDN fails (workspace fallback):**
 
 ---
 
-然后**停下来，等用户确认**。
+## WeChat QR Code Login
 
-### 第 4 步：用户确认后 → 轮询 + 写凭证 + 重启
+QR code saved to `~/workspace/weixin_qr.png`, please open the file and scan with **WeChat**.
 
-**4a. 轮询状态：**
+After scanning, confirm login on your phone, then tell me "ok".
+
+⏱ Valid for approximately 1 minute
+
+---
+
+Then **stop, wait for user confirmation**.
+
+### Step 4: After User Confirms → Poll + Write Credentials + Restart
+
+**4a. Poll Status:**
 
 ```bash
 curl -s "https://ilinkai.weixin.qq.com/ilink/bot/get_qrcode_status?qrcode=<qrcode>"
 ```
 
-| status | 处理 |
+| status | Action |
 |---|---|
-| `wait` | 等 3 秒再 poll |
-| `scaned` | 告诉用户"已扫码，请在手机上确认登录" |
-| `confirmed` | 成功！提取 `ilink_bot_id`、`bot_token`、`baseurl`、`ilink_user_id` |
-| `expired` | 从第 1 步重来 |
+| `wait` | Wait 3 seconds then poll again |
+| `scaned` | Tell user "QR code scanned, please confirm login on your phone" |
+| `confirmed` | Success! Extract `ilink_bot_id`, `bot_token`, `baseurl`, `ilink_user_id` |
+| `expired` | Restart from Step 1 |
 
-**4b. 写入凭证（confirmed 后必须执行）：**
+**4b. Write Credentials (must execute after confirmed):**
 
-将 `ilink_bot_id` 中的 `@` → `-`、`.` → `-` 得到 `accountId`（例：`a34b410e2e6f@im.bot` → `a34b410e2e6f-im-bot`）。
+Replace `@` → `-` and `.` → `-` in `ilink_bot_id` to get `accountId` (example: `a34b410e2e6f@im.bot` → `a34b410e2e6f-im-bot`).
 
-写一个临时脚本执行：
+Write a temporary script to execute:
 
 ```bash
 cat > /tmp/write_weixin_account.js << 'SCRIPT'
@@ -179,48 +179,48 @@ try { existing = JSON.parse(fs.readFileSync(indexPath, 'utf-8')); } catch {}
 if (!existing.includes(accountId)) existing.push(accountId);
 fs.writeFileSync(indexPath, JSON.stringify(existing, null, 2));
 
-console.log('凭证 + 索引写入成功');
+console.log('Credentials + index written successfully');
 SCRIPT
 ```
 
-将脚本中的占位符替换为实际值后执行：
+Replace placeholders in the script with actual values then execute:
 
 ```bash
 sed -i 's/__ACCOUNT_ID__/<accountId>/g; s/__ILINK_BOT_ID__/<ilink_bot_id>/g; s/__BOT_TOKEN__/<bot_token>/g; s/__BASEURL__/<baseurl>/g; s/__ILINK_USER_ID__/<ilink_user_id>/g' /tmp/write_weixin_account.js && node /tmp/write_weixin_account.js
 ```
 
-**4c. 重启 Gateway：**
+**4c. Restart Gateway:**
 
 ```bash
 Encre gateway restart
 ```
 
-### 成功回复
+### Success Response
 
 ---
 
-## 微信连接结果
+## WeChat Connection Result
 
-- ✅ 状态：已绑定成功
-- ✅ Gateway：已重启
+- ✅ Status: Successfully bound
+- ✅ Gateway: Restarted
 - ilink_bot_id: `<ilink_bot_id>`
 - ilink_user_id: `<ilink_user_id>`
 
-现在可以直接在微信里发消息了 🎉
+Now you can send messages directly in WeChat 🎉
 
 ---
 
-到此为止。不要再做任何额外操作。不要读文档。
+That's it. Do not perform any additional operations. Do not read documents.
 
-## 绝对禁止
+## Absolutely Prohibited
 
-- 禁止跳过 upload_to_cdn（失败 3 次才用 workspace 兜底）
-- 禁止自动开轮询（等用户说"扫完了 / ok"）
-- 禁止手动改写 `Encre.json`
-- 禁止跳过写凭证步骤（不写凭证插件无法连接）
-- 禁止给用户 `qrcode_img_content` 原始 URL
-- 禁止使用替代上传方案（0x0.st、catbox、imgbb、base64、canvas 等）
+- Skip upload_to_cdn (only use workspace fallback after 3 failures)
+- Auto-start polling (wait for user to say "scanned / ok")
+- Manually modify `Encre.json`
+- Skip credential writing step (without credentials the plugin cannot connect)
+- Give user the raw `qrcode_img_content` URL
+- Use alternative upload methods (0x0.st, catbox, imgbb, base64, canvas, etc.)
 
-## 一句话总结
+## One-sentence Summary
 
-检查插件 → curl 拿二维码 → PNG → CDN + workspace 双保险 → 用户微信扫码 → 轮询确认 → 写凭证文件 → 重启 gateway → 完成。
+Check plugin → curl to get QR code → PNG → CDN + workspace dual backup → User scans with WeChat → Poll for confirmation → Write credential file → Restart gateway → Done.

@@ -45,7 +45,7 @@ import uuid
 from typing import Any
 from urllib.parse import parse_qs
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.msgraph")
 
@@ -865,12 +865,16 @@ class MSGraphAdapter(BaseAdapter):
                 user_id=user_id or "unknown",
                 reply_to_message_id=reply_to_id,
                 raw=raw_notification,
+                source=SessionSource(
+                    platform=self.name,
+                    chat_id=chat_id,
+                    chat_type="dm",
+                    user_id=user_id or "unknown",
+                ),
             )
 
-            self.dispatch_message(event)
-
             task = asyncio.create_task(
-                self._process_chat(chat_id=event.chat_id or "", content=text)
+                self._dispatch_event(event)
             )
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
@@ -915,6 +919,14 @@ class MSGraphAdapter(BaseAdapter):
                 return parts[i + 1]
 
         return resource
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """

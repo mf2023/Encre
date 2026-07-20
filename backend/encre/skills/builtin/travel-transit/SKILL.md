@@ -33,13 +33,13 @@ You are helping the user navigate within a city: **{{args}}**
 - Moovit - transit directions, strong in some regions
 
 **Domestic (China):**
-- Amap / Gaode (amap.com / 高德地图) - dominant for driving, transit, and ride-hail in China
-- Baidu Maps (map.baidu.com / 百度地图) - strong transit + driving, alternative to Amap
-- Tencent Maps (map.qq.com / 腾讯地图) - WeChat-integrated, third option
+- Amap / Gaode (amap.com) - dominant for driving, transit, and ride-hail in China
+- Baidu Maps (map.baidu.com) - strong transit + driving, alternative to Amap
+- Tencent Maps (map.qq.com) - WeChat-integrated, third option
 
 ### Search Workflow
 1. **Confirm the request** -> origin address/landmark, destination address/landmark, city, preferred mode (walk / transit / drive / cycle), departure time (or "now"). Ask if any are ambiguous - "the station" is not enough in a city with several.
-2. **Search the right map** -> International: `web_fetch` the Google Maps directions URL. China: `web_search` `高德 <起点> 到 <终点> 公交` or construct an Amap/Baidu query. Use `web_search` when a direct URL is hard to build.
+2. **Search the right map** -> International: `web_fetch` the Google Maps directions URL. China: `web_search` ` <> <> ` (Amap <origin> to <destination> transit) or construct an Amap/Baidu query. Use `web_search` when a direct URL is hard to build.
 3. **Parse the route** -> for the chosen mode: total time, distance, step-by-step (walk to X station -> take line Y -> transfer at Z -> ...), fare, number of transfers, real-time disruption notes.
 4. **Offer 1-2 alternatives** -> transit often has a "fastest" and a "fewest transfers" option; surface both with the tradeoff.
 5. **Flag practical details** -> last train time, weekend schedule differences, accessibility (elevators), paid vs free transfer areas.

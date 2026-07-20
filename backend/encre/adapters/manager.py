@@ -56,7 +56,11 @@ from collections.abc import Callable
 from typing import Any
 
 from encre.config import get_data_dir
+from encre.gateway.authz import AuthorizationChecker
+from encre.gateway.delivery import DeliveryRouter
+from encre.gateway.pairing import PairingStore
 from encre.gateway.server import GatewayServer
+from encre.gateway.session import SessionSource, SessionStore
 
 logger = logging.getLogger("encre.adapters.manager")
 
@@ -217,6 +221,20 @@ class AdapterManager:
             port=gateway_port,
             max_connections=32,
         )
+        # SessionStore: persists session_key -> agent session_id routing so each
+        # conversation (platform/chat/user) resumes its own agent session.
+        # Aligns with Hermes' gateway_routing table.  Used by resolve_session()
+        # when an inbound frame carries a SessionSource.
+        self._session_store = SessionStore()
+        # Authorization + DM-pairing (Hermes 5-layer check).  Injected into each
+        # adapter via set_authz / set_pairing so handle_message can reject
+        # unauthorized messages before the agent loop.
+        self._pairing = PairingStore()
+        self._authz = AuthorizationChecker(pairing=self._pairing)
+        # Delivery router for outbound content to explicit targets (cron /
+        # automation push, cross-platform delivery).  Lazily held; created on
+        # first use so an unconfigured manager (iClaw daemon) is unaffected.
+        self._delivery: DeliveryRouter | None = None
         # Active adapter instances: adapter_id -> adapter_instance
         self._instances: dict[str, Any] = {}
         # Last error per adapter: adapter_id -> error_message
@@ -249,6 +267,17 @@ class AdapterManager:
         """
         return self._router
 
+    @property
+    def delivery(self) -> DeliveryRouter:
+        """The outbound delivery router (created on first access).
+
+        Routes content to explicit ``platform:chat_id`` / adapter-id targets
+        with truncation + audit (see :mod:`encre.gateway.delivery`).
+        """
+        if self._delivery is None:
+            self._delivery = DeliveryRouter(self)
+        return self._delivery
+
     async def start_gateway(self) -> None:
         """Start the GatewayServer to accept WebSocket connections from the frontend.
 
@@ -260,6 +289,29 @@ class AdapterManager:
         self._running = True
         await self._gateway.start()
         logger.info("Adapter gateway started")
+        # Discover + load user hooks, then fire gateway:startup (aligns with
+        # Hermes' hook lifecycle).  Discovery failures are logged and skipped
+        # inside discover_and_load -- they never abort startup.
+        try:
+            from encre.gateway.hooks import get_hook_registry, GATEWAY_STARTUP
+            hooks = get_hook_registry()
+            loaded = hooks.discover_and_load()
+            if loaded:
+                logger.info("[hooks] loaded %d hook(s): %s", len(loaded), loaded)
+            await hooks.emit(GATEWAY_STARTUP, {"adapters": list(self._instances.keys())})
+        except Exception as e:
+            logger.warning("[hooks] gateway:startup emit failed: %s", e)
+
+        # Register the relay platform when configured (config-driven, not a
+        # feature flag).  When GATEWAY_RELAY_URL / gateway_relay_url is set, the
+        # gateway dials out to a connector and fronts platforms indirectly.
+        # Unconfigured deployments skip this entirely -- non-breaking.
+        try:
+            from encre.gateway.relay import relay_is_configured, register_relay_adapter
+            if relay_is_configured():
+                await register_relay_adapter(self)
+        except Exception as e:
+            logger.warning("[relay] registration failed (non-fatal): %s", e)
 
     async def stop_gateway(self) -> None:
         """Stop the GatewayServer and all running adapters.
@@ -269,6 +321,8 @@ class AdapterManager:
         """
         await self.stop_all()
         await self._gateway.stop()
+        if self._session_store is not None:
+            self._session_store.close()
         self._running = False
         logger.info("Adapter gateway stopped")
 
@@ -304,6 +358,10 @@ class AdapterManager:
 
         try:
             instance = cls(**kwargs)
+            # Inject gateway authorization + pairing so handle_message can
+            # enforce the 5-layer check and handle /pair.
+            instance.set_authz(getattr(self, "_authz", None))
+            instance.set_pairing(getattr(self, "_pairing", None))
             ok = await instance.connect()
             if ok:
                 self._instances[adapter_id] = instance
@@ -508,6 +566,50 @@ class AdapterManager:
         logger.info("[adapter-manager] created fixed session %s for adapter %s",
                      info.session_id, adapter_name)
         return info.session_id
+
+    async def resolve_session(self, conn: Any, source: SessionSource) -> str | None:
+        """Resolve the agent session_id for an inbound ``SessionSource``.
+
+        Aligns with Hermes' ``SessionStore.get_or_create_session``: look up the
+        routing table by ``build_session_key(source)``; on a miss, create a new
+        agent session (via the SessionManager) and persist the mapping so the
+        next message from the same conversation resumes it.
+
+        Falls back to :meth:`ensure_adapter_session` (the coarse per-adapter
+        fixed session) when no SessionStore / router is available, preserving
+        the legacy behaviour for iClaw-daemon mode and unconfigured setups.
+
+        Args:
+            conn: The adapter connection (its ``.name`` is used for the legacy
+                fallback).
+            source: The structured message origin.
+
+        Returns:
+            The agent session_id, or None if no session could be created.
+        """
+        if source is None:
+            return await self.ensure_adapter_session(getattr(conn, "name", ""))
+        if self._session_store is None or not self._router:
+            return await self.ensure_adapter_session(getattr(conn, "name", ""))
+
+        def _create() -> str | None:
+            sm = self._router.session_manager
+            if sm is None:
+                return None
+            info = sm.create_session(config=self._router._default_config)
+            # Stamp the session with its origin so the frontend (Phase 5) and
+            # the system-prompt builder can show platform context.
+            info.metadata["source"] = source.to_dict()
+            info.metadata["channel"] = source.platform
+            try:
+                info.agent.session.metadata["channel"] = source.platform
+            except Exception:
+                pass
+            logger.info("[adapter-manager] created session %s for %s:%s:%s",
+                        info.session_id, source.platform, source.chat_type, source.chat_id)
+            return info.session_id
+
+        return self._session_store.get_or_create(source, _create)
 
     def _load_adapter_sessions(self) -> None:
         """Load the adapter -> session_id map from disk.

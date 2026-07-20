@@ -29,6 +29,7 @@ Defaults implementation for the Encre tool system.
 """
 from encre.tools.builtin import (
     EncreAgentTool,
+    EncreManageTool,
     EncreApplyPatchTool,
     EncreBashKillTool,
     EncreBashListTool,
@@ -120,6 +121,7 @@ def register_default_tools(registry: ToolRegistry) -> ToolRegistry:
         EncreCronDeleteTool(),
         EncreCronListTool(),
         EncreAgentTool(),
+        EncreManageTool(),
         EncreFindToolTool(),
         EncreLSPTool(),
         EncreBrowserTool(),

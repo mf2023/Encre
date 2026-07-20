@@ -1,0 +1,8 @@
+{
+  "registry": "https://skill.xfyun.cn",
+  "namespace": "global",
+  "slug": "docker",
+  "version": "1.0.4",
+  "agent": "custom",
+  "installedAt": "2026-07-20T08:02:58.700Z"
+}

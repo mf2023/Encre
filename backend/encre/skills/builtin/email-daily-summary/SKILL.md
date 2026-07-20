@@ -12,31 +12,31 @@ context: inline
 ## Email Daily Summary
 # Email Daily Summary Skill
 
-这个技能帮助你自动登录邮箱，获取邮件内容，并生成每日邮件总结。
+This skill helps you automatically log into your email, retrieve email content, and generate daily email summaries.
 
-## 功能特性
+## Features
 
-- 🔐 支持多种邮箱登录（Gmail、Outlook、QQ 邮箱、163 邮箱等）
-- 📧 自动获取最新邮件列表
-- 📝 智能生成邮件摘要
-- 🏷️ 按重要性/发件人/主题分类
-- 📊 生成每日邮件统计报告
+- 🔐 Supports multiple email logins (Gmail, Outlook, QQ Mail, 163 Mail, etc.)
+- 📧 Automatically retrieves latest email list
+- 📝 Smart email summary generation
+- 🏷️ Categorized by importance/sender/subject
+- 📊 Generates daily email statistics report
 
-## 前置要求
+## Prerequisites
 
-1. 安装 browser-use CLI：
+1. Install browser-use CLI:
 ```bash
 uv pip install browser-use[cli]
 browser-use install
 ```
 
-2. 确保已在浏览器中登录过邮箱（使用 real 模式可直接复用登录状态）
+2. Ensure you have logged into your email in the browser (using real mode reuses the login session directly)
 
-## 使用方法
+## Usage
 
-### 方式一：使用已登录的浏览器（推荐）
+### Method 1: Using a Logged-In Browser (Recommended)
 
-使用 `--browser real` 模式可以复用你 Chrome 浏览器中已登录的邮箱会话：
+Using `--browser real` mode reuses your Chrome browser's logged-in email session:
 
 ```bash
 # Gmail
@@ -52,9 +52,9 @@ browser-use --browser real open https://mail.qq.com
 browser-use --browser real open https://mail.163.com
 ```
 
-### 方式二：手动登录流程
+### Method 2: Manual Login Process
 
-如果需要手动登录，使用 `--headed` 模式查看操作过程：
+If manual login is needed, use `--headed` mode to view the operation process:
 
 ```bash
 # 打开邮箱登录页面（以 Gmail 为例）
@@ -75,9 +75,9 @@ browser-use click <login_button_index>
 browser-use open https://mail.google.com
 ```
 
-## 获取邮件列表
+## Get Email List
 
-登录成功后，获取邮件列表：
+After successful login, retrieve the email list:
 
 ```bash
 # 获取当前页面状态，查看邮件列表
@@ -102,7 +102,7 @@ browser-use eval "
 "
 ```
 
-## 使用 Python 生成邮件总结
+## Generate Email Summary with Python
 
 ```bash
 # 初始化邮件数据收集
@@ -140,9 +140,9 @@ print(f'截图已保存: email_summary_{summary_date}.png')
 "
 ```
 
-## 完整的每日邮件总结脚本
+## Complete Daily Email Summary Script
 
-创建一个完整的总结流程：
+Create a complete summary flow:
 
 ```bash
 #!/bin/bash
@@ -195,20 +195,20 @@ echo "✅ 完成！截图保存至: $OUTPUT_DIR/inbox_$DATE.png"
 browser-use close
 ```
 
-## 支持的邮箱服务
+## Supported Email Services
 
-| 邮箱服务 | 登录 URL | 收件箱 URL |
+| Email Service | Login URL | Inbox URL |
 |---------|---------|-----------|
 | Gmail | https://accounts.google.com | https://mail.google.com |
 | Outlook | https://login.live.com | https://outlook.live.com |
-| QQ 邮箱 | https://mail.qq.com | https://mail.qq.com |
-| 163 邮箱 | https://mail.163.com | https://mail.163.com |
-| 126 邮箱 | https://mail.126.com | https://mail.126.com |
-| 企业微信邮箱 | https://exmail.qq.com | https://exmail.qq.com |
+| QQ Mail | https://mail.qq.com | https://mail.qq.com |
+| 163 Mail | https://mail.163.com | https://mail.163.com |
+| 126 Mail | https://mail.126.com | https://mail.126.com |
+| WeCom Mail | https://exmail.qq.com | https://exmail.qq.com |
 
-## 生成 AI 邮件摘要
+## Generate AI Email Summary
 
-如果配置了 API Key，可以使用 AI 自动生成邮件摘要：
+If an API Key is configured, you can use AI to automatically generate email summaries:
 
 ```bash
 # 使用 AI 提取邮件摘要（需要 BROWSER_USE_API_KEY）
@@ -216,7 +216,7 @@ browser-use --browser real open https://mail.google.com
 browser-use extract "提取前 10 封邮件的发件人、主题和摘要，按重要性排序"
 ```
 
-## 定时任务设置
+## Scheduled Tasks
 
 ### macOS/Linux (crontab)
 
@@ -230,7 +230,7 @@ crontab -e
 
 ### macOS (launchd)
 
-创建 `~/Library/LaunchAgents/com.email.dailysummary.plist`：
+Create `~/Library/LaunchAgents/com.email.dailysummary.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -259,14 +259,14 @@ crontab -e
 </plist>
 ```
 
-加载任务：
+Load the task:
 ```bash
 launchctl load ~/Library/LaunchAgents/com.email.dailysummary.plist
 ```
 
-## 输出示例
+## Output Example
 
-生成的邮件总结报告格式：
+Generated email summary report format:
 
 ```
 ==========================================
@@ -300,41 +300,41 @@ launchctl load ~/Library/LaunchAgents/com.email.dailysummary.plist
 ==========================================
 ```
 
-## 安全提示
+## Safety Tips
 
-⚠️ **重要安全建议**：
+⚠️ **Important Safety Recommendations**:
 
-1. **不要在脚本中明文保存密码**，优先使用 `--browser real` 模式复用已登录会话
-2. **敏感信息使用环境变量**存储
-3. **定期检查授权应用**，移除不需要的第三方访问
-4. **启用两步验证**保护邮箱安全
-5. **日志文件不要包含敏感信息**
+1. **Do not store passwords in plain text in scripts**, prioritize using `--browser real` mode to reuse logged-in sessions
+2. **Store sensitive information using environment variables**
+3. **Periodically review authorized applications**, remove unnecessary third-party access
+4. **Enable two-factor authentication** to protect email security
+5. **Log files should not contain sensitive information**
 
-## 故障排除
+## Troubleshooting
 
-**登录失败？**
+**Login failed?**
 ```bash
 # 使用 headed 模式查看登录过程
 browser-use --browser real --headed open https://mail.google.com
 ```
 
-**页面元素找不到？**
+**Page elements not found?**
 ```bash
 # 等待页面完全加载
 sleep 5
 browser-use state
 ```
 
-**会话过期？**
+**Session expired?**
 ```bash
 # 关闭所有会话重新开始
 browser-use close --all
 browser-use --browser real open https://mail.google.com
 ```
 
-## 清理
+## Cleanup
 
-完成后记得关闭浏览器：
+Remember to close the browser when finished:
 
 ```bash
 browser-use close

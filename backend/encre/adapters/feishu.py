@@ -44,7 +44,7 @@ import os
 import time
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.feishu")
 
@@ -215,6 +215,14 @@ class FeishuAdapter(BaseAdapter):
         return await self._refresh_token()
 
     # ── Send Messages ─────────────────────────────────────────────────────
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def send(
         self,
@@ -662,9 +670,17 @@ class FeishuAdapter(BaseAdapter):
                 media_urls=media_urls,
                 media_types=media_types,
                 raw=payload,
+                source=SessionSource(
+                    platform=self.name,
+                    chat_id=chat_id or user_id,
+                    chat_type="dm",
+                    user_id=user_id,
+                ),
             )
 
-            self.dispatch_message(event_obj)
+            task = asyncio.create_task(self._dispatch_event(event_obj))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
         except Exception as e:
             logger.error("[feishu] Failed to handle message event: %s", e)
 

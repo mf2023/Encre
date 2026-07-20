@@ -43,7 +43,7 @@ import socket as _socket
 import time
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.webhook")
 
@@ -317,11 +317,15 @@ class WebhookAdapter(BaseAdapter):
             chat_id=chat_id,
             user_id=user_id,
             raw=payload,
+            source=SessionSource(
+                platform=self.name,
+                chat_id=chat_id,
+                chat_type="dm" if not payload.get("type") else payload.get("type", "dm"),
+                user_id=user_id or chat_id,
+            ),
         )
 
-        self.dispatch_message(event)
-
-        task = asyncio.create_task(self._process_chat(chat_id, text))
+        task = asyncio.create_task(self._dispatch_event(event))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
@@ -331,6 +335,14 @@ class WebhookAdapter(BaseAdapter):
         )
 
     # ── Processing ─────────────────────────────────────────────────────────
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and send the response.

@@ -1140,7 +1140,7 @@ ipcMain.on("tray-theme", (_event, themePreference: string) => {
 ipcMain.on("tray-popup-action", (_event, payload: { action?: string; sessionId?: string }) => {
   closeTrayPopup();
   const { action, sessionId } = payload;
-  if (action === "open") {
+  if (action === "open" || action === "open_workspace") {
     if (mainWindow === null) {
       createWindow();
     } else {
@@ -1153,7 +1153,10 @@ ipcMain.on("tray-popup-action", (_event, payload: { action?: string; sessionId?:
       // renderer's IPC listeners are registered (esp. on a fresh window).
       const sendSwitch = () => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("switch-session", sessionId);
+          mainWindow.webContents.send(
+            action === "open_workspace" ? "switch-workspace" : "switch-session",
+            sessionId,
+          );
         }
       };
       if (mainWindow.webContents.isLoading()) {

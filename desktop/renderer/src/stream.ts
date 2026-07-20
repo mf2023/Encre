@@ -39,9 +39,10 @@ import { Permissions } from "./permissions.js";
 import { Settings } from "./settings.js";
 import { t } from "./i18n.js";
 import { handleEngineInstallRequest, handleEngineInstallProgress } from "./engine_install.js";
-import type { AdapterTestResultEvent } from "./types.js";
+import type { AdapterTestResultEvent, WechatScanResultEvent } from "./types.js";
 
 let _adapterTestCallback: ((event: AdapterTestResultEvent) => void) | null = null;
+let _wechatScanCallback: ((event: WechatScanResultEvent) => void) | null = null;
 let _automationJobsCallback: ((jobs: any[]) => void) | null = null;
 let _automationHistoryCallback: ((history: any[]) => void) | null = null;
 let _automationJobCreatedCallback: ((job: any) => void) | null = null;
@@ -52,6 +53,11 @@ let _automationStreamCallback: ((event: import("./types.js").AutomationStreamEve
 /** Registers a callback for adapter-test results. */
 export function onAdapterTestResult(cb: (event: AdapterTestResultEvent) => void): void {
   _adapterTestCallback = cb;
+}
+
+/** Registers a callback for WeChat QR code scan results. */
+export function onWechatScanResult(cb: (event: WechatScanResultEvent) => void): void {
+  _wechatScanCallback = cb;
 }
 
 /** Registers a callback invoked whenever the automation jobs list arrives. */
@@ -781,6 +787,12 @@ export function handleEvent(event: ServerEvent): void {
       }
       break;
 
+    case "wechat_scan_result":
+      if (typeof _wechatScanCallback === "function") {
+        _wechatScanCallback(event as any);
+      }
+      break;
+
     case "plan_update":
       if (!_hasSessionId(event)) break;
       state.setPlanItems(event.plan_items, _eventSessionId(event));
@@ -809,9 +821,18 @@ export function handleEvent(event: ServerEvent): void {
       state.setAvailableModels(event.models);
       break;
 
-    case "sessions_list":
+    case "sessions_list": {
+      const currentChannel = state.getState().workspaceMode === "iwork" ? "iwork" : "normal";
+      if (event.channel && event.channel !== currentChannel) break;
+
       state.setSessionsList(event.sessions);
-      window.electronAPI?.traySessionsUpdate?.(event.sessions);
+      const isIworkMode = state.getState().workspaceMode === "iwork";
+      const freshSessions = event.sessions as any[];
+      const trayCache = state.getTraySessions();
+      state.setTraySessions(
+        isIworkMode ? trayCache.normal : freshSessions,
+        isIworkMode ? freshSessions : trayCache.iwork,
+      );
       if (state.getState().sessionId) {
         const cur = (event.sessions as any[]).find(
           (s: any) => s.session_id === state.getState().sessionId
@@ -821,13 +842,12 @@ export function handleEvent(event: ServerEvent): void {
         }
       }
       break;
+    }
 
     case "sessions_all": {
-      // Tray popup needs both normal + iwork sessions at once.
       const normal = (event as any).normal || [];
       const iwork = (event as any).iwork || [];
       state.setTraySessions(normal, iwork);
-      window.electronAPI?.traySessionsBothUpdate?.({ normal, iwork });
       break;
     }
 
@@ -1292,6 +1312,14 @@ export function handleEvent(event: ServerEvent): void {
         (window as any).__pendingTrayResume = null;
         state.setSessionId(pending.sessionId);
         send({ type: "resume", session_id: pending.sessionId, request_id: pending.requestId });
+      } else {
+        // `workspace_opened` is the backend confirmation that the selected
+        // tree row now owns the agent context. Only now leave the previous
+        // conversation and show the workspace-root welcome state.
+        state.setSessionId("");
+        state.clearMessages("");
+        (window as any).__appCleanupContentArea?.({ keepAutomationFlag: false });
+        chat?.renderForce?.();
       }
       // Refresh tray dual cache + populate sidebar tree immediately.
       // list_sessions returns sessions from ALL workspace directories on disk,

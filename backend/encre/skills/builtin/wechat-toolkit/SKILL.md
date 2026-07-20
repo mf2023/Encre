@@ -1,6 +1,6 @@
 ---
 name: wechat-toolkit
-description: 微信公众号一站式工具包 — 集成文章搜索、文章下载、AI洗稿改写、公众号发布四大功能。当用户需要搜索/下载/改写/发布微信公众号文章时使用。
+description: WeChat public account all-in-one toolkit - integrates article search, article download, AI rewriting, and public account publishing. Used when user needs to search/download/rewrite/publish WeChat public account articles.
 metadata:
   source: encre
   tags: 
@@ -10,306 +10,306 @@ context: inline
 ---
 
 ## Wechat Toolkit
-# 📦 微信公众号工具包 (wechat-toolkit)
+# WeChat Public Account Toolkit (wechat-toolkit)
 
-集成四大功能模块：**搜索 → 下载 → 洗稿 → 发布**，覆盖公众号内容创作全流程。
-
----
-
-## 模块一览
-
-| 模块 | 功能 | 触发词示例 |
-|------|------|-----------|
-| 🔍 搜索 | 按关键词搜索公众号文章 | "搜XX的公众号文章" |
-| 📰 下载 | 下载文章内容/图片/视频 | "下载这篇公众号文章" |
-| ✍️ 洗稿 | AI去痕迹+原创改写 | "帮我洗稿/改写这篇文章" |
-| 📱 发布 | 发布Markdown到草稿箱 | "发布到公众号" |
+Integrates four major functional modules: **Search → Download → Rewrite → Publish**, covering the entire public account content creation workflow.
 
 ---
 
-# 🔍 模块一：文章搜索
+## Module Overview
 
-通过搜狗微信搜索获取公众号文章列表，支持抓取正文。
+| Module | Function | Trigger Example |
+|--------|----------|-----------------|
+| 🔍 Search | Search public account articles by keyword | "Search XX's public account articles" |
+| 📰 Download | Download article content/images/videos | "Download this public account article" |
+| ✍️ Rewrite | AI de-trace + original rewriting | "Help me rewrite this article" |
+| 📱 Publish | Publish Markdown to draft box | "Publish to public account" |
 
-## 首次安装依赖
+---
+
+# 🔍 Module 1: Article Search
+
+Search public account articles via Sogou WeChat search, supports fetching full text.
+
+## First-time Dependency Installation
 
 ```bash
 npm install -g cheerio
 ```
 
-## 使用方法
+## Usage
 
 ```bash
-# 基础搜索
-node {baseDir}/scripts/search/search_wechat.js "关键词"
+# Basic search
+node {baseDir}/scripts/search/search_wechat.js "keyword"
 
-# 指定数量
-node {baseDir}/scripts/search/search_wechat.js "关键词" -n 15
+# Specify count
+node {baseDir}/scripts/search/search_wechat.js "keyword" -n 15
 
-# 保存到文件
-node {baseDir}/scripts/search/search_wechat.js "关键词" -n 20 -o result.json
+# Save to file
+node {baseDir}/scripts/search/search_wechat.js "keyword" -n 20 -o result.json
 
-# 解析真实链接
-node {baseDir}/scripts/search/search_wechat.js "关键词" -n 5 -r
+# Resolve real links
+node {baseDir}/scripts/search/search_wechat.js "keyword" -n 5 -r
 
-# 抓取文章正文（自动启用 -r）
-node {baseDir}/scripts/search/search_wechat.js "关键词" -n 5 -c
+# Fetch article content (auto-enables -r)
+node {baseDir}/scripts/search/search_wechat.js "keyword" -n 5 -c
 ```
 
-### 参数说明
-- `query`：搜索关键词（必填）
-- `-n, --num`：返回数量（默认 10，最大 50）
-- `-o, --output`：输出 JSON 文件路径
-- `-r, --resolve-url`：解析微信文章真实链接
-- `-c, --fetch-content`：抓取文章正文内容（自动启用 -r）
+### Parameter Description
+- `query`: Search keyword (required)
+- `-n, --num`: Number of results (default 10, max 50)
+- `-o, --output`: Output JSON file path
+- `-r, --resolve-url`: Resolve real WeChat article links
+- `-c, --fetch-content`: Fetch article body content (auto-enables -r)
 
-### 输出字段
-- 文章标题、地址、概要、发布时间、来源公众号
-- `content`：正文内容（使用 -c 时）
-- `word_count`：字数统计（使用 -c 时）
+### Output Fields
+- Article title, URL, summary, publish time, source public account
+- `content`: Body content (when using -c)
+- `word_count`: Word count (when using -c)
 
 ---
 
-# 📰 模块二：文章下载
+# 📰 Module 2: Article Download
 
-输入公众号文章链接，自动下载内容（Markdown+HTML）、配图和视频。
+Input public account article link, automatically download content (Markdown+HTML), images and videos.
 
-## 首次安装依赖
+## First-time Dependency Installation
 
 ```bash
 cd {baseDir}/scripts/downloader && npm install
 ```
 
-## 下载前：确认保存位置
+## Before Downloading: Confirm Save Location
 
 ```bash
-# 查看当前配置
+# View current config
 node {baseDir}/scripts/downloader/download.js --show-config
 
-# 设置默认下载路径（仅需一次）
+# Set default download path (only needed once)
 node {baseDir}/scripts/downloader/download.js --set-output ~/Downloads/wechat-articles
 ```
 
-- `"isDefault": true` → 尚未配置，需询问用户
-- `"isDefault": false` → 已配置，告知用户当前路径
+- `"isDefault": true` → Not configured yet, need to ask user
+- `"isDefault": false` → Already configured, inform user of current path
 
-## 下载文章
+## Download Article
 
 ```bash
-# 使用默认路径
-node {baseDir}/scripts/downloader/download.js "<文章URL>"
+# Use default path
+node {baseDir}/scripts/downloader/download.js "<article URL>"
 
-# 临时指定路径
-node {baseDir}/scripts/downloader/download.js "<文章URL>" --output <临时目录>
+# Temporarily specify path
+node {baseDir}/scripts/downloader/download.js "<article URL>" --output <temp directory>
 
-# 跳过图片/视频
-node {baseDir}/scripts/downloader/download.js "<文章URL>" --no-image
-node {baseDir}/scripts/downloader/download.js "<文章URL>" --no-video
+# Skip images/videos
+node {baseDir}/scripts/downloader/download.js "<article URL>" --no-image
+node {baseDir}/scripts/downloader/download.js "<article URL>" --no-video
 ```
 
-### 输出结构
+### Output Structure
 ```
-<下载目录>/<文章标题>/
-├── content/article.html      # 完整 HTML
-├── metadata.json              # 标题、作者、时间等
-├── images/                    # 所有配图
-└── videos/                    # 所有视频/音频
+<download directory>/<article title>/
+├── content/article.html      # Full HTML
+├── metadata.json              # Title, author, time, etc.
+├── images/                    # All images
+└── videos/                    # All videos/audio
 ```
 
-### 前置要求
-- Node.js ≥ 18、Google Chrome、`bash npm install`（首次）
+### Prerequisites
+- Node.js ≥ 18, Google Chrome, `bash npm install` (first time)
 
 ---
 
-# ✍️ 模块三：文章洗稿与改写
+# ✍️ Module 3: Article Rewriting
 
-将文章改写为自然、原创的风格，去除 AI 写作痕迹，提升原创度。
+Rewrite articles into natural, original style, removing AI writing traces, improving originality.
 
-## 触发词
-- "帮我洗稿这篇文章"
-- "改写成原创"
-- "降低查重率"
-- "去掉 AI 味"
+## Trigger Words
+- "Help me rewrite this article"
+- "Rewrite into original"
+- "Reduce plagiarism rate"
+- "Remove AI feel"
 
-## 洗稿工作流
+## Rewrite Workflow
 
-### 标准洗稿流程
+### Standard Rewrite Process
 
-1. **获取原文** — 通过搜索（-c 抓正文）或下载获得原文
-2. **分析结构** — 识别文章类型、核心论点、段落层次
-3. **深度改写** — 按以下策略执行改写
-4. **添加 frontmatter** — 补充 title + cover
-5. **发布** — 推送到公众号草稿箱
+1. **Get original text** — Obtain original text via search (-c fetch body) or download
+2. **Analyze structure** — Identify article type, core arguments, paragraph hierarchy
+3. **Deep rewrite** — Execute rewriting according to the following strategies
+4. **Add frontmatter** — Add title + cover
+5. **Publish** — Push to public account draft box
 
-### 改写策略
+### Rewrite Strategies
 
-#### A. 结构重组（降重核心）
-- **段落重排**：调整段落顺序，打乱原文结构
-- **段落拆合**：将长段拆为短段，或合并碎片段落
-- **叙事角度转换**：时间线 ↔ 问题导向 ↔ 对比分析 ↔ 故事引入
-- **论据重组**：保留核心论据，改变展开方式
+#### A. Structural Restructuring (Core for plagiarism reduction)
+- **Paragraph reordering**: Adjust paragraph order, disrupt original structure
+- **Paragraph split/merge**: Split long paragraphs into short ones, or merge fragmented paragraphs
+- **Narrative perspective shift**: Timeline ↔ Problem-oriented ↔ Comparative analysis ↔ Story introduction
+- **Argument restructuring**: Retain core arguments, change presentation method
 
-#### B. 语言改写（去 AI 痕迹）
-- **删除意义膨胀句**："标志性"、"里程碑"、"深远影响" → 替换为具体事实
-- **去虚假权威**："专家认为"、"业内普遍认为" → 写明来源或删除
-- **去伪深度动词**："提升能力"、"赋能"、"推动进程" → 改为具体动作
-- **去广告语气**："卓越"、"极致体验"、"全方位" → 客观描述
-- **去 AI 高频词**：赋能、闭环、生态、抓手、底层逻辑、范式、沉淀、势能
-- **去填充短语**：事实上、值得注意的是、总体来说、不难发现
-- **去空洞结尾**："未来可期"、"值得期待" → 实际结论或行动项
+#### B. Language Rewriting (Remove AI traces)
+- **Remove inflated sentences**: "Landmark", "Milestone", "Far-reaching impact" → Replace with specific facts
+- **Remove false authority**: "Experts believe", "Industry generally believes" → State source or delete
+- **Remove pseudo-depth verbs**: "Enhance capabilities", "Empower", "Drive progress" → Change to specific actions
+- **Remove advertising tone**: "Excellent", "Ultimate experience", "Comprehensive" → Objective description
+- **Remove AI high-frequency words**: Empower, closed-loop, ecosystem, leverage point, underlying logic, paradigm, sedimentation, potential
+- **Remove filler phrases**: In fact, it is worth noting that, generally speaking, it is not hard to find
+- **Remove empty conclusions**: "Promising future", "Worth looking forward to" → Actual conclusions or action items
 
-#### C. 标题改写
-为每篇文章生成 3-5 个备选标题，涵盖：
-- **疑问型**：用问题引发好奇（"为什么XX还在用这种方法？"）
-- **数字型**：用数字增强可信度（"3个被忽略的XX技巧"）
-- **悬念型**：制造信息差（"XX的真相，90%的人不知道"）
-- **痛点型**：戳中读者痛点（"别再XX了，试试这个方法"）
+#### C. Title Rewriting
+Generate 3-5 alternative titles for each article, covering:
+- **Question type**: Use questions to spark curiosity ("Why is XX still using this method?")
+- **Number type**: Use numbers to enhance credibility ("3 overlooked XX techniques")
+- **Suspense type**: Create information asymmetry ("The truth about XX, 90% of people don't know")
+- **Pain point type**: Strike reader pain points ("Stop XX, try this method instead")
 
-#### D. 开头改写
-将原文开头转换为以下风格之一：
-- **故事引入**：用一个小故事或场景切入
-- **数据引入**：用震撼数据开头
-- **痛点引入**：直击读者困扰
-- **反问引入**：抛出反直觉问题
+#### D. Opening Rewriting
+Convert the original opening to one of the following styles:
+- **Story introduction**: Start with a small story or scenario
+- **Data introduction**: Start with shocking data
+- **Pain point introduction**: Hit reader's pain points directly
+- **Rhetorical question introduction**: Raise counter-intuitive questions
 
-#### E. SEO 优化（可选）
-- 在标题和首段自然植入核心关键词
-- 在小标题中分布长尾关键词
-- 控制关键词密度（2%-5%），保持自然可读
+#### E. SEO Optimization (Optional)
+- Naturally embed core keywords in title and first paragraph
+- Distribute long-tail keywords in subheadings
+- Control keyword density (2%-5%), maintain natural readability
 
-### AI 痕迹识别清单
+### AI Trace Identification Checklist
 
-改写完成后，逐项检查：
+After rewriting, check item by item:
 
-| # | 检查项 | 处理方式 |
-|---|--------|---------|
-| 1 | 意义膨胀句 | 替换为具体事实 |
-| 2 | 虚假权威引用 | 写明来源或删除 |
-| 3 | 伪深度动词 | 改为具体动作 |
-| 4 | 广告语气 | 客观描述 |
-| 5 | 模板段落（挑战→机遇→展望） | 删除模板，保留结论 |
-| 6 | AI 高频词密集出现 | 替换为日常用语 |
-| 7 | 负向并列滥用（不仅…而且…） | 直接表达 |
-| 8 | 三段式强拆 | 保留重点，删填充项 |
-| 9 | 同义词机械轮换 | 同一概念固定用词 |
-| 10 | 破折号滥用 | 改为句号或逗号 |
-| 11 | 加粗强调滥用 | 去掉不必要强调 |
-| 12 | 列表模板（**X：**…） | 合并为自然段 |
-| 13 | 概念堆砌标题 | 改为口语化标题 |
-| 14 | Emoji 泛滥 | 除非指定风格，默认删除 |
-| 15 | 聊天语残留 | 删除 |
-| 16 | 知识截止声明 | 删除 |
-| 17 | 过度讨好语气 | 客观回应 |
-| 18 | 填充短语 | 删除 |
-| 19 | 过度模糊（可能会、或许） | 改为条件判断 |
-| 20 | 空洞结尾 | 改为实际结论 |
-| 21 | 假区间表达（从…到…） | 列举具体事实 |
+| # | Check Item | Action |
+|---|------------|--------|
+| 1 | Inflated sentences | Replace with specific facts |
+| 2 | False authority citations | State source or delete |
+| 3 | Pseudo-depth verbs | Change to specific actions |
+| 4 | Advertising tone | Objective description |
+| 5 | Template paragraphs (challenge→opportunity→outlook) | Delete template, keep conclusion |
+| 6 | AI high-frequency words appearing densely | Replace with everyday language |
+| 7 | Abusive negative conjunctions (not only... but also...) | Express directly |
+| 8 | Forced three-part structure | Keep key points, delete fillers |
+| 9 | Mechanical synonym rotation | Use consistent terms for same concept |
+| 10 | Dash abuse | Change to periods or commas |
+| 11 | Bold emphasis abuse | Remove unnecessary emphasis |
+| 12 | List template (**X:**…) | Merge into natural paragraphs |
+| 13 | Concept-stacked titles | Change to conversational titles |
+| 14 | Emoji overuse | Remove by default unless style specified |
+| 15 | Chat language residue | Delete |
+| 16 | Knowledge cutoff statement | Delete |
+| 17 | Overly ingratiating tone | Respond objectively |
+| 18 | Filler phrases | Delete |
+| 19 | Excessive vagueness (might, perhaps) | Change to conditional statements |
+| 20 | Empty ending | Change to actual conclusion |
+| 21 | False range expressions (from…to…) | List specific facts |
 
-### 输出格式
+### Output Format
 
-1. **改写后全文**（Markdown 格式，含 frontmatter）
-2. **备选标题**（3-5 个）
-3. **修改说明**（可选，简要列出主要改动）
+1. **Rewritten full text** (Markdown format, with frontmatter)
+2. **Alternative titles** (3-5 options)
+3. **Change notes** (optional, briefly list major changes)
 
-### 判断标准
+### Judgment Criteria
 
-改写成功的标志：
-- ✅ 读起来像真人写的，能直接朗读不拗口
-- ✅ 没有空洞句、模板段、"像 AI" 的气味
-- ✅ 信息密度高，每句话都有具体内容
-- ✅ 结构与原文明显不同
-- ✅ 保持原文核心信息完整性
+Signs of successful rewriting:
+- ✅ Reads like a real person wrote it, can be read aloud without awkwardness
+- ✅ No empty sentences, template paragraphs, or "AI-like" smell
+- ✅ High information density, every sentence has specific content
+- ✅ Structure is clearly different from original
+- ✅ Preserves core information integrity of original
 
 ---
 
-# 📱 模块四：文章发布
+# 📱 Module 4: Article Publishing
 
-一键发布 Markdown 到微信公众号草稿箱，基于 wenyan-cli。
+One-click publish Markdown to WeChat public account draft box, based on wenyan-cli.
 
-## 首次安装
+## First-time Installation
 
 ```bash
 node {baseDir}/scripts/bootstrap/install_wenyan.js
 ```
 
-说明：
-- skill 已内置 fork 版 `wenyan-cli` 源码，位置是 `vendor/wenyan-cli-main`
-- 首次运行发布脚本时，也会自动执行这一步
-- 如果本机没有 `pnpm`，可先执行 `corepack enable`
+Note:
+- The skill has built-in forked `wenyan-cli` source code, located at `vendor/wenyan-cli-main`
+- The first time you run the publish script, this step will also be executed automatically
+- If `pnpm` is not installed locally, first run `corepack enable`
 
-## 配置 API 凭证
+## Configure API Credentials
 
-确保环境变量已设置（或在 TOOLS.md 中配置）：
+Ensure environment variables are set (or configured in TOOLS.md):
 ```bash
 export WECHAT_APP_ID=your_wechat_app_id
 export WECHAT_APP_SECRET=your_wechat_app_secret
 ```
 
-**重要：** IP 必须在微信公众号后台白名单中！
+**Important:** IP must be in the WeChat public account backend whitelist!
 
-## Markdown 格式要求
+## Markdown Format Requirements
 
-文件顶部**必须**包含完整 frontmatter：
+File top **must** contain complete frontmatter:
 
 ```markdown
 ---
-title: 文章标题（必填！）
-cover: https://example.com/cover.jpg  # 封面图（必填！）
+title: Article Title (Required!)
+cover: https://example.com/cover.jpg  # Cover image (Required!)
 ---
 
-# 正文...
+# Body...
 ```
 
-⚠️ `title` 和 `cover` **缺一不可**，否则报错。
+⚠️ `title` and `cover` **both required**, otherwise error.
 
-**⚠️ 图片路径必须使用绝对路径**，避免 wenyan 路径解析问题。包括 cover 和正文中的所有图片引用：
+**⚠️ Image paths must use absolute paths** to avoid wenyan path resolution issues. This includes cover and all image references in the body:
 ```markdown
-cover: /Users/minruiqing/photos/cover.jpg        # ✅ 绝对路径
-cover: ./assets/cover.jpg                         # ❌ 相对路径可能出错
+cover: /Users/username/photos/cover.jpg        # ✅ Absolute path
+cover: ./assets/cover.jpg                         # ❌ Relative path may cause errors
 
-![配图](/Users/minruiqing/photos/image.jpg)       # ✅ 绝对路径
-![配图](./images/photo.jpg)                       # ❌ 相对路径可能出错
+![Image](/Users/username/photos/image.jpg)       # ✅ Absolute path
+![Image](./images/photo.jpg)                       # ❌ Relative path may cause errors
 ```
 
-**⚠️ 图片路径里不要出现空格。** `cover` 和正文图片一旦带空格，wenyan 上传公众号时很容易失败。建议文章目录、`media/` 目录和所有文件名都使用无空格命名。
+**⚠️ No spaces in image paths.** If `cover` or body images have spaces, wenyan will fail when uploading to public account. It is recommended that article directories, `media/` directories, and all filenames use no-space naming.
 
-## 配图生成
+## Image Generation
 
-发布前，**主动询问用户是否需要生成配图**：
+Before publishing, **proactively ask the user if they need images generated**:
 
-> 📸 文章准备就绪！需要我帮你生成配图吗？
-> - 封面图（cover，建议 1080×864）
-> - 正文插图（根据段落主题生成）
-> - 不需要，直接发布
+> 📸 Article ready! Need me to generate images for you?
+> - Cover image (recommended 1080×864)
+> - Body illustrations (generated based on paragraph themes)
+> - No, just publish
 
-**如果用户需要配图：**
-1. 根据文章标题和内容，生成合适的图片描述 prompt
-2. 调用用户提供的**生图 skill**（如 doubao-image、openai-image-gen 等）生成图片
-3. 将生成的图片保存到文章目录，使用**绝对路径**引用
-4. 封面图设置到 frontmatter 的 `cover` 字段
-5. 正文插图在合适位置插入 `![描述](绝对路径)`
+**If the user wants images:**
+1. Generate suitable image description prompts based on article title and content
+2. Call the user's provided **image generation skill** (such as doubao-image, openai-image-gen, etc.) to generate images
+3. Save generated images to the article directory, use **absolute paths** for references
+4. Set cover image to the `cover` field in frontmatter
+5. Insert body illustrations at appropriate positions using `![description](absolute path)`
 
-**prompt 建议：**
-- 封面图：与标题强相关，简洁有冲击力，适合小尺寸预览
-- 正文插图：与对应段落内容一致，辅助理解
+**Prompt suggestions:**
+- Cover image: Strongly related to title, concise and impactful, suitable for small-size preview
+- Body illustrations: Consistent with the corresponding paragraph content, aid understanding
 
-## 发布方式
+## Publishing Methods
 
 ```bash
-# 方式 1: 使用 publish.js
+# Method 1: Use publish.js
 node {baseDir}/scripts/publisher/publish.js /path/to/article.md
 
-# 方式 2: 直接用 wenyan-cli
+# Method 2: Use wenyan-cli directly
 wenyan publish -f article.md -t lapis -h solarized-light
 
-# 方式 3: stdin（推荐，解决路径问题）
+# Method 3: stdin (recommended, solves path issues)
 # macOS/Linux:
 cat "/path/to/article.md" | WECHAT_APP_ID=xxx WECHAT_APP_SECRET=xxx wenyan publish -t lapis -h solarized-light
 
-# 方式 4: 含视频文章（必须用这个）
+# Method 4: Articles with video (must use this)
 node {baseDir}/scripts/publisher/publish_with_video.js /path/to/article.md
 
-# 方式 5: 草稿 / 已发布文章管理
+# Method 5: Draft / Published article management
 node {baseDir}/scripts/publisher/manage_draft.js get MEDIA_ID
 node {baseDir}/scripts/publisher/manage_draft.js list --count 10
 node {baseDir}/scripts/publisher/manage_draft.js count
@@ -321,12 +321,12 @@ node {baseDir}/scripts/publisher/manage_draft.js published-get ARTICLE_ID
 node {baseDir}/scripts/publisher/manage_draft.js published-delete ARTICLE_ID --index 0
 ```
 
-## 草稿删除与正式发布
+## Draft Deletion and Formal Publishing
 
-wenyan 扩展后，现在除了“上传到草稿箱”之外，还支持：
+After wenyan extension, besides "upload to draft box", it also supports:
 
 ```bash
-# 直接用 wenyan
+# Use wenyan directly
 wenyan draft get MEDIA_ID
 wenyan draft list --count 10
 wenyan draft count
@@ -337,7 +337,7 @@ wenyan published list --count 10
 wenyan published get ARTICLE_ID
 wenyan published delete ARTICLE_ID --index 0
 
-# 或使用 toolkit 包装脚本（自动读取 TOOLS.md 中的凭证）
+# Or use toolkit wrapper scripts (automatically reads credentials from TOOLS.md)
 node {baseDir}/scripts/publisher/manage_draft.js get MEDIA_ID
 node {baseDir}/scripts/publisher/manage_draft.js list --count 10
 node {baseDir}/scripts/publisher/manage_draft.js count
@@ -349,97 +349,97 @@ node {baseDir}/scripts/publisher/manage_draft.js published-get ARTICLE_ID
 node {baseDir}/scripts/publisher/manage_draft.js published-delete ARTICLE_ID --index 0
 ```
 
-说明：
-- `draft list` / `published list` 支持 `--offset`、`--count`、`--no-content`
-- `draft publish` 返回的是异步发布任务，推荐带 `--wait`
-- `publish-status` 用来查询正式发布结果
-- `published delete --index 0` 会删除整篇已发布图文；传具体序号可删单篇
-- 正式发布能力依赖公众号权限；如果微信返回未授权，需要去公众平台确认接口权限
+Notes:
+- `draft list` / `published list` support `--offset`, `--count`, `--no-content`
+- `draft publish` returns an async publish task, recommend using `--wait`
+- `publish-status` is used to check formal publish results
+- `published delete --index 0` deletes the entire published article; specify a sequence number to delete a single article
+- Formal publishing capability depends on public account permissions; if WeChat returns unauthorized, check interface permissions on the public platform
 
-## 主题选项
+## Theme Options
 
-先查看 wechat-toolkit 已整理好的主题目录：
+First, check the theme directory already organized by wechat-toolkit:
 
 ```bash
 node {baseDir}/scripts/publisher/publish.js --list-themes
 ```
 
-**Bundled 主题（12 个）**
+**Bundled Themes (12)**
 
-- 内置：`default`、`orangeheart`、`rainbow`、`lapis`、`pie`、`maize`、`purple`、`phycat`
-- 自定义：`aurora`、`newsroom`、`sage`、`ember`
+- Built-in: `default`, `orangeheart`, `rainbow`, `lapis`, `pie`, `maize`, `purple`, `phycat`
+- Custom: `aurora`, `newsroom`, `sage`, `ember`
 
-**代码高亮**：`atom-one-dark`、`atom-one-light`、`dracula`、`github`、`github-dark`、`monokai`、`solarized-dark`、`solarized-light`、`xcode`
+**Code Highlighting**: `atom-one-dark`, `atom-one-light`, `dracula`, `github`, `github-dark`, `monokai`, `solarized-dark`, `solarized-light`, `xcode`
 
-**主题预览（Encre 版本说明）**
+**Theme Previews (Encre Version Notes)**
 
-- Encre 发布包默认**不包含 PNG 预览图**，避免触发非文本文件限制和体积限制
-- 如果你本地想生成参考图，请运行：
+- Encre release package **does not include PNG previews** by default, to avoid triggering non-text file restrictions and size limits
+- If you want to generate reference images locally, run:
 
 ```bash
 node {baseDir}/scripts/publisher/publish.js --generate-theme-previews
 ```
 
-- 生成目录：`{baseDir}/scripts/publisher/theme_previews/`
+- Output directory: `{baseDir}/scripts/publisher/theme_previews/`
 
 ```bash
-# 使用 bundled 主题发布
+# Publish with bundled theme
 node {baseDir}/scripts/publisher/publish.js article.md lapis
 node {baseDir}/scripts/publisher/publish.js article.md aurora
 
-# 指定高亮主题
+# Specify highlighting theme
 node {baseDir}/scripts/publisher/publish.js article.md newsroom github
 
-# 重新生成全部参考图
+# Regenerate all reference images
 node {baseDir}/scripts/publisher/publish.js --generate-theme-previews
 ```
 
-## 视频嵌入（关键）
+## Video Embedding (Important)
 
-微信视频必须用 iframe + data-mpvid 格式，`publish_with_video.js` 已内置此逻辑。
+WeChat videos must use iframe + data-mpvid format, `publish_with_video.js` already has this logic built-in.
 
-Markdown 中引用：
+Reference in Markdown:
 ```markdown
-![视频描述](media/video.mp4)   # 自动上传并嵌入
+![Video description](media/video.mp4)   # Auto upload and embed
 ```
 
-## 故障排查
+## Troubleshooting
 
-| 问题 | 解决方法 |
-|------|---------|
-| IP 不在白名单 | `rest_client ifconfig.me` → 添加到公众号后台 |
-| 内置 wenyan 未就绪 | `node {baseDir}/scripts/bootstrap/install_wenyan.js` |
-| 环境变量未设置 | `export WECHAT_APP_ID=xxx` |
-| 缺少 frontmatter | 添加 title + cover |
-| 40001 token 失效 | 用 `publish_with_video.js`（已内置 token 管理） |
-| 图片路径带空格 | 重命名目录/文件，确保 cover 和正文图片路径都不含空格 |
+| Issue | Solution |
+|-------|----------|
+| IP not in whitelist | `rest_client ifconfig.me` → Add to public account backend |
+| Built-in wenyan not ready | `node {baseDir}/scripts/bootstrap/install_wenyan.js` |
+| Environment variables not set | `export WECHAT_APP_ID=xxx` |
+| Missing frontmatter | Add title + cover |
+| 40001 token expired | Use `publish_with_video.js` (has built-in token management) |
+| Image paths with spaces | Rename directory/file, ensure cover and body image paths have no spaces |
 
 ---
 
-# 完整工作流示例
+# Complete Workflow Examples
 
-## 搜索 → 洗稿 → 发布
-
-```
-1. 搜索文章：node {baseDir}/scripts/search/search_wechat.js "AI教程" -n 5 -c
-2. 选择目标文章，执行洗稿改写
-3. 保存为 Markdown（含 frontmatter）
-4. 发布：node {baseDir}/scripts/publisher/publish.js article.md
-```
-
-## 下载 → 洗稿 → 发布
+## Search → Rewrite → Publish
 
 ```
-1. 下载文章：node {baseDir}/scripts/downloader/download.js "https://mp.weixin.qq.com/s/xxx"
-2. 读取下载的 HTML/Markdown，执行洗稿改写
-3. 保存为 Markdown（含 frontmatter）
-4. 发布：node {baseDir}/scripts/publisher/publish.js article.md
+1. Search articles: node {baseDir}/scripts/search/search_wechat.js "AI tutorial" -n 5 -c
+2. Select target article, execute rewriting
+3. Save as Markdown (with frontmatter)
+4. Publish: node {baseDir}/scripts/publisher/publish.js article.md
+```
+
+## Download → Rewrite → Publish
+
+```
+1. Download article: node {baseDir}/scripts/downloader/download.js "https://mp.weixin.qq.com/s/xxx"
+2. Read downloaded HTML/Markdown, execute rewriting
+3. Save as Markdown (with frontmatter)
+4. Publish: node {baseDir}/scripts/publisher/publish.js article.md
 ```
 
 ---
 
-## 注意事项
+## Important Notes
 
-- 所有工具仅供个人学习使用，请遵守版权法规
-- 搜索功能内置防封禁机制（随机UA、请求延迟），请勿高频使用
-- 配置文件：下载器 `{baseDir}/scripts/downloader/config.json`
+- All tools are for personal learning use only, please comply with copyright laws
+- Search function has built-in anti-ban mechanisms (random UA, request delay), do not use at high frequency
+- Config file: downloader `{baseDir}/scripts/downloader/config.json`

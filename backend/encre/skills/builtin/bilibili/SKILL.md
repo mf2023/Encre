@@ -28,7 +28,7 @@ It is for videos that trigger:
 Use this skill when you need to:
 - design stronger danmu moments
 - plant collective reaction triggers inside a video
-- identify where a viewer will want to吐槽, 共鸣, 站队, or刷梗
+- identify where a viewer will want to comment, resonate, take sides, or spread memes
 - turn a script into a Bilibili-native engagement structure
 - build deeper community participation instead of passive viewing
 
@@ -44,7 +44,7 @@ This skill does NOT:
 
 Bilibili helps:
 - identify likely danmu trigger points
-- design “槽点”, “梗点”, and “共鸣点”
+- design "trigger points for roasting", "meme points", and "resonance points"
 - structure videos for community response rather than passive consumption
 - improve comment, danmu, and rewatch potential
 - turn one-way content into two-way crowd participation
@@ -53,13 +53,13 @@ Bilibili helps:
 
 ## Best Use Cases
 
-- ACG / 二次元 / 游戏内容
+- ACG / anime & manga culture / gaming content
 - commentary and reaction-driven videos
 - campus / youth culture content
 - emotionally resonant storytelling
 - meme-heavy editing plans
 - script review for Bilibili-native engagement
-- finding “名场面” insertion points
+- finding "iconic scene" insertion points
 
 ---
 
@@ -70,7 +70,7 @@ Useful input includes:
 - script or outline
 - target audience
 - intended tone
-- whether the goal is 搞笑, 共鸣, 吐槽, 热血, 反转, or discussion
+- whether the goal is humor, resonance, roasting, excitement, twist, or discussion
 - where you think the current weak parts are
 - whether you want script help, beat design, or danmu trigger analysis
 
@@ -82,7 +82,7 @@ BILIBILI RESONANCE ASSESSMENT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 Video Goal: [What reaction this video should create]
 Audience Mode: [Who this is for]
-Resonance Type: [吐槽 / 梗 / 共情 / 站队 / 高能 / 名场面]
+Resonance Type: [Roasting / Meme / Empathy / Take Sides / High Energy / Iconic Scene]
 
 CORE TRIGGERS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -105,8 +105,8 @@ RESONANCE RISKS
 
 RECOMMENDED FIXES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. [How to sharpen the槽点]
-2. [How to create a stronger梗点]
+1. [How to sharpen the trigger point]
+2. [How to create a stronger meme point]
 3. [How to improve collective reaction probability]
 
 NEXT STEP
@@ -123,7 +123,7 @@ When analyzing a Bilibili video, ask:
 - Where does the content invite collective emotion rather than solo viewing?
 - Is there a shared joke, contradiction, or emotional spike strong enough to trigger live response?
 - Does the video contain moments that are easy to quote, repeat, or mimic?
-- Is there a “群体观看感” or is it just a normal video placed on Bilibili?
+- Is there a "sense of collective viewing" or is it just a normal video placed on Bilibili?
 
 ---
 
@@ -132,9 +132,9 @@ When analyzing a Bilibili video, ask:
 - community reaction beats passive clarity
 - collective emotion is stronger than isolated information
 - meme potential often starts from contrast, exaggeration, or recognizable pain
-- a weak槽点 produces silence
-- a strong共鸣点 makes viewers feel seen
-- a good名场面 is legible within seconds
+- a weak trigger point produces silence
+- a strong resonance point makes viewers feel seen
+- a good iconic scene is legible within seconds
 - danmu is not decoration; it is part of the content layer
 
 ---
@@ -154,13 +154,13 @@ Extract:
 
 ### Step 2: Identify reaction architecture
 Classify desired engagement:
-- 吐槽
-- 梗
-- 共情
-- 反转
-- 热血
-- 站队
-- 名场面
+- Roasting
+- Meme
+- Empathy
+- Plot Twist
+- Thrill
+- Taking Sides
+- Iconic Scene
 
 ### Step 3: Find response gaps
 Check whether the content lacks:
@@ -199,8 +199,8 @@ If content depends on trends, niche fandom knowledge, or platform-specific refer
 - danmu-friendly video design
 - meme triggers in videos
 - collective audience reaction
-- 共鸣 / 吐槽 / 梗点 design
-- how to make a video more B站-native
+- resonance / roasting / meme point design
+- how to make a video more Bilibili-native
 
 ### Do NOT use this skill when:
 - the user only wants generic SEO advice

@@ -31,7 +31,7 @@ This Skill describes how the model should use the `aigohotel-mcp` MCP server to 
 - **Required**
   - `originQuery` (string): The user’s original natural-language query.
   - `place` (string): The place name (city / airport / attraction / train station / subway station / hotel / district / detailed address, etc.).
-  - `placeType` (string): The type corresponding to `place`. Supported values: `城市` (city), `机场` (airport), `景点` (attraction), `火车站` (train station), `地铁站` (subway station), `酒店` (hotel), `区/县` (district/county), `详细地址` (detailed address).
+  - `placeType` (string): The type corresponding to `place`. Supported values: `city`, `airport`, `attraction`, `train station`, `subway station`, `hotel`, `district/county`, `detailed address`.
 
 - **Dates and length of stay**
   - `checkInDate` (string, `YYYY-MM-DD`): Parse from user utterances when possible; if omitted or earlier than today, the service automatically uses “tomorrow”.

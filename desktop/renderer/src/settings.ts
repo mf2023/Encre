@@ -22,7 +22,7 @@
 
 import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, setPermissionPolicies, subscribe, showToast, isEnabled } from "./state.js";
 import { send } from "./ws.js";
-import { waitForModelValidation, onAdapterTestResult } from "./stream.js";
+import { waitForModelValidation, onAdapterTestResult, onWechatScanResult } from "./stream.js";
 import { setModelConfigs, setMcpServers, setSkillsList, setSubAgents } from "./state.js";
 import type { ModelConfigMeta, MCPServerConfig, SkillInfo, ModelCatalog, McpCatalog, McpProviderEntry, ProviderEntry, ProfileData, CustomCommand, UsageStatsSessionEntry } from "./types.js";
 import { Dialog } from "./dialog.js";
@@ -637,6 +637,79 @@ export class Settings {
       this._adapterTestResults[event.adapter_id] = { success: event.success, message: event.message };
       if (this.currentPanel === "gateway") {
         this.renderGateway();
+      }
+    });
+
+    // Handle WeChat QR code scan results
+    onWechatScanResult((event) => {
+      const img = document.getElementById("wechat-qr-img") as HTMLImageElement | null;
+      const statusEl = document.getElementById("wechat-qr-status");
+      const scanBtn = document.getElementById("wechat-scan-btn");
+      if (scanBtn) scanBtn.removeAttribute("disabled");
+      if (event.success && event.qrcode_url) {
+        if (img) {
+          img.src = event.qrcode_url;
+          img.style.display = "block";
+        }
+        if (statusEl) {
+          statusEl.style.display = "block";
+          statusEl.textContent = "120s";
+          // Countdown the remaining seconds.
+          let remain = 120;
+          if ((this as any)._qrCountdown) clearInterval((this as any)._qrCountdown);
+          (this as any)._qrCountdown = setInterval(() => {
+            remain -= 1;
+            const el = document.getElementById("wechat-qr-status");
+            if (!el) {
+              clearInterval((this as any)._qrCountdown);
+              return;
+            }
+            if (remain <= 0) {
+              el.textContent = "";
+              const i = document.getElementById("wechat-qr-img") as HTMLImageElement | null;
+              if (i) i.style.display = "none";
+              clearInterval((this as any)._qrCountdown);
+              return;
+            }
+            el.textContent = `${remain}s`;
+          }, 1000);
+        }
+      } else {
+        if (img) img.style.display = "none";
+        if (statusEl) {
+          statusEl.style.display = "block";
+          statusEl.textContent = `❌ ${event.message}`;
+        }
+      }
+    });
+  }
+
+  /** Show a standalone QR code popup window for WeChat login. */
+  private _showWechatQrDialog(): void {
+    document.getElementById("wechat-qr-overlay")?.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "wechat-qr-overlay";
+    overlay.className = "toast-overlay";
+    overlay.innerHTML = `
+      <div class="toast-dialog" style="width:320px;text-align:center;padding:20px">
+        <div style="font-size:15px;font-weight:600">${t("settings.wechatScanDialogTitle")}</div>
+        <hr style="border:none;border-top:1px solid var(--border-color);margin:16px 0" />
+        <div id="wechat-qr-status" style="font-size:14px;color:var(--text-muted);padding:120px 0">${t("settings.wechatScanning")}</div>
+        <img id="wechat-qr-img" style="display:none;width:240px;height:240px;margin:0 auto" />
+        <div id="wechat-qr-countdown" style="display:none;font-size:12px;color:var(--text-muted);margin-top:8px"></div>
+        <div style="margin-top:16px">
+          <button class="btn" id="wechat-qr-close" style="padding:6px 24px;font-size:13px">${t("header.close")}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector("#wechat-qr-close")?.addEventListener("click", () => {
+      if ((this as any)._qrCountdown) clearInterval((this as any)._qrCountdown);
+      overlay.remove();
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        if ((this as any)._qrCountdown) clearInterval((this as any)._qrCountdown);
+        overlay.remove();
       }
     });
   }
@@ -1656,25 +1729,21 @@ this.renderShortcuts();
       { id: "discord", name: "Discord", desc: "集成 Discord 机器人，管理服务器频道消息与交互", fields: [
         { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
       ], docs: "https://discord.com/developers/applications" },
-      { id: "weixin", name: "微信", desc: "连接微信，收发消息并自动回复", fields: [
-        { key: "app_id", labelKey: "fieldAppId", type: "text" },
-        { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-      ], docs: "https://mp.weixin.qq.com/" },
-      { id: "wecom", name: "企业微信", desc: "对接企业微信自建应用，实现企业内部消息通知与协作", fields: [
-        { key: "corp_id", labelKey: "fieldCorpId", type: "text" },
-        { key: "agent_id", labelKey: "fieldAgentId", type: "text" },
-        { key: "secret", labelKey: "fieldSecret", type: "password" },
-        { key: "token", labelKey: "fieldToken", type: "text" },
+      { id: "weixin", name: "微信", desc: "通过 iLink Bot 扫码绑定微信个人号，自动收发消息", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
+      { id: "wecom", name: "企业微信", desc: "对接企业微信自建应用回调，接收成员消息并自动回复", fields: [
+        { key: "token", labelKey: "fieldWecomToken", type: "text" },
         { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
+        { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" },
       ], docs: "https://developer.work.weixin.qq.com/document/" },
-      { id: "feishu", name: "飞书", desc: "连接飞书开放平台，接收机器人事件并回复消息", fields: [
+      { id: "feishu", name: "飞书", desc: "连接飞书开放平台机器人，接收机器人事件并回复消息", fields: [
         { key: "app_id", labelKey: "fieldAppId", type: "text" },
         { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-      ], docs: "https://open.feishu.cn/" },
-      { id: "dingtalk", name: "钉钉", desc: "接入钉钉自定义机器人 Webhook，发送工作通知与群消息", fields: [
-        { key: "webhook_url", labelKey: "fieldWebhookUrl", type: "text" },
-        { key: "webhook_secret", labelKey: "fieldWebhookSecret", type: "password" },
-      ], docs: "https://open.dingtalk.com/" },
+        { key: "verify_token", labelKey: "fieldVerifyToken", type: "password" },
+      ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
+      { id: "dingtalk", name: "钉钉", desc: "接入钉钉开放平台机器人，通过 WebSocket 接收事件并通过 OpenAPI 回复消息", fields: [
+        { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
+        { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" },
+      ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
       { id: "slack", name: "Slack", desc: "集成 Slack 工作空间，通过 Bot Token 监听和发送频道消息", fields: [
         { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
         { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" },
@@ -1794,20 +1863,29 @@ this.renderShortcuts();
             </div>`;
         }
         configBodyHtml = `
-          <div style="padding:12px 16px 8px">
-            ${fieldsHtml}
-            <div id="adapter-test-status-${def.id}" style="font-size:12px;padding:4px 0;min-height:20px"></div>
-            <div style="padding-top:12px;display:flex;justify-content:flex-end;gap:8px">
-              <button class="btn btn-sm" id="adapter-test-${def.id}" style="padding:6px 20px;font-size:13px">
-                <i data-lucide="plug" style="width:14px;height:14px;margin-right:4px"></i>
-                ${t("settings.adapterTest")}
-              </button>
-              <button class="btn btn-primary btn-sm" id="adapter-save-${def.id}" style="padding:6px 20px;font-size:13px">
-                <i data-lucide="check" style="width:14px;height:14px;margin-right:4px"></i>
-                ${t("settings.adapterSave")}
-              </button>
-            </div>
-          </div>`;
+	          <div style="padding:12px 16px 8px">
+	            ${fieldsHtml}
+	            ${def.id === "weixin" ? `
+	            <div style="text-align:center;padding:16px 0 0">
+	              <button class="btn btn-primary" id="wechat-scan-btn" style="padding:8px 24px;font-size:14px">
+	                <i data-lucide="scan-qr-code" style="width:16px;height:16px;margin-right:6px"></i>
+	                ${t("settings.wechatScan")}
+	              </button>
+	            </div>
+	            ` : `
+	            <div id="adapter-test-status-${def.id}" style="font-size:12px;padding:4px 0;min-height:20px"></div>
+	            <div style="padding-top:12px;display:flex;justify-content:flex-end;gap:8px">
+	              <button class="btn btn-sm" id="adapter-test-${def.id}" style="padding:6px 20px;font-size:13px">
+	                <i data-lucide="plug" style="width:14px;height:14px;margin-right:4px"></i>
+	                ${t("settings.adapterTest")}
+	              </button>
+	              <button class="btn btn-primary btn-sm" id="adapter-save-${def.id}" style="padding:6px 20px;font-size:13px">
+	                <i data-lucide="check" style="width:14px;height:14px;margin-right:4px"></i>
+	                ${t("settings.adapterSave")}
+	              </button>
+	            </div>
+	            `}
+	          </div>`;
       }
 
       const iconData = PLATFORM_ICONS[def.id];
@@ -1923,6 +2001,18 @@ this.renderShortcuts();
           send({ type: "configure", config });
           delete this._adapterTestResults[def.id];
           this.renderGateway();
+        });
+      }
+
+      // WeChat scan button (QR code login) - opens a standalone popup window
+      const scanBtn = document.getElementById("wechat-scan-btn");
+      if (scanBtn) {
+        scanBtn.addEventListener("click", () => {
+          scanBtn.setAttribute("disabled", "disabled");
+          this._showWechatQrDialog();
+          send({ type: "wechat_scan", adapter_id: "weixin" });
+          // Re-enable after the result arrives (or after 30s timeout).
+          setTimeout(() => scanBtn.removeAttribute("disabled"), 30000);
         });
       }
 

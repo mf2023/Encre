@@ -73,7 +73,7 @@ try:
 except ImportError:
     CRYPTO_AVAILABLE = False
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.wecom")
 
@@ -811,25 +811,28 @@ class WeComAdapter(BaseAdapter):
             media_urls=media_urls,
             media_types=media_types,
             raw=xml_text,
+            source=SessionSource(
+                platform=self.name,
+                chat_id=user_id,
+                chat_type="dm",
+                user_id=user_id,
+            ),
         )
 
     async def _dispatch_event(self, event: MessageEvent) -> None:
         """
-        Dispatch event.
+        Dispatch event via handle_message (unified path).
 
         Args:
             event (MessageEvent):
-
-        Returns:
-            None
         """
         try:
-            self.dispatch_message(event)
-            _t = asyncio.ensure_future(self._process_chat(
-                chat_id=event.chat_id or "",
-                content=event.text,
-            ))
-            self._background_tasks.add(_t)
+            if event.chat_id:
+                try:
+                    await self.send_typing(event.chat_id)
+                except Exception:
+                    pass
+            await self.handle_message(event)
         except Exception as exc:
             logger.error("[%s] Event dispatch error: %s", self.name, exc)
 

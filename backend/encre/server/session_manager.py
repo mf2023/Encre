@@ -709,6 +709,11 @@ class SessionManager:
                 "name": info.metadata.get("name", self._index.get(info.session_id, {}).get("name", "")),
                 "channel": (info.agent.session.metadata.get("channel") if hasattr(info.agent, "session") and info.agent.session and info.agent.session.metadata
                             else info.metadata.get("channel", "normal")),
+                # Structured routing origin (Phase 5): set by the gateway
+                # resolve_session() when an adapter forwards a SessionSource.
+                # None for desktop/normal sessions (no platform origin).  The
+                # frontend renders a platform badge when present.
+                "source": info.metadata.get("source"),
                 "message_count": msg_count,
             })
         return result

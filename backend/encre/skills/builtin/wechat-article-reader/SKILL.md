@@ -1,6 +1,6 @@
 ---
 name: wechat-article-reader
-description: 将微信公众号文章导出为 Markdown 格式。当用户提供微信公众号链接 (mp.weixin.qq.com) 或要求下载/导出/保存微信文章时触发。默认保存到工作空间的 source 目录。
+description: Export WeChat public account articles to Markdown format. Triggered when user provides a WeChat public account link (mp.weixin.qq.com) or requests to download/export/save WeChat articles. Default save to workspace source directory.
 metadata:
   source: encre
   tags: 
@@ -10,73 +10,73 @@ context: inline
 ---
 
 ## Wechat Article Reader
-# 微信公众号文章导出技能 (WeChat-Article-Reader)
+# WeChat Public Account Article Export Skill (WeChat-Article-Reader)
 
-## 触发条件
+## Trigger Conditions
 
-当以下情况时触发此技能：
+Trigger this skill when the following conditions are met:
 
-- 用户提供微信公众号文章链接 (mp.weixin.qq.com)
-- 用户要求"下载"、"导出"或"保存"微信文章
-- 用户要求将微信文章转换为 Markdown
-- 用户提到"公众号文章"、"微信文章"、"下载微信"、"导出公众号"
+- User provides a WeChat public account article link (mp.weixin.qq.com)
+- User requests to "download", "export" or "save" WeChat articles
+- User requests to convert WeChat articles to Markdown
+- User mentions "public account articles", "WeChat articles", "download WeChat", "export public account"
 
-**触发示例：**
-- "下载这篇文章 https://mp.weixin.qq.com/s/xxx"
-- "把这篇公众号文章导出为 markdown"
-- "保存微信文章到本地"
-- "帮我保存这篇微信文章"
+**Trigger Examples:**
+- "Download this article https://mp.weixin.qq.com/s/xxx"
+- "Export this public account article to markdown"
+- "Save WeChat article to local"
+- "Help me save this WeChat article"
 
-## 工作原理
+## How It Works
 
-此技能使用 Python 脚本执行以下操作：
-1. 获取微信文章 HTML 页面
-2. 从 Open Graph 元标签提取元数据（标题、作者、发布时间）
-3. 从 `#js_content` div 提取正文内容
-4. 使用 markdownify 将 HTML 转换为 Markdown
-5. 保存为带 YAML Front Matter 的 Markdown 文件
+This skill uses Python scripts to perform the following operations:
+1. Get WeChat article HTML page
+2. Extract metadata from Open Graph meta tags (title, author, publish time)
+3. Extract content from `#js_content` div
+4. Convert HTML to Markdown using markdownify
+5. Save as Markdown file with YAML Front Matter
 
-## 脚本目录
+## Script Directory
 
-**基础目录**：`~/.npm-global/lib/node_modules/Encre/skills/WeChat-article-reader`
+**Base Directory**: `~/.npm-global/lib/node_modules/Encre/skills/WeChat-article-reader`
 
-**脚本位置**：the tool
+**Script Location**: the tool
 
-## 安装设置
+## Installation Setup
 
-### 首次安装
+### First-time Installation
 
-1. **检查 Python 依赖**：
+1. **Check Python Dependencies**:
 ```bash
 python3 -c "import requests, bs4, markdownify" 2>/dev/null || echo "需要安装依赖"
 ```
 
-2. **如需安装依赖**：
+2. **To Install Dependencies**:
 ```bash
 pip3 install requests beautifulsoup4 lxml markdownify
 ```
 
-### 无需配置
+### No Configuration Needed
 
-此技能开箱即用，无需 API Key 或额外配置。使用带浏览器头部的 HTTP 请求来获取微信文章。
+This skill works out of the box, no API Key or additional configuration needed. Uses HTTP requests with browser headers to fetch WeChat articles.
 
-## 执行步骤
+## Execution Steps
 
-当此技能被触发时，按以下步骤执行：
+When this skill is triggered, follow these steps:
 
-### 步骤 1：提取 URL
+### Step 1: Extract URL
 
-从用户请求中识别微信文章 URL。有效 URL 以以下开头：
+Identify the WeChat article URL from the user's request. Valid URLs start with:
 - `https://mp.weixin.qq.com/s/`
 - `https://mp.weixin.qq.com/...`
 
-### 步骤 2：确定输出目录
+### Step 2: Determine Output Directory
 
-默认输出目录：`~/.Encre/workspace-qiming/source`
+**Default output directory**: `~/.Encre/workspace-qiming/source`
 
-用户可以指定自定义输出目录。
+Users can specify a custom output directory.
 
-### 步骤 3：运行导出脚本
+### Step 3: Run Export Script
 
 ```bash
 # 如需要则创建输出目录
@@ -86,15 +86,15 @@ mkdir -p "$OUTPUT_DIR"
 python3 ~/.npm-global/lib/node_modules/Encre/skills/WeChat-article-reader/scripts/export.py "$URL" "$OUTPUT_DIR"
 ```
 
-### 步骤 4：报告结果
+### Step 4: Report Results
 
-告知用户：
-- 成功或失败状态
-- 输出文件路径
-- 文章标题和元数据
-- 任何错误或警告
+Inform the user:
+- Success or failure status
+- Output file path
+- Article title and metadata
+- Any errors or warnings
 
-## 命令示例
+## Command Examples
 
 ```bash
 # 基本导出
@@ -104,21 +104,21 @@ python3 ~/.npm-global/lib/node_modules/Encre/skills/WeChat-article-reader/script
 python3 ~/.npm-global/lib/node_modules/Encre/skills/WeChat-article-reader/scripts/export.py "$URL" "/path/to/output"
 ```
 
-## 输出格式
+## Output Format
 
-导出的 Markdown 文件包含：
+The exported Markdown file contains:
 
 ```yaml
 ---
-title: 文章标题
+title: Article标题
 author: 作者名称
 publish_time: 发布时间
 source_url: 原文链接
 exported_at: 导出时间戳
-description: 文章描述
+description: Article描述
 ---
 
-# 文章标题
+# Article标题
 
 > 原文链接: URL
 
@@ -127,55 +127,55 @@ description: 文章描述
 
 -----
 
-文章正文内容...
+Article正文内容...
 ```
 
-## 文件命名
+## File Naming
 
-生成的文件遵循格式：`YYYYMMDD_HHMMSS_文章标题.md`
+Generated files follow the format: `YYYYMMDD_HHMMSS_Article.md` (article title)
 
-标题中的特殊字符会被清理以确保文件系统兼容性。
+Special characters in titles are cleaned to ensure file system compatibility.
 
-## 常见问题与限制
+## Common Issues and Limitations
 
-### 常见问题
+### Common Issues
 
-| 问题 | 原因 | 解决方案 |
-|------|------|----------|
-| "无法找到文章正文内容" | 文章需要登录或已被删除 | 尝试在浏览器中打开，或使用浏览器工具 |
-| 连接超时 | 网络问题或限流 | 等待后重试，检查网络连接 |
-| 编码问题 | 特殊字符 | 脚本自动处理 UTF-8 |
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "Cannot find article content" | Article requires login or has been deleted | Try opening in browser, or use browser tools |
+| Connection timeout | Network issue or rate limiting | Wait and retry, check network connection |
+| Encoding issue | Special characters | Script handles UTF-8 automatically |
 
-### 已知限制
+### Known Limitations
 
-- **需要登录的文章**：部分文章需要微信登录才能查看
-- **反爬虫**：微信有反机器人措施，可能阻止频繁请求
-- **图片**：不下载文章图片，仅保存 Markdown 文本
-- **复杂格式**：可能无法完全保留所有格式
+- **Login required articles**: Some articles require WeChat login to view
+- **Anti-crawling**: WeChat has anti-bot measures that may block frequent requests
+- **Images**: Article images are not downloaded, only Markdown text is saved
+- **Complex formatting**: May not be able to fully preserve all formatting
 
-## 依赖项
+## Dependencies
 
-| 包名 | 版本 | 用途 |
-|------|------|------|
-| requests | >=2.31.0 | HTTP 请求 |
-| beautifulsoup4 | >=4.12.0 | HTML 解析 |
-| lxml | >=4.9.0 | XML/HTML 解析器 |
-| markdownify | >=0.11.6 | HTML 转 Markdown |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| requests | >=2.31.0 | HTTP requests |
+| beautifulsoup4 | >=4.12.0 | HTML parsing |
+| lxml | >=4.9.0 | XML/HTML parser |
+| markdownify | >=0.11.6 | HTML to Markdown |
 
-## 错误处理
+## Error Handling
 
-脚本会：
-- 打印清晰的中文错误信息
-- 使用正确的状态码退出
-- 优雅处理缺失的依赖
-- 处理前验证 URL 格式
+The script will:
+- Print clear error messages (in Chinese)
+- Exit with correct status codes
+- Handle missing dependencies gracefully
+- Validate URL format before processing
 
-## 来源
+## Source
 
-基于 wechat-article-export 项目：
+Based on the wechat-article-export project:
 - GitHub: https://github.com/wechat-article/wechat-article-exporter
-- 本 Skill 由 启明 创建
+- This Skill was created by Qiming
 
-## 开源协议
+## Open Source License
 
 MIT License

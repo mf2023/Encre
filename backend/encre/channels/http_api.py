@@ -253,7 +253,7 @@ class HTTPChannel(Channel):
             )
             # Get the session_id used
             info = router.session_manager.create_session()
-            router.session_manager.remove_session(info.session_id)
+            await router.session_manager.remove_session(info.session_id)
             self._respond(writer, 200, {
                 "response": result,
                 "session_id": session_id,

@@ -34,15 +34,15 @@ You are helping the user discover what to do at a destination: **{{args}}**
 - Michelin Guide (guide.michelin.com) - restaurants for food-focused trips
 
 **Domestic (China):**
-- Dianping (dianping.com / 大众点评) - restaurants + local services with reviews; the default for food
-- Mafengwo (mafengwo.cn / 马蜂窝) - attractions ranking + travelogues
-- Xiaohongshu (xiaohongshu.com / 小红书) - trendy / photogenic spots, recent real experience
-- Meituan (meituan.com / 美团) - ticketed attractions + reviews
+- Dianping (dianping.com) - restaurants + local services with reviews; the default for food
+- Mafengwo (mafengwo.cn) - attractions ranking + travelogues
+- Xiaohongshu (xiaohongshu.com) - trendy / photogenic spots, recent real experience
+- Meituan (meituan.com) - ticketed attractions + reviews
 - Ctrip destination guides
 
 ### Search Workflow
 1. **Clarify the interest** -> destination, what kind of activity (sightseeing / food / nature / shopping / nightlife / family), and any constraints (budget, accessibility, time available, must-see vs off-path). Ask if vague.
-2. **Search ranking sources** -> `web_search` `<destination> top things to do` / `<目的> 必去景点` then `web_fetch` TripAdvisor / Mafengwo / Google Maps POI. Collect a ranked list with rating + approx visit time + cost.
+2. **Search ranking sources** -> `web_search` `<destination> top things to do` / `<> Must-Visit Attractions` (destination must-see attractions) then `web_fetch` TripAdvisor / Mafengwo / Google Maps POI. Collect a ranked list with rating + approx visit time + cost.
 3. **For food specifically** -> Dianping (China) or Michelin/TripAdvisor (international); note the cuisine type and price tier, not just the name.
 4. **Filter to the user's interests** -> 3-5 well-chosen picks beat 20 dumped names; explain why each fits the user's stated interest.
 5. **Practical notes** -> opening hours, ticketed/advance-booking need, peak crowd times, best season, how long to budget.

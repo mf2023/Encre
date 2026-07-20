@@ -369,6 +369,117 @@ class TestOpenAIBackendRequestBuilding:
 # Lifecycle
 # ===========================================================================
 
+# ===========================================================================
+# Prompt caching
+# ===========================================================================
+
+class TestOpenAIBackendPromptCaching:
+    """Test the _apply_prompt_caching_openai static method."""
+
+    def test_splits_system_at_boundary(self):
+        """System message is split into prefix and suffix at __PROMPT_CACHE_BOUNDARY__."""
+        messages = [
+            {"role": "system", "content": "You are helpful.__PROMPT_CACHE_BOUNDARY__\nMemory: foo"},
+            {"role": "user", "content": "Hello"},
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        assert len(result) == 3
+        assert result[0]["role"] == "system"
+        assert "You are helpful." in result[0]["content"]
+        assert result[1]["role"] == "system"
+        assert "Memory: foo" in result[1]["content"]
+        assert result[2]["role"] == "user"
+
+    def test_no_boundary_unchanged(self):
+        """Messages without boundary marker are left unchanged."""
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hello"},
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        assert len(result) == 2
+        assert result[0]["content"] == "You are helpful."
+
+    def test_only_user_messages(self):
+        """No system messages means no splitting occurs."""
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "user", "content": "World"},
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        assert len(result) == 2
+
+    def test_multiple_system_messages(self):
+        """Only the system message with boundary is split."""
+        messages = [
+            {"role": "system", "content": "Static rules.__PROMPT_CACHE_BOUNDARY__\nDynamic rules"},
+            {"role": "system", "content": "Extra system"},
+            {"role": "user", "content": "Hi"},
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        assert len(result) == 4
+        assert result[0]["role"] == "system" and "Static rules" in result[0]["content"]
+        assert result[1]["role"] == "system" and "Dynamic rules" in result[1]["content"]
+        assert result[2]["role"] == "system"
+        assert result[3]["role"] == "user"
+
+    def test_empty_prefix_or_suffix(self):
+        """Empty parts after splitting are dropped."""
+        messages = [
+            {"role": "system", "content": "__PROMPT_CACHE_BOUNDARY__\nOnly suffix"},
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        assert len(result) == 1
+        assert "Only suffix" in result[0]["content"]
+
+        messages2 = [
+            {"role": "system", "content": "Only prefix\n__PROMPT_CACHE_BOUNDARY__"},
+        ]
+        result2 = OpenAIBackend._apply_prompt_caching_openai(messages2)
+        assert len(result2) == 1
+        assert "Only prefix" in result2[0]["content"]
+
+    def test_non_string_content_unchanged(self):
+        """List content (e.g. multimodal) is not modified."""
+        messages = [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": "Hello"}],
+            },
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        assert len(result) == 1
+        assert isinstance(result[0]["content"], list)
+
+    def test_mixed_message_order_preserved(self):
+        """Non-system messages keep their order relative to split system parts."""
+        messages = [
+            {"role": "system", "content": "A.__PROMPT_CACHE_BOUNDARY__\nB."},
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "Q2"},
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        roles = [m["role"] for m in result]
+        assert roles == ["system", "system", "user", "assistant", "user"]
+
+    def test_boundary_removed_from_system(self):
+        """The boundary marker text is removed from all system message contents."""
+        messages = [
+            {"role": "system", "content": "A.__PROMPT_CACHE_BOUNDARY__\nB."},
+            {"role": "system", "content": "C.__PROMPT_CACHE_BOUNDARY__\nD."},
+        ]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        for m in result:
+            assert "__PROMPT_CACHE_BOUNDARY__" not in m["content"]
+
+    def test_chat_without_caching_no_split(self):
+        """enable_caching=False leaves messages unchanged."""
+        messages = [{"role": "user", "content": "Hello"}]
+        result = OpenAIBackend._apply_prompt_caching_openai(messages)
+        assert result == messages
+
+
 class TestOpenAIBackendLifecycle:
     """Test resource cleanup and lifecycle."""
 

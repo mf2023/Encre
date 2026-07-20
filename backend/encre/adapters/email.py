@@ -48,7 +48,7 @@ import os
 from email.header import decode_header
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.email")
 
@@ -466,11 +466,22 @@ class EmailAdapter(BaseAdapter):
         if event is None:
             return
 
-        self.dispatch_message(event)
-
-        task = asyncio.create_task(self._process_chat(chat_id=event.chat_id or "", content=event.text))
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        # Build source from the parsed email and route through handle_message.
+        if event.chat_id:
+            source = SessionSource(
+                platform=self.name,
+                chat_id=event.chat_id,
+                chat_type="dm",
+                user_id=event.user_id or event.chat_id,
+            )
+            event.source = source
+            task = asyncio.create_task(self._dispatch_event(event))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        else:
+            task = asyncio.create_task(self._process_chat(chat_id=event.chat_id or "", content=event.text))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
         await self._imap_client.uid("STORE", uid_str, "+FLAGS", "(\\Seen)")
 
@@ -545,6 +556,14 @@ class EmailAdapter(BaseAdapter):
         )
 
     # ── Helpers ────────────────────────────────────────────────────────────
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and stream the response."""

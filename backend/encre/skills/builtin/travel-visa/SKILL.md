@@ -34,7 +34,7 @@ You are helping the user understand visa/entry requirements: **{{args}}**
 **Official sources (authoritative, slower to parse):**
 - Destination country's embassy/consulate website
 - Destination country's foreign-affairs ministry
-- For China outbound: 国家移民管理局 (NIA) and the destination embassy in China
+- For China outbound: National Immigration Administration (NIA) and the destination embassy in China
 
 **Domestic (China) specifics:**
 - Chinese passport holders: many destinations now visa-free or e-visa (Thailand, Malaysia, Singapore, UAE, etc. - policies change frequently, verify)

@@ -38,7 +38,7 @@ import asyncio
 import logging
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.discord")
 
@@ -313,6 +313,39 @@ class DiscordAdapter(BaseAdapter):
             except Exception:
                 pass
 
+        # Normalize the Discord channel into the Hermes chat_type vocabulary.
+        # Threads carry parent_id; DM channels are private; everything else is
+        # a guild text/voice channel.  scope_id (guild) is REQUIRED for Discord
+        # server isolation -- two guilds must never collide into one session.
+        chan = message.channel
+        parent_id = getattr(chan, "parent_id", None)
+        is_thread = parent_id is not None and hasattr(chan, "parent")
+        guild = getattr(message, "guild", None)
+        guild_id = str(guild.id) if guild is not None else None
+        if is_thread:
+            chat_type = "thread"
+            chat_id = str(parent_id)  # parent channel -- shared-thread key base
+            thread_id = str(chan.id)
+        elif hasattr(chan, "recipient") or str(getattr(chan, "type", "")) == "ChannelType.private":
+            chat_type = "dm"
+            chat_id = str(chan.id)
+            thread_id = None
+        else:
+            chat_type = "group"
+            chat_id = str(chan.id)
+            thread_id = None
+
+        source = SessionSource(
+            platform=self.name,
+            chat_id=chat_id,
+            chat_type=chat_type,
+            chat_name=getattr(chan, "name", None),
+            user_id=user_id,
+            user_name=str(message.author) if message.author else None,
+            thread_id=thread_id,
+            scope_id=guild_id,
+        )
+
         event = MessageEvent(
             text=text,
             message_type=MessageType.TEXT,
@@ -322,13 +355,26 @@ class DiscordAdapter(BaseAdapter):
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
             raw=message,
+            source=source,
         )
 
-        self.dispatch_message(event)
-
-        task = asyncio.create_task(self._process_chat(chat_id, text))
+        task = asyncio.create_task(self._dispatch_event(event))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        """Send a typing indicator, then route the event via handle_message.
+
+        handle_message builds the session key (already populated on ``event``),
+        runs the two-level guard, and dispatches to the gateway -- giving each
+        Discord channel/thread/DM its own agent session.
+        """
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and stream the response to chat.

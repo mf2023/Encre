@@ -34,6 +34,7 @@
 import { AppState, createEmptyState, createEmptySessionSnapshot, Message, ToolCallState, TelemetryData, UsageStatsData, TokenUsage, PlanItem, PlanProposal, NotificationItem, AttachmentMeta, TimelineSegment, BranchMeta, SessionSnapshot } from "./types.js";
 import { t } from "./i18n.js";
 import { findSlashCommand } from "./slash_commands.js";
+import { buildTraySessionData, dedupeSessions } from "./session-projection.js";
 
 type Listener = () => void;
 
@@ -1337,7 +1338,8 @@ export function restoreInputModeChip(mode: string): void {
 
 /** Replaces the sidebar session list. */
 export function setSessionsList(sessions: import("./types.js").SessionEntryData[]): void {
-  update({ sessionsList: sessions });
+  const visible = dedupeSessions(sessions).filter((session) => (session.message_count || 0) > 0);
+  update({ sessionsList: visible });
   // Note: do NOT update traySessionsCache here — it only has one mode's
   // data and would corrupt the dual-mode cache.  The tray cache is
   // maintained by setTraySessions() which is called from the
@@ -1350,10 +1352,20 @@ const traySessionsCache: { normal: any[]; iwork: any[] } = { normal: [], iwork: 
 export function setTraySessions(normal: any[], iwork: any[]): void {
   traySessionsCache.normal = normal;
   traySessionsCache.iwork = iwork;
+  publishTraySessions();
 }
 
 export function getTraySessions(): { normal: any[]; iwork: any[] } {
   return traySessionsCache;
+}
+
+function publishTraySessions(): void {
+  const projected = buildTraySessionData(
+    traySessionsCache.normal,
+    traySessionsCache.iwork,
+    state.workspaces,
+  );
+  window.electronAPI?.traySessionsBothUpdate?.(projected as any);
 }
 
 /** Removes a session from the sidebar list by id. */
@@ -1482,6 +1494,7 @@ export function setWorkspaces(workspaces: import("./types.js").WorkspaceEntry[])
     setActiveWorkspace("");
   }
   update({ workspaces: valid });
+  publishTraySessions();
 }
 
 /** Sets the active workspace path. */

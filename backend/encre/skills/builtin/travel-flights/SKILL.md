@@ -33,17 +33,17 @@ You are helping the user find and compare flights: **{{args}}**
 - Google search for the route -> follow aggregator links
 
 **Domestic (China):**
-- Ctrip (ctrip.com / 携程) - dominant OTA, domestic + international
-- Fliggy (fliggy.com / 飞猪) - Alibaba's OTA
-- Qunar (qunar.com / 去哪儿) - price-comparison focused
+- Ctrip (ctrip.com) - dominant OTA, domestic + international
+- Fliggy (fliggy.com) - Alibaba's OTA
+- Qunar (qunar.com) - price-comparison focused
 
 ### Search Workflow
 1. **Assume sensible defaults, search immediately.** Do not interrogate the user first. If the date is missing, check whether the request implies one ("this weekend", "next month"); if not, assume the nearest upcoming date or a flexible-date search and state the assumption. Only ask when a missing detail genuinely changes the result AND cannot be defaulted - and if you must ask, batch every such question in one message.
-2. **Search the aggregator** -> use `web_search` with a query like `flights <origin> to <destination> <date> site:google.com/flights` or `机票 <出发> 到 <目的> <日期> 携程`. Then `web_fetch` the result page. Do the search in the same turn as the request - never reply with "I'll search" without actually searching.
+2. **Search the aggregator** -> use `web_search` with a query like `flights <origin> to <destination> <date> site:google.com/flights` or ` <> <> <> ` (flights <origin> to <destination> <date> Ctrip). Then `web_fetch` the result page. Do the search in the same turn as the request - never reply with "I'll search" without actually searching.
 3. **Handle no-direct-flight cities (common for small origins like Yining).** Many city pairs have no direct flight. When results are thin or empty, do NOT report "no flights found" and stop - that is a failed delivery. Instead:
-   - Search connecting flights via a hub (e.g. Urumqi, Xi'an, Chengdu for western China). Surface 1-stop options with the layover airport + total duration.
-   - Check rail alternatives in parallel (`travel-trains`) - a train + flight combination is often the real answer for remote origins.
-   - State the situation plainly: "no direct flight; here are 1-stop options and a train alternative".
+    - Search connecting flights via a hub (e.g. Urumqi, Xi'an, Chengdu for western China). Surface 1-stop options with the layover airport + total duration.
+    - Check rail alternatives in parallel (`travel-trains`) - a train + flight combination is often the real answer for remote origins.
+    - State the situation plainly: "no direct flight; here are 1-stop options and a train alternative".
 4. **Parse the results** -> extract: airline, flight number, depart/arrive times, duration, stops + layover airports, price + currency, baggage allowance. Present as a table.
 5. **Compare 2-3 options** -> don't just return one; surface the cheapest, the fastest, and a balanced option with the tradeoff stated.
 6. **Deliver the full plan in one turn.** If the trip involves ground transport to the origin airport or from the destination airport, include those legs (delegate to `travel-transit`). The deliverable is the door-to-door journey, not the flight segment alone.

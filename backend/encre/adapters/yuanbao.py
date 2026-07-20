@@ -64,7 +64,7 @@ except ImportError:
     WebSocketClientProtocol = None
     ConnectionClosed = Exception
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.yuanbao")
 
@@ -548,11 +548,12 @@ class YuanbaoAdapter(BaseAdapter):
             media_types=media_types,
             raw=parsed.get("raw", parsed),
             timestamp=timestamp,
-        )
-
-        logger.debug(
-            "[yuanbao] Message from %s in %s: %s",
-            from_account, chat_id, content[:80] if content else "[media]",
+            source=SessionSource(
+                platform=self.name,
+                chat_id=chat_id,
+                chat_type="group" if chat_type == "group" else "dm",
+                user_id=from_account,
+            ),
         )
 
         if self._ws:
@@ -560,7 +561,9 @@ class YuanbaoAdapter(BaseAdapter):
             with suppress(Exception):
                 await self._ws.send(json.dumps(ack))
 
-        self.dispatch_message(event)
+        task = asyncio.create_task(self._dispatch_event(event))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     # ── Heartbeat ─────────────────────────────────────────────────────────
 
@@ -595,6 +598,14 @@ class YuanbaoAdapter(BaseAdapter):
         return RECONNECT_BACKOFF[idx]
 
     # ── Outbound messaging ────────────────────────────────────────────────
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def send(
         self,

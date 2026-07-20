@@ -373,6 +373,10 @@ class App {
 
     // Listen for session switch from tray popup
     if (window.electronAPI) {
+      window.electronAPI.onSwitchWorkspace((path: string) => {
+        void this.workspace.open(path);
+      });
+
       window.electronAPI.onSwitchSession((sessionId: string) => {
         const st = getState();
         if (!sessionId || sessionId === st.sessionId) return;

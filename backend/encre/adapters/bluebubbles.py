@@ -51,7 +51,7 @@ except ImportError:
     HTTPX_AVAILABLE = False
     httpx = None
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.bluebubbles")
 
@@ -489,17 +489,27 @@ class BlueBubblesAdapter(BaseAdapter):
                     if timestamp_m
                     else datetime.now()
                 ),
+                source=SessionSource(
+                    platform=self.name,
+                    chat_id=chat_guid,
+                    chat_type="dm",
+                    user_id=sender_guid or chat_guid,
+                ),
             )
 
-            logger.debug(
-                "[bluebubbles] Message from %s: %s",
-                chat_guid,
-                text[:80],
-            )
-
-            self.dispatch_message(event)
+            task = asyncio.create_task(self._dispatch_event(event))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
         except Exception as e:
             logger.error("[bluebubbles] Error handling event: %s", e)
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     # ── Internal helpers ──────────────────────────────────────────────────
 

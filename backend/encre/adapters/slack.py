@@ -39,7 +39,7 @@ import logging
 import re
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.slack")
 
@@ -319,6 +319,15 @@ class SlackAdapter(BaseAdapter):
         if is_thread_reply and thread_ts != ts:
             reply_to_message_id = thread_ts
 
+        chat_type = "dm" if channel_type == "im" else "group"
+        source = SessionSource(
+            platform=self.name,
+            chat_id=channel,
+            chat_type=chat_type,
+            user_id=user_id,
+            thread_id=thread_ts if is_thread_reply else None,
+        )
+
         msg_event = MessageEvent(
             text=text,
             message_type=MessageType.TEXT,
@@ -328,13 +337,20 @@ class SlackAdapter(BaseAdapter):
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
             raw=event,
+            source=source,
         )
 
-        self.dispatch_message(msg_event)
-
-        task = asyncio.create_task(self._process_chat(channel, text))
+        task = asyncio.create_task(self._dispatch_event(msg_event))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _process_chat(self, chat_id: str, content: str) -> None:
         """Submit content to the gateway and stream the response."""

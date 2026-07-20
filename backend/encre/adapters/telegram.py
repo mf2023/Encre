@@ -38,7 +38,7 @@ import asyncio
 import logging
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.telegram")
 
@@ -271,6 +271,29 @@ class TelegramAdapter(BaseAdapter):
             reply_to_message_id = str(message.reply_to_message.message_id)
             reply_to_text = message.reply_to_message.text
 
+        # Normalize the Telegram chat type into the Hermes chat_type vocabulary
+        # (dm / group / channel / forum) so build_session_key routes correctly.
+        _chat = getattr(message, "chat", None)
+        _tg_type = getattr(_chat, "type", "private") if _chat else "private"
+        _chat_type_map = {"private": "dm", "group": "group", "supergroup": "group", "channel": "channel"}
+        chat_type = _chat_type_map.get(_tg_type, "group")
+        thread_id = None
+        _thread = getattr(message, "message_thread_id", None)
+        if _thread and _tg_type in ("group", "supergroup") and getattr(_chat, "is_forum", False):
+            chat_type = "forum"
+            thread_id = str(_thread)
+
+        source = SessionSource(
+            platform=self.name,
+            chat_id=chat_id,
+            chat_type=chat_type,
+            chat_name=getattr(_chat, "title", None) if _chat else None,
+            user_id=user_id,
+            user_name=getattr(getattr(message, "from_user", None), "username", None)
+            or getattr(getattr(message, "from_user", None), "full_name", None),
+            thread_id=thread_id,
+        )
+
         event = MessageEvent(
             text=text,
             message_type=MessageType.TEXT,
@@ -280,13 +303,26 @@ class TelegramAdapter(BaseAdapter):
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
             raw=message,
+            source=source,
         )
 
-        self.dispatch_message(event)
-
-        task = asyncio.create_task(self._process_chat(chat_id, text))
+        task = asyncio.create_task(self._dispatch_event(event))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        """Send a typing indicator, then route the event via handle_message.
+
+        handle_message builds the session key (already populated on ``event``),
+        runs the two-level guard, and dispatches to the gateway -- giving each
+        Telegram conversation its own agent session.
+        """
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def _handle_start(
         self,

@@ -36,7 +36,7 @@ import { setRequestedSessionId } from "./stream.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { showContextMenu } from "./context-menu.js";
-import type { SessionEntryData } from "./types.js";
+import type { SessionEntryData, SessionSource } from "./types.js";
 
 /**
  * Renders and manages the sidebar session list.
@@ -186,14 +186,14 @@ export class Session {
           <div class="session-item-top">
             <input type="checkbox" class="session-checkbox" data-sid="${s.session_id}" ${this.selectedIds.has(s.session_id) ? "checked" : ""} />
             <span class="session-preview">${this.esc(displayName)}</span>
-            ${runningBadge}
+            ${runningBadge}${this.sourceBadge(s.source)}
           </div>
         </div>`;
       } else {
         html += `<div class="ws-tree-session-item${active}" data-sid="${s.session_id}">
           <div class="session-item-top">
             <span class="session-preview">${this.esc(displayName)}</span>
-            ${runningBadge}
+            ${runningBadge}${this.sourceBadge(s.source)}
           </div>
         </div>`;
       }
@@ -204,6 +204,32 @@ export class Session {
     this.bindContextMenus();
     this.bindCheckboxes();
     this.updateBatchBarLabels();
+  }
+
+  /** Platform-origin badge for adapter-sourced sessions (Phase 5).
+   *
+   *  Renders a small pill showing the originating platform (and chat type)
+   *  when the session carries a structured {@link SessionSource}.  Returns an
+   *  empty string for desktop/normal sessions (no source) -- preserving the
+   *  prior badgeless appearance.  Aligns with Hermes' platform_hint projection
+   *  so a user can see at a glance which IM platform a conversation came from.
+   */
+  private sourceBadge(source?: SessionSource): string {
+    if (!source || !source.platform) return "";
+    const platformLabels: Record<string, string> = {
+      qqbot: "QQ", telegram: "Telegram", webhook: "Webhook", discord: "Discord",
+      slack: "Slack", feishu: "Feishu", dingtalk: "DingTalk", wecom: "WeCom",
+      weixin: "WeChat", whatsapp: "WhatsApp", signal: "Signal", matrix: "Matrix",
+      email: "Email", sms: "SMS", msgraph: "MS Graph", yuanbao: "Yuanbao",
+      bluebubbles: "iMessage", homeassistant: "HomeAssistant",
+    };
+    const chatTypeLabels: Record<string, string> = {
+      dm: "DM", group: "Group", channel: "Channel", thread: "Thread", forum: "Forum",
+    };
+    const plat = platformLabels[source.platform] || source.platform;
+    const ct = source.chat_type ? (chatTypeLabels[source.chat_type] || source.chat_type) : "";
+    const label = ct ? `${plat} · ${ct}` : plat;
+    return `<span class="session-source-badge" data-platform="${this.esc(source.platform)}">${this.esc(label)}</span>`;
   }
 
   private bindClicks(): void {

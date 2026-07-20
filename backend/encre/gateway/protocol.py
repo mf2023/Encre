@@ -91,21 +91,35 @@ class GatewayMessage:
         return GatewayMessage(op=GatewayOp.HEARTBEAT_ACK)
 
     @staticmethod
-    def submit(prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> "GatewayMessage":
+    def submit(
+        prompt: str,
+        session_id: str | None = None,
+        system_prompt: str | None = None,
+        source: dict[str, Any] | None = None,
+    ) -> "GatewayMessage":
         d: dict[str, Any] = {"prompt": prompt}
         if session_id:
             d["session_id"] = session_id
         if system_prompt:
             d["system_prompt"] = system_prompt
+        if source:
+            d["source"] = source
         return GatewayMessage(op=GatewayOp.SUBMIT, data=d)
 
     @staticmethod
-    def submit_stream(prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> "GatewayMessage":
+    def submit_stream(
+        prompt: str,
+        session_id: str | None = None,
+        system_prompt: str | None = None,
+        source: dict[str, Any] | None = None,
+    ) -> "GatewayMessage":
         d: dict[str, Any] = {"prompt": prompt}
         if session_id:
             d["session_id"] = session_id
         if system_prompt:
             d["system_prompt"] = system_prompt
+        if source:
+            d["source"] = source
         return GatewayMessage(op=GatewayOp.SUBMIT_STREAM, data=d)
 
     @staticmethod

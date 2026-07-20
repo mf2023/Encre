@@ -1,6 +1,6 @@
 ---
 name: yuque
-description: Manage Yuque (语雀) knowledge base documents and repositories.
+description: Manage Yuque knowledge base documents and repositories.
 metadata:
   source: encre
   tags: 
@@ -12,7 +12,7 @@ context: inline
 ## Yuque
 # Yuque Skill
 
-Interact with Yuque (语雀) knowledge base platform via the Yuque Open API.
+Interact with Yuque knowledge base platform via the Yuque Open API.
 
 ## Prerequisites
 

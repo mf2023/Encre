@@ -43,6 +43,7 @@ import time
 from typing import Any
 
 from encre.gateway.protocol import GatewayMessage, GatewayOp
+from encre.gateway.session import SessionSource
 from encre.utils.types import Finish, TextDelta, ToolResult
 
 logger = logging.getLogger("encre.gateway.server")
@@ -214,6 +215,7 @@ class GatewayServer:
             return
         session_id = msg.data.get("session_id")
         system_prompt = msg.data.get("system_prompt")
+        source_dict = msg.data.get("source")
         logger.info("[gateway] %s submit prompt=%.60s session=%s", conn.name, prompt, session_id or "(new)")
         router = getattr(self._engine, "_router", None)
         if router is None:
@@ -222,10 +224,17 @@ class GatewayServer:
             return
         try:
             async with router.iclaw_context():
-                if not session_id and hasattr(self._engine, "ensure_adapter_session"):
-                    session_id = await self._engine.ensure_adapter_session(conn.name)
+                if source_dict is not None and hasattr(self._engine, "resolve_session"):
+                    source = SessionSource.from_dict(source_dict)
+                    session_id = await self._engine.resolve_session(conn, source)
+                    channel_name = source.platform
+                else:
+                    source = None
+                    if not session_id and hasattr(self._engine, "ensure_adapter_session"):
+                        session_id = await self._engine.ensure_adapter_session(conn.name)
+                    channel_name = conn.name
                 result = await router.submit(
-                    conn.name, prompt,
+                    channel_name, prompt,
                     session_id=session_id,
                     system_prompt=system_prompt,
                 )
@@ -246,6 +255,7 @@ class GatewayServer:
             return
         session_id = msg.data.get("session_id")
         system_prompt = msg.data.get("system_prompt")
+        source_dict = msg.data.get("source")
         logger.info("[gateway] %s submit_stream prompt=%.60s session=%s", conn.name, prompt, session_id or "(new)")
         router = getattr(self._engine, "_router", None)
         if router is None:
@@ -255,10 +265,20 @@ class GatewayServer:
         text_len = 0
         try:
             async with router.iclaw_context():
-                if not session_id and hasattr(self._engine, "ensure_adapter_session"):
-                    session_id = await self._engine.ensure_adapter_session(conn.name)
+                # Source-bearing frames route per-conversation via SessionStore
+                # (build_session_key -> persistent session_id mapping).  Legacy
+                # frames (no source) fall back to the coarse per-adapter session.
+                if source_dict is not None and hasattr(self._engine, "resolve_session"):
+                    source = SessionSource.from_dict(source_dict)
+                    session_id = await self._engine.resolve_session(conn, source)
+                    channel_name = source.platform
+                else:
+                    source = None
+                    if not session_id and hasattr(self._engine, "ensure_adapter_session"):
+                        session_id = await self._engine.ensure_adapter_session(conn.name)
+                    channel_name = conn.name
                 async for event in router.submit_stream(
-                    conn.name, prompt,
+                    channel_name, prompt,
                     session_id=session_id,
                     system_prompt=system_prompt,
                 ):

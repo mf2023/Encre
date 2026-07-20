@@ -319,6 +319,18 @@ class ClientConfigure:
 
 
 @dataclass
+class ClientWechatScan:
+    type: str = "wechat_scan"
+    adapter_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientWechatScan":
+        return cls(
+            type="wechat_scan",
+            adapter_id=d.get("adapter_id", "weixin"),
+        )
+
+
 class ClientTestAdapter:
     type: str = "test_adapter"
     adapter_id: str = ""
@@ -1294,6 +1306,7 @@ ClientMessage = (
     | ClientSwitchBranch
     | ClientRollbackBranch
     | ClientGetUsageStats
+    | ClientWechatScan
     | ClientTestAdapter
     | ClientIclawResume
     | ClientAutomationListJobs
@@ -1341,6 +1354,7 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "new_session": ClientNewSession,
         "get_config": ClientGetConfig,
         "test_adapter": ClientTestAdapter,
+        "wechat_scan": ClientWechatScan,
         "iclaw_resume": ClientIclawResume,
         "update_models": ClientUpdateModels,
         "set_active_model": ClientSetActiveModel,

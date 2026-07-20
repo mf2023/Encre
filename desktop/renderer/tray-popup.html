@@ -10,7 +10,7 @@ html,body{height:100%}
   --tp-bg:#ffffff;--tp-color:#1f1f1f;--tp-hover:#f5f5f5;--tp-border:#f0f0f0;
   --tp-line:#e8e8e8;--tp-scrollbar:#ddd;--tp-sub-color:#999;
   --tp-name:#1f1f1f;--tp-meta:#888;--tp-empty:#bbb;--tp-badge-bg:#eef2ff;
-  --tp-badge-color:#4f46e5;  --tp-dot:#ccc;--tp-sep:#f0f0f0;--tp-bg-tertiary:#f0f0f0;
+  --tp-badge-color:#4f46e5;  --tp-dot:#ccc;--tp-sep:#f0f0f0;--tp-bg-tertiary:#f0f0f0;--tp-accent:#666;
   color-scheme:light;
   /* Map tray palette to the shared .seg component variables
      (defined in _components.css). Both surfaces now resolve through
@@ -21,7 +21,7 @@ html,body{height:100%}
   --tp-bg:#1a1a1a;--tp-color:#e5e5e5;--tp-hover:#262626;--tp-border:#333333;
   --tp-line:#333333;--tp-scrollbar:#444;--tp-sub-color:#777;
   --tp-name:#e5e5e5;--tp-meta:#888;--tp-empty:#666;--tp-badge-bg:#1e1b4b;
-  --tp-badge-color:#a5b4fc;  --tp-dot:#555;--tp-sep:#2a2a2a;--tp-bg-tertiary:#2a2a2a;
+  --tp-badge-color:#a5b4fc;  --tp-dot:#555;--tp-sep:#2a2a2a;--tp-bg-tertiary:#2a2a2a;--tp-accent:#999;
   color-scheme:dark;
   --seg-bg:#2a2a2a;--seg-active-bg:#3a3a3a;--seg-text:#999;--seg-text-hover:#f5f5f5;--seg-active-text:#f5f5f5;
 }
@@ -40,21 +40,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica N
 .sub svg.icon{width:12px;height:12px;opacity:.5;flex-shrink:0}
 .ws-tree-session-item{position:relative;flex-shrink:0;display:flex;flex-direction:column;padding:9px 12px;border-radius:6px;cursor:pointer;margin-bottom:1px;color:var(--tp-name);font-size:13px;transition:background .1s}
 .ws-tree-session-item:hover{background:var(--tp-hover)}
-.ws-tree-session-item.active{background:var(--tp-bg-tertiary);color:var(--tp-color)}
+.ws-tree-session-item.active{background:transparent;color:var(--tp-color)}
 .session-item-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .session-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .session-running{display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0}
 .ws-tree-node{margin-bottom:2px}
 .ws-tree-node-header{display:flex;align-items:center;gap:5px;padding:7px 8px;cursor:pointer;font-size:13px;font-weight:500;color:var(--tp-color);border-radius:6px}
 .ws-tree-node-header:hover{background:var(--tp-hover)}
-.ws-tree-node-header.active{background:var(--tp-bg-tertiary)}
-.ws-chevron{width:14px;height:14px;opacity:.45;flex-shrink:0;cursor:pointer;transition:transform .15s}
+.ws-tree-node-header.active{background:transparent}
+.ws-expand-button{appearance:none;-webkit-appearance:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin:-4px 0 -4px -4px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--tp-meta);cursor:pointer;flex-shrink:0;outline:none;box-shadow:none}
+.ws-expand-button:hover{background:var(--tp-hover);color:var(--tp-color)}
+.ws-expand-button:focus,.ws-expand-button:focus-visible{outline:none;box-shadow:none}
+.ws-chevron{width:16px;height:16px;opacity:.45;transition:transform .15s}
 .ws-chevron.open{transform:rotate(90deg)}
 .ws-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ws-session-count{font-size:10.5px;color:var(--tp-meta);flex-shrink:0}
-.ws-tree-children{margin-left:14px;padding-left:12px;border-left:1px solid var(--tp-line);display:flex;flex-direction:column;gap:1px}
+.ws-tree-children{margin-left:14px;padding-left:12px;display:flex;flex-direction:column;gap:1px}
 .ws-tree-children.rc-hide{display:none}
-.ws-tree-children .ws-tree-session-item::before{content:'';position:absolute;left:-12px;top:50%;width:12px;border-top:1px solid var(--tp-line);pointer-events:none}
 .ws-tree-empty-sessions{padding:6px 8px;font-size:12px;color:var(--tp-empty)}
 .e{padding:18px;text-align:center;font-size:12px;color:var(--tp-empty);display:flex;align-items:center;justify-content:center;gap:6px}
 .e svg.icon{width:14px;height:14px;opacity:.4}
@@ -126,6 +128,7 @@ var ICONS = {
 function renderSessions(sessions, iconKey, emptyKey) {
   var container = document.getElementById("sessions-container");
   container.innerHTML = "";
+  sessions = (sessions || []).filter(function(s) { return (s.message_count || 0) > 0; });
 
   if (sessions && sessions.length > 0) {
     for (var i = 0; i < sessions.length; i++) {
@@ -149,6 +152,7 @@ function renderSessions(sessions, iconKey, emptyKey) {
 function renderIworkSessions(sessions) {
   var container = document.getElementById("sessions-container");
   container.innerHTML = "";
+  sessions = sessions || [];
   if (!sessions || sessions.length === 0) {
     var empty = document.createElement("div");
     empty.className = "e";
@@ -156,30 +160,20 @@ function renderIworkSessions(sessions) {
     container.appendChild(empty);
     return;
   }
-  var groups = {};
-  for (var i = 0; i < sessions.length; i++) {
-    var s = sessions[i];
-    var meta = s.metadata || {};
-    var wsPath = meta.workspace || meta.workspace_path || "";
-    if (!groups[wsPath]) groups[wsPath] = [];
-    groups[wsPath].push(s);
-  }
-  var wsKeys = Object.keys(groups);
-  wsKeys.sort(function(a, b) {
-    var af = a.indexOf("_") === 0 ? 1 : 0;
-    var bf = b.indexOf("_") === 0 ? 1 : 0;
-    return af - bf || a.localeCompare(b);
-  });
-  for (var gi = 0; gi < wsKeys.length; gi++) {
-    var wsKey = wsKeys[gi];
-    var wsSessions = groups[wsKey];
-    var wsName = wsKey.replace(/[/\\]/g, "/").split("/").filter(Boolean).pop() || "?";
+  for (var gi = 0; gi < sessions.length; gi++) {
+    var group = sessions[gi];
+    var workspace = group.workspace || {};
+    var wsKey = workspace.path || "";
+    var wsSessions = group.sessions || [];
+    var wsName = workspace.name || wsKey.replace(/[/\\]/g, "/").split("/").filter(Boolean).pop() || "?";
     var isExpanded = wsExpanded[wsKey] === true;
     var wsRow = document.createElement("div");
     wsRow.className = "ws-tree-node";
     wsRow.setAttribute("data-ws-path", wsKey);
-    wsRow.innerHTML = '<div class="ws-tree-node-header" data-ws-path="' + esc(wsKey) + '">' +
+    wsRow.innerHTML = '<div class="ws-tree-node-header active" data-ws-path="' + esc(wsKey) + '">' +
+      '<button type="button" class="ws-expand-button" aria-label="Toggle workspace sessions" aria-expanded="' + (isExpanded ? "true" : "false") + '">' +
       '<svg class="ws-chevron' + (isExpanded ? ' open' : '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' +
+      '</button>' +
       '<span class="ws-name">' + esc(wsName) + '</span>' +
       '<span class="ws-session-count">' + wsSessions.length + '</span>' +
       '</div>';
@@ -280,12 +274,20 @@ document.getElementById("sessions-container").addEventListener("click", function
   if (rw) {
     var wsKey = rw.getAttribute("data-ws-path");
     if (wsKey) {
-      var expanded = wsExpanded[wsKey] === true;
-      wsExpanded[wsKey] = !expanded;
-      var chev = rw.querySelector(".ws-chevron");
-      if (chev) chev.classList.toggle("open");
-      var rc = _rcByPath(wsKey);
-      if (rc) rc.classList.toggle("rc-hide");
+      var expandButton = e.target.closest(".ws-expand-button");
+      if (expandButton) {
+        e.preventDefault();
+        e.stopPropagation();
+        var expanded = wsExpanded[wsKey] === true;
+        wsExpanded[wsKey] = !expanded;
+        expandButton.setAttribute("aria-expanded", expanded ? "false" : "true");
+        var chev = rw.querySelector(".ws-chevron");
+        if (chev) chev.classList.toggle("open");
+        var rc = _rcByPath(wsKey);
+        if (rc) rc.classList.toggle("rc-hide");
+      } else if (window.electronAPI && window.electronAPI.trayPopupAction) {
+        window.electronAPI.trayPopupAction("open_workspace", wsKey);
+      }
     }
     return;
   }

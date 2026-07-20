@@ -22,12 +22,12 @@ You are helping the user find and compare train travel: **{{args}}**
 ### When NOT to Use
 - **Flights** -> `travel-flights`
 - **Long-distance buses** -> usually `travel-transit` or `web_search`; rail skill focuses on trains
-- **City metro/subway navigation** -> `travel-transit` (Citymapper / 高德)
+- **City metro/subway navigation** -> `travel-transit` (Citymapper / Amap)
 - **Hotels at the destination** -> `travel-hotels`
 
 ### Data Sources (no open API - search + fetch)
 **China domestic (rail is the dominant mode):**
-- 12306 (12306.cn / 中国铁路) - the official source; authoritative for schedules, fares, and real-time availability
+- 12306 (12306.cn / China Railway) - the official source; authoritative for schedules, fares, and real-time availability
 - Ctrip / Fliggy / Qunar rail sections - aggregator UI on top of 12306 data, sometimes easier to read
 
 **Europe:**
@@ -45,7 +45,7 @@ You are helping the user find and compare train travel: **{{args}}**
 
 ### Search Workflow
 1. **Confirm params** -> origin station, destination station, date, ticket class (seat/sleeper/2nd-class/1st-class), passenger count. For China, confirm whether the user has a 12306 account (booking requires real-name ID).
-2. **Search the right source** -> China: `web_search` `12306 <出发> 到 <目的> <日期>` then `web_fetch`. Europe: Trainline or the national carrier. Japan: Hyperdia/Jorudan.
+2. **Search the right source** -> China: `web_search` `12306 <Departure> <> <>` (12306 <origin> to <destination> <date>) then `web_fetch`. Europe: Trainline or the national carrier. Japan: Hyperdia/Jorudan.
 3. **Parse the results** -> train number, depart/arrive station + time, duration, stops, fare + class, seat availability. Present as a table.
 4. **Compare classes** -> high-speed (G/D trains in China, Shinkansen, TGV) vs conventional (K/T/Z in China); state the time-price tradeoff.
 5. **Rail pass evaluation** -> if multi-city travel, compute whether a pass beats point-to-point: roughly compare pass-per-day cost vs typical point-to-point fare for the planned legs.
@@ -55,14 +55,14 @@ You are helping the user find and compare train travel: **{{args}}**
 - For rail-pass decisions, a card comparing "pass total cost" vs "sum of point-to-point fares".
 
 ### Best Practices
-- Always specify station names fully - many cities have multiple stations (Beijing has 北京南/北京西/北京北; London has many terminals)
+- Always specify station names fully - many cities have multiple stations (Beijing has Beijing South / Beijing West / Beijing North; London has many terminals)
 - For China high-speed (G/D), note the second-class vs business-class price gap
 - Flag that 12306 booking requires real-name verification + a Chinese ID or passport; foreign travelers can register but it is friction-heavy
 - For sleeper trains, note the berth type (hard/soft, upper/lower) - it affects price and comfort
 - State the ticket refund/change rules briefly - rail tickets often have tiered refund fees
 
 ### Common Pitfalls
-- **Ambiguous station names** -> "Beijing station" is not enough; use the full name (北京南 etc.)
+- **Ambiguous station names** -> "Beijing station" is not enough; use the full name (Beijing South, etc.)
 - **Conflating high-speed and conventional** -> a "cheap" K-train may take 3x as long; always show duration
 - **Forgetting real-name booking** -> in China you cannot just buy and ride; the ticket is tied to an ID
 - **Recommending a pass without math** -> a Eurail pass only pays off above a threshold of travel; compute it

@@ -50,7 +50,7 @@ except ImportError:
     HTTPX_AVAILABLE = False
     httpx = None
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
 
 logger = logging.getLogger("encre.adapters.signal")
 
@@ -175,6 +175,14 @@ class SignalAdapter(BaseAdapter):
         logger.info("[signal] Disconnected")
 
     # ── Outbound messaging ────────────────────────────────────────────────
+
+    async def _dispatch_event(self, event: MessageEvent) -> None:
+        if event.chat_id:
+            try:
+                await self.send_typing(event.chat_id)
+            except Exception:
+                pass
+        await self.handle_message(event)
 
     async def send(
         self,
@@ -357,15 +365,17 @@ class SignalAdapter(BaseAdapter):
                     if timestamp
                     else datetime.now()
                 ),
+                source=SessionSource(
+                    platform=self.name,
+                    chat_id=chat_id,
+                    chat_type="dm",
+                    user_id=user_id,
+                ),
             )
 
-            logger.debug(
-                "[signal] Message from %s: %s",
-                source,
-                text[:80],
-            )
-
-            self.dispatch_message(event)
+            task = asyncio.create_task(self._dispatch_event(event))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
         except Exception as e:
             logger.error("[signal] Error handling envelope: %s", e)
 

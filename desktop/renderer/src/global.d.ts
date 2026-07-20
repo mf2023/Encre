@@ -94,6 +94,7 @@ interface ElectronAPI {
     theme: string;
   }) => void): () => void;
   onSwitchSession(callback: (sessionId: string) => void): () => void;
+  onSwitchWorkspace(callback: (path: string) => void): () => void;
   browserClearData(): Promise<{ success: boolean; error?: string }>;
   openExternal(url: string): Promise<boolean>;
   getAppVersions(): Promise<{ desktop: string; agent: string }>;

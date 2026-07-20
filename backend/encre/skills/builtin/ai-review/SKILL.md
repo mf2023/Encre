@@ -19,18 +19,18 @@ The process involves these sequential steps. Follow them in order to generate th
 1.  **Receive Input:** The user will provide content via a URL or a file path (`.pdf`, `.md`, `.txt`).
 2.  **Read Content:** Use the appropriate tool to read the content. Refer to the **Content Reading Guide** below to handle different sources.
 3.  **Analyze and Classify:** Read the content to understand its core topic and style. Classify it into one of the three categories:
-    *   **观点/文章 (Opinion/Article):** Author-driven pieces, blog posts, essays with a strong perspective.
+    *   **Opinion/Article:** Author-driven pieces, blog posts, essays with a strong perspective.
     *   **Solid Paper:** Technical or research papers with a formal structure.
-    *   **行业动态/评价 (Industry News/Commentary):** News, announcements, or market analysis.
+    *   **Industry News/Commentary:** News, announcements, or market analysis.
 4.  **Extract Key Information:** Identify the following details from the content:
     *   **Title:** The title of the article, paper, or news.
     *   **URL/Source:** The original URL or file name.
     *   **Date:** The publication date of the content (format: YYYY-MM).
-    *   **Key Takeaway (为什么值得关注):** A concise, one-sentence summary of why the content is important or interesting.
+    *   **Key Takeaway (Why it's worth watching):** A concise, one-sentence summary of why the content is important or interesting.
 5.  **Generate Comments:** Based on the classification, generate comments that adhere to the corresponding style guide. This is the most critical step.
-    *   For **观点/文章**, read `/home/ubuntu/skills/ai-review-assistant/documentation`.
+    *   For **Opinion/Article**, read `/home/ubuntu/skills/ai-review-assistant/documentation`.
     *   For **Solid Paper**, read `/home/ubuntu/skills/ai-review-assistant/documentation`.
-    *   For **行业动态/评价**, read `/home/ubuntu/skills/ai-review-assistant/documentation`.
+    *   For **Industry News/Commentary**, read `/home/ubuntu/skills/ai-review-assistant/documentation`.
 6.  **Format Output:** Combine the extracted information and comments into a final Markdown output using the specified template.
 
 ## Content Reading Guide
