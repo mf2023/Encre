@@ -81,6 +81,7 @@ class EncreHookSystem:
         "pre_sub_agent", "post_sub_agent",
         "on_goal_progress",
         "on_file_change",
+        "on_user_message_persisted",
         "on_telemetry",
     )
 
@@ -289,6 +290,17 @@ class EncreHookSystem:
     async def emit_file_change(self, path: str, operation: str) -> None:
         """Raised when the agent writes or modifies a file."""
         await self._run_handlers("on_file_change", path, {"operation": operation})
+
+    async def emit_user_message_persisted(self, session_id: str) -> None:
+        """Raised when a user message has been added to the session.
+
+        Subscribers (e.g. the WS layer's session manager) use this to flush
+        the session to disk immediately, so a process kill between this
+        point and the model's response still leaves a resumable transcript.
+        Mirrors Claude Code's await-on-user-message-before-query-loop
+        (QueryEngine.ts:450-463).
+        """
+        await self._run_handlers("on_user_message_persisted", session_id, {})
 
     # ── Telemetry ─────────────────────────────────────────────────
 

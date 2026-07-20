@@ -82,6 +82,7 @@ from encre.tools.builtin import (
     EncreWebFetchTool,
     EncreWebSearchTool,
     EncreWorkflowTool,
+    EncreSwarmTool,
 )
 from encre.tools.builtin.computer_use import EncreComputerUseTool
 from encre.tools.builtin.vlm_computer_use import EncreVLMComputerUseTool
@@ -149,6 +150,7 @@ def register_default_tools(registry: ToolRegistry) -> ToolRegistry:
         EncreMemoryProfileTool(),
         EncreQuestionTool(),
         EncreWorkflowTool(),
+        EncreSwarmTool(),
         EncreComputerUseTool(),
         EncreVLMComputerUseTool(),
     ])

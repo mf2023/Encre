@@ -33,12 +33,22 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from encre.swarm.blackboard import EncreBlackboard
 from encre.swarm.roles import AgentRole, RoleRegistry
+
+
+# A sub-agent runner lets the orchestrator execute each task node through the
+# host loop's ``_run_sub_agent`` instead of spawning a bare ``EncreAgent``.
+# This wires swarm teammates into the loop's infrastructure: depth fencing
+# (no swarm-inside-swarm recursion), live progress streaming to the frontend,
+# transcript persistence under ``sub_agents/<id>/``, and the tool-policy /
+# safety hooks.  When ``None`` (e.g. in unit tests) the orchestrator falls
+# back to spawning a fresh ``EncreAgent`` directly, preserving the old path.
+SubAgentRunner = Callable[..., Any]
 
 
 @dataclass
@@ -70,12 +80,14 @@ class EncreOrchestrator:
         blackboard: EncreBlackboard | None = None,
         max_concurrent: int = 10,
         enable_reviewer_gate: bool = True,
+        sub_agent_runner: SubAgentRunner | None = None,
     ) -> None:
         self._roles = role_registry or RoleRegistry()
         self._blackboard = blackboard or EncreBlackboard()
         self._max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._enable_reviewer_gate = enable_reviewer_gate
+        self._sub_agent_runner = sub_agent_runner
         self._cancelled = False
         self._running_tasks: dict[str, asyncio.Task[None]] = {}
 
@@ -230,14 +242,47 @@ class EncreOrchestrator:
                 node.error = str(e)
 
     async def _run_agent(self, node: Any, role: AgentRole, context: str) -> str:
-        """Execute a single node's prompt through a fresh ``EncreAgent``.
+        """Execute a single node's prompt.
+
+        When a ``sub_agent_runner`` is configured (the normal case when the
+        swarm is driven from the host loop), the node runs through the loop's
+        ``_run_sub_agent`` so it inherits depth fencing (no
+        swarm-inside-swarm recursion), live progress streaming to the
+        frontend, transcript persistence under ``sub_agents/<id>/``, and the
+        safety / tool-policy hooks.  Otherwise a fresh role-configured
+        ``EncreAgent`` is spawned directly (the unit-test / standalone path).
 
         Returns the concatenated text output.  A ``Finish`` with reason
         ``"error"`` appends a marker so the caller knows the agent aborted.
         """
+        from encre.utils.types import Finish, TextDelta
+
+        system_prompt = role.system_prompt_override or ""
+        full_prompt = (
+            f"{node.name}: {node.description}\n\n{context}\n\n"
+            "---\n"
+            "You are executing a subtask. Do NOT restate the full plan. "
+            "Work ONLY on your assigned task. "
+            "Reference files with file:line format. "
+            "Report completion status explicitly."
+        )
+
+        if self._sub_agent_runner is not None:
+            try:
+                result = await self._sub_agent_runner(
+                    full_prompt,
+                    system_prompt=system_prompt,
+                    max_turns=15,
+                )
+            except Exception as exc:
+                return f"[Error during execution: {exc}]"
+            if isinstance(result, dict):
+                return result.get("content", "") or ""
+            return str(result)
+
+        # Fallback: spawn a fresh role-configured EncreAgent directly.
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
-        from encre.utils.types import Finish, TextDelta
 
         config = EncreConfig(
             max_turns=15,
@@ -248,18 +293,8 @@ class EncreOrchestrator:
         if role.backend_type_override:
             config.backend_type = role.backend_type_override
         agent = EncreAgent(config=config)
-        system_prompt = role.system_prompt_override or None
-        full_prompt = (
-            f"{node.name}: {node.description}\n\n{context}\n\n"
-            "---\n"
-            "You are executing a subtask. Do NOT restate the full plan. "
-            "Work ONLY on your assigned task. "
-            "Reference files with file:line format. "
-            "Report completion status explicitly."
-        )
-
         parts: list[str] = []
-        async for event in agent.run(full_prompt, system_prompt=system_prompt):
+        async for event in agent.run(full_prompt, system_prompt=system_prompt or None):
             if isinstance(event, TextDelta) and event.text:
                 parts.append(event.text)
             elif isinstance(event, Finish) and event.reason == "error":
@@ -283,6 +318,17 @@ class EncreOrchestrator:
             return True  # Timeout: approve by default
 
     async def _run_simple_agent(self, role: AgentRole, prompt: str) -> str:
+        system_prompt = role.system_prompt_override or ""
+        if self._sub_agent_runner is not None:
+            try:
+                result = await self._sub_agent_runner(
+                    prompt, system_prompt=system_prompt, max_turns=5,
+                )
+            except Exception as exc:
+                return f"[Error: {exc}]"
+            if isinstance(result, dict):
+                return result.get("content", "") or ""
+            return str(result)
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
         from encre.utils.types import TextDelta
@@ -290,7 +336,7 @@ class EncreOrchestrator:
         config = EncreConfig(max_turns=5, permission_mode="auto")
         agent = EncreAgent(config=config)
         parts: list[str] = []
-        async for event in agent.run(prompt, system_prompt=role.system_prompt_override or None):
+        async for event in agent.run(prompt, system_prompt=system_prompt or None):
             if isinstance(event, TextDelta) and event.text:
                 parts.append(event.text)
         return "".join(parts)

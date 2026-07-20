@@ -60,6 +60,7 @@ _TOOL_DEFAULTS = {
     "cost_level": "medium",
     "retryability": "auto",
     "safe_fallback": "",
+    "source": "user",
 }
 
 
@@ -87,6 +88,7 @@ class EncreTool(ABC):
     cost_level: str = "medium"
     retryability: str = "auto"
     safe_fallback: str = ""
+    source: str = "user"
 
     _minified_schema: dict[str, Any] = {}
 
@@ -209,6 +211,7 @@ def build_tool(
     cost_level: str | None = None,
     retryability: str | None = None,
     safe_fallback: str | None = None,
+    source: str | None = None,
     is_concurrency_safe: Callable[[dict[str, Any]], bool] | None = None,
     is_readonly: bool | Callable[[dict[str, Any]], bool] | None = None,
     is_destructive: bool | Callable[[dict[str, Any]], bool] | None = None,
@@ -320,6 +323,7 @@ def build_tool(
         "cost_level": cost_level if cost_level is not None else _TOOL_DEFAULTS["cost_level"],
         "retryability": retryability if retryability is not None else _TOOL_DEFAULTS["retryability"],
         "safe_fallback": safe_fallback if safe_fallback is not None else _TOOL_DEFAULTS["safe_fallback"],
+        "source": source if source is not None else _TOOL_DEFAULTS["source"],
         "execute": _execute,
         "is_concurrency_safe": _concurrency_check,
         "is_readonly": _readonly_check,

@@ -305,6 +305,41 @@ def check_interrupt(loop: Any) -> bool:
     return False
 
 
+# ── Requirement change detection ──────────────────────────────────────
+
+_REQUIREMENT_CHANGE_KEYWORDS: tuple[str, ...] = (
+    "actually", "instead", "change", "forget", "ignore",
+    "different", "new plan", "instead of", "rethink",
+    "reconsider", "new approach", "scrap", "abandon",
+    "never mind", "on second thought", "let me rephrase",
+    "let me clarify", "change of plan", "actually, don't",
+    "actually, do", "forget what i said", "disregard",
+    "start over", "from scratch", "different direction",
+    "new requirement", "changed my mind",
+)
+
+
+def _detect_requirement_change(prompt: str) -> str:
+    """Detect whether *prompt* signals a mid-conversation requirement change.
+
+    Returns the matched keyword phrase (for logging) or an empty string
+    when no change is detected.  Used by the loop to invalidate the cached
+    user requirements summary so the next compact produces a fresh anchor.
+
+    This is a heuristic -- it catches the most common "I changed my mind"
+    patterns without requiring an LLM call.  False positives (detecting a
+    change when none happened) are safe: they just cause a fresh compact
+    summary, which is harmless.
+    """
+    if not prompt:
+        return ""
+    lowered = prompt.lower()
+    for kw in _REQUIREMENT_CHANGE_KEYWORDS:
+        if kw in lowered:
+            return kw
+    return ""
+
+
 # ── 7. Tombstone Generation ───────────────────────────────────────────
 
 def build_tombstone_messages(
@@ -451,7 +486,17 @@ def build_thinking_prefill(
 # ── 10. Budget Grace Call ─────────────────────────────────────────────
 
 class BudgetState:
-    """Tracks token budget and whether a grace call has been used."""
+    """Tracks token budget and whether a grace call has been used.
+
+    The state persists across compaction (the loop instance is not rebuilt
+    on compact) AND across session restarts -- ``used_tokens`` /
+    ``max_tokens`` / ``grace_used`` are checkpointed to session metadata by
+    ``checkpoint()`` so a restarted session resumes the same budget instead
+    of resetting to zero.  Mirrors Claude Code's task_budget beta which
+    accrues across compact boundaries.
+    """
+
+    META_KEY = "budget_state"
 
     def __init__(self, *, max_tokens: int = 0, grace_enabled: bool = True) -> None:
         self.max_tokens = max_tokens
@@ -474,6 +519,36 @@ class BudgetState:
     def add_usage(self, tokens: int) -> None:
         self.used_tokens += tokens
 
+    def checkpoint(self) -> dict:
+        """Return a serialisable snapshot for session-metadata persistence."""
+        return {
+            "max_tokens": self.max_tokens,
+            "used_tokens": self.used_tokens,
+            "grace_enabled": self.grace_enabled,
+            "grace_used": self._grace_used,
+        }
+
+    @classmethod
+    def restore(cls, snapshot: dict | None, *, fallback_max: int = 0) -> "BudgetState":
+        """Rebuild a BudgetState from a checkpointed snapshot.
+
+        When *snapshot* is missing or malformed, returns a fresh state with
+        ``fallback_max`` (the current config's token_budget).  This keeps a
+        restarted session resuming its accrued budget.
+        """
+        if not isinstance(snapshot, dict):
+            return cls(max_tokens=fallback_max)
+        try:
+            state = cls(
+                max_tokens=int(snapshot.get("max_tokens", fallback_max) or fallback_max),
+                grace_enabled=bool(snapshot.get("grace_enabled", True)),
+            )
+            state.used_tokens = int(snapshot.get("used_tokens", 0) or 0)
+            state._grace_used = bool(snapshot.get("grace_used", False))
+            return state
+        except (TypeError, ValueError):
+            return cls(max_tokens=fallback_max)
+
 
 def build_grace_message(remaining_work: str = "") -> str:
     """Build the grace call message when budget is exhausted."""
@@ -485,6 +560,52 @@ def build_grace_message(remaining_work: str = "") -> str:
     if remaining_work:
         msg += f"\n\nRemaining work: {remaining_work}"
     return msg
+
+
+def build_auto_continue_message() -> str:
+    """Build a message that nudges the model to continue where it left off.
+
+    Mirrors Claude Code's token budget auto-continue
+    (query/tokenBudget.ts:checkTokenBudget): when the model stops early but
+    still has budget, inject a concise nudge so it keeps going rather than
+    forcing the user to say "continue".
+    """
+    return (
+        "[Continue from where you left off. Do NOT repeat work already done. "
+        "Keep going with the next task or step.]"
+    )
+
+
+def build_delegation_guidance() -> str:
+    """Build the coordinator-style delegation guidance for the system prompt.
+
+    Mirrors Claude Code's coordinator mode (coordinatorMode.ts): the main
+    agent should *understand* a complex task itself, then delegate
+    self-contained subtasks to sub-agents (via the ``agent`` / ``swarm``
+    tools) with explicit, actionable instructions -- rather than blindly
+    forwarding the user's words and saying "based on your findings".
+
+    This is guidance, not enforcement: the model retains full tool access
+    but is steered toward good delegation hygiene on large multi-step work.
+    """
+    return (
+        "=== Delegation Guidance (coordinator mode) ===\n"
+        "For complex, multi-step, or parallelisable work, DELEGATE to sub-agents "
+        "via the `agent` or `swarm` tools instead of doing everything yourself.\n"
+        "When delegating:\n"
+        "1. UNDERSTAND the task yourself first -- read the relevant code, grasp "
+        "the goal -- so you can write a precise brief.\n"
+        "2. Give each sub-agent a SELF-CONTAINED instruction: full context, exact "
+        "file paths, and the expected deliverable. Do NOT just forward the user's "
+        "words or say 'based on your findings'.\n"
+        "3. Run independent sub-tasks in PARALLEL (pass a `tasks` array to the "
+        "agent tool).\n"
+        "4. After results return, SYNTHESISE them yourself: verify, resolve "
+        "conflicts, decide the next step. You own the outcome.\n"
+        "5. Cite file:line in your final answer. Do not restate sub-agent output "
+        "verbatim -- extract what matters.\n"
+        "=== End Delegation Guidance ==="
+    )
 
 
 # ── 11. /steer Injection ──────────────────────────────────────────────

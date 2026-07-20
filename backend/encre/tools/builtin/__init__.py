@@ -105,6 +105,7 @@ from encre.tools.builtin.vlm_computer_use import EncreVLMComputerUseTool
 from encre.tools.builtin.web_fetch import EncreWebFetchTool
 from encre.tools.builtin.web_search import EncreWebSearchTool
 from encre.tools.builtin.workflow import EncreWorkflowTool
+from encre.tools.builtin.swarm_tool import EncreSwarmTool
 
 __all__ = [
     "EncreAgentTool",
@@ -173,4 +174,5 @@ __all__ = [
     "EncreWebFetchTool",
     "EncreWebSearchTool",
     "EncreWorkflowTool",
+    "EncreSwarmTool",
 ]

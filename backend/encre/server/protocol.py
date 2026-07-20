@@ -125,6 +125,7 @@ ClientMessageType = Literal[
     "switch_branch",
     "rollback",
     "get_usage_stats",
+    "replay_get_session",
     "automation_list_jobs",
     "automation_create_job",
     "automation_cancel_job",
@@ -1109,6 +1110,25 @@ class ClientGetUsageStats:
 
 
 @dataclass
+class ClientReplayGetSession:
+    """Request a session's recorded telemetry for replay / scrubbing.
+
+    Returns the full ordered event stream plus a summary and turn-boundary
+    indices so the frontend can render a cursor-based scrubber without
+    extra round-trips.
+    """
+    type: str = "replay_get_session"
+    session_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientReplayGetSession":
+        return cls(
+            type="replay_get_session",
+            session_id=d.get("session_id", ""),
+        )
+
+
+@dataclass
 class ClientAutomationListJobs:
     type: str = "automation_list_jobs"
 
@@ -1410,6 +1430,7 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "switch_branch": ClientSwitchBranch,
         "rollback": ClientRollbackBranch,
         "get_usage_stats": ClientGetUsageStats,
+        "replay_get_session": ClientReplayGetSession,
         "automation_list_jobs": ClientAutomationListJobs,
         "automation_create_job": ClientAutomationCreateJob,
         "automation_cancel_job": ClientAutomationCancelJob,

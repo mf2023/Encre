@@ -107,12 +107,14 @@ class EncreSwarmSession:
         max_concurrent: int = 5,
         enable_reviewer: bool = True,
         timeout_seconds: float = 3600.0,
+        sub_agent_runner: Callable | None = None,
     ) -> None:
         self._agent = agent
         self._goal = goal
         self._max_concurrent = max_concurrent
         self._enable_reviewer = enable_reviewer
         self._timeout = timeout_seconds
+        self._sub_agent_runner = sub_agent_runner
 
     async def execute(
         self,
@@ -157,6 +159,7 @@ class EncreSwarmSession:
             blackboard=blackboard,
             max_concurrent=max_concurrent,
             enable_reviewer_gate=self._enable_reviewer,
+            sub_agent_runner=self._sub_agent_runner,
         )
 
         completed = 0
@@ -209,7 +212,11 @@ class EncreSwarmSession:
             # (e.g. missing backend config), so consensus never blocks the
             # swarm from completing.
             voters = [
-                EncreTeammate(name=f"voter-{task_id}", task="vote")
+                EncreTeammate(
+                    name=f"voter-{task_id}",
+                    task="vote",
+                    sub_agent_runner=self._sub_agent_runner,
+                )
                 for task_id, _ in results_list[1:]
             ]
             try:

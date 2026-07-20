@@ -163,6 +163,11 @@ EncreFindToolTool = build_tool(
     category="meta",
     triggers=["find tool", "search tools", "discover tool"],
     always_available=True,
-    is_concurrency_safe=lambda _: True,
-    is_readonly=True,
+    # find_tool calls discovery.unlock which mutates the session's unlocked-set
+    # and invalidates the payload cache -- it has side effects on tool/runtime
+    # state, so it must NOT be pre-executed during streaming and must NOT be
+    # treated as concurrency-safe (running it in parallel with other tools
+    # could race the unlock).  See loop.py streaming-pre-execute exclusion.
+    is_concurrency_safe=lambda _: False,
+    is_readonly=False,
 )

@@ -1406,13 +1406,40 @@ class App {
       send({ type: "list_workspaces" });
     }
 
-    // Let data responses arrive, then ensure splash is visible ≥ 1 s
-    await new Promise<void>(r => requestAnimationFrame(() => r()));
+    // Ensure splash is visible ≥ 1 s for visual smoothness
     const _elapsed = performance.now() - _splashStart;
     if (_elapsed < 1000) {
       await new Promise(r => setTimeout(r, 1000 - _elapsed));
     }
+
+    if (!getState().connected) {
+      await this.handleSplashError(t("app.splashNoConnect"));
+      return;
+    }
     this.splash.hide();
+  }
+
+  private async handleSplashError(message: string): Promise<void> {
+    this.splash.showError(message, async () => {
+      try {
+        const result = await window.electronAPI?.restartService?.();
+        if (result?.success) {
+          location.reload();
+        } else {
+          this.splash.showError(
+            t("app.splashRestartFailed") + (result?.error ? ": " + result.error : ""),
+            () => this.handleSplashError(t("app.splashRetry"))
+          );
+        }
+      } catch (err) {
+        this.splash.showError(
+          t("app.splashRestartFailed") + ": " + String(err),
+          () => this.handleSplashError(t("app.splashRetry"))
+        );
+      }
+    });
+    // Block until the user resolves the error (page reloads or they keep trying)
+    await new Promise<void>(() => {});
   }
 
   private bindInput(): void {

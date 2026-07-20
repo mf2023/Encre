@@ -116,6 +116,7 @@ from encre.server.protocol import (
     ClientOpenWorkspace,
     ClientPing,
     ClientReindexWorkspace,
+    ClientReplayGetSession,
     ClientRemoveDocument,
     ClientRemoveWorkspace,
     ClientRenameSession,
@@ -512,9 +513,15 @@ class EncreWSHandler:
                                 parts = ak.split("_", 2)
                                 if len(parts) >= 3:
                                     parsed.setdefault(parts[1], {})[parts[2]] = av
-                            # Merge into adapter_configs so existing fields (e.g. push_chat_id)
-                            # are not lost when only a subset of keys is sent.
-                            for aid, fields in parsed.items():
+                            # Handle unbind: if all weixin credential fields are empty, remove config
+                            for aid, fields in list(parsed.items()):
+                                if aid == "weixin" and "app_id" in fields and "token" in fields and not fields.get("app_id") and not fields.get("token"):
+                                    session.agent.config.adapter_configs.pop(aid, None)
+                                    self._default_config.adapter_configs.pop(aid, None)
+                                    parsed.pop(aid, None)
+                                    continue
+                                # Merge into adapter_configs so existing fields (e.g. push_chat_id)
+                                # are not lost when only a subset of keys is sent.
                                 if aid in session.agent.config.adapter_configs:
                                     session.agent.config.adapter_configs[aid].update(fields)
                                 else:
@@ -588,9 +595,13 @@ class EncreWSHandler:
                                 qrcode_url="", success=False,
                                 message="WeChat adapter does not support QR login")
                             continue
-                        url = await adapter.get_qrcode_url()
+                        url, qrcode_token = await adapter.get_qrcode_url()
                         await self._send(ws, "wechat_scan_result",
                             qrcode_url=url, success=True, message="")
+                        # Start background polling for scan confirmation
+                        if qrcode_token:
+                            _t = asyncio.ensure_future(self._poll_wechat_scan(ws, adapter, qrcode_token))
+                            self._tasks.add(_t)
                     except Exception as e:
                         await self._send(ws, "wechat_scan_result",
                             qrcode_url="", success=False,
@@ -2412,6 +2423,12 @@ class EncreWSHandler:
                         await self._send(ws, "error", message=str(e), code="retry_error",
                                          session_id=sid)
                         continue
+                    # Retry invalidates the compact summary: the conversation
+                    # diverges at this point, so the old summary (which
+                    # summarised the previous branch's "future") is now
+                    # misleading.  Clear it so the next compact regenerates
+                    # from the new branch's state.
+                    sess.metadata.pop("user_requirements_summary", None)
                     # Notify frontend about the new branch so the branch switcher updates.
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     # Send the correct messages for the new branch so the frontend
@@ -2530,6 +2547,10 @@ class EncreWSHandler:
                         await self._send(ws, "error", message="Message not found", code="rollback_error",
                                          session_id=sid)
                         continue
+                    # Rollback restores the conversation to a previous state.
+                    # The compact summary (which summarised "future" work) is
+                    # now misleading — clear it so the next compact regenerates.
+                    sess.metadata.pop("user_requirements_summary", None)
                     # rollback_to keeps the target message but the frontend
                     # removes it locally (its content goes into the input box
                     # for re-editing).  Remove it here too so that a page
@@ -2814,6 +2835,29 @@ class EncreWSHandler:
                             "model_breakdown": {},
                             "sessions": [],
                         })
+
+                elif isinstance(msg, ClientReplayGetSession):
+                    # Session replay: load the recorded telemetry JSONL and
+                    # return the full event stream + summary + turn boundaries
+                    # so the frontend can scrub through what the agent did.
+                    try:
+                        from encre.replay import ReplayPlayer
+                        _player = ReplayPlayer(msg.session_id)
+                        await self._send(ws, "replay_session",
+                            session_id=msg.session_id,
+                            summary=_player.summary(),
+                            events=[ev.to_dict() for ev in _player.event_stream()],
+                            turn_boundaries=_player.turn_boundaries(),
+                        )
+                    except Exception as _replay_exc:
+                        logger.warning("[ws] replay failed: %s", _replay_exc, exc_info=True)
+                        await self._send(ws, "replay_session",
+                            session_id=getattr(msg, "session_id", ""),
+                            summary={},
+                            events=[],
+                            turn_boundaries=[],
+                            error=str(_replay_exc),
+                        )
 
         except (ConnectionResetError, OSError) as _conn_err:
             logger.debug("[ws] connection reset: %s", _conn_err)
@@ -3135,6 +3179,60 @@ class EncreWSHandler:
         for ws in closed:
             self._connections.remove(ws)
 
+    async def _poll_wechat_scan(self, ws, adapter, qrcode_token: str) -> None:
+        """Poll iLink Bot QR code status in background and notify frontend."""
+        try:
+            result = await adapter.poll_qrcode_status(qrcode_token)
+            if result:
+                ilink_bot_id = result.get("ilink_bot_id", "")
+                bot_token = result.get("bot_token", "")
+                baseurl = result.get("baseurl", "")
+                ilink_user_id = result.get("ilink_user_id", "")
+                await self._send(ws, "wechat_scan_result",
+                    qrcode_url="", success=True, message="",
+                    scan_confirmed=True,
+                    credentials={
+                        "ilink_bot_id": ilink_bot_id,
+                        "bot_token": bot_token,
+                        "baseurl": baseurl,
+                        "ilink_user_id": ilink_user_id,
+                    })
+                # Save credentials and start the adapter
+                if self._adapter_manager and ilink_bot_id and bot_token:
+                    # Clear any stale stored config for weixin
+                    if hasattr(self._adapter_manager, "_stored_configs"):
+                        self._adapter_manager._stored_configs.pop("weixin", None)
+                    cfg = {
+                        "app_id": ilink_bot_id,
+                        "token": bot_token,
+                        "api_url": baseurl,
+                        "enabled": True,
+                    }
+                    await self._adapter_manager.start_adapter("weixin", cfg)
+                    # Persist to adapter_configs
+                    info = self._info
+                    if info and hasattr(info, "agent") and hasattr(info.agent, "config"):
+                        info.agent.config.adapter_configs["weixin"] = {
+                            "app_id": ilink_bot_id,
+                            "token": bot_token,
+                            "api_url": baseurl,
+                            "enabled": True,
+                        }
+                        if hasattr(self, "_default_config"):
+                            self._default_config.adapter_configs["weixin"] = {
+                                "app_id": ilink_bot_id,
+                                "token": bot_token,
+                                "api_url": baseurl,
+                                "enabled": True,
+                            }
+                        self._persist_settings(info)
+        except Exception as e:
+            logger.warning("[wechat_scan] poll error: %s", e)
+        finally:
+            task = asyncio.current_task()
+            if task:
+                self._tasks.discard(task)
+
     def _load_sub_agent_messages(self, session_id: str) -> list[dict[str, Any]] | None:
         """Load messages from a sub-agent session directory.
 
@@ -3367,10 +3465,17 @@ class EncreWSHandler:
                 if val is not None and val != "":
                     existing[key] = str(val)
             # Also persist adapter configs from EncreConfig for auto-start on restart
+            # First, remove stale adapter keys that are no longer in config
+            adapter_ids_in_config = set()
             if cfg.adapter_configs:
+                adapter_ids_in_config = set(cfg.adapter_configs.keys())
                 for adapter_id, fields in cfg.adapter_configs.items():
                     for fk, fv in fields.items():
                         existing[f"adapter_{adapter_id}_{fk}"] = fv
+            # Remove keys for adapters no longer in config (e.g. unbound weixin)
+            stale_keys = [k for k in existing if k.startswith("adapter_") and k.split("_", 2)[1] not in adapter_ids_in_config]
+            for k in stale_keys:
+                existing.pop(k, None)
             if hasattr(cfg, "permission_settings") and cfg.permission_settings:
                 existing["permission_settings"] = dict(cfg.permission_settings)
             logger.info("[persist_settings] saving keys: %s", list(existing.keys()))
@@ -3508,8 +3613,17 @@ class EncreWSHandler:
         except Exception:
             logger.debug("[index] failed to send progress", exc_info=True)
 
+    @staticmethod
+    def _truncate_name(text: str) -> str:
+        """Truncate text: CJK -> first 10 chars, English -> first 5 words."""
+        import re
+        text = text.strip().strip('"').strip("'").strip("「").strip("」").strip("『").strip("』")
+        if re.search(r'[\u4e00-\u9fff]', text):
+            return text[:10]
+        return ' '.join(text.split()[:5])
+
     async def _auto_name_session(self, session: Any, first_user_msg: str) -> str:
-        """Generate a concise session name (≤8 chars) from the user's first message.
+        """Generate a concise session name from the user's first message.
         Uses the same backend as the session's agent with a minimal prompt.
         If the call fails or times out, returns empty string (no name set)."""
         try:
@@ -3522,7 +3636,8 @@ class EncreWSHandler:
                 return ""
             sys_prompt = (
                 "You are a title naming assistant. Based on the user's message, "
-                "generate a concise title of no more than 8 characters. "
+                "generate a concise title. For Chinese: no more than 10 characters. "
+                "For English: no more than 5 words. "
                 "Return ONLY the title text, no quotes, no explanation, no punctuation."
             )
             gen = backend.chat(
@@ -3540,13 +3655,16 @@ class EncreWSHandler:
                     full_text += event.text
                 elif isinstance(event, BackendFinish):
                     break
-            name = full_text.strip().strip('"').strip("'").strip("「").strip("」").strip("『").strip("』")[:8]
+                elif isinstance(event, BackendError):
+                    logger.debug("[session] auto-name: backend error: %s", event.error)
+                    return ""
+            name = self._truncate_name(full_text)
             if len(name) < 2:
                 logger.debug("[session] auto-name: generated name too short: '%s'", full_text[:50])
                 return ""
             return name
         except Exception as e:
-            logger.warning("[session] auto-name failed: %s", e)
+            logger.warning("[session] auto-name failed: %s", e, exc_info=True)
             return ""
 
     async def _auto_name_and_rename(self, session: Any, prompt: str) -> None:
@@ -3562,10 +3680,27 @@ class EncreWSHandler:
                     return
                 self._manager.rename_session(session.session_id, name, manual=False)
                 logger.info("[session] auto-named %s -> %s", session.session_id[:8], name)
+                # Notify the frontend so it can update the session bar immediately.
+                await self._broadcast_session_renamed(session.session_id, name)
+            else:
+                # Fallback: use truncated first user message as name
+                fallback = self._truncate_name(prompt)
+                if fallback:
+                    self._manager.rename_session(session.session_id, fallback, manual=False)
+                    logger.info("[session] auto-name fallback %s -> %s", session.session_id[:8], fallback)
+                    await self._broadcast_session_renamed(session.session_id, fallback)
         except TimeoutError:
             logger.debug("[session] auto-name timed out (15s)")
         except Exception as e:
-            logger.debug("[session] auto-name failed: %s", e)
+            logger.debug("[session] auto-name failed: %s", e, exc_info=True)
+
+    async def _broadcast_session_renamed(self, session_id: str, new_name: str) -> None:
+        """Send session_renamed to all connected clients."""
+        for ws in list(self._connections):
+            try:
+                await self._send(ws, "session_renamed", session_id=session_id, new_name=new_name)
+            except Exception:
+                pass
 
     @staticmethod
     async def _build_skills_list(info: Any) -> list[dict[str, Any]]:
@@ -3575,11 +3710,13 @@ class EncreWSHandler:
             for name, skill in registry._skills.items():
                 if getattr(skill, "hidden", False):
                     continue
+                if skill.source in ("bundled", "managed"):
+                    continue
                 entry: dict[str, Any] = {
                     "name": name,
                     "description": skill.description,
                     "aliases": skill.aliases,
-                    "source": str(skill.source) if hasattr(skill, "source") else "bundled",
+                    "source": skill.source,
                     "argument_hint": skill.argument_hint,
                     "allowed_tools": skill.allowed_tools,
                     "when_to_use": skill.when_to_use,

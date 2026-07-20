@@ -357,12 +357,14 @@ class AdapterManager:
                 kwargs[k] = v
 
         try:
+            logger.info("[adapter-manager] start_adapter '%s' kwargs=%s", adapter_id, {k: ("***" if "secret" in k or "token" in k or "password" in k else v) for k,v in kwargs.items()})
             instance = cls(**kwargs)
             # Inject gateway authorization + pairing so handle_message can
             # enforce the 5-layer check and handle /pair.
             instance.set_authz(getattr(self, "_authz", None))
             instance.set_pairing(getattr(self, "_pairing", None))
             ok = await instance.connect()
+            logger.info("[adapter-manager] '%s' connect() returned %s", adapter_id, ok)
             if ok:
                 self._instances[adapter_id] = instance
                 self._last_errors.pop(adapter_id, None)
@@ -442,6 +444,42 @@ class AdapterManager:
             cls = _ADAPTER_CLASSES.get(adapter_id)
             if cls is None:
                 continue
+
+            # Filter cfg to only include valid constructor params (skip unknown keys)
+            import inspect
+            sig = inspect.signature(cls.__init__)
+            valid_params = set(sig.parameters.keys()) - {"self", "gateway_url"}
+            cfg = {k: v for k, v in cfg.items() if k in valid_params or k == "enabled"}
+            # Also clean up stale stored config keys
+            if adapter_id in self._stored_configs:
+                self._stored_configs[adapter_id] = {
+                    k: v for k, v in self._stored_configs[adapter_id].items()
+                    if k in valid_params
+                }
+
+            # Check if this is an unbind request (all credential fields sent as empty)
+            is_unbind = False
+            is_running = adapter_id in self._instances
+            if adapter_id == "weixin":
+                has_app_id = "app_id" in cfg
+                has_token = "token" in cfg
+                if has_app_id and has_token and not cfg.get("app_id") and not cfg.get("token"):
+                    is_unbind = True
+
+            if is_unbind:
+                self._stored_configs.pop(adapter_id, None)
+                if is_running:
+                    await self.stop_adapter(adapter_id)
+                continue
+
+            # For weixin, only start if actual credentials are present
+            if adapter_id == "weixin":
+                has_real_creds = bool(cfg.get("app_id")) and bool(cfg.get("token"))
+                if not has_real_creds:
+                    self._stored_configs.pop(adapter_id, None)
+                    if is_running:
+                        await self.stop_adapter(adapter_id)
+                    continue
 
             enabled = cfg.get("enabled", False)
             is_running = adapter_id in self._instances
@@ -595,6 +633,7 @@ class AdapterManager:
         def _create() -> str | None:
             sm = self._router.session_manager
             if sm is None:
+                logger.warning("[adapter-manager] resolve_session: session_manager is None")
                 return None
             info = sm.create_session(config=self._router._default_config)
             # Stamp the session with its origin so the frontend (Phase 5) and

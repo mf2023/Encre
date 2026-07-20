@@ -108,6 +108,7 @@ class OllamaBackend(OpenAISSEBackend):
         max_tokens: int = 4096,
         stream: bool = True,
         enable_caching: bool = False,
+        cache_edits_state: Any = None,
     ) -> AsyncGenerator[BackendEvent, None]:
         """Send a chat completion request, fetching model info first if needed.
 

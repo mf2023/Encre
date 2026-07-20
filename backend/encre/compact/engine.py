@@ -395,7 +395,7 @@ class CompactEngine:
         )
 
         try:
-            summary = await _generate_summary(backend, compact_msgs)
+            summary = await _generate_summary(backend, compact_msgs, enable_caching=enable_caching)
         except Exception as exc:
             logger.warning("[compact] API call failed: %s", exc, exc_info=True)
             self._failure_count += 1
@@ -431,6 +431,7 @@ class CompactEngine:
             try:
                 retry_summary = await _generate_summary(
                     backend, compact_msgs, extra_instruction=_SUMMARY_SECTION_REMINDER,
+                    enable_caching=enable_caching,
                 )
                 if retry_summary and len(retry_summary) >= 100:
                     retry_validation = _validate_summary_sections(retry_summary)
@@ -443,6 +444,144 @@ class CompactEngine:
             logger.warning(
                 "[compact] summary still missing sections %s after retry -- rescuing",
                 validation.missing,
+            )
+            self._failure_count += 1
+            rescued = await _segmented_rescue(messages, backend, self._failure_count)
+            if rescued is not None:
+                self._failure_count = 0
+                return rescued
+
+
+        # P3+P4: verify that key constraints from the original user messages
+        # are preserved in the summary.  Two-phase verification:
+        # Phase 1 (P3, cheap): text-match check
+        # Phase 2 (P4, LLM check): ask the model directly
+        # If either fails, retry the summary.
+        _key_terms = _extract_key_constraints(messages)
+        _verification_ok = True
+        if _key_terms:
+            # Phase 1: text-match check
+            _missing_text = _verify_key_constraints(summary, _key_terms)
+            if _missing_text:
+                logger.warning(
+                    "[compact] P3: summary missing %d/%d key constraint terms: %s",
+                    len(_missing_text), len(_key_terms), _missing_text[:6],
+                )
+                _verification_ok = False
+            else:
+                # Phase 2: LLM verification (only if Phase 1 passed)
+                _verification_ok, _missing_llm = await _verify_summary_coverage(
+                    backend, summary, _key_terms,
+                )
+                if not _verification_ok:
+                    logger.warning(
+                        "[compact] P4: summary missing %d critical constraints in LLM check: %s",
+                        len(_missing_llm), _missing_llm,
+                    )
+
+        if not _verification_ok and self._failure_count < _MAX_VERIFICATION_RETRIES:
+            self._failure_count += 1
+            logger.warning(
+                "[compact] verification failed, retry %d/%d",
+                self._failure_count, _MAX_VERIFICATION_RETRIES,
+            )
+            _missing_list = _missing_text if _missing_text else _missing_llm
+            _extra_list = "\n".join(f"- {m}" for m in _missing_list)
+            _extra = (
+                "Your previous summary was missing some critical user requirements. "
+                "You MUST include the following constraints in your summary:\n"
+                + _extra_list
+                + "\n\nRe-emit the full summary with ALL 9 sections and include "
+                "these constraints in the 'Primary Request and Intent' section."
+            )
+            try:
+                _retry_summary = await _generate_summary(
+                    backend, compact_msgs, extra_instruction=_extra,
+                    enable_caching=enable_caching,
+                )
+                if _retry_summary and len(_retry_summary) >= 100:
+                    summary = _retry_summary
+                    _re_verify = await _verify_summary_coverage(
+                        backend, summary, _key_terms,
+                    )
+                    if _re_verify[0]:
+                        self._failure_count = 0
+                        _verification_ok = True
+            except Exception as _rexc:
+                logger.warning("[compact] verification retry failed: %s", _rexc)
+
+        if not _verification_ok:
+            logger.warning(
+                "[compact] verification still failing after retries -- rescuing",
+            )
+            self._failure_count += 1
+            rescued = await _segmented_rescue(messages, backend, self._failure_count)
+            if rescued is not None:
+                self._failure_count = 0
+                return rescued
+
+
+        # P3+P4: verify that key constraints from the original user messages
+        # are preserved in the summary.  Two-phase verification:
+        # Phase 1 (P3, cheap): text-match check
+        # Phase 2 (P4, LLM check): ask the model directly
+        # If either fails, retry the summary.
+        _key_terms = _extract_key_constraints(messages)
+        _verification_ok = True
+        if _key_terms:
+            # Phase 1: text-match check
+            _missing_text = _verify_key_constraints(summary, _key_terms)
+            if _missing_text:
+                logger.warning(
+                    "[compact] P3: summary missing %d/%d key constraint terms: %s",
+                    len(_missing_text), len(_key_terms), _missing_text[:6],
+                )
+                _verification_ok = False
+            else:
+                # Phase 2: LLM verification (only if Phase 1 passed)
+                _verification_ok, _missing_llm = await _verify_summary_coverage(
+                    backend, summary, _key_terms,
+                )
+                if not _verification_ok:
+                    logger.warning(
+                        "[compact] P4: summary missing %d critical constraints in LLM check: %s",
+                        len(_missing_llm), _missing_llm,
+                    )
+
+        if not _verification_ok and self._failure_count < _MAX_VERIFICATION_RETRIES:
+            self._failure_count += 1
+            logger.warning(
+                "[compact] verification failed, retry %d/%d",
+                self._failure_count, _MAX_VERIFICATION_RETRIES,
+            )
+            _missing_list = _missing_text if _missing_text else _missing_llm
+            _extra_list = "\n".join(f"- {m}" for m in _missing_list)
+            _extra = (
+                "Your previous summary was missing some critical user requirements. "
+                "You MUST include the following constraints in your summary:\n"
+                + _extra_list
+                + "\n\nRe-emit the full summary with ALL 9 sections and include "
+                "these constraints in the 'Primary Request and Intent' section."
+            )
+            try:
+                _retry_summary = await _generate_summary(
+                    backend, compact_msgs, extra_instruction=_extra,
+                    enable_caching=enable_caching,
+                )
+                if _retry_summary and len(_retry_summary) >= 100:
+                    summary = _retry_summary
+                    _re_verify = await _verify_summary_coverage(
+                        backend, summary, _key_terms,
+                    )
+                    if _re_verify[0]:
+                        self._failure_count = 0
+                        _verification_ok = True
+            except Exception as _rexc:
+                logger.warning("[compact] verification retry failed: %s", _rexc)
+
+        if not _verification_ok:
+            logger.warning(
+                "[compact] verification still failing after retries -- rescuing",
             )
             self._failure_count += 1
             rescued = await _segmented_rescue(messages, backend, self._failure_count)
@@ -571,6 +710,7 @@ async def _generate_summary(
     messages: list[dict[str, Any]],
     *,
     extra_instruction: str = "",
+    enable_caching: bool = False,
 ) -> str | None:
     """Call the backend to produce a conversation summary.
 
@@ -601,7 +741,7 @@ async def _generate_summary(
             temperature=0.0,
             max_tokens=COMPACT_MAX_OUTPUT_TOKENS,
             stream=True,
-            enable_caching=False,
+            enable_caching=enable_caching,
         ):
             from encre.utils.types import BackendText
             if isinstance(event, BackendText) and event.text:
@@ -626,6 +766,26 @@ async def _generate_summary(
 
     # If no tags found, return the entire output
     return full_text
+
+
+
+def extract_user_requirements(summary: str) -> str:
+    import re as _re
+    m = _re.search(
+        r"(?:#+\s*)?\d*\.?\s*Primary\s+Request\s+(?:and\s+Intent)?[:\]]*\s*\n(.*?)(?:\n(?:#+\s*)?\d*\.?\s*(?:Files|Key|Errors|Current|Pending|User|Workspace|Next)|$)",
+        summary,
+        _re.DOTALL | _re.IGNORECASE,
+    )
+    if m:
+        req = m.group(1).strip()
+        if len(req) > 800:
+            req = req[:800] + "..."
+        return (
+            "=== User Requirements (extracted from compact summary) ===\n"
+            f"{req}\n"
+            "=== End User Requirements ==="
+        )
+    return ""
 
 
 def _build_compacted(
@@ -702,7 +862,7 @@ def _build_compacted(
             "is_compact_context": True,
         })
 
-    # Anchor: first user message
+    # Anchor: first user message (task definition)
     first_user = None
     for msg in messages:
         if msg.get("role") == "user":
@@ -710,6 +870,16 @@ def _build_compacted(
             break
     if first_user:
         result.append(first_user)
+
+    # Protected messages: spec definitions and plan messages that must
+    # survive compaction so the model never forgets the user's structured
+    # requirements.  These are appended right after the first user anchor.
+    for msg in messages:
+        if msg.get("kind") in ("spec", "plan") or msg.get("is_plan"):
+            mid = msg.get("id", "")
+            if mid and mid in {m.get("id", "") for m in result}:
+                continue
+            result.append(dict(msg))
 
     # Last 4 turns -- increased from 2 to provide more recent context
     user_idxs = [i for i, m in enumerate(messages) if m.get("role") == "user"]
@@ -901,7 +1071,7 @@ def _budget_fallback(
 ) -> list[dict[str, Any]] | None:
     """Last-resort budget-based truncation when the model call fails.
 
-    Keeps: system + first user + last *keep_recent* turns.
+    Keeps: system + first user + spec/plan anchors + last *keep_recent* turns.
     """
     if len(messages) <= keep_recent * 2 + 2:
         return list(messages)
@@ -913,10 +1083,19 @@ def _budget_fallback(
             first_user = dict(m)
             break
 
+    # Protected messages: specs and plans that must survive truncation.
+    protected = []
+    for m in messages:
+        if m.get("kind") in ("spec", "plan") or m.get("is_plan"):
+            mid = m.get("id", "")
+            if mid and mid == (first_user or {}).get("id", ""):
+                continue
+            protected.append(dict(m))
+
     non_system = [m for m in messages if m.get("role") != "system"]
     recent = non_system[-(keep_recent * 2):]
 
-    result = system + ([first_user] if first_user else []) + recent
+    result = system + ([first_user] if first_user else []) + protected + recent
     return _sanitize_tool_groups(result)
 
 
@@ -1058,6 +1237,99 @@ _SUMMARY_SECTION_REMINDER = (
 )
 
 
-# ── Backward-compatible alias ──────────────────────────────────────────
+
+
+
+# P3: Compact content verification
+def _extract_key_constraints(messages, max_terms=15):
+    """Extract key constraint terms from user messages before compaction."""
+    import re as _re
+    patterns = [
+        r"do\s*n[o']t\s+use\s+(\w[\w.]*)",
+        r"don't\s+use\s+(\w[\w.]*)",
+        r"must\s+not\s+(\w[\w.]*)",
+        r"should\s+not\s+(\w[\w.]*)",
+        r"without\s+(\w[\w.]*)",
+        r"avoid\s+(\w[\w.]*)",
+        r"only\s+use\s+(\w[\w.]*)",
+        r"prefer\s+(\w[\w.]*)",
+        r"use\s+(\w+[\d.]+\w*)\s+instead",
+        r"not\s+(\w[\w.]*)\s+but\s+(\w[\w.]*)",
+        r"no\s+(\w[\w.]*)",
+    ]
+    terms = set()
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            continue
+        lowered = content.lower()
+        for pattern in patterns:
+            for m in _re.finditer(pattern, lowered):
+                for g in m.groups():
+                    if g and len(g) > 2:
+                        terms.add(g.rstrip(".,;:!?"))
+        for m in _re.finditer(r"\b(v?\d+\.\d+)\b", lowered):
+            terms.add(m.group(1).rstrip(".,;:!?"))
+        for m in _re.finditer(r"\b(python|rust|go|typescript|javascript|react|vue|django|flask|fastapi|postgres|mysql|redis|docker|kubernetes|aws|gcp|azure)\b", lowered):
+            terms.add(m.group(1))
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
+def _verify_key_constraints(summary, key_terms):
+    """Check which key constraint terms appear in the compact summary."""
+    if not key_terms or not summary:
+        return list(key_terms) if key_terms else []
+    lowered = summary.lower()
+    missing = []
+    for term in key_terms:
+        if term not in lowered:
+            missing.append(term)
+    return missing
+
+
+# P4: summarisation verification loop
+_VERIFICATION_PROMPT = (
+    "You are checking whether a conversation summary is complete.\n\n"
+    "SUMMARY:\n{summary}\n\n"
+    "KEY CONSTRAINT: Does the summary above mention or address the following "
+    'user requirement: "{constraint}"?\n\n'
+    "Answer EXACTLY one word: YES if the summary mentions this requirement, "
+    "NO if it does not. If unsure, answer NO."
+)
+
+_MAX_VERIFICATION_RETRIES = 2
+
+
+async def _verify_summary_coverage(backend, summary, key_terms):
+    """Verify that summary covers the key constraint terms."""
+    if not key_terms or not summary:
+        return True, []
+    critical = sorted(key_terms, key=len, reverse=True)[:5]
+    missing = []
+    for term in critical:
+        try:
+            prompt = _VERIFICATION_PROMPT.format(summary=summary[:2000], constraint=term)
+            result = ""
+            async for event in backend.chat(
+                messages=[{"role": "user", "content": prompt}],
+                tools=None, tool_choice="none",
+                temperature=0.0, max_tokens=3, stream=True,
+            ):
+                from encre.utils.types import BackendText
+                if isinstance(event, BackendText) and event.text:
+                    result += event.text
+            result = result.strip().upper()
+            if "NO" in result and "YES" not in result:
+                missing.append(term)
+        except Exception:
+            continue
+    return len(missing) == 0, missing
+
+
+# Backward-compatible alias# ── Backward-compatible alias ──────────────────────────────────────────
 
 EncreCompactEngine = CompactEngine

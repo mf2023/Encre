@@ -54,8 +54,11 @@ from encre.loop_stability import (
     BudgetState,
     SteerQueue,
     WithheldError,
+    _detect_requirement_change,
     build_empty_retry_message,
     build_grace_message,
+    build_auto_continue_message,
+    build_delegation_guidance,
     build_steer_injection,
     build_thinking_prefill,
     build_tombstone_messages,
@@ -332,6 +335,103 @@ def _extract_apply_patch_paths(result: str) -> list[str]:
         return []
 
 
+def _extract_write_target_paths(tool_name: str, args: dict[str, Any]) -> set[str]:
+    """Return the normalised absolute file paths a write tool will modify.
+
+    Used by the path-aware parallel grouping so two write tools touching
+    *different* files can run concurrently (mirrors Hermes' ``_paths_overlap``
+    check).  Returns an empty set for tools whose target paths cannot be
+    statically determined (e.g. ``bash``), which keeps them sequential.
+    """
+    if tool_name not in _WRITE_TOOL_NAMES:
+        return set()
+    if tool_name == "apply_patch":
+        paths: set[str] = set()
+        for fd in (args.get("files") or []):
+            if isinstance(fd, dict):
+                for key in ("old_path", "new_path"):
+                    p = fd.get(key) or ""
+                    if p:
+                        try:
+                            paths.add(os.path.abspath(p))
+                        except Exception:
+                            paths.add(p)
+        return paths
+    fp = args.get("file_path") or args.get("path") or ""
+    if not fp:
+        return set()
+    try:
+        return {os.path.abspath(fp)}
+    except Exception:
+        return {fp}
+
+
+def _split_writes_by_path_conflict(
+    write_tools: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Partition write tools into (parallel-safe, sequential) by path overlap.
+
+    A write tool is parallel-safe only when none of its target paths overlap
+    with any other write tool's paths in the same turn.  Tools whose paths
+    cannot be determined (empty set -- e.g. bash, or a write tool missing its
+    path arg) are always sequential to avoid racing on an unknown file.
+    """
+    path_map: dict[int, set[str]] = {
+        i: _extract_write_target_paths(p["name"], p.get("args", {}))
+        for i, p in enumerate(write_tools)
+    }
+    parallel: list[dict[str, Any]] = []
+    sequential: list[dict[str, Any]] = []
+    for i, p in enumerate(write_tools):
+        my_paths = path_map[i]
+        if not my_paths:
+            sequential.append(p)
+            continue
+        conflict = any(
+            bool(my_paths & path_map[j])
+            for j in range(len(write_tools))
+            if j != i
+        )
+        (sequential if conflict else parallel).append(p)
+    return parallel, sequential
+
+
+async def _try_lsp_diagnostics(file_path: str) -> str:
+    """Run LSP diagnostics on *file_path* and return a formatted summary.
+
+    Returns an empty string when LSP is unavailable (no server started for
+    this workspace, unsupported language, or any error) so the caller falls
+    back to the generic VERIFY reminder.  Mirrors Hermes' pattern of piping
+    real language-server diagnostics into write-tool results so the model
+    sees type errors immediately without a separate tool call.
+    """
+    try:
+        from encre.tools.builtin.lsp import _get_manager
+        mgr = _get_manager()
+        if not getattr(mgr, "_workspace", ""):
+            return ""
+        diags = await mgr.get_diagnostics(file_path)
+        if not diags:
+            return ""
+        sev_name = {1: "Error", 2: "Warning", 3: "Info", 4: "Hint"}
+        lines = [f"\n\n[LSP Diagnostics for {file_path}] ({len(diags)})"]
+        for d in diags[:20]:
+            sev = sev_name.get(d.severity, "Issue")
+            raw_msg = (d.message or "").strip()
+            msg = (raw_msg.splitlines()[0][:200] if raw_msg else "")
+            loc = ""
+            try:
+                if d.range and d.range.start is not None:
+                    loc = f" line {d.range.start.line}:{d.range.start.character}"
+            except Exception:
+                pass
+            src = f" ({d.source})" if d.source else ""
+            lines.append(f"  [{sev}]{loc}{src} {msg}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _is_reference_tool(tool_name: str) -> bool:
     """Memory, MCP, and web tools generate sidebar references."""
     name = tool_name.lower()
@@ -544,6 +644,10 @@ class EncreLoop:
         self.reflex = evo.reflex
         self.meta = evo.meta
         self.recovery_engine = recovery or ErrorRecoveryEngine()
+        # Cached microcompact state (per-session).  Lazily initialised on the
+        # first turn when the backend is Anthropic so non-Anthropic backends
+        # pay zero cost.  Mirrors Claude Code's ``CachedMCState``.
+        self._cache_edits_state: Any = None
         self.feedback = feedback
         self._code_index: EncreCodeIndex | None = code_index
         self._pending_code_scan: EncreCodeIndex | None = None
@@ -639,10 +743,13 @@ class EncreLoop:
         self._truncated_tool_call_retry_count: int = 0
         # Steer queue for mid-conversation user instructions
         self._steer_queue: SteerQueue = SteerQueue()
-        # Budget state for grace call support
-        self._budget_state: BudgetState = BudgetState(
-            max_tokens=getattr(self.config, "token_budget", 0),
-            grace_enabled=True,
+        # Budget state for grace call support.  Restored from session metadata
+        # so a restarted session resumes its accrued token budget instead of
+        # resetting to zero (mirrors Claude Code's task_budget accrual across
+        # compact boundaries / session restarts).
+        self._budget_state: BudgetState = BudgetState.restore(
+            self.session.metadata.get(BudgetState.META_KEY),
+            fallback_max=getattr(self.config, "token_budget", 0),
         )
         # Thinking prefill toggle
         self._thinking_prefill_enabled: bool = getattr(
@@ -725,7 +832,8 @@ class EncreLoop:
                 slice_msgs,
                 backend=self.backend,
                 turn_count=turn,
-                session_id=self.session.id or "",
+                enable_caching=self.config.enable_prompt_caching,
+                        session_id=self.session.id or "",
             )
         except Exception as exc:
             logger.warning("[milestone] compact call failed: %s", exc)
@@ -1568,12 +1676,25 @@ class EncreLoop:
         """Return (workspace_root, workspace_name, project_summary) for the prompt builder.
 
         Returns ("", "", "") when not running inside a workspace.
+
+        Cache key includes the git branch so that switching branches
+        automatically refreshes the workspace context.
         """
         ws_path = getattr(self.config, "workspace", "") or ""
         if not ws_path or not os.path.isdir(ws_path):
             self._workspace_info_cache = None
             return "", "", ""
         cache_key = ws_path
+        # Include the current git branch in the cache key so that switching
+        # branches immediately invalidates the cached workspace context.
+        try:
+            repo = getattr(self, "git", None) or getattr(self, "_git", None)
+            if repo is not None:
+                branch = repo.get_branch() if hasattr(repo, "get_branch") else ""
+                if branch:
+                    cache_key = f"{ws_path}@{branch}"
+        except Exception:
+            pass
         if (
             self._workspace_info_cache is not None
             and self._workspace_info_cache[0] == cache_key
@@ -2009,23 +2130,12 @@ class EncreLoop:
                 )
                 return
 
-            # Streaming pre-execution only applies to read-only tools:
-            # write/destructive tools must wait for the normal post-streaming
-            # permission gate so the user can still deny them.
-            try:
-                readonly_attr = getattr(tool, "is_readonly", None)
-                if callable(readonly_attr):
-                    is_readonly = bool(readonly_attr(args))
-                else:
-                    is_readonly = bool(readonly_attr)
-            except Exception:
-                is_readonly = False
-            if not is_readonly:
-                logger.debug(
-                    "[pre_execute] skipping %s for %s -- not read-only",
-                    tool_name, client_id,
-                )
-                return
+            # Streaming pre-execution applies to any tool with auto-approve
+            # permission -- not just read-only ones.  Write tools that are
+            # already allowed (bypass/auto mode) can start executing during
+            # streaming just like read-only tools, and their results are
+            # consumed in the post-streaming phase.  Tools that need user
+            # approval (ask mode) are excluded by the permission check above.
 
             executor = RetryableExecutor(self.recovery_engine)
             state = await executor.execute(
@@ -2149,6 +2259,16 @@ class EncreLoop:
         # Classify user intent for dynamic prompt assembly
         intents = classify_intents(prompt)
 
+        # Detect mid-conversation requirement changes: when the user's
+        # latest message signals a shift in direction, invalidate the
+        # cached user requirements summary so the next compact produces
+        # a fresh one.  This prevents the model from anchoring to stale
+        # requirements after the user says "actually, let's do X instead".
+        _detected_change = _detect_requirement_change(prompt)
+        if _detected_change and self.session.metadata.get("user_requirements_summary"):
+            logger.info("[run] detected requirement change: %s -- clearing cached summary", _detected_change)
+            self.session.metadata["user_requirements_summary"] = ""
+
         # Activate any skills invoked via /skill-name syntax
         skill_prompt, prompt = await self._activate_skills(prompt)
         _t0 = time.time()
@@ -2249,6 +2369,20 @@ class EncreLoop:
         doc_skills_prompt = self._render_active_doc_skills()
         if doc_skills_prompt:
             system_prompt = doc_skills_prompt + "\n\n" + system_prompt
+
+        # Inject user requirements summary: a compact description of the
+        # user's core goals extracted from the last compact summary.  Lives
+        # in session metadata so it survives compaction.  Only for the main
+        # agent (sub-agents get their own self-contained brief).
+        if not _skip_enrichment:
+            _req_summary = self.session.metadata.get("user_requirements_summary", "")
+            if _req_summary:
+                system_prompt = system_prompt + "\n\n" + _req_summary
+            # P5: coordinator-style delegation guidance.  Steers the main
+            # agent toward good delegation hygiene (understand -> delegate
+            # self-contained briefs -> synthesise) on complex multi-step
+            # work.  Mirrors Claude Code's coordinatorMode.ts.
+            system_prompt = system_prompt + "\n\n" + build_delegation_guidance()
 
         if _skip_enrichment:
             # Sub-agent behavioral framework: essential blocks every agent
@@ -2387,6 +2521,13 @@ class EncreLoop:
                 logger.info("[sub_agent] adding user message to session | prompt_len=%s | last_ctx_user_exists=%s",
                             len(prompt), last_ctx_user is not None)
                 self.session.add_message("user", prompt)
+                # Flush the user message to disk before entering the model
+                # loop so a process kill here still leaves a resumable
+                # transcript.  Mirrors Claude Code QueryEngine.ts:450-463.
+                with contextlib.suppress(Exception):
+                    await self.hook_system.emit_user_message_persisted(
+                        self.session.id or ""
+                    )
 
         if time.time() - _t0 > 0.1:
             logger.info("[perf] prompt build %.1fs", time.time() - _t0)
@@ -2519,10 +2660,12 @@ class EncreLoop:
                             context_msgs, backend=self.backend,
                             turn_count=self.session.turn_count,
                             system_prompt=system_prompt or "",
-                            session_id=self.session.id or "",
+                            enable_caching=self.config.enable_prompt_caching,
+                        session_id=self.session.id or "",
                         )
                         if compacted is not None:
                             self.session.replace_branch_messages(self.session.active_branch_id, compacted)
+                            self._update_user_requirements(compacted)
                             new_tokens = count_message_tokens(compacted)
                             self._compact_notification = CompactNotification(
                                 old_count=len(context_msgs),
@@ -2716,6 +2859,7 @@ class EncreLoop:
                         _context_msgs, backend=self.backend,
                         turn_count=self.session.turn_count,
                         system_prompt=system_prompt or "",
+                        enable_caching=self.config.enable_prompt_caching,
                         session_id=self.session.id or "",
                     )
                     if _compacted is not None:
@@ -2748,6 +2892,31 @@ class EncreLoop:
             response_text = ""
             _backend_usage: dict[str, Any] | None = None
             _t_chat = time.time()
+
+            # Cached microcompact: register tool_results and queue deletions
+            # for the Anthropic cache_edits API layer.  Only runs when the
+            # backend is Anthropic (other backends ignore the block).
+            _cache_edits_state = self._cache_edits_state
+            if _cache_edits_state is None and self.config.enable_prompt_caching:
+                try:
+                    from encre.cache_edits import create_state
+                    self._cache_edits_state = create_state()
+                    _cache_edits_state = self._cache_edits_state
+                except Exception:
+                    pass
+            if _cache_edits_state is not None:
+                try:
+                    from encre.cache_edits import (
+                        create_cache_edits_block,
+                        get_tool_results_to_delete,
+                        register_tool_results,
+                    )
+                    register_tool_results(_cache_edits_state, backend_messages)
+                    to_delete = get_tool_results_to_delete(_cache_edits_state)
+                    if to_delete:
+                        create_cache_edits_block(_cache_edits_state, to_delete)
+                except Exception:
+                    logger.debug("[cache_edits] loop registration failed", exc_info=True)
 
             logger.info("[run] calling backend.chat() turn=%s msgs=%s tools=%s",
                         self.session.turn_count, len(backend_messages),
@@ -2789,6 +2958,7 @@ class EncreLoop:
                         tools=backend_tools,
                         max_tokens=_slot_budget,
                         enable_caching=self.config.enable_prompt_caching and self.backend.supports_prompt_caching(),
+                        cache_edits_state=_cache_edits_state,
                     )
                     async for event in self._chat_with_timeout(_chat_gen, timeout=120.0):
                         if _chat_first_event:
@@ -2964,10 +3134,18 @@ class EncreLoop:
                                     }
                                 # Streaming tool execution: pre-execute allowed tools in
                                 # background while the model continues generating output.
+                                # Exclude tools with side effects on the tool/runtime state
+                                # (find_tool unlocks + mutates discovery cache, manage installs
+                                # tools, agent/swarm/workflow spawn sub-agents) -- running
+                                # those during streaming corrupts state because the current
+                                # turn's tool schema was already sent.  They run in the normal
+                                # post-streaming phase instead.
                                 if (self.config.enable_streaming_tool_execution
                                     and not self.plan_mode_active
-                                    and event.name not in ("question", "agent", "workflow")
-                                    and event.name not in _WRITE_TOOL_NAMES):
+                                    and event.name not in (
+                                        "question", "agent", "workflow", "swarm",
+                                        "find_tool", "manage",
+                                    )):
                                     _sc_client = f"call_{self.session.turn_count}_{_streaming_call_idx}"
                                     if _sc_client not in self._streaming_tool_results:
                                         asyncio.create_task(
@@ -3014,10 +3192,12 @@ class EncreLoop:
                                 context_msgs, backend=self.backend,
                                 turn_count=self.session.turn_count,
                                 system_prompt=system_prompt or "",
-                                session_id=self.session.id or "",
+                                enable_caching=self.config.enable_prompt_caching,
+                        session_id=self.session.id or "",
                             )
                             if compacted is not None:
                                 self.session.replace_branch_messages(self.session.active_branch_id, compacted)
+                                self._update_user_requirements(compacted)
                                 logger.info("[reactive] compact succeeded turn=%d, continuing without error",
                                             self.session.turn_count)
                                 _reactive_compacted = True
@@ -3420,10 +3600,40 @@ class EncreLoop:
                     except Exception as e:
                         logger.warning("[spec] failed to parse spec: %s", e)
 
-                yield create_finish("stop", usage=_backend_usage)
-                # Main session: text-only ends this run. User sends next message.
-                # Sub-agent: text-only completes the sub-agent task.
-                return
+                # ── Auto-continue: when budget remains, nudge the model to
+                # keep going instead of stopping early.  Mirrors Claude Code's
+                # token-budget auto-continue (query/tokenBudget.ts).
+                _auto_continue = False
+                if (
+                    self.config.token_budget > 0
+                    and not tool_call_buffers
+                    and _backend_usage
+                ):
+                    self._budget_state.add_usage(
+                        _backend_usage.get("output_tokens", 0)
+                    )
+                    self.session.metadata[BudgetState.META_KEY] = self._budget_state.checkpoint()
+                    if (
+                        not self._budget_state.is_exhausted
+                        and self._budget_state.used_tokens > 0
+                    ):
+                        _auto_continue = True
+                        logger.info(
+                            "[run] auto-continue turn=%s token=%d/%d",
+                            self.session.turn_count,
+                            self._budget_state.used_tokens,
+                            self._budget_state.max_tokens,
+                        )
+                        self.session.add_message(
+                            "user", build_auto_continue_message(),
+                        )
+                        continue
+
+                if not _auto_continue:
+                    yield create_finish("stop", usage=_backend_usage)
+                    # Main session: text-only ends this run. User sends next message.
+                    # Sub-agent: text-only completes the sub-agent task.
+                    return
 
             assistant_content = "".join(text_parts) if text_parts else ""
 
@@ -3848,6 +4058,20 @@ class EncreLoop:
             safe_tools = [p for p in prepared if not p.get("skip") and p.get("safe")]
             unsafe_tools = [p for p in prepared if not p.get("skip") and not p.get("safe")]
 
+            # Path-aware parallelism: write tools that touch *different*
+            # files are safe to run concurrently (mirrors Hermes'
+            # ``_paths_overlap``).  Tools whose paths can't be statically
+            # determined (bash, a write tool missing its path arg, ...) and
+            # tools whose paths overlap with another write tool stay
+            # sequential.  ``apply_patch`` participates too (all of its
+            # multi-file paths are checked for overlap).
+            _unsafe_writes = [p for p in unsafe_tools if p["name"] in _WRITE_TOOL_NAMES]
+            _unsafe_other = [p for p in unsafe_tools if p["name"] not in _WRITE_TOOL_NAMES]
+            _parallel_writes, _sequential_writes = _split_writes_by_path_conflict(_unsafe_writes)
+            if _parallel_writes:
+                safe_tools = safe_tools + _parallel_writes
+                unsafe_tools = _sequential_writes + _unsafe_other
+
             # ── Capture file snapshots before any tool writes to disk ──
             for p in safe_tools + unsafe_tools:
                 name = p["name"]
@@ -3983,14 +4207,19 @@ class EncreLoop:
                         session_id=self.session.id or "",
                         tool_name=p.get("name", ""),
                     )
-                    # Auto-verify: append verification reminder for write tools
+                    # Auto-verify: append LSP diagnostics (or a VERIFY
+                    # reminder when LSP is unavailable) for write tools.
                     if not p["is_error"] and p["name"] in _WRITE_TOOL_NAMES:
                         fp = _extract_file_path(p["name"], p["result"])
                         if fp:
-                            p["result"] += (
-                                f"\n\n[VERIFY] Please verify the changes to `{fp}` "
-                                f"are correct by reading the file."
-                            )
+                            _lsp_text = await _try_lsp_diagnostics(fp)
+                            if _lsp_text:
+                                p["result"] += _lsp_text
+                            else:
+                                p["result"] += (
+                                    f"\n\n[VERIFY] Please verify the changes to "
+                                    f"`{fp}` are correct by reading the file."
+                                )
                     yield create_tool_result(
                         id=p["client_id"],
                         content=p["result"],
@@ -4755,6 +4984,7 @@ class EncreLoop:
                         _post_tool_msgs, backend=self.backend,
                         turn_count=self.session.turn_count,
                         system_prompt=system_prompt or "",
+                        enable_caching=self.config.enable_prompt_caching,
                         session_id=self.session.id or "",
                     )
                     if _post_compacted is not None:
@@ -4778,6 +5008,7 @@ class EncreLoop:
                 self._budget_state.add_usage(
                     _backend_usage.get("output_tokens", 0)
                 )
+                self.session.metadata[BudgetState.META_KEY] = self._budget_state.checkpoint()
             if self._budget_state.is_exhausted and self._budget_state.can_grace:
                 self._budget_state.use_grace()
                 logger.info("[run] budget exhausted, using grace call turn=%d", self.session.turn_count)

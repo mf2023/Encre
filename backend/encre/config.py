@@ -283,6 +283,7 @@ class SubAgentConfig:
     description: str = ""
     system_prompt: str = ""
     hidden: bool = False
+    source: str = "user"
     # ``tool_policy`` constrains the tools a sub-agent may invoke.
     # ``"readonly"`` (Explore-style): read-only tools only.
     # ``"no_writes"`` (Plan-style): no write-class tools, but can
@@ -296,6 +297,7 @@ class SubAgentConfig:
             "description": self.description,
             "system_prompt": self.system_prompt,
             "hidden": self.hidden,
+            "source": self.source,
             "tool_policy": self.tool_policy,
         }
 
@@ -306,6 +308,7 @@ class SubAgentConfig:
             description=d.get("description", ""),
             system_prompt=d.get("system_prompt", ""),
             hidden=d.get("hidden", False),
+            source=d.get("source", "user"),
             tool_policy=d.get("tool_policy", "all"),
         )
 
@@ -331,7 +334,7 @@ class EncreConfig:
     enable_prompt_caching: bool = True
     enable_streaming_tool_execution: bool = True
     enable_multi_stage_compact: bool = True
-    enable_unified_recovery: bool = False
+    enable_unified_recovery: bool = True
     enable_context_collapse: bool = True
     enable_project_rules: bool = True
     enable_file_watcher: bool = False

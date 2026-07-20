@@ -270,13 +270,19 @@ class GatewayServer:
                 # frames (no source) fall back to the coarse per-adapter session.
                 if source_dict is not None and hasattr(self._engine, "resolve_session"):
                     source = SessionSource.from_dict(source_dict)
+                    logger.info("[gateway] %s submit_stream with source platform=%s chat=%s",
+                                conn.name, source.platform, source.chat_id)
                     session_id = await self._engine.resolve_session(conn, source)
+                    logger.info("[gateway] %s resolve_session returned session_id=%s",
+                                conn.name, session_id or "(none)")
                     channel_name = source.platform
                 else:
                     source = None
                     if not session_id and hasattr(self._engine, "ensure_adapter_session"):
                         session_id = await self._engine.ensure_adapter_session(conn.name)
                     channel_name = conn.name
+                logger.info("[gateway] %s router=%s session_id=%s channel=%s",
+                            conn.name, router is not None, session_id or "(none)", channel_name)
                 async for event in router.submit_stream(
                     channel_name, prompt,
                     session_id=session_id,

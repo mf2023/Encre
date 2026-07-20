@@ -704,8 +704,11 @@ class BaseAdapter(ABC):
         await self._ensure_gateway()
         if session_id is None and source is None:
             session_id = self.get_session(chat_id)
-        logger.info("[%s] process_with_stream chat=%s session=%s content=%.60s",
-                     self.name, chat_id, session_id or "(none)", content)
+        logger.info("[%s] process_with_stream chat=%s session=%s source=%s gateway_connected=%s content=%.60s",
+                     self.name, chat_id, session_id or "(none)",
+                     source.platform if source else "none",
+                     self._client.is_connected if self._client else False,
+                     content)
         full_response: list[str] = []
         async for event in self.submit_stream(content, session_id=session_id, source=source):
             if isinstance(event, TextDelta) and event.text:
@@ -1099,10 +1102,14 @@ class BaseAdapter(ABC):
 
         # 3. Dispatch.
         self._active_sessions[session_key] = asyncio.Event()
+        logger.info("[%s] handle_message dispatch: handler=%s session_key=%s",
+                     self.name, self._message_handler is not None, session_key)
         try:
             if self._message_handler is not None:
                 await self._message_handler(event)
             else:
+                logger.info("[%s] handle_message -> process_with_stream chat=%s source=%s",
+                             self.name, event.chat_id, source.platform if source else None)
                 await self.process_with_stream(
                     event.text,
                     event.chat_id or "",

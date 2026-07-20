@@ -1,8 +1,0 @@
-{
-  "registry": "https://skill.xfyun.cn",
-  "namespace": "global",
-  "slug": "kubectl-skill",
-  "version": "20260316.132117",
-  "agent": "custom",
-  "installedAt": "2026-07-20T08:03:26.912Z"
-}

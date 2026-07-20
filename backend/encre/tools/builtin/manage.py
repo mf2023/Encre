@@ -123,6 +123,7 @@ async def _install_tool(loop: Any, kwargs: dict[str, Any]) -> str:
             category=category,
             intents=intents,
             always_available=always_available,
+            source="model",
         )
         loop.tool_registry.register(tool)
 
@@ -170,6 +171,7 @@ async def _install_agent(loop: Any, kwargs: dict[str, Any]) -> str:
             description=description,
             system_prompt=system_prompt,
             tool_policy=tool_policy,
+            source="model",
         )
         loop.config.sub_agents.append(sub_agent)
         return json.dumps({
@@ -220,7 +222,7 @@ async def _install_skill(loop: Any, kwargs: dict[str, Any]) -> str:
             description=description,
             get_prompt_for_command=_get_prompt,
             aliases=aliases,
-            source=SkillSource.PROJECT,
+            source=SkillSource.MANAGED,
             body=body,
         )
         skill_registry.register(skill)
@@ -272,6 +274,21 @@ async def _install_mcp(loop: Any, kwargs: dict[str, Any]) -> str:
         if not hasattr(loop, "_mcp_tools"):
             loop._mcp_tools = []
         loop._mcp_tools.append(mcp_tool)
+
+        mcp_entry = {"name": name, "source": "model"}
+        if command:
+            mcp_entry["type"] = "stdio"
+            mcp_entry["command"] = command
+            if args:
+                mcp_entry["args"] = args
+        else:
+            mcp_entry["type"] = "http"
+            mcp_entry["url"] = url
+        if env:
+            mcp_entry["env"] = env
+        if cwd:
+            mcp_entry["cwd"] = cwd
+        loop.config.mcp_servers.append(mcp_entry)
 
         return json.dumps({
             "status": "installed",

@@ -493,7 +493,36 @@ class SessionManager:
         info.metadata["name"] = placeholder_name
         self._sessions[session_id] = info
         self._fire_sessions_changed()
+
+        # Register a hook that flushes the session to disk the moment a user
+        # message is added, so a process kill before the model responds still
+        # leaves a resumable transcript.  Mirrors Claude Code's
+        # QueryEngine.ts:450-463 (await user-message write before query loop).
+        self._register_user_message_persist_hook(info)
         return info
+
+    def _register_user_message_persist_hook(self, info: SessionInfo) -> None:
+        """Register an ``on_user_message_persisted`` handler that saves the
+        session immediately.  Uses a fire-and-forget async task so the loop
+        is never blocked on disk I/O -- the await in the loop only waits for
+        the hook dispatch, not the write itself.
+        """
+        import asyncio
+
+        async def _persist(_session_id: str, _ctx: dict, _result: dict | None) -> dict:
+            try:
+                # Fire-and-forget: don't block the model loop on disk I/O.
+                asyncio.ensure_future(self._save_session_async(info))
+            except Exception:
+                pass
+            return {}
+
+        try:
+            info.agent.hook_system.register_handler(
+                "on_user_message_persisted", _persist,
+            )
+        except Exception:
+            pass
 
     def get_session(self, session_id: str) -> SessionInfo | None:
         return self._sessions.get(session_id)
@@ -573,6 +602,7 @@ class SessionManager:
                 # timestamp.
                 self._index[session_id] = self._make_index_entry(info)
                 self._save_index()
+                self._register_user_message_persist_hook(info)
                 return info
             except Exception:
                 return self.create_session(config=config)

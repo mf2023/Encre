@@ -346,6 +346,13 @@ export interface WechatScanResultEvent {
   qrcode_url: string;
   success: boolean;
   message: string;
+  scan_confirmed?: boolean;
+  credentials?: {
+    ilink_bot_id: string;
+    bot_token: string;
+    baseurl: string;
+    ilink_user_id: string;
+  };
 }
 
 export interface AutomationJobsList {
@@ -804,6 +811,8 @@ export interface MCPServerConfig {
   timeout?: number;
   /** Disabled flag (default false). */
   disabled?: boolean;
+  /** Origin: "user" (default) or "model" (created by manage tool). */
+  source?: string;
 }
 
 export interface SubAgentConfig {
@@ -811,6 +820,8 @@ export interface SubAgentConfig {
   description: string;
   system_prompt: string;
   hidden?: boolean;
+  /** Origin: "user" (default) or "model" (created by manage tool). */
+  source?: string;
 }
 
 export interface SkillInfo {

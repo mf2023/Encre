@@ -35,7 +35,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from encre.swarm.mailbox import EncreMailbox
 
@@ -77,6 +77,7 @@ class EncreTeammate:
         tools: "list[EncreTool] | None" = None,
         config: "EncreConfig | None" = None,
         allowed_tools: "list[str] | None" = None,
+        sub_agent_runner: Any = None,
     ):
         self.teammate_id = str(uuid.uuid4())
         self.name = name
@@ -84,6 +85,7 @@ class EncreTeammate:
         self.tools = tools or []
         self.config = config
         self.allowed_tools = allowed_tools
+        self.sub_agent_runner = sub_agent_runner
         self.mailbox = EncreMailbox(owner_id=f"{name}:{self.teammate_id[:8]}")
         self._run_task: asyncio.Task | None = None
         self._run_handle: TeammateHandle | None = None
@@ -104,12 +106,28 @@ class EncreTeammate:
     async def _run(self, handle: TeammateHandle) -> None:
         """Background coroutine driving the wrapped agent.
 
-        Streams ``TextDelta``/``ToolResult`` events, accumulating text into
-        ``handle.result`` and posting tool outputs to the mailbox.  Translates
-        ``CancelledError`` into a ``cancelled`` status (re-raising so callers
-        can detect cancellation) and any other exception into ``failed``.
+        When a ``sub_agent_runner`` is configured the teammate delegates to the
+        host loop's ``_run_sub_agent`` (inheriting depth fencing, live progress
+        streaming, transcript persistence, and the safety / tool-policy hooks).
+        Otherwise it streams ``TextDelta``/``ToolResult`` events from a
+        self-spawned ``EncreAgent``, accumulating text into ``handle.result``
+        and posting tool outputs to the mailbox for cross-agent visibility.
+        Translates ``CancelledError`` into a ``cancelled`` status (re-raising
+        so callers can detect cancellation) and any other exception into
+        ``failed``.
         """
         try:
+            if self.sub_agent_runner is not None:
+                result = await self.sub_agent_runner(
+                    self.task, system_prompt="", max_turns=15,
+                )
+                if isinstance(result, dict):
+                    handle.result = result.get("content", "") or ""
+                else:
+                    handle.result = str(result)
+                handle.status = "completed"
+                return
+
             from encre.agent import EncreAgent
             from encre.config import EncreConfig
             from encre.tools.registry import ToolRegistry

@@ -876,6 +876,12 @@
           adapterTesting: "\u6B63\u5728\u6D4B\u8BD5\u8FDE\u63A5",
           wechatScan: "\u626B\u7801\u8FDE\u63A5\u5FAE\u4FE1",
           wechatScanning: "\u6B63\u5728\u83B7\u53D6\u4E8C\u7EF4\u7801...",
+          wechatScanDialogTitle: "\u626B\u63CF\u4E8C\u7EF4\u7801\u7ED1\u5B9A\u5FAE\u4FE1",
+          wechatRemainingTime: "\u5269\u4F59\u65F6\u95F4 {seconds} \u79D2",
+          wechatQrExpired: "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548\uFF0C\u8BF7\u70B9\u51FB\u5237\u65B0",
+          wechatScanSuccess: "\u626B\u7801\u6210\u529F\uFF01\u5FAE\u4FE1\u5DF2\u7ED1\u5B9A",
+          wechatUnbind: "\u89E3\u7ED1",
+          wechatUnbindConfirm: "\u786E\u5B9A\u8981\u89E3\u7ED1\u5FAE\u4FE1\u5417\uFF1F\u89E3\u7ED1\u540E\u9700\u91CD\u65B0\u626B\u7801\u8FDE\u63A5\u3002",
           adapterStatusConnected: "\u5DF2\u8FDE\u63A5",
           adapterStatusDisconnected: "\u672A\u8FDE\u63A5",
           adapterStatusError: "\u8FDE\u63A5\u9519\u8BEF",
@@ -946,7 +952,7 @@
           adapterDescQqbot: "\u63A5\u5165 QQ \u673A\u5668\u4EBA\u5E73\u53F0\uFF0C\u5B9E\u65F6\u63A5\u6536\u4E0E\u56DE\u590D\u7FA4\u804A\u53CA\u79C1\u804A\u6D88\u606F",
           adapterDescTelegram: "\u8FDE\u63A5 Telegram Bot API\uFF0C\u81EA\u52A8\u5904\u7406\u9891\u9053\u4E0E\u79C1\u4FE1\u4E2D\u7684\u6307\u4EE4\u548C\u5BF9\u8BDD",
           adapterDescDiscord: "\u96C6\u6210 Discord \u673A\u5668\u4EBA\uFF0C\u7BA1\u7406\u670D\u52A1\u5668\u9891\u9053\u6D88\u606F\u4E0E\u4EA4\u4E92",
-          adapterDescWeixin: "\u8FDE\u63A5\u5FAE\u4FE1\uFF0C\u6536\u53D1\u6D88\u606F\u5E76\u81EA\u52A8\u56DE\u590D",
+          adapterDescWeixin: "\u914D\u7F6E iLink Bot \u540E\uFF0C\u8FDE\u63A5\u5FAE\u4FE1\uFF0C\u6536\u53D1\u6D88\u606F\u5E76\u81EA\u52A8\u56DE\u590D",
           adapterDescWecom: "\u5BF9\u63A5\u4F01\u4E1A\u5FAE\u4FE1\u81EA\u5EFA\u5E94\u7528\uFF0C\u5B9E\u73B0\u4F01\u4E1A\u5185\u90E8\u6D88\u606F\u901A\u77E5\u4E0E\u534F\u4F5C",
           adapterDescFeishu: "\u8FDE\u63A5\u98DE\u4E66\u5F00\u653E\u5E73\u53F0\uFF0C\u63A5\u6536\u673A\u5668\u4EBA\u4E8B\u4EF6\u5E76\u56DE\u590D\u6D88\u606F",
           adapterDescDingtalk: "\u63A5\u5165\u9489\u9489\u81EA\u5B9A\u4E49\u673A\u5668\u4EBA Webhook\uFF0C\u53D1\u9001\u5DE5\u4F5C\u901A\u77E5\u4E0E\u7FA4\u6D88\u606F",
@@ -985,7 +991,13 @@
           model: "\u6A21\u578B",
           commands: "\u547D\u4EE4",
           tokens: "Tokens",
-          slashActivated: "\u5DF2\u6FC0\u6D3B"
+          slashActivated: "\u5DF2\u6FC0\u6D3B",
+          splashTimeout: "\u670D\u52A1\u5668\u54CD\u5E94\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5\u540E\u7AEF\u670D\u52A1\u72B6\u6001",
+          splashNoConnect: "\u65E0\u6CD5\u8FDE\u63A5\u5230\u670D\u52A1\u5668\uFF0C\u8BF7\u68C0\u67E5\u540E\u7AEF\u662F\u5426\u5DF2\u542F\u52A8",
+          splashRestart: "\u5F3A\u5236\u91CD\u542F\u670D\u52A1\u5668",
+          splashRestarting: "\u91CD\u542F\u4E2D\u2026",
+          splashRestartFailed: "\u91CD\u542F\u670D\u52A1\u5668\u5931\u8D25",
+          splashRetry: "\u8BF7\u7A0D\u540E\u91CD\u8BD5"
         },
         engineInstall: {
           cancel: "\u53D6\u6D88",
@@ -2208,6 +2220,12 @@
           adapterTesting: "Testing connection",
           wechatScan: "Scan QR Code to Connect",
           wechatScanning: "Requesting QR code...",
+          wechatScanDialogTitle: "Scan QR Code to Bind WeChat",
+          wechatRemainingTime: "{seconds} seconds remaining",
+          wechatQrExpired: "QR code expired, click to refresh",
+          wechatScanSuccess: "Scan successful! WeChat is now connected",
+          wechatUnbind: "Unbind",
+          wechatUnbindConfirm: "Are you sure you want to unbind WeChat? You will need to scan again to reconnect.",
           adapterStatusConnected: "Connected",
           adapterStatusDisconnected: "Disconnected",
           adapterStatusError: "Connection Error",
@@ -2261,7 +2279,7 @@
           adapterDescQqbot: "Connect to the QQ Bot platform to receive and reply to group and private chat messages in real time",
           adapterDescTelegram: "Connect to the Telegram Bot API to automatically handle commands and conversations in channels and direct messages",
           adapterDescDiscord: "Integrate Discord bots to manage server channel messages and interactions",
-          adapterDescWeixin: "Connect to WeChat to send and receive messages and auto-reply",
+          adapterDescWeixin: "After configuring iLink Bot, connect to WeChat to send and receive messages and auto-reply",
           adapterDescWecom: "Connect to a WeCom custom app to enable internal message notifications and collaboration",
           adapterDescFeishu: "Connect to the Feishu open platform to receive bot events and reply to messages",
           adapterDescDingtalk: "Connect to a DingTalk custom bot webhook to send work notifications and group messages",
@@ -2320,7 +2338,13 @@
           model: "Model",
           commands: "Commands",
           tokens: "tokens",
-          slashActivated: "Activated"
+          slashActivated: "Activated",
+          splashTimeout: "Server response timed out. Please check the backend service.",
+          splashNoConnect: "Cannot connect to server. Please check if the backend is running.",
+          splashRestart: "Force Restart Server",
+          splashRestarting: "Restarting\u2026",
+          splashRestartFailed: "Failed to restart server",
+          splashRetry: "Please try again later"
         },
         dialog: {
           confirm: "Confirm",
@@ -67387,11 +67411,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   }
 
   // renderer/src/splash.ts
+  init_i18n();
   var SplashScreen = class {
     constructor() {
       this.loader = null;
+      this.errorEl = null;
     }
-    /** Shows the splash overlay and (lazily) creates the EALoader animation. */
     show() {
       document.body.classList.add("splash-mode");
       const el2 = document.getElementById("splash-screen");
@@ -67402,8 +67427,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           staticSrc: "assets/Encre.svg"
         });
       }
+      this.createErrorArea(el2);
     }
-    /** Hides the splash overlay and tears down the EALoader animation. */
     hide() {
       document.body.classList.remove("splash-mode");
       const el2 = document.getElementById("splash-screen");
@@ -67412,6 +67437,39 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         this.loader.destroy();
         this.loader = null;
       }
+      this.errorEl = null;
+    }
+    showError(message, onRestart) {
+      if (this.errorEl) {
+        const msgEl = this.errorEl.querySelector(".splash-error-message");
+        if (msgEl) msgEl.textContent = message;
+        this.errorEl.classList.remove("hidden");
+        const btn = this.errorEl.querySelector(".splash-restart-btn");
+        if (btn) {
+          btn.textContent = t("app.splashRestart");
+          btn.onclick = () => {
+            btn.textContent = t("app.splashRestarting");
+            btn.disabled = true;
+            onRestart();
+          };
+        }
+      }
+    }
+    createErrorArea(parent) {
+      if (this.errorEl) return;
+      const el2 = document.createElement("div");
+      el2.className = "splash-error hidden";
+      el2.innerHTML = `
+      <div class="splash-error-icon-wrap">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <div class="splash-error-message"></div>
+      <button class="splash-restart-btn btn btn-sm"></button>
+    `;
+      parent.appendChild(el2);
+      this.errorEl = el2;
     }
   };
 
@@ -82618,39 +82676,76 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
       });
       onWechatScanResult((event) => {
+        if (!this._wechatDialogOpen) return;
         const img = document.getElementById("wechat-qr-img");
         const statusEl = document.getElementById("wechat-qr-status");
+        const countdownEl = document.getElementById("wechat-qr-countdown");
         const scanBtn = document.getElementById("wechat-scan-btn");
         if (scanBtn) scanBtn.removeAttribute("disabled");
+        if (event.scan_confirmed) {
+          if (this._qrCountdown) clearInterval(this._qrCountdown);
+          if (countdownEl) {
+            countdownEl.style.display = "none";
+            countdownEl.textContent = "";
+          }
+          if (statusEl) {
+            statusEl.textContent = t("settings.wechatScanSuccess");
+            statusEl.style.padding = "12px 0 0";
+            statusEl.style.display = "block";
+          }
+          const successOverlay = document.getElementById("wechat-qr-success-overlay");
+          if (successOverlay) {
+            successOverlay.style.display = "flex";
+            successOverlay.style.animation = "fade-in 0.3s ease";
+          }
+          return;
+        }
         if (event.success && event.qrcode_url) {
+          if (this._qrResultReceived) return;
+          this._qrResultReceived = true;
+          if (statusEl) {
+            statusEl.style.display = "none";
+            statusEl.style.padding = "60px 0 0";
+          }
           if (img) {
             img.src = event.qrcode_url;
             img.style.display = "block";
           }
-          if (statusEl) {
-            statusEl.style.display = "block";
-            statusEl.textContent = "120s";
+          if (countdownEl) {
+            countdownEl.style.display = "block";
+            countdownEl.textContent = t("settings.wechatRemainingTime").replace("{seconds}", "120");
             let remain = 120;
             if (this._qrCountdown) clearInterval(this._qrCountdown);
             this._qrCountdown = setInterval(() => {
               remain -= 1;
-              const el2 = document.getElementById("wechat-qr-status");
+              const el2 = document.getElementById("wechat-qr-countdown");
               if (!el2) {
                 clearInterval(this._qrCountdown);
                 return;
               }
               if (remain <= 0) {
                 el2.textContent = "";
-                const i8 = document.getElementById("wechat-qr-img");
-                if (i8) i8.style.display = "none";
+                el2.style.display = "none";
+                const statusEl2 = document.getElementById("wechat-qr-status");
+                if (statusEl2) {
+                  statusEl2.textContent = t("settings.wechatQrExpired");
+                  statusEl2.style.padding = "12px 0 0";
+                  statusEl2.style.display = "block";
+                }
+                const refreshOverlay = document.getElementById("wechat-qr-refresh-overlay");
+                if (refreshOverlay) refreshOverlay.style.display = "flex";
                 clearInterval(this._qrCountdown);
                 return;
               }
-              el2.textContent = `${remain}s`;
+              el2.textContent = t("settings.wechatRemainingTime").replace("{seconds}", String(remain));
             }, 1e3);
           }
         } else {
           if (img) img.style.display = "none";
+          if (countdownEl) {
+            countdownEl.style.display = "none";
+            countdownEl.textContent = "";
+          }
           if (statusEl) {
             statusEl.style.display = "block";
             statusEl.textContent = `\u274C ${event.message}`;
@@ -82661,21 +82756,66 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     /** Show a standalone QR code popup window for WeChat login. */
     _showWechatQrDialog() {
       document.getElementById("wechat-qr-overlay")?.remove();
+      this._wechatDialogOpen = true;
+      this._qrResultReceived = false;
       const overlay = document.createElement("div");
       overlay.id = "wechat-qr-overlay";
       overlay.className = "toast-overlay";
       overlay.innerHTML = `
-      <div class="toast-dialog" style="width:300px;text-align:center">
-        <div id="wechat-qr-status" style="font-size:14px;color:var(--text-muted);padding:120px 0">${t("settings.wechatScanning")}</div>
-        <img id="wechat-qr-img" style="display:none;width:240px;height:240px;margin:0 auto" />
+      <div class="toast-dialog" style="width:320px;text-align:center;padding:24px">
+        <div class="toast-title" style="text-align:center;font-size:15px;font-weight:600;border-bottom:none;padding-bottom:0;margin-bottom:0">${t("settings.wechatScanDialogTitle")}</div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0" />
+        <div style="position:relative;display:inline-block;margin:0 auto">
+          <img id="wechat-qr-img" style="display:none;width:240px;height:240px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.12)" />
+          <div id="wechat-qr-success-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center">
+            <div style="width:56px;height:56px;border-radius:50%;background:#07C160;display:flex;align-items:center;justify-content:center">
+              <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block">
+                <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              </svg>
+            </div>
+          </div>
+          <div id="wechat-qr-refresh-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center;cursor:pointer">
+            <div style="width:56px;height:56px;border-radius:50%;background:#9aa0a6;display:flex;align-items:center;justify-content:center">
+              <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block">
+                <path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div id="wechat-qr-status" style="padding:60px 0 0;font-size:14px;color:var(--text-muted)">${t("settings.wechatScanning")}</div>
+        <div id="wechat-qr-countdown" style="display:none;font-size:12px;color:var(--text-muted);margin-top:4px"></div>
         <div style="margin-top:16px">
           <button class="btn" id="wechat-qr-close" style="padding:6px 24px;font-size:13px">${t("header.close")}</button>
         </div>
       </div>`;
       document.body.appendChild(overlay);
-      overlay.querySelector("#wechat-qr-close")?.addEventListener("click", () => overlay.remove());
+      overlay.querySelector("#wechat-qr-close")?.addEventListener("click", () => {
+        if (this._qrCountdown) clearInterval(this._qrCountdown);
+        this._wechatDialogOpen = false;
+        overlay.remove();
+      });
+      const refreshOverlay = overlay.querySelector("#wechat-qr-refresh-overlay");
+      if (refreshOverlay) {
+        refreshOverlay.addEventListener("click", () => {
+          refreshOverlay.style.display = "none";
+          const statusEl = document.getElementById("wechat-qr-status");
+          if (statusEl) {
+            statusEl.textContent = t("settings.wechatScanning");
+            statusEl.style.display = "block";
+          }
+          const img = document.getElementById("wechat-qr-img");
+          if (img) {
+            img.style.display = "none";
+            img.src = "";
+          }
+          this._qrResultReceived = false;
+          send({ type: "wechat_scan", adapter_id: "weixin" });
+        });
+      }
       overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) overlay.remove();
+        if (e.target === overlay) {
+          e.stopPropagation();
+        }
       });
     }
     bindVersionTapUnlock() {
@@ -83701,14 +83841,21 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           configBodyHtml = `
 	          <div style="padding:12px 16px 8px">
 	            ${fieldsHtml}
-	            ${def.id === "weixin" ? `
-	            <div style="text-align:center;padding:16px 0 0">
-	              <button class="btn btn-primary" id="wechat-scan-btn" style="padding:8px 24px;font-size:14px">
-	                <i data-lucide="scan-qr-code" style="width:16px;height:16px;margin-right:6px"></i>
-	                ${t("settings.wechatScan")}
-	              </button>
-	            </div>
-	            ` : `
+${def.id === "weixin" ? connected ? `
+            <div style="display:flex;align-items:center;justify-content:center;min-height:60px">
+              <button class="btn btn-sm" id="wechat-unbind-btn" style="padding:6px 16px;font-size:12px;color:var(--text-danger)">
+                <i data-lucide="unlink" style="width:14px;height:14px;margin-right:4px"></i>
+                ${t("settings.wechatUnbind")}
+              </button>
+            </div>
+            ` : `
+            <div style="display:flex;align-items:center;justify-content:center;min-height:60px">
+              <button class="btn btn-primary" id="wechat-scan-btn" style="padding:8px 28px;font-size:14px">
+                <i data-lucide="scan-qr-code" style="width:16px;height:16px;margin-right:6px"></i>
+                ${t("settings.wechatScan")}
+              </button>
+            </div>
+            ` : `
 	            <div id="adapter-test-status-${def.id}" style="font-size:12px;padding:4px 0;min-height:20px"></div>
 	            <div style="padding-top:12px;display:flex;justify-content:flex-end;gap:8px">
 	              <button class="btn btn-sm" id="adapter-test-${def.id}" style="padding:6px 20px;font-size:13px">
@@ -83766,7 +83913,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               <div class="settings-item-desc">${descHtml}</div>
             </div>
             <div class="settings-item-control" style="gap:8px">
-              ${isExpanded && def.docs ? `<a href="#" class="model-get-apikey-link" data-adapter-docs="${def.id}" style="font-size:12px">${t("settings.viewDocs")}</a>` : ""}
+              ${isExpanded && def.docs && def.id !== "weixin" ? `<a href="#" class="model-get-apikey-link" data-adapter-docs="${def.id}" style="font-size:12px">${t("settings.viewDocs")}</a>` : ""}
               <label class="toggle-switch" onclick="event.stopPropagation()">
                 <input type="checkbox" id="adapter-enable-${def.id}" ${enabled ? "checked" : ""} />
                 <span class="toggle-slider"></span>
@@ -83840,9 +83987,20 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (scanBtn) {
           scanBtn.addEventListener("click", () => {
             scanBtn.setAttribute("disabled", "disabled");
+            this._lastQrUrl = "";
             this._showWechatQrDialog();
             send({ type: "wechat_scan", adapter_id: "weixin" });
             setTimeout(() => scanBtn.removeAttribute("disabled"), 3e4);
+          });
+        }
+        const unbindBtn = document.getElementById("wechat-unbind-btn");
+        if (unbindBtn) {
+          unbindBtn.addEventListener("click", () => {
+            Dialog.confirm(t("settings.wechatUnbind"), t("settings.wechatUnbindConfirm")).then((confirmed) => {
+              if (confirmed) {
+                send({ type: "configure", config: { adapter_weixin_app_id: "", adapter_weixin_token: "", adapter_weixin_api_url: "" } });
+              }
+            });
           });
         }
         const testBtn = document.getElementById(`adapter-test-${def.id}`);
@@ -84404,13 +84562,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const isOn = enabled.has(sk.name);
         const isUser = sk.source === "user" || sk.source === "project";
         const canDelete = sk.source !== "bundled" && sk.source !== "managed";
-        const sourceLabel = sk.source || "bundled";
         const aliases = sk.aliases && sk.aliases.length > 0 ? sk.aliases.join(", ") : "";
         rowsHtml += `
         <div class="model-table-row" data-skill="${this.esc(sk.name)}">
           <div class="model-table-cell model-cell-name">
             <span class="model-name-text">${this.esc(sk.name)}</span>
-            <span class="model-active-tag" style="margin-left:8px">${sourceLabel}</span>
           </div>
           <div class="model-table-cell model-cell-provider">
             <span class="skill-desc-text">${this.esc(sk.description)}</span>
@@ -84707,10 +84863,12 @@ ${content2}`;
         const isHttp = srv.type === "http";
         const transportTag = isHttp ? t("settings.transportTagHttp") : t("settings.transportTagStdio");
         const isDisabled = srv.disabled === true;
+        const sourceLabel = srv.source === "model" ? "model" : "user";
         rowsHtml += `
         <div class="model-table-row" data-mcp-idx="${i8}">
           <div class="model-table-cell model-cell-name">
             <span class="model-name-text">${this.esc(srv.name)}</span>
+            <span class="model-active-tag" style="margin-left:8px">${sourceLabel}</span>
             <span class="model-active-tag">${isDisabled ? t("settings.disabled") : t("settings.enabled")}</span>
           </div>
           <div class="model-table-cell model-cell-provider">
@@ -85142,10 +85300,13 @@ ${content2}`;
             <div class="model-table-cell model-cell-provider">${t("settings.description")}</div>
             <div class="model-table-cell model-cell-actions">${t("settings.actions")}</div>
           </div>
-          ${agents.map((a2, i8) => `
+          ${agents.map((a2, i8) => {
+        const sourceLabel = a2.source === "model" ? "model" : "user";
+        return `
             <div class="model-table-row">
               <div class="model-table-cell model-cell-name">
                 <span class="model-name-text">${this.esc(a2.name)}</span>
+                <span class="model-active-tag" style="margin-left:8px">${sourceLabel}</span>
               </div>
               <div class="model-table-cell model-cell-provider">
                 <span class="skill-desc-text">${this.esc(a2.description || "-")}</span>
@@ -85158,7 +85319,8 @@ ${content2}`;
                   <i data-lucide="trash-2" class="lucide icon-sm"></i>
                 </button>
               </div>
-            </div>`).join("")}
+            </div>`;
+      }).join("")}
         </div>`;
       this.panels.agent.innerHTML = `
       <div class="settings-section-title"><i data-lucide="sparkles" class="lucide section-title-icon"></i> ${t("settings.agentManagement")}</div>
@@ -141521,12 +141683,37 @@ void main() {
         send({ type: "get_config" });
         send({ type: "list_workspaces" });
       }
-      await new Promise((r) => requestAnimationFrame(() => r()));
       const _elapsed = performance.now() - _splashStart;
       if (_elapsed < 1e3) {
         await new Promise((r) => setTimeout(r, 1e3 - _elapsed));
       }
+      if (!getState().connected) {
+        await this.handleSplashError(t("app.splashNoConnect"));
+        return;
+      }
       this.splash.hide();
+    }
+    async handleSplashError(message) {
+      this.splash.showError(message, async () => {
+        try {
+          const result = await window.electronAPI?.restartService?.();
+          if (result?.success) {
+            location.reload();
+          } else {
+            this.splash.showError(
+              t("app.splashRestartFailed") + (result?.error ? ": " + result.error : ""),
+              () => this.handleSplashError(t("app.splashRetry"))
+            );
+          }
+        } catch (err) {
+          this.splash.showError(
+            t("app.splashRestartFailed") + ": " + String(err),
+            () => this.handleSplashError(t("app.splashRetry"))
+          );
+        }
+      });
+      await new Promise(() => {
+      });
     }
     bindInput() {
       this.btnSend.addEventListener("click", () => this.submit());

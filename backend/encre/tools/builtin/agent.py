@@ -135,9 +135,9 @@ def _enforce_tool_policy(tool_name: str, tool_input: dict[str, Any] | None = Non
     # even an "all"-policy sub-agent cannot call the agent tool.  The
     # depth check is the only layer that reliably stops an LLM from
     # re-trying on a soft error.
-    if tool_name == "agent" and getattr(loop, "sub_agent_depth", 0) > 0:
+    if tool_name in ("agent", "swarm") and getattr(loop, "sub_agent_depth", 0) > 0:
         return (
-            "Sub-agents are forbidden from spawning further sub-agents. "
+            "Sub-agents are forbidden from spawning further sub-agents or swarms. "
             "The runtime only allows one level of delegation. Complete the "
             "assigned task with your own tools and return the result."
         )
@@ -155,11 +155,11 @@ def _enforce_tool_policy(tool_name: str, tool_input: dict[str, Any] | None = Non
     if policy == "readonly" and tool_name in ("docker", "deploy", "workflow",
                                               "cron_create", "cron_delete",
                                               "cron_list", "task_create",
-                                              "task_update", "agent"):
+                                              "task_update", "agent", "swarm"):
         return f"Tool {tool_name} is forbidden in readonly sub-agent policy."
     if policy == "no_writes" and tool_name in write_tools:
         return f"Tool {tool_name} is forbidden in no_writes sub-agent policy."
-    if policy == "no_writes" and tool_name in ("docker", "deploy", "workflow", "agent"):
+    if policy == "no_writes" and tool_name in ("docker", "deploy", "workflow", "agent", "swarm"):
         return f"Tool {tool_name} is forbidden in no_writes sub-agent policy."
     # bash policy is enforced by the safety engine based on the
     # ``dangerous_command_patterns`` list -- we do not duplicate that

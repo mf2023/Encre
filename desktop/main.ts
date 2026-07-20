@@ -391,10 +391,14 @@ function startPythonServer(): Promise<void> {
     const pythonCmd = process.platform === "win32" ? "python" : "python3";
 
     const rootDir = path.resolve(__dirname, "..", "..");
+    // The encre Python package lives under backend/, so that dir must be on
+    // PYTHONPATH (ahead of any pip-installed copy in site-packages) for the
+    // desktop to run the in-repo source rather than a stale installed wheel.
+    const backendDir = path.resolve(rootDir, "backend");
     const pythonPath =
       process.platform === "win32"
-        ? `${rootDir};${process.env.PYTHONPATH || ""}`
-        : `${rootDir}:${process.env.PYTHONPATH || ""}`;
+        ? `${backendDir};${rootDir};${process.env.PYTHONPATH || ""}`
+        : `${backendDir}:${rootDir}:${process.env.PYTHONPATH || ""}`;
 
     const isWin = process.platform === "win32";
     serverProcess = spawn(pythonCmd, ["-m", "encre.server.app", "--port", String(WS_PORT), "--service", "--log-level", "DEBUG"], {

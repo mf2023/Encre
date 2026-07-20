@@ -198,6 +198,7 @@ class AnthropicBackend(BaseBackend):
         max_tokens: int = 4096,
         stream: bool = True,
         enable_caching: bool = False,
+        cache_edits_state: Any = None,
     ) -> AsyncGenerator[BackendEvent, None]:
         """Send a chat completion request and stream back events.
 
@@ -228,6 +229,30 @@ class AnthropicBackend(BaseBackend):
         if enable_caching:
             # Annotate system + last user message with cache breakpoints.
             messages = self._apply_prompt_caching(messages)
+
+        # Cached microcompact: if the loop queued cache_edits deletions, splice
+        # the cache_edits content block into the outgoing messages AT THE API
+        # LAYER (the local messages stay unchanged so the cache prefix is
+        # preserved).  Mirrors Claude Code's addCacheBreakpoints
+        # (services/api/claude.ts:3107-3162).  cache_edits is an Anthropic
+        # first-party capability; it is a no-op on non-Anthropic backends.
+        _cache_edits_beta: bool = False
+        if cache_edits_state is not None and enable_caching:
+            try:
+                from encre.cache_edits import (
+                    CACHE_EDITING_BETA_HEADER,
+                    attach_cache_edits,
+                    consume_pending,
+                    get_pinned,
+                    mark_sent_to_api,
+                )
+                _pending = consume_pending(cache_edits_state)
+                _pinned = get_pinned(cache_edits_state)
+                if _pending is not None or _pinned:
+                    messages = attach_cache_edits(messages, _pending, _pinned)
+                    _cache_edits_beta = True
+            except Exception:
+                logger.debug("[cache_edits] attach failed", exc_info=True)
 
         # Assemble the Anthropic Messages API request body.
         body: dict[str, Any] = {
@@ -262,6 +287,12 @@ class AnthropicBackend(BaseBackend):
                     _req_headers["x-api-key"] = self.auth_manager.api_key
                 elif self.api_key:
                     _req_headers["x-api-key"] = self.api_key
+                # cache_edits requires the context-management beta header
+                # (latched on once enabled, matching Claude Code's
+                # cache-editing header latch).  Only sent when we actually
+                # attached a cache_edits block this request.
+                if _cache_edits_beta:
+                    _req_headers["anthropic-beta"] = CACHE_EDITING_BETA_HEADER
 
                 _url = str(self._client.base_url)
                 try:
@@ -303,6 +334,7 @@ class AnthropicBackend(BaseBackend):
                 finish_reason: str = "stop"
                 _input_tokens: int = 0
                 _output_tokens: int = 0
+                _cache_deleted: int = 0
 
                 # Anthropic SSE emits paired lines: "event: <type>" followed
                 # by "data: <json>". Parse them into BackendEvent objects.
@@ -319,6 +351,16 @@ class AnthropicBackend(BaseBackend):
                         msg = data.get("message", {})
                         msg_usage = msg.get("usage", {})
                         _input_tokens = msg_usage.get("input_tokens", 0)
+                        # Mark every registered tool_result as "sent to API" so
+                        # the next turn's deletion candidates are eligible.
+                        # This is safe to do here because message_start fires
+                        # exactly once per request, after the API accepted it.
+                        if cache_edits_state is not None:
+                            try:
+                                from encre.cache_edits import mark_sent_to_api
+                                mark_sent_to_api(cache_edits_state)
+                            except Exception:
+                                pass
 
                     elif event_type == "content_block_start":
                         # A new content block begins (text, thinking, tool_use).
@@ -392,6 +434,7 @@ class AnthropicBackend(BaseBackend):
                             finish_reason = stop_reason or "stop"
                         msg_usage = data.get("usage", {})
                         _output_tokens = msg_usage.get("output_tokens", 0)
+                        _cache_deleted = msg_usage.get("cache_deleted_input_tokens", 0)
 
                     elif event_type == "error":
                         error_data = data.get("error", {})
@@ -400,6 +443,8 @@ class AnthropicBackend(BaseBackend):
                         yield create_backend_error(err_msg)
 
                 _usage = {"input_tokens": _input_tokens, "output_tokens": _output_tokens} if _input_tokens or _output_tokens else None
+                if _usage and _cache_deleted:
+                    _usage["cache_deleted_input_tokens"] = _cache_deleted
                 yield create_backend_finish(finish_reason, usage=_usage)
 
         except Exception as e:

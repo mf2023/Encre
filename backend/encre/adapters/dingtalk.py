@@ -216,16 +216,19 @@ class DingTalkAdapter(BaseAdapter):
 
     async def _run_stream(self) -> None:
         """Run the dingtalk-stream client with exponential-backoff reconnection."""
+        logger.info("[dingtalk] _run_stream STARTING, stream_client=%s", self._stream_client is not None)
         backoff_idx = 0
         while self._running:
             try:
+                logger.info("[dingtalk] calling stream_client.start()...")
                 await self._stream_client.start()
+                logger.info("[dingtalk] stream_client.start() returned (unexpected)")
             except asyncio.CancelledError:
                 return
             except Exception as e:
                 if not self._running:
                     return
-                logger.warning("[dingtalk] Stream client error: %s", e)
+                logger.warning("[dingtalk] Stream client error: %s %s", type(e).__name__, e)
 
             if not self._running:
                 return
@@ -255,6 +258,7 @@ class DingTalkAdapter(BaseAdapter):
 
     async def _on_stream_message(self, data: dict[str, Any]) -> None:
         """Process an incoming DingTalk stream message and dispatch it."""
+        logger.info("[dingtalk] _on_stream_message data keys=%s", list(data.keys()) if isinstance(data, dict) else type(data).__name__)
         try:
             message = ChatbotMessage.from_dict(data) if ChatbotMessage else None
             if message is None:
@@ -569,12 +573,8 @@ class _IncomingHandler(
         return
 
     async def process(self, message: CallbackMessage) -> tuple[int, str]:
-        """Called by dingtalk-stream when a message arrives.
-
-        Parses the CallbackMessage.data dict and dispatches to the
-        adapter's _on_stream_message in a background task so that this
-        method returns the ACK immediately.
-        """
+        """Called by dingtalk-stream when a message arrives."""
+        logger.info("[dingtalk] process() CALLED, incoming message received")
         try:
             data = message.data
             if isinstance(data, str):

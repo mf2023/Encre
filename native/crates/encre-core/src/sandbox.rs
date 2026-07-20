@@ -53,7 +53,7 @@ pub struct SandboxResult {
 pub fn sandbox_execute(
     command: &str,
     timeout: u64,
-    _workspace: Option<&str>,
+    workspace: Option<&str>,
 ) -> Result<SandboxResult, String> {
     // ── Build the subprocess command ──────────────────────────
     let mut cmd;

@@ -67,6 +67,7 @@ HookEventType = Literal[
     "on_telemetry",
     "pre_bash",
     "on_file_change",
+    "on_user_message_persisted",
 ]
 
 HookResult = dict[str, Any]
