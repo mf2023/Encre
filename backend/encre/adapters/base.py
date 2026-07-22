@@ -63,7 +63,7 @@ from datetime import datetime
 from typing import Any
 
 from encre.gateway.client import GatewayClient
-from encre.gateway.session import SessionSource, build_session_key
+from encre.gateway.session import SessionSource
 from encre.utils.types import AgentEvent, Finish, TextDelta
 
 logger = logging.getLogger("encre.adapters.base")
@@ -123,10 +123,8 @@ class MessageEvent:
             events can be filtered out to prevent echo loops.
         source: Structured routing origin (platform / chat_id / chat_type / user /
             thread / scope).  When populated, :meth:`BaseAdapter.handle_message`
-            builds a deterministic session key from it (see
-            :func:`encre.gateway.session.build_session_key`) so each conversation
-            resumes its own agent session.  ``None`` falls back to the legacy
-            user-to-session mapping.
+            preserves it for delivery and authorization.  Agent context remains
+            scoped to the owning adapter, so all chats use one persistent session.
     """
     text: str
     message_type: MessageType = MessageType.TEXT
@@ -643,11 +641,9 @@ class BaseAdapter(ABC):
             prompt: The user's message text to send to the AI agent.
             session_id: Optional explicit AI session ID for continuing a conversation.
             system_prompt: Optional system prompt for this conversation turn.
-            source: Optional structured routing origin.  When provided, the
-                gateway server resolves the agent session per-conversation via
-                :class:`~encre.gateway.session.SessionStore` (replacing the
-                coarse per-adapter fixed session).  ``session_id`` is ignored
-                when ``source`` is set -- the server owns the resolution.
+            source: Optional structured routing origin used for delivery and
+                authorization. The gateway still resolves one persistent agent
+                session for the adapter, regardless of chat or user.
 
         Yields:
             AgentEvent instances -- typically TextDelta (incremental text) and
@@ -693,17 +689,16 @@ class BaseAdapter(ABC):
         Args:
             content: The message text to send to the AI agent.
             chat_id: The platform chat/channel ID to send the response to.
-            session_id: Optional explicit session ID. Falls back to the user's
-                stored session for this adapter if not provided.  Ignored when
-                ``source`` is set (the server resolves the session per-conversation).
-            source: Optional structured routing origin.  When provided, the
-                gateway server resolves the agent session via
-                :class:`~encre.gateway.session.SessionStore` instead of using
-                ``session_id`` / the user-to-session map.
+            session_id: Optional explicit session ID. The gateway owns the
+                persistent adapter session, so normal adapter messages use that
+                session regardless of chat or user.
+            source: Optional structured routing origin used for delivery and
+                authorization while the gateway keeps the adapter session.
         """
         await self._ensure_gateway()
-        if session_id is None and source is None:
-            session_id = self.get_session(chat_id)
+        # The gateway owns one persistent Agent session per adapter.  Do not
+        # split that context using the adapter-local chat map.
+        session_id = None
         logger.info("[%s] process_with_stream chat=%s session=%s source=%s gateway_connected=%s content=%.60s",
                      self.name, chat_id, session_id or "(none)",
                      source.platform if source else "none",
@@ -1005,16 +1000,15 @@ class BaseAdapter(ABC):
 
         1. Normalizes the message into a :class:`SessionSource` (synthesizing
            one from ``chat_id``/``user_id`` when the adapter did not set it).
-        2. Runs the **Level-1 message guard**: if a session is already active
+        2. Runs the **Level-1 message guard**: if the adapter context is already active
            for this ``session_key`` and the message is not a bypass command,
            it is queued in ``_pending_messages`` (and the active session's
            interrupt event is set) instead of being dropped or rejected.
         3. Dispatches: if a message handler is registered (gateway-driven
            mode, set via :meth:`set_message_handler`), await it; otherwise
            fall back to the legacy adapter-driven
-           :meth:`process_with_stream`, now forwarding ``source`` so the
-           gateway server routes per-conversation via
-           :class:`~encre.gateway.session.SessionStore`.
+           :meth:`process_with_stream`, forwarding ``source`` for delivery and
+           authorization while retaining the adapter-level Agent session.
         4. On completion, drains any queued messages for this session.
 
         Adapters should migrate their inbound listeners from
@@ -1077,7 +1071,9 @@ class BaseAdapter(ABC):
             if new_event is not None:
                 event = new_event
 
-        session_key = build_session_key(source)
+        # One adapter is one Agent context.  This also serializes messages that
+        # target the same persistent session and avoids router "busy" replies.
+        session_key = f"adapter:{self.name}"
 
         # 2. Level-1 guard: queue if a session is active and this is not a
         #    bypass command.

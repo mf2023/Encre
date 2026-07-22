@@ -124,7 +124,9 @@ export type ServerEvent =
   | WorkflowCompleted
   | ContextUsageEvent
   | ReferencesUpdateEvent
-  | SpecUpdateEvent;
+  | SpecUpdateEvent
+  | ModeChanged
+  | CommandChanged;
 
 export interface RunQueued {
   type: "run_queued";
@@ -170,6 +172,7 @@ export interface SearchResultEntry {
   path?: string;
   line?: number;
   name?: string;
+  icon?: string;
 }
 
 export interface SearchResults {
@@ -227,6 +230,8 @@ export interface ToolResult {
   id: string;
   content: string;
   is_error: boolean;
+  error_code?: string;
+  error_category?: string;
   session_id?: string;
   sub_agent_messages?: Array<{ role: string; content: string | Array<{ type: string; text: string }>; tool_calls?: any[]; reasoning_content?: string; segments?: Array<{kind: string; text?: string; tool_id?: string}>; created_at?: number; mode?: string }>;
   sub_agent_session_id?: string;
@@ -238,6 +243,8 @@ export interface FinishEvent {
   usage?: Record<string, unknown>;
   assistant_message_id?: string;
   error?: string;
+  error_code?: string;
+  error_category?: string;
   session_id?: string;
 }
 
@@ -249,6 +256,10 @@ export interface ErrorEvent {
   type: "error";
   message: string;
   code: string;
+  category?: string;
+  retryable?: boolean;
+  retry_after?: number;
+  details?: Record<string, unknown>;
   session_id?: string;
 }
 
@@ -460,6 +471,7 @@ export type ClientMessage =
   | ClientRespondPlan
   | ClientRespondQuestion
   | ClientSetPlanMode
+  | ClientSetMode
   | ClientRetry
   | ClientSwitchBranch
   | ClientRollback
@@ -554,6 +566,8 @@ export interface ClientRun {
   session_id?: string;
   specialty?: string;
   attachments?: AttachmentMeta[];
+  mode?: string;
+  mode_prompt?: string;
 }
 
 export interface ClientCancel {
@@ -1363,6 +1377,12 @@ export interface ClientSetPlanMode {
   reason?: string;
 }
 
+export interface ClientSetMode {
+  type: "set_mode";
+  session_id?: string;
+  mode: string; // "plan" | "spec" | ""
+}
+
 export interface ClientRetry {
   type: "retry";
   branch_id: string;
@@ -1443,6 +1463,8 @@ export interface ToolCallState {
   subAgentMessages?: Message[];
   subAgentSessionId?: string;
   isError?: boolean;
+  errorCode?: string;
+  errorCategory?: string;
   status: "pending" | "running" | "done";
   /** When a single agent tool call executed multiple parallel tasks, this
    *  indexes the task currently being viewed (0-based). Undefined means the
@@ -1722,6 +1744,18 @@ export interface PlanModeChanged {
   type: "plan_mode_changed";
   active: boolean;
   reason?: string;
+  session_id?: string;
+}
+
+export interface ModeChanged {
+  type: "mode_changed";
+  mode: string; // "plan" | "spec" | ""
+  session_id?: string;
+}
+
+export interface CommandChanged {
+  type: "command_changed";
+  command: { name: string; prompt?: string; icon?: string; title?: string } | null;
   session_id?: string;
 }
 

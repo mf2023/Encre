@@ -157,7 +157,7 @@ class OpenAICompatibleVLM:
         self,
         api_key: str | None = None,
         base_url: str = "https://api.openai.com/v1",
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-5.6-luna",
         timeout: float = 60.0,
     ) -> None:
         """Store OpenAI-compatible endpoint config and validate the API key.
@@ -235,7 +235,7 @@ class AnthropicVLM:
         self,
         api_key: str | None = None,
         base_url: str = "https://api.anthropic.com",
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = "claude-sonnet-5",
         timeout: float = 60.0,
     ) -> None:
         """Store Anthropic endpoint config and validate the API key.

@@ -46,6 +46,10 @@ export interface SlashCommand {
   kind: SlashCommandKind;
   prompt?: string;
   source?: string;
+  /** Session modes this command is available in. Empty/undefined = all modes. */
+  availability?: string[];
+  /** Alternate names that also match/trigger this command. */
+  aliases?: string[];
 }
 
 const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
@@ -89,6 +93,15 @@ const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
     icon: "navigation",
     kind: "action",
   },
+  {
+    id: "init",
+    name: "init",
+    title: t("slashCommands.initTitle"),
+    description: t("slashCommands.initDesc"),
+    icon: "wand-sparkles",
+    kind: "action",
+    availability: ["iwork"],
+  },
 ];
 
 /** Active slash commands — starts with built-in, can be overridden from backend. */
@@ -106,6 +119,8 @@ export interface ServerSlashCommand {
   kind?: string;
   prompt?: string;
   source?: string;
+  availability?: string[];
+  aliases?: string[];
 }
 
 function normalizeServerCommand(s: ServerSlashCommand): SlashCommand {
@@ -120,6 +135,8 @@ function normalizeServerCommand(s: ServerSlashCommand): SlashCommand {
     kind,
     prompt: s.prompt,
     source: s.source || "user",
+    availability: s.availability,
+    aliases: Array.isArray(s.aliases) ? s.aliases.map(a => String(a).toLowerCase()) : [],
   };
 }
 
@@ -181,7 +198,12 @@ export function applyProjectCommands(projectCmds: ServerSlashCommand[]): void {
  */
 export function findSlashCommand(name: string): SlashCommand | undefined {
   const normalized = name.toLowerCase().replace(/^\//, "");
-  return SLASH_COMMANDS.find((cmd) => cmd.name === normalized || cmd.id === normalized);
+  return SLASH_COMMANDS.find(
+    (cmd) =>
+      cmd.name === normalized ||
+      cmd.id === normalized ||
+      (cmd.aliases && cmd.aliases.includes(normalized)),
+  );
 }
 
 /**
@@ -206,17 +228,34 @@ export function parseSlashInput(text: string): { command: SlashCommand; rest: st
   };
 }
 
+function isAvailableInMode(cmd: SlashCommand, mode?: string): boolean {
+  if (!mode) return true;
+  if (!cmd.availability || cmd.availability.length === 0) return true;
+  return cmd.availability.includes(mode);
+}
+
 /**
  * Returns slash commands whose name/title/description match the query.
  *
  * @param query - The (already `/`-stripped) search query; empty returns all.
+ * @param mode  - Optional session mode to filter by (e.g. "iwork", "normal").
  */
-export function matchingSlashCommands(query: string): SlashCommand[] {
+export function matchingSlashCommands(query: string, mode?: string): SlashCommand[] {
   const normalized = query.toLowerCase().replace(/^\//, "");
-  if (!normalized) return SLASH_COMMANDS;
-  return SLASH_COMMANDS.filter((cmd) =>
+  let cmds = mode ? SLASH_COMMANDS.filter((cmd) => isAvailableInMode(cmd, mode)) : SLASH_COMMANDS;
+  if (!normalized) return cmds;
+  return cmds.filter((cmd) =>
     cmd.name.startsWith(normalized) ||
+    (cmd.aliases && cmd.aliases.some((a) => a.startsWith(normalized))) ||
     cmd.title.toLowerCase().includes(normalized) ||
     cmd.description.toLowerCase().includes(normalized)
   );
+}
+
+/** Whether a command matches the typed query by name or alias (for highlight). */
+export function commandMatchesQuery(cmd: SlashCommand, query: string): boolean {
+  const q = query.toLowerCase().replace(/^\//, "");
+  if (!q) return true;
+  const aliasMatch = cmd.aliases ? cmd.aliases.some((a) => a.startsWith(q)) : false;
+  return cmd.name.toLowerCase().startsWith(q) || aliasMatch;
 }

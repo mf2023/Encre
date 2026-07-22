@@ -79,8 +79,8 @@ class BedrockBackend(BaseBackend):
     default AWS credential chain is used (environment variables, ~/.aws/credentials).
 
     Args:
-        model: Bedrock model ID (e.g., ``"anthropic.claude-sonnet-4-20250514"``).
-            Defaults to ``"anthropic.claude-sonnet-4-20250514"``.
+        model: Bedrock model ID (e.g., ``"anthropic.claude-sonnet-5"``).
+            Defaults to ``"anthropic.claude-sonnet-5"``.
         aws_access_key_id: Optional AWS access key ID.
         aws_secret_access_key: Optional AWS secret access key.
         region_name: AWS region name (e.g., ``"us-west-2"``).  Defaults to
@@ -90,7 +90,7 @@ class BedrockBackend(BaseBackend):
 
     def __init__(
         self,
-        model: str = "anthropic.claude-sonnet-4-20250514",
+        model: str = "anthropic.claude-sonnet-5",
         aws_access_key_id: str = "",
         aws_secret_access_key: str = "",
         region_name: str = "us-east-1",
@@ -103,7 +103,7 @@ class BedrockBackend(BaseBackend):
 
         Args:
             model: Bedrock model ID.  Defaults to
-                ``anthropic.claude-sonnet-4-20250514``.
+                ``anthropic.claude-sonnet-5``.
             aws_access_key_id: Optional AWS access key ID.
             aws_secret_access_key: Optional AWS secret access key.
             region_name: AWS region.  Defaults to ``us-east-1``.

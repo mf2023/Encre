@@ -1,5 +1,5 @@
 /**
- * Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+ * Copyright 婵?2025-2026 Wenze Wei. All Rights Reserved.
  *
  * This file is part of Encre.
  * The Encre project belongs to the Dunimd Team.
@@ -30,17 +30,21 @@
  *  - Provide a system tray icon + popup for quick session switching.
  *  - Expose an encrypted on-disk cookie store for the in-app browser.
  *  - Register a large set of IPC handlers bridging the renderer to the OS
- *    (file system, terminal/pty, git, window controls, auto-start, docs鈥?.
+ *    (file system, terminal/pty, git, window controls, auto-start, docs….
  *
  * All heavy interaction with the OS happens here; the renderer only talks to
  * the main process through the `electronAPI` exposed by `preload.ts`.
  */
 
-import { app, BrowserWindow, ipcMain, shell, dialog, Tray, nativeImage, nativeTheme, session, protocol, net } from "electron";
-import { ChildProcess, spawn, execSync } from "child_process";
+import { app, BrowserWindow, ipcMain, shell, dialog, Tray, nativeImage, nativeTheme, session, protocol, net, webContents } from "electron";
+import { ChildProcess, spawn, execSync, exec } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as crypto from "crypto";
+import * as os from "os";
+import * as WebSocket from "ws";
+import * as http from "http";
+import { WebSocketServer, WebSocket as WS } from "ws";
 
 // Handle to the spawned Python backend process (null when not running).
 let serverProcess: ChildProcess | null = null;
@@ -67,13 +71,21 @@ const GIT_DIFF_CACHE = new Map<string, { ts: number; result: any }>();
 // Time-to-live (ms) for the git caches before a fresh command is run.
 const GIT_CACHE_TTL_MS = 5000;
 
-/* 鈹€鈹€ Encrypted browser cookie store 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Encrypted browser cookie store 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶?*/
 
-// On-disk path to the static AES-256 key for the cookie store.
-const BROWSER_KEY_FILE = path.join(DATA_DIR, "browser_key");
+// Dedicated directory for all browser data.
+const BROWSER_DIR = path.join(DATA_DIR, "browser");
+// On-disk path to the static AES-256 key for browser data encryption.
+const BROWSER_KEY_FILE = path.join(BROWSER_DIR, "key");
 // On-disk path to the encrypted cookie blob.
-const BROWSER_COOKIE_FILE = path.join(DATA_DIR, "browser_cookies.enc");
-
+const BROWSER_COOKIE_FILE = path.join(BROWSER_DIR, "cookies.enc");
+// On-disk path to the encrypted localStorage blob.
+const BROWSER_LOCALSTORAGE_FILE = path.join(BROWSER_DIR, "localstorage.enc");
+const BROWSER_BOOKMARKS_FILE = path.join(BROWSER_DIR, "bookmarks.enc");
+const BROWSER_HISTORY_FILE = path.join(BROWSER_DIR, "history.enc");
+const BROWSER_PASSWORDS_FILE = path.join(BROWSER_DIR, "passwords.enc");
+// Partition with persist: prefix so Chromium persists IndexedDB/Cache to disk.
+const BROWSER_PARTITION = "persist:encre-browser";
 /**
  * Returns the AES-256 key used to encrypt/decrypt browser cookies.
  * The key is generated once and persisted to BROWSER_KEY_FILE; subsequent
@@ -88,7 +100,7 @@ function getBrowserEncryptionKey(): Buffer {
   } catch {}
   // Generate a new 32-byte AES-256 key
   const key = crypto.randomBytes(32);
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(BROWSER_DIR, { recursive: true });
   fs.writeFileSync(BROWSER_KEY_FILE, key);
   return key;
 }
@@ -137,7 +149,7 @@ function decryptCookies(data: Buffer): string | null {
  */
 function saveBrowserCookies(cookieJson: string): void {
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(BROWSER_DIR, { recursive: true });
     const encrypted = encryptCookies(cookieJson);
     fs.writeFileSync(BROWSER_COOKIE_FILE, encrypted);
   } catch (e) {
@@ -161,18 +173,118 @@ function loadBrowserCookies(): string | null {
 }
 
 /**
- * Wires up the persistent, encrypted cookie store for the in-app browser
- * session (`encre-browser` partition). Responsibilities:
- *  - Loads previously saved cookies into the session on startup.
+ * Encrypts and saves a localStorage JSON blob to disk.
+ */
+function saveBrowserLocalStorage(json: string): void {
+  try {
+    fs.mkdirSync(BROWSER_DIR, { recursive: true });
+    const encrypted = encryptCookies(json);
+    fs.writeFileSync(BROWSER_LOCALSTORAGE_FILE, encrypted);
+  } catch (e) {
+    console.error("[browser] failed to save localStorage:", e);
+  }
+}
+
+/**
+ * Loads and decrypts the persisted localStorage blob from disk.
+ */
+
+
+/**
+ * Encrypts and saves a bookmarks JSON blob to disk.
+ */
+function saveBrowserBookmarks(json: string): void {
+  try {
+    fs.mkdirSync(BROWSER_DIR, { recursive: true });
+    const encrypted = encryptCookies(json);
+    fs.writeFileSync(BROWSER_BOOKMARKS_FILE, encrypted);
+  } catch (e) {
+    console.error("[browser] failed to save bookmarks:", e);
+  }
+}
+
+/**
+ * Loads and decrypts the persisted bookmarks blob from disk.
+ */
+function loadBrowserBookmarks(): string | null {
+  try {
+    if (!fs.existsSync(BROWSER_BOOKMARKS_FILE)) return null;
+    const data = fs.readFileSync(BROWSER_BOOKMARKS_FILE);
+    return decryptCookies(data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Encrypts and saves a history JSON blob to disk.
+ */
+function saveBrowserHistory(json: string): void {
+  try {
+    fs.mkdirSync(BROWSER_DIR, { recursive: true });
+    const encrypted = encryptCookies(json);
+    fs.writeFileSync(BROWSER_HISTORY_FILE, encrypted);
+  } catch (e) {
+    console.error("[browser] failed to save history:", e);
+  }
+}
+
+/**
+ * Loads and decrypts the persisted history blob from disk.
+ */
+function loadBrowserHistory(): string | null {
+  try {
+    if (!fs.existsSync(BROWSER_HISTORY_FILE)) return null;
+    const data = fs.readFileSync(BROWSER_HISTORY_FILE);
+    return decryptCookies(data);
+  } catch {
+    return null;
+  }
+}
+
+function saveBrowserPasswords(json: string): void {
+  try {
+    fs.mkdirSync(BROWSER_DIR, { recursive: true });
+    const encrypted = encryptCookies(json);
+    fs.writeFileSync(BROWSER_PASSWORDS_FILE, encrypted);
+  } catch (e) {
+    console.error("[browser] failed to save passwords:", e);
+  }
+}
+
+function loadBrowserPasswords(): string | null {
+  try {
+    if (!fs.existsSync(BROWSER_PASSWORDS_FILE)) return null;
+    const data = fs.readFileSync(BROWSER_PASSWORDS_FILE);
+    return decryptCookies(data);
+  } catch {
+    return null;
+  }
+}
+
+function loadBrowserLocalStorage(): string | null {
+  try {
+    if (!fs.existsSync(BROWSER_LOCALSTORAGE_FILE)) return null;
+    const data = fs.readFileSync(BROWSER_LOCALSTORAGE_FILE);
+    return decryptCookies(data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Wires up the persistent, encrypted browser data store for the in-app browser
+ * session (persist:encre-browser partition). Responsibilities:
+ *  - Loads previously saved cookies and localStorage into the session on startup.
  *  - Watches cookie changes, debouncing writes to disk (500ms).
- *  - Flushes the cache synchronously on `before-quit` (async handlers are
- *    not awaited by Electron on quit).
+ *  - Saves localStorage from all webview origins on navigation/quit.
+ *  - Flushes the cache synchronously on `before-quit`.
  *  - Restricts which permissions the in-app browser may request.
  */
 function setupBrowserSession(): void {
-  const bs = session.fromPartition("encre-browser");
+  const bs = session.fromPartition(BROWSER_PARTITION);
 
-  // In-memory cache of the latest cookie JSON 鈥?used for synchronous save on quit
+  // In-memory cache of the latest cookie JSON …used for synchronous save on quit
   let cookieCache: string | null = null;
 
   // Load encrypted cookies into the session
@@ -188,17 +300,19 @@ function setupBrowserSession(): void {
               ? `http${c.secure ? "s" : ""}://${cleanDomain}${c.path || "/"}`
               : undefined;
             if (url && c.name) {
+              const isHost = c.name.startsWith("__Host-");
+              const isSecure = c.name.startsWith("__Secure-");
               bs.cookies.set({
                 url,
                 name: c.name,
                 value: c.value || "",
-                domain: c.domain,
-                path: c.path || "/",
-                secure: !!c.secure,
+                domain: isHost ? undefined : c.domain,
+                path: isHost ? "/" : (c.path || "/"),
+                secure: isHost || isSecure || !!c.secure,
                 httpOnly: !!c.httpOnly,
                 sameSite: c.sameSite || "unspecified",
                 expirationDate: c.expirationDate,
-              }).catch((e: any) => console.error("[browser] cookie set failed:", e));
+              }).catch(() => {});
             }
           } catch (e) {
             console.error("[browser] cookie load error:", e);
@@ -222,7 +336,7 @@ function setupBrowserSession(): void {
     }).catch((e: any) => console.error("[browser] cookie save error:", e));
   });
 
-  // Synchronous save on quit 鈥?Electron does NOT await async event handlers
+  // Synchronous save on quit …Electron does NOT await async event handlers
   app.on("before-quit", () => {
     if (saveTimer) clearTimeout(saveTimer);
     if (cookieCache) {
@@ -232,16 +346,34 @@ function setupBrowserSession(): void {
   });
 
   // Permission handler for the in-app browser
-  bs.setPermissionRequestHandler((_wc, permission, callback) => {
-    const allowed = new Set(["geolocation", "notifications", "midi", "midiSysex", "pointerLock", "fullscreen", "openExternal", "clipboard-read", "clipboard-sanitized-write", "display-capture", "media"]);
+  const originPerms = new Map<string, Map<string, boolean>>();
+  const originRequestedPerms = new Map<string, Set<string>>();
+  const allowed = new Set(["geolocation", "notifications", "midi", "midiSysex", "pointerLock", "fullscreen", "openExternal", "clipboard-read", "clipboard-sanitized-write", "display-capture", "media"]);
+  bs.setPermissionRequestHandler((wc, permission, callback) => {
+    let origin = "";
+    try { origin = new URL(wc.getURL()).origin; } catch {}
+    if (origin) {
+      // Track that this permission was requested by the site
+      let req = originRequestedPerms.get(origin);
+      if (!req) { req = new Set(); originRequestedPerms.set(origin, req); }
+      req.add(permission);
+      // Check user override
+      const perms = originPerms.get(origin);
+      if (perms && perms.has(permission)) {
+        callback(perms.get(permission)!);
+        return;
+      }
+    }
     callback(allowed.has(permission));
   });
+  (global as any).__browserOriginPerms = originPerms;
+  (global as any).__browserRequestedPerms = originRequestedPerms;
 }
 
 // Clears the in-app browser's cookies, storage and encrypted cookie file.
 ipcMain.handle("browser:clear-data", async () => {
   try {
-    const bs = session.fromPartition("encre-browser");
+    const bs = session.fromPartition(BROWSER_PARTITION);
     // Clear all cookies
     const all = await bs.cookies.get({});
     for (const c of all) {
@@ -255,15 +387,610 @@ ipcMain.handle("browser:clear-data", async () => {
     }
     // Clear Chromium storage (localStorage, IndexedDB, cache, etc.)
     await bs.clearStorageData();
-    // Delete encrypted cookie file
+    // Delete encrypted data files
     try { fs.unlinkSync(BROWSER_COOKIE_FILE); } catch {}
+    try { fs.unlinkSync(BROWSER_LOCALSTORAGE_FILE); } catch {}
+    try { fs.unlinkSync(BROWSER_BOOKMARKS_FILE); } catch {}
+    try { fs.unlinkSync(BROWSER_HISTORY_FILE); } catch {}
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message };
   }
 });
 
-/* 鈹€鈹€ Terminal sessions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+// ===== Site Info & Permissions =====
+
+ipcMain.handle("browser:get-site-info", async (_event, url: string): Promise<{
+  origin: string;
+  isSecure: boolean;
+  cookieCount: number;
+  permissions: Array<{ name: string; granted: boolean }>;
+}> => {
+  const result = {
+    origin: "",
+    isSecure: false,
+    cookieCount: 0,
+    permissions: [] as Array<{ name: string; granted: boolean }>,
+  };
+  try {
+    const u = new URL(url);
+    result.origin = u.origin;
+    result.isSecure = u.protocol === "https:";
+    // Get cookie count for domain
+    const bs = session.fromPartition(BROWSER_PARTITION);
+    const cookies = await bs.cookies.get({ domain: u.hostname });
+    result.cookieCount = cookies.length;
+    // Get requested permissions for origin
+    const originRequestedPerms: Map<string, Set<string>> = (global as any).__browserRequestedPerms || new Map();
+    const originPerms: Map<string, Map<string, boolean>> = (global as any).__browserOriginPerms || new Map();
+    const requested: Set<string> = originRequestedPerms.get(u.origin) || new Set();
+    const userPerms = originPerms.get(u.origin) || new Map();
+    result.permissions = [...requested].map((name) => ({
+      name,
+      granted: userPerms.has(name) ? userPerms.get(name)! : true,
+    }));
+  } catch {}
+  return result;
+});
+
+ipcMain.handle("browser:get-cookies-for-origin", async (_event, url: string): Promise<{ cookies: Array<{ name: string; value: string; domain: string; path: string; secure: boolean; httpOnly: boolean; sameSite: string; expirationDate?: number }> }> => {
+  const out: { cookies: any[] } = { cookies: [] };
+  try {
+    const u = new URL(url);
+    const bs = session.fromPartition(BROWSER_PARTITION);
+    const cookies = await bs.cookies.get({ domain: u.hostname });
+    out.cookies = cookies.map((c: any) => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path,
+      secure: c.secure,
+      httpOnly: c.httpOnly,
+      sameSite: c.sameSite,
+      expirationDate: c.expirationDate,
+    }));
+  } catch {}
+  return out;
+});
+
+ipcMain.handle("browser:set-permission", async (_event, origin: string, permission: string, granted: boolean): Promise<{ success: boolean }> => {
+  try {
+    const originPerms: Map<string, Map<string, boolean>> = (global as any).__browserOriginPerms || new Map();
+    let perms = originPerms.get(origin);
+    if (!perms) {
+      perms = new Map();
+      originPerms.set(origin, perms);
+    }
+    perms.set(permission, granted);
+    (global as any).__browserOriginPerms = originPerms;
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
+});
+
+// ===== Bookmarks IPC =====
+ipcMain.handle("browser:get-bookmarks", async () => {
+  const raw = loadBrowserBookmarks();
+  if (raw) {
+    try { return JSON.parse(raw); } catch {}
+  }
+  return {
+    checksum: "",
+    roots: {
+      bookmark_bar: { children: [], date_added: "0", date_modified: "0", guid: "", id: "1", name: "Bookmarks bar", type: "folder" },
+      other: { children: [], date_added: "0", date_modified: "0", guid: "", id: "2", name: "Other bookmarks", type: "folder" },
+    },
+    version: 1,
+  };
+});
+
+ipcMain.handle("browser:set-bookmarks", async (_e, data: any) => {
+  saveBrowserBookmarks(JSON.stringify(data));
+  return { success: true };
+});
+
+ipcMain.handle("browser:add-bookmark", async (_e, entry: { url: string; title: string }) => {
+  const raw = loadBrowserBookmarks();
+  const data = raw ? JSON.parse(raw) : { checksum: "", roots: { bookmark_bar: { children: [], date_added: "0", date_modified: "0", guid: "", id: "1", name: "Bookmarks bar", type: "folder" }, other: { children: [], date_added: "0", date_modified: "0", guid: "", id: "2", name: "Other bookmarks", type: "folder" } }, version: 1 };
+  const bar = data.roots.bookmark_bar;
+  const guid = "bm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  const id = String(bar.children.length + 1);
+  bar.children.push({
+    date_added: String(Date.now() * 1000 + 11644473600000000),
+    guid,
+    id,
+    name: entry.title || entry.url,
+    type: "url",
+    url: entry.url,
+  });
+  bar.date_modified = String(Date.now() * 1000 + 11644473600000000);
+  data.checksum = guid;
+  saveBrowserBookmarks(JSON.stringify(data));
+  return { success: true };
+});
+
+ipcMain.handle("browser:remove-bookmark", async (_e, url: string) => {
+  const raw = loadBrowserBookmarks();
+  if (!raw) return { success: false };
+  const data = JSON.parse(raw);
+  function removeFrom(arr: any[], targetUrl: string): boolean {
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (arr[i].type === "url" && arr[i].url === targetUrl) { arr.splice(i, 1); return true; }
+      if (arr[i].type === "folder" && arr[i].children) { if (removeFrom(arr[i].children, targetUrl)) return true; }
+    }
+    return false;
+  }
+  removeFrom(data.roots.bookmark_bar.children, url);
+  removeFrom(data.roots.other.children, url);
+  data.checksum = "rm_" + Date.now();
+  saveBrowserBookmarks(JSON.stringify(data));
+  return { success: true };
+});
+
+// ===== History IPC =====
+ipcMain.handle("browser:get-history", async () => {
+  const raw = loadBrowserHistory();
+  if (raw) {
+    try { const arr = JSON.parse(raw); if (Array.isArray(arr)) return arr; } catch {}
+  }
+  return [];
+});
+
+ipcMain.handle("browser:add-history-entry", async (_e, entry: { url: string; title: string }) => {
+  const raw = loadBrowserHistory();
+  const history = raw ? JSON.parse(raw) : [];
+  const existing = history.findIndex((h: any) => h.url === entry.url);
+  if (existing >= 0) {
+    history[existing].visit_count = (history[existing].visit_count || 0) + 1;
+    history[existing].visit_time = Date.now();
+    history[existing].title = entry.title || history[existing].title;
+  } else {
+    history.unshift({ id: Date.now(), url: entry.url, title: entry.title || "", visit_time: Date.now(), visit_count: 1, typed_count: 0 });
+  }
+  if (history.length > 5000) history.length = 5000;
+  saveBrowserHistory(JSON.stringify(history));
+  return { success: true };
+});
+
+ipcMain.handle("browser:clear-history", async () => {
+  try { fs.unlinkSync(BROWSER_HISTORY_FILE); } catch {}
+  return { success: true };
+});
+
+ipcMain.handle("browser:export-file", async (_event, options: { content: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }) => {
+  const result = await dialog.showSaveDialog({
+    defaultPath: options.defaultName,
+    filters: options.filters,
+  });
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+  try {
+    fs.writeFileSync(result.filePath, options.content, "utf-8");
+    return { success: true, filePath: result.filePath };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+// ===== Browser import/export IPC =====
+
+interface DetectedBrowser {
+  id: string;
+  name: string;
+  profilePath: string;
+  hasBookmarks: boolean;
+  hasCookies: boolean;
+  hasHistory: boolean;
+}
+
+const BROWSER_PROFILES: Array<{ id: string; name: string; profileDir: string; executableDir: string; exeName: string }> = [
+  { id: "chrome", name: "Google Chrome", profileDir: path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\User Data\\Default"), executableDir: path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application"), exeName: "chrome.exe" },
+  { id: "edge", name: "Microsoft Edge", profileDir: path.join(process.env.LOCALAPPDATA || "", "Microsoft\\Edge\\User Data\\Default"), executableDir: path.join(process.env.LOCALAPPDATA || "", "Microsoft\\Edge\\Application"), exeName: "msedge.exe" },
+  { id: "brave", name: "Brave", profileDir: path.join(process.env.LOCALAPPDATA || "", "BraveSoftware\\Brave-Browser\\User Data\\Default"), executableDir: path.join(process.env.LOCALAPPDATA || "", "BraveSoftware\\Brave-Browser\\Application"), exeName: "brave.exe" },
+  { id: "opera", name: "Opera", profileDir: path.join(process.env.APPDATA || "", "Opera Software\\Opera Stable"), executableDir: path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Opera"), exeName: "launcher.exe" },
+  { id: "vivaldi", name: "Vivaldi", profileDir: path.join(process.env.LOCALAPPDATA || "", "Vivaldi\\User Data\\Default"), executableDir: path.join(process.env.LOCALAPPDATA || "", "Vivaldi\\Application"), exeName: "vivaldi.exe" },
+  { id: "yandex", name: "Yandex Browser", profileDir: path.join(process.env.LOCALAPPDATA || "", "Yandex\\YandexBrowser\\User Data\\Default"), executableDir: path.join(process.env.LOCALAPPDATA || "", "Yandex\\YandexBrowser\\Application"), exeName: "browser.exe" },
+  { id: "chromium", name: "Chromium", profileDir: path.join(process.env.LOCALAPPDATA || "", "Chromium\\User Data\\Default"), executableDir: path.join(process.env.LOCALAPPDATA || "", "Chromium\\Application"), exeName: "chrome.exe" },
+  { id: "firefox", name: "Firefox", profileDir: "", executableDir: path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Mozilla Firefox"), exeName: "firefox.exe" },
+];
+
+function findFirefoxProfileDir(): string | null {
+  const profilesIni = path.join(process.env.APPDATA || "", "Mozilla\\Firefox\\profiles.ini");
+  if (!fs.existsSync(profilesIni)) return null;
+  try {
+    const content = fs.readFileSync(profilesIni, "utf-8");
+    const match = content.match(/Default=Profiles\/([^\r\n]+)/);
+    if (match) {
+      const dir = path.join(process.env.APPDATA || "", "Mozilla\\Firefox\\Profiles", match[1]);
+      if (fs.existsSync(dir)) return dir;
+    }
+    const fallback = content.match(/Path=Profiles\/([^\r\n]+)/);
+    if (fallback) {
+      const dir = path.join(process.env.APPDATA || "", "Mozilla\\Firefox\\Profiles", fallback[1]);
+      if (fs.existsSync(dir)) return dir;
+    }
+  } catch {}
+  return null;
+}
+
+ipcMain.handle("browser:detect-browsers", async (): Promise<DetectedBrowser[]> => {
+  const result: DetectedBrowser[] = [];
+  for (const b of BROWSER_PROFILES) {
+    let profilePath = b.profileDir;
+    if (b.id === "firefox") {
+      const ff = findFirefoxProfileDir();
+      if (!ff) continue;
+      profilePath = ff;
+    }
+    if (!fs.existsSync(profilePath)) continue;
+    const hasBookmarks = b.id === "firefox"
+      ? fs.existsSync(path.join(profilePath, "places.sqlite"))
+      : fs.existsSync(path.join(profilePath, "Bookmarks"));
+    const hasCookies = b.id === "firefox"
+      ? fs.existsSync(path.join(profilePath, "cookies.sqlite"))
+      : fs.existsSync(path.join(profilePath, "Cookies"));
+    const hasHistory = b.id === "firefox"
+      ? fs.existsSync(path.join(profilePath, "places.sqlite"))
+      : fs.existsSync(path.join(profilePath, "History"));
+    if (hasBookmarks || hasCookies || hasHistory) {
+      result.push({ id: b.id, name: b.name, profilePath, hasBookmarks, hasCookies, hasHistory });
+    }
+  }
+  return result;
+});
+
+function readSqliteViaPython(dbPath: string, query: string): any[] {
+  const tmpFile = path.join(os.tmpdir(), "encre_sqlite_reader.py");
+  const script = `
+import sqlite3, json, sys
+db = sys.argv[1]
+q = sys.argv[2]
+try:
+  conn = sqlite3.connect(db)
+  conn.text_factory = bytes
+  cursor = conn.cursor()
+  cursor.execute(q)
+  rows = cursor.fetchall()
+  cols = [d[0] for d in cursor.description]
+  def decode(v):
+    if isinstance(v, bytes): return v.decode("utf-8", errors="replace")
+    return v
+  result = [{cols[i]: decode(row[i]) for i in range(len(cols))} for row in rows]
+  print(json.dumps(result, ensure_ascii=False))
+  conn.close()
+except Exception as e:
+  print(json.dumps({"error": str(e)}))
+  sys.exit(1)
+`;
+  fs.writeFileSync(tmpFile, script, "utf-8");
+  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+  const out = execSync(`"${pythonCmd}" "${tmpFile}" "${dbPath}" "${query}"`, { encoding: "utf-8", timeout: 15000 });
+  return JSON.parse(out);
+}
+
+async function readChromePasswordsViaPythonAsync(dbPath: string): Promise<any[]> {
+  const tmpFile = path.join(os.tmpdir(), "encre_chrome_pw_reader.py");
+  const script = `
+import sqlite3, json, sys, os, ctypes, ctypes.wintypes
+db = sys.argv[1]
+try:
+  import shutil, tempfile
+  tmp_db = os.path.join(tempfile.gettempdir(), "encre_lr_tmp.db")
+  shutil.copy2(db, tmp_db)
+  conn = sqlite3.connect(tmp_db)
+  conn.text_factory = bytes
+  cursor = conn.cursor()
+  cursor.execute("SELECT signon_realm, username_value, password_value FROM logins")
+  rows = cursor.fetchall()
+  class DATA_BLOB(ctypes.Structure):
+    _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+  crypt32 = ctypes.windll.crypt32
+  kernel32 = ctypes.windll.kernel32
+  def decrypt(d):
+    if not d: return ""
+    try:
+      bi = DATA_BLOB(len(d), ctypes.cast(ctypes.create_string_buffer(d), ctypes.POINTER(ctypes.c_byte)))
+      bo = DATA_BLOB(0, None)
+      if crypt32.CryptUnprotectData(ctypes.byref(bi), None, None, None, None, 0, ctypes.byref(bo)):
+        raw = (ctypes.c_byte * bo.cbData).from_address(ctypes.addressof(bo.contents)) if bo.cbData else b""
+        data = bytes(raw)
+        kernel32.LocalFree(bo.pbData)
+        return data.decode("utf-8", errors="replace")
+    except: pass
+    return ""
+  result = [{"signon_realm": r[0].decode("utf-8", errors="replace") if isinstance(r[0], bytes) else str(r[0] or ""), "username_value": r[1].decode("utf-8", errors="replace") if isinstance(r[1], bytes) else str(r[1] or ""), "password_value": decrypt(r[2])} for r in rows]
+  print(json.dumps(result, ensure_ascii=False))
+  conn.close()
+  try: os.remove(tmp_db)
+  except: pass
+except Exception as e:
+  print(json.dumps({"error": str(e)}))
+  sys.exit(1)
+`;
+  fs.writeFileSync(tmpFile, script, "utf-8");
+  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+  return new Promise((resolve) => {
+    exec(`"${pythonCmd}" "${tmpFile}" "${dbPath}"`, { encoding: "utf-8", timeout: 15000 }, (err, stdout) => {
+      try { if (err) { resolve([]); return; } resolve(JSON.parse(stdout)); } catch { resolve([]); }
+    });
+  });
+}
+
+async function readSqliteViaPythonAsync(dbPath: string, query: string): Promise<any[]> {
+  const tmpFile = path.join(os.tmpdir(), "encre_sqlite_reader.py");
+  const script = `
+import sqlite3, json, sys
+db = sys.argv[1]
+q = sys.argv[2]
+try:
+  conn = sqlite3.connect(db)
+  conn.text_factory = bytes
+  cursor = conn.cursor()
+  cursor.execute(q)
+  rows = cursor.fetchall()
+  cols = [d[0] for d in cursor.description]
+  def decode(v):
+    if isinstance(v, bytes): return v.decode("utf-8", errors="replace")
+    return v
+  result = [{cols[i]: decode(row[i]) for i in range(len(cols))} for row in rows]
+  print(json.dumps(result, ensure_ascii=False))
+  conn.close()
+except Exception as e:
+  print(json.dumps({"error": str(e)}))
+  sys.exit(1)
+`;
+  fs.writeFileSync(tmpFile, script, "utf-8");
+  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+  return new Promise((resolve, reject) => {
+    exec(`"${pythonCmd}" "${tmpFile}" "${dbPath}" "${query}"`, { encoding: "utf-8", timeout: 15000 }, (err, stdout) => {
+      try {
+        if (err) { resolve([]); return; }
+        resolve(JSON.parse(stdout));
+      } catch { resolve([]); }
+    });
+  });
+}
+
+ipcMain.handle("browser:import-data", async (_event, browserId: string, profilePath: string): Promise<{ success: boolean; data?: any; error?: string }> => {
+  try {
+    const data: any = { bookmarks: null, history: [], cookies: [] };
+
+    if (browserId === "firefox") {
+      // Read bookmarks & history from places.sqlite
+      const placesPath = path.join(profilePath, "places.sqlite");
+      if (fs.existsSync(placesPath)) {
+        try {
+          const bmRows = await readSqliteViaPythonAsync(placesPath, "SELECT b.title, p.url, b.dateAdded FROM moz_bookmarks b JOIN moz_places p ON b.fk = p.id WHERE b.type = 1 AND p.url LIKE 'http%' ORDER BY b.dateAdded DESC");
+          data.bookmarks = { checksum: "", roots: { bookmark_bar: { children: [], date_added: "0", date_modified: "0", guid: "", id: "1", name: "Bookmarks bar", type: "folder" }, other: { children: [], date_added: "0", date_modified: "0", guid: "", id: "2", name: "Other bookmarks", type: "folder" } }, version: 1 };
+          for (const row of bmRows) {
+            data.bookmarks.roots.bookmark_bar.children.push({
+              date_added: String(row.dateAdded || Date.now()),
+              guid: "ff_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+              id: String(data.bookmarks.roots.bookmark_bar.children.length + 1),
+              name: row.title || row.url || "",
+              type: "url",
+              url: row.url || "",
+            });
+          }
+          const histRows = await readSqliteViaPythonAsync(placesPath, "SELECT p.url, p.title, p.visit_count, p.last_visit_date FROM moz_places p WHERE p.url LIKE 'http%' ORDER BY p.last_visit_date DESC LIMIT 5000");
+          for (const row of histRows) {
+            data.history.push({ id: Date.now(), url: row.url || "", title: row.title || "", visit_time: row.last_visit_date || Date.now(), visit_count: row.visit_count || 1, typed_count: 0 });
+          }
+        } catch {}
+      }
+      // Read cookies from cookies.sqlite
+      const cookiePath = path.join(profilePath, "cookies.sqlite");
+      if (fs.existsSync(cookiePath)) {
+        try {
+          const cookieRows = await readSqliteViaPythonAsync(cookiePath, "SELECT host, name, value, path, expiry, isSecure, isHttpOnly, sameSite FROM moz_cookies");
+          for (const row of cookieRows) {
+            data.cookies.push({ domain: row.host || "", name: row.name || "", value: row.value || "", path: row.path || "/", expires: row.expiry || 0, secure: !!row.isSecure, httpOnly: !!row.isHttpOnly, sameSite: row.sameSite || "unspecified" });
+          }
+        } catch {}
+      }
+    } else {
+      // Chrome/Edge: read Bookmarks JSON
+      const bmPath = path.join(profilePath, "Bookmarks");
+      if (fs.existsSync(bmPath)) {
+        try {
+          data.bookmarks = JSON.parse(fs.readFileSync(bmPath, "utf-8"));
+        } catch {}
+      }
+      // Read History SQLite
+      const histPath = path.join(profilePath, "History");
+      if (fs.existsSync(histPath)) {
+        try {
+          const histRows = await readSqliteViaPythonAsync(histPath, "SELECT u.url, u.title, u.visit_count, v.visit_time FROM urls u LEFT JOIN visits v ON u.id = v.url ORDER BY v.visit_time DESC LIMIT 5000");
+          for (const row of histRows) {
+            data.history.push({ id: Date.now(), url: row.url || "", title: row.title || "", visit_time: row.visit_time || Date.now(), visit_count: row.visit_count || 1, typed_count: 0 });
+          }
+        } catch {}
+      }
+      // Read Cookies SQLite
+      const cookiePath = path.join(profilePath, "Cookies");
+      if (fs.existsSync(cookiePath)) {
+        try {
+          const cookieRows = await readSqliteViaPythonAsync(cookiePath, "SELECT host_key, name, value, path, expires_utc, is_secure, is_httponly, samesite FROM cookies");
+          for (const row of cookieRows) {
+            data.cookies.push({ domain: row.host_key || "", name: row.name || "", value: row.value || "", path: row.path || "/", expires: row.expires_utc || 0, secure: !!row.is_secure, httpOnly: !!row.is_httponly, sameSite: row.samesite || "unspecified" });
+          }
+        } catch {}
+      }
+      // Read passwords from Login Data
+      const loginPath = path.join(profilePath, "Login Data");
+      if (fs.existsSync(loginPath)) {
+        try {
+          data.passwords = await readChromePasswordsViaPythonAsync(loginPath);
+        } catch {}
+      }
+    }
+
+    return { success: true, data };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("browser:save-imported-data", async (_event, data: { bookmarks?: any; history?: any[]; cookies?: any[]; passwords?: any[] }): Promise<{ success: boolean; error?: string }> => {
+  try {
+    if (data.bookmarks) {
+      saveBrowserBookmarks(JSON.stringify(data.bookmarks));
+    }
+    if (data.history && data.history.length > 0) {
+      const existing = loadBrowserHistory();
+      const merged = existing ? JSON.parse(existing) : [];
+      const seen = new Set(merged.map((h: any) => h.url));
+      for (const entry of data.history) {
+        if (!seen.has(entry.url)) {
+          merged.push(entry);
+          seen.add(entry.url);
+        }
+      }
+      if (merged.length > 5000) merged.length = 5000;
+      saveBrowserHistory(JSON.stringify(merged));
+    }
+    // Import cookies into the browser session partition
+    if (data.cookies && data.cookies.length > 0) {
+      const bs = session.fromPartition(BROWSER_PARTITION);
+      for (const c of data.cookies) {
+        try {
+          const cleanDomain = typeof c.domain === 'string' ? c.domain.replace(/^\./, '') : '';
+          if (!cleanDomain) continue;
+          const url = `http${c.secure ? "s" : ""}://${cleanDomain}${c.path || "/"}`;
+          // Convert Chrome FILETIME (100-ns since 1601-01-01) to Unix timestamp
+          let expires = typeof c.expires === 'number' ? c.expires : 0;
+          if (expires > 1e12) {
+            expires = Math.floor((expires - 11644473600000000) / 10000000);
+          }
+          // Map sameSite from integer to string
+          let sameSite = c.sameSite;
+          if (typeof sameSite === 'number') {
+            const map: Record<string, string> = { '-1': 'unspecified', '0': 'no_restriction', '1': 'lax', '2': 'strict' };
+            sameSite = map[sameSite] || 'unspecified';
+          }
+          await bs.cookies.set({
+            url,
+            name: c.name,
+            value: c.value,
+            domain: cleanDomain,
+            path: c.path || "/",
+            secure: !!c.secure,
+            httpOnly: !!c.httpOnly,
+            sameSite: (String(sameSite || 'unspecified') as "unspecified" | "no_restriction" | "lax" | "strict"),
+            expirationDate: expires > 0 ? expires : undefined,
+          });
+        } catch {}
+      }
+    }
+    // Import passwords into the browser session
+    if (data.passwords && data.passwords.length > 0) {
+      saveBrowserPasswords(JSON.stringify(data.passwords));
+    }
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("browser:export-all", async (): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"],
+      title: "Select export directory",
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { success: false, error: "canceled" };
+    const dir = result.filePaths[0];
+
+    // Export bookmarks (decrypted)
+    const bmRaw = loadBrowserBookmarks();
+    if (bmRaw) {
+      try {
+        const bmData = JSON.parse(bmRaw);
+        const all: Array<{ name: string; url: string }> = [];
+        function collect(children: any[]) {
+          for (const c of children || []) {
+            if (c.type === "url") all.push({ name: c.name, url: c.url || "" });
+            if (c.type === "folder" && c.children) collect(c.children);
+          }
+        }
+        if (bmData?.roots) {
+          collect(bmData.roots.bookmark_bar?.children);
+          collect(bmData.roots.other?.children);
+        }
+        let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n  <DT><H3>Bookmarks Bar</H3>\n  <DL><p>\n`;
+        for (const bm of all) {
+          const name = bm.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+          html += `    <DT><A HREF="${bm.url}" ADD_DATE="${Math.floor(Date.now() / 1000)}">${name}</A>\n`;
+        }
+        html += `  </DL><p>\n</DL><p>`;
+        fs.writeFileSync(path.join(dir, "bookmarks.html"), html, "utf-8");
+      } catch {}
+    }
+
+    // Export history (decrypted)
+    const histRaw = loadBrowserHistory();
+    if (histRaw) {
+      try {
+        const history = JSON.parse(histRaw);
+        let csv = "url,title,visit_time,visit_count\n";
+        for (const entry of history || []) {
+          const url = (entry.url || "").replace(/"/g, '""');
+          const title = (entry.title || "").replace(/"/g, '""');
+          const time = entry.visit_time ? new Date(entry.visit_time).toISOString() : "";
+          const count = entry.visit_count || 1;
+          csv += `"${url}","${title}","${time}",${count}\n`;
+        }
+        fs.writeFileSync(path.join(dir, "history.csv"), csv, "utf-8");
+      } catch {}
+    }
+
+    // Export cookies (decrypted)
+    const cookieRaw = loadBrowserCookies();
+    if (cookieRaw) {
+      try {
+        const cookies = JSON.parse(cookieRaw);
+        let cookieStr = "# Netscape HTTP Cookie File\n# https://curl.se/rfc/cookie_spec.html\n";
+        for (const c of cookies || []) {
+          const domain = c.domain || "";
+          const flag = domain.startsWith(".") ? "TRUE" : "FALSE";
+          const path = c.path || "/";
+          const secure = c.secure ? "TRUE" : "FALSE";
+          const expires = Math.floor(c.expirationDate || c.expires || 0);
+          const name = c.name || "";
+          const value = (c.value || "").replace(/\n/g, "");
+          cookieStr += `${domain}\t${flag}\t${path}\t${secure}\t${expires}\t${name}\t${value}\n`;
+        }
+        fs.writeFileSync(path.join(dir, "cookies.txt"), cookieStr, "utf-8");
+      } catch {}
+    }
+
+    // Export localStorage (decrypted)
+    const lsRaw = loadBrowserLocalStorage();
+    if (lsRaw) {
+      try {
+        const lsData = JSON.parse(lsRaw);
+        fs.writeFileSync(path.join(dir, "localStorage.json"), JSON.stringify(lsData, null, 2), "utf-8");
+      } catch {}
+    }
+
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+
+/* 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Terminal sessions 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶?*/
+
+/* 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞?CDP WebSocket Relay 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜 */
+
+let cdpServer: http.Server | null = null;
+let cdpWss: WebSocketServer | null = null;
+let cdpPort = 0;
+let cdpWebContentsId: number | null = null;
+let cdpWsClient: WS | null = null;
+
+
 
 // A single terminal/pty session tracked by the main process.
 interface PtySession {
@@ -299,7 +1026,7 @@ function getDataDir(): string {
   return path.join(home, ".dunimd", "encre");
 }
 
-/* 鈹€鈹€ Service management helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Service management helpers 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑?*/
 
 /**
  * Reads the PID recorded in the service PID file.
@@ -342,7 +1069,7 @@ function killServiceByPid(pid: number): void {
       // /F = force, /T = tree kill (children too)
       execSync(`taskkill /PID ${pid} /F /T`, { stdio: "ignore" });
     } else {
-      // Kill the full process group 鈥?-pid means "process group id"
+      // Kill the full process group …-pid means "process group id"
       try { process.kill(-pid, "SIGKILL"); } catch { process.kill(pid, "SIGKILL"); }
     }
   } catch { /* process already dead */ }
@@ -409,7 +1136,7 @@ function startPythonServer(): Promise<void> {
       windowsHide: isWin ? true : false,
     });
 
-    // Do NOT unref 鈥?the before-quit handler needs the reference to kill
+    // Do NOT unref …the before-quit handler needs the reference to kill
     // this process tree on exit.
     if (isWin && serverProcess) {
       // Log the PID for debugging; Python server writes its own PID file
@@ -521,7 +1248,7 @@ const TRAY_LABELS: Record<string, { openYim: string; quit: string; tooltip: stri
 };
 
 /**
- * Updates the tray icon tooltip based on whether the service is running.
+  zh: { openYim: "\u6253\u5f00 Encre", quit: "\u9000\u51fa", tooltip: "Encre Server" },
  * @param running - Whether the backend service is currently running.
  */
 function updateTrayStatus(running: boolean): void {
@@ -682,7 +1409,7 @@ function loadAppIcon(): Electron.NativeImage {
  * Left click shows/focuses the main window; right click toggles the popup.
  */
 function createTray(): void {
-  // Use the Encre app icon for the tray 鈥?works on Windows (ICO) and macOS/Linux.
+  // Use the Encre app icon for the tray …works on Windows (ICO) and macOS/Linux.
   const icon = loadAppIcon();
   tray = new Tray(icon);
   const labels = getTrayLabels();
@@ -704,7 +1431,7 @@ function createTray(): void {
   });
 }
 
-/* 鈹€鈹€ Window creation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Window creation 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎?*/
 
 /**
  * Creates the main application BrowserWindow: a frameless, hidden-by-default
@@ -776,7 +1503,7 @@ function createWindow(): void {
   });
 }
 
-// 鈹€鈹€ IPC handlers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?IPC handlers 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?
 
 // Returns the backend WebSocket port to the renderer.
 ipcMain.handle("getServerPort", () => {
@@ -834,7 +1561,7 @@ ipcMain.handle("getAppPath", () => {
   return getDataDir();
 });
 
-// 鈹€鈹€ Crypto keyfile access 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Crypto keyfile access 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫?
 
 // Reads the user's transport-encryption keyfile (~/.encre/keyfile).
 ipcMain.handle("readKeyfile", () => {
@@ -863,7 +1590,7 @@ ipcMain.handle("readMachineId", () => {
   return require("os").hostname();
 });
 
-// 鈹€鈹€ Service IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Service IPC 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?
 
 // Reports whether the backend service is running (via PID file).
 ipcMain.handle("getServiceStatus", () => {
@@ -880,7 +1607,7 @@ ipcMain.handle("restartService", async (event) => {
   return await restartService(event);
 });
 
-// 鈹€鈹€ Logs & Diagnostics IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Logs & Diagnostics IPC 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?
 
 // Opens the active log file (or its folder) in the system file manager.
 ipcMain.handle("openLogs", async () => {
@@ -948,7 +1675,7 @@ ipcMain.handle("getDiagnostics", async () => {
   };
 });
 
-// ── Structured Log Reader ────────────────────────────────────────────
+// 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞?Structured Log Reader 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟鏇㈡⒒娴ｇ鏆遍柛妯荤矒瀹曟垿骞樼紒妯煎帗闂佺绻愰ˇ顖涚妤ｅ啯鈷戦柛鎰絻鐢劑鏌涚€ｎ偅宕岄柡灞界Ч瀹曟寰勬繝浣割棜闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞存粓绠栧娲礃閹绘帒杈呴梺绋款儐閹瑰洭寮诲澶婄濠㈣泛锕ｆ竟?
 
 interface LogEntry {
   timestamp: string;
@@ -1061,7 +1788,7 @@ ipcMain.handle("clearLogs", async () => {
   }
 });
 
-// 鈹€鈹€ Auto-start IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Auto-start IPC 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩?
 
 // Path to the persisted auto-start preference file.
 const AUTOSTART_FILE = path.join(DATA_DIR, "autostart.json");
@@ -1086,7 +1813,7 @@ function readAutoStartFile(): boolean {
  */
 function writeAutoStartFile(enabled: boolean): void {
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(BROWSER_DIR, { recursive: true });
     fs.writeFileSync(AUTOSTART_FILE, JSON.stringify({ openAtLogin: enabled }), "utf-8");
   } catch (err) {
     console.error("Failed to write autostart.json:", err);
@@ -1115,7 +1842,7 @@ ipcMain.handle("setAutoStart", async (_event, enabled: boolean) => {
   }
 });
 
-// 鈹€鈹€ Tray popup IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Tray popup IPC 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?
 
 // Updates the tray locale from the renderer.
 ipcMain.on("tray-locale", (_event, locale: string) => {
@@ -1202,7 +1929,7 @@ ipcMain.on("tray-mode", (_event, mode: string) => {
 // Keep tray theme in sync when OS-level dark mode changes
 nativeTheme.on("updated", () => {
   // We don't know the preference here ("system"/explicit), so read from
-  // localStorage of the main window if possible 鈥?otherwise just resolve
+  // localStorage of the main window if possible …otherwise just resolve
   // with whatever currentTrayTheme already is.
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.executeJavaScript(
@@ -1222,7 +1949,7 @@ nativeTheme.on("updated", () => {
   }
 });
 
-// 鈹€鈹€ Terminal IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Terminal IPC 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?
 
 // Spawns a new pseudo-terminal (pty) session for the in-app terminal.
 ipcMain.handle("terminal:spawn", async (_event, shell?: string, shellArgs?: string[]) => {
@@ -1329,7 +2056,7 @@ ipcMain.handle("terminal:kill", (_event, id: number) => {
   if (t) { t.pty.kill(); terminals.delete(id); }
 });
 
-// 鈹€鈹€ Files IPC 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Files IPC 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎?
 
 // Lists directory entries (directories first, then alphabetical).
 ipcMain.handle("listDirectory", async (_event, dirPath: string) => {
@@ -1370,7 +2097,7 @@ ipcMain.handle("getDrives", async () => {
   return ["/"];
 });
 
-// 鈹€鈹€ Git IPC (proxied to Python backend) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?Git IPC (proxied to Python backend) 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶?
 
 ipcMain.handle("gitStatus", async (_event, repoPath: string) => {
   const now = Date.now();
@@ -1488,7 +2215,7 @@ ipcMain.handle("gitPull", async (_event, repoPath: string) => {
   }
 });
 
-// Win key capture flag — set by renderer when shortcuts panel is open
+// Win key capture flag …set by renderer when shortcuts panel is open
 ipcMain.handle("setWinKeyCapture", (_event, enabled: boolean) => {
   winKeyCapture = enabled;
 });
@@ -1690,7 +2417,98 @@ ipcMain.on("forward-to-child", (_event, channel: string, ...args: any[]) => {
   }
 });
 
-// 鈹€鈹€ App lifecycle 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+ipcMain.handle("open-settings", (_event, panel: string) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("open-settings-panel", panel);
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+/* 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞?CDP WebSocket Relay for BrowserView 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞?*/
+const cdpRelays = new Map<number, { wsc: WebSocket.Server; clients: Set<WebSocket.WebSocket>; debuggerAttached: boolean }>();
+
+function startCdpRelay(webContentsId: number): number {
+  const wsc = new WebSocket.Server({ port: 0, host: "127.0.0.1" });
+  const port = (wsc.address() as any).port;
+  const clients = new Set<WebSocket.WebSocket>();
+  cdpRelays.set(webContentsId, { wsc, clients, debuggerAttached: false });
+
+  wsc.on("connection", (ws) => {
+    clients.add(ws);
+    const wc = webContents.fromId(webContentsId);
+    ws.on("message", (data) => {
+      if (!wc || wc.isDestroyed()) return;
+      try {
+        const msg = JSON.parse(data.toString());
+        wc.debugger.sendCommand(msg.method, msg.params || {})
+          .then((result: any) => {
+            if (msg.id !== undefined) ws.send(JSON.stringify({ id: msg.id, result }));
+          })
+          .catch((err: any) => {
+            if (msg.id !== undefined) ws.send(JSON.stringify({ id: msg.id, error: { code: -32000, message: err.message || String(err) } }));
+          });
+      } catch {}
+    });
+    ws.on("close", () => clients.delete(ws));
+  });
+
+  const wc = webContents.fromId(webContentsId);
+  if (wc && !wc.isDestroyed()) {
+    try {
+      wc.debugger.attach("1.3");
+      cdpRelays.get(webContentsId)!.debuggerAttached = true;
+      wc.debugger.on("message", (_event: any, method: string, params: any) => {
+        for (const c of clients) {
+          if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ method, params }));
+        }
+      });
+    } catch (e) { console.error("[cdp-relay] Failed to attach debugger:", e); }
+  }
+  return port;
+}
+
+function stopCdpRelay(webContentsId: number): void {
+  const relay = cdpRelays.get(webContentsId);
+  if (!relay) return;
+  for (const c of relay.clients) { try { c.close(); } catch {} }
+  relay.clients.clear();
+  try { relay.wsc.close(); } catch {}
+  const wc = webContents.fromId(webContentsId);
+  if (wc && !wc.isDestroyed() && relay.debuggerAttached) { try { wc.debugger.detach(); } catch {} }
+  cdpRelays.delete(webContentsId);
+}
+
+ipcMain.handle("browser:get-cdp-port", (_event, webContentsId: number): number => {
+  const existing = cdpRelays.get(webContentsId);
+  if (existing) return (existing.wsc.address() as any).port;
+  return startCdpRelay(webContentsId);
+});
+
+ipcMain.handle("browser:register-cdp-webview", (_event, webContentsId: number): number => startCdpRelay(webContentsId));
+ipcMain.handle("browser:unregister-cdp-webview", (_event, webContentsId: number): void => stopCdpRelay(webContentsId));
+
+app.on("web-contents-created", (_event, wc) => {
+  wc.on("destroyed", () => { if (cdpRelays.has(wc.id)) stopCdpRelay(wc.id); });
+  if (wc.getType() === "window") {
+    wc.setWindowOpenHandler(() => ({ action: "deny" }));
+  }
+  if (wc.getType() === "webview") {
+    wc.setWindowOpenHandler((details) => {
+      let url = details.url;
+      if (url && !/^https?:\/\//i.test(url)) {
+        try { url = new URL(url, wc.getURL()).href; } catch {}
+      }
+      if (url && /^https?:\/\//i.test(url)) {
+        const hostWc = wc.hostWebContents;
+        if (hostWc) hostWc.send("browser:new-window", url, wc.id);
+      }
+      return { action: "deny" };
+    });
+  }
+});
+
+// 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛?App lifecycle 闂傚倸鍊风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾惧鏌熼崜褏甯涢柣鎾冲暣閺屾稖绠涢幙鍐┬︽繛瀛樼矒缁犳牕顫忓ú顏勭闁圭粯甯掓潏鍛存⒑缁嬫鍎愰柟鐟版喘瀵顓兼径濠勵槯婵犮垼娉涢敃锝嗙珶閺囥垺鈷掑ù锝囶焾閺嗛亶鏌涘Ο鑽ょ煉鐎规洘鍨块獮妯肩磼濡厧甯楅梻浣侯焾缁绘劙藝椤栨稓顩插Δ锝呭暞閳锋垿鏌涢幇顓炵祷閻㈩垬鍔戦弻娑氣偓锝庡亝瀹曞矂鏌＄仦鐣屝х€规洘顨嗗鍕節娴ｅ壊妫滈梻鍌氬€风粈渚€宕崸妤€鍌ㄦ繝濠傜墕绾?
 
 /**
  * Pings the backend `/health` endpoint to verify it is responsive.
@@ -1755,7 +2573,7 @@ app.whenReady().then(async () => {
       console.log(`Background service already running (PID ${existingPid}), connecting`);
       updateTrayStatus(true);
     } else {
-      // PID is stale/zombie 鈥?kill it and restart fresh
+      // PID is stale/zombie …kill it and restart fresh
       console.log(`Server PID ${existingPid} is unresponsive, restarting`);
       killServiceByPid(existingPid);
       await new Promise(r => setTimeout(r, 1500));
@@ -1788,11 +2606,11 @@ app.whenReady().then(async () => {
 
 // Keep the app alive (tray) when all windows close; do not quit.
 app.on("window-all-closed", () => {
-  // Do NOT quit 鈥?service continues running in background.
+  // Do NOT quit …service continues running in background.
   // The system tray keeps the app alive on Windows/Linux.
   // On macOS, window hiding is the default behavior.
   if (process.platform === "darwin") {
-    // macOS: standard behavior 鈥?app stays alive without windows
+    // macOS: standard behavior …app stays alive without windows
   } else {
     // Windows/Linux: window reference cleared, tray keeps app alive
     mainWindow = null;
@@ -1810,7 +2628,7 @@ app.on("activate", () => {
 
 // Tear down everything (terminals, backend, port) on quit.
 app.on("before-quit", () => {
-  console.log("[app] before-quit 鈥?cleaning up all child processes");
+  console.log("[app] before-quit …cleaning up all child processes");
   // Kill all terminal sessions
   for (const [, t] of terminals) {
     try { t.pty.kill(); } catch {}
@@ -1843,3 +2661,5 @@ process.on("exit", () => {
   try { execSync(`taskkill /F /IM python.exe 2>nul`, { stdio: "ignore" }); } catch {}
   try { execSync(`taskkill /F /IM "Encre.exe" /FI "PID ne ${process.pid}" 2>nul`, { stdio: "ignore" }); } catch {}
 });
+
+

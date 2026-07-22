@@ -78,7 +78,7 @@ class GroqBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "llama-3.3-70b-versatile",
+        model: str = "llama-4-maverick-17b",
         **kwargs: Any,
     ) -> None:
         """Initialise the Groq backend.
@@ -87,7 +87,7 @@ class GroqBackend(OpenAISSEBackend):
             api_key: Groq API key.
             base_url: Custom API base URL.  Defaults to
                 ``https://api.groq.com/openai/v1``.
-            model: Model name.  Defaults to ``llama-3.3-70b-versatile``.
+            model: Model name.  Defaults to ``llama-4-maverick-17b``.
                 Other valid values: ``llama-4-scout``, ``gpt-oss-120b``.
             **kwargs: Additional arguments passed to :class:`OpenAISSEBackend`.
         """

@@ -5,8 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Encre</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="design-system.css" />
   <link rel="stylesheet" href="xterm.css" />
+  <link rel="stylesheet" href="codicon.css" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="monaco/vs/loader.js"></script>
+  <script>
+    require.config({ paths: { vs: 'monaco/vs' } });
+    require(['vs/editor/editor.main'], function() {});
+  </script>
 </head>
 <body>
   <div id="app-shell">
@@ -127,6 +134,10 @@
             <i data-lucide="network" class="lucide"></i>
             <span data-i18n="sidebar.gateway">Gateway</span>
           </button>
+          <button class="settings-nav-item" data-panel="browser">
+            <i data-lucide="globe" class="lucide"></i>
+            <span data-i18n="sidebar.browser">Browser</span>
+          </button>
           <div class="settings-nav-divider"></div>
           <button class="settings-nav-item" data-panel="index">
              <i data-lucide="file-text" class="lucide"></i>
@@ -228,6 +239,7 @@
               <div class="settings-panel" id="panel-storage"></div>
               <div class="settings-panel" id="panel-model"></div>
               <div class="settings-panel" id="panel-gateway"></div>
+              <div class="settings-panel" id="panel-browser"></div>
               <div class="settings-panel" id="panel-index"></div>
               <div class="settings-panel" id="panel-skills"></div>
               <div class="settings-panel" id="panel-rules"></div>
@@ -287,6 +299,20 @@
                         <i data-lucide="at-sign" class="lucide"></i>
                       </button>
                     </div>
+                  </div>
+                  <div id="toolbar-mode-chip" class="toolbar-mode-chip hidden" data-mode="">
+                    <i data-lucide="list-checks" class="chip-icon" style="width:12px;height:12px;"></i>
+                    <span class="toolbar-mode-label"></span>
+                    <button class="toolbar-mode-close" id="btn-mode-close" data-i18n-title="input.cancelMode" title="Cancel mode">
+                      <i data-lucide="x" class="lucide" style="width:11px;height:11px;"></i>
+                    </button>
+                  </div>
+                  <div id="toolbar-command-chip" class="toolbar-command-chip hidden" data-command="">
+                    <i data-lucide="command" class="chip-icon" style="width:12px;height:12px;"></i>
+                    <span class="toolbar-command-label"></span>
+                    <button class="toolbar-command-close" id="btn-command-close" data-i18n-title="input.cancelCommand" title="Clear command">
+                      <i data-lucide="x" class="lucide" style="width:11px;height:11px;"></i>
+                    </button>
                   </div>
                 </div>
                 <div class="toolbar-right">

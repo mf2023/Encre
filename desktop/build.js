@@ -44,7 +44,7 @@ esbuild.buildSync({
   platform: "node",
   target: "node20",
   outfile: path.join(desktop, "dist", "main.js"),
-  external: ["electron", "node-pty"],
+  external: ["electron", "node-pty", "ws"],
 });
 
 // Bundle the preload script (electron stays external for security).
@@ -76,6 +76,28 @@ const xtermCssDst = path.join(desktop, "renderer", "xterm.css");
 if (fs.existsSync(xtermCssSrc)) {
   fs.copyFileSync(xtermCssSrc, xtermCssDst);
   console.log("xterm.css copied.");
+}
+
+// Copy codicon CSS + fonts
+const codiconCss = path.join(desktop, "node_modules", "@vscode", "codicons", "dist", "codicon.css");
+const codiconCssDst = path.join(desktop, "renderer", "codicon.css");
+if (fs.existsSync(codiconCss)) {
+  fs.copyFileSync(codiconCss, codiconCssDst);
+  console.log("codicon.css copied.");
+}
+const codiconFont = path.join(desktop, "node_modules", "@vscode", "codicons", "dist", "codicon.ttf");
+const codiconFontDst = path.join(desktop, "renderer", "codicon.ttf");
+if (fs.existsSync(codiconFont)) {
+  fs.copyFileSync(codiconFont, codiconFontDst);
+  console.log("codicon.ttf copied.");
+}
+
+// Copy Monaco Editor
+const monacoVs = path.join(desktop, "node_modules", "monaco-editor", "min", "vs");
+const monacoVsDst = path.join(desktop, "renderer", "monaco", "vs");
+if (fs.existsSync(monacoVs)) {
+  copyRecursive(monacoVs, monacoVsDst);
+  console.log("monaco editor copied.");
 }
 
 /**

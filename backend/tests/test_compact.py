@@ -348,40 +348,34 @@ class TestCompactionStrategies:
 # EncreCompactEngine
 # ===========================================================================
 
+class _MockBackend:
+    """Minimal mock backend for CompactEngine tests."""
+    def context_window_size(self) -> int:
+        return 128000
+
+    @property
+    def model(self) -> str:
+        return "mock-model"
+
+
 class TestCompactEngine:
-    """Test suite for CompactEngine."""
+    """Test suite for CompactEngine (current API)."""
     def test_create(self):
         """Test: Create."""
         engine = EncreCompactEngine()
-        # Verify: engine is not None
-        assert engine is not None
-
-    def test_with_strategy(self):
-        """Test: With strategy."""
-        s = EncreAlwaysCompactStrategy()
-        engine = EncreCompactEngine(strategy=s)
-        # Verify: engine is not None
         assert engine is not None
 
     def test_should_compact(self):
-        """Test: Should compact."""
+        """Test: Should compact (sync method)."""
         engine = EncreCompactEngine()
         msgs = _make_messages(2)
-        # Verify: isinstance(asyncio.run(engine.should_compact(msgs, 128000)), bool)
-        assert isinstance(asyncio.run(engine.should_compact(msgs, 128000)), bool)
+        assert isinstance(engine.should_compact(msgs, 128000), bool)
 
     def test_compact(self):
-        """Test: Compact."""
+        """Test: Compact with mock backend."""
         engine = EncreCompactEngine()
         msgs = _make_messages(30)
-        result = asyncio.run(engine.compact(msgs, 128000))
-        # Verify: result is not None
+        backend = _MockBackend()
+        result = asyncio.run(engine.compact(msgs, backend=backend, turn_count=0))
+        # Falls back to _budget_fallback since mock backend has no real API
         assert result is not None
-
-    def test_set_strategy(self):
-        """Test: Set strategy."""
-        engine = EncreCompactEngine()
-        s = EncreAlwaysCompactStrategy()
-        engine.set_strategy(s)
-        # Verify: engine._strategy is s
-        assert engine._strategy is s

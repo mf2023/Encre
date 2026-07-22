@@ -270,9 +270,9 @@ class TestThinking:
         resolved = resolve_thinking_config(None, "claude-sonnet-4-20250514")
         # Confirm the expected result for this scenario: adaptive thinking resolution.
         assert isinstance(resolved, AdaptiveThinking)
-        # None config + non-claude model -> disabled
-        resolved2 = resolve_thinking_config(None, "gpt-4o")
-        assert isinstance(resolved2, DisabledThinking)
+        # None config + non-claude model -> adaptive (GPT models now support thinking)
+        resolved2 = resolve_thinking_config(None, "gpt-5.6")
+        assert isinstance(resolved2, AdaptiveThinking)
 
     def test_get_thinking_budget(self):
         """Verifies that get thinking budget."""

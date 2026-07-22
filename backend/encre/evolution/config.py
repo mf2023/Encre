@@ -47,25 +47,33 @@ class EvolutionConfig:
     optimizer: Any = None
     reflex: Any = None
     meta: Any = None
+    reviewer: Any = None
+    event_store: Any = None
     learner_enabled: bool = True
     optimizer_enabled: bool = True
     reflex_enabled: bool = True
     meta_enabled: bool = True
+    reviewer_enabled: bool = True
+    event_store_enabled: bool = True
 
     @classmethod
     def create_default(cls) -> "EvolutionConfig":
         """Build a fully-enabled config with components wired to disk storage."""
         from encre.config import get_data_dir
+        from encre.evolution.event_store import EventStore
         from encre.evolution.learner import EncreEvolutionLearner
         from encre.evolution.meta import EncreMetaCognition
         from encre.evolution.optimizer import EncreStrategyOptimizer
         from encre.evolution.reflex import EncreReflexLoop
+        from encre.evolution.reviewer import BackgroundReviewer
 
         return cls(
             learner=EncreEvolutionLearner(storage_path=str(get_data_dir() / "evolution" / "state.json")),
             optimizer=EncreStrategyOptimizer(),
             reflex=EncreReflexLoop(enabled=True),
             meta=EncreMetaCognition(),
+            reviewer=BackgroundReviewer(),
+            event_store=EventStore(),
         )
 
     @classmethod
@@ -86,6 +94,8 @@ class EvolutionConfig:
             optimizer_enabled=False,
             reflex_enabled=False,
             meta_enabled=False,
+            reviewer_enabled=False,
+            event_store_enabled=False,
         )
 
 

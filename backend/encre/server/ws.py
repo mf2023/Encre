@@ -133,7 +133,9 @@ from encre.server.protocol import (
     ClientSearch,
     ClientSetActiveModel,
     ClientSetGitignore,
+    ClientSetMode,
     ClientSetPlanMode,
+    ClientSetCommand,
     ClientSpecApprove,
     ClientSpecReject,
     ClientSteer,
@@ -221,6 +223,23 @@ from encre.utils.types import (  # noqa: E402
 
 logger = logging.getLogger("encre.server.ws")
 
+# Bridge standard logging to loguru so ws.py logs appear in desktop output
+try:
+    from loguru import logger as _loguru_logger
+    import sys
+    class _LoguruHandler(logging.Handler):
+        def emit(self, record):
+            try:
+                _loguru_logger.opt(depth=6, exception=record.exc_info).log(record.levelname, record.getMessage())
+            except Exception:
+                pass
+    _loguru_handler = _LoguruHandler()
+    _loguru_handler.setLevel(logging.DEBUG)
+    logging.getLogger("encre.server.ws").addHandler(_loguru_handler)
+    logging.getLogger("encre.server.ws").setLevel(logging.DEBUG)
+except Exception:
+    pass
+
 
 class EncreWSHandler:
     """Per-connection handler for the Encre WebSocket protocol.
@@ -273,6 +292,105 @@ class EncreWSHandler:
             logger.warning("[_send] Failed to send %s: %s", msg_type, exc)
             # WebSocket disconnected -- cancel any running agent
             self._cancel_current_task()
+
+    async def _send_session_mode(self, ws, session) -> None:
+        """Send mode_changed for the session's persisted mode (if any)."""
+        try:
+            mode = (session.metadata.get("slash_command_mode") if hasattr(session, 'metadata') else None) or ""
+            if mode:
+                await self._send(ws, "mode_changed", mode=mode, session_id=session.session_id)
+        except Exception:
+            pass
+
+    async def _apply_mode(self, ws, session, mode: str) -> str:
+        """Apply a slash-command mode transition through the single entry point.
+
+        Normalises ``mode`` (only ``""``/``"plan"``/``"spec"`` survive) and
+        drives it through ``loop.set_mode`` so ``config.slash_command_mode``,
+        the ``session.metadata`` mirror, and the derived ``plan_mode_active``
+        flag never disagree.  Then broadcasts ``mode_changed`` so the desktop
+        toolbar chip / exit button reflect the new mode, and -- only when the
+        plan-active state actually changed -- ``plan_mode_changed`` so the plan
+        proposals panel stays in sync.  Returns the normalised mode.
+        """
+        valid = ("", "plan", "spec")
+        mode = mode if mode in valid else ""
+        was_plan = session.agent.loop.plan_mode_active
+        session.agent.loop.set_mode(mode)
+        now_plan = session.agent.loop.plan_mode_active
+        logger.info("[set_mode] mode applied: '%s' session=%s plan_mode_active=%s->%s",
+                    mode, session.session_id[:8], was_plan, now_plan)
+        await self._send(ws, "mode_changed", mode=mode, session_id=session.session_id)
+        if was_plan != now_plan:
+            await self._send(ws, "plan_mode_changed",
+                             active=now_plan, session_id=session.session_id)
+        return mode
+
+    def _restore_persisted_mode(self, session) -> None:
+        """Re-apply a session's persisted slash-command mode after (re)load.
+
+        A resumed or freshly-created session carries its mode in metadata but
+        the agent's ``config.slash_command_mode`` starts at the default.  Drive
+        it through ``loop.set_mode`` so the string, metadata mirror, and
+        derived ``plan_mode_active`` flag all agree before the next run.
+        """
+        try:
+            mode = session.metadata.get("slash_command_mode", "") or ""
+            session.agent.loop.set_mode(mode)
+        except Exception:
+            logger.debug("failed to restore persisted mode", exc_info=True)
+
+    async def _send_session_command(self, ws, session) -> None:
+        """Send command_changed for the session's persisted command (if any)."""
+        try:
+            cmd = (session.metadata.get("active_command") if hasattr(session, 'metadata') else None)
+            if cmd and cmd.get("name"):
+                await self._send(ws, "command_changed", command=cmd,
+                                 session_id=session.session_id)
+        except Exception:
+            pass
+
+    async def _apply_command(self, ws, session, name: str, prompt: str = "",
+                             icon: str = "", title: str = "") -> None:
+        """Apply a slash-command activation/clear through the single entry point.
+
+        Stores the command (``{name, prompt, icon, title}``) via
+        ``loop.set_command`` so ``config.active_command`` and the
+        ``session.metadata`` mirror stay consistent, then broadcasts
+        ``command_changed`` so the desktop command chip reflects the new
+        state.  An empty ``name`` clears the active command.  A command is
+        independent of the mode (plan/spec) -- both may be active at once.
+        """
+        name = (name or "").strip()
+        if name:
+            session.agent.loop.set_command(name, prompt, icon=icon, title=title)
+        else:
+            session.agent.loop.clear_command()
+        cmd = session.agent.config.active_command
+        logger.info("[set_command] command applied: '%s' session=%s",
+                    name or "(cleared)", session.session_id[:8])
+        await self._send(ws, "command_changed", command=cmd,
+                         session_id=session.session_id)
+
+    def _restore_persisted_command(self, session) -> None:
+        """Re-apply a session's persisted slash command after (re)load.
+
+        Mirrors :meth:`_restore_persisted_mode`: the persisted command lives
+        in ``session.metadata["active_command"]`` but ``config.active_command``
+        starts at ``None``.  Drive it through ``loop.set_command`` so the
+        in-memory mirror agrees before the next run re-injects the block.
+        """
+        try:
+            cmd = session.metadata.get("active_command") or {}
+            if cmd.get("name"):
+                session.agent.loop.set_command(
+                    cmd.get("name", ""),
+                    cmd.get("prompt", ""),
+                    icon=cmd.get("icon", ""),
+                    title=cmd.get("title", ""),
+                )
+        except Exception:
+            logger.debug("failed to restore persisted command", exc_info=True)
 
     @staticmethod
     def _renderer_session_messages(session: Any) -> list[dict[str, Any]]:
@@ -349,6 +467,12 @@ class EncreWSHandler:
                     self._info.agent.config.mcp_servers = servers
             except Exception:
                 pass
+            # Re-apply any persisted slash-command mode so config and the
+            # derived ``plan_mode_active`` flag are correct before the first run.
+            self._restore_persisted_mode(self._info)
+            # Re-apply any persisted slash *command* (sticky prompt injection)
+            # so its ``command_instructions`` block is re-injected next run.
+            self._restore_persisted_command(self._info)
         return self._info
 
     async def handle(self, ws) -> None:
@@ -375,6 +499,14 @@ class EncreWSHandler:
                     self._current_session_id = resumed.session_id
                     sess = resumed.agent.session
                     sess.rebuild_artifacts_from_messages()
+                    # Re-apply the resumed session's persisted slash-command
+                    # mode so config + derived plan_mode_active agree with
+                    # metadata before the first run (and before _send_session_mode
+                    # broadcasts the chip to the frontend).
+                    self._restore_persisted_mode(self._info)
+                    # Re-apply the persisted slash command (sticky injection)
+                    # alongside the mode, then broadcast its chip too.
+                    self._restore_persisted_command(self._info)
                     msgs = self._renderer_session_messages(sess)
                     plan = sess.plan_items
                     arts = sess.artifacts
@@ -856,9 +988,39 @@ class EncreWSHandler:
                         if active_agent.permission_mode:
                             session.agent.config.permission_mode = active_agent.permission_mode
 
-                    session.agent.config.slash_command_mode = msg.mode or ""
+                    # Mode transitions.  The desktop frontend echoes the
+                    # active mode on every ``run`` message (inline chip or the
+                    # persisted mode).  Treat an explicit ``mode`` that differs
+                    # from the session's persisted mode as a real transition
+                    # (the user typed /plan or /spec, or switched modes) and
+                    # drive it through the single entry point so the string,
+                    # metadata mirror and derived ``plan_mode_active`` flag
+                    # stay consistent, then broadcast ``mode_changed`` so the
+                    # toolbar chip / exit button appear.  When there is no
+                    # explicit mode, just echo the persisted mode into config
+                    # for this run WITHOUT touching the persistent slot --
+                    # this avoids the old "sticky restore" bug where a one-off
+                    # /plan kept replaying across every later normal message.
+                    _persisted = session.metadata.get("slash_command_mode", "") or ""
+                    if msg.mode and msg.mode != _persisted:
+                        await self._apply_mode(ws, session, msg.mode)
+                    else:
+                        session.agent.config.slash_command_mode = msg.mode or _persisted
+                    logger.info("[run] slash_command_mode resolved to: '%s' (msg.mode='%s', persisted='%s')",
+                                session.agent.config.slash_command_mode, msg.mode, _persisted)
 
-                    session.agent.add_message("user", prompt, mode=msg.mode or "")
+                    # Echo the persisted slash *command* into config for this
+                    # run so its ``command_instructions`` block is re-injected.
+                    # Activation/clearing is handled by the dedicated
+                    # ``set_command`` message; here we only keep the in-memory
+                    # mirror in sync with the persisted slot (e.g. after a
+                    # session switch where config was not yet restored).
+                    if not getattr(session.agent.config, "active_command", None):
+                        session.agent.config.active_command = (
+                            session.metadata.get("active_command") or None
+                        )
+
+                    session.agent.add_message("user", prompt, mode=session.agent.config.slash_command_mode)
                     # Immediately update the in-memory index and broadcast so
                     # the sidebar shows the new entry before the model responds.
                     if not session.agent.session.metadata.get("temp_chat"):
@@ -898,8 +1060,19 @@ class EncreWSHandler:
                     except Exception:
                         logger.debug("agent has no set_engine_emit", exc_info=True)
 
-                    async def _run_agent(*, session=session, prompt=prompt, system_prompt=system_prompt, mode_prompt=mode_prompt):
+                    # Snapshot the active_command before the task is created
+                    # so the _run_agent closure captures it by value, not by
+                    # reference, avoiding the race with the frontend's
+                    # set_command clear message.
+                    _active_command = getattr(session.agent.config, "active_command", None)
+
+                    async def _run_agent(*, session=session, prompt=prompt, system_prompt=system_prompt, mode_prompt=mode_prompt, _saved_command=_active_command):
                         try:
+                            # Restore active_command that may have been cleared
+                            # by the frontend's set_command clear message (sent
+                            # right after the run message, creating a race).
+                            if _saved_command and not getattr(session.agent.config, "active_command", None):
+                                session.agent.config.active_command = _saved_command
                             async for event in session.agent.run(
                                 prompt=prompt, system_prompt=system_prompt,
                                 custom_instructions=mode_prompt):
@@ -931,12 +1104,24 @@ class EncreWSHandler:
                         except Exception as e:
                             logger.error(f"Agent run failed: {e}\n{traceback.format_exc()}")
                             from encre.backends.base import format_backend_error
+                            from encre.errors import classify_error_code
                             err_msg = format_backend_error(e)
+                            err_code = classify_error_code(err_msg).value
                             with contextlib.suppress(Exception):
-                                await self._send(ws, "error", message=err_msg, code="execution_error", session_id=session.session_id)
+                                await self._send(ws, "error", message=err_msg, code=err_code, category="unknown", retryable=False, details={}, session_id=session.session_id)
                             with contextlib.suppress(Exception):
-                                await self._send(ws, "finish", reason="error", session_id=session.session_id)
+                                await self._send(ws, "finish", reason="error", error_code=err_code, session_id=session.session_id)
                         finally:
+                            # One-shot commands: clear the active command after
+                            # the run completes so it is not re-injected on the
+                            # next turn.  The frontend also sends a set_command
+                            # clear message, but this inline clear is the
+                            # authoritative one-shot guarantee.
+                            if _saved_command and _saved_command.get("name"):
+                                try:
+                                    session.agent.loop.clear_command()
+                                except Exception:
+                                    pass
                             if session.agent.telemetry.enabled:
                                 with contextlib.suppress(Exception):
                                     summary = session.agent.telemetry.get_summary()
@@ -991,10 +1176,50 @@ class EncreWSHandler:
                     if session is None:
                         session = self._get_or_create_session()
                     self._manager.touch(session.session_id)
-                    if msg.active:
-                        session.agent.loop.enter_plan_mode(reason=msg.reason)
-                    else:
-                        session.agent.loop.exit_plan_mode(reason=msg.reason)
+                    # Legacy ``set_plan_mode``: map the boolean onto the
+                    # unified mode state via the single entry point and
+                    # broadcast ``mode_changed``/``plan_mode_changed`` so the
+                    # frontend toolbar chip and plan panel stay in sync (this
+                    # path previously mutated the bool without notifying).
+                    await self._apply_mode(ws, session, "plan" if msg.active else "")
+
+                elif isinstance(msg, ClientSetMode):
+                    sid = msg.session_id or self._current_session_id
+                    session = (
+                        self._manager.get_session(sid)
+                        if sid else None
+                    )
+                    if session is None:
+                        session = self._get_or_create_session()
+                    self._manager.touch(session.session_id)
+                    logger.info("[set_mode] received mode='%s' session=%s",
+                                msg.mode, session.session_id[:8])
+                    # Drive every persistent-mode change through the single
+                    # entry point.  ``_apply_mode`` normalises the value,
+                    # updates config + metadata mirror + derived flag, and
+                    # broadcasts ``mode_changed`` / ``plan_mode_changed`` so
+                    # the desktop toolbar chip and plan panel reflect it.
+                    _mode = await self._apply_mode(ws, session, msg.mode)
+                    if not _mode:
+                        logger.info("[set_mode] mode cleared for session=%s", session.session_id[:8])
+
+                elif isinstance(msg, ClientSetCommand):
+                    sid = msg.session_id or self._current_session_id
+                    session = (
+                        self._manager.get_session(sid)
+                        if sid else None
+                    )
+                    if session is None:
+                        session = self._get_or_create_session()
+                    self._manager.touch(session.session_id)
+                    # Activate / clear the sticky slash command through the
+                    # single entry point.  Stores the command in config +
+                    # session.metadata so it survives restart, re-injects its
+                    # ``command_instructions`` block every turn, and broadcasts
+                    # ``command_changed`` so the command chip stays in sync.
+                    await self._apply_command(
+                        ws, session, msg.name, msg.prompt, msg.icon, msg.title,
+                    )
 
                 elif isinstance(msg, ClientRespondQuestion):
                     session = (
@@ -1120,6 +1345,13 @@ class EncreWSHandler:
                     )
                     config_data["custom_slash_commands"] = load_custom_slash_commands()
                     config_data["keybinds"] = load_keybinds()
+                    # Ship the session's active command (if any) so the
+                    # frontend can render the command chip on connect /
+                    # config refresh.
+                    config_data["active_command"] = (
+                        getattr(info.agent.config, "active_command", None)
+                        or info.agent.session.metadata.get("active_command")
+                    )
                     await self._send(ws, "config_data", config=config_data)
 
                 elif isinstance(msg, ClientUpdateModels):
@@ -1863,6 +2095,8 @@ class EncreWSHandler:
                                      plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id,
                                      request_id=msg.request_id)
+                    await self._send_session_mode(ws, info)
+                    await self._send_session_command(ws, info)
                     _t1 = time.time()
                     logger.info("[workspace] open_workspace done session=%s total=%.2fs",
                                 info.session_id[:8], _t1 - _t_open)
@@ -1922,6 +2156,8 @@ class EncreWSHandler:
                                      plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id,
                                      request_id=msg.request_id)
+                    await self._send_session_mode(ws, info)
+                    await self._send_session_command(ws, info)
 
                 elif isinstance(msg, ClientGetMemoryList):
                     from encre.config import get_data_dir
@@ -2270,6 +2506,8 @@ class EncreWSHandler:
                                      plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id,
                                      is_running=session.is_running, request_id=msg.request_id)
+                    await self._send_session_mode(ws, session)
+                    await self._send_session_command(ws, session)
 
                 elif isinstance(msg, ClientIclawResume):
                     logger.info("[iclaw] resume requested")
@@ -4022,7 +4260,15 @@ class EncreWSHandler:
             # a non-retryable 400 mid-stream).  Surface it to the UI immediately
             # so the user sees the provider's actual error message instead of a
             # generic "Error 400" once the agent loop finally unwinds.
-            await self._send(ws, "error", message=event.error, code="backend_error", session_id=sid)
+            # Includes code/category/retryable for structured frontend rendering.
+            await self._send(ws, "error",
+                message=event.error,
+                code=event.code or "backend_error",
+                category=event.category or "unknown",
+                retryable=event.retryable,
+                retry_after=event.retry_after,
+                details=event.details or {},
+                session_id=sid)
 
         elif isinstance(event, Reference):
             await self._send(ws, "references_update", references=[event.reference], session_id=sid)
@@ -4040,18 +4286,43 @@ class EncreWSHandler:
             await self._send(ws, "assistant_boundary", session_id=sid)
 
         elif isinstance(event, CompactNotification):
+            # Send the compacted message list so the frontend's state
+            # matches the backend. Without this, the frontend still shows
+            # compacted-away messages, leading to "Message not found"
+            # errors when the user tries to rollback to them.
+            compact_msgs = self._renderer_session_messages(_info.agent.session) if _info else []
             await self._send(ws, "compact",
                 old_count=event.old_count,
                 new_count=event.new_count,
                 old_tokens=event.old_tokens,
                 new_tokens=event.new_tokens,
+                messages=compact_msgs,
                 session_id=sid)
             await _send_agent_state()
         elif isinstance(event, SystemMessage):
-            await self._send(ws, "system_message",
-                content=event.content,
-                kind=event.kind,
-                session_id=sid)
+            content = event.content or ""
+            # Spec data rides on a SystemMessage with an ``__spec_data__:``
+            # prefix (loop.py emits it after parsing a generated spec).
+            # The raw JSON must NEVER reach the frontend as a visible
+            # "System message" bubble -- it would render as a leaked
+            # prompt-like strip at the top of the conversation.  Re-route
+            # it as a proper ``spec_update`` event so the frontend renders
+            # the spec card (with Approve/Reject) instead.
+            if content.startswith("__spec_data__:"):
+                try:
+                    import json as _json
+                    spec_data = _json.loads(content[len("__spec_data__:"):])
+                    await self._send(ws, "spec_update",
+                                     spec=spec_data,
+                                     status="review",
+                                     session_id=sid)
+                except Exception:
+                    logger.warning("[spec] failed to relay spec_update from system message", exc_info=True)
+            else:
+                await self._send(ws, "system_message",
+                                content=content,
+                                kind=event.kind,
+                                session_id=sid)
             # Also push updated context usage to the canvas panel
             if _info is not None:
                 ctx_msgs = _info.agent.session.get_context_messages()
@@ -4127,8 +4398,20 @@ class EncreWSHandler:
                 last = _info.agent.session.messages[-1]
                 if last.get("role") == "assistant":
                     last_msg_id = last.get("id")
+            # If compaction occurred during this turn, send the updated
+            # message list so the frontend's state matches the backend.
+            # Without this, compacted-away messages stay in the frontend
+            # and cause "Message not found" errors on rollback.
+            finish_msgs = []
+            if event.compacted and _info:
+                finish_msgs = self._renderer_session_messages(_info.agent.session)
             await self._send(ws, "finish", reason=event.reason, usage=event.usage,
-                             error=event.error, assistant_message_id=last_msg_id,
+                             error=event.error,
+                             error_code=event.error_code or "",
+                             error_category=event.error_category or "",
+                             assistant_message_id=last_msg_id,
+                             compacted=event.compacted,
+                             messages=finish_msgs if finish_msgs else None,
                              session_id=sid)
             await _send_agent_state()
             # Push updated context usage so the canvas panel stays in sync

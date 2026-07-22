@@ -444,7 +444,11 @@ class WebSocketChannel(Channel):
             await ws.send(json.dumps({
                 "type": "error",
                 "message": event.error,
-                "code": "backend_error",
+                "code": event.code or "backend_error",
+                "category": event.category or "unknown",
+                "retryable": event.retryable,
+                "retry_after": event.retry_after,
+                "details": event.details or {},
                 "session_id": session_id or "",
             }, ensure_ascii=False))
 

@@ -57,7 +57,7 @@ class GLMBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "glm-4.7",
+        model: str = "glm-5.2",
         **kwargs: Any,
     ) -> None:
         """Initialize the GLM (Zhipu AI) backend.

@@ -96,6 +96,20 @@ interface ElectronAPI {
   onSwitchSession(callback: (sessionId: string) => void): () => void;
   onSwitchWorkspace(callback: (path: string) => void): () => void;
   browserClearData(): Promise<{ success: boolean; error?: string }>;
+  getBookmarks(): Promise<any>;
+  setBookmarks(data: any): Promise<{ success: boolean }>;
+  addBookmark(entry: { url: string; title: string }): Promise<{ success: boolean }>;
+  removeBookmark(url: string): Promise<{ success: boolean }>;
+  getHistory(): Promise<any[]>;
+  addHistoryEntry(entry: { url: string; title: string }): Promise<{ success: boolean }>;
+  clearHistory(): Promise<{ success: boolean }>;
+  exportFile(options: { content: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>;
+
+  // Browser import/export
+  detectBrowsers(): Promise<Array<{ id: string; name: string; profilePath: string; hasBookmarks: boolean; hasCookies: boolean; hasHistory: boolean }>>;
+  importBrowserData(browserId: string, profilePath: string): Promise<{ success: boolean; data?: any; error?: string }>;
+  saveImportedBrowserData(data: { bookmarks?: any; history?: any[]; cookies?: any[] }): Promise<{ success: boolean; error?: string }>;
+  exportAllBrowserData(): Promise<{ success: boolean; error?: string }>;
   openExternal(url: string): Promise<boolean>;
   getAppVersions(): Promise<{ desktop: string; agent: string }>;
   getLicenseContent(): Promise<string>;
@@ -104,6 +118,8 @@ interface ElectronAPI {
   onChildAddTab(callback: (view: string, label: string) => void): () => void;
   forwardToChild(channel: string, ...args: any[]): void;
   onChildEvent(channel: string, callback: (data: any) => void): () => void;
+  openSettings(panel: string): Promise<void>;
+  onNewWindow(callback: (url: string, wcId: number) => void): () => void;
   openLogs(): Promise<void>;
   getDiagnostics(): Promise<{
     versions: { desktop: string; agent: string };
@@ -127,6 +143,16 @@ interface ElectronAPI {
   onRestartProgress(callback: (data: { progress: number }) => void): () => void;
   restartService(): Promise<{ success: boolean; error?: string }>;
   openFolder(folderPath: string): Promise<boolean>;
+
+  // Browser CDP
+  getCdpPort(webContentsId: number): Promise<number>;
+  registerCdpWebview(webContentsId: number): Promise<number>;
+  unregisterCdpWebview(webContentsId: number): Promise<void>;
+
+  // Site info & permissions
+  getSiteInfo(url: string): Promise<{ origin: string; isSecure: boolean; cookieCount: number; permissions: Array<{ name: string; granted: boolean }> }>;
+  setPermission(origin: string, permission: string, granted: boolean): Promise<{ success: boolean }>;
+  getCookiesForOrigin(url: string): Promise<{ cookies: Array<{ name: string; value: string; domain: string; path: string; secure: boolean; httpOnly: boolean; sameSite: string; expirationDate?: number }> }>;
 }
 
 /** Global `Window` augmentation exposing the Electron bridge and icon runtime. */

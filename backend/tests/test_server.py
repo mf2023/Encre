@@ -189,9 +189,9 @@ class TestClientConfigure:
 
     def test_from_dict(self):
         """Verifies that from dict."""
-        msg = ClientConfigure.from_dict({"config": {"model": "gpt-4o"}})
+        msg = ClientConfigure.from_dict({"config": {"model": "gpt-5.6"}})
         # Confirm the expected result for this scenario: from dict.
-        assert msg.config == {"model": "gpt-4o"}
+        assert msg.config == {"model": "gpt-5.6"}
 
     def test_from_dict_empty(self):
         """Verifies that from dict empty."""
@@ -343,8 +343,7 @@ class TestEncodeServerMessage:
     """
     def test_returns_json_string(self):
         """Verifies that returns json string."""
-        result = encode_server_message("text_delta", text="hello")
-        # Confirm the expected result for this scenario: returns json string.
+        result = encode_server_message("text_delta", encrypt=False, text="hello")
         assert isinstance(result, str)
         parsed = json.loads(result)
         assert parsed["type"] == "text_delta"
@@ -352,16 +351,13 @@ class TestEncodeServerMessage:
 
     def test_ensure_ascii_false(self):
         """Verifies that ensure ascii false."""
-        # ensure_ascii=False means unicode is preserved
-        result = encode_server_message("text_delta", text="cafe")
-        # Confirm the expected result for this scenario: ensure ascii false.
+        result = encode_server_message("text_delta", encrypt=False, text="cafe")
         assert "cafe" in result
 
     def test_no_extra_kwargs(self):
         """Verifies that no extra kwargs."""
-        result = encode_server_message("pong")
+        result = encode_server_message("pong", encrypt=False)
         parsed = json.loads(result)
-        # Confirm the expected result for this scenario: no extra kwargs.
         assert parsed == {"type": "pong"}
 
 
@@ -456,7 +452,7 @@ class TestConvenienceEncoders:
         msg = encode_finish("stop")
         parsed = json.loads(msg)
         # Confirm the expected result for this scenario: encode finish.
-        assert parsed == {"type": "finish", "reason": "stop", "usage": None}
+        assert parsed == {"type": "finish", "reason": "stop", "usage": None, "error": None}
 
     def test_encode_finish_with_usage(self):
         """Verifies that encode finish with usage."""

@@ -54,21 +54,94 @@ function readBatch<T, R>(items: T[], fn: (item: T) => Promise<R>, size: number):
 export function getFileIcon(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase();
   const icons: Record<string, string> = {
-    md: "file-text", txt: "file-text",
-    json: "file-json-2",
-    py: "file-code-2", js: "file-code-2", ts: "file-code-2",
-    tsx: "file-code-2", jsx: "file-code-2",
-    html: "file-code-2", css: "palette", scss: "palette",
-    rs: "file-cog", go: "file-code-2", java: "coffee",
-    svg: "file-image", png: "file-image", jpg: "file-image",
-    jpeg: "file-image", gif: "file-image", webp: "file-image",
+    // JavaScript / TypeScript
+    js: "braces", jsx: "braces", mjs: "braces", cjs: "braces",
+    ts: "file-code", tsx: "file-code", mts: "file-code", cts: "file-code",
+    // Python
+    py: "file-type", pyw: "file-type", ipynb: "file-type",
+    // Web
+    html: "codepen", htm: "codepen", css: "palette", scss: "palette", sass: "palette", less: "palette",
+    // Data / markup
+    json: "file-json-2", jsonc: "file-json-2", xml: "file-code", svg: "file-code", yaml: "file-cog", yml: "file-cog", toml: "file-cog",
+    csv: "file-spreadsheet", xlsx: "file-spreadsheet", xls: "file-spreadsheet",
+    // Text / docs
+    md: "file-text", mdx: "file-text", txt: "file-text", rtf: "file-text",
     pdf: "file-text",
-    zip: "package", tar: "package", gz: "package",
-    mp3: "music", mp4: "video",
-    toml: "file-cog", yml: "file-cog", yaml: "file-cog",
-    sh: "terminal", bash: "terminal",
+    // Rust
+    rs: "file-cog",
+    // Go
+    go: "file-code", mod: "file-code",
+    // Java / JVM
+    java: "coffee", class: "coffee", jar: "package",
+    // C / C++ / C# / Swift / Kotlin / Scala
+    c: "file-code-2", cpp: "file-code-2", cxx: "file-code-2", h: "file-code-2", hpp: "file-code-2", cs: "file-code-2",
+    swift: "file-code-2", kt: "file-code-2", scala: "file-code-2",
+    // PHP
+    php: "file-code-2",
+    // Ruby
+    rb: "file-code", rbs: "file-code",
+    // Dart / Flutter
+    dart: "file-code-2",
+    // Lua
+    lua: "file-code-2",
+    // R
+    r: "file-code-2", rmd: "file-text",
+    // Shell / scripts
+    sh: "terminal", bash: "terminal", zsh: "terminal", fish: "terminal", ps1: "terminal", bat: "terminal",
+    // SQL
+    sql: "database", sqlite: "database", db: "database",
+    // Docker
+    dockerfile: "container", dockerignore: "container",
+    // Images
+    png: "file-image", jpg: "file-image", jpeg: "file-image", gif: "file-image", webp: "file-image", ico: "file-image",
+    bmp: "file-image", tiff: "file-image", avif: "file-image",
+    // Audio
+    mp3: "music", wav: "music", ogg: "music", flac: "music", aac: "music", m4a: "music", wma: "music",
+    // Video
+    mp4: "video", avi: "video", mov: "video", mkv: "video", webm: "video", wmv: "video", flv: "video",
+    // Archives
+    zip: "package", tar: "package", gz: "package", bz2: "package", xz: "package",
+    rar: "package", "7z": "package", zst: "package",
+    // Environment / config (no-dot files)
+    env: "file-cog", gitignore: "file-cog", gitattributes: "file-cog", editorconfig: "file-cog",
   };
   return icons[ext ?? ""] || "paperclip";
+}
+
+/** Returns the codicon class name for a file based on its extension. */
+export function getCodeIcon(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase();
+  const map: Record<string, string> = {
+    js: "file-code", jsx: "file-code", mjs: "file-code", cjs: "file-code",
+    ts: "file-code", tsx: "file-code", mts: "file-code", cts: "file-code",
+    py: "file-code", pyw: "file-code", ipynb: "file-code",
+    rs: "file-code",
+    go: "file-code", mod: "file-code",
+    java: "file-code", class: "file-code",
+    c: "file-code", cpp: "file-code", cxx: "file-code", h: "file-code", hpp: "file-code", cs: "file-code",
+    swift: "file-code", kt: "file-code", scala: "file-code",
+    php: "file-code", rb: "file-code", rbs: "file-code",
+    dart: "file-code", lua: "file-code",
+    r: "file-code", rmd: "file-code",
+    html: "code", htm: "code",
+    css: "file-code", scss: "file-code", sass: "file-code", less: "file-code",
+    json: "json", jsonc: "json",
+    yaml: "file-code", yml: "file-code", toml: "file-code",
+    xml: "file-code", svg: "file-code",
+    md: "file-text", mdx: "file-text", txt: "file-text", rtf: "file-text",
+    pdf: "file-pdf",
+    sh: "terminal", bash: "terminal", zsh: "terminal", fish: "terminal", ps1: "terminal", bat: "terminal",
+    sql: "database", sqlite: "database", db: "database",
+    dockerfile: "container", dockerignore: "container",
+    png: "file-media", jpg: "file-media", jpeg: "file-media", gif: "file-media", webp: "file-media", ico: "file-media",
+    bmp: "file-media", tiff: "file-media", avif: "file-media",
+    mp3: "file-media", wav: "file-media", ogg: "file-media", flac: "file-media", aac: "file-media", m4a: "file-media", wma: "file-media",
+    mp4: "file-media", avi: "file-media", mov: "file-media", mkv: "file-media", webm: "file-media", wmv: "file-media", flv: "file-media",
+    zip: "file-zip", tar: "file-zip", gz: "file-zip", bz2: "file-zip", xz: "file-zip",
+    rar: "file-zip", "7z": "file-zip", zst: "file-zip",
+    env: "gear", gitignore: "gear", gitattributes: "gear", editorconfig: "gear",
+  };
+  return map[ext ?? ""] || "file";
 }
 
 export class Files {

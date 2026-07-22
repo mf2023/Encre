@@ -168,11 +168,11 @@ class RouterBackend(BaseBackend):
     Usage:
         router = RouterBackend(
             routes={
-                TaskCategory.CLASSIFICATION: OpenAIBackend(model="gpt-4o-mini"),
-                TaskCategory.CODING: AnthropicBackend(model="claude-sonnet-4-6"),
+                TaskCategory.CLASSIFICATION: OpenAIBackend(model="gpt-5.6-luna"),
+                TaskCategory.CODING: AnthropicBackend(model="claude-sonnet-5"),
                 TaskCategory.REASONING: DeepSeekBackend(model="deepseek-v4-pro"),
             },
-            default=OpenAIBackend(model="gpt-4o"),
+            default=OpenAIBackend(model="gpt-5.6"),
         )
     """
 

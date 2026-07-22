@@ -51,7 +51,7 @@ class NovitaBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "mistralai/mixtral-8x22b-instruct",
+        model: str = "mistralai/mistral-large-2",
         **kwargs: Any,
     ) -> None:
         if not base_url:

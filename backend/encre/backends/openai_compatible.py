@@ -51,7 +51,7 @@ from encre.backends.openai_sse import OpenAISSEBackend
 
 # Known 1M-context model families (prefix or regex patterns) for auto-detection
 _LARGE_CONTEXT_PATTERNS: list[str] = [
-    "gpt-4.1", "gpt-5.5", "gpt-5.6", "gpt-5.4", "gpt-6",
+    "gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-4.1", "gpt-6",
     "deepseek-v4", "deepseek-chat", "deepseek-reasoner",
     "claude-opus-4-7", "claude-sonnet-4-6", "claude-4",
     "gemini-2.5", "gemini-2.0", "gemini-3",
@@ -101,7 +101,7 @@ class OpenAICompatibleBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "gpt-4.1-mini",
+        model: str = "gpt-5.6-luna",
         context_window: int = 0,
         **kwargs: Any,
     ) -> None:

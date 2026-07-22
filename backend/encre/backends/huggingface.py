@@ -54,7 +54,7 @@ class HuggingFaceBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "meta-llama/Llama-3.3-70B-Instruct",
+        model: str = "meta-llama/Llama-4-Maverick-17B-Instruct",
         **kwargs: Any,
     ) -> None:
         """Initialize the Hugging Face Inference API backend.

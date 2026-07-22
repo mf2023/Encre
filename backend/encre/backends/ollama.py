@@ -81,7 +81,7 @@ class OllamaBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "llama3.2",
+        model: str = "llama4",
         **kwargs: Any,
     ) -> None:
         """Initialise the Ollama backend.

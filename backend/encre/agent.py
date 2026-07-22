@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 from encre.channels.slash_commands import (
     EncreCommandRegistry,
     load_project_commands,
+    load_user_commands,
 )
 from encre.codebase.indexer import EncreCodeIndex
 from encre.config import EncreConfig, SubAgentConfig
@@ -331,8 +332,11 @@ class EncreAgent:
         # Slash commands follow the same project-discovery pattern as
         # skills: builtin commands stay registered, project-level
         # ``.encre/commands`` and ``.claude/commands`` files are layered
-        # on top with priority-based merging.
+        # on top with priority-based merging.  User-level commands (home
+        # directory + settings.json) are loaded first and persist across
+        # workspace switches; project commands reload per workspace.
         self.command_registry = command_registry or EncreCommandRegistry()
+        load_user_commands(self.command_registry)
         load_project_commands(self.config.workspace, self.command_registry)
         # Wire project-level hooks from ``.encre/hooks.yaml`` or
         # ``.claude/settings.json`` straight into the live hook system

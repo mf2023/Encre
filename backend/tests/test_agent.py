@@ -46,20 +46,20 @@ class TestEncreAgentConstruction:
 
     def test_creation_with_explicit_config(self):
         """Test: Creation with explicit config."""
-        config = EncreConfig(model="gpt-4o-mini", max_tokens=1000)
+        config = EncreConfig(model="gpt-5.6-luna", max_tokens=1000)
         agent = EncreAgent(config=config)
         # Verify: agent.config is config
         assert agent.config is config
-        # Verify: agent.config.model == "gpt-4o-mini"
-        assert agent.config.model == "gpt-4o-mini"
+        # Verify: agent.config.model == "gpt-5.6-luna"
+        assert agent.config.model == "gpt-5.6-luna"
 
     def test_creation_with_config_defaults(self):
         """Test: Creation with config defaults."""
         agent = EncreAgent()
-        # Verify: agent.config.model == "gpt-4o"
-        assert agent.config.model == "gpt-4o"
-        # Verify: agent.config.backend_type == "openai"
-        assert agent.config.backend_type == "openai"
+        # Verify: agent.config.model is empty (no hardcoded vendor default)
+        assert agent.config.model == ""
+        # Verify: agent.config.backend_type is empty (no hardcoded vendor default)
+        assert agent.config.backend_type == ""
 
 
 class TestEncreAgentProperties:

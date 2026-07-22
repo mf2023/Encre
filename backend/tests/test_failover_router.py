@@ -553,21 +553,21 @@ class TestCostTracker:
     def test_record_usage(self):
         """Test: Record usage."""
         ct = CostTracker()
-        ct.record(model="gpt-4o", input_tokens=100, output_tokens=50, cost_usd=0.0005)
+        ct.record(model="gpt-5.6", input_tokens=100, output_tokens=50, cost_usd=0.0005)
         # Verify: ct.total_input_tokens == 100
         assert ct.total_input_tokens == 100
         # Verify: ct.total_output_tokens == 50
         assert ct.total_output_tokens == 50
         # Verify: ct.total_cost_usd == 0.0005
         assert ct.total_cost_usd == 0.0005
-        # Verify: ct.requests_by_model["gpt-4o"] == 1
-        assert ct.requests_by_model["gpt-4o"] == 1
+        # Verify: ct.requests_by_model["gpt-5.6"] == 1
+        assert ct.requests_by_model["gpt-5.6"] == 1
 
     def test_multiple_models(self):
         """Test: Multiple models."""
         ct = CostTracker()
-        ct.record(model="gpt-4o", input_tokens=100, output_tokens=50, cost_usd=0.0005)
-        ct.record(model="claude-sonnet-4-20250514", input_tokens=200, output_tokens=100, cost_usd=0.003)  # noqa: E501
+        ct.record(model="gpt-5.6", input_tokens=100, output_tokens=50, cost_usd=0.0005)
+        ct.record(model="claude-sonnet-5", input_tokens=200, output_tokens=100, cost_usd=0.003)  # noqa: E501
         # Verify: ct.total_input_tokens == 300
         assert ct.total_input_tokens == 300
         # Verify: ct.total_output_tokens == 150
@@ -576,15 +576,15 @@ class TestCostTracker:
         assert ct.total_cost_usd == 0.0035
         # Verify: len(ct.cost_by_model) == 2
         assert len(ct.cost_by_model) == 2
-        # Verify: ct.requests_by_model["gpt-4o"] == 1
-        assert ct.requests_by_model["gpt-4o"] == 1
-        # Verify: ct.requests_by_model["claude-sonnet-4-20250514"] == 1
-        assert ct.requests_by_model["claude-sonnet-4-20250514"] == 1
+        # Verify: ct.requests_by_model["gpt-5.6"] == 1
+        assert ct.requests_by_model["gpt-5.6"] == 1
+        # Verify: ct.requests_by_model["claude-sonnet-5"] == 1
+        assert ct.requests_by_model["claude-sonnet-5"] == 1
 
     def test_with_cache(self):
         """Test: With cache."""
         ct = CostTracker()
-        ct.record(model="claude-sonnet-4-6", input_tokens=1000, output_tokens=50,
+        ct.record(model="claude-sonnet-5", input_tokens=1000, output_tokens=50,
                   cost_usd=0.01, cache_hit=500, cache_savings=0.005)
         # Verify: ct.cache_hit_tokens == 500
         assert ct.cache_hit_tokens == 500
@@ -594,7 +594,7 @@ class TestCostTracker:
     def test_to_dict(self):
         """Test: To dict."""
         ct = CostTracker()
-        ct.record(model="gpt-4o", input_tokens=100, output_tokens=50, cost_usd=0.0005)
+        ct.record(model="gpt-5.6", input_tokens=100, output_tokens=50, cost_usd=0.0005)
         d = ct.to_dict()
         # Verify: d["total_input_tokens"] == 100
         assert d["total_input_tokens"] == 100

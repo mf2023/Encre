@@ -34,7 +34,40 @@ from encre.utils.types import (
     create_tool_result,
 )
 
-_BASH_TOOL_NAMES = frozenset({"bash", "bash_io", "powershell"})
+# Tools whose errors should cancel concurrently-executing siblings.
+# For example, a failed bash command often invalidates the context
+# for parallel read-only tools.
+_ERROR_CASCADE_TOOLS: frozenset[str] = frozenset({
+    "bash", "bash_io", "powershell",
+})
+
+# Tools whose errors should NEVER cascade to siblings (isolated).
+_NON_CASCADE_TOOLS: frozenset[str] = frozenset({
+    "question", "agent", "workflow",
+})
+
+
+class AbortController:
+    """Shared abort signal for a batch of tools.
+
+    When a tool error triggers cancellation, the controller records
+    the reason so every subsequently-checked tool sees why it was
+    aborted — no separate per-tool signalling needed.
+    """
+
+    def __init__(self) -> None:
+        self._reason: str | None = None
+
+    @property
+    def reason(self) -> str | None:
+        return self._reason
+
+    def cancel(self, reason: str) -> None:
+        if self._reason is None:
+            self._reason = reason
+
+    def reset(self) -> None:
+        self._reason = None
 
 
 @dataclass
@@ -59,6 +92,8 @@ class TrackedTool:
     sub_agent_messages: list[dict[str, Any]] | None = None
     sub_agent_session_id: str | None = None
     paths: frozenset[str] = field(default_factory=frozenset)
+    abort_controller: AbortController | None = None
+    abort_reason: str | None = None
 
 
 def _extract_paths(
@@ -116,6 +151,7 @@ class StreamingToolExecutor:
         emit_fn: Callable[[TrackedTool], Generator[AgentEvent, None, None]] | None = None,
         concurrency: int = 10,
         tool_registry: Any = None,
+        abort_controller: AbortController | None = None,
     ) -> None:
         """Initialize the streaming executor.
 
@@ -124,6 +160,7 @@ class StreamingToolExecutor:
             emit_fn: Optional callable to emit results for a tracked tool.
             concurrency: Maximum number of concurrent tool executions.
             tool_registry: Optional ToolRegistry for resolving hooks.
+            abort_controller: Shared abort signal for sibling propagation.
         """
         self._tools: list[TrackedTool] = []
         self._execute_fn = execute_fn
@@ -131,6 +168,7 @@ class StreamingToolExecutor:
         self._semaphore = asyncio.Semaphore(concurrency)
         self._discarded = False
         self._tool_registry = tool_registry
+        self._abort = abort_controller or AbortController()
 
     def discard(self) -> None:
         """Discard all pending and in-progress tools.
@@ -144,6 +182,7 @@ class StreamingToolExecutor:
         """Queue a tool for execution. Starts executing if concurrency allows."""
         if not tool.paths:
             tool.paths = _extract_paths(tool, self._tool_registry)
+        tool.abort_controller = self._abort
         self._tools.append(tool)
         task = asyncio.create_task(self._process_tool(tool))
         tool.promise = task
@@ -218,40 +257,41 @@ class StreamingToolExecutor:
         return future
 
     def _get_abort_reason(self, tool: TrackedTool) -> str | None:
-        """Determine why a tool should be aborted before execution.
-
-        Args:
-            tool: The tracked tool to check.
-
-        Returns:
-            An abort reason string, or None if the tool should proceed.
-        """
+        """Determine why a tool should be aborted before execution."""
         if self._discarded:
             return "streaming_fallback"
+        if self._abort.reason:
+            return self._abort.reason
         return None
 
-    def _cancel_sibling_safe_tools(self, errored_tool: TrackedTool) -> None:
-        """Cancel other concurrently-running safe tools when a bash tool fails.
+    def _propagate_error(self, errored_tool: TrackedTool) -> None:
+        """Cancel siblings when a cascade-eligible tool errors.
 
-        A failing bash command often invalidates the context for parallel
-        read-only tools, so we cancel siblings in the same batch.  Queued
-        tools are allowed to run afterwards rather than being blanket-blocked.
+        Cancels ALL siblings (executing + queued) so the batch halts
+        quickly instead of wasting resources on doomed work.
+
+        Excluded tools (``_NON_CASCADE_TOOLS`` like ``question`` or
+        ``agent``) are never cancelled — they are always isolated.
         """
+        if errored_tool.name in _NON_CASCADE_TOOLS:
+            return
+        reason = (
+            f"sibling error: {errored_tool.name} failed"
+        )
+        self._abort.cancel(reason)
         for t in self._tools:
-            if (
-                t is not errored_tool
-                and t.status == "executing"
-                and t.is_concurrency_safe
-                and t.promise is not None
-                and not t.promise.done()
-            ):
+            if t is errored_tool:
+                continue
+            if t.name in _NON_CASCADE_TOOLS:
+                continue
+            if t.promise is not None and not t.promise.done():
                 t.promise.cancel()
 
     async def _execute_tool(self, tool: TrackedTool) -> None:
         """Execute a single tool with lifecycle management."""
         abort_reason = self._get_abort_reason(tool)
         if abort_reason:
-            err_msg = "Streaming fallback -- tool execution discarded"
+            err_msg = abort_reason
             tool.results.append(
                 create_tool_result(id=tool.client_id, content=err_msg, is_error=True)
             )
@@ -264,12 +304,18 @@ class StreamingToolExecutor:
             self_tool_errored = False
             try:
                 await self._execute_fn(tool)
-                if tool.is_error and tool.name in _BASH_TOOL_NAMES:
+                if tool.is_error and tool.name in _ERROR_CASCADE_TOOLS:
                     self_tool_errored = True
-                    self._cancel_sibling_safe_tools(tool)
+                    self._propagate_error(tool)
 
             except asyncio.CancelledError:
-                if not self_tool_errored:
+                if self._abort.reason:
+                    tool.abort_reason = self._abort.reason
+                    tool.result_content = (
+                        f"Tool execution was cancelled: {self._abort.reason}"
+                    )
+                    tool.is_error = True
+                elif not self_tool_errored:
                     tool.result_content = "Tool execution was cancelled"
                     tool.is_error = True
                 tool.status = "completed"
@@ -280,8 +326,8 @@ class StreamingToolExecutor:
                 )
                 tool.is_error = True
                 self_tool_errored = True
-                if tool.name in _BASH_TOOL_NAMES:
-                    self._cancel_sibling_safe_tools(tool)
+                if tool.name in _ERROR_CASCADE_TOOLS:
+                    self._propagate_error(tool)
 
         tool.status = "completed"
 

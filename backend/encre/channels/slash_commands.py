@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
+from encre.prompts.loader import PromptLoader
 from encre.skills.registry import parse_yaml_frontmatter
 
 
@@ -72,6 +73,7 @@ class SlashCommandDef:
     source: CommandSource = CommandSource.BUNDLED
     file_path: str = ""
     aliases: tuple[str, ...] = ()
+    availability: tuple[str, ...] = ()  # empty = all modes; e.g. ("iwork",)
 
     def to_dict(self) -> dict:
         return {
@@ -83,8 +85,10 @@ class SlashCommandDef:
             "argument_hint": self.argument_hint,
             "source": self.source.value,
             "has_prompt_body": bool(self.prompt_body),
+            "prompt": self.prompt_body,
             "file_path": self.file_path,
             "aliases": list(self.aliases),
+            "availability": list(self.availability),
         }
 
     def render_prompt(self, args: str = "") -> str:
@@ -102,6 +106,8 @@ class SlashCommandDef:
             body = body.replace(placeholder, token)
         return body
 
+
+_prompt_loader = PromptLoader()
 
 BUILTIN_SLASH_COMMANDS: tuple[SlashCommandDef, ...] = (
     SlashCommandDef(
@@ -124,6 +130,13 @@ BUILTIN_SLASH_COMMANDS: tuple[SlashCommandDef, ...] = (
         "Clear the current session",
         "action", "rotate-ccw",
     ),
+    SlashCommandDef(
+        "init", "Init Project",
+        "Analyze project and generate workspace configuration",
+        "action", "wand-sparkles",
+        availability=("iwork",),
+        prompt_body=_prompt_loader.load("init", category=""),
+    ),
 )
 
 
@@ -141,6 +154,15 @@ TERMINAL_SLASH_COMMANDS: tuple[SlashCommandDef, ...] = (
 _PROJECT_COMMAND_CANDIDATE_DIRS: tuple[str, ...] = (
     ".encre/commands",
     ".claude/commands",
+)
+
+# User-level (global) command directories, relative to the home directory.
+# These are scanned once per agent (not reloaded on workspace switch) so a
+# user's personal commands (e.g. ``~/.claude/commands/commit.md``) are always
+# available regardless of the active workspace.
+_USER_COMMAND_CANDIDATE_DIRS: tuple[str, ...] = (
+    ".claude/commands",
+    ".encre/commands",
 )
 
 
@@ -209,6 +231,25 @@ class EncreCommandRegistry:
             if target in self._commands
         }
 
+    def clear_source(self, source: CommandSource) -> None:
+        """Drop every command originating from *source*.
+
+        Unlike :meth:`clear_non_builtin` this preserves other non-builtin
+        sources -- e.g. clearing ``PROJECT`` on a workspace switch must not
+        wipe user-level (``USER``) commands loaded from the home directory
+        and ``settings.json``.
+        """
+        self._commands = {
+            name: cmd
+            for name, cmd in self._commands.items()
+            if cmd.source != source
+        }
+        self._aliases = {
+            alias: target
+            for alias, target in self._aliases.items()
+            if target in self._commands
+        }
+
     def load_from_dir(self, commands_dir: str, source: CommandSource) -> int:
         """Load ``*.md`` command files from *commands_dir*.
 
@@ -250,7 +291,12 @@ def _command_from_markdown(
     title = str(metadata.get("title", name)).strip() or name
     description = str(metadata.get("description", "")).strip()
     kind_raw = str(metadata.get("kind", "action")).strip().lower()
-    kind: Literal["mode", "action"] = "mode" if kind_raw == "mode" else "action"
+    # There are no user-defined modes -- only the two built-ins (plan/spec)
+    # are modes.  File-based commands are always actions (commands), even if
+    # a frontmatter ``kind: mode`` is present, so they never get mistaken for
+    # modes (no tool interception, no spec gate, no set_mode).
+    kind: Literal["mode", "action"] = "action"
+    _ = kind_raw  # kept for clarity; intentionally ignored
     icon = str(metadata.get("icon", "command")).strip() or "command"
     argument_hint = str(metadata.get("argument_hint", "")).strip()
     aliases_raw = metadata.get("aliases", [])
@@ -279,18 +325,94 @@ def load_project_commands(
 ) -> EncreCommandRegistry:
     """Load project-level commands for *workspace_path*.
 
-    When *registry* is provided it is reused (and its non-builtin
-    entries cleared first).  Otherwise a fresh registry is created.
-    Existing builtin entries are preserved in either case.
+    When *registry* is provided it is reused (and its **project** entries
+    cleared first -- user-level entries are preserved).  Otherwise a fresh
+    registry is created.  Existing builtin and user entries are preserved in
+    either case.
     """
     reg = registry if registry is not None else EncreCommandRegistry()
-    reg.clear_non_builtin()
+    reg.clear_source(CommandSource.PROJECT)
     if not workspace_path:
         return reg
     for rel in _PROJECT_COMMAND_CANDIDATE_DIRS:
         full = os.path.join(workspace_path, rel)
         if os.path.isdir(full):
             reg.load_from_dir(full, CommandSource.PROJECT)
+    return reg
+
+
+def _command_from_settings_dict(d: dict, source: CommandSource,
+                                file_path: str) -> SlashCommandDef | None:
+    """Build a :class:`SlashCommandDef` from a settings.json command dict."""
+    raw_name = str(d.get("name", "")).strip()
+    if not raw_name:
+        return None
+    name = raw_name.lower().replace("_", "-")
+    title = str(d.get("title", name)).strip() or name
+    description = str(d.get("description", "")).strip()
+    icon = str(d.get("icon", "command")).strip() or "command"
+    argument_hint = str(d.get("argument_hint", "")).strip()
+    prompt_body = str(d.get("prompt", "") or d.get("prompt_body", "")).strip()
+    aliases_raw = d.get("aliases", [])
+    if isinstance(aliases_raw, str):
+        aliases = [a.strip().lower() for a in re.split(r"[,\s]+", aliases_raw) if a.strip()]
+    elif isinstance(aliases_raw, list):
+        aliases = [str(a).strip().lower() for a in aliases_raw if a]
+    else:
+        aliases = []
+    # No user-defined modes -- settings commands are always actions.
+    return SlashCommandDef(
+        name=name,
+        title=title,
+        description=description,
+        kind="action",
+        icon=icon,
+        argument_hint=argument_hint,
+        prompt_body=prompt_body,
+        source=source,
+        file_path=file_path,
+        aliases=tuple(aliases),
+    )
+
+
+def load_user_commands(
+    registry: EncreCommandRegistry | None = None,
+) -> EncreCommandRegistry:
+    """Load user-level (global) commands into *registry*.
+
+    Two sources, both tagged :attr:`CommandSource.USER`:
+
+    * Home-directory ``*.md`` command files (``~/.claude/commands``,
+      ``~/.encre/commands``) -- previously a dead code path
+      (``CommandSource.USER`` had no loader).
+    * ``custom_slash_commands`` stored in ``settings.json`` (frontend-managed
+      JSON commands).
+
+    User commands override project and bundled commands of the same name
+    (``USER`` has higher priority than ``PROJECT``/``BUNDLED``).  This is
+    called once per agent and is NOT re-run on workspace switch, so a user's
+    personal commands persist across workspaces.  Existing ``USER`` entries
+    are cleared first so a reload stays fresh.
+    """
+    reg = registry if registry is not None else EncreCommandRegistry()
+    reg.clear_source(CommandSource.USER)
+    home = os.path.expanduser("~")
+    for rel in _USER_COMMAND_CANDIDATE_DIRS:
+        full = os.path.join(home, rel)
+        if os.path.isdir(full):
+            reg.load_from_dir(full, CommandSource.USER)
+    # Ingest settings.json custom_slash_commands so the backend registry is
+    # the single source of truth surfaced via get_slash_command_defs.
+    try:
+        from encre.settings_manager import load_custom_slash_commands
+        for entry in load_custom_slash_commands():
+            if not isinstance(entry, dict):
+                continue
+            cmd = _command_from_settings_dict(entry, CommandSource.USER, "")
+            if cmd is not None:
+                reg.register(cmd)
+    except Exception:
+        pass
     return reg
 
 

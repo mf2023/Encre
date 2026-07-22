@@ -40,6 +40,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -80,6 +81,7 @@ class GatewayClient:
         self._listeners: dict[str, list[Any]] = {}
         # Message queue: _read_loop pushes, submit/submit_stream consume
         self._msg_queue: asyncio.Queue[GatewayMessage | None] = asyncio.Queue()
+        self._pending: dict[str, asyncio.Queue[GatewayMessage | None]] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     @property
@@ -146,6 +148,8 @@ class GatewayClient:
             self._ws = None
         # Unblock any consumer waiting on the queue
         await self._msg_queue.put(None)
+        for queue in self._pending.values():
+            await queue.put(None)
         logger.info("%s disconnected from gateway", self._name)
 
     async def submit(self, prompt: str, session_id: str | None = None, system_prompt: str | None = None) -> str:
@@ -153,14 +157,17 @@ class GatewayClient:
         if not self._connected:
             logger.error("[gateway-client] %s cannot submit -- not connected to gateway", self._name)
             return ""
-        msg = GatewayMessage.submit(prompt, session_id, system_prompt)
+        request_id = uuid.uuid4().hex
+        response_queue: asyncio.Queue[GatewayMessage | None] = asyncio.Queue()
+        self._pending[request_id] = response_queue
+        msg = GatewayMessage.submit(prompt, session_id, system_prompt, request_id=request_id)
         await self._send(msg)
         parts: list[str] = []
         timeout_count = 0
         max_timeouts = 10
         while self._connected:
             try:
-                response = await asyncio.wait_for(self._msg_queue.get(), timeout=30.0)
+                response = await asyncio.wait_for(response_queue.get(), timeout=30.0)
                 if response is None:
                     logger.warning("[gateway-client] %s submit disconnected during response", self._name)
                     break  # disconnected
@@ -180,9 +187,13 @@ class GatewayClient:
                     break
                 logger.warning("[gateway-client] %s submit timeout #%d, retrying...", self._name, timeout_count)
                 continue
+            except asyncio.CancelledError:
+                self._pending.pop(request_id, None)
+                raise
             except Exception as e:
                 logger.warning("[gateway-client] %s submit exception: %s", self._name, e)
                 break
+        self._pending.pop(request_id, None)
         result = "".join(parts)
         logger.info("[gateway-client] %s submit done len=%d", self._name, len(result))
         return result
@@ -201,16 +212,20 @@ class GatewayClient:
                          self._name, self._ws is not None, self._running)
             yield Finish(reason="error", error="Gateway not connected")
             return
-        msg = GatewayMessage.submit_stream(prompt, session_id, system_prompt, source=source)
+        request_id = uuid.uuid4().hex
+        response_queue: asyncio.Queue[GatewayMessage | None] = asyncio.Queue()
+        self._pending[request_id] = response_queue
+        msg = GatewayMessage.submit_stream(prompt, session_id, system_prompt, source=source, request_id=request_id)
         await self._send(msg)
         text_len = 0
         timeout_count = 0
         max_timeouts = 10
         while self._connected:
             try:
-                response = await asyncio.wait_for(self._msg_queue.get(), timeout=30.0)
+                response = await asyncio.wait_for(response_queue.get(), timeout=30.0)
                 if response is None:
                     logger.warning("[gateway-client] %s submit_stream disconnected", self._name)
+                    self._pending.pop(request_id, None)
                     yield Finish(reason="error", error="Gateway connection closed")
                     return
                 if response.op == GatewayOp.TEXT_DELTA:
@@ -226,24 +241,32 @@ class GatewayClient:
                         logger.warning("[gateway-client] %s finish with error: %s (text_len=%d)", self._name, err, text_len)
                     else:
                         logger.info("[gateway-client] %s finish reason=%s text_len=%d", self._name, response.data.get("reason", "?"), text_len)
+                    self._pending.pop(request_id, None)
                     yield Finish(reason=response.data.get("reason", "done"), error=err, usage=response.data.get("usage"))
                     return
                 elif response.op == GatewayOp.ERROR:
                     logger.warning("[gateway-client] %s error: %s", self._name, response.data.get("message", ""))
+                    self._pending.pop(request_id, None)
                     yield Finish(reason="error", error=response.data.get("message", ""))
                     return
             except TimeoutError:
                 timeout_count += 1
                 if timeout_count >= max_timeouts:
                     logger.error("[gateway-client] %s submit_stream timed out %d times, giving up", self._name, max_timeouts)
+                    self._pending.pop(request_id, None)
                     yield Finish(reason="error", error="Server did not respond")
                     return
                 logger.warning("[gateway-client] %s submit_stream timeout #%d, retrying...", self._name, timeout_count)
                 continue
+            except asyncio.CancelledError:
+                self._pending.pop(request_id, None)
+                raise
             except Exception as e:
                 logger.warning("[gateway-client] %s submit_stream exception: %s", self._name, e)
+                self._pending.pop(request_id, None)
                 yield Finish(reason="error", error="Gateway connection lost")
                 return
+        self._pending.pop(request_id, None)
 
     async def _send(self, msg: GatewayMessage) -> None:
         self._seq += 1
@@ -298,15 +321,20 @@ class GatewayClient:
                     logger.info("[gateway-client] %s recv finish reason=%s error=%s", self._name, reason, err or "none")
                 elif msg.op == GatewayOp.ERROR:
                     logger.warning("[gateway-client] %s recv error: %s", self._name, msg.data.get("message", ""))
-                # Forward everything to the shared queue
-                await self._msg_queue.put(msg)
+                request_id = str(msg.data.get("request_id", ""))
+                queue = self._pending.get(request_id) if request_id else None
+                if queue is not None:
+                    await queue.put(msg)
+                else:
+                    await self._msg_queue.put(msg)
         except Exception as e:
             logger.warning("[gateway-client] %s read_loop ended: %s %s", self._name, type(e).__name__, e)
         finally:
             self._connected = False
             self._emit("disconnected")
             await self._msg_queue.put(None)
-            await self._msg_queue.put(None)
+            for queue in self._pending.values():
+                await queue.put(None)
 
     def _emit(self, event: str, *args: Any, **kwargs: Any) -> None:
         for cb in self._listeners.get(event, []):

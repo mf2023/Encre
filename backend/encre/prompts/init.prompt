@@ -1,0 +1,142 @@
+You are initializing a project workspace for future Encre coding agents. Your job is to survey this codebase and create (or improve) an ENCRE.md file inside the `.encre/` directory. The file will be loaded into every future session to help agents understand the project.
+
+Follow the phases below carefully. Be thorough — a high-quality ENCRE.md saves every future agent hours of ramp-up time.
+
+## Phase 1: Survey the Codebase
+
+First, read these files in order to understand the project:
+
+1. **Root manifest files** (read the ones that exist):
+   - package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, build.gradle, CMakeLists.txt, etc.
+   - README.md, README.rst, CONTRIBUTING.md
+   - Makefile, Justfile, Taskfile.yml, or similar build files
+   - Dockerfile, docker-compose.yml
+   - .env.example or .env.sample
+
+2. **CI/CD configuration**:
+   - .github/workflows/ (GitHub Actions)
+   - .gitlab-ci.yml
+   - Jenkinsfile
+   - .circleci/config.yml
+   - CI configs that reveal build/test/lint commands
+
+3. **Existing AI configuration**:
+   - `.encre/rules.md` — existing project rules
+   - `.encre/config.json` — workspace config (contains system_prompt, permission_mode, specialty, etc.)
+   - ENCRE.md — existing file at project root (loaded as rules at priority 78)
+   - CLAUDE.md — existing file at project root (loaded as rules at priority 75)
+   - .cursorrules, .windsurfrules, .clinerules — other AI tool configs
+   - .github/copilot-instructions.md
+   - AGENTS.md — Codex-standard instructions
+
+4. **Source tree structure**:
+   - Use `glob` to list top-level `src/`, `lib/`, `app/`, `packages/`, or similar directories
+   - Recursively explore the main source tree to understand module organization
+   - Read key entry points (main.ts, index.ts, __init__.py, main.go, etc.)
+
+## Phase 2: Understand the Project
+
+After reading, summarize for yourself:
+
+- **Technology stack**: languages, frameworks, runtime, package manager, major libraries
+- **Architecture**: monolith, monorepo with workspaces, multi-module, microservices
+- **Module organization**: how source code is structured across directories
+- **Build system**: what builds the project and any non-obvious build steps
+- **Test strategy**: test framework, where tests live, how to run a single test
+- **Lint/format**: what linters and formatters are used, their config files
+- **Database/middleware**: if applicable, what database, cache, message queue
+- **Deployment**: how the project is deployed (Docker, cloud, bare metal)
+- **Non-obvious gotchas**: environment variables, OS requirements, hardware needs
+- **Existing rules/conventions**: what existing AI configs and rules already specify
+
+## Phase 3: Generate ENCRE.md
+
+Write (or update) `.encre/ENCRE.md` with the following structure. Every section should contain only information that is **specific to this project** and **would cause mistakes if an agent didn't know it**.
+
+### ENCRE.md Template
+
+```markdown
+# ENCRE.md
+
+This file provides guidance to Encre when working with code in this repository.
+
+## Project Overview
+
+[1-2 sentences describing what this project does and its primary language/framework]
+
+## Build & Development
+
+- **Build**: `[exact command]` — [what it does]
+- **Test**: `[exact command]` — [how to run all tests]
+- **Single test**: `[exact command]` — [how to run one test]
+- **Lint**: `[exact command]` — [what it checks]
+- **Format**: `[exact command]` — [what it formats]
+- **Typecheck**: `[exact command]` — [if applicable]
+- **Other**: [any other commonly-used commands]
+
+## Architecture
+
+[3-5 sentences describing the big-picture architecture — directory organization, key modules, data flow. Focus on what requires reading multiple files to understand.]
+
+## Key Conventions
+
+- [Project-specific code conventions that differ from language defaults]
+- [Naming conventions, import patterns, error handling patterns]
+- [Testing conventions: where tests live, naming, fixtures]
+- [Git workflow: branch naming, commit style, PR conventions]
+
+## Environment
+
+- **Required env vars**: [list with descriptions]
+- **Dependencies**: [any non-obvious system dependencies or setup steps]
+- **Secrets/credentials**: [where they live, how to set them up]
+
+## Gotchas
+
+- [Non-obvious things that have caused issues in the past]
+- [Performance-sensitive areas]
+- [Known limitations or technical debt]
+
+## AI Integration
+
+- **Modes**: [if .encre/config.json specifies plan/spec modes, note them here]
+- **Rules**: [key rules from .encre/rules.md or other AI rule files that agents should know]
+- **Custom commands**: [any .encre/commands/*.md that exist]
+```
+
+### Quality Rules
+
+**Include ONLY if true for this project:**
+- Non-standard build/test/lint commands that can't be guessed from manifest files
+- Architecture decisions that aren't obvious from file structure
+- Testing quirks (specific flags, fixtures, database setup needed)
+- Coding conventions that differ from language community standards
+- Required env vars or setup steps that aren't documented elsewhere
+- Known gotchas or recurring failure modes
+
+**NEVER include:**
+- Generic advice ("write clean code", "handle errors gracefully")
+- Standard language conventions Claude already knows
+- File-by-file listings or component hierarchies (agents can explore these)
+- Information that changes frequently (reference it with `@path/to/file` syntax instead)
+- Instructions that repeat what's already in README or existing config files
+- Made-up sections like "Common Development Tasks" or "Tips and Tricks"
+
+**When updating an existing ENCRE.md:**
+- Read the current file first
+- Propose specific changes rather than silently overwriting
+- Preserve valuable content the previous author added
+- Add a note about what was updated and why
+
+**For projects with multiple subdirectories (monorepos, multi-module):**
+- Note which modules exist and where they live
+- Note module-specific build/test commands if they differ
+- Offer to create module-specific `.encre/rules/` files for path-scoped rules
+
+## Final Checks
+
+Before finishing:
+1. Re-read your ENCRE.md through the lens of a new agent: "Would removing this line cause mistakes?" If not, cut it.
+2. Verify every command you listed actually exists (run them or verify against config files).
+3. Check that you didn't duplicate information already in `.encre/config.json` or `.encre/rules.md`.
+4. If an ENCRE.md already existed, confirm you improved it versus a straight overwrite.

@@ -63,7 +63,7 @@ Typical usage::
 
     from encre.backends import OpenAIBackend  # noqa: E402
 
-    backend = OpenAIBackend(model="gpt-4.1")
+    backend = OpenAIBackend(model="gpt-5.6")
     async for event in backend.chat(messages=[{"role": "user", "content": "Hello"}]):
         print(event)
 """

@@ -157,7 +157,7 @@ class TestAgentComposition:
     def _make_config(self):
         """Verifies that make config."""
         return EncreConfig(
-            model="gpt-4o",
+            model="gpt-5.6",
             backend_type="local",
             permission_mode="bypass",
             max_turns=1,

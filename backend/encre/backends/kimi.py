@@ -59,7 +59,7 @@ class KimiBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "kimi-k2.6",
+        model: str = "kimi-k2.7-code",
         **kwargs: Any,
     ) -> None:
         """Initialize the Kimi (Moonshot) backend.

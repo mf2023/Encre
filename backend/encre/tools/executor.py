@@ -54,7 +54,7 @@ from encre.loop import (
 )
 from encre.recovery import RetryableExecutor
 from encre.sandbox.types import SandboxResult
-from encre.tools.streaming_executor import StreamingToolExecutor, TrackedTool
+from encre.tools.streaming_executor import AbortController, StreamingToolExecutor, TrackedTool
 from encre.utils.types import (
     AgentEvent,
     Artifact,
@@ -80,6 +80,78 @@ _MAX_TOOL_CONCURRENCY = max(
     1,
     int(__import__("os").environ.get("ENCRE_MAX_TOOL_USE_CONCURRENCY", "10") or "10"),
 )
+
+# ── Tool partitioning ───────────────────────────────────────────────────
+# Groups tool calls into optimal execution batches:
+#   - Consecutive read-only / concurrency-safe tools → parallel batch
+#   - Write tools (not concurrency-safe) → isolated singletons
+# This mirrors Claude Code's partitionToolCalls() strategy.
+
+def partition_tool_calls(
+    tools: list[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    """Partition tool calls into optimal execution groups.
+
+    Yields a list of lists.  Each inner list is either:
+    - A *batch* of consecutive concurrency-safe tools (run in parallel), or
+    - A singleton non-concurrency-safe tool (runs alone).
+
+    Within each batch, if one tool errors, the entire batch is cancelled
+    so sibling tools don't waste resources on invalidated context.
+    """
+    if not tools:
+        return []
+
+    groups: list[list[dict[str, Any]]] = []
+    current_batch: list[dict[str, Any]] = []
+
+    for p in tools:
+        safe = p.get("safe", False)
+        if safe:
+            current_batch.append(p)
+        else:
+            if current_batch:
+                groups.append(current_batch)
+                current_batch = []
+            groups.append([p])
+
+    if current_batch:
+        groups.append(current_batch)
+
+    return groups
+
+
+# ── Prompt-injection defense ────────────────────────────────────────────
+# Wraps tool results from high-risk sources in a delimiter so the model
+# can distinguish external content from its own reasoning.
+# Mirrors Hermes' <untrusted_tool_result> wrapping strategy.
+
+_UNTRUSTED_TOOL_RESULT_TOOLS: frozenset[str] = frozenset({
+    "web_search", "web_fetch", "browser", "computer_use",
+    "vlm_computer_use", "read", "pdf", "spreadsheet",
+    "document", "media", "media_api", "rest_client",
+})
+
+_UNTRUSTED_DELIMITER_OPEN = "<untrusted_tool_result>"
+_UNTRUSTED_DELIMITER_CLOSE = "</untrusted_tool_result>"
+
+
+def _wrap_untrusted_result(tool_name: str, content: str) -> str:
+    """Wrap tool output in untrusted-result delimiters, defanging embedded tokens.
+
+    High-risk tools (web, MCP, browser, etc.) produce content from external
+    sources that may contain prompt-injection payloads.  Wrapping them in a
+    structured delimiter lets the model distinguish them from system / user
+    instructions.  Embedded delimiter tokens are defanged to prevent nested
+    delimiter attacks.
+    """
+    from encre.errors import _NEUTRALIZE_DELIMITERS
+    safe = _NEUTRALIZE_DELIMITERS(content)
+    return (
+        f"{_UNTRUSTED_DELIMITER_OPEN} source=\"{tool_name}\"\n"
+        f"{safe}\n"
+        f"{_UNTRUSTED_DELIMITER_CLOSE}"
+    )
 
 
 def _format_container_sandbox_result(
@@ -492,14 +564,14 @@ class ToolPipeline:
             if pre_hook and pre_hook.get("modified_input"):
                 p["args"] = pre_hook["modified_input"]
 
-            if loop._plan_mode.plan_mode_active:
+            if loop.plan_mode_active:
                 proposal_emitted = False
                 async for event in loop._intercept_plan_mode(
                     p["name"], p["args"], p["id"], p["client_id"],
                 ):
                     proposal_emitted = True
                     yield event
-                if proposal_emitted and not loop._plan_mode._plan_decision:
+                if proposal_emitted and not loop._plan_decision:
                     plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
                     yield create_tool_result(id=p["client_id"], content=plan_err, is_error=True)
                     loop.session.add_tool_result(p["id"], plan_err, is_error=True, client_id=p["client_id"])
@@ -721,6 +793,12 @@ class ToolPipeline:
             if hint:
                 p["result"] += f"\n\n[RECOVERY] {hint}"
 
+        # Prompt-injection defense: wrap results from high-risk sources
+        # (web, browser, MCP, etc.) in untrusted-result delimiters so the
+        # model can distinguish external content from its own instructions.
+        if not p["is_error"] and p["name"] in _UNTRUSTED_TOOL_RESULT_TOOLS:
+            p["result"] = _wrap_untrusted_result(p["name"], p["result"])
+
         yield create_tool_result(
             id=p["client_id"],
             content=p["result"],
@@ -835,26 +913,41 @@ class ToolPipeline:
             """Emit buffered results for a tracked tool."""
             yield from tracked.results
 
-        executor = StreamingToolExecutor(
-            execute_fn=_exec_fn,
-            emit_fn=_emit_fn,
-            concurrency=_MAX_TOOL_CONCURRENCY,
-            tool_registry=loop.tool_registry if hasattr(loop, "tool_registry") else None,
-        )
+        abort_controller = AbortController()
+        groups = partition_tool_calls(tools)
 
-        conc_sorted = sorted(tools, key=lambda p: 0 if p.get("safe") else 1)
-        for p in conc_sorted:
-            tracked = TrackedTool(
-                id=p["id"],
-                name=p["name"],
-                args=p["args"],
-                client_id=p["client_id"],
-                is_concurrency_safe=p.get("safe", False),
+        for group in groups:
+            # If the abort controller was triggered by a previous batch,
+            # cancel all remaining tools immediately.
+            if abort_controller.reason:
+                for p in group:
+                    yield create_tool_result(
+                        id=p["client_id"],
+                        content=f"Tool execution was cancelled: {abort_controller.reason}",
+                        is_error=True,
+                    )
+                continue
+
+            executor = StreamingToolExecutor(
+                execute_fn=_exec_fn,
+                emit_fn=_emit_fn,
+                concurrency=min(_MAX_TOOL_CONCURRENCY, len(group)),
+                tool_registry=loop.tool_registry if hasattr(loop, "tool_registry") else None,
+                abort_controller=abort_controller,
             )
-            executor.add_tool(tracked)
 
-        async for event in executor.get_remaining_results():
-            yield event
+            for p in group:
+                tracked = TrackedTool(
+                    id=p["id"],
+                    name=p["name"],
+                    args=p["args"],
+                    client_id=p["client_id"],
+                    is_concurrency_safe=p.get("safe", False),
+                )
+                executor.add_tool(tracked)
+
+            async for event in executor.get_remaining_results():
+                yield event
 
     async def _exec_agent_tracked(
         self,

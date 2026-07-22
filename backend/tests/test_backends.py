@@ -65,7 +65,7 @@ class TestModelInfo:
     def test_create_with_aliases(self):
         """Test: Create with aliases."""
         mi = ModelInfo(
-            name="gpt-4o",
+            name="gpt-5.6",
             provider="openai",
             aliases=["gpt4o", "4o"],
         )

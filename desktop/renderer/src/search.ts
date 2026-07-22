@@ -50,6 +50,7 @@ interface LocalItem {
   snippet: string;
   preview?: string;
   path?: string;
+  icon?: string;
 }
 
 /** Template describing how a search section is labeled/iconed. */
@@ -448,8 +449,11 @@ export class Search {
         const kindLabel = this.esc(sec.kindLabel(r));
         const snippet = this.esc(r.snippet);
         const preview = r.preview ? `<span class="search-result-preview">${this.esc(r.preview)}</span>` : "";
+        const itemIcon = r.icon
+          ? `<i data-lucide="${this.esc(r.icon)}" class="lucide lucide-sm"></i>`
+          : sec.icon;
         html += `<div class="search-result-item${sel}" data-idx="${idx}">
-          ${sec.icon}
+          ${itemIcon}
           <div class="search-result-body">
             <span class="search-result-kind">${kindLabel}</span>
             <span class="search-result-snippet">${snippet}</span>
@@ -506,9 +510,9 @@ export class Search {
       items.push({ kind: "app_action", name: act.nameEn, snippet: act.nameZh, preview: act.id, path: act.id });
     }
 
-    const cmds = matchingSlashCommands(q);
+    const cmds = matchingSlashCommands(q, st.workspaceMode);
     for (const cmd of cmds) {
-      items.push({ kind: "slash_command", name: `/${cmd.name}`, snippet: cmd.title, preview: cmd.description });
+      items.push({ kind: "slash_command", name: `/${cmd.name}`, snippet: cmd.title, preview: cmd.description, icon: cmd.icon });
     }
 
     this.fuse.setCollection(items);
@@ -519,6 +523,7 @@ export class Search {
       snippet: fr.item.snippet,
       preview: fr.item.preview,
       path: fr.item.path,
+      icon: fr.item.icon,
     } as SearchResultEntry));
   }
 

@@ -47,7 +47,7 @@ As of May 2026, OpenAI's model lineup has evolved significantly:
 This backend extends :class:`OpenAISSEBackend` and inherits all SSE streaming,
 tool call buffering, and non-stream fallback logic.  The only customisation
 is the default API endpoint (``https://api.openai.com/v1``) and the default
-model (``gpt-4.1``).
+model (``gpt-5.6``).
 """
 
 from typing import Any
@@ -69,8 +69,8 @@ class OpenAIBackend(OpenAISSEBackend):
     """OpenAI backend for the 2026 model lineup.
 
     Supports GPT-4.1 (Nano/Mini/full), GPT-5.x (5.2/5.4/5.5), o3, and
-    o4-mini.  The default model is ``gpt-4.1``, which replaces the deprecated
-    ``gpt-4o``.
+    gpt-5.6-luna.  The default model is ``gpt-5.6`` (alias for
+    ``gpt-5.6-sol``), the latest flagship model.
 
     All models support tool calling, image inputs, and prompt caching.
     The GPT-4.1 family offers 1M token context windows at competitive prices.
@@ -92,7 +92,7 @@ class OpenAIBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "gpt-4.1",
+        model: str = "gpt-5.6",
         **kwargs: Any,
     ) -> None:
         """Initialise the OpenAI backend.
@@ -103,11 +103,11 @@ class OpenAIBackend(OpenAISSEBackend):
             base_url: Custom API base URL.  Defaults to
                 ``https://api.openai.com/v1``.  Can be changed to use Azure
                 OpenAI or other OpenAI-compatible endpoints.
-            model: Model name.  Defaults to ``gpt-4.1`` (the 2026 replacement
-                for GPT-4o).  Other valid values:
-                    ``gpt-4.1-mini``,
-                ``gpt-4.1-nano``, ``gpt-5.2``, ``gpt-5.4``, ``gpt-5.5``,
-                ``o3``, ``o4-mini``.
+            model: Model name.  Defaults to ``gpt-5.6`` (alias for
+                ``gpt-5.6-sol``, the latest flagship model).  Other valid
+                values: ``gpt-5.6-terra``, ``gpt-5.6-luna``, ``gpt-5.5``,
+                ``gpt-5.4``, ``gpt-5.2``, ``gpt-4.1``, ``gpt-4.1-mini``,
+                ``gpt-4.1-nano``, ``o3``, ``o4-mini``.
             **kwargs: Additional arguments passed to :class:`OpenAISSEBackend`.
         """
         if not base_url:
@@ -207,6 +207,9 @@ class OpenAIBackend(OpenAISSEBackend):
             return 400000
         if "5.2" in model_lower or "5.3" in model_lower or "5.1" in model_lower:
             return 128000
+        # GPT-5.6 family -- 1.05M
+        if "gpt-5.6" in model_lower:
+            return 1050000
         # GPT-4o legacy -- 128K
         if "gpt-4o" in model_lower:
             return 128000

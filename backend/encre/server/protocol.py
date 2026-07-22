@@ -52,7 +52,10 @@ def _parse_client_encrypted(raw: str | bytes) -> str | bytes | None:
     """
     if not raw:
         return raw
-    decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+    try:
+        decoded = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+    except UnicodeDecodeError:
+        return raw  # invalid UTF-8 — return as-is for caller to handle
 
     # A valid base64 ciphertext from AES‑GCM is always at least
     # 12 (nonce) + 1 (min ciphertext) + 16 (tag) ≈ 30 bytes ≈ 40 base64 chars.
@@ -133,6 +136,7 @@ ClientMessageType = Literal[
     "steer",
     "spec_approve",
     "spec_reject",
+    "set_mode",
 ]
 
 
@@ -245,6 +249,60 @@ class ClientSetPlanMode:
             type="set_plan_mode",
             active=bool(d.get("active", False)),
             reason=str(d.get("reason", "")),
+        )
+
+
+@dataclass
+class ClientSetMode:
+    """Set or clear the persistent slash-command mode (plan/spec).
+
+    Unlike ``ClientRun.mode`` which is per-run, this persists the mode
+    in session metadata so it stays active across multiple runs.
+    The frontend sends this when the user clicks the mode chip's X button
+    or activates a mode via shortcut.
+    """
+
+    type: str = "set_mode"
+    session_id: str | None = None
+    mode: str = ""  # "plan", "spec", or "" to clear
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientSetMode":
+        return cls(
+            type="set_mode",
+            session_id=str(d.get("session_id", "")) or None,
+            mode=str(d.get("mode", "")),
+        )
+
+
+@dataclass
+class ClientSetCommand:
+    """Set or clear the persistent slash *command* (a sticky prompt injection).
+
+    A command is NOT a mode: it re-injects its prompt body every turn while
+    active but triggers no tool interception and no spec gate.  Unlike
+    ``ClientRun.mode_prompt`` (one-shot, per-run), this persists the command
+    in session metadata so it stays active across runs until cleared.
+    The frontend sends this when the user activates a command chip (built-in
+    action or user-defined).  An empty ``name`` clears the active command.
+    """
+
+    type: str = "set_command"
+    session_id: str | None = None
+    name: str = ""
+    prompt: str = ""  # rendered prompt body ({{args}} already substituted)
+    icon: str = ""
+    title: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientSetCommand":
+        return cls(
+            type="set_command",
+            session_id=str(d.get("session_id", "")) or None,
+            name=str(d.get("name", "")),
+            prompt=str(d.get("prompt", "")),
+            icon=str(d.get("icon", "")),
+            title=str(d.get("title", "")),
         )
 
 
@@ -1338,6 +1396,7 @@ ClientMessage = (
     | ClientAutomationDeleteJob
     | ClientAutomationDeleteExecution
     | ClientAutomationRenameExecution
+    | ClientSetMode
 )
 
 
@@ -1363,6 +1422,7 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "respond_permission": ClientRespondPermission,
         "respond_plan": ClientRespondPlan,
         "set_plan_mode": ClientSetPlanMode,
+        "set_command": ClientSetCommand,
         "respond_question": ClientRespondQuestion,
         "cancel": ClientCancel,
         "resume": ClientResume,
@@ -1441,6 +1501,7 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "automation_delete_execution": ClientAutomationDeleteExecution,
         "automation_rename_execution": ClientAutomationRenameExecution,
         "engine_install_response": ClientEngineInstallResponse,
+        "set_mode": ClientSetMode,
     }
     cls = parsers.get(msg_type)
     if cls is None:
@@ -1523,6 +1584,9 @@ ServerMessageType = Literal[
     "automation_job_history",
     "automation_job_update",
     "automation_stream_event",
+    "mode_changed",
+    "plan_mode_changed",
+    "command_changed",
 ]
 
 
@@ -1546,27 +1610,27 @@ def encode_server_message(
 
 
 def encode_text_delta(text: str) -> str:
-    return encode_server_message("text_delta", text=text)
+    return encode_server_message("text_delta", encrypt=False, text=text)
 
 
 def encode_thinking_delta(text: str) -> str:
-    return encode_server_message("thinking_delta", text=text)
+    return encode_server_message("thinking_delta", encrypt=False, text=text)
 
 
 def encode_tool_call_start(name: str, call_id: str) -> str:
-    return encode_server_message("tool_call_start", name=name, id=call_id)
+    return encode_server_message("tool_call_start", encrypt=False, name=name, id=call_id)
 
 
 def encode_tool_call_delta(call_id: str, key: str, value: str) -> str:
-    return encode_server_message("tool_call_delta", id=call_id, key=key, value=value)
+    return encode_server_message("tool_call_delta", encrypt=False, id=call_id, key=key, value=value)
 
 
 def encode_tool_call_end(call_id: str) -> str:
-    return encode_server_message("tool_call_end", id=call_id)
+    return encode_server_message("tool_call_end", encrypt=False, id=call_id)
 
 
 def encode_tool_progress(call_id: str, tool_name: str, status: str) -> str:
-    return encode_server_message("tool_progress", id=call_id, tool_name=tool_name, status=status)
+    return encode_server_message("tool_progress", encrypt=False, id=call_id, tool_name=tool_name, status=status)
 
 
 def encode_tool_result(
@@ -1577,7 +1641,7 @@ def encode_tool_result(
     sub_agent_session_id: str | None = None,
 ) -> str:
     return encode_server_message(
-        "tool_result",
+        "tool_result", encrypt=False,
         id=call_id,
         content=content,
         is_error=is_error,
@@ -1587,15 +1651,15 @@ def encode_tool_result(
 
 
 def encode_permission_request(tool_name: str, reason: str) -> str:
-    return encode_server_message("permission_request", tool_name=tool_name, reason=reason)
+    return encode_server_message("permission_request", encrypt=False, tool_name=tool_name, reason=reason)
 
 
 def encode_finish(reason: str, usage: dict[str, Any] | None = None, error: str | None = None) -> str:
-    return encode_server_message("finish", reason=reason, usage=usage, error=error)
+    return encode_server_message("finish", encrypt=False, reason=reason, usage=usage, error=error)
 
 
 def encode_pong() -> str:
-    return encode_server_message("pong")
+    return encode_server_message("pong", encrypt=False)
 
 
 def encode_documents_list(documents: list[dict[str, Any]]) -> str:
@@ -1619,7 +1683,7 @@ def encode_document_error(message: str) -> str:
 
 
 def encode_error(message: str, code: str = "internal") -> str:
-    return encode_server_message("error", message=message, code=code)
+    return encode_server_message("error", encrypt=False, message=message, code=code)
 
 
 def encode_session_ready(
@@ -1632,7 +1696,7 @@ def encode_session_ready(
         payload["messages"] = messages
     if request_id:
         payload["request_id"] = request_id
-    return encode_server_message("session_ready", **payload)
+    return encode_server_message("session_ready", encrypt=False, **payload)
 
 
 def encode_configured(config: dict[str, Any]) -> str:

@@ -60,6 +60,7 @@ class EncreBasePrompt(ABC):
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
         skill_summary: str = "",
+        active_command: dict[str, Any] | None = None,
     ) -> str:
         ...
 
@@ -98,6 +99,7 @@ class EncrePromptTemplate(EncreBasePrompt):
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
         skill_summary: str = "",
+        active_command: dict[str, Any] | None = None,
     ) -> str:
         """Build the system prompt from session context.
 
@@ -120,6 +122,7 @@ class EncrePromptTemplate(EncreBasePrompt):
             slash_command_mode=slash_command_mode,
             slash_commands=slash_commands,
             skill_summary=skill_summary,
+            active_command=active_command,
         )
 
     def build_tool_instructions(self, tool_names: list[str]) -> str:

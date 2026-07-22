@@ -11,6 +11,7 @@
     "postinstall": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&&set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/&&if not exist node_modules/electron/dist/electron.exe node node_modules/electron/install.js"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "electron": "^42.1.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.28.0",
@@ -33,17 +34,22 @@
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.6",
+    "@dev.icons/core": "^1.1.0",
+    "@vscode/codicons": "^0.0.45",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "chart.js": "^4.5.1",
     "codemirror": "^6.0.2",
+    "devicon": "^2.17.0",
     "fuse.js": "^7.3.0",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.1",
+    "monaco-editor": "^0.56.0",
     "node-pty": "^1.1.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "simple-icons": "^16.21.0"
+    "simple-icons": "^16.21.0",
+    "ws": "^8.21.1"
   }
 }

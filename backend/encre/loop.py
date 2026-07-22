@@ -39,6 +39,7 @@ from encre.backends.base import BaseBackend, format_backend_error
 from encre.codebase.document_manager import EncreDocumentManager
 from encre.codebase.indexer import EncreCodeIndex
 from encre.compact.engine import CompactEngine
+from encre.compact.pipeline import CompactionPipeline
 from encre.config import EncreConfig
 from encre.evolution.config import EvolutionConfig
 from encre.feedback.learner import EncreFeedbackLearner
@@ -143,6 +144,11 @@ from encre.utils.types import (
     create_tool_progress,
     create_tool_result,
 )
+
+from encre.loop_state.state import LoopState
+from encre.loop_state.transition import TurnTransition
+from encre.loop_error import ErrorOrchestrator, RecoveryAction, PostStreamAction
+from encre.errors import classify_error_code, get_error_metadata, ErrorCode
 
 logger = get_logger(__name__)
 
@@ -643,7 +649,12 @@ class EncreLoop:
         self.optimizer = evo.optimizer
         self.reflex = evo.reflex
         self.meta = evo.meta
+        self.reviewer = evo.reviewer
+        self.event_store = evo.event_store
         self.recovery_engine = recovery or ErrorRecoveryEngine()
+        # Wire event store to hook system for automatic lifecycle recording
+        if self.event_store is not None and evo.event_store_enabled:
+            self.event_store.wire_hooks(self.hook_system)
         # Cached microcompact state (per-session).  Lazily initialised on the
         # first turn when the backend is Anthropic so non-Anthropic backends
         # pay zero cost.  Mirrors Claude Code's ``CachedMCState``.
@@ -652,6 +663,9 @@ class EncreLoop:
         self._code_index: EncreCodeIndex | None = code_index
         self._pending_code_scan: EncreCodeIndex | None = None
 
+        # Context renderer for tracking what changed between turns.
+        from encre.context.renderer import ContextRenderer
+        self._ctx_renderer = ContextRenderer()
         # Auto-resolve thinking config based on model if not explicitly set.
         # Per-model config takes precedence over the global config.
         active_model = config.get_active_model()
@@ -671,6 +685,7 @@ class EncreLoop:
         )
         self.safety = safety or EncreSafetyEngine(config)
         self.compact_engine = CompactEngine()
+        self._compaction_pipeline = CompactionPipeline()
         self.prompt_builder = EncrePromptTemplate()
         self.rollback = EncreRollbackGit()
         self._permission_event: asyncio.Event | None = None
@@ -684,15 +699,19 @@ class EncreLoop:
         # single click terminates the entire agent tree immediately,
         # not just the top-level loop.
         self._child_loops: set[Any] = set()
-        # Plan-mode state. When ``plan_mode_active`` is True, write-class
-        # tools (``file_write``/``file_edit``/``apply_patch``) are NOT
-        # executed directly.  Instead the loop builds a preview
-        # (diff/command summary), emits a ``PlanProposal`` event, and
-        # waits for the user to approve or reject via
-        # ``approve_plan``/``reject_plan`` before continuing.  This
-        # gives desktop UI a real "plan-first" workflow that matches
-        # Claude Code's plan mode.
-        self.plan_mode_active: bool = False
+        # Plan-mode state. ``plan_mode_active`` is a *derived* read-only
+        # property (True iff ``config.slash_command_mode == "plan"``) so the
+        # boolean flag can never drift out of sync with the string mode the
+        # rest of the system reads.  When plan mode is on, write-class tools
+        # (``file_write``/``file_edit``/``apply_patch``) are NOT executed
+        # directly.  Instead the loop builds a preview (diff/command
+        # summary), emits a ``PlanProposal`` event, and waits for the user
+        # to approve or reject via ``approve_plan``/``reject_plan`` before
+        # continuing.  This gives desktop UI a real "plan-first" workflow
+        # that matches Claude Code's plan mode.
+        # All mode transitions go through :meth:`set_mode`, which keeps the
+        # ``config.slash_command_mode`` string, ``session.metadata`` mirror,
+        # and the derived ``plan_mode_active`` flag consistent atomically.
         self._plan_event: asyncio.Event | None = None
         self._plan_decision: bool = False
         self._plan_proposals: dict[str, dict[str, Any]] = {}
@@ -713,34 +732,36 @@ class EncreLoop:
         self._compact_task: asyncio.Task[None] | None = None
         # Pending compact notification to yield at next turn start
         self._compact_notification: CompactNotification | None = None
+        # Whether any compaction (synchronous or background) replaced messages
+        # during the current turn.  The Finish event carries this flag so the
+        # frontend can request a message refresh and avoid "Message not found"
+        # errors when rolling back to compacted-away messages.
+        self._compacted_this_turn: bool = False
         # Streaming tool execution cache: maps client_id → precomputed execution result.
         # Populated in background during streaming when
         # ``enable_streaming_tool_execution`` is True.
         self._streaming_tool_results: dict[str, dict[str, Any]] = {}
+        # Background sub-agent tracker for async/fire-and-forget mode.
+        # Lazily initialised on first async sub-agent spawn.
+        self._bg_sub_agents: Any = None
         # ── Recovery state ─────────────────────────────────────────
-        # Max output tokens recovery: escalates from default_slot_tokens
-        # to max_tokens, then retries up to MAX_OUTPUT_TOKENS_RECOVERY_LIMIT.
-        self._max_output_tokens_recovery_count: int = 0
+        # Unified error orchestrator — owns all recovery decisions and
+        # counters.  Replaces the old RecoveryStateMachine + inline scalars.
         self._max_output_tokens_override: int | None = None
-        self._has_attempted_reactive_compact: bool = False
-        self._slot_escalated: bool = False
-        # Unified recovery state machine (opt-in).  When
-        # ``enable_unified_recovery`` is True, the loop consults this machine
-        # for "have we tried X" guard decisions; when False the inline
-        # guards above remain authoritative and the RSM stays dormant.
-        from encre.loop_recovery import RecoveryStateMachine
-        self._rsm: RecoveryStateMachine = RecoveryStateMachine()
+        self._error_orch: ErrorOrchestrator = ErrorOrchestrator()
+        # Per-run loop state (initialized at start of each _run_impl).
+        self._state: LoopState | None = None
         # Fallback model tracking: set when a fallback switch occurs.
         self._active_fallback_model: str = ""
         self._active_fallback_backend_type: str = ""
+        # Reactive compact guard: set to True after first reactive compact per turn.
+        self._has_attempted_reactive_compact: bool = False
+        # System prompt cache: keyed by content hash so we skip rebuild when nothing changed.
+        self._sys_prompt_cache: str | None = None
+        self._sys_prompt_cache_key: Any = None
         # Spec engine: set externally by ws.py so the loop can parse specs
         # and enforce the approval gate in spec mode.
         self.spec_engine: Any = None
-        # ── Loop stability state ────────────────────────────────────
-        # Empty response retry counter (resets each user turn)
-        self._empty_response_retry_count: int = 0
-        # Truncated tool call retry counter
-        self._truncated_tool_call_retry_count: int = 0
         # Steer queue for mid-conversation user instructions
         self._steer_queue: SteerQueue = SteerQueue()
         # Budget state for grace call support.  Restored from session metadata
@@ -1000,7 +1021,19 @@ class EncreLoop:
             "verify": "Validate with reads, tests, or checks. Look for regressions and mismatches with the plan.",
             "report": "Summarize outcomes, touched files, verification evidence, and remaining risks.",
         }
-        return f"## Task Stage\nCurrent stage: {stage}\nGuidance: {guidance.get(stage, '')}"
+        # NOTE: this is an internal WORK PHASE, not a user-facing "mode".
+        # The user-visible mode is the slash-command mode (plan/spec/normal)
+        # declared in the Slash Commands block.  Keep the wording distinct so
+        # the model never confuses "phase" with "mode" when asked which mode
+        # it is in.
+        return (
+            f"## Work Phase (internal, not a user mode)\n"
+            f"Current work phase: {stage}\n"
+            f"Guidance: {guidance.get(stage, '')}\n"
+            f"This is an internal scheduling hint. It is NOT a mode. "
+            f"When asked which mode you are in, answer based on the "
+            f"Slash Commands / mode block, not this phase."
+        )
 
     def _should_delegate_sub_agent(self, prompt: str, prepared: list[dict[str, Any]]) -> tuple[bool, str, str]:
         if self.sub_agent_depth > 0:
@@ -1034,7 +1067,7 @@ class EncreLoop:
             return ""
         advisor_prompt = (
             f"Parent task: {prompt}\n\n"
-            f"Current stage: {self.session.metadata.get('task_stage', 'discover')}\n"
+            f"Current work phase: {self.session.metadata.get('task_stage', 'discover')}\n"
             f"Reason for delegation: {reason}\n\n"
             "Return only concise guidance for the parent agent:\n"
             "1. What facts matter most now\n"
@@ -1100,11 +1133,12 @@ class EncreLoop:
                 logger.warning(f"Error closing backend: {e}", extra={"backend": type(self.backend).__name__})
 
     async def _wait_for_permission_decision(self, tool_name: str) -> bool:
-        """Wait for a permission decision, cancel signal, or timeout.
+        """Wait for a permission decision or cancel signal.
 
         Returns True only when the user explicitly allows the request.
-        Cancellation and timeout are treated as denials so the loop never
-        leaves an unresolved permission request behind.
+        Cancellation is treated as denial so the loop never leaves an
+        unresolved permission request behind.  Never times out — the
+        user must explicitly Allow or Deny before the tool proceeds.
         """
         if self._permission_event is None:
             return False
@@ -1128,7 +1162,6 @@ class EncreLoop:
             done, pending = await asyncio.wait(
                 [permission_waiter, cancel_waiter],
                 return_when=asyncio.FIRST_COMPLETED,
-                timeout=120.0,
             )
             await _drain(pending)
 
@@ -1137,12 +1170,7 @@ class EncreLoop:
                     "Permission request cancelled for tool '%s'", tool_name,
                 )
                 return False
-            if permission_waiter in done:
-                return self._permission_decision
-            logger.warning(
-                "Permission request timed out for tool '%s'", tool_name,
-            )
-            return False
+            return self._permission_decision
         except asyncio.CancelledError:
             await _drain([permission_waiter, cancel_waiter])
             raise
@@ -1176,6 +1204,56 @@ class EncreLoop:
     # diffs / previews with explicit accept / reject buttons.  This
     # makes the agent a true "plan first" workflow: it proposes the
     # change, the user inspects it, and only then does the tool run.
+    #
+    # The three modes -- ``""`` (normal), ``"plan"``, ``"spec"`` -- are
+    # all funnelled through :meth:`set_mode`, the single transition
+    # entry point, so ``config.slash_command_mode`` (string),
+    # ``session.metadata`` mirror, and the derived
+    # ``plan_mode_active`` flag can never disagree.  ``plan_mode_active``
+    # is ``True`` only for ``"plan"``; ``"spec"`` is a separate strict
+    # mode that does NOT intercept write tools (it enforces its own
+    # approval gate via ``self.spec_engine`` instead).
+
+    @property
+    def plan_mode_active(self) -> bool:
+        """Whether write-class tools are currently intercepted as proposals.
+
+        Derived from ``config.slash_command_mode`` so the flag and the
+        mode string the rest of the system consults can never diverge.
+        Only ``"plan"`` activates tool interception; ``"spec"`` does not.
+        """
+        return getattr(self.config, "slash_command_mode", "") == "plan"
+
+    _VALID_MODES: tuple[str, ...] = ("", "plan", "spec")
+
+    def set_mode(self, mode: str) -> None:
+        """Switch the persistent slash-command mode.
+
+        ``mode`` must be one of ``""`` (normal), ``"plan"``, or
+        ``"spec"``; any other value is normalised to ``""``.  This is
+        the *only* place that mutates mode state: it keeps
+        ``config.slash_command_mode``, ``session.metadata`` mirror
+        (``slash_command_mode`` string + the legacy ``plan_mode_active``
+        bool for backward compatibility), and the derived
+        ``plan_mode_active`` property consistent atomically.  Leaving
+        plan mode also wakes any waiter parked on a pending plan
+        proposal so the loop can decide what to do with it.
+        """
+        mode = mode if mode in self._VALID_MODES else ""
+        prev = getattr(self.config, "slash_command_mode", "")
+        self.config.slash_command_mode = mode
+        # Mirror into session metadata so the mode survives a session
+        # reload / reconnect.  ``""`` clears the persistent slot.
+        if mode:
+            self.session.metadata["slash_command_mode"] = mode
+        else:
+            self.session.metadata.pop("slash_command_mode", None)
+        # Legacy bool kept for external readers / persisted sessions.
+        self.session.metadata["plan_mode_active"] = (mode == "plan")
+        # Leaving plan mode must unblock any waiter parked on a
+        # pending plan proposal so it does not hang forever.
+        if prev == "plan" and mode != "plan" and self._plan_event is not None:
+            self._plan_event.set()
 
     def enter_plan_mode(self, reason: str = "") -> PlanModeChanged:
         """Switch the loop into plan mode.
@@ -1183,17 +1261,63 @@ class EncreLoop:
         Subsequent write-class tools will be intercepted and emitted
         as ``PlanProposal`` events until ``exit_plan_mode`` is called.
         """
-        self.plan_mode_active = True
+        self.set_mode("plan")
         return create_plan_mode_changed(True, reason=reason)
 
     def exit_plan_mode(self, reason: str = "") -> PlanModeChanged:
         """Leave plan mode. Pending proposals remain in the queue."""
-        self.plan_mode_active = False
+        self.set_mode("")
         # Wake any waiters so the loop can decide what to do with the
         # remaining queued proposals.
         if self._plan_event is not None:
             self._plan_event.set()
         return create_plan_mode_changed(False, reason=reason)
+
+    # ── Active command API ────────────────────────────────────────────
+    #
+    # A slash *command* (built-in action or user-defined ``*.md`` command)
+    # is a sticky prompt injection that is NOT a mode: it does not intercept
+    # write tools and does not run the spec approval gate.  Once activated
+    # it stays in effect across turns (its ``command_instructions`` block is
+    # re-injected on every run) until explicitly cleared.  This mirrors the
+    # persistence model of :meth:`set_mode` so a command survives session
+    # reload / reconnect / restart: ``config.active_command`` is the
+    # in-memory mirror, ``session.metadata["active_command"]`` is the
+    # on-disk source of truth.  A command and a mode (plan/spec) may be
+    # active at the same time -- they are independent slots.
+
+    def set_command(self, name: str, prompt: str, icon: str = "",
+                    title: str = "") -> None:
+        """Activate (or replace) the persistent slash command.
+
+        Stores ``{name, prompt, icon, title}`` in both
+        ``config.active_command`` and ``session.metadata["active_command"]``
+        so the command's instructions are re-injected every turn until
+        :meth:`clear_command` is called.  An empty ``name`` clears the slot.
+        """
+        name = (name or "").strip()
+        if not name:
+            self.clear_command()
+            return
+        payload = {
+            "name": name,
+            "prompt": prompt or "",
+            "icon": icon or "",
+            "title": title or name,
+        }
+        self.config.active_command = payload
+        self.session.metadata["active_command"] = payload
+
+    def clear_command(self) -> None:
+        """Deactivate the persistent slash command (no-op if none active)."""
+        self.config.active_command = None
+        self.session.metadata.pop("active_command", None)
+
+    @property
+    def active_command_name(self) -> str:
+        """Name of the active slash command, or ``""`` if none is active."""
+        cmd = getattr(self.config, "active_command", None)
+        return cmd.get("name", "") if cmd else ""
 
     def approve_plan(self, proposal_id: str = "") -> None:
         """Approve a pending plan proposal.
@@ -2235,13 +2359,10 @@ class EncreLoop:
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
-        # Reset per-run counters so state doesn't leak across runs
-        self._empty_response_retry_count = 0
-        self._truncated_tool_call_retry_count = 0
-        self._max_output_tokens_recovery_count = 0
-        self._unknown_error_retry_count = 0
-        # RSM reset mirrors the inline counters above (per-run, not per-turn).
-        self._rsm.reset_for_new_turn()
+        # Reset per-run recovery state via the unified orchestrator.
+        self._error_orch.reset_for_new_turn()
+        # Initialize per-run loop state with transition history tracking.
+        self._state = LoopState.create(turn_count=self.session.turn_count)
         # Log effective max_turns so we can diagnose unexpected session stops
         logger.info("[run] _run_impl start turn=%s max_turns=%s backend=%s model=%s",
                      self.session.turn_count, self.config.max_turns,
@@ -2293,11 +2414,9 @@ class EncreLoop:
                 tuple(c.get("name", "") for c in (slash_commands or [])),
                 tuple(sorted(s.name for s in self.skill_registry.list_all()
                        if s.user_invocable and not s.name.startswith("tool-"))) if self.skill_registry else (),
+                self.active_command_name,
             )
-            if (
-                hasattr(self, "_sys_prompt_cache")
-                and self._sys_prompt_cache_key == _cache_key
-            ):
+            if self._sys_prompt_cache is not None and self._sys_prompt_cache_key == _cache_key:
                 system_prompt = self._sys_prompt_cache
             else:
                 system_prompt = self.prompt_builder.build_system_prompt(
@@ -2314,6 +2433,7 @@ class EncreLoop:
                     slash_command_mode=slash_command_mode,
                     slash_commands=slash_commands,
                     skill_summary=self._render_skill_catalogue(),
+                    active_command=getattr(self.config, "active_command", None),
                 )
                 self._sys_prompt_cache = system_prompt
                 self._sys_prompt_cache_key = _cache_key
@@ -2336,8 +2456,15 @@ class EncreLoop:
                 slash_command_mode=slash_command_mode,
                 slash_commands=slash_commands,
                 skill_summary=self._render_skill_catalogue(),
+                active_command=getattr(self.config, "active_command", None),
             )
             system_prompt = system_prompt + "\n\n" + built
+        else:
+            # Custom system_prompt provided but we are in normal mode.  The
+            # custom prompt may be silent about the current mode, so the model
+            # can infer it incorrectly from earlier plan/spec messages.  Force
+            # an explicit normal-mode declaration at the top.
+            system_prompt = "Current mode: NORMAL MODE. You are not in plan mode or spec mode. Ignore any mode claims in earlier messages; this system instruction is authoritative.\n\n" + system_prompt
 
         # When a custom system_prompt was provided by a parent agent (not
         # None, not plan/spec mode), skip workspace context enrichment.
@@ -2354,6 +2481,7 @@ class EncreLoop:
         if not _skip_enrichment:
             codebase_ctx = await self._build_codebase_context()
             if codebase_ctx:
+                self._ctx_renderer.record("Codebase Index", codebase_ctx)
                 system_prompt = system_prompt + "\n\n" + codebase_ctx
 
         # Prepend skill prompt to system prompt
@@ -2435,6 +2563,7 @@ class EncreLoop:
                 try:
                     memory_prompt = self._build_memory_prompt()
                     if memory_prompt:
+                        self._ctx_renderer.record("Memory", memory_prompt)
                         system_prompt = system_prompt + "\n\n" + memory_prompt
                 except Exception:
                     pass
@@ -2444,6 +2573,7 @@ class EncreLoop:
                 try:
                     profile_prompt = self._build_profile_prompt(prompt)
                     if profile_prompt:
+                        self._ctx_renderer.record("Profile", profile_prompt)
                         system_prompt = system_prompt + "\n\n" + profile_prompt
                 except Exception:
                     pass
@@ -2453,6 +2583,7 @@ class EncreLoop:
                 try:
                     soul_prompt = self._build_soul_prompt()
                     if soul_prompt:
+                        self._ctx_renderer.record("Soul", soul_prompt)
                         system_prompt = system_prompt + "\n\n" + soul_prompt
                 except Exception:
                     pass
@@ -2461,21 +2592,26 @@ class EncreLoop:
             try:
                 doc_prompt = self._build_document_context()
                 if doc_prompt:
+                    self._ctx_renderer.record("Documents", doc_prompt)
                     system_prompt = system_prompt + "\n\n" + doc_prompt
             except Exception:
                 pass
 
         stage_prompt = self._build_stage_prompt()
         if stage_prompt:
+            self._ctx_renderer.record("Task Stage", stage_prompt)
             system_prompt = system_prompt + "\n\n" + stage_prompt
         working_set_prompt = self._build_working_set_prompt()
         if working_set_prompt:
+            self._ctx_renderer.record("Current Task", working_set_prompt)
             system_prompt = system_prompt + "\n\n" + working_set_prompt
         turn_summary_prompt = self._build_turn_summary_prompt()
         if turn_summary_prompt:
+            self._ctx_renderer.record("Prior Turns", turn_summary_prompt)
             system_prompt = system_prompt + "\n\n" + turn_summary_prompt
         stuck_prompt = self._build_stuck_recovery_prompt()
         if stuck_prompt:
+            self._ctx_renderer.record("Recovery", stuck_prompt)
             system_prompt = system_prompt + "\n\n" + stuck_prompt
         # Inject user rules (project-level + global)
         try:
@@ -2484,9 +2620,16 @@ class EncreLoop:
                 from encre.prompts.loader import PromptLoader
                 _loader = PromptLoader()
                 rules_block = _loader.load_with_context("rules", rules_content=rules_prompt)
+                self._ctx_renderer.record("User Rules", rules_prompt)
                 system_prompt = system_prompt + "\n\n" + rules_block
         except Exception:
             pass
+
+        # Append context annotation: tells the model what changed since last turn
+        ctx_annotation = self._ctx_renderer.build_annotation()
+        if ctx_annotation:
+            system_prompt = system_prompt + "\n\n" + ctx_annotation
+        self._ctx_renderer.finalize_turn()
 
         # Update system message on every run so prompt blocks match current intents
         has_system = any(
@@ -2547,6 +2690,7 @@ class EncreLoop:
 
         while not self.session.is_max_turns_reached() and not self._cancelled():
             turn_start = time.time()
+            self._compacted_this_turn = False
             turn_events = 0
             self._streaming_tool_results.clear()
             _t_ts = time.time()
@@ -2583,117 +2727,87 @@ class EncreLoop:
                 pct=100 * est_tokens / window if window else 0,
             )
 
-            # Step 1: microcompact -- cheap cleanup of old tool results
-            if self.compact_engine.should_microcompact(context_msgs, window):
-                micro = await self.compact_engine.microcompact(context_msgs, window)
-                if len(micro) != len(context_msgs):
-                    self.session.replace_branch_messages(self.session.active_branch_id, micro)
+            # ── Unified compression pipeline ───────────────────────────
+            # Replaces the ad-hoc step1/step1a/step1b/step2 with a single
+            # pipeline that runs stages in order: budget → collapse →
+            # microcompact → snip → autocompact (async) → milestone.
+            try:
+                pipeline_report = await self._compaction_pipeline.run(
+                    context_msgs,
+                    backend=self.backend,
+                    config=self.config,
+                )
+                if pipeline_report.messages is not context_msgs:
+                    self.session.replace_branch_messages(
+                        self.session.active_branch_id, pipeline_report.messages,
+                    )
+                    self._compacted_this_turn = True
                     ctx_msgs = self.session.get_context_messages()
                     context_msgs = ctx_msgs
                     est_tokens = count_message_tokens(context_msgs)
+
+                # Log any stages that did work
+                for s in pipeline_report.stages:
+                    if s.did_work:
+                        logger.info(
+                            "[pipeline] %s turn=%d msgs %d->%d tokens %dk->%dk %s",
+                            s.name, self.session.turn_count,
+                            s.msgs_before, s.msgs_after,
+                            s.tokens_before // 1000, s.tokens_after // 1000,
+                            s.detail or "",
+                        )
+
+                # Async autocompact background task (if pipeline triggered it)
+                if pipeline_report.needs_compact:
+                    if self._compact_task and not self._compact_task.done():
+                        self._compact_task.cancel()
                     logger.info(
-                        "[microcompact] done turn=%d msgs %d->%d tokens %dk",
-                        self.session.turn_count, len(context_msgs),
-                        len(micro), est_tokens // 1000,
+                        "[compact] triggering turn=%d tokens=%dk window=%dk (async)",
+                        self.session.turn_count, est_tokens // 1000, window // 1000,
                     )
 
-            # Step 1a: context collapse -- deterministic one-line stubs for old
-            # tool results, before the model-driven compact.  LLM-free, so it
-            # runs ahead of the expensive summarisation and shrinks what the
-            # model has to summarise.  Gated off by default.
-            if getattr(self.config, "enable_context_collapse", False):
-                try:
-                    from encre.loop_state.collapse import collapse_old_tool_outputs, count_collapsed
-                    collapsed = collapse_old_tool_outputs(context_msgs)
-                    n_collapsed = count_collapsed(collapsed)
-                    if n_collapsed:
-                        self.session.replace_branch_messages(self.session.active_branch_id, collapsed)
-                        ctx_msgs = self.session.get_context_messages()
-                        context_msgs = ctx_msgs
-                        est_tokens = count_message_tokens(context_msgs)
-                        logger.info(
-                            "[collapse] stubbed %d old tool results turn=%d tokens %dk",
-                            n_collapsed, self.session.turn_count, est_tokens // 1000,
-                        )
-                except Exception as _ce:
-                    logger.warning("[collapse] failed: %s", _ce)
-
-            # Step 1b: multi-stage pipeline -- pure message-transform
-            # reductions (budget/snip/semantic/collapse) that run before the
-            # model-driven compact, so the expensive summarisation is only a
-            # last resort.  Gated off by default; enable via config.
-            if getattr(self.config, "enable_multi_stage_compact", False):
-                try:
-                    from encre.compact.strategies import EncreMultiStagePipeline
-                    if not hasattr(self, "_multi_stage_pipeline"):
-                        self._multi_stage_pipeline = EncreMultiStagePipeline()
-                    if await self._multi_stage_pipeline.should_compact(context_msgs, window):
-                        reduced = await self._multi_stage_pipeline.compact(context_msgs, window)
-                        if len(reduced) != len(context_msgs):
-                            self.session.replace_branch_messages(self.session.active_branch_id, reduced)
-                            ctx_msgs = self.session.get_context_messages()
-                            context_msgs = ctx_msgs
-                            est_tokens = count_message_tokens(context_msgs)
-                            logger.info(
-                                "[multi_stage] done turn=%d msgs %d->%d tokens %dk",
-                                self.session.turn_count, len(context_msgs),
-                                len(reduced), est_tokens // 1000,
+                    async def _do_compact(context_msgs=context_msgs, est_tokens=est_tokens):
+                        try:
+                            self.session.set_compact_archive(context_msgs)
+                            await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
+                            compacted = await self.compact_engine.compact(
+                                context_msgs, backend=self.backend,
+                                turn_count=self.session.turn_count,
+                                system_prompt=system_prompt or "",
+                                enable_caching=self.config.enable_prompt_caching,
+                                session_id=self.session.id or "",
                             )
-                except Exception as _pe:
-                    logger.warning("[multi_stage] pipeline failed: %s", _pe)
-
-            # Step 2: full compaction -- model-driven summarisation
-            # Runs asynchronously in background; result applies to next turn
-            if self.compact_engine.should_compact(context_msgs, window):
-                if self._compact_task and not self._compact_task.done():
-                    self._compact_task.cancel()
-                logger.info(
-                    "[compact] triggering turn=%d tokens=%dk window=%dk (async)",
-                    self.session.turn_count, est_tokens // 1000, window // 1000,
-                )
-
-                async def _do_compact(context_msgs=context_msgs, est_tokens=est_tokens):
-                    try:
-                        self.session.set_compact_archive(context_msgs)
-                        await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
-                        compacted = await self.compact_engine.compact(
-                            context_msgs, backend=self.backend,
-                            turn_count=self.session.turn_count,
-                            system_prompt=system_prompt or "",
-                            enable_caching=self.config.enable_prompt_caching,
-                        session_id=self.session.id or "",
-                        )
-                        if compacted is not None:
-                            self.session.replace_branch_messages(self.session.active_branch_id, compacted)
-                            self._update_user_requirements(compacted)
-                            new_tokens = count_message_tokens(compacted)
-                            self._compact_notification = CompactNotification(
-                                old_count=len(context_msgs),
-                                new_count=len(compacted),
-                                old_tokens=est_tokens,
-                                new_tokens=new_tokens,
+                            if compacted is not None:
+                                self.session.replace_branch_messages(self.session.active_branch_id, compacted)
+                                self._compacted_this_turn = True
+                                self._update_user_requirements(compacted)
+                                new_tokens = count_message_tokens(compacted)
+                                self._compact_notification = CompactNotification(
+                                    old_count=len(context_msgs),
+                                    new_count=len(compacted),
+                                    old_tokens=est_tokens,
+                                    new_tokens=new_tokens,
+                                )
+                                logger.info(
+                                    "[compact] bg done turn=%d msgs %d->%d tokens %dk->%dk",
+                                    self.session.turn_count, len(context_msgs),
+                                    len(compacted), est_tokens // 1000, new_tokens // 1000,
+                                )
+                        except asyncio.CancelledError:
+                            logger.info("[compact] cancelled (new turn started)")
+                        except Exception:
+                            logger.warning(
+                                "[compact] bg failed turn=%d -- circuit breaker or API error",
+                                self.session.turn_count,
                             )
-                            logger.info(
-                                "[compact] bg done turn=%d msgs %d->%d tokens %dk->%dk",
-                                self.session.turn_count, len(context_msgs),
-                                len(compacted), est_tokens // 1000, new_tokens // 1000,
-                            )
-                    except asyncio.CancelledError:
-                        logger.info("[compact] cancelled (new turn started)")
-                    except Exception:
-                        logger.warning(
-                            "[compact] bg failed turn=%d -- circuit breaker or API error",
-                            self.session.turn_count,
-                        )
 
-                self._compact_task = asyncio.create_task(_do_compact())
+                    self._compact_task = asyncio.create_task(_do_compact())
+
+            except Exception as _pe:
+                logger.warning("[pipeline] failed turn=%d: %s", self.session.turn_count, _pe)
 
             # P1: milestone summarisation.  Every MILESTONE_INTERVAL turns
-            # we write a compact "milestone" into session metadata.  The
-            # next full compact then only needs to summarise the slice
-            # AFTER the last milestone, so each compaction pass deals
-            # with a much smaller window -- reducing summary loss and
-            # avoiding the "summary of summary" cascade.
+            # we write a compact "milestone" into session metadata.
             try:
                 await self._maybe_write_milestone(context_msgs)
             except Exception as _m_err:
@@ -2866,6 +2980,7 @@ class EncreLoop:
                         self.session.replace_branch_messages(
                             self.session.active_branch_id, _compacted
                         )
+                        self._compacted_this_turn = True
                         backend_messages = self.session.get_context_messages()
                         # Re-inject system messages that were lost during session refresh
                         if _injected_system_entries:
@@ -2928,7 +3043,7 @@ class EncreLoop:
                 str(backend_messages[0])[:200] if backend_messages else "",
             )
             _llm_span.set_attribute("llm.turn", self.session.turn_count)
-            _reactive_compacted = False
+            self._error_orch.reset_for_new_turn()
             # Slot reservation: start with a small output budget and
             # escalate to the full budget only when the model hits the
             # limit ("max_tokens" or "length" finish reason).  This
@@ -2942,7 +3057,6 @@ class EncreLoop:
                 _slot_budget = self.config.default_slot_tokens
             else:
                 _slot_budget = self.config.max_tokens
-            _slot_escalated = self._slot_escalated
             _slot_finish_reason = "stop"
             # Fallback loop: retry with fallback model on rate-limit/overload
             _attempt_fallback = True
@@ -3174,16 +3288,40 @@ class EncreLoop:
                             raise RuntimeError(event.error)
 
                 except Exception as exc:
-                    # Reactive compact: on context overflow (413), compact the session
-                    # synchronously so the next turn has room and retries naturally
-                    # instead of showing the user an error card.
-                    _rsm_active = getattr(self.config, "enable_unified_recovery", False)
-                    if _rsm_active:
-                        from encre.loop_recovery import RecoveryKind
-                        _rsm_allows_compact = self._rsm.can_attempt(RecoveryKind.REACTIVE_COMPACT)
-                    else:
-                        _rsm_allows_compact = True
-                    if not _reactive_compacted and _is_context_overflow(exc) and _rsm_allows_compact:
+                    from encre.backends.base import format_backend_error
+                    from encre.recovery_loop import is_context_overflow, is_rate_limit_or_overload, can_fallback, reactive_compact_with_retry, build_fallback_system_message
+                    # build_tombstone_messages is imported at module top
+                    # level from encre.loop_stability (the module that
+                    # actually defines it).  Do NOT re-import it from
+                    # recovery_loop -- that module does not define it and
+                    # the import would raise ImportError whenever this
+                    # fallback path runs.
+                    from encre.loop_stability import classify_error as _legacy_classify, WithheldError
+                    from encre.errors import AgentError
+
+                    # Build structured error from the exception
+                    _agent_err = AgentError.from_exception(exc, finish_reason=None)
+                    _error_kind = _legacy_classify(exc)
+                    _is_ctx_overflow = is_context_overflow(exc)
+                    _is_rate_limit = is_rate_limit_or_overload(exc)
+
+                    decision = self._error_orch.handle_backend_exception(
+                        exc,
+                        error_code=_agent_err.code.value,
+                        error_category=_agent_err.category.value,
+                        is_context_overflow=_is_ctx_overflow,
+                        is_rate_limit=_is_rate_limit,
+                        config=self.config,
+                        compact_engine=self.compact_engine,
+                        session=self.session,
+                        backend=self.backend,
+                        system_prompt=system_prompt or "",
+                        tool_call_buffers=tool_call_buffers,
+                        turn_count=self.session.turn_count,
+                    )
+
+                    if decision.action == RecoveryAction.COMPACT_CONTINUE:
+                        # Reactive compact: compress session and retry
                         try:
                             context_msgs = self.session.get_context_messages()
                             est = count_message_tokens(context_msgs)
@@ -3193,70 +3331,50 @@ class EncreLoop:
                                 turn_count=self.session.turn_count,
                                 system_prompt=system_prompt or "",
                                 enable_caching=self.config.enable_prompt_caching,
-                        session_id=self.session.id or "",
+                                session_id=self.session.id or "",
                             )
                             if compacted is not None:
                                 self.session.replace_branch_messages(self.session.active_branch_id, compacted)
+                                self._compacted_this_turn = True
                                 self._update_user_requirements(compacted)
                                 logger.info("[reactive] compact succeeded turn=%d, continuing without error",
                                             self.session.turn_count)
-                                _reactive_compacted = True
                                 self._has_attempted_reactive_compact = True
-                                if _rsm_active:
-                                    self._rsm.record_attempt(RecoveryKind.REACTIVE_COMPACT)
-                                    self._rsm.mark_recovered()
                                 _llm_span.set_attribute("llm.reactive_compact", "succeeded")
                                 _llm_span.end()
-                                # Refresh memory so the model sees current state on retry
+                                if self._state is not None:
+                                    self._state.transitions.record(
+                                        TurnTransition.REACTIVE_COMPACT,
+                                        turn=self.session.turn_count,
+                                        detail="context overflow",
+                                    )
                                 if self.memory_system is not None:
-                                    try:
-                                        self.memory_system.refresh()
-                                    except Exception:
-                                        logger.warning("[reactive] memory refresh failed", exc_info=True)
-                                # Don't yield error -- next turn picks up compacted messages
+                                    try: self.memory_system.refresh()
+                                    except Exception: logger.warning("[reactive] memory refresh failed", exc_info=True)
                                 continue
                         except Exception as _ce:
                             logger.warning("[reactive] compact failed turn=%d: %s",
                                            self.session.turn_count, _ce)
 
-                    # Model fallback: on rate-limit / overload, switch to
-                    # fallback model and retry once.  Mirrors Claude Code's
-                    # FallbackTriggeredError in query.ts.
-                    _rsm_allows_fallback = True
-                    if _rsm_active:
-                        _rsm_allows_fallback = self._rsm.can_attempt(RecoveryKind.MODEL_FALLBACK)
-                    if can_fallback(self.config) and is_rate_limit_or_overload(exc) and _rsm_allows_fallback:
+                    if decision.action == RecoveryAction.FALLBACK_CONTINUE:
+                        # Model fallback
                         original_model = self.config.model
                         fallback_model = self.config.fallback_model
-                        logger.info(
-                            "[fallback] switching from %s to %s due to: %s",
-                            original_model, fallback_model, exc,
-                        )
+                        logger.info("[fallback] switching from %s to %s due to: %s",
+                                    original_model, fallback_model, exc)
                         self._active_fallback_model = fallback_model
                         self._active_fallback_backend_type = self.config.fallback_backend_type or self.config.backend_type
                         _llm_span.set_attribute("llm.fallback", f"{original_model}->{fallback_model}")
                         _llm_span.end()
-                        # Yield system message so the user sees the switch
-                        yield create_system_message(
-                            build_fallback_system_message(original_model, fallback_model)
-                        )
-                        # Tombstone: yield placeholder messages for any
-                        # tool calls that were in-flight when the API failed.
-                        # This ensures the conversation history stays valid
-                        # and the API won't reject the next request.
+                        yield create_system_message(build_fallback_system_message(original_model, fallback_model))
                         if tool_call_buffers:
-                            _tombstones = build_tombstone_messages(
-                                tool_call_buffers, f"model fallback: {exc}"
-                            )
+                            _tombstones = build_tombstone_messages(tool_call_buffers, f"model fallback: {exc}")
                             for _ts in _tombstones:
-                                self.session.add_message(
-                                    _ts["role"], _ts.get("content", ""),
-                                    tool_call_id=_ts.get("tool_call_id"),
-                                    name=_ts.get("name"),
-                                    is_error=_ts.get("is_error", False),
-                                )
+                                self.session.add_message(_ts["role"], _ts.get("content", ""),
+                                    tool_call_id=_ts.get("tool_call_id"), name=_ts.get("name"),
+                                    is_error=_ts.get("is_error", False))
                             tool_call_buffers.clear()
-                        # Build and switch to fallback backend
+                        from encre.backends.base import create_backend
                         fallback_backend = create_backend(
                             fallback_model,
                             self.config.fallback_base_url or self.config.base_url,
@@ -3265,108 +3383,72 @@ class EncreLoop:
                         )
                         self.backend = fallback_backend
                         _attempt_fallback = True
-                        _reactive_compacted = False
-                        if _rsm_active:
-                            from encre.loop_recovery import RecoveryKind as _RK
-                            self._rsm.record_attempt(_RK.MODEL_FALLBACK)
-                            self._rsm.reset_for_fallback()
-                        continue
-
-                    # ── Withheld error pattern ───────────────────────────
-                    # Classify the error and try recovery before showing
-                    # it to the user.  Mirrors Claude Code's withheld error
-                    # pattern in query.ts.
-                    _error_kind = classify_error(exc)
-                    _withheld = WithheldError(exc, kind=_error_kind)
-
-                    # For network errors, retry once with a short delay
-                    if _withheld.should_withhold and _error_kind == "network":
-                        try:
-                            import asyncio as _aio
-                            await _aio.sleep(1.0)
-                            _withheld.consume()
-                            logger.info("[run] network error -- retried after 1s delay turn=%d", self.session.turn_count)
-                            continue
-                        except Exception:
-                            _withheld.release()
-
-                    # For auth errors, surface immediately
-                    if _error_kind == "auth":
-                        _withheld.release()
-
-                    # For unknown errors, try one retry
-                    if _withheld.should_withhold and _error_kind == "unknown":
-                        try:
-                            _withheld.consume()
-                            if self._unknown_error_retry_count < 1:
-                                self._unknown_error_retry_count += 1
-                                _attempt_fallback = True
-                                logger.warning(
-                                    "[run] unknown error -- retry {}/1 turn={} error={}",
-                                    self._unknown_error_retry_count,
-                                    self.session.turn_count,
-                                    format_backend_error(exc),
-                                    exc_info=True,
-                                )
-                                continue
-                            _withheld.release()
-                            logger.warning(
-                                "[run] unknown error retries exhausted turn={} error={}",
-                                self.session.turn_count,
-                                format_backend_error(exc),
-                                exc_info=True,
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.MODEL_FALLBACK,
+                                turn=self.session.turn_count,
+                                detail=f"{original_model} -> {fallback_model}",
                             )
-                        except Exception:
-                            _withheld.release()
-
-                    # If still withheld (recovery succeeded via continue),
-                    # don't show the error
-                    if not _withheld.should_withhold:
-                        _error_consumed = True
                         continue
 
-                    _released_err = _withheld.release()
-                    logger.error("[run] backend.chat() raised exception after %.1fs turn=%s: %s",
-                                time.time() - _t_chat, self.session.turn_count, _released_err)
+                    if decision.action == RecoveryAction.RETRY:
+                        import asyncio as _aio
+                        await _aio.sleep(decision.delay)
+                        logger.info("[run] network error -- retried after %.1fs delay turn=%d", decision.delay, self.session.turn_count)
+                        _attempt_fallback = True
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.NETWORK_RETRY,
+                                turn=self.session.turn_count,
+                                detail=f"{decision.delay}s delay retry",
+                            )
+                        continue
+
+                    if decision.action == RecoveryAction.CONTINUE:
+                        _error_consumed = True
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.ERROR_CONSUMED,
+                                turn=self.session.turn_count,
+                                detail=decision.detail,
+                            )
+                        logger.warning("[run] error consumed -- continuing turn=%d error=%s",
+                                       self.session.turn_count, format_backend_error(exc))
+                        continue
+
+                    # RecoveryAction.RELEASE — surface to user
                     _llm_span.set_attribute("llm.error", str(exc))
                     _llm_span.end()
                     await self.hook_system.emit_error(exc, "backend_chat_exception")
                     await self.hook_system.emit_backend_error(str(exc), type(self.backend).__name__ if self.backend else "unknown")
-                    # Notify the frontend with a finish(error) event so the red error
-                    # card renders in the conversation, rather than silently swallowing
-                    # the error as a plain user message.
                     err_msg = format_backend_error(exc)
-                    yield create_finish("error", error=err_msg)
-                    # Store the error on the CURRENT turn's assistant message (the
-                    # one after the last user message) so it persists across session
-                    # reloads.  The frontend picks up these fields and renders the
-                    # red error card on the correct turn.
+                    yield create_finish("error", error=err_msg,
+                                        error_code=_agent_err.code.value,
+                                        error_category=_agent_err.category.value)
                     _last_ui = -1
                     for _j in range(len(self.session.messages) - 1, -1, -1):
                         if self.session.messages[_j].get("role") == "user":
-                            _last_ui = _j
-                            break
+                            _last_ui = _j; break
                     _cur_asst = None
                     for _j in range(_last_ui + 1, len(self.session.messages)):
                         if self.session.messages[_j].get("role") == "assistant":
-                            _cur_asst = self.session.messages[_j]
-                            break
+                            _cur_asst = self.session.messages[_j]; break
                     if _cur_asst is not None:
                         _cur_asst["errorMessage"] = err_msg
-                        _cur_asst["errorCode"] = "execution_error"
+                        _cur_asst["errorCode"] = _agent_err.code.value
                         _c = _cur_asst.get("content", "")
                         if isinstance(_c, str):
                             _cur_asst["content"] = _c + f"\n\n[Backend API Error]\n{err_msg}"
                     else:
-                        # No assistant message in the current turn (API failed
-                        # immediately).  Create a placeholder so the error persists
-                        # across reloads.  Must use add_message() to set branch_id /
-                        # seq / id etc. so get_context_messages() includes it.
                         self.session.add_message("assistant",
                             f"[Backend API Error]\n{err_msg}",
                             errorMessage=err_msg,
-                            errorCode="execution_error",
+                            errorCode=_agent_err.code.value,
                             segments=[{"kind": "text", "text": f"[Backend API Error]\n{err_msg}"}],
+                        )
+                    if self._state is not None:
+                        self._state.transitions.record(
+                            TurnTransition.ERROR, turn=self.session.turn_count, detail=err_msg[:200],
                         )
                     logger.info("[run] stored backend error on assistant msg turn=%s, exiting", self.session.turn_count)
                     return
@@ -3387,139 +3469,89 @@ class EncreLoop:
                 response_text, len(tool_call_buffers)
             )
 
-            # ── Max output tokens recovery ──────────────────────────
-            # When the model hits the output token limit (finish_reason =
-            # "max_tokens" or "length"), recover by escalating the
-            # slot budget or retrying with a continuation message.
-            # Mirrors Claude Code's maxOutputTokensRecovery in query.ts.
-            if _slot_finish_reason in ("max_tokens", "length"):
-                # When the unified RSM is enabled, route the max-output
-                # recovery guard through it so this third recovery path
-                # participates in the per-turn recovery cap alongside
-                # reactive-compact and model-fallback.
-                _rsm_active = getattr(self.config, "enable_unified_recovery", False)
-                _RK = None
-                if _rsm_active:
-                    from encre.loop_recovery import RecoveryKind as _RK
-                    _rsm_allows_maxout = self._rsm.can_attempt(_RK.MAX_OUTPUT_TOKENS)
-                else:
-                    _rsm_allows_maxout = True
-                if not _slot_escalated and self.config.default_slot_tokens and self.config.default_slot_tokens < self.config.max_tokens:
-                    # First escalation: go from default_slot_tokens to
-                    # full max_tokens.  No retry needed — just bump the
-                    # budget for the next turn.
-                    _slot_escalated = True
-                    self._slot_escalated = True
-                    if _rsm_active:
-                        self._rsm.record_attempt(_RK.SLOT_ESCALATION)
-                    logger.info(
-                        "[slot] escalating from %d -> %d turn=%d",
-                        self.config.default_slot_tokens, self.config.max_tokens,
-                        self.session.turn_count,
-                    )
-                    # Inject a continuation message so the next chunk
-                    # reads naturally
-                    yield create_system_message(
-                        build_slot_escalation_message()
-                    )
-                elif _rsm_allows_maxout and self._max_output_tokens_recovery_count < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT:
-                    # Already at max_tokens, but still hitting the
-                    # limit.  Retry with the recovery message.
-                    self._max_output_tokens_recovery_count += 1
-                    self._max_output_tokens_override = ESCALATED_MAX_TOKENS
-                    if _rsm_active:
-                        self._rsm.record_attempt(_RK.MAX_OUTPUT_TOKENS)
-                    # Tombstone: if the model was truncated mid-tool-call
-                    # the in-flight tool_use blocks have no matching
-                    # tool_result, which the API rejects on the next
-                    # request.  Synthesize error tool_results before the
-                    # retry continue.  Mirrors the model-fallback path.
-                    if tool_call_buffers:
-                        _tombstones = build_tombstone_messages(
-                            tool_call_buffers, "max_tokens truncation"
-                        )
-                        for _ts in _tombstones:
-                            self.session.add_message(
-                                _ts["role"], _ts.get("content", ""),
-                                tool_call_id=_ts.get("tool_call_id"),
-                                name=_ts.get("name"),
-                                is_error=_ts.get("is_error", False),
-                            )
-                        tool_call_buffers.clear()
-                    logger.info(
-                        "[max_tokens] recovery attempt %d/%d turn=%d",
-                        self._max_output_tokens_recovery_count,
-                        MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
-                        self.session.turn_count,
-                    )
-                    yield create_system_message(
-                        build_max_tokens_recovery_message()
-                    )
-                    continue
-                else:
-                    # Exhausted retries — let the text-only exit logic
-                    # decide whether to stop
-                    if _rsm_active:
-                        self._rsm.mark_recovered()
-                    logger.warning(
-                        "[max_tokens] recovery exhausted after %d attempts turn=%d",
-                        self._max_output_tokens_recovery_count,
-                        self.session.turn_count,
-                    )
+            # ── Post-stream recovery (orchestrator) ──────────────────
+            post_decision = self._error_orch.handle_post_stream(
+                finish_reason=_slot_finish_reason,
+                is_empty=is_empty_response(text_parts, tool_call_buffers, thinking_parts) if not _error_consumed else False,
+                is_truncated=bool(tool_call_buffers) and is_truncated_tool_call(tool_call_buffers),
+                tool_call_buffers=tool_call_buffers,
+                text_parts=text_parts,
+                thinking_parts=thinking_parts,
+                config=self.config,
+                session=self.session,
+                turn_count=self.session.turn_count,
+            )
 
-            # ── Empty response retry ─────────────────────────────────
-            # When the model returns no content and no tool calls, retry
-            # with a prompt to respond.  Mirrors Hermes agent's empty
-            # response retry in conversation_loop.py.
             if _error_consumed:
                 yield create_finish("stop")
                 return
-            if is_empty_response(text_parts, tool_call_buffers, thinking_parts):
-                if self._empty_response_retry_count < 2:
-                    self._empty_response_retry_count += 1
-                    logger.warning(
-                        "[run] empty response, retry %d/2 turn=%d",
-                        self._empty_response_retry_count,
-                        self.session.turn_count,
-                    )
-                    self.session.add_message("user", build_empty_retry_message(
-                        self._empty_response_retry_count
-                    ))
-                    continue
-                else:
-                    logger.warning("[run] empty response retries exhausted turn=%d", self.session.turn_count)
-                    self.session.add_message("assistant",
-                        "(No response generated. Please try rephrasing your request.)",
-                    )
-                    yield create_finish("stop")
-                    return
 
-            # ── Truncated tool call repair ───────────────────────────
-            # When tool call arguments are truncated/invalid JSON, retry
-            # with a hint to re-issue.  Mirrors Hermes agent's truncated
-            # tool call retry in conversation_loop.py.
-            if tool_call_buffers and is_truncated_tool_call(tool_call_buffers):
-                if self._truncated_tool_call_retry_count < 2:
-                    self._truncated_tool_call_retry_count += 1
+            if post_decision.action == PostStreamAction.CONTINUE:
+                if post_decision.detail == "slot escalation":
+                    self._error_orch._slot_escalated = True
+                    if self._state is not None:
+                        self._state.transitions.record(
+                            TurnTransition.SLOT_ESCALATION,
+                            turn=self.session.turn_count,
+                            detail=f"{self.config.default_slot_tokens} -> {self.config.max_tokens}",
+                        )
+                    logger.info("[slot] escalating from %d -> %d turn=%d",
+                                self.config.default_slot_tokens, self.config.max_tokens, self.session.turn_count)
+                    yield create_system_message(build_slot_escalation_message())
+                elif "max_tokens" in post_decision.detail:
+                    self._max_output_tokens_override = ESCALATED_MAX_TOKENS
+                    if tool_call_buffers:
+                        _tombstones = build_tombstone_messages(tool_call_buffers, "max_tokens truncation")
+                        for _ts in _tombstones:
+                            self.session.add_message(_ts["role"], _ts.get("content", ""),
+                                tool_call_id=_ts.get("tool_call_id"), name=_ts.get("name"),
+                                is_error=_ts.get("is_error", False))
+                        tool_call_buffers.clear()
+                    if self._state is not None:
+                        self._state.transitions.record(
+                            TurnTransition.MAX_OUTPUT_TOKENS,
+                            turn=self.session.turn_count,
+                            detail=post_decision.detail,
+                        )
+                    logger.info("[max_tokens] recovery %s turn=%d", post_decision.detail, self.session.turn_count)
+                    yield create_system_message(build_max_tokens_recovery_message())
+                elif "empty" in post_decision.detail:
+                    if self._state is not None:
+                        self._state.transitions.record(
+                            TurnTransition.EMPTY_RESPONSE,
+                            turn=self.session.turn_count,
+                            detail=post_decision.detail,
+                        )
+                    logger.warning("[run] empty response, %s turn=%d", post_decision.detail, self.session.turn_count)
+                    retry_count = self._error_orch._empty_response_retry_count
+                    self.session.add_message("user", build_empty_retry_message(retry_count))
+                elif "truncated" in post_decision.detail:
                     _first_tc = next(iter(tool_call_buffers.values()))
                     _args_preview = str(_first_tc.get("arguments", ""))[:200]
                     _tc_name = _first_tc.get("name", "unknown")
-                    logger.warning(
-                        "[run] truncated tool call '%s', retry %d/2 turn=%d",
-                        _tc_name, self._truncated_tool_call_retry_count,
-                        self.session.turn_count,
-                    )
-                    # Clear the broken buffers and inject a repair message
+                    if self._state is not None:
+                        self._state.transitions.record(
+                            TurnTransition.TRUNCATED_TOOL_CALL,
+                            turn=self.session.turn_count,
+                            detail=post_decision.detail + f" tool={_tc_name}",
+                        )
+                    logger.warning("[run] truncated tool call '%s', %s turn=%d",
+                                   _tc_name, post_decision.detail, self.session.turn_count)
                     tool_call_buffers.clear()
-                    self.session.add_message("user", build_truncated_retry_message(
-                        _tc_name, _args_preview
-                    ))
-                    continue
-                else:
-                    logger.warning(
-                        "[run] truncated tool call retries exhausted turn=%d",
-                        self.session.turn_count,
-                    )
+                    self.session.add_message("user", build_truncated_retry_message(_tc_name, _args_preview))
+                continue
+
+            if (post_decision.action == PostStreamAction.STOP or
+                (_slot_finish_reason in ("max_tokens", "length") and
+                 not self._error_orch._slot_escalated and
+                 self._error_orch._max_output_tokens_recovery_count >= MAX_OUTPUT_TOKENS_RECOVERY_LIMIT)):
+                # Empty response exhausted
+                if is_empty_response(text_parts, tool_call_buffers, thinking_parts):
+                    logger.warning("[run] empty response retries exhausted turn=%d", self.session.turn_count)
+                    self.session.add_message("assistant",
+                        "(No response generated. Please try rephrasing your request.)")
+                    yield create_finish("stop")
+                    return
 
             if text_parts and not tool_call_buffers:
                 full_text = "".join(text_parts)
@@ -3576,10 +3608,25 @@ class EncreLoop:
 
                 # ── Spec parsing ───────────────────────────────────
                 # In spec mode, when the model produces a text-only response
-                # (no tool calls), it likely generated a specification.
-                # Parse it into the spec engine and emit a system message
-                # so the frontend can show the spec card with approve/reject.
-                if slash_command_mode == "spec" and self.spec_engine and full_text.strip():
+                # (no tool calls), it MAY have generated a specification.
+                # Only treat it as a spec when the output actually looks like
+                # a structured spec document -- i.e. it contains at least one
+                # ``## `` (H2) heading that ``parse_spec`` will split into
+                # sections.  Without this guard, ANY text the model emits in
+                # spec mode (a clarifying question, small talk, an error
+                # apology) gets mis-parsed as a degenerate single-section
+                # "spec" and the frontend pops a spec card / system bubble
+                # for what was just a normal reply.
+                _looks_like_spec = any(
+                    line.lstrip().startswith("## ") and not line.lstrip().startswith("### ")
+                    for line in full_text.splitlines()
+                )
+                if (
+                    slash_command_mode == "spec"
+                    and self.spec_engine
+                    and full_text.strip()
+                    and _looks_like_spec
+                ):
                     try:
                         from encre.spec.engine import SpecStatus as _SpecStatus
                         spec_doc = self.spec_engine.parse_spec(
@@ -3588,11 +3635,14 @@ class EncreLoop:
                         )
                         spec_doc.status = _SpecStatus.REVIEW
                         spec_data = spec_doc.to_dict()
-                        yield create_system_message(
-                            f"Specification generated with {len(spec_doc.sections)} sections. "
-                            f"Review and approve before implementation.",
-                            kind="spec",
-                        )
+                        # Emit the parsed spec as a ``__spec_data__`` payload so
+                        # ws.py can re-route it as a ``spec_update`` event --
+                        # the frontend renders the spec card (with sections,
+                        # status and Approve/Reject) from that.  We do NOT emit
+                        # a separate human-readable SystemMessage here: it would
+                        # render as a redundant "System message" strip pinned
+                        # to the top of the conversation, on top of the spec
+                        # card which already carries the same information.
                         from encre.utils.types import SystemMessage as _SM
                         import json as _json
                         yield _SM(content=f"__spec_data__:{_json.dumps(spec_data)}", kind="spec")
@@ -3618,6 +3668,12 @@ class EncreLoop:
                         and self._budget_state.used_tokens > 0
                     ):
                         _auto_continue = True
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.AUTO_CONTINUE,
+                                turn=self.session.turn_count,
+                                detail=f"token={self._budget_state.used_tokens}/{self._budget_state.max_tokens}",
+                            )
                         logger.info(
                             "[run] auto-continue turn=%s token=%d/%d",
                             self.session.turn_count,
@@ -3630,6 +3686,11 @@ class EncreLoop:
                         continue
 
                 if not _auto_continue:
+                    if self._state is not None:
+                        self._state.transitions.record(
+                            TurnTransition.TEXT_ONLY,
+                            turn=self.session.turn_count,
+                        )
                     yield create_finish("stop", usage=_backend_usage)
                     # Main session: text-only ends this run. User sends next message.
                     # Sub-agent: text-only completes the sub-agent task.
@@ -3764,7 +3825,9 @@ class EncreLoop:
                 # apply_patch, bash, etc.).  Read-only tools are allowed
                 # so the model can still gather context.
                 _spec_block = False
-                if slash_command_mode == "spec" and self.spec_engine is not None and tc["name"] in _WRITE_TOOL_NAMES:
+                if slash_command_mode == "spec" and self.spec_engine is not None and (
+                    tc["name"] in _WRITE_TOOL_NAMES or tc["name"] == "bash"
+                ):
                     _current = self.spec_engine.current_spec
                     _spec_approved = _current is not None and (
                         hasattr(_current, "status") and getattr(_current.status, "value", None) == "approved"
@@ -4720,7 +4783,9 @@ class EncreLoop:
 
                     # ── Spec approval gate for secondary tools ──────────
                     _spec_block = False
-                    if slash_command_mode == "spec" and self.spec_engine is not None and tc["name"] in _WRITE_TOOL_NAMES:
+                    if slash_command_mode == "spec" and self.spec_engine is not None and (
+                        tc["name"] in _WRITE_TOOL_NAMES or tc["name"] == "bash"
+                    ):
                         _current = self.spec_engine.current_spec
                         _spec_approved = _current is not None and (
                             hasattr(_current, "status") and getattr(_current.status, "value", None) == "approved"
@@ -4991,6 +5056,7 @@ class EncreLoop:
                         self.session.replace_branch_messages(
                             self.session.active_branch_id, _post_compacted
                         )
+                        self._compacted_this_turn = True
                         logger.info("[run] post-tool compact succeeded turn=%d", self.session.turn_count)
                         # Refresh memory so next turn sees any new memories written this turn
                         if self.memory_system is not None:
@@ -5011,6 +5077,12 @@ class EncreLoop:
                 self.session.metadata[BudgetState.META_KEY] = self._budget_state.checkpoint()
             if self._budget_state.is_exhausted and self._budget_state.can_grace:
                 self._budget_state.use_grace()
+                if self._state is not None:
+                    self._state.transitions.record(
+                        TurnTransition.BUDGET_GRACE,
+                        turn=self.session.turn_count,
+                        detail=f"used={self._budget_state.used_tokens}/{self._budget_state.max_tokens}",
+                    )
                 logger.info("[run] budget exhausted, using grace call turn=%d", self.session.turn_count)
                 self.session.add_message("user", build_grace_message())
                 self._budget_state.grace_enabled = False
@@ -5084,10 +5156,20 @@ class EncreLoop:
             )
 
             await self.hook_system.emit_turn_end(self.session.turn_count)
+            # Trigger background review every N turns (fire-and-forget)
+            if self.reviewer is not None:
+                asyncio.create_task(self.reviewer.on_turn_end(self))
             self.rollback.commit(self.session, f"turn_{self.session.turn_count}")
 
             # Clean up persistent terminal sessions from this turn.
             await _cleanup_terminal_sessions()
+
+            # Record successful turn completion as NEXT_TURN
+            if self._state is not None:
+                self._state.transitions.record(
+                    TurnTransition.NEXT_TURN,
+                    turn=self.session.turn_count,
+                )
 
         # ── Defense layer: close any half-finished tool_use block ────────
         # A cancel (user pause / abnormal exit) can break the
@@ -5103,12 +5185,19 @@ class EncreLoop:
         self._finalize_cancelled_turn()
 
         reason = "cancelled" if self._cancelled() else "max_tokens"
+        if self._state is not None:
+            self._state.transitions.record(
+                TurnTransition.CANCELLED if reason == "cancelled" else TurnTransition.MAX_TURNS,
+                turn=self.session.turn_count,
+                detail=reason,
+            )
         logger.warning("[run] session ending turn=%s max_turns=%s reason=%s",
                        self.session.turn_count, self.config.max_turns, reason)
         await self.hook_system.emit_session_end()
         yield create_finish(
             reason,
             usage=_last_backend_usage,
+            compacted=self._compacted_this_turn,
         )
 
     async def _run_sub_agent(self, prompt: str,
@@ -5118,7 +5207,8 @@ class EncreLoop:
                               tool_policy: str = "all",
                               progress_callback: Any = None,
                               event_callback: Any = None,
-                              session_id: str | None = None) -> dict[str, Any]:
+                              session_id: str | None = None,
+                              cache_context: Any = None) -> dict[str, Any]:
         """Run a sub-agent as a fully isolated session.
 
         The sub-agent is ALWAYS an EncreAgent spawned from this loop. The
@@ -5236,6 +5326,17 @@ class EncreLoop:
             sub_agent.loop.hook_system.emit_pre_tool = _emit_pre_tool_with_policy  # type: ignore[assignment]
         # Add the prompt as a user message, exactly like ws.py does for normal input
         sub_agent.add_message("user", prompt)
+
+        # If a cache context is provided, wrap the system prompt so the
+        # sub-agent shares the same cached prefix bytes as the parent.
+        # This is a no-op for backends that don't support prompt caching
+        # (e.g. OpenAI) but provides a significant latency reduction for
+        # Anthropic's prompt caching API.
+        if cache_context is not None and hasattr(cache_context, "wrap_prompt"):
+            system_prompt = cache_context.wrap_prompt(system_prompt or "")
+            logger.info("[sub_agent] applied cache context from parent session=%s hash=%s",
+                        getattr(cache_context, "parent_session_id", "?"),
+                        getattr(cache_context, "prefix_hash", "?"))
 
         # Give the sub-agent a proper session ID. Callers such as the
         # automation scheduler can pre-allocate one so its live execution

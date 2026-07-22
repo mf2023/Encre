@@ -59,7 +59,7 @@ class TencentBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "hy3-preview",
+        model: str = "hy3",
         **kwargs: Any,
     ) -> None:
         if not base_url:

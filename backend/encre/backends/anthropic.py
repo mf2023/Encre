@@ -91,7 +91,7 @@ class AnthropicBackend(BaseBackend):
 
     Supports Claude Opus 4.6/4.7, Sonnet 4.5/4.6, and Haiku 4.5 via
     Anthropic's native Messages API.  The default model is
-    ``claude-sonnet-4-6-20250514`` (Sonnet 4.6).
+    ``claude-sonnet-5`` (Sonnet 5).
 
     This backend implements the Anthropic SSE protocol directly, handling:
     - ``content_block_start`` events for text, thinking, and tool_use blocks
@@ -109,7 +109,7 @@ class AnthropicBackend(BaseBackend):
     def __init__(
         self,
         api_key: str = "",
-        model: str = "claude-sonnet-4-6-20250514",
+        model: str = "claude-sonnet-5",
         thinking_budget_tokens: int = 16000,
         thinking_mode: str = "enabled",
         thinking_effort: str = "",
@@ -123,9 +123,9 @@ class AnthropicBackend(BaseBackend):
         Args:
             api_key: Anthropic API key.  Required for authentication via the
                 ``x-api-key`` header.
-            model: Claude model name.  Defaults to ``claude-sonnet-4-6-20250514``
-                (Sonnet 4.6).  Other valid values: ``claude-opus-4-20250514``
-                (Opus 4.6), ``claude-haiku-4-20250514`` (Haiku 4.5).
+            model: Claude model name.  Defaults to ``claude-sonnet-5``
+                (Sonnet 5).  Other valid values: ``claude-fable-5``
+                (Fable 5), ``claude-opus-4-8`` (Opus 4.8).
             thinking_budget_tokens: Token budget for extended thinking when
                 ``thinking_mode == "enabled"``.  Must be smaller than
                 ``max_tokens``.  Default 16,000.  Anthropic's documented
@@ -537,7 +537,7 @@ class AnthropicBackend(BaseBackend):
             return 0
         try:
             from encre.utils.tokens import estimate_tokens
-            return estimate_tokens(text, model="claude-sonnet-4-6")
+            return estimate_tokens(text, model="claude-sonnet-5")
         except Exception:
             return len(text) // 4
 

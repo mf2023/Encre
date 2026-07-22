@@ -63,7 +63,7 @@ class AlibabaBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "qwen-plus",
+        model: str = "qwen3.8-max-preview",
         thinking_budget: int = 0,
         **kwargs: Any,
     ) -> None:

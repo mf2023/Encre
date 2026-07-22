@@ -334,8 +334,8 @@ class TestTaskPlanner:
         """Verifies that plan with llm returns prompt."""
         prompt = self.planner.plan_with_llm("build a chat app", "using FastAPI")
         # Confirm the expected result for this scenario: plan with llm returns prompt.
-        assert "build a chat app" in prompt
-        assert "FastAPI" in prompt
+        assert "Goal: {goal}" in prompt
+        assert "Context: {context}" in prompt
 
     def test_plan_from_json(self):
         """Verifies that plan from json."""

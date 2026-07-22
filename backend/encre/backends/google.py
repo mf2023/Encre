@@ -100,7 +100,7 @@ class GoogleBackend(BaseBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "gemini-2.5-pro",
+        model: str = "gemini-3.5-pro",
         enable_grounding: bool = False,
         enable_thinking: bool = True,
         thinking_budget: int = -1,

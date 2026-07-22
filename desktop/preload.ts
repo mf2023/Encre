@@ -176,6 +176,37 @@ contextBridge.exposeInMainWorld("electronAPI", {
   browserClearData: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("browser:clear-data"),
 
+  // Browser bookmarks
+  getBookmarks: (): Promise<any> =>
+    ipcRenderer.invoke("browser:get-bookmarks"),
+  setBookmarks: (data: any): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("browser:set-bookmarks", data),
+  addBookmark: (entry: { url: string; title: string }): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("browser:add-bookmark", entry),
+  removeBookmark: (url: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("browser:remove-bookmark", url),
+
+  // Browser history
+  getHistory: (): Promise<any[]> =>
+    ipcRenderer.invoke("browser:get-history"),
+  addHistoryEntry: (entry: { url: string; title: string }): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("browser:add-history-entry", entry),
+  clearHistory: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("browser:clear-history"),
+
+  exportFile: (options: { content: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke("browser:export-file", options),
+
+  // Browser import/export
+  detectBrowsers: (): Promise<Array<{ id: string; name: string; profilePath: string; hasBookmarks: boolean; hasCookies: boolean; hasHistory: boolean }>> =>
+    ipcRenderer.invoke("browser:detect-browsers"),
+  importBrowserData: (browserId: string, profilePath: string): Promise<{ success: boolean; data?: any; error?: string }> =>
+    ipcRenderer.invoke("browser:import-data", browserId, profilePath),
+  saveImportedBrowserData: (data: { bookmarks?: any; history?: any[]; cookies?: any[] }): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("browser:save-imported-data", data),
+  exportAllBrowserData: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("browser:export-all"),
+
   // Open external URLs in system browser
   openExternal: (url: string): Promise<boolean> =>
     ipcRenderer.invoke("open-external", url),
@@ -206,6 +237,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
     const handler = (_event: any, data: any) => callback(data);
     ipcRenderer.on(channel, handler);
     return () => { ipcRenderer.removeListener(channel, handler); };
+  },
+
+  openSettings: (panel: string): Promise<void> =>
+    ipcRenderer.invoke("open-settings", panel),
+
+  onNewWindow: (callback: (url: string, wcId: number) => void): (() => void) => {
+    const handler = (_event: any, url: string, wcId: number) => callback(url, wcId);
+    ipcRenderer.on("browser:new-window", handler);
+    return () => { ipcRenderer.removeListener("browser:new-window", handler); };
   },
 
   openLogs: (): Promise<void> =>
@@ -239,4 +279,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("restart-progress", handler);
     return () => { ipcRenderer.removeListener("restart-progress", handler); };
   },
+
+  // Browser CDP
+  getCdpPort: (webContentsId: number): Promise<number> =>
+    ipcRenderer.invoke("browser:get-cdp-port", webContentsId),
+  registerCdpWebview: (webContentsId: number): Promise<number> =>
+    ipcRenderer.invoke("browser:register-cdp-webview", webContentsId),
+  unregisterCdpWebview: (webContentsId: number): Promise<void> =>
+    ipcRenderer.invoke("browser:unregister-cdp-webview", webContentsId),
+
+  // Site info & permissions
+  getSiteInfo: (url: string): Promise<{ origin: string; isSecure: boolean; cookieCount: number; permissions: Array<{ name: string; granted: boolean }> }> =>
+    ipcRenderer.invoke("browser:get-site-info", url),
+  setPermission: (origin: string, permission: string, granted: boolean): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("browser:set-permission", origin, permission, granted),
+  getCookiesForOrigin: (url: string): Promise<{ cookies: Array<{ name: string; value: string; domain: string; path: string; secure: boolean; httpOnly: boolean; sameSite: string; expirationDate?: number }> }> =>
+    ipcRenderer.invoke("browser:get-cookies-for-origin", url),
 });

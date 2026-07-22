@@ -58,7 +58,7 @@ class TestEncreLoopConstruction:
     def setup_method(self):
         """Verifies that setup method."""
         self.config = EncreConfig(
-            model="gpt-4o",
+            model="gpt-5.6",
             backend_type="openai",
             permission_mode="default",
             max_turns=10,
@@ -231,7 +231,7 @@ class TestEncreLoopAttributes:
     def setup_method(self):
         """Verifies that setup method."""
         self.config = EncreConfig(
-            model="gpt-4o",
+            model="gpt-5.6",
             backend_type="openai",
             permission_mode="default",
             max_turns=10,
@@ -301,7 +301,7 @@ class TestEncreLoopAclose:
     def setup_method(self):
         """Verifies that setup method."""
         self.config = EncreConfig(
-            model="gpt-4o",
+            model="gpt-5.6",
             backend_type="openai",
             permission_mode="default",
             max_turns=10,
@@ -354,7 +354,7 @@ class TestEncreLoopMemorySystem:
     def setup_method(self):
         """Verifies that setup method."""
         self.config = EncreConfig(
-            model="gpt-4o",
+            model="gpt-5.6",
             backend_type="openai",
             permission_mode="default",
             max_turns=10,
@@ -393,7 +393,7 @@ class TestEncreLoopMemorySystem:
 class TestEncreLoopTaskState:
     def setup_method(self):
         self.config = EncreConfig(
-            model="gpt-4o",
+            model="gpt-5.6",
             backend_type="openai",
             permission_mode="default",
             max_turns=10,
@@ -476,6 +476,7 @@ class TestEncreLoopToolSemantics:
             input_schema={"type": "object", "properties": {}},
             execute=AsyncMock(),
         )
+        tool.semantic_type = ""
         semantics = _infer_tool_semantics("grep", tool)
         assert semantics["semantic_type"] == "search"
         assert semantics["cost_level"] == "low"

@@ -687,8 +687,8 @@ export type TimelineItem =
   | { kind: "thinking"; id: string; text: string; elapsed?: number; messageId?: string }
   | { kind: "tool"; id: string; tc: ToolCallState; messageId?: string }
   | { kind: "assistant_text"; id: string; content: string; isStreaming: boolean; hasError?: boolean; messageId?: string; showActions?: boolean; showBranchSwitcher?: boolean }
-  | { kind: "error_card"; id: string; messageId: string; errorMessage: string; errorCode: string }
-  | { kind: "warning_card"; id: string; messageId: string; interruptedReason: string }
+| { kind: "error_card"; id: string; messageId: string; errorMessage: string; errorCode: string; errorCategory?: string }
+| { kind: "warning_card"; id: string; messageId: string; interruptedReason: string }
   | { kind: "inline_success"; id: string; messageId: string; turnStatusText: string }
   | { kind: "inline_cancelled"; id: string; messageId: string; text: string }
   | { kind: "compact"; id: string }
@@ -837,7 +837,7 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
             // purely the error message (avoiding double display).
             if (isLast) {
               if (msg.errorMessage) {
-                items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
+                items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "", errorCategory: (msg as any).errorCategory || "" });
               } else if (msg.interruptedReason) {
                 items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
               }
@@ -869,7 +869,7 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
         }
         // Insert status cards for legacy messages
         if (msg.errorMessage) {
-          items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "" });
+          items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "", errorCategory: (msg as any).errorCategory || "" });
         } else if (msg.interruptedReason) {
           items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
         }
@@ -989,6 +989,7 @@ export class Chat {
   private expandedItems = new Set<string>();
   private userCollapsedItems = new Set<string>();
   private lastAssistantMsgId = "";
+  private _inRenderForce = false;
   private rafPending = false;
   private liveLoader: EALoader | null = null;
   private scrollIndicator: ChatScrollIndicator;
@@ -1330,30 +1331,36 @@ export class Chat {
   private _pendingParallelRender = false;
 
   renderForce(): void {
-    const st = getState();
-    const subTc = st.subAgentView;
-    const dividerCount = subTc?.subAgentMessages
-      ? subTc.subAgentMessages.filter((m) => m.mode === "task_divider").length
-      : 0;
-    const isParallelRunning = subTc &&
-      (subTc.status === "running" || subTc.status === "pending") &&
-      dividerCount >= 2;
-    if (!isParallelRunning) {
-      this.render();
-      return;
-    }
-    // Throttle parallel sub-agent streaming renders so the main thread
-    // stays responsive enough for scrolling and window dragging.
-    this._pendingParallelRender = true;
-    if (this._parallelRenderTimer === null) {
-      this.render();
-      this._parallelRenderTimer = window.setTimeout(() => {
-        this._parallelRenderTimer = null;
-        if (this._pendingParallelRender) {
-          this._pendingParallelRender = false;
-          this.render();
-        }
-      }, 100);
+    this.renderedKey = "";
+    this._inRenderForce = true;
+    try {
+      const st = getState();
+      const subTc = st.subAgentView;
+      const dividerCount = subTc?.subAgentMessages
+        ? subTc.subAgentMessages.filter((m) => m.mode === "task_divider").length
+        : 0;
+      const isParallelRunning = subTc &&
+        (subTc.status === "running" || subTc.status === "pending") &&
+        dividerCount >= 2;
+      if (!isParallelRunning) {
+        this.render();
+        return;
+      }
+      // Throttle parallel sub-agent streaming renders so the main thread
+      // stays responsive enough for scrolling and window dragging.
+      this._pendingParallelRender = true;
+      if (this._parallelRenderTimer === null) {
+        this.render();
+        this._parallelRenderTimer = window.setTimeout(() => {
+          this._parallelRenderTimer = null;
+          if (this._pendingParallelRender) {
+            this._pendingParallelRender = false;
+            this.render();
+          }
+        }, 100);
+      }
+    } finally {
+      this._inRenderForce = false;
     }
   }
 
@@ -2004,7 +2011,11 @@ export class Chat {
         // DOM and state are out of sync (e.g. the assistant message was
         // created for a tool call before any text segment existed). Force a
         // full render so the produced content actually appears.
-        this.renderForce();
+        // Guard against re-entrancy: if we're already inside a renderForce
+        // (which is what got us here), don't recurse infinitely.
+        if (!this._inRenderForce) {
+          this.renderForce();
+        }
         return;
       }
       if (newText.trim().length > 0) {
@@ -2054,6 +2065,8 @@ export class Chat {
   private renderUserItem(item: Extract<TimelineItem, { kind: "user" }>): string {
     const isSubAgent = !!getState().subAgentView;
     const cmdMatch = item.content.match(/^\/(\w[\w-]*)(?:\s+(.*))?$/s);
+    const cmdTagMatch = !cmdMatch ? item.content.match(/^<command>(\w[\w-]*)<\/command>$/s) : null;
+    const effectiveCmdMatch = cmdMatch || cmdTagMatch;
     const isTerminal = item.mode?.startsWith("terminal:");
     const modeBadge = item.mode && !isTerminal ? (() => { const c = findSlashCommand(item.mode); const icon = c ? c.icon : "list-checks"; return `<span class="mode-chip" data-mode="${item.mode}"><i data-lucide="${icon}" class="chip-icon" style="width:12px;height:12px;"></i><span>${c ? c.title : item.mode}</span></span>`; })() : "";
     const fileCards = item.fileRefs?.map(f => {
@@ -2062,15 +2075,17 @@ export class Chat {
       return this.renderModeCard(f.icon, f.name, fmtSize(f.size));
     }).join("") || "";
     const termCard = isTerminal ? this.renderModeCard("terminal", item.mode!.split(":")[1] || "Terminal", `${item.content.split("\n").length} lines`) : "";
-    if (cmdMatch) {
-      const cmdName = cmdMatch[1];
-      const rest = cmdMatch[2] || "";
-      const displayContent = rest
-        ? escapeHtml(rest)
-        : `<span class="user-cmd-noargs">${t("app.slashActivated")}</span>`;
+    if (effectiveCmdMatch) {
+      const cmdName = effectiveCmdMatch[1];
+      const rest = cmdTagMatch ? "" : (effectiveCmdMatch[2] || "");
+      const displayContent = rest ? escapeHtml(rest) : "";
+      const cmd = findSlashCommand(cmdName);
+      const cmdBadge = cmd
+        ? `<span class="mode-chip" data-mode="${cmdName}"><i data-lucide="${cmd.icon}" class="chip-icon" style="width:12px;height:12px;"></i><span>${cmd.title}</span></span>`
+        : `<span class="mode-chip" data-mode="${cmdName}"><i data-lucide="command" class="chip-icon" style="width:12px;height:12px;"></i><span>${escapeHtml(cmdName)}</span></span>`;
       return `<div class="user-item" data-user-idx="${item.index}">
         <div class="user-bubble">
-          <span class="user-cmd-badge">${escapeHtml(cmdName)}</span>
+          ${cmdBadge}
           ${modeBadge}
           ${displayContent}</div>
         <div class="user-actions">
@@ -2484,10 +2499,43 @@ export class Chat {
 
   private renderErrorCard(item: Extract<TimelineItem, { kind: "error_card" }>): string {
     const id = `ec-${item.messageId}`;
-    return `<div class="turn-status-card status-error" id="${id}">
+    const cat = item.errorCategory || "";
+    // Category-based icon and label
+    let iconSvg: string;
+    let label: string;
+    let extraClass = "";
+    if (cat === "auth") {
+      iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+      label = t("chat.abortedError");
+      extraClass = " status-error-auth";
+    } else if (cat === "rate_limit") {
+      iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+      label = "Rate Limited";
+      extraClass = " status-error-rate";
+    } else if (cat === "context") {
+      iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
+      label = "Context Limit";
+      extraClass = " status-error-context";
+    } else if (cat === "network") {
+      iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>`;
+      label = "Network Error";
+      extraClass = " status-error-network";
+    } else if (cat === "server") {
+      iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
+      label = "Server Error";
+      extraClass = " status-error-server";
+    } else if (cat === "tool") {
+      iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
+      label = "Tool Error";
+      extraClass = " status-error-tool";
+    } else {
+      iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+      label = t("chat.abortedError");
+    }
+    return `<div class="turn-status-card status-error${extraClass}" id="${id}">
       <div class="status-header" onclick="window.__toggleStatusCard('${id}')">
-        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span class="status-label">${t("chat.abortedError")}</span>
+        ${iconSvg}
+        <span class="status-label">${label}</span>
         ${item.errorCode ? `<span class="status-code-tag">${escapeHtml(item.errorCode)}</span>` : ""}
         <svg class="status-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
@@ -2567,32 +2615,47 @@ export class Chat {
     const isRejected = status === "rejected";
     const isReview = status === "review" || status === "draft";
     const sessionId = getState().sessionId;
-    const id = "spec-card";
-    const expanded = this.expandedItems.has(id);
-    const sectionsHtml = spec.sections.map(s => `
-      <div class="spec-section">
-        <div class="spec-section-title">${escapeHtml(s.title)}</div>
-        <div class="spec-section-content">${escapeHtml(s.content)}</div>
+
+    // Section list rendered as reviewable file rows (icon box + section
+    // title). Clicking a row toggles its content open -- mirrors the demo's
+    // file-list pattern but each section is independently expandable.
+    const sectionsHtml = spec.sections.map((s, i) => {
+      const sid = `spec-sec-${i}`;
+      const open = this.expandedItems.has(sid);
+      return `<div class="review-file${open ? " expanded" : ""}" data-review-toggle="${sid}">
+        <div class="review-file-row">
+          <span class="review-file-icon"><i data-lucide="file-text"></i></span>
+          <span class="review-file-name">${escapeHtml(s.title)}</span>
+          <i data-lucide="chevron-down" class="review-file-arrow"></i>
+        </div>
+        <div class="review-file-body">${escapeHtml(s.content)}</div>
+      </div>`;
+    }).join("");
+
+    const feedbackHtml = spec.feedback ? `<div class="review-feedback"><strong>Feedback:</strong> ${escapeHtml(spec.feedback)}</div>` : "";
+
+    let footerHtml: string;
+    if (isReview) {
+      footerHtml = `<div class="review-footer">
+        <button class="review-btn review-btn-cancel" data-spec-reject="${sessionId}">${t("chat.reviewCancel") || "Cancel"}</button>
+        <button class="review-btn review-btn-execute" data-spec-approve="${sessionId}">${t("chat.reviewExecute") || "Execute"}</button>
+      </div>`;
+    } else if (isApproved) {
+      footerHtml = `<div class="review-footer"><span class="review-status review-status-ok"><i data-lucide="check-circle"></i> ${t("chat.reviewExecuted") || "Executed"}</span></div>`;
+    } else if (isRejected) {
+      footerHtml = `<div class="review-footer"><span class="review-status review-status-no"><i data-lucide="x-circle"></i> ${t("chat.reviewCancelled") || "Cancelled"}</span></div>`;
+    } else {
+      footerHtml = "";
+    }
+
+    return `<div class="review-modal review-spec">
+      <div class="review-body">
+        <p class="review-main">${escapeHtml(t("chat.reviewSpecMain") || "The specification has been generated. Proceed with implementation based on this document?")}</p>
+        <p class="review-sub">${escapeHtml(t("chat.reviewSpecSub") || "If it does not match your intent, review and edit the files, or enter guidance in the input box.")}</p>
+        <div class="review-filelist">${sectionsHtml}</div>
+        ${feedbackHtml}
       </div>
-    `).join("");
-    const feedbackHtml = spec.feedback ? `<div class="spec-feedback"><strong>Feedback:</strong> ${escapeHtml(spec.feedback)}</div>` : "";
-    const reviewActions = isReview ? `
-      <div class="spec-footer">
-        <button class="spec-btn spec-btn-approve" data-spec-approve="${sessionId}">Approve</button>
-        <button class="spec-btn spec-btn-reject" data-spec-reject="${sessionId}">Reject</button>
-      </div>
-    ` : isApproved ? `<div class="spec-footer"><span class="spec-approved-label"><i data-lucide="check-circle"></i> Approved</span></div>`
-    : isRejected ? `<div class="spec-footer"><span class="spec-rejected-label"><i data-lucide="x-circle"></i> Rejected</span></div>`
-    : "";
-    return `<div class="strip-item${expanded ? " expanded" : ""}" data-id="${id}">
-      <div class="strip" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
-        <span class="icon-wrap"><i data-lucide="file-text" class="semantic" style="color:var(--chip-accent,#8b5cf6)"></i><i data-lucide="chevron-down" class="arrow"></i></span>
-        <span class="strip-name">${escapeHtml(spec.title)}</span>
-        <span class="strip-summary">${status}</span>
-      </div>
-      <div class="strip-body-slot" data-has-body="1">
-        <div class="strip-body spec-body">${sectionsHtml}${feedbackHtml}${reviewActions}</div>
-      </div>
+      ${footerHtml}
     </div>`;
   }
 
@@ -2645,6 +2708,28 @@ export class Chat {
           this.toggleItem(id, item);
           return;
         }
+      }
+    }
+
+    // Review card section toggle: clicking a file row expands/collapses
+    // that section's body. Uses data-review-toggle on the row.
+    const reviewToggle = target.closest("[data-review-toggle]") as HTMLElement | null;
+    if (reviewToggle) {
+      const tid = reviewToggle.getAttribute("data-review-toggle");
+      if (tid) {
+        const expanded = this.expandedItems.has(tid);
+        if (expanded) {
+          this.expandedItems.delete(tid);
+          reviewToggle.classList.remove("expanded");
+        } else {
+          this.expandedItems.add(tid);
+          reviewToggle.classList.add("expanded");
+        }
+        if (typeof (window as any).lucide !== "undefined") {
+          (window as any).lucide.createIcons();
+        }
+        e.stopPropagation();
+        return;
       }
     }
 

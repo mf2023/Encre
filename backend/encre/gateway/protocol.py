@@ -35,6 +35,7 @@ build typed messages; ``to_dict`` / ``from_dict`` handle (de)serialization.
 """
 
 import enum
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -96,8 +97,10 @@ class GatewayMessage:
         session_id: str | None = None,
         system_prompt: str | None = None,
         source: dict[str, Any] | None = None,
+        request_id: str | None = None,
     ) -> "GatewayMessage":
         d: dict[str, Any] = {"prompt": prompt}
+        d["request_id"] = request_id or uuid.uuid4().hex
         if session_id:
             d["session_id"] = session_id
         if system_prompt:
@@ -112,8 +115,10 @@ class GatewayMessage:
         session_id: str | None = None,
         system_prompt: str | None = None,
         source: dict[str, Any] | None = None,
+        request_id: str | None = None,
     ) -> "GatewayMessage":
         d: dict[str, Any] = {"prompt": prompt}
+        d["request_id"] = request_id or uuid.uuid4().hex
         if session_id:
             d["session_id"] = session_id
         if system_prompt:
@@ -123,28 +128,38 @@ class GatewayMessage:
         return GatewayMessage(op=GatewayOp.SUBMIT_STREAM, data=d)
 
     @staticmethod
-    def text_delta(text: str, msg_id: str = "", session_id: str = "") -> "GatewayMessage":
+    def text_delta(text: str, msg_id: str = "", session_id: str = "", request_id: str = "") -> "GatewayMessage":
         d: dict[str, Any] = {"text": text, "id": msg_id}
         if session_id:
             d["session_id"] = session_id
+        if request_id:
+            d["request_id"] = request_id
         return GatewayMessage(op=GatewayOp.TEXT_DELTA, data=d)
 
     @staticmethod
-    def tool_result(tool_id: str, content: str, is_error: bool = False) -> "GatewayMessage":
-        return GatewayMessage(op=GatewayOp.TOOL_RESULT, data={"id": tool_id, "content": content, "is_error": is_error})
+    def tool_result(tool_id: str, content: str, is_error: bool = False, request_id: str = "") -> "GatewayMessage":
+        d = {"id": tool_id, "content": content, "is_error": is_error}
+        if request_id:
+            d["request_id"] = request_id
+        return GatewayMessage(op=GatewayOp.TOOL_RESULT, data=d)
 
     @staticmethod
-    def finish(reason: str = "done", usage: dict[str, Any] | None = None, error: str = "") -> "GatewayMessage":
+    def finish(reason: str = "done", usage: dict[str, Any] | None = None, error: str = "", request_id: str = "") -> "GatewayMessage":
         d: dict[str, Any] = {"reason": reason}
         if usage:
             d["usage"] = usage
         if error:
             d["error"] = error
+        if request_id:
+            d["request_id"] = request_id
         return GatewayMessage(op=GatewayOp.FINISH, data=d)
 
     @staticmethod
-    def error(message: str) -> "GatewayMessage":
-        return GatewayMessage(op=GatewayOp.ERROR, data={"message": message})
+    def error(message: str, request_id: str = "") -> "GatewayMessage":
+        d = {"message": message}
+        if request_id:
+            d["request_id"] = request_id
+        return GatewayMessage(op=GatewayOp.ERROR, data=d)
 
     @staticmethod
     def adapter_info(name: str, status: str, capabilities: list[str] | None = None) -> "GatewayMessage":

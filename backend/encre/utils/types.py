@@ -112,6 +112,8 @@ class ToolResult:
     id: str
     content: str
     is_error: bool
+    error_code: str = ""
+    error_category: str = ""
     sub_agent_messages: list[dict[str, Any]] | None = None
     sub_agent_session_id: str | None = None
 
@@ -194,6 +196,9 @@ class Finish:
     reason: FinishReason
     usage: dict[str, Any] | None = None
     error: str | None = None
+    error_code: str = ""
+    error_category: str = ""
+    compacted: bool = False
 
 
 @dataclass
@@ -475,8 +480,13 @@ class BackendFinish:
 
 @dataclass
 class BackendError:
-    """Normalised error event from a backend adapter."""
+    """Normalised, code-classified error event from a backend adapter."""
     error: str
+    code: str = "unknown"
+    category: str = "unknown"
+    retryable: bool = False
+    retry_after: float | None = None
+    details: dict[str, Any] | None = None
 
 
 # Union of every normalised event a backend adapter may emit.
@@ -597,8 +607,10 @@ def create_question_request(tool_call_id: str, questions: list[dict[str, Any]]) 
     return QuestionRequest(tool_call_id=tool_call_id, questions=questions)
 
 
-def create_finish(reason: FinishReason, usage: dict[str, Any] | None = None, error: str | None = None) -> Finish:
-    return Finish(reason=reason, usage=usage, error=error)
+def create_finish(reason: FinishReason, usage: dict[str, Any] | None = None, error: str | None = None,
+                   error_code: str = "", error_category: str = "") -> Finish:
+    return Finish(reason=reason, usage=usage, error=error,
+                  error_code=error_code, error_category=error_category)
 
 
 def create_system_message(content: str, kind: str = "info") -> SystemMessage:
@@ -625,8 +637,12 @@ def create_backend_finish(reason: str, usage: dict[str, Any] | None = None) -> B
     return BackendFinish(reason=reason, usage=usage)
 
 
-def create_backend_error(error: str) -> BackendError:
-    return BackendError(error=error)
+def create_backend_error(error: str, code: str = "unknown", category: str = "unknown",
+                          retryable: bool = False, retry_after: float | None = None,
+                          details: dict[str, Any] | None = None) -> BackendError:
+    return BackendError(error=error, code=code, category=category,
+                         retryable=retryable, retry_after=retry_after,
+                         details=details)
 
 
 def create_artifact(artifact: dict[str, Any]) -> Artifact:

@@ -85,15 +85,15 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: none;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
-  background: transparent;
-  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  padding: 5px 14px;
   transition: var(--transition-base);
   outline: none;
   text-decoration: none;
@@ -114,25 +114,6 @@
   opacity: 0.35;
   cursor: not-allowed;
   pointer-events: none;
-}
-
-.btn-icon {
-  width: 32px;
-  height: 32px;
-  padding: 6px;
-  border-radius: var(--radius-sm);
-}
-
-.btn-icon.btn-sm {
-  width: 28px;
-  height: 28px;
-  padding: 4px;
-}
-
-.btn-icon.btn-xs {
-  width: 24px;
-  height: 24px;
-  padding: 3px;
 }
 
 .btn-sm {

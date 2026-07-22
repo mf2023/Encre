@@ -172,8 +172,8 @@ async def test_handle_message_queues_concurrent_message():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_different_sessions_not_queued():
-    """Messages on different session keys run independently (not queued)."""
+async def test_handle_message_different_chats_share_adapter_context():
+    """Messages from different chats are serialized in one adapter context."""
     a = _StubAdapter()
     release = asyncio.Event()
     started: list[str] = []
@@ -187,14 +187,16 @@ async def test_handle_message_different_sessions_not_queued():
 
     ta = asyncio.create_task(a.handle_message(_dm_event("a", chat_id="1")))
     await asyncio.sleep(0)
-    # Different chat_id -> different session_key -> not queued.
+    # Chat IDs only control delivery.  The adapter has one Agent context, so
+    # the second message waits until the first turn has completed.
     tb = asyncio.create_task(a.handle_message(_dm_event("b", chat_id="2")))
     await asyncio.sleep(0)
     assert "a" in started
-    assert "b" in started
+    assert "b" not in started
     release.set()
     await ta
     await tb
+    assert "b" in started
 
 
 @pytest.mark.asyncio

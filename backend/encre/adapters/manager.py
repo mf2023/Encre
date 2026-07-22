@@ -221,10 +221,8 @@ class AdapterManager:
             port=gateway_port,
             max_connections=32,
         )
-        # SessionStore: persists session_key -> agent session_id routing so each
-        # conversation (platform/chat/user) resumes its own agent session.
-        # Aligns with Hermes' gateway_routing table.  Used by resolve_session()
-        # when an inbound frame carries a SessionSource.
+        # Keep the legacy store available for compatibility with existing state;
+        # adapter session routing below is intentionally keyed only by adapter.
         self._session_store = SessionStore()
         # Authorization + DM-pairing (Hermes 5-layer check).  Injected into each
         # adapter via set_authz / set_pairing so handle_message can reject
@@ -608,14 +606,9 @@ class AdapterManager:
     async def resolve_session(self, conn: Any, source: SessionSource) -> str | None:
         """Resolve the agent session_id for an inbound ``SessionSource``.
 
-        Aligns with Hermes' ``SessionStore.get_or_create_session``: look up the
-        routing table by ``build_session_key(source)``; on a miss, create a new
-        agent session (via the SessionManager) and persist the mapping so the
-        next message from the same conversation resumes it.
-
-        Falls back to :meth:`ensure_adapter_session` (the coarse per-adapter
-        fixed session) when no SessionStore / router is available, preserving
-        the legacy behaviour for iClaw-daemon mode and unconfigured setups.
+        The adapter is the persistence boundary: chat/user details in ``source``
+        are retained for routing and authorization, but never create additional
+        agent transcripts.
 
         Args:
             conn: The adapter connection (its ``.name`` is used for the legacy
@@ -625,30 +618,10 @@ class AdapterManager:
         Returns:
             The agent session_id, or None if no session could be created.
         """
-        if source is None:
-            return await self.ensure_adapter_session(getattr(conn, "name", ""))
-        if self._session_store is None or not self._router:
-            return await self.ensure_adapter_session(getattr(conn, "name", ""))
-
-        def _create() -> str | None:
-            sm = self._router.session_manager
-            if sm is None:
-                logger.warning("[adapter-manager] resolve_session: session_manager is None")
-                return None
-            info = sm.create_session(config=self._router._default_config)
-            # Stamp the session with its origin so the frontend (Phase 5) and
-            # the system-prompt builder can show platform context.
-            info.metadata["source"] = source.to_dict()
-            info.metadata["channel"] = source.platform
-            try:
-                info.agent.session.metadata["channel"] = source.platform
-            except Exception:
-                pass
-            logger.info("[adapter-manager] created session %s for %s:%s:%s",
-                        info.session_id, source.platform, source.chat_type, source.chat_id)
-            return info.session_id
-
-        return self._session_store.get_or_create(source, _create)
+        # The adapter is the context boundary.  Chat/user identifiers are used
+        # for delivery and authorization only; they must not create additional
+        # Agent transcripts.  The mapping is persisted by adapter name.
+        return await self.ensure_adapter_session(getattr(conn, "name", ""))
 
     def _load_adapter_sessions(self) -> None:
         """Load the adapter -> session_id map from disk.

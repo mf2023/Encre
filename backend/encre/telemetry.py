@@ -51,6 +51,9 @@ PRICING_TABLE: dict[str, tuple[float, float]] = {
     "claude-3-opus":        (0.015, 0.075),
     "claude-3-haiku":       (0.00025, 0.00125),
     # OpenAI
+    "gpt-5.6":              (0.0050, 0.030),
+    "gpt-5.6-terra":        (0.0025, 0.015),
+    "gpt-5.6-luna":         (0.0010, 0.006),
     "gpt-4o":               (0.0025, 0.010),
     "gpt-4o-mini":          (0.00015, 0.0006),
     "gpt-4-turbo":          (0.010, 0.030),

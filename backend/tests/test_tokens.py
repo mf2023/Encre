@@ -81,7 +81,7 @@ class TestEstimateTokens:
 
     def test_model_kwarg_accepted(self):
         """Verifies that model kwarg accepted."""
-        count = estimate_tokens("hello", model="gpt-4o")
+        count = estimate_tokens("hello", model="gpt-5.6")
         # Confirm the expected result for this scenario: model kwarg accepted.
         assert isinstance(count, int)
         assert count > 0

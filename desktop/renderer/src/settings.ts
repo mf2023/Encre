@@ -34,6 +34,7 @@ import { formatShortcut } from "./shortcutDisplay.js";
 import { Chart, registerables } from "chart.js";
 Chart.register(...registerables);
 import { showTooltipAt, hideTooltip } from "./tooltip.js";
+import { SEARCH_ENGINES, getDefaultSearchEngine } from "./browser.js";
 
 /** Wraps an async operation with a loading spinner on the button. */
 export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T>): Promise<T> {
@@ -58,7 +59,7 @@ initLocale();
 
 const APP_VERSION = "0.2.0-pre.1";
 
-export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory";
+export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "browser" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory";
 
 const DEV_MODE_STORAGE_KEY = "encre-dev-mode";
 const DEV_TAP_THRESHOLD = 7;
@@ -119,6 +120,7 @@ export class Settings {
       storage: document.getElementById("panel-storage")!,
       model: document.getElementById("panel-model")!,
       gateway: document.getElementById("panel-gateway")!,
+      browser: document.getElementById("panel-browser")!,
       index: document.getElementById("panel-index")!,
       skills: document.getElementById("panel-skills")!,
       rules: document.getElementById("panel-rules")!,
@@ -874,6 +876,7 @@ export class Settings {
       storage: t("sidebar.storage"),
       model: t("sidebar.models"),
       gateway: t("sidebar.gateway"),
+      browser: t("sidebar.browser"),
       agent: t("sidebar.agent"),
       mcp: t("sidebar.mcp"),
       index: t("sidebar.document"),
@@ -915,6 +918,7 @@ export class Settings {
     } else if (typeof (window as any).__chatRender === "function") {
       (window as any).__chatRender();
     }
+    (window as any).__sessionInner?.restoreSidebarVisibility?.();
   }
 
   /**
@@ -1110,6 +1114,9 @@ export class Settings {
     } else if (id === "gateway") {
       this.panels.gateway.classList.add("active");
       this.renderGateway();
+    } else if (id === "browser") {
+      this.panels.browser.classList.add("active");
+      this.renderBrowser();
     } else if (id === "mcp") {
       this.panels.mcp.classList.add("active");
       this.renderMcpList();
@@ -1195,6 +1202,7 @@ export class Settings {
     this.renderShortcuts();
     this.renderModel();
     this.renderGateway();
+    this.renderBrowser();
     this.renderIndex();
     this.renderSkills();
     this.renderRules();
@@ -3391,27 +3399,30 @@ private _bindModelSelect(): void {
     }
 
     const options: DropdownOption[] = [
-      { id: "default", label: t("permissions.settings.default") },
       { id: "allow", label: t("permissions.settings.allow") },
       { id: "deny", label: t("permissions.settings.deny") },
       { id: "ask", label: t("permissions.settings.ask") },
     ];
 
-    const capabilityKeys = new Set([
-      "network", "file", "bash_io", "docker", "browser",
-      "workflow", "git", "deploy", "desktop", "database", "misc", "mcp",
-    ]);
-
     const knownTools = [
-      "bash", "file_write", "file_edit", "apply_patch",
-      "docker", "deploy", "database", "browser", "desktop",
+      "bash", "bash_output", "bash_kill", "bash_list",
+      "ssh",
+      "file_write", "file_edit", "apply_patch", "archive",
+      "docker", "deploy", "database", "browser",
+      "desktop", "computer_use", "vlm_computer_use",
+      "email", "notify",
+      "env_manager", "cloud_storage",
+      "git", "github",
+      "manage", "swarm", "workflow",
+      "lint_format",
+      "rest_client",
+      "file_api", "batch_api", "fine_tuning_api",
     ];
-    const knownCapabilities = Array.from(capabilityKeys);
 
     const ensureEntries = (keys: string[], existing: Record<string, import("./types.js").PermissionPolicy>) => {
       const entries: Array<[string, import("./types.js").PermissionPolicy]> = [];
       for (const key of keys) {
-        entries.push([key, existing[key] || { value: "default", source: "default" }]);
+        entries.push([key, existing[key] || { value: "allow", source: "default" }]);
       }
       for (const [key, policy] of Object.entries(existing)) {
         if (!keys.includes(key)) entries.push([key, policy]);
@@ -3420,9 +3431,8 @@ private _bindModelSelect(): void {
     };
 
     const toolEntries = ensureEntries(knownTools, policies.tools);
-    const capEntries = ensureEntries(knownCapabilities, policies.capabilities);
 
-    const renderRows = (group: "tools" | "capabilities", entries: Array<[string, import("./types.js").PermissionPolicy]>) => {
+    const renderRows = (entries: Array<[string, import("./types.js").PermissionPolicy]>) => {
       if (entries.length === 0) {
         return `<div class="empty-state">${t("permissions.settings.noItems")}</div>`;
       }
@@ -3430,17 +3440,17 @@ private _bindModelSelect(): void {
         const divider = idx < entries.length - 1 ? '<div class="settings-item-divider"></div>' : "";
         const descKey = `permissions.settings.desc.${name}`;
         const desc = t(descKey as any) === descKey ? "" : t(descKey as any);
+        const currentVal = policy.value === "default" ? "allow" : policy.value;
         return `
-          <div class="settings-item-row" data-perm-group="${group}" data-perm-name="${this.esc(name)}">
+          <div class="settings-item-row" data-perm-group="tools" data-perm-name="${this.esc(name)}">
             <div class="settings-item-info">
               <div class="settings-item-title">
                 ${this.esc(name)}
-                <span class="model-active-tag perm-source-${policy.source || "default"}">${policy.source || "default"}</span>
               </div>
               ${desc ? `<div class="settings-item-desc">${this.esc(desc)}</div>` : ""}
             </div>
             <div class="settings-item-control">
-              ${this.renderDropdown(`perm-dd-${group}-${name}`, options, policy.value || "default", () => {})}
+              ${this.renderDropdown(`perm-dd-tools-${name}`, options, currentVal, () => {})}
             </div>
           </div>
           ${divider}
@@ -3448,48 +3458,32 @@ private _bindModelSelect(): void {
       }).join("");
     };
 
-    const toolsHtml = renderRows("tools", toolEntries);
-    const capsHtml = renderRows("capabilities", capEntries);
+    const toolsHtml = renderRows(toolEntries);
 
     this.panels.permissions.innerHTML = `
       <div class="settings-section-title"><i data-lucide="wrench" class="lucide section-title-icon"></i> ${t("permissions.settings.tools")}</div>
       <div class="settings-card">${toolsHtml}</div>
-
-      <div class="settings-section-title"><i data-lucide="zap" class="lucide section-title-icon"></i> ${t("permissions.settings.capabilities")}</div>
-      <div class="settings-card">${capsHtml}</div>
     `;
 
     // Auto-save on every dropdown change.
-    for (const group of ["tools", "capabilities"] as const) {
-      const entries = group === "tools" ? toolEntries : capEntries;
-      for (const [name, policy] of entries) {
-        this.bindDropdown(`perm-dd-${group}-${name}`, (val) => {
-          const payload: Record<string, string> = {};
-          for (const g of ["tools", "capabilities"] as const) {
-            const es = g === "tools" ? toolEntries : capEntries;
-            for (const [n, p] of es) {
-              const key = `perm-dd-${g}-${n}`;
-              const wrap = document.getElementById(`${key}-wrap`);
-              const trigger = wrap?.querySelector(".settings-dropdown-trigger span");
-              const selectedOption = options.find(o => o.label === trigger?.textContent);
-              payload[n] = selectedOption?.id ?? p.value ?? "default";
-            }
-          }
-          // Update the changed value
-          payload[name] = val;
-          send({ type: "configure", config: { permission_settings: payload } });
-          const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
-          for (const [n, p] of toolEntries) {
-            next.tools[n] = { value: (payload[n] as any) || p.value || "default", source: "user" };
-          }
-          for (const [n, p] of capEntries) {
-            if (capabilityKeys.has(n)) {
-              next.capabilities[n] = { value: (payload[n] as any) || p.value || "default", source: "user" };
-            }
-          }
-          setPermissionPolicies(next);
-        });
-      }
+    for (const [name] of toolEntries) {
+      this.bindDropdown(`perm-dd-tools-${name}`, (val) => {
+        const payload: Record<string, string> = {};
+        for (const [n] of toolEntries) {
+          const key = `perm-dd-tools-${n}`;
+          const wrap = document.getElementById(`${key}-wrap`);
+          const trigger = wrap?.querySelector(".settings-dropdown-trigger span");
+          const selectedOption = options.find(o => o.label === trigger?.textContent);
+          payload[n] = selectedOption?.id ?? "allow";
+        }
+        payload[name] = val;
+        send({ type: "configure", config: { permission_settings: payload } });
+        const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
+        for (const [n] of toolEntries) {
+          next.tools[n] = { value: (payload[n] as any) || "allow", source: "user" };
+        }
+        setPermissionPolicies(next);
+      });
     }
 
     if (typeof (window as any).lucide !== "undefined") {
@@ -4533,15 +4527,6 @@ private _bindModelSelect(): void {
           </div>
         </div>
         <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.browserData")}</div>
-            <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <button class="btn btn-sm" id="storage-clear-browser" style="color:var(--error)">${t("settings.clear")}</button>
-          </div>
-        </div>
       </div>`;
 
     if (typeof (window as any).lucide !== "undefined") {
@@ -4576,6 +4561,346 @@ private _bindModelSelect(): void {
     document.getElementById("storage-open-logs")?.addEventListener("click", async () => {
       await window.electronAPI?.openChildWindow("logs", t("settings.aboutLogs") || "Logs");
     });
+  }
+
+  private renderBrowser(): void {
+    const st = getState();
+    const s = st.settings;
+    const currentSearchEngine = (s.default_search_engine as string) || "bing";
+    const searchEngineOptions: DropdownOption[] = SEARCH_ENGINES.map(e => ({ id: e.id, label: e.name }));
+
+    this.panels.browser.innerHTML = `
+      <div class="settings-section-title"><i data-lucide="globe" class="lucide section-title-icon"></i> ${t("settings.browserSettings")}</div>
+
+      <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.defaultSearchEngine")}</div>
+            <div class="settings-item-desc">${t("settings.defaultSearchEngineDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            ${this.renderDropdown("dd-search-engine", searchEngineOptions, currentSearchEngine, (v) => { this.saveSetting("default_search_engine", v); this.renderBrowser(); })}
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.browserData")}</div>
+            <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="browser-clear-data" style="color:var(--error)">${t("settings.clear")}</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section-title" style="margin-top:24px"><i data-lucide="refresh-cw" class="lucide section-title-icon"></i> ${t("settings.importExport")}</div>
+      <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.importBrowserData")}</div>
+            <div class="settings-item-desc">${t("settings.importBrowserDataDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="browser-import-btn">${t("settings.import")}</button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.exportAllBrowserData")}</div>
+            <div class="settings-item-desc">${t("settings.exportAllBrowserDataDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn btn-sm" id="browser-export-all">${t("settings.export")}</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section-title" style="margin-top:24px"><i data-lucide="bookmark" class="lucide section-title-icon"></i> ${t("settings.bookmarks")}
+        <button class="btn btn-sm" id="browser-export-bookmarks" style="margin-left:auto">${t("settings.export")}</button>
+      </div>
+      <div id="browser-bookmarks-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
+
+      <div class="settings-section-title" style="margin-top:24px"><i data-lucide="clock" class="lucide section-title-icon"></i> ${t("settings.history")}
+        <button class="btn btn-sm" id="browser-export-history" style="margin-left:auto">${t("settings.export")}</button>
+      </div>
+      <div id="browser-history-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
+      <button class="btn btn-sm" id="browser-clear-history" style="color:var(--error);margin-top:8px">${t("settings.clear")}</button>`;
+
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.panels.browser });
+    }
+
+    this.bindDropdown("dd-search-engine", (v) => { this.saveSetting("default_search_engine", v); this.renderBrowser(); });
+
+    document.getElementById("browser-clear-data")?.addEventListener("click", async () => {
+      const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));
+      if (ok) {
+        window.electronAPI?.browserClearData?.();
+        this.renderBrowser();
+      }
+    });
+
+    document.getElementById("browser-clear-history")?.addEventListener("click", async () => {
+      const ok = await Dialog.confirm(t("settings.confirmClearHistoryTitle"), t("settings.confirmClearHistory"));
+      if (ok) {
+        window.electronAPI?.clearHistory?.();
+        this.renderBrowser();
+      }
+    });
+
+    document.getElementById("browser-import-btn")?.addEventListener("click", () => this._showImportDialog());
+    document.getElementById("browser-export-all")?.addEventListener("click", () => this._exportAllBrowserData());
+    document.getElementById("browser-export-bookmarks")?.addEventListener("click", () => this._exportBookmarks());
+    document.getElementById("browser-export-history")?.addEventListener("click", () => this._exportHistory());
+
+    this._loadBrowserLists();
+  }
+
+  private _showImportDialog(): void {
+    const api = (window as any).electronAPI;
+    if (!api) return;
+
+    const bodyHtml = `
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${t("settings.importBrowserDataDesc")}</div>
+      <div id="import-browser-list" class="model-table" style="min-height:60px">
+        <div class="model-empty">${t("settings.scanning")}</div>
+      </div>`;
+    const { overlay, close } = this._showFormDialog(t("settings.importBrowserData"), bodyHtml, true);
+    const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
+    okBtn.remove();
+
+    const listEl = overlay.querySelector("#import-browser-list") as HTMLElement;
+
+    api.detectBrowsers().then((browsers: any[]) => {
+      if (!browsers || browsers.length === 0) {
+        listEl.innerHTML = `<div class="model-empty">${t("settings.noBrowsersFound")}</div>`;
+        return;
+      }
+      listEl.innerHTML = browsers.map((b: any) => `
+        <div class="model-table-row">
+          <div class="model-table-cell model-cell-name">
+            <span class="model-name-text">${this.esc(b.name)}</span>
+          </div>
+          <div class="model-table-cell model-cell-actions">
+            <button class="btn btn-sm" data-action="browser-import" data-browser-id="${this.esc(b.id)}" data-profile="${this.esc(b.profilePath)}">${t("settings.import")}</button>
+          </div>
+        </div>
+      `).join("");
+      listEl.querySelectorAll("[data-action='browser-import']").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const browserId = btn.getAttribute("data-browser-id");
+          const profilePath = btn.getAttribute("data-profile");
+          if (!browserId || !profilePath) return;
+          btn.textContent = t("settings.importing");
+          (btn as HTMLButtonElement).disabled = true;
+          const res = await api.importBrowserData(browserId, profilePath);
+          if (res.success && res.data) {
+            await api.saveImportedBrowserData(res.data);
+            showToast(t("settings.importSuccess"), "success");
+            close();
+            this.renderBrowser();
+          } else {
+            showToast(t("settings.importFailed") + (res.error ? ": " + res.error : ""), "error");
+            btn.textContent = t("settings.import");
+            (btn as HTMLButtonElement).disabled = false;
+          }
+        });
+      });
+    }).catch(() => {
+      listEl.innerHTML = `<div class="model-empty">${t("settings.scanFailed")}</div>`;
+    });
+  }
+
+  private _exportAllBrowserData(): void {
+    const api = (window as any).electronAPI;
+    if (!api?.exportAllBrowserData) return;
+    api.exportAllBrowserData().then((res: any) => {
+      if (res.success) {
+        showToast(t("settings.exportSuccess"), "success");
+      } else if (res.error !== "canceled") {
+        showToast(t("settings.exportFailed") + (res.error ? ": " + res.error : ""), "error");
+      }
+    });
+  }
+
+  private _exportBookmarks(): void {
+    const api = (window as any).electronAPI;
+    if (!api?.getBookmarks) return;
+    api.getBookmarks().then((data: any) => {
+      const all: Array<{ name: string; url: string }> = [];
+      function collect(children: any[]) {
+        for (const c of children || []) {
+          if (c.type === "url") all.push({ name: c.name, url: c.url || "" });
+          if (c.type === "folder" && c.children) collect(c.children);
+        }
+      }
+      if (data?.roots) {
+        collect(data.roots.bookmark_bar?.children);
+        collect(data.roots.other?.children);
+      }
+      let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+  <DT><H3>Bookmarks Bar</H3>
+  <DL><p>\n`;
+      for (const bm of all) {
+        const name = bm.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        html += `    <DT><A HREF="${bm.url}" ADD_DATE="${Math.floor(Date.now() / 1000)}">${name}</A>\n`;
+      }
+      html += `  </DL><p>
+</DL><p>`;
+      api.exportFile({ content: html, defaultName: "bookmarks.html", filters: [{ name: "Bookmark File", extensions: ["html"] }] });
+    }).catch(() => {});
+  }
+
+  private _exportHistory(): void {
+    const api = (window as any).electronAPI;
+    if (!api?.getHistory) return;
+    api.getHistory().then((history: any[]) => {
+      let csv = "url,title,visit_time,visit_count\n";
+      for (const entry of history || []) {
+        const url = (entry.url || "").replace(/"/g, '""');
+        const title = (entry.title || "").replace(/"/g, '""');
+        const time = entry.visit_time ? new Date(entry.visit_time).toISOString() : "";
+        const count = entry.visit_count || 1;
+        csv += `"${url}","${title}","${time}",${count}\n`;
+      }
+      api.exportFile({ content: csv, defaultName: "history.csv", filters: [{ name: "CSV File", extensions: ["csv"] }] });
+    }).catch(() => {});
+  }
+
+  private _displayUrl(url: string): string {
+    try { return decodeURI(url); } catch { return url; }
+  }
+
+  private _formatTime(ts: number): string {
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    if (diff < 60000) return t("settings.justNow");
+    if (diff < 3600000) return Math.floor(diff / 60000) + "m ago";
+    if (diff < 86400000) return Math.floor(diff / 3600000) + "h ago";
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) return t("settings.today");
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${y}-${m}-${day} ${hh}:${mm}`;
+  }
+
+  private _openUrl(url: string): void {
+    const behavior = (getState().settings.default_link_behavior as string) || "system";
+    const api = (window as any).electronAPI;
+    if (!api) return;
+    if (behavior === "in_app" && api.openChildWindow) {
+      api.openChildWindow(url, url);
+    } else if (api.openExternal) {
+      api.openExternal(url);
+    }
+  }
+
+  private _loadBrowserLists(): void {
+    const api = (window as any).electronAPI;
+    if (!api) return;
+
+    // Bookmarks
+    const bookmarksList = document.getElementById("browser-bookmarks-list");
+    if (bookmarksList && api.getBookmarks) {
+      api.getBookmarks().then((data: any) => {
+        const all: Array<{ name: string; url: string }> = [];
+        function collect(children: any[]) {
+          for (const c of children || []) {
+            if (c.type === "url") all.push({ name: c.name, url: c.url || "" });
+            if (c.type === "folder" && c.children) collect(c.children);
+          }
+        }
+        if (data?.roots) {
+          collect(data.roots.bookmark_bar?.children);
+          collect(data.roots.other?.children);
+        }
+        if (all.length === 0) {
+          bookmarksList.innerHTML = `<div class="model-empty">${t("settings.noBookmarks")}</div>`;
+          return;
+        }
+        bookmarksList.innerHTML = all.map((bm, i) => `
+          <div class="model-table-row">
+            <div class="model-table-cell model-cell-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              <span class="model-name-text">${this.esc(bm.name)}</span>
+            </div>
+            <div class="model-table-cell model-cell-provider" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              ${this.esc(this._displayUrl(bm.url))}
+            </div>
+            <div class="model-table-cell model-cell-actions">
+              <button class="btn-icon" data-action="bm-navigate" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.openInBrowser")}">
+                <i data-lucide="external-link" class="lucide"></i>
+              </button>
+              <button class="btn-icon" data-action="bm-remove" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.remove")}">
+                <i data-lucide="trash-2" class="lucide"></i>
+              </button>
+            </div>
+          </div>
+        `).join("");
+        if (typeof (window as any).lucide !== "undefined") {
+          (window as any).lucide.createIcons({ root: bookmarksList });
+        }
+        bookmarksList.querySelectorAll("[data-action='bm-navigate']").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const url = btn.getAttribute("data-url");
+            if (url) this._openUrl(url);
+          });
+        });
+        bookmarksList.querySelectorAll("[data-action='bm-remove']").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const url = btn.getAttribute("data-url");
+            if (url && api.removeBookmark) {
+              api.removeBookmark(url).then(() => this.renderBrowser());
+            }
+          });
+        });
+      }).catch(() => {});
+    }
+
+    // History
+    const historyList = document.getElementById("browser-history-list");
+    if (historyList && api.getHistory) {
+      api.getHistory().then((history: any[]) => {
+        if (!history || history.length === 0) {
+          historyList.innerHTML = `<div class="model-empty">${t("settings.noHistory")}</div>`;
+          return;
+        }
+        historyList.innerHTML = history.map((entry) => {
+          const ts = entry.visit_time ? this._formatTime(entry.visit_time) : "";
+          return `
+          <div class="model-table-row">
+            <div class="model-table-cell model-cell-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              <span class="model-name-text">${this.esc(entry.title || entry.url)}</span>
+            </div>
+            <div class="model-table-cell model-cell-provider">
+              ${ts}
+            </div>
+            <div class="model-table-cell model-cell-actions">
+              <button class="btn-icon" data-action="hist-navigate" data-url="${this.esc(entry.url)}" data-tooltip="${t("settings.openInBrowser")}">
+                <i data-lucide="external-link" class="lucide"></i>
+              </button>
+            </div>
+          </div>`;
+        }).join("");
+        if (typeof (window as any).lucide !== "undefined") {
+          (window as any).lucide.createIcons({ root: historyList });
+        }
+        historyList.querySelectorAll("[data-action='hist-navigate']").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const url = btn.getAttribute("data-url");
+            if (url) this._openUrl(url);
+          });
+        });
+      }).catch(() => {});
+    }
   }
 
   private renderAbout(): void {

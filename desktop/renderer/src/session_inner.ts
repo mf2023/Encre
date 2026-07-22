@@ -25,44 +25,35 @@
  *
  * The resizable right-hand sidebar shown inside a session: a draggable tab bar
  * hosting an info/summary panel plus dynamically-opened panels (terminal,
- * code editor, file review, agent, …), each with its own embedded xterm
+ * code editor, file review, agent, �?, each with its own embedded xterm
  * terminal instances. Width is persisted to `localStorage`.
  */
 
 import { getState, subscribe, addAttachments, showToast } from "./state.js";
 import type { ArtifactItem, AttachmentMeta, ReferenceItem } from "./types.js";
-import { getFileIcon } from "./files.js";
+import { getFileIcon, getCodeIcon } from "./files.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { renderMarkdown } from "./chat.js";
 import { send } from "./ws.js";
+import { getMonaco, monacoLang, registerEditor, unregisterEditor } from "./monaco.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { EditorView, basicSetup } from "codemirror";
-import { EditorState } from "@codemirror/state";
-import { keymap } from "@codemirror/view";
-import { indentWithTab } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
-import { javascript } from "@codemirror/lang-javascript";
-import { python } from "@codemirror/lang-python";
-import { json } from "@codemirror/lang-json";
-import { html } from "@codemirror/lang-html";
-import { css } from "@codemirror/lang-css";
-import { markdown } from "@codemirror/lang-markdown";
-import { rust } from "@codemirror/lang-rust";
-import { java } from "@codemirror/lang-java";
-import { cpp } from "@codemirror/lang-cpp";
-import { php } from "@codemirror/lang-php";
-import { xml } from "@codemirror/lang-xml";
-import { sql } from "@codemirror/lang-sql";
-import { yaml } from "@codemirror/lang-yaml";
 import { renderDiffHtml } from "./diff_render.js";
 import { showContextMenu } from "./context-menu.js";
+import { BrowserView } from "./browser.js";
+import { getDefaultHomepage } from "./browser.js";
 
-/** Definition of a sidebar tab (id + whether it can be closed). */
+/** Definition of a sidebar tab. */
 export interface TabDef {
-  id: string;
+  id: string;            /** unique instance ID: "terminal-1", "browser-1", "editor", "review" */
+  type: string;          /** panel type: "terminal" | "editor" | "review" | "browser" */
+  label: string;         /** display label shown in the tab bar */
   closable: boolean;
+  shellPath?: string;    /** for terminal tabs */
+  shellArgs?: string[];  /** for terminal tabs */
+  startUrl?: string;     /** for browser tabs */
+  favicon?: string;      /** for browser tabs: favicon URL from the page */
 }
 
 const TABS_STORAGE_KEY = "session-sidebar-tabs";
@@ -75,7 +66,7 @@ function _loadTabs(): TabDef[] {
   return [];
 }
 function _saveTabs(tabs: TabDef[]): void {
-  try { localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs.map(t => ({id: t.id, closable: t.closable})))); } catch {}
+  try { localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs.map(t => ({id: t.id, type: t.type, label: t.label, closable: t.closable})))); } catch {}
 }
 
 interface NewTabOption {
@@ -87,6 +78,7 @@ const NEW_TAB_OPTIONS: NewTabOption[] = [
   { id: "terminal", icon: "terminal" },
   { id: "editor", icon: "code-2" },
   { id: "review", icon: "eye" },
+  { id: "browser", icon: "globe" },
 ];
 
 function tabLabel(id: string): string {
@@ -94,7 +86,18 @@ function tabLabel(id: string): string {
     case "terminal": return t("sessionInner.tabTerminal");
     case "editor": return t("sessionInner.tabEditor");
     case "review": return t("sessionInner.tabReview");
+    case "browser": return t("sessionInner.tabBrowser");
     default: return id;
+  }
+}
+
+function tabIcon(type: string): string {
+  switch (type) {
+    case "terminal": return "terminal";
+    case "editor": return "code-2";
+    case "review": return "eye";
+    case "browser": return "globe";
+    default: return "square";
   }
 }
 
@@ -128,8 +131,12 @@ export class SessionInner {
   private tabs: TabDef[] = [];
   private activeTab: string = "";
   private _sessionTabs = new Map<string, TabDef[]>();
-  private _sessionTerminals = new Map<string, Map<string, Array<{ label: string; ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>>();
+  private _sessionTerminals = new Map<string, Map<string, Array<{ ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>>();
   private _sessionTermActiveIdx = new Map<string, Map<string, number>>();
+  private _sessionSidebarVisible = new Map<string, boolean>();
+  private _sessionBrowsers = new Map<string, Map<string, BrowserView>>();
+  private _sessionEditors = new Map<string, { el: HTMLElement; view: EditorView | null; tabs: Array<{path: string; name: string}>; activeTab: string }>();
+  private _sessionReviewState = new Map<string, { filter: string; mode: "git" | "artifact"; artifact: ArtifactItem | null; filePending: string | undefined }>();
   /** Key used for storing sidebar tabs: "session:<sid>" or "workspace:<path>". */
   private _tabKey = "";
 
@@ -158,13 +165,42 @@ export class SessionInner {
     // Save current state to old key.
     if (this._tabKey) {
       this._sessionTabs.set(this._tabKey, [...this.tabs]);
+      // Only save visibility if sidebar is currently visible.
+      // If hidden, the correct state was already saved by whoever hid it
+      // (cleanupContentArea, closeSessionInnerSidebar, or session menu button).
+      const _panel = document.getElementById("session-inner-sidebar");
+      if (_panel && !_panel.classList.contains("hidden")) {
+        this.saveSidebarVisibility();
+      }
       // Deep-copy terminals map so each session gets its own Map instance.
-      const termCopy = new Map<string, Array<{ label: string; ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>();
+      const termCopy = new Map<string, Array<{ ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>();
       for (const [k, arr] of this.panelTerminals) {
         termCopy.set(k, [...arr]);
       }
       this._sessionTerminals.set(this._tabKey, termCopy);
       this._sessionTermActiveIdx.set(this._tabKey, new Map(this.panelActiveTermIdx));
+      const browserCopy = new Map<string, BrowserView>();
+      for (const [k, bv] of this.panelBrowsers) {
+        browserCopy.set(k, bv);
+      }
+      this._sessionBrowsers.set(this._tabKey, browserCopy);
+      const editorWrap = this.tabBody.querySelector('[data-panel="editor"] > .si-editor-wrap') as HTMLElement | null;
+      if (editorWrap) editorWrap.remove();
+      this._sessionEditors.set(this._tabKey, {
+        el: editorWrap as HTMLElement,
+        view: this._editorView,
+        tabs: [...this._editorTabs],
+        activeTab: this._activeEditorTab,
+      });
+      this._editorView = null;
+      this._editorTabs = [];
+      this._activeEditorTab = "";
+      this._sessionReviewState.set(this._tabKey, {
+        filter: this._reviewFilter,
+        mode: this._reviewMode,
+        artifact: this._reviewArtifact,
+        filePending: this._reviewFilePending,
+      });
     }
     this._tabKey = newKey;
 
@@ -173,6 +209,31 @@ export class SessionInner {
     const restoredActiveIdx = this._sessionTermActiveIdx.get(newKey);
     this.panelTerminals = restoredTerminals ?? new Map();
     this.panelActiveTermIdx = restoredActiveIdx ?? new Map();
+    const restoredBrowsers = this._sessionBrowsers.get(newKey);
+    this.panelBrowsers = restoredBrowsers ?? new Map();
+    const savedEditor = this._sessionEditors.get(newKey);
+    if (savedEditor) {
+      this._editorView = savedEditor.view;
+      this._editorTabs = savedEditor.tabs;
+      this._activeEditorTab = savedEditor.activeTab;
+    } else {
+      this._editorView = null;
+      this._editorTabs = [];
+      this._activeEditorTab = "";
+    }
+    const savedReview = this._sessionReviewState.get(newKey);
+    if (savedReview) {
+      this._reviewFilter = savedReview.filter;
+      this._reviewMode = savedReview.mode;
+      this._reviewArtifact = savedReview.artifact;
+      this._reviewFilePending = savedReview.filePending;
+    } else {
+      const hasWs = !!getState().activeWorkspace;
+      this._reviewFilter = hasWs ? "all" : "lastRound";
+      this._reviewMode = hasWs ? "git" : "artifact";
+      this._reviewArtifact = null;
+      this._reviewFilePending = undefined;
+    }
 
     const restored = this._sessionTabs.get(newKey);
     if (restored) {
@@ -185,6 +246,7 @@ export class SessionInner {
     this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
     this.renderTabs();
     this.render();
+    this.restoreSidebarVisibility();
   }
 
   /* tab drag */
@@ -203,13 +265,17 @@ export class SessionInner {
   private resizeStartX = 0;
   private resizeStartW = 0;
 
-  /* terminals �?each panel can have multiple sub-terminals */
-  private panelTerminals = new Map<string, Array<{ label: string; ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>();
+  /* terminals �� each panel can have multiple sub-terminals */
+  private panelTerminals = new Map<string, Array<{ ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>();
   private panelActiveTermIdx = new Map<string, number>();
   private panelShellPath = new Map<string, string>();
   private panelShellArgs = new Map<string, string[]>();
-
-  /**
+  private panelBrowsers = new Map<string, BrowserView>();
+  private _terminalCounter = 0;
+  private _browserCounter = 0;
+  private _availableShells: Array<{ name: string; path: string; args?: string[] }> = [];
+  private _shellsLoaded = false;
+/**
    * Constructor: resolves DOM nodes, restores width and wires tabs/resize.
    */
   constructor() {
@@ -219,7 +285,7 @@ export class SessionInner {
     this.tabList.className = "header-tabs";
     this.tabBody = this.el.querySelector(".tab-body")!;
 
-    // Start empty — the home page (terminal/editor/review cards) shows.
+    // Start empty �?the home page (terminal/editor/review cards) shows.
     this.tabs = [];
     this.activeTab = "";
 
@@ -273,8 +339,15 @@ export class SessionInner {
       const closeBtn = tab.closable
         ? `<span class="tab-close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>`
         : "";
+      let iconHtml: string;
+      if (tab.type === "browser" && tab.favicon) {
+        iconHtml = `<img class="tab-favicon" src="${this.esc(tab.favicon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''"/><i data-lucide="globe" class="lucide lucide-xs" style="margin-right:4px;flex-shrink:0;display:none"></i>`;
+      } else {
+        iconHtml = `<i data-lucide="${tabIcon(tab.type)}" class="lucide lucide-xs" style="margin-right:4px;flex-shrink:0"></i>`;
+      }
       return `<button class="tab${activeCls}" data-tab="${tab.id}" draggable="true">
-        <span class="tab-label">${this.esc(tabLabel(tab.id))}</span>${closeBtn}
+        ${iconHtml}
+        <span class="tab-label">${this.esc(tab.label)}</span>${closeBtn}
       </button>`;
     }).join("");
 
@@ -286,6 +359,8 @@ export class SessionInner {
     if (this.tabs.length === 0) {
       this.renderHomePage();
     } else {
+      const homeEl = this.tabBody.querySelector(".si-home");
+      if (homeEl) homeEl.remove();
       await this.renderPanels();
     }
     this.refreshLucide();
@@ -318,8 +393,11 @@ export class SessionInner {
     this.tabAddDropdown = dropdown;
 
     const rebuildDropdown = () => {
-      const openIds = new Set(this.tabs.map((t) => t.id));
-      const available = NEW_TAB_OPTIONS.filter((opt) => !openIds.has(opt.id));
+      const openTypes = new Set(this.tabs.map((tab) => tab.type));
+      const available = NEW_TAB_OPTIONS.filter((opt) => {
+        if (opt.id === "terminal" || opt.id === "browser") return true;
+        return !openTypes.has(opt.id);
+      });
       if (available.length === 0) {
         dropdown.innerHTML = `<div class="tab-add-empty">${t("sessionInner.newTabEmpty")}</div>`;
       } else {
@@ -332,8 +410,12 @@ export class SessionInner {
         dropdown.querySelectorAll(".tab-add-item").forEach((item) => {
           item.addEventListener("click", async (e) => {
             e.stopPropagation();
-            const id = (item as HTMLElement).dataset.add!;
-            await this.createTab(id);
+            const type = (item as HTMLElement).dataset.add!;
+            if (type === "terminal") {
+              await this._showShellSelector(btn);
+            } else {
+              await this.createTab(type);
+            }
             dropdown.classList.add("hidden");
           });
         });
@@ -364,6 +446,65 @@ export class SessionInner {
       }
     };
     document.addEventListener("click", this.tabAddDocClickHandler);
+  }
+
+  private async _showShellSelector(anchor: HTMLElement): Promise<void> {
+    const api = (window as any).electronAPI;
+    if (!api) {
+      await this.createTab("terminal");
+      return;
+    }
+    if (!this._shellsLoaded) {
+      try {
+        this._availableShells = await api.terminalListShells();
+        this._shellsLoaded = true;
+      } catch {
+        this._availableShells = [];
+      }
+    }
+    if (this._availableShells.length === 0) {
+      this._availableShells.push({ name: "Default", path: "" });
+    }
+    if (this._availableShells.length === 1) {
+      const s = this._availableShells[0];
+      await this.createTab("terminal", { shellPath: s.path, shellArgs: s.args });
+      return;
+    }
+
+    const shellDropdown = document.createElement("div");
+    shellDropdown.className = "tab-add-dropdown hidden";
+    document.body.appendChild(shellDropdown);
+
+    const rect = anchor.getBoundingClientRect();
+    shellDropdown.style.top = (rect.bottom + 4) + "px";
+    shellDropdown.style.right = (window.innerWidth - rect.right + 4) + "px";
+    shellDropdown.style.maxHeight = Math.min(240, window.innerHeight - rect.bottom - 40) + "px";
+    shellDropdown.style.overflowY = "auto";
+    shellDropdown.innerHTML = this._availableShells.map((s) => {
+      return `<div class="tab-add-item" data-path="${this.esc(s.path)}" data-args="${this.esc(JSON.stringify(s.args || []))}" style="flex-direction:column;align-items:flex-start;gap:2px">
+        <span>${this.esc(s.name)}</span>
+        ${s.path ? `<span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono,monospace)">${this.esc(s.path)}</span>` : ""}
+      </div>`;
+    }).join("");
+    shellDropdown.querySelectorAll(".tab-add-item").forEach((item) => {
+      item.addEventListener("click", async () => {
+        const el = item as HTMLElement;
+        const sp = el.dataset.path || "";
+        let sa: string[] = [];
+        try { sa = JSON.parse(el.dataset.args || "[]"); } catch {}
+        shellDropdown.remove();
+        await this.createTab("terminal", { shellPath: sp, shellArgs: sa });
+      });
+    });
+    shellDropdown.classList.remove("hidden");
+
+    const closeHandler = (e: MouseEvent) => {
+      if (!shellDropdown.contains(e.target as Node)) {
+        shellDropdown.remove();
+        document.removeEventListener("click", closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", closeHandler), 0);
   }
 
   public getTabs(): TabDef[] {
@@ -398,6 +539,7 @@ export class SessionInner {
       { id: "terminal", icon: "terminal", label: t("sessionInner.tabTerminal"), desc: t("sessionInner.tabTerminalDesc") },
       { id: "editor", icon: "code-2", label: t("sessionInner.tabEditor"), desc: t("sessionInner.tabEditorDesc") },
       { id: "review", icon: "eye", label: t("sessionInner.tabReview"), desc: t("sessionInner.tabReviewDesc") },
+      { id: "browser", icon: "globe", label: t("sessionInner.tabBrowser"), desc: t("sessionInner.tabBrowserDesc") },
     ];
 
     this.tabBody.innerHTML = `<div class="si-home">${cards.map((c) => `
@@ -413,8 +555,12 @@ export class SessionInner {
 
     this.tabBody.querySelectorAll(".si-home-card").forEach((el) => {
       el.addEventListener("click", () => {
-        const id = (el as HTMLElement).dataset.tab!;
-        this.createTab(id);
+        const type = (el as HTMLElement).dataset.tab!;
+        if (type === "terminal") {
+          this._showShellSelector(this.tabAddBtn || this.el);
+        } else {
+          this.createTab(type);
+        }
       });
     });
 
@@ -423,11 +569,28 @@ export class SessionInner {
     }
   }
 
-  public async createTab(id: string): Promise<void> {
-    if (!this.tabs.some((tab) => tab.id === id)) {
-      this.tabs.push({ id, closable: true });
-      _saveTabs(this.tabs);
+  public async createTab(type: string, opts?: { shellPath?: string; shellArgs?: string[]; startUrl?: string }): Promise<void> {
+    let id: string;
+    let label: string;
+    if (type === "terminal") {
+      this._terminalCounter++;
+      id = `terminal-${this._terminalCounter}`;
+      const shellName = opts?.shellPath ? opts.shellPath.split(/[/\\]/).pop()?.replace(/\.(exe|cmd|bat)$/i, "") || "Terminal" : "Terminal";
+      label = `${shellName} ${this._terminalCounter}`;
+    } else if (type === "browser") {
+      this._browserCounter++;
+      id = `browser-${this._browserCounter}`;
+      label = t("sessionInner.tabBrowser");
+    } else {
+      id = type;
+      label = tabLabel(type);
     }
+    const tab: TabDef = { id, type, label, closable: true };
+    if (opts?.shellPath !== undefined) tab.shellPath = opts.shellPath;
+    if (opts?.shellArgs !== undefined) tab.shellArgs = opts.shellArgs;
+    if (opts?.startUrl !== undefined) tab.startUrl = opts.startUrl;
+    this.tabs.push(tab);
+    _saveTabs(this.tabs);
     this.activeTab = id;
     await this.renderTabs();
   }
@@ -443,13 +606,16 @@ export class SessionInner {
       const panel = document.createElement("div");
       panel.className = "tab-panel" + (t.id === this.activeTab ? " active" : "");
       panel.dataset.panel = t.id;
+      panel.dataset.type = t.type;
 
-      if (t.id === "terminal") {
-        await this.setupTerminalPanel(panel);
-      } else if (t.id === "editor") {
+      if (t.type === "terminal") {
+        await this.setupTerminalPanel(panel, t.id, t.shellPath, t.shellArgs);
+      } else if (t.type === "editor") {
         this.setupEditorPanel(panel);
-      } else if (t.id === "review") {
+      } else if (t.type === "review") {
         this.setupReviewPanel(panel);
+      } else if (t.type === "browser") {
+        this.setupBrowserPanel(panel, t.id, t.startUrl);
       }
 
       this.tabBody.appendChild(panel);
@@ -457,24 +623,31 @@ export class SessionInner {
 
     this.tabBody.querySelectorAll(".tab-panel").forEach((p) => {
       const pid = (p as HTMLElement).dataset.panel || "";
+      const ptype = (p as HTMLElement).dataset.type || "";
       const exists = this.tabs.some((t) => t.id === pid);
       if (!exists) {
-        if (pid === "terminal") {
+        if (ptype === "terminal") {
           const terms = this.panelTerminals.get(pid);
           if (terms) {
-            for (const t of terms) {
-              t.cleanup();
-              t.resizeObs.disconnect();
-              t.term.dispose();
+            for (const trm of terms) {
+              trm.cleanup();
+              trm.resizeObs.disconnect();
+              trm.term.dispose();
               const api = (window as any).electronAPI;
-              if (api) api.terminalKill(t.ptyId);
+              if (api) api.terminalKill(trm.ptyId);
             }
             this.panelTerminals.delete(pid);
             this.panelActiveTermIdx.delete(pid);
           }
-          /* Remove the shell dropdown from document.body */
           const dd = document.querySelector(".si-term-shell-dropdown");
           if (dd) dd.remove();
+        }
+        if (ptype === "browser") {
+          const bv = this.panelBrowsers.get(pid);
+          if (bv) {
+            bv.destroy();
+            this.panelBrowsers.delete(pid);
+          }
         }
         p.remove();
       } else {
@@ -485,35 +658,28 @@ export class SessionInner {
 
   /* ── Terminal ───────────────────────────────────────────────────── */
 
-  private async setupTerminalPanel(panel: HTMLElement): Promise<void> {
+  private async setupTerminalPanel(panel: HTMLElement, tabId: string, shellPath?: string, shellArgs?: string[]): Promise<void> {
     panel.innerHTML = `<div class="si-terminal-wrap">
-      <div class="tab-bar tab-bar--term">
-        <div class="tab-list"></div>
-        <button class="tab-action-btn" data-tooltip="${t("sessionInner.termNew")}"><i data-lucide="plus" class="lucide lucide-sm"></i></button>
-        <button class="tab-action-btn danger" data-tooltip="${t("sessionInner.termKillAll")}"><i data-lucide="trash-2" class="lucide lucide-sm"></i></button>
-      </div>
-      <div class="si-panel-empty si-term-empty">
-        <i data-lucide="terminal" class="lucide"></i>
-        <span class="si-panel-empty-title">${t("sessionInner.termEmpty")}</span>
-        <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
-      </div>
-      <div class="si-terminal-body" style="display:none"></div>
+      <div class="si-terminal-body"></div>
     </div>`;
 
     const body = panel.querySelector(".si-terminal-body") as HTMLElement;
-    const emptyEl = panel.querySelector(".si-term-empty") as HTMLElement;
-    const tabList = panel.querySelector(".tab-bar--term .tab-list") as HTMLElement;
-    const addBtn = panel.querySelector(".tab-bar--term .tab-action-btn") as HTMLElement;
-    const killAllBtn = panel.querySelector(".tab-bar--term .tab-action-btn.danger") as HTMLElement;
+    const panelId = tabId;
 
-    /* Create shell dropdown on document.body to avoid parent overflow clipping */
-    const shellDropdown = document.createElement("div");
-    shellDropdown.className = "si-term-shell-dropdown hidden";
-    document.body.appendChild(shellDropdown);
+    if (this.panelTerminals.has(panelId) && (this.panelTerminals.get(panelId)?.length || 0) > 0) {
+      const terms = this.panelTerminals.get(panelId)!;
+      for (const trm of terms) {
+        if (trm.term?.element) {
+          body.appendChild(trm.term.element);
+        }
+      }
+      if (terms[0]) {
+        try { terms[0].term.focus(); } catch {}
+      }
+      this._bindTerminalTheme(panelId, panel);
+      return;
+    }
 
-    const panelId = panel.dataset.panel || "terminal";
-    // Only initialize if not already present - otherwise we'd wipe terminals
-    // when switching back to a session that already has them.
     if (!this.panelTerminals.has(panelId)) {
       this.panelTerminals.set(panelId, []);
       this.panelActiveTermIdx.set(panelId, 0);
@@ -525,8 +691,6 @@ export class SessionInner {
       return;
     }
 
-
-
     let shells: Array<{ name: string; path: string; args?: string[] }>;
     try {
       shells = await api.terminalListShells();
@@ -537,8 +701,8 @@ export class SessionInner {
       shells.push({ name: "Default", path: "" });
     }
 
-    const getShellPath = () => this.panelShellPath.get(panelId) || shells[0]?.path || "";
-    const getShellArgs = () => this.panelShellArgs.get(panelId) || shells[0]?.args || [];
+    const getShellPath = () => shellPath || shells[0]?.path || "";
+    const getShellArgs = () => shellArgs || shells[0]?.args || [];
 
     const buildTheme = () => {
       const st = getState();
@@ -565,216 +729,79 @@ export class SessionInner {
     };
     const applyTheme = (term: any) => { term.options.theme = buildTheme(); };
 
-    const showTermEmpty = (show: boolean) => {
-      emptyEl.style.display = show ? "flex" : "none";
-      body.style.display = show ? "none" : "flex";
-      tabList.style.display = show ? "none" : "";
-      killAllBtn.style.display = show ? "none" : "";
-    };
-
-    const spawnAndAttach = async () => {
-      const sh = getShellPath();
-      const args = getShellArgs();
-      let ptyId: number;
-      try {
-        const result = await api.terminalSpawn(sh || undefined, args.length ? args : undefined);
-        if (result.error) {
-          body.innerHTML = `<div class="si-empty">${t("sessionInner.termError")}: ${this.esc(result.error)}</div>`;
-          return null;
-        }
-        ptyId = result.id as number;
-      } catch (e: any) {
-        body.innerHTML = `<div class="si-empty">${t("sessionInner.termError")}: ${this.esc(e?.message || String(e))}</div>`;
-        return null;
+    const sh = getShellPath();
+    const args = getShellArgs();
+    let ptyId: number;
+    try {
+      const result = await api.terminalSpawn(sh || undefined, args.length ? args : undefined);
+      if (result.error) {
+        body.innerHTML = `<div class="si-empty">${t("sessionInner.termError")}: ${this.esc(result.error)}</div>`;
+        return;
       }
+      ptyId = result.id as number;
+    } catch (e: any) {
+      body.innerHTML = `<div class="si-empty">${t("sessionInner.termError")}: ${this.esc(e?.message || String(e))}</div>`;
+      return;
+    }
 
-      const term = new Terminal({
-        cursorBlink: true,
-        cursorStyle: "bar",
-        fontSize: 12.5,
-        fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", "Cascadia Mono", Consolas, monospace',
-        lineHeight: 1.3,
-        theme: buildTheme(),
-        cols: 60,
-        rows: 16,
-        allowProposedApi: true,
-        allowTransparency: false,
-        scrollback: 5000,
-      });
+    const term = new Terminal({
+      cursorBlink: true,
+      cursorStyle: "bar",
+      fontSize: 12.5,
+      fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", "Cascadia Mono", Consolas, monospace',
+      lineHeight: 1.3,
+      theme: buildTheme(),
+      cols: 60,
+      rows: 16,
+      allowProposedApi: true,
+      allowTransparency: false,
+      scrollback: 5000,
+    });
 
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
 
-      try {
-        const webglAddon = new WebglAddon();
-        term.loadAddon(webglAddon);
-      } catch {}
+    try {
+      const webglAddon = new WebglAddon();
+      term.loadAddon(webglAddon);
+    } catch {}
 
-      term.open(body);
+    term.open(body);
 
-      term.attachCustomKeyEventHandler((e) => {
-        const mod = e.ctrlKey || e.metaKey;
-        if (mod && (e.key === "c" || e.key === "C")) {
-          if (term.hasSelection()) {
-            e.preventDefault();
-            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
-            return false;
-          }
-          return true;
+    term.attachCustomKeyEventHandler((e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && (e.key === "c" || e.key === "C")) {
+        if (term.hasSelection()) {
+          e.preventDefault();
+          navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+          return false;
         }
-        if (mod && (e.key === "v" || e.key === "V")) {
+        return true;
+      }
+      if (mod && (e.key === "v" || e.key === "V")) {
+        e.preventDefault();
+        navigator.clipboard.readText().then((text) => term.paste(text)).catch(() => {});
+        return false;
+      }
+      if (e.key === "Insert") {
+        if (e.shiftKey) {
           e.preventDefault();
           navigator.clipboard.readText().then((text) => term.paste(text)).catch(() => {});
           return false;
         }
-        if (e.key === "Insert") {
-          if (e.shiftKey) {
-            e.preventDefault();
-            navigator.clipboard.readText().then((text) => term.paste(text)).catch(() => {});
-            return false;
-          }
-          if (e.ctrlKey && term.hasSelection()) {
-            e.preventDefault();
-            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
-            return false;
-          }
+        if (e.ctrlKey && term.hasSelection()) {
+          e.preventDefault();
+          navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+          return false;
         }
-        return true;
-      });
-
-      term.element?.addEventListener("contextmenu", (ev: MouseEvent) => {
-        ev.preventDefault();
-        ctxTermTarget = term;
-        showContextMenu(ctxMenu, ev.clientX, ev.clientY);
-      });
-
-      term.onData((data: string) => {
-        api.terminalWrite(ptyId, data);
-      });
-
-      const dataCleanup = api.onTerminalData((d: { id: number; data: string }) => {
-        if (d.id === ptyId) term.write(d.data);
-      });
-      const exitCleanup = api.onTerminalExit((d: { id: number }) => {
-        if (d.id === ptyId) {
-          term.write(`\r\n\x1b[33m${t("sessionInner.processExited")}\x1b[0m\r\n`);
-        }
-      });
-
-      let resizeTimer: any = null;
-      const obs = new ResizeObserver(() => {
-        if (resizeTimer) return;
-        resizeTimer = setTimeout(() => {
-          resizeTimer = null;
-          try {
-            fitAddon.fit();
-            const dims = (term as any)._core?._renderService?.dimensions;
-            if (dims && dims.cols > 0 && dims.rows > 0) {
-              api.terminalResize(ptyId, dims.cols, dims.rows);
-            }
-          } catch {}
-        }, 50);
-      });
-      obs.observe(body);
-      requestAnimationFrame(() => { try { fitAddon.fit(); } catch {} });
-
-      term.focus();
-
-      const cleanup = () => { dataCleanup(); exitCleanup(); };
-      return { term, ptyId, cleanup, resizeObs: obs };
-    };
-
-    const switchTerminal = (pid: string, idx: number, _termBody: HTMLElement) => {
-      const terms = this.panelTerminals.get(pid) || [];
-      if (idx < 0 || idx >= terms.length) return;
-      this.panelActiveTermIdx.set(pid, idx);
-      terms.forEach((ti, i) => {
-        (ti.term as any).element.style.display = i === idx ? "" : "none";
-      });
-      if (terms[idx]) terms[idx].term.focus();
-    };
-
-    const killLocal = (pid: string, idx: number, _termBody: HTMLElement) => {
-      const terms = this.panelTerminals.get(pid);
-      if (!terms || idx < 0 || idx >= terms.length) return;
-      const tobj = terms[idx];
-      tobj.cleanup();
-      tobj.resizeObs.disconnect();
-      tobj.term.dispose();
-      if (api) api.terminalKill(tobj.ptyId);
-      terms.splice(idx, 1);
-
-      if (terms.length === 0) {
-        this.panelActiveTermIdx.set(pid, -1);
-        showTermEmpty(true);
-        renderTermTabs();
-      } else {
-        const cur = this.panelActiveTermIdx.get(pid) || 0;
-        const newIdx = Math.min(cur, terms.length - 1);
-        switchTerminal(pid, newIdx, body);
-        renderTermTabs();
       }
-    };
-    this.killSubTerminal = killLocal;
-
-    /* merged shell selector + add button */
-    const openShellDropdown = (anchor: HTMLElement, spawnAfter: boolean) => {
-      const isHidden = shellDropdown.classList.contains("hidden");
-      if (!isHidden) return;
-      const rect = anchor.getBoundingClientRect();
-      const dw = Math.max(200, rect.width);
-      shellDropdown.style.top = (rect.bottom + 4) + "px";
-      const rightEdge = rect.left + dw;
-      const fitsRight = rightEdge <= window.innerWidth - 8;
-      shellDropdown.style.left = fitsRight ? rect.left + "px" : "auto";
-      shellDropdown.style.right = fitsRight ? "auto" : (window.innerWidth - rect.right + "px");
-      shellDropdown.style.minWidth = dw + "px";
-      shellDropdown.style.maxHeight = Math.min(240, window.innerHeight - rect.bottom - 40) + "px";
-      const cur = getShellPath();
-      shellDropdown.innerHTML = shells.map((s) => {
-        const active = (s.path === cur) ? " active" : "";
-        return `<div class="si-term-shell-item${active}" data-path="${this.esc(s.path)}" data-args="${this.esc(JSON.stringify(s.args || []))}">
-          <span>${this.esc(s.name)}</span>
-          <span class="si-term-shell-path">${this.esc(s.path)}</span>
-        </div>`;
-      }).join("");
-      shellDropdown.querySelectorAll(".si-term-shell-item").forEach((item) => {
-        item.addEventListener("click", () => {
-          const el = item as HTMLElement;
-          this.panelShellPath.set(panelId, el.dataset.path || "");
-          try { this.panelShellArgs.set(panelId, JSON.parse(el.dataset.args || "[]")); } catch { this.panelShellArgs.set(panelId, []); }
-          shellDropdown.classList.add("hidden");
-          if (spawnAfter) {
-            spawnAndAttach().then((inst) => {
-              if (!inst) return;
-              const tms = this.panelTerminals.get(panelId) || [];
-              const idx = tms.length;
-              tms.push({ label: `${idx + 1}. ${t("sessionInner.termLabel")}`, ...inst });
-              showTermEmpty(false);
-              switchTerminal(panelId, idx, body);
-              renderTermTabs();
-            });
-          }
-        });
-      });
-      shellDropdown.classList.remove("hidden");
-    };
-
-    addBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openShellDropdown(addBtn, true);
-    });
-
-    document.addEventListener("click", (e) => {
-      if (!addBtn.contains(e.target as Node) && !shellDropdown.contains(e.target as Node)) {
-        shellDropdown.classList.add("hidden");
-      }
+      return true;
     });
 
     /* context menu */
     const ctxMenu = document.createElement("div");
     ctxMenu.className = "context-menu hidden";
-    ctxMenu.setAttribute("id", "term-ctx-menu");
+    ctxMenu.setAttribute("id", `term-ctx-menu-${tabId}`);
     ctxMenu.innerHTML = `
       <div class="context-menu-item" data-action="copy">${t("sessionInner.termCopy")}</div>
       <div class="context-menu-item" data-action="paste">${t("sessionInner.termPaste")}</div>
@@ -783,11 +810,48 @@ export class SessionInner {
     document.body.appendChild(ctxMenu);
     let ctxTermTarget: any = null;
 
-    const getShellName = (): string => {
-      const shellPath = this.panelShellPath.get(panelId) || "";
-      const match = shells.find(s => s.path === shellPath);
-      return match ? match.name : shellPath.split(/[/\\]/).pop()?.replace(/\.(exe|cmd|bat)$/i, "") || "Terminal";
-    };
+    term.element?.addEventListener("contextmenu", (ev: MouseEvent) => {
+      ev.preventDefault();
+      ctxTermTarget = term;
+      showContextMenu(ctxMenu, ev.clientX, ev.clientY);
+    });
+
+    term.onData((data: string) => {
+      api.terminalWrite(ptyId, data);
+    });
+
+    const dataCleanup = api.onTerminalData((d: { id: number; data: string }) => {
+      if (d.id === ptyId) term.write(d.data);
+    });
+    const exitCleanup = api.onTerminalExit((d: { id: number }) => {
+      if (d.id === ptyId) {
+        term.write(`\r\n\x1b[33m${t("sessionInner.processExited")}\x1b[0m\r\n`);
+      }
+    });
+
+    let resizeTimer: any = null;
+    const obs = new ResizeObserver(() => {
+      if (resizeTimer) return;
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        try {
+          fitAddon.fit();
+          const dims = (term as any)._core?._renderService?.dimensions;
+          if (dims && dims.cols > 0 && dims.rows > 0) {
+            api.terminalResize(ptyId, dims.cols, dims.rows);
+          }
+        } catch {}
+      }, 50);
+    });
+    obs.observe(body);
+    requestAnimationFrame(() => { try { fitAddon.fit(); } catch {} });
+
+    term.focus();
+
+    const cleanup = () => { dataCleanup(); exitCleanup(); ctxMenu.remove(); };
+    const tms = this.panelTerminals.get(panelId) || [];
+    tms.push({ ptyId, term, cleanup, resizeObs: obs });
+    this.panelTerminals.set(panelId, tms);
 
     ctxMenu.querySelectorAll(".context-menu-item").forEach((item) => {
       item.addEventListener("click", () => {
@@ -800,8 +864,7 @@ export class SessionInner {
         } else if (action === "send") {
           const content = getTerminalAllText(ctxTermTarget);
           if (content) {
-            const shellName = getShellName();
-            const lineCount = content.split("\n").length;
+            const shellName = sh.split(/[/\\]/).pop()?.replace(/\.(exe|cmd|bat)$/i, "") || "Terminal";
             const att: AttachmentMeta = {
               name: shellName,
               path: `terminal:${Date.now()}`,
@@ -822,104 +885,8 @@ export class SessionInner {
         ctxMenu.classList.add("hidden");
       }
     });
-    const renderTermTabs = () => {
-      const terms = this.panelTerminals.get(panelId) || [];
-      const activeIdx = this.panelActiveTermIdx.get(panelId) || 0;
-      if (terms.length === 0) {
-        tabList.innerHTML = "";
-        return;
-      }
-      tabList.innerHTML = terms.map((ti, i) => {
-        const cls = i === activeIdx ? " active" : "";
-        return `<div class="tab tab--term${cls}" data-idx="${i}">
-          <span class="tab-label">${this.esc(ti.label)}</span>
-          <button class="tab-close" data-idx="${i}" data-tooltip="${t("sessionInner.termKill")}">×</button>
-        </div>`;
-      }).join("");
 
-      tabList.querySelectorAll(".tab.tab--term").forEach((el) => {
-        el.addEventListener("click", (e) => {
-          if ((e.target as HTMLElement).closest(".tab-close")) return;
-          if ((this as any)._termDragMoved) { (this as any)._termDragMoved = false; return; }
-          const idx = parseInt((el as HTMLElement).dataset.idx || "0");
-          switchTerminal(panelId, idx, body);
-          renderTermTabs();
-        });
-        el.addEventListener("mousedown", (e) => {
-          const ev = e as MouseEvent;
-          if (ev.button !== 0) return;
-          if ((ev.target as HTMLElement).closest(".tab-close")) return;
-          const dragEl = el as HTMLElement;
-          const startX = ev.clientX;
-          let moved = false;
-          const onMove = (evMove: MouseEvent) => {
-            if (!moved && Math.abs(evMove.clientX - startX) < 5) return;
-            if (!moved) { moved = true; dragEl.classList.add("dragging"); (this as any)._termDragMoved = true; }
-            tabList.querySelectorAll(".tab.tab--term.drop-target").forEach((t) => t.classList.remove("drop-target"));
-            const over = Array.from(tabList.querySelectorAll(".tab.tab--term")).find((t) => {
-              const r = (t as HTMLElement).getBoundingClientRect();
-              return ev.clientX >= r.left && ev.clientX <= r.right;
-            }) as HTMLElement | undefined;
-            if (over && over !== dragEl) over.classList.add("drop-target");
-          };
-          const onUp = () => {
-            document.removeEventListener("mousemove", onMove);
-            document.removeEventListener("mouseup", onUp);
-            dragEl.classList.remove("dragging");
-            const target = tabList.querySelector(".tab.tab--term.drop-target") as HTMLElement | null;
-            if (target) {
-              const fromIdx = parseInt(dragEl.dataset.idx || "0");
-              const toIdx = parseInt(target.dataset.idx || "0");
-              const arr = this.panelTerminals.get(panelId) || [];
-              if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx && fromIdx < arr.length && toIdx < arr.length) {
-                const [m] = arr.splice(fromIdx, 1);
-                arr.splice(toIdx, 0, m);
-                this.panelTerminals.set(panelId, arr);
-                this.panelActiveTermIdx.set(panelId, toIdx);
-                renderTermTabs();
-              }
-            }
-            tabList.querySelectorAll(".tab.tab--term.drop-target").forEach((t) => t.classList.remove("drop-target"));
-          };
-          document.addEventListener("mousemove", onMove);
-          document.addEventListener("mouseup", onUp);
-          e.preventDefault();
-        });
-      });
-      tabList.querySelectorAll(".tab-close").forEach((el) => {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const idx = parseInt((el as HTMLElement).dataset.idx || "0");
-          killLocal(panelId, idx, body);
-          renderTermTabs();
-        });
-      });
-    };
-
-    killAllBtn.addEventListener("click", () => {
-      const terms = this.panelTerminals.get(panelId);
-      if (!terms) return;
-      for (const t of [...terms]) {
-        t.cleanup();
-        t.resizeObs.disconnect();
-        t.term.dispose();
-        if (api) api.terminalKill(t.ptyId);
-      }
-      terms.length = 0;
-      this.panelActiveTermIdx.set(panelId, -1);
-      showTermEmpty(true);
-      renderTermTabs();
-    });
-
-    showTermEmpty(true);
-    renderTermTabs();
-
-    const themeUnsub = subscribe(() => {
-      const terms = this.panelTerminals.get(panelId);
-      if (terms) {
-        for (const tt of terms) applyTheme(tt.term);
-      }
-    });
+    this._bindTerminalTheme(panelId, panel);
 
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: panel });
@@ -927,6 +894,39 @@ export class SessionInner {
   }
 
   private killSubTerminal: ((pid: string, idx: number, body: HTMLElement) => void) | undefined;
+
+  private _bindTerminalTheme(panelId: string, panel: HTMLElement): void {
+    const buildTheme = () => {
+      const st = getState();
+      const isLight = st.theme === "light";
+      return isLight ? {
+        background: "#ffffff", foreground: "#1a1a1a", cursor: "#1a1a1a",
+        selectionBackground: "rgba(0,0,0,0.10)",
+        black: "#000000", red: "#cd3131", green: "#00bc00",
+        yellow: "#949800", blue: "#0451a5", magenta: "#bc05bc",
+        cyan: "#0598bc", white: "#555555",
+        brightBlack: "#666666", brightRed: "#cd3131", brightGreen: "#14ce14",
+        brightYellow: "#b5ba00", brightBlue: "#0451a5", brightMagenta: "#bc05bc",
+        brightCyan: "#0598bc", brightWhite: "#a5a5a5",
+      } : {
+        background: "#000000", foreground: "#f5f5f7", cursor: "#f5f5f7",
+        selectionBackground: "rgba(255,255,255,0.15)",
+        black: "#000000", red: "#cd3131", green: "#0dbc79",
+        yellow: "#e5e510", blue: "#2472c8", magenta: "#bc3fbc",
+        cyan: "#11a8cd", white: "#e5e5e5",
+        brightBlack: "#666666", brightRed: "#f14c4c", brightGreen: "#23d18b",
+        brightYellow: "#f5f543", brightBlue: "#3b8eea", brightMagenta: "#d670d6",
+        brightCyan: "#29b8db", brightWhite: "#ffffff",
+      };
+    };
+    const applyTheme = (term: any) => { term.options.theme = buildTheme(); };
+    subscribe(() => {
+      const terms = this.panelTerminals.get(panelId);
+      if (terms) {
+        for (const tt of terms) applyTheme(tt.term);
+      }
+    });
+  }
 
   /* ── Review (Git Diff) ─────────────────────────────────────────── */
 
@@ -994,7 +994,7 @@ export class SessionInner {
     const actionWrap = allDropdownWraps[1] as HTMLElement;
     const actionTrigger = actionWrap.querySelector(".settings-dropdown-trigger") as HTMLButtonElement;
     const actionDropdown = actionWrap.querySelector(".settings-dropdown") as HTMLElement;
-    // Collapse / split / git-action buttons (added after the ⋯ menu).
+    // Collapse / split / git-action buttons (added after the �?menu).
     const collapseBtn = panel.querySelector(".si-review-collapse-btn") as HTMLButtonElement;
     const splitBtn = panel.querySelector(".si-review-split-btn") as HTMLButtonElement;
     const gitWrap = panel.querySelector(".si-review-git-wrap") as HTMLElement;
@@ -1205,7 +1205,7 @@ export class SessionInner {
         return;
       }
 
-      // (artifact/lastRound already handled above — only git modes reach here)
+      // (artifact/lastRound already handled above �?only git modes reach here)
       
 
       if (!ws) {
@@ -1374,8 +1374,8 @@ export class SessionInner {
     };
     buildActionItems();
 
-    // Responsive overflow: as the sidebar narrows, merge buttons into the ⋯
-    // menu from left to right (collapse -> split -> git module). The ⋯ menu
+    // Responsive overflow: as the sidebar narrows, merge buttons into the �?
+    // menu from left to right (collapse -> split -> git module). The �?menu
     // and the mode selector are always kept. Button sizes never change.
     const setOverflow = (count: number) => {
       const n = Math.max(0, Math.min(3, count));
@@ -1389,13 +1389,13 @@ export class SessionInner {
       buildActionItems();
     };
     // Measure by the sidebar panel width, which is the real constraint.
-    // Sidebar default is 280px; mode selector + ⋯ need ~170px.
+    // Sidebar default is 280px; mode selector + �?need ~170px.
     const measureOverflow = () => {
       // Normal mode (no workspace): no buttons to merge, all hidden.
       if (!getState().activeWorkspace) { setOverflow(0); return; }
       const w = panel.clientWidth;
       let need = 0;
-      if (w < 230) need = 3;       // everything merged, only mode + ⋯ left
+      if (w < 230) need = 3;       // everything merged, only mode + �?left
       else if (w < 270) need = 2;  // git + split merged
       else if (w < 310) need = 1; // collapse merged
       else need = 0;
@@ -1453,7 +1453,7 @@ export class SessionInner {
 
     // Update the collapse/split button icons to reflect the current state.
     // Lucide's createIcons() replaces <i> with <svg>, so the icon element
-    // no longer has data-lucide on the next call – rebuild the inner HTML.
+    // no longer has data-lucide on the next call �?rebuild the inner HTML.
     const updateToolIcons = () => {
       collapseBtn.innerHTML = `<i data-lucide="${this._reviewCollapsed ? "plus" : "minus"}" class="lucide lucide-sm"></i>`;
       splitBtn.innerHTML = `<i data-lucide="${this._reviewSplitView ? "columns" : "list"}" class="lucide lucide-sm"></i>`;
@@ -1542,7 +1542,7 @@ export class SessionInner {
         }
         return;
       }
-      // Click on the icon or button body → run the selected git action.
+      // Click on the icon or button body �?run the selected git action.
       runGitAction();
     });
     gitDropdown.addEventListener("click", (e) => {
@@ -1672,7 +1672,7 @@ export class SessionInner {
       actionDropdown.classList.remove("open");
     });
 
-    // Build filter dropdown items (left dropdown — mode/filter selection)
+    // Build filter dropdown items (left dropdown �?mode/filter selection)
     const buildFilterItems = () => {
       const ws = getState().activeWorkspace;
       const items: Array<{ filter: string; labelKey: string }> = [];
@@ -1717,7 +1717,7 @@ export class SessionInner {
     };
     buildFilterItems();
 
-    // Filter dropdown — delegation
+    // Filter dropdown �?delegation
     modeTrigger.addEventListener("click", (e) => {
       e.stopPropagation();
       const isOpen = modeDropdown.classList.contains("open");
@@ -1765,6 +1765,85 @@ export class SessionInner {
       }
       await load(undefined, false);
     }
+  }
+
+  private setupBrowserPanel(panel: HTMLElement, tabId: string, startUrl?: string): void {
+    panel.style.overflow = "hidden";
+
+    const existing = this.panelBrowsers.get(tabId);
+    if (existing) {
+      panel.appendChild(existing.container);
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: panel });
+      }
+      return;
+    }
+
+    const container = document.createElement("div");
+    container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;height:100%;";
+    panel.appendChild(container);
+    const url = startUrl || getDefaultHomepage();
+    const bv = new BrowserView(container, {
+      startUrl: url,
+      compact: true,
+      onTitleChange: (title: string) => {
+        const tab = this.tabs.find(t => t.id === tabId);
+        if (tab && title) {
+          tab.label = title;
+          this.renderTabLabels();
+        }
+      },
+      onFaviconChange: (faviconUrl: string) => {
+        const tab = this.tabs.find(t => t.id === tabId);
+        if (tab) {
+          tab.favicon = faviconUrl;
+          this.renderTabIcons();
+        }
+      },
+      onNewWindow: (newUrl: string) => {
+        this.createTab("browser", { startUrl: newUrl });
+      },
+    });
+    this.panelBrowsers.set(tabId, bv);
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: panel });
+    }
+  }
+
+  private renderTabLabels(): void {
+    this.tabList.querySelectorAll(".tab").forEach((el) => {
+      const id = (el as HTMLElement).dataset.tab;
+      if (!id) return;
+      const tab = this.tabs.find(t => t.id === id);
+      if (!tab) return;
+      const labelEl = el.querySelector(".tab-label");
+      if (labelEl) labelEl.textContent = tab.label;
+    });
+  }
+
+  private renderTabIcons(): void {
+    this.tabList.querySelectorAll(".tab").forEach((el) => {
+      const id = (el as HTMLElement).dataset.tab;
+      if (!id) return;
+      const tab = this.tabs.find(t => t.id === id);
+      if (!tab || tab.type !== "browser") return;
+      const existingImg = el.querySelector(".tab-favicon");
+      const existingIcon = el.querySelector(".lucide");
+      if (tab.favicon && !existingImg) {
+        if (existingIcon) {
+          const img = document.createElement("img");
+          img.className = "tab-favicon";
+          img.src = tab.favicon;
+          img.alt = "";
+          img.style.cssText = "width:14px;height:14px;flex-shrink:0;margin-right:4px;";
+          img.onerror = () => { img.style.display = "none"; if (existingIcon) (existingIcon as HTMLElement).style.display = ""; };
+          existingIcon.replaceWith(img);
+          if (typeof (window as any).lucide !== "undefined") {
+            (window as any).lucide.createIcons({ root: el });
+          }
+        }
+      }
+    });
   }
 
   private setupAgentPanel(panel: HTMLElement): void {
@@ -2022,9 +2101,10 @@ export class SessionInner {
     return html;
   }
 
-  private _editorView: EditorView | null = null;
+  private _editorView: any = null;
   private _editorCtxMenu: HTMLDivElement | null = null;
   private _editorCtxTarget: string | null = null;
+  private _editorCtxSelection: string | null = null;
   private _editorTabs: Array<{path: string; name: string}> = [];
   private _activeEditorTab = "";
 
@@ -2128,7 +2208,7 @@ export class SessionInner {
         if (tabBar) tabBar.style.display = "none";
         if (container) { container.style.display = "none"; container.innerHTML = ""; }
         if (emptyEl) emptyEl.style.display = "flex";
-        if (this._editorView) { this._editorView.destroy(); this._editorView = null; }
+        if (this._editorView) { this._editorView.dispose(); this._editorView = null; }
       }
       return;
     }
@@ -2156,54 +2236,68 @@ export class SessionInner {
     container.innerHTML = "";
     container.style.display = "flex";
 
-    if (this._editorView) { this._editorView.destroy(); this._editorView = null; }
+    if (this._editorView) { unregisterEditor(this._editorView); this._editorView.dispose(); this._editorView = null; }
 
-    this._editorView = new EditorView({
-      state: EditorState.create({
-        doc: result.content,
-        extensions: [
-          basicSetup,
-          EditorView.editable.of(false),
-          this.cmTheme(),
-          keymap.of([indentWithTab]),
-          this.langExt(filePath.split(".").pop()?.toLowerCase() || ""),
-        ],
-      }),
-      parent: container,
+    const editor = await getMonaco();
+    const ext = filePath.split(".").pop()?.toLowerCase() || "";
+    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+
+    this._editorView = editor.create(container, {
+      value: result.content,
+      language: monacoLang(ext),
+      theme: isDark ? "vs-dark" : "vs",
+      readOnly: true,
+      minimap: { enabled: false },
+      automaticLayout: true,
+      scrollBeyondLastLine: false,
+      fontSize: 13,
+      lineNumbers: "on",
+      renderLineHighlight: "line",
+      contextmenu: false,
+      bracketPairColorization: { enabled: true },
+      padding: { top: 8 },
     });
+
+    registerEditor(this._editorView);
 
     container.oncontextmenu = (ev: MouseEvent) => {
       ev.preventDefault();
       if (!this._editorCtxMenu) return;
+      this._editorCtxTarget = filePath.split(/[/\\]/).pop() || filePath;
+      const view = this._editorView;
+      if (view) {
+        const sel = view.getSelection();
+        const model = view.getModel();
+        this._editorCtxSelection = model && !sel.isEmpty() ? model.getValueInRange(sel) : null;
+      } else {
+        this._editorCtxSelection = null;
+      }
       showContextMenu(this._editorCtxMenu, ev.clientX, ev.clientY);
     };
-  }
 
-  private cmTheme() {
-    return EditorView.theme({
-      "&": { height: "100%" },
-      ".cm-scroller": { overflow: "auto" },
-    });
-  }
-
-  private langExt(ext: string) {
-    const map: Record<string, any> = {
-      js: javascript(), jsx: javascript({ jsx: true }),
-      ts: javascript({ typescript: true }), tsx: javascript({ jsx: true, typescript: true }),
-      rs: rust(), go: rust(), java: java(),
-      json: json(), yaml: yaml(), yml: yaml(), toml: yaml(),
-      md: markdown(), html: html(), css: css(),
-      cpp: cpp(), c: cpp(), h: cpp(), hpp: cpp(),
-      cs: java(), swift: java(), kt: java(), scala: java(),
-      php: php(), xml: xml(), sql: sql(),
-      sh: python(), bash: python(), zsh: python(),
-      r: python(), lua: python(), dart: python(),
-      rb: python(), py: python(),
-    };
-    return map[ext] || [];
+    this._editorView.focus();
   }
 
   private async setupEditorPanel(panel: HTMLElement): Promise<void> {
+    const savedEditor = this._sessionEditors.get(this._tabKey);
+    if (savedEditor?.el) {
+      panel.style.overflow = "hidden";
+      panel.appendChild(savedEditor.el);
+      this._sessionEditors.delete(this._tabKey);
+      const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+      if (tabBar && this._editorTabs.length > 0) {
+        tabBar.style.display = "flex";
+        this._renderEditorTabs(tabBar);
+      }
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: panel });
+      }
+      if (this._editorView) {
+        this._editorView.layout();
+      }
+      return;
+    }
+
     const api = (window as any).electronAPI;
 
     if (!getState().activeWorkspace) {
@@ -2219,7 +2313,7 @@ export class SessionInner {
     }
 
 panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
-      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0">
+      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
         <div class="si-editor-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:4px;padding:20px;color:var(--editor-empty,#888);font-size:13px;text-align:center">
           <i data-lucide="file-code-2" class="lucide" style="width:24px;height:24px;opacity:0.35"></i>
           <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
@@ -2308,14 +2402,13 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       this._editorCtxMenu.querySelectorAll(".context-menu-item").forEach((item) => {
         item.addEventListener("click", () => {
           const action = (item as HTMLElement).dataset.action;
-          const view = this._editorView;
-          if (action === "copy" && view) {
-            const sel = view.state.selection.main;
-            const text = sel.empty ? "" : view.state.sliceDoc(sel.from, sel.to);
-            if (text) navigator.clipboard.writeText(text).catch(() => {});
-          } else if (action === "send" && view) {
-            const sel = view.state.selection.main;
-            const content = sel.empty ? view.state.doc.toString() : view.state.sliceDoc(sel.from, sel.to);
+          if (action === "copy") {
+            if (this._editorCtxSelection) {
+              navigator.clipboard.writeText(this._editorCtxSelection).catch(() => {});
+            }
+          } else if (action === "send") {
+            const content = this._editorCtxSelection || "";
+            if (!content) return;
             const name = this._editorCtxTarget || "editor";
             const att: AttachmentMeta = {
               name,
@@ -2329,11 +2422,14 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
           }
           this._editorCtxMenu!.classList.add("hidden");
           this._editorCtxTarget = null;
+          this._editorCtxSelection = null;
         });
       });
       document.addEventListener("click", (e) => {
         if (this._editorCtxMenu && !this._editorCtxMenu.contains(e.target as Node)) {
           this._editorCtxMenu.classList.add("hidden");
+          this._editorCtxTarget = null;
+          this._editorCtxSelection = null;
         }
       });
     }
@@ -2384,7 +2480,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         } else {
           out.push(`<div class="si-tree-entry" data-path="${this.esc(fullPath)}" data-file="true" style="padding-left:${indent}px">
             <span class="si-tree-chevron" style="visibility:hidden"><i data-lucide="chevron-right" class="lucide lucide-xs"></i></span>
-            <span class="si-tree-icon"><i data-lucide="${getFileIcon(entry.name)}" class="lucide lucide-sm"></i></span>
+            <span class="si-tree-icon"><i class="codicon codicon-${getCodeIcon(entry.name)}"></i></span>
             <span class="si-tree-name">${this.esc(entry.name)}</span>
           </div>`);
         }
@@ -2512,7 +2608,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
 
     await this._loadEditorFile(filePath);
 
-    if (!this.tabs.some((t) => t.id === "editor")) {
+    if (!this.tabs.some((t) => t.type === "editor")) {
       this.createTab("editor");
     } else {
       this.activateTab("editor");
@@ -2536,7 +2632,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
   private _reviewCollapsed = false;    // collapse all diff bodies
   // Selected git action for the commit/push/pr trigger.
   private _reviewGitAction: "commit" | "push" | "pull" = "commit";
-  // How many side buttons are currently merged into the ⋯ overflow menu.
+  // How many side buttons are currently merged into the �?overflow menu.
   private _reviewOverflow = 0;
   private _reviewDiffEl: HTMLElement | null = null;  // ref for CSS class toggling
 
@@ -2551,6 +2647,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       document.getElementById("app")?.classList.add("sidebar-collapsed");
       // Re-render info panel content since it was skipped while hidden
       this.renderForce();
+      this.saveSidebarVisibility();
     }
     if (artifact) {
       this._reviewFilter = "lastRound";
@@ -2572,9 +2669,9 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
   }
 
   private openReviewTab(filePath?: string): void {
-    const createNew = !this.tabs.some((t) => t.id === "review");
+    const createNew = !this.tabs.some((t) => t.type === "review");
     if (createNew) {
-      this.tabs.push({ id: "review", closable: true });
+      this.tabs.push({ id: "review", type: "review", label: tabLabel("review"), closable: true });
       this._reviewFilePending = filePath;
     }
     this.activeTab = "review";
@@ -2717,7 +2814,8 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
   private closeTab(id: string): void {
     const idx = this.tabs.findIndex((tab) => tab.id === id);
     if (idx < 0) return;
-    if (id === "terminal") {
+    const tab = this.tabs[idx];
+    if (tab.type === "terminal") {
       const terms = this.panelTerminals.get(id);
       if (terms) {
         for (const t of terms) {
@@ -2730,14 +2828,24 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         this.panelTerminals.delete(id);
         this.panelActiveTermIdx.delete(id);
       }
-      const dd = document.querySelector(".si-term-shell-dropdown");
+      const dd = document.querySelector(`#term-ctx-menu-${id}`);
       if (dd) dd.remove();
     }
-    if (id === "editor" && this._editorView) {
-      this._editorView.destroy();
-      this._editorView = null;
+    if (tab.type === "browser") {
+      const bv = this.panelBrowsers.get(id);
+      if (bv) {
+        bv.destroy();
+        this.panelBrowsers.delete(id);
+      }
+    }
+    if (tab.type === "editor") {
+      if (this._editorView) {
+        this._editorView.dispose();
+        this._editorView = null;
+      }
       this._editorTabs = [];
       this._activeEditorTab = "";
+      this._sessionEditors.delete(this._tabKey);
     }
     this.tabs.splice(idx, 1);
     _saveTabs(this.tabs);
@@ -2797,6 +2905,30 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
   restoreWidth(): void {
     this.el.style.setProperty("--sidebar-w", this.sidebarWidth + "px");
     document.getElementById("main-body")?.style.setProperty("--sidebar-w", this.sidebarWidth + "px");
+  }
+
+  saveSidebarVisibility(): void {
+    const panel = document.getElementById("session-inner-sidebar");
+    if (!panel) return;
+    this._sessionSidebarVisible.set(this._tabKey, !panel.classList.contains("hidden"));
+  }
+
+  restoreSidebarVisibility(): void {
+    const panel = document.getElementById("session-inner-sidebar");
+    const mainBody = document.getElementById("main-body");
+    const appEl = document.getElementById("app");
+    if (!panel || !mainBody) return;
+    const visible = this._sessionSidebarVisible.get(this._tabKey) ?? false;
+    if (visible) {
+      this.restoreWidth();
+      panel.classList.remove("hidden");
+      mainBody.classList.remove("sidebar-hidden");
+      appEl?.classList.add("sidebar-collapsed");
+      this.renderForce();
+    } else {
+      panel.classList.add("hidden");
+      mainBody.classList.add("sidebar-hidden");
+    }
   }
 
   /* ── Collapsible Panel State ────────────────────────────────────── */

@@ -80,15 +80,17 @@ import { t, getLocale, onLocaleChange, applyI18n, setLocale } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { lookupShortcut, augmentTitle, formatShortcut, platformLabel } from "./shortcutDisplay.js";
 import type { Message } from "./types.js";
-import { SLASH_COMMANDS, parseSlashInput, type SlashCommand } from "./slash_commands.js";
+import { SLASH_COMMANDS, matchingSlashCommands, parseSlashInput, type SlashCommand } from "./slash_commands.js";
 import { mountNebula } from "./easter-egg.js";
 import { showContextMenu } from "./context-menu.js";
+import { BrowserView } from "./browser.js";
 
 type ChildTab = {
   view: string;
   label: string;
   title?: string;
-  webview?: any;
+  favicon?: string;
+  browserView?: BrowserView;
   _contentEl?: HTMLElement;
   _nebulaCleanup?: () => void;
 };
@@ -125,6 +127,11 @@ class App {
   private skipNextInput = false;
   private _slashActive = false;
   private _currentChipMode = "";
+  private _persistentMode = "";
+  /** Active slash *command* (distinct from a mode).  Mirrors the backend
+   *  ``session.metadata["active_command"]`` slot: a sticky prompt injection
+   *  that stays across turns until cleared.  ``null`` = no command active. */
+  private _activeCommand: { name: string; prompt?: string; icon?: string; title?: string } | null = null;
   private _welcomeTitleAnimating = false;
   private _isChild = false;
   private _childView = "";
@@ -153,6 +160,8 @@ class App {
     // always invoke the bound method even after hot-reloads.
     (window as any).__appCleanupContentArea = (opts?: { keepAutomationFlag?: boolean }) =>
       this.cleanupContentArea(opts);
+    // Expose the app instance on window so stream.ts can update the mode chip
+    (window as any).__app = this;
 
     this.splash = new SplashScreen();
     this.chat = new Chat();
@@ -166,6 +175,19 @@ class App {
     (window as any).__chatForceRender = () => this.chat.renderForce();
     this.tools = new Tools();
     this.settings = new Settings();
+    window.addEventListener("open-settings-panel", ((e: CustomEvent) => {
+      const panel = e.detail?.panel;
+      this.automationPanel.hide();
+      this.settings.open();
+      if (panel) this.settings.switchPanel(panel);
+    }) as EventListener);
+    if (window.electronAPI) {
+      window.electronAPI.onChildEvent("open-settings-panel", (panel: string) => {
+        this.automationPanel.hide();
+        this.settings.open();
+        if (panel) this.settings.switchPanel(panel);
+      });
+    }
     this.files = new Files(this.input);
 
     this.session = new Session();
@@ -434,7 +456,12 @@ class App {
       });
     }
 
-    // Sync inputMode state to DOM attribute for CSS selector
+    // Sync inputMode state changes to the input border / chip via the
+    // single updateChipState() path.  Previously this wrote data-input-mode
+    // directly from state.inputMode while updateChipState() wrote it from
+    // _persistentMode -- two sources fighting over one attribute.  Now both
+    // funnel through effectiveMode() (chip OR persistent), so the border
+    // always reflects the mode that will actually be sent.
     let prevInputMode = "";
     onLocaleChange(() => {
       if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
@@ -444,14 +471,7 @@ class App {
       const s = getState();
       if (s.inputMode !== prevInputMode) {
         prevInputMode = s.inputMode;
-        const el = document.getElementById("input-area");
-        if (el) {
-          if (s.inputMode) {
-            el.setAttribute("data-input-mode", s.inputMode);
-          } else {
-            el.removeAttribute("data-input-mode");
-          }
-        }
+        this.updateChipState();
       }
     });
 
@@ -519,12 +539,14 @@ class App {
         mainBody.classList.remove("sidebar-hidden");
         app.classList.add("sidebar-collapsed");
         this.sessionInner.renderForce();
+        this.sessionInner.saveSidebarVisibility();
       } else {
         // Hide the panel but keep tabs/terminals alive (like browser tabs).
         // Re-opening shows everything exactly where it was.
         this.sessionInner.saveWidth();
         panel.classList.add("hidden");
         mainBody.classList.add("sidebar-hidden");
+        this.sessionInner.saveSidebarVisibility();
       }
     });
 
@@ -534,6 +556,24 @@ class App {
     // Re-render slash dropdown when backend commands arrive
     window.addEventListener("slash-commands-updated", () => {
       this.renderSlashDropdown();
+      // Re-render input mode chip with correct icon/title now that
+      // custom commands are loaded.
+      const chipMode = this._currentChipMode;
+      if (chipMode) {
+        const cmd = SLASH_COMMANDS.find(c => c.id === chipMode);
+        if (cmd) {
+          const chip = this.input.querySelector('.mode-chip[data-mode]') as HTMLElement | null;
+          if (chip) {
+            const iconEl = chip.querySelector('.chip-icon') as HTMLElement | null;
+            const labelEl = chip.querySelector('span:not(.chip-icon)') as HTMLElement | null;
+            if (iconEl) iconEl.setAttribute('data-lucide', cmd.icon);
+            if (labelEl) labelEl.textContent = cmd.title;
+            if ((window as any).lucide) (window as any).lucide.createIcons();
+          }
+        }
+      }
+      this.chat.render();
+      this.updateChipState();
     });
 
     // Child window mode — detect ?child=VIEW_NAME from URL
@@ -590,6 +630,10 @@ class App {
         this.addTab(v, l);
       });
     }
+
+    window.addEventListener("browser-open-tab", ((e: CustomEvent) => {
+      this.addTab(e.detail.url, e.detail.label);
+    }) as EventListener);
   }
 
   private addTab(view: string, label: string): void {
@@ -633,7 +677,17 @@ class App {
 
   private _showTabContent(tab: ChildTab): void {
     for (const t of this._tabs) {
-      if (t._contentEl) t._contentEl.style.display = t === tab ? "flex" : "none";
+      if (t._contentEl) {
+        const isBrowser = t.view.startsWith("http://") || t.view.startsWith("https://") || t.view === "about:blank";
+        if (isBrowser) {
+          t._contentEl.style.visibility = t === tab ? "visible" : "hidden";
+          t._contentEl.style.zIndex = t === tab ? "0" : "-1";
+          t._contentEl.style.pointerEvents = t === tab ? "auto" : "none";
+          t._contentEl.style.display = "flex";
+        } else {
+          t._contentEl.style.display = t === tab ? "flex" : "none";
+        }
+      }
     }
   }
 
@@ -641,6 +695,9 @@ class App {
     const removed = this._tabs[index];
     if (removed?._nebulaCleanup) {
       removed._nebulaCleanup();
+    }
+    if (removed?.browserView) {
+      removed.browserView.destroy();
     }
     if (removed?._contentEl) {
       removed._contentEl.remove();
@@ -664,11 +721,18 @@ class App {
     if (!tabsEl) return;
     tabsEl.innerHTML = this._tabs.map((t, i) => {
       const displayLabel = t.title || t.label;
+      const faviconHtml = t.favicon
+        ? `<img class="tab-favicon" src="${this.esc(t.favicon)}" onerror="this.style.display='none';this.nextElementSibling.style.display=''"><i data-lucide="globe" class="lucide lucide-sm" style="display:none"></i>`
+        : `<i data-lucide="globe" class="lucide lucide-sm"></i>`;
       return `<button class="tab${i === this._activeTabIndex ? " active" : ""}" data-index="${i}" draggable="true">
+        ${faviconHtml}
         <span class="tab-label">${this.esc(displayLabel)}</span>
         <span class="tab-close" data-index="${i}"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
       </button>`;
     }).join("");
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: tabsEl });
+    }
 
     let dragSrcIdx: number | null = null;
     tabsEl.querySelectorAll("button[data-index]").forEach(btn => {
@@ -768,219 +832,23 @@ class App {
     tab._contentEl = container;
     childViewEl.appendChild(container);
 
-    if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.view === "about:blank") {
+if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.view === "about:blank") {
       const startUrl = tab.view === "about:blank" ? "" : tab.view;
-      container.innerHTML = `
-        <div class="child-nav-bar">
-          <button class="child-nav-btn" data-nav="back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
-          <button class="child-nav-btn" data-nav="forward"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
-          <button class="child-nav-btn" data-nav="reload"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
-          <input type="text" class="child-url-input" value="${startUrl}" placeholder="https://..." spellcheck="false" />
-        </div>
-        <div class="child-webview-wrap">
-          <webview class="child-webview" src="${startUrl || "about:blank"}" partition="encre-browser"></webview>
-          <div class="child-webview-status hidden" id="child-webview-status">
-            <div class="child-status-loading" id="child-status-loading"></div>
-            <div class="child-status-error hidden" id="child-status-error">
-              <div class="child-overlay-content">
-                <div class="child-overlay-icon">
-                  <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="12" y1="8" x2="12" y2="12"/>
-                    <line x1="12" y1="16" x2="12.01" y2="16"/>
-                  </svg>
-                </div>
-                <div class="child-overlay-title" id="child-overlay-title">${t("child.loadFailed")}</div>
-                <div class="child-overlay-desc" id="child-overlay-desc">${t("child.loadFailedDesc")}</div>
-                <button class="child-overlay-retry" id="child-overlay-retry" type="button">${t("child.retry")}</button>
-              </div>
-            </div>
-          </div>
-        </div>`;
-        const wv = container.querySelector("webview") as any;
-        if (wv) {
-          tab.webview = wv;
-          const statusEl = container.querySelector("#child-webview-status") as HTMLElement | null;
-          const loadingEl = container.querySelector("#child-status-loading") as HTMLElement | null;
-          const errorEl = container.querySelector("#child-status-error") as HTMLElement | null;
-          const overlayTitle = container.querySelector("#child-overlay-title") as HTMLElement | null;
-          const overlayDesc = container.querySelector("#child-overlay-desc") as HTMLElement | null;
-          const retryBtn = container.querySelector("#child-overlay-retry") as HTMLButtonElement | null;
-          let loader: EALoader | null = null;
-          let loadTimer: number | null = null;
-          let _showedError = false;
-
-          const showLoading = () => {
-            statusEl?.classList.remove("hidden");
-            loadingEl?.classList.remove("hidden");
-            errorEl?.classList.add("hidden");
-            if (!loader && loadingEl) {
-              loader = new EALoader(loadingEl);
-            }
-          };
-          const showError = (title: string, desc: string) => {
-            _showedError = true;
-            if (loader) { loader.destroy(); loader = null; }
-            statusEl?.classList.remove("hidden");
-            loadingEl?.classList.add("hidden");
-            if (overlayTitle) overlayTitle.textContent = title;
-            if (overlayDesc) overlayDesc.textContent = desc;
-            errorEl?.classList.remove("hidden");
-          };
-          const hideStatus = () => {
-            _showedError = false;
-            if (loader) { loader.destroy(); loader = null; }
-            statusEl?.classList.add("hidden");
-            loadingEl?.classList.add("hidden");
-            errorEl?.classList.add("hidden");
-          };
-          const clearLoadTimer = () => {
-            if (loadTimer !== null) {
-              clearTimeout(loadTimer);
-              loadTimer = null;
-            }
-          };
-          if (retryBtn) {
-            retryBtn.addEventListener("click", () => {
-              _showedError = false;
-              hideStatus();
-              wv.reload();
-            });
-          }
-          // Track page title
-          wv.addEventListener("page-title-updated", (e: any) => {
-            this.renderTabBar();
-          });
-        // Intercept new windows (popups, target=_blank) — open as new tab
-        wv.addEventListener("new-window", (e: any) => {
-          e.preventDefault();
-          const newUrl = e.url || "";
-          console.log("[webview] new-window:", newUrl);
-          if (!newUrl || !/^https?:\/\//i.test(newUrl)) return;
-          const behavior = (getState().settings.default_link_behavior as string) || "system";
-          if (behavior === "in_app") {
-            this.addTab(newUrl, newUrl);
-          } else {
-            const api = (window as any).electronAPI;
-            if (api?.openExternal) {
-              api.openExternal(newUrl);
-            } else {
-              window.open(newUrl, "_blank");
-            }
-          }
-        });
-        // will-navigate: user-initiated (URL bar/back/forward) = same tab; link click = new tab
-        let explicitNav = true;
-        wv.addEventListener("will-navigate", (e: any) => {
-          console.log("[webview] will-navigate:", e.url, "explicitNav:", explicitNav, "isMainFrame:", e.isMainFrame);
-          if (e.isMainFrame !== false) {
-            if (!explicitNav && e.url && /^https?:\/\//i.test(e.url)) {
-              console.log("[webview] → intercept, open new tab:", e.url);
-              e.preventDefault();
-              const behavior = (getState().settings.default_link_behavior as string) || "system";
-              if (behavior === "in_app") {
-                this.addTab(e.url, e.url);
-              } else {
-                const api = (window as any).electronAPI;
-                if (api?.openExternal) {
-                  api.openExternal(e.url);
-                } else {
-                  window.open(e.url, "_blank");
-                }
-              }
-              return;
-            }
-            explicitNav = false;
-          }
-        });
-        // Force 80% zoom on each navigation
-        const applyZoom = () => {
-          try { wv.setZoomFactor(1); } catch {}
-        };
-        wv.addEventListener("did-finish-load", applyZoom);
-        wv.addEventListener("did-navigate", applyZoom);
-        // Also set zoom immediately if already loaded
-        applyZoom();
-        // ── Load lifecycle: loading spinner, error page, timeout ──────────
-        const LOAD_TIMEOUT_MS = 30000;
-        const isErrorPage = () => {
-          try {
-            const url = wv.getURL();
-            return url && (url.startsWith("chrome-error://") || url === "about:blank" && tab.view !== "about:blank");
-          } catch { return false; }
-        };
-        wv.addEventListener("did-start-loading", () => {
-          if (!_showedError) {
-            showLoading();
-          }
-          clearLoadTimer();
-          loadTimer = window.setTimeout(() => {
-            showError(t("child.loadTimeout"), t("child.loadTimeoutDesc"));
-          }, LOAD_TIMEOUT_MS);
-        });
-        wv.addEventListener("did-stop-loading", () => {
-          clearLoadTimer();
-        });
-        wv.addEventListener("did-finish-load", () => {
-          clearLoadTimer();
-          if (isErrorPage()) {
-            showError(t("child.loadFailed"), t("child.loadFailedDesc"));
-          } else if (!_showedError) {
-            hideStatus();
-          }
-        });
-        wv.addEventListener("did-fail-load", (e: any) => {
-          clearLoadTimer();
-          const desc = (e && (e.errorDescription || e.message)) || t("child.loadFailedDesc");
-          showError(t("child.loadFailed"), String(desc));
-        });
-        wv.addEventListener("did-navigate", (e: any) => {
-          try {
-            const url = e.url || wv.getURL() || "";
-            if (url.startsWith("chrome-error://")) {
-              showError(t("child.loadFailed"), t("child.loadFailedDesc"));
-            }
-          } catch {}
-        });
-        // Nav buttons
-        container.querySelectorAll("[data-nav]").forEach(btn => {
-          btn.addEventListener("click", () => {
-            if (!wv) return;
-            const action = btn.getAttribute("data-nav");
-            hideStatus();
-            if (action === "back") { explicitNav = true; wv.goBack(); }
-            else if (action === "forward") { explicitNav = true; wv.goForward(); }
-            else if (action === "reload") { wv.reload(); }
-          });
-        });
-        // URL input in nav bar
-        const urlInput = container.querySelector(".child-url-input") as HTMLInputElement;
-        if (urlInput) {
-          const navigate = () => {
-            let url = urlInput.value.trim();
-            if (!url) return;
-            if (!/^https?:\/\//i.test(url)) {
-              url = "https://" + url;
-            }
-            _showedError = false;
-            hideStatus();
-            explicitNav = true;
-            wv.src = url;
-          };
-          urlInput.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") navigate();
-          });
-          // Sync URL input with webview navigation
-          if (wv) {
-            wv.addEventListener("did-navigate", (e: any) => {
-              urlInput.value = e.url;
-            });
-            wv.addEventListener("did-navigate-in-page", (e: any) => {
-              urlInput.value = e.url;
-            });
-          }
-        }
-      }
+      const bv = new BrowserView(container, {
+        startUrl,
+        onFaviconChange: (favicon: string) => {
+          tab.favicon = favicon;
+          this.renderTabBar();
+        },
+        onNewWindow: (newUrl: string) => {
+          this.addTab(newUrl, newUrl);
+        },
+      });
+      tab.browserView = bv;
+      bv.webview.addEventListener("page-title-updated", (e: any) => {
+        tab.title = e.title || "";
+        this.renderTabBar();
+      });
     } else if (tab.view === "license") {
       container.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">Loading...</pre></div>`;
       if (window.electronAPI) {
@@ -1446,6 +1314,22 @@ class App {
     this.btnSend.addEventListener("click", () => this.submit());
     this.btnStop.addEventListener("click", () => this.cancel());
 
+    // Toolbar mode chip X button - exits persistent mode
+    const btnModeClose = document.getElementById("btn-mode-close");
+    if (btnModeClose) {
+      btnModeClose.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const oldMode = this._persistentMode;
+        this._persistentMode = "";
+        this.updateChipState();
+        this.updatePlaceholder();
+        const st = getState();
+        console.log("[mode-close] clearing mode:", oldMode, "sessionId:", st.sessionId);
+        send({ type: "set_mode", mode: "", session_id: st.sessionId || undefined } as any);
+      });
+    }
+
     this.input.addEventListener("keydown", (e) => {
       const sendMode = (getState().settings.shortcut_send_mode as string) || "enter";
       const isCtrlEnter = sendMode === "ctrl_enter";
@@ -1458,11 +1342,11 @@ class App {
         const text = this.getPlainText();
 
         // Don't re-activate slash command when a mode chip is already present
-        if (!this.hasModeChip()) {
-          // Check exact slash command match first (e.g. /plan → activate mode)
+        if (!this.hasModeChip() && !this.hasCommandChip()) {
+          // Check slash command match (e.g. /plan → activate mode)
           const parsed = parseSlashInput(text);
-          if (parsed && parsed.exact) {
-            this.activateSlashCommand(parsed.command);
+          if (parsed) {
+            this.activateSlashCommand(parsed.command, parsed.rest);
             return;
           }
         }
@@ -1476,14 +1360,14 @@ class App {
             const action = matched.getAttribute("data-action");
             const cmd = SLASH_COMMANDS.find(c => c.id === action || c.name === action);
             if (cmd) {
-              this.activateSlashCommand(cmd);
+              const m = text.match(/^\/[^\s]+\s+([\s\S]*)$/);
+              this.activateSlashCommand(cmd, m ? m[1] : undefined);
               return;
             }
           }
           dd?.classList.add("hidden");
           bm?.classList.remove("active");
           this._slashActive = false;
-          this.input.innerHTML = "";
           this.updatePlaceholder();
           this.resizeInput();
           this.updateSendButton();
@@ -1493,6 +1377,10 @@ class App {
         this.submit();
       }
       if (e.key === "Escape") {
+        if (this.hasCommandChip()) {
+          this.deactivateCommandChip();
+          return;
+        }
         if (this._slashActive) {
           this._slashActive = false;
           this.input.innerHTML = "";
@@ -1561,6 +1449,23 @@ class App {
       }
     });
     chipObserver.observe(this.input, { childList: true, subtree: true });
+
+    // ── Toolbar mode-chip close button ────────────────────────────
+    const closeBtn = document.getElementById("btn-mode-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.deactivateModeChip();
+      });
+    }
+    // ── Toolbar command-chip close button ─────────────────────────
+    const cmdCloseBtn = document.getElementById("btn-command-close");
+    if (cmdCloseBtn) {
+      cmdCloseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.deactivateCommandChip();
+      });
+    }
   }
 
   private detectSlashCommand(): void {
@@ -1575,7 +1480,10 @@ class App {
     // Clear all match highlights
     mentionDropdown.querySelectorAll(".mention-match").forEach(el => el.classList.remove("mention-match"));
 
-    if (text.startsWith("/") && !this.hasModeChip()) {
+    if (text.startsWith("/") && !this.hasModeChip() && !this.hasCommandChip()) {
+      // Re-render slash dropdown to pick up any custom commands that
+      // arrived after initial render (e.g. via slash-commands-updated).
+      this.renderSlashDropdown();
       if (mentionDropdown.classList.contains("hidden")) {
         mentionDropdown.classList.remove("hidden");
         btnMention.classList.add("active");
@@ -1586,12 +1494,14 @@ class App {
       mainPage?.classList.add("hidden");
       slashPage?.classList.remove("hidden");
 
-      // Highlight matching slash commands
+      // Highlight matching slash commands (name OR alias, case-insensitive).
       const query = text.slice(1).toLowerCase();
       if (query) {
         mentionDropdown.querySelectorAll('[data-slash]').forEach(el => {
-          const cmd = el.getAttribute("data-slash") || "";
-          if (cmd.startsWith(query)) {
+          const name = (el.getAttribute("data-slash") || "").toLowerCase();
+          const aliases = (el.getAttribute("data-aliases") || "").split(",").filter(Boolean);
+          const matched = name.startsWith(query) || aliases.some((a) => a.startsWith(query));
+          if (matched) {
             el.classList.add("mention-match");
           }
         });
@@ -1606,7 +1516,7 @@ class App {
   private handleManualSlashCommand(): void {
     const text = this.getPlainText();
 
-    if (this.hasModeChip()) return;
+    if (this.hasModeChip() || this.hasCommandChip()) return;
     const parsed = parseSlashInput(text);
     if (!parsed) return;
     this.activateSlashCommand(parsed.command, parsed.rest);
@@ -1960,7 +1870,7 @@ class App {
       return;
     }
     el.innerHTML = artifacts.slice(0, 6).map((a: any) => {
-      const iconSrc = a.ext === "py" ? "file-code-2" : a.ext === "ts" || a.ext === "tsx" || a.ext === "js" ? "file-code-2" : "file-plus-2";
+      const iconSrc = getFileIcon(a.name);
       const adds = a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : 0;
       const dels = a.diff_text ? (a.diff_text.match(/^-/gm) || []).length : 0;
       return `<div class="sp-artifact-item">
@@ -2302,6 +2212,8 @@ class App {
       this.updatePlaceholder();
       this.resizeInput();
       this.updateSendButton();
+      // Don't send set_mode here — wait for the user to actually send a message.
+      // The toolbar chip only appears after the backend confirms the mode.
     } else if (cmd.kind === "action") {
       this.executeSlashAction(cmd, restText);
       this.updatePlaceholder();
@@ -2325,6 +2237,7 @@ class App {
         }
         return;
       case "steer":
+        // steer is a one-shot mid-run injection, not a sticky command.
         this.insertModeChip(cmd.id, restText);
         this._currentChipMode = "steer";
         this.updateChipState();
@@ -2333,22 +2246,66 @@ class App {
       default:
         break;
     }
-    // Custom action commands: insert a chip so the user can type after it,
-    // then submit sends only the text (no mode parameter)
-    this.insertModeChip(cmd.id, restText);
+    // Any other action command with a prompt body -> sticky *command* chip
+    // (NOT a mode).  Persist on the backend so its instructions re-inject
+    // every turn and survive restart; the backend broadcasts command_changed
+    // back to confirm the chip.
+    if (cmd.prompt && cmd.prompt.trim()) {
+      this.sendSetCommand(cmd, restText);
+    } else {
+      this.insertCommandChip(cmd, restText);
+      this._currentChipMode = cmd.id;
+      this.updateChipState();
+      this.input.focus();
+    }
+  }
+
+  /** Activate a sticky slash command: persist on the backend + render chip. */
+  private sendSetCommand(cmd: SlashCommand, restText?: string): void {
+    const st = getState();
+    const rendered = this.renderCommandPrompt(cmd, restText);
+    send({
+      type: "set_command",
+      session_id: st.sessionId || undefined,
+      name: cmd.id,
+      prompt: rendered,
+      icon: cmd.icon,
+      title: cmd.title,
+    } as any);
+    // Optimistically render; command_changed will confirm/correct.
+    this._activeCommand = { name: cmd.id, prompt: rendered, icon: cmd.icon, title: cmd.title };
+    this.insertCommandChip(cmd, restText);
     this._currentChipMode = cmd.id;
     this.updateChipState();
     this.input.focus();
   }
 
+  /** Substitute {{args}} into the command prompt body (mirrors backend render_prompt). */
+  private renderCommandPrompt(cmd: SlashCommand, args?: string): string {
+    const body = cmd.prompt || "";
+    if (!body) return "";
+    const token = args || "";
+    return body
+      .replace(/\{\{args\}\}/g, token)
+      .replace(/\{\{arguments\}\}/g, token)
+      .replace(/\{\{user_input\}\}/g, token);
+  }
+
   private deactivateModeChip(): void {
     if (!this.hasModeChip()) return;
+    const mode = this._currentChipMode;
     this.removeModeChip();
     this._currentChipMode = "";
+    this._persistentMode = "";
     this.updateChipState();
     this.updatePlaceholder();
     this.resizeInput();
     this.updateSendButton();
+    // Notify backend that the persistent mode is cleared
+    if (mode) {
+      const st = getState();
+      send({ type: "set_mode", mode: "", session_id: st.sessionId || undefined } as any);
+    }
   }
 
   /* ── Contenteditable helpers ─────────────────────────────────── */
@@ -2377,7 +2334,7 @@ class App {
     chip.setAttribute("data-mode", mode);
     const cmd = SLASH_COMMANDS.find(c => c.id === mode);
     const label = cmd ? cmd.title : mode;
-    const icon = cmd ? cmd.icon : "list-checks";
+    const icon = this.resolveIcon(cmd ? cmd.icon : "list-checks");
     chip.innerHTML = `<i data-lucide="${icon}" class="chip-icon" style="width:12px;height:12px;"></i><span>${label}</span>`;
     this.input.appendChild(chip);
 
@@ -2395,14 +2352,108 @@ class App {
       sel.addRange(range);
     }
 
-    if ((window as any).lucide) {
-      (window as any).lucide.createIcons();
-    }
+    this.refreshIcons();
   }
 
   private removeModeChip(): void {
     const chip = this.input.querySelector('.mode-chip[data-mode]');
     if (chip) chip.remove();
+  }
+
+  /* ── Command chip (sticky slash command, NOT a mode) ─────────── */
+
+  private hasCommandChip(): boolean {
+    return !!this.input.querySelector('.command-chip[data-command]');
+  }
+
+  private getCurrentCommand(): string {
+    const chip = this.input.querySelector('.command-chip[data-command]');
+    if (!chip) return "";
+    return chip.getAttribute("data-command") || "";
+  }
+
+  private insertCommandChip(cmd: SlashCommand, restText?: string): void {
+    this.removeCommandChip();
+    const chip = document.createElement("span");
+    chip.contentEditable = "false";
+    chip.className = "command-chip";
+    chip.setAttribute("data-command", cmd.id);
+    const icon = this.resolveIcon(cmd.icon);
+    chip.innerHTML = `<i data-lucide="${icon}" class="chip-icon" style="width:12px;height:12px;"></i><span>${cmd.title}</span>`;
+    this.input.appendChild(chip);
+
+    if (restText) {
+      this.input.appendChild(document.createTextNode(restText));
+    }
+
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.setStartAfter(chip);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    this.refreshIcons();
+  }
+
+  private removeCommandChip(): void {
+    const chip = this.input.querySelector('.command-chip[data-command]');
+    if (chip) chip.remove();
+  }
+
+  /** Resolve a Lucide icon name, falling back to ``command`` when unknown. */
+  private resolveIcon(name: string): string {
+    const candidate = (name && name.trim()) || "command";
+    if ((window as any).lucide && (window as any).lucide.icons) {
+      const known = (window as any).lucide.icons as Record<string, unknown>;
+      if (!(candidate in known)) return "command";
+    }
+    return candidate;
+  }
+
+  /** Re-run Lucide createIcons. */
+  private refreshIcons(): void {
+    if (!(window as any).lucide) return;
+    (window as any).lucide.createIcons();
+  }
+
+  /** Clear the active sticky command (Esc / chip close). Notifies backend. */
+  private deactivateCommandChip(): void {
+    const name = this._activeCommand?.name || this.getCurrentCommand();
+    this.removeCommandChip();
+    this._activeCommand = null;
+    if (this._currentChipMode && this._currentChipMode === name) {
+      this._currentChipMode = "";
+    }
+    this.updateChipState();
+    this.updatePlaceholder();
+    this.resizeInput();
+    this.updateSendButton();
+    if (name) {
+      const st = getState();
+      send({ type: "set_command", session_id: st.sessionId || undefined, name: "" } as any);
+    }
+  }
+
+  /** Render the toolbar command chip from the backend-confirmed active command. */
+  private updateToolbarCommandChip(): void {
+    const chip = document.getElementById("toolbar-command-chip");
+    if (!chip) return;
+    const cmd = this._activeCommand;
+    if (!cmd || !cmd.name) {
+      chip.classList.add("hidden");
+      chip.setAttribute("data-command", "");
+      return;
+    }
+    chip.classList.remove("hidden");
+    chip.setAttribute("data-command", cmd.name);
+    const icon = chip.querySelector(".chip-icon") as HTMLElement;
+    const label = chip.querySelector(".toolbar-command-label") as HTMLElement;
+    const def = SLASH_COMMANDS.find((c) => c.id === cmd.name);
+    if (icon) icon.setAttribute("data-lucide", this.resolveIcon(def?.icon || cmd.icon || "command"));
+    if (label) label.textContent = def?.title || cmd.title || cmd.name;
+    this.refreshIcons();
   }
 
   private handleModeEnd(): void {
@@ -2413,18 +2464,65 @@ class App {
     this.updatePlaceholder();
   }
 
-  private updateChipState(): void {
-    const mode = this.getCurrentMode();
+  /** Resolve the currently effective mode (single source of truth).
+
+  The effective mode is what the backend should be told and what the input
+  border / toolbar chip must reflect.  It is the chip mode (an active /spec
+  or /plan chip the user just inserted) falling back to the backend-confirmed
+  persistent mode (so the border survives across turns after the first run).
+
+  Keeping this aligned with submit()'s sendMode resolution guarantees that
+  whenever the border shows a mode colour, the very same value is sent on the
+  run message -- so "border visible == mode takes effect" always holds.
+  */
+  private effectiveMode(): string {
+    return this.getCurrentMode() || this._persistentMode || "";
+  }
+
+  public updateChipState(): void {
     const el = document.getElementById("input-area");
     if (!el) return;
+    // Input border and toolbar chip reflect the EFFECTIVE mode (chip OR
+    // backend-confirmed persistent mode), not _persistentMode alone.
+    // Previously this read _persistentMode only, so on first /spec entry --
+    // before the backend broadcast mode_changed and set _persistentMode --
+    // every keystroke wiped the border via removeAttribute, even though a
+    // chip was present.  That made "border absent == mode ignored".
+    // When no mode is active but a command chip IS, set data-input-mode to
+    // "command" so the border gets a distinct visual (teal accent).
+    const mode = this.effectiveMode();
     if (mode) {
       el.setAttribute("data-input-mode", mode);
+    } else if (this.hasCommandChip()) {
+      el.setAttribute("data-input-mode", "command");
     } else {
       el.removeAttribute("data-input-mode");
     }
+    this.updateToolbarModeChip(mode);
+    this.updateToolbarCommandChip();
   }
 
-  private updatePlaceholder(): void {
+  private updateToolbarModeChip(mode: string): void {
+    const chip = document.getElementById("toolbar-mode-chip");
+    if (!chip) return;
+    if (!mode) {
+      chip.classList.add("hidden");
+      chip.setAttribute("data-mode", "");
+      return;
+    }
+    chip.classList.remove("hidden");
+    chip.setAttribute("data-mode", mode);
+    const icon = chip.querySelector(".chip-icon") as HTMLElement;
+    const label = chip.querySelector(".toolbar-mode-label") as HTMLElement;
+    const cmd = SLASH_COMMANDS.find(c => c.id === mode);
+    if (icon) icon.setAttribute("data-lucide", this.resolveIcon(cmd?.icon || "list-checks"));
+    if (label) label.textContent = cmd?.title || mode;
+    if ((window as any).lucide) {
+      (window as any).lucide.createIcons();
+    }
+  }
+
+  public updatePlaceholder(): void {
     const ph = document.getElementById("prompt-placeholder");
     if (!ph) return;
     const mode = this.getCurrentMode();
@@ -2440,7 +2538,7 @@ class App {
 
     // Hide overlay when user typed text, or when any chip present (chip is the visual indicator)
     const hasText = this.getPlainText().length > 0;
-    const hasChip = this.hasModeChip();
+    const hasChip = this.hasModeChip() || this.hasCommandChip();
     const hasAttach = !!this.input.querySelector('[data-attach]');
     ph.classList.toggle("hidden", hasText || hasChip || hasAttach);
 
@@ -2512,6 +2610,7 @@ class App {
     const mainBody = document.getElementById("main-body");
     if (!panel || !mainBody) return;
     if (!panel.classList.contains("hidden")) {
+      this.sessionInner.saveSidebarVisibility();
       this.sessionInner.saveWidth();
       panel.classList.add("hidden");
       mainBody.classList.add("sidebar-hidden");
@@ -2664,6 +2763,16 @@ class App {
       // updateSessionBarName(); we want to undo that on cleanup.
       inputArea.style.display = "";
     }
+    const tbChip = document.getElementById("toolbar-mode-chip");
+    if (tbChip) {
+      tbChip.classList.add("hidden");
+      tbChip.setAttribute("data-mode", "");
+    }
+    const cmdChip = document.getElementById("toolbar-command-chip");
+    if (cmdChip) {
+      cmdChip.classList.add("hidden");
+      cmdChip.setAttribute("data-command", "");
+    }
     const sessionMenuBtn = document.getElementById("btn-session-menu");
     if (sessionMenuBtn) sessionMenuBtn.style.display = "";
     const mainContent = document.getElementById("main-content");
@@ -2701,8 +2810,9 @@ class App {
     // of whatever state the previous view left it in.
     const sessionInnerSidebar = document.getElementById("session-inner-sidebar");
     if (sessionInnerSidebar) {
-      // Persist the (probably user-set) width before we hide it so we can
-      // restore it when the user re-opens the sidebar.
+      if (!sessionInnerSidebar.classList.contains("hidden")) {
+        this.sessionInner?.saveSidebarVisibility?.();
+      }
       this.sessionInner?.saveWidth?.();
       sessionInnerSidebar.classList.add("hidden");
     }
@@ -2914,18 +3024,19 @@ class App {
       <span>${t("general.slashCommands")}</span>
     </button>`;
 
-    const items = SLASH_COMMANDS.map(cmd => `
-      <button class="mention-dropdown-item" data-action="${cmd.id}" data-slash="${cmd.name}" data-kind="${cmd.kind}">
-        <i data-lucide="${cmd.icon}" class="lucide mention-icon-${cmd.id}"></i>
+    const mode = getState().workspaceMode;
+    const items = matchingSlashCommands("", mode).map(cmd => {
+      const aliases = (cmd.aliases && cmd.aliases.length) ? cmd.aliases.join(",") : "";
+      return `
+      <button class="mention-dropdown-item" data-action="${cmd.id}" data-slash="${cmd.name}" data-kind="${cmd.kind}"${aliases ? ` data-aliases="${aliases}"` : ""}>
+        <i data-lucide="${this.resolveIcon(cmd.icon)}" class="lucide mention-icon-${cmd.id}"></i>
         <span>${cmd.title}  <span class="mention-hint">/${cmd.name}</span></span>
-      </button>
-    `).join("");
+      </button>`;
+    }).join("");
 
     slashPage.innerHTML = backBtn + items;
 
-    if ((window as any).lucide) {
-      (window as any).lucide.createIcons();
-    }
+    this.refreshIcons();
   }
 
   private fetchModels(): void {
@@ -3036,17 +3147,33 @@ class App {
     const st = getState();
     const hasAttachments = st.attachments.length > 0;
 
-    if (!text.trim() && !this.hasModeChip() && !hasAttachments) return;
+    if (!text.trim() && !this.hasModeChip() && !this.hasCommandChip() && !hasAttachments) return;
+
+    // Safety net: if the input text is a known slash command but no chip
+    // is active yet (e.g. user clicked the send button instead of Enter,
+    // or the input handler didn't catch it), activate the chip first.
+    if (!this.hasModeChip() && !this.hasCommandChip()) {
+      const parsed = parseSlashInput(text);
+      if (parsed && parsed.command.kind === "action") {
+        this.activateSlashCommand(parsed.command, parsed.rest);
+        return;
+      }
+    }
 
     const isQueued = st.running;
 
-    // Send mode for all commands that have a chip in the input
-    const sendMode = this.getCurrentMode() || undefined;
+    // Send mode: the same effective mode the border reflects (chip OR
+    // persistent).  Using effectiveMode() here guarantees "border visible
+    // == this exact mode is sent" -- the two can never disagree.
+    const sendMode = this.effectiveMode() || undefined;
+    console.log("[submit] sendMode:", JSON.stringify(sendMode), "hasChip:", this.hasModeChip(), "chipMode:", this._currentChipMode, "persistent:", this._persistentMode);
 
     // If user submitted with no text, generate default text
     if (!text.trim()) {
       if (sendMode) {
         text = `<mode>${sendMode}</mode>`;
+      } else if (this.hasCommandChip()) {
+        text = `<command>${this.getCurrentCommand()}</command>`;
       } else if (hasAttachments) {
         const first = st.attachments[0];
         if (first.mime_type === "text/x-terminal") {
@@ -3066,6 +3193,9 @@ class App {
       this.input.style.height = "56px";
       this._currentChipMode = "";
       setInputMode("");
+      this.updateChipState();
+      this.updatePlaceholder();
+      this.updateSendButton();
       return;
     }
 
@@ -3110,7 +3240,6 @@ class App {
     };
     if (sendMode) {
       payload.mode = sendMode;
-      setInputMode(sendMode);
       // Include the command's custom prompt if defined
       const cmd = SLASH_COMMANDS.find(c => c.id === sendMode);
       if (cmd?.prompt) {
@@ -3126,10 +3255,29 @@ class App {
     if (_chatContainer) _chatContainer.scrollTop = _chatContainer.scrollHeight;
 
     // Clear input — mode chip is hidden during agent execution.
+    // A sticky *command* (active_command) is one-shot: it fires on submit
+    // and then is cleared.  Unlike plan/spec it does NOT persist across
+    // turns in the input chip (the backend re-injects its instructions
+    // every turn until the next message).
     this.input.innerHTML = "";
     this.input.style.height = "56px";
     this._currentChipMode = "";
     setInputMode("");
+    // Only persist mode commands (plan/spec) — action commands (init, custom)
+    // are one-shot and must not keep the toolbar chip visible after send.
+    if (sendMode) {
+      const _cmd = SLASH_COMMANDS.find(c => c.id === sendMode);
+      if (_cmd?.kind === "mode") {
+        this._persistentMode = sendMode;
+      }
+    }
+    // Command chips are one-shot: clear the in-memory slot.
+    // The backend clears the active_command in _run_agent's finally
+    // block, so we don't send a set_command clear message here
+    // (doing so would race with the async system prompt build).
+    if (this._activeCommand) {
+      this._activeCommand = null;
+    }
     this.updateChipState();
     this.updatePlaceholder();
     this.updateSendButton();

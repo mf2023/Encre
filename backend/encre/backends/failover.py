@@ -147,7 +147,7 @@ class FailoverBackend(BaseBackend):
         failover = FailoverBackend(
             backends=[
                 ("gpt-5", OpenAIBackend(model="gpt-5", api_key="...")),
-                ("claude-sonnet", AnthropicBackend(model="claude-sonnet-4-6", api_key="...")),
+                ("claude-sonnet", AnthropicBackend(model="claude-sonnet-5", api_key="...")),
             ],
             retry_config=config,
         )

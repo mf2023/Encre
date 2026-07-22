@@ -315,7 +315,7 @@ class TestEncreGoalRunnerConstruction:
         """Test: Construction with config."""
         from encre.config import EncreConfig
         from encre.goal import EncreGoalRunner
-        config = EncreConfig(model="gpt-4o", backend_type="openai")
+        config = EncreConfig(model="gpt-5.6", backend_type="openai")
         runner = EncreGoalRunner(config=config)
         # Verify: runner is not None
         assert runner is not None
@@ -360,7 +360,7 @@ class TestEncreGoalRunnerConstruction:
         """Test: Evulator system prompt is string."""
         from encre.config import EncreConfig
         from encre.goal import EncreGoalRunner
-        config = EncreConfig(model="gpt-4o", backend_type="openai")
+        config = EncreConfig(model="gpt-5.6", backend_type="openai")
         runner = EncreGoalRunner(config=config)
         # Verify: isinstance(runner.EVALUATOR_SYSTEM_PROMPT, str)
         assert isinstance(runner.EVALUATOR_SYSTEM_PROMPT, str)
@@ -371,7 +371,7 @@ class TestEncreGoalRunnerConstruction:
         """Test: Build goal prompt."""
         from encre.config import EncreConfig
         from encre.goal import EncreGoalRunner, GoalDefinition
-        config = EncreConfig(model="gpt-4o", backend_type="openai")
+        config = EncreConfig(model="gpt-5.6", backend_type="openai")
         runner = EncreGoalRunner(config=config)
         goal = GoalDefinition(
             description="Implement login",
@@ -393,7 +393,7 @@ class TestEncreGoalLoopConstruction:
         from encre.config import EncreConfig
         from encre.goal import EncreGoalLoop
 
-        config = EncreConfig(model="gpt-4o", backend_type="openai")
+        config = EncreConfig(model="gpt-5.6", backend_type="openai")
 
         # Manually create a minimal mock for EncreAgent
         import tempfile
@@ -439,7 +439,7 @@ class TestEncreGoalLoopConstruction:
         from encre.config import EncreConfig
         from encre.goal import EncreGoalLoop
 
-        config = EncreConfig(model="gpt-4o", backend_type="openai")
+        config = EncreConfig(model="gpt-5.6", backend_type="openai")
 
         class MockAgent:
             """MockAgent."""
@@ -477,7 +477,7 @@ class TestEncreGoalLoopConstruction:
         from encre.config import EncreConfig
         from encre.goal import EncreGoalLoop
 
-        config = EncreConfig(model="gpt-4o", backend_type="openai")
+        config = EncreConfig(model="gpt-5.6", backend_type="openai")
 
         class MockAgent:
             """MockAgent."""
@@ -513,7 +513,7 @@ class TestEncreGoalLoopConstruction:
         from encre.config import EncreConfig
         from encre.goal import EncreGoalLoop
 
-        config = EncreConfig(model="gpt-4o", backend_type="openai")
+        config = EncreConfig(model="gpt-5.6", backend_type="openai")
 
         class MockAgent:
             """MockAgent."""

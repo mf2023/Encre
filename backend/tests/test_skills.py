@@ -72,7 +72,7 @@ class TestBundledSkillDefinition:
             when_to_use=".py .rs",
             argument_hint="[target: file to process]",
             allowed_tools=["bash", "grep"],
-            model="gpt-4o",
+            model="gpt-5.6",
             disable_model_invocation=False,
             user_invocable=True,
             context=SkillContext.INLINE,
@@ -85,7 +85,7 @@ class TestBundledSkillDefinition:
         assert skill.when_to_use == ".py .rs"
         assert skill.argument_hint == "[target: file to process]"
         assert skill.allowed_tools == ["bash", "grep"]
-        assert skill.model == "gpt-4o"
+        assert skill.model == "gpt-5.6"
         assert skill.disable_model_invocation is False
         assert skill.user_invocable is True
         assert skill.context == SkillContext.INLINE

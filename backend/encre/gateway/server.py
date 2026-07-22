@@ -209,9 +209,10 @@ class GatewayServer:
 
     async def _handle_submit(self, ws: Any, conn: _AdapterConnection, msg: GatewayMessage) -> None:
         prompt = msg.data.get("prompt", "")
+        request_id = str(msg.data.get("request_id", ""))
         if not prompt.strip():
             logger.warning("[gateway] %s submit empty prompt", conn.name)
-            await self._send(ws, GatewayMessage.error("Empty prompt"))
+            await self._send(ws, GatewayMessage.error("Empty prompt", request_id=request_id))
             return
         session_id = msg.data.get("session_id")
         system_prompt = msg.data.get("system_prompt")
@@ -220,7 +221,7 @@ class GatewayServer:
         router = getattr(self._engine, "_router", None)
         if router is None:
             logger.warning("[gateway] %s submit failed -- engine not ready", conn.name)
-            await self._send(ws, GatewayMessage.error("Engine not ready"))
+            await self._send(ws, GatewayMessage.error("Engine not ready", request_id=request_id))
             return
         try:
             async with router.iclaw_context():
@@ -240,18 +241,20 @@ class GatewayServer:
                 )
                 if isinstance(result, str) and result:
                     logger.info("[gateway] %s submit response len=%d session=%s", conn.name, len(result), session_id or "?")
-                    await self._send(ws, GatewayMessage.text_delta(result, session_id=session_id or ""))
+                    await self._send(ws, GatewayMessage.text_delta(result, session_id=session_id or "", request_id=request_id))
                 else:
                     logger.info("[gateway] %s submit empty response", conn.name)
+                await self._send(ws, GatewayMessage.finish(request_id=request_id))
         except Exception as e:
             logger.error("[gateway] %s submit error: %s %s", conn.name, type(e).__name__, e)
-            await self._send(ws, GatewayMessage.error(str(e)))
+            await self._send(ws, GatewayMessage.error(str(e), request_id=request_id))
 
     async def _handle_submit_stream(self, ws: Any, conn: _AdapterConnection, msg: GatewayMessage) -> None:
         prompt = msg.data.get("prompt", "")
+        request_id = str(msg.data.get("request_id", ""))
         if not prompt.strip():
             logger.warning("[gateway] %s submit_stream empty prompt", conn.name)
-            await self._send(ws, GatewayMessage.error("Empty prompt"))
+            await self._send(ws, GatewayMessage.error("Empty prompt", request_id=request_id))
             return
         session_id = msg.data.get("session_id")
         system_prompt = msg.data.get("system_prompt")
@@ -260,14 +263,13 @@ class GatewayServer:
         router = getattr(self._engine, "_router", None)
         if router is None:
             logger.warning("[gateway] %s submit_stream failed -- engine not ready", conn.name)
-            await self._send(ws, GatewayMessage.error("Engine not ready"))
+            await self._send(ws, GatewayMessage.error("Engine not ready", request_id=request_id))
             return
         text_len = 0
         try:
             async with router.iclaw_context():
-                # Source-bearing frames route per-conversation via SessionStore
-                # (build_session_key -> persistent session_id mapping).  Legacy
-                # frames (no source) fall back to the coarse per-adapter session.
+                # Source-bearing frames still use source for platform delivery
+                # and authorization.  Agent context is persistent per adapter.
                 if source_dict is not None and hasattr(self._engine, "resolve_session"):
                     source = SessionSource.from_dict(source_dict)
                     logger.info("[gateway] %s submit_stream with source platform=%s chat=%s",
@@ -290,10 +292,10 @@ class GatewayServer:
                 ):
                     if isinstance(event, TextDelta) and event.text:
                         text_len += len(event.text)
-                        await self._send(ws, GatewayMessage.text_delta(event.text, session_id=session_id or ""))
+                        await self._send(ws, GatewayMessage.text_delta(event.text, session_id=session_id or "", request_id=request_id))
                     elif isinstance(event, ToolResult):
                         await self._send(ws, GatewayMessage.tool_result(
-                            event.id or "", event.content or "", event.is_error
+                            event.id or "", event.content or "", event.is_error, request_id=request_id
                         ))
                     elif isinstance(event, Finish):
                         usage = None
@@ -303,10 +305,10 @@ class GatewayServer:
                             logger.warning("[gateway] %s finish with error: %s (text_len=%d)", conn.name, event.error, text_len)
                         else:
                             logger.info("[gateway] %s finish reason=%s text_len=%d", conn.name, event.reason, text_len)
-                        await self._send(ws, GatewayMessage.finish(event.reason, usage, event.error or ""))
+                        await self._send(ws, GatewayMessage.finish(event.reason, usage, event.error or "", request_id=request_id))
         except Exception as e:
             logger.error("[gateway] %s submit_stream error: %s %s", conn.name, type(e).__name__, e)
-            await self._send(ws, GatewayMessage.error(str(e)))
+            await self._send(ws, GatewayMessage.error(str(e), request_id=request_id))
 
     def _sync_adapter_list(self) -> None:
         """Sync connected adapter names to the EventRouter so the AI

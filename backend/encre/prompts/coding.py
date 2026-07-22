@@ -72,6 +72,8 @@ class EncreCodingPrompt(EncrePromptTemplate):
         session_id: str = "",
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
+        skill_summary: str = "",
+        active_command: dict[str, Any] | None = None,
     ) -> str:
         """Build the coding system prompt from session context.
 
@@ -93,4 +95,6 @@ class EncreCodingPrompt(EncrePromptTemplate):
             session_id=session_id,
             slash_command_mode=slash_command_mode,
             slash_commands=slash_commands,
+            skill_summary=skill_summary,
+            active_command=active_command,
         )

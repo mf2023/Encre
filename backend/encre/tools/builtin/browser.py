@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 _session: "EncreBrowserSession | None" = None
 _engine_requester: Any | None = None
+_cdp_ws_url: str | None = None
 
 
 def set_engine_requester(requester: Any) -> None:
@@ -47,8 +48,14 @@ def set_engine_requester(requester: Any) -> None:
         _session.set_engine_requester(requester)
 
 
+def set_cdp_url(url: str) -> None:
+    """Set the CDP WebSocket URL to connect to (e.g. Electron webview relay)."""
+    global _cdp_ws_url
+    _cdp_ws_url = url
+
+
 def _get_session():
-    """Get session."""
+    """Get or create the browser session."""
     global _session
     if _session is None:
         from encre.computer.browser import EncreBrowserSession
@@ -56,6 +63,16 @@ def _get_session():
         if _engine_requester is not None and hasattr(_session, "set_engine_requester"):
             _session.set_engine_requester(_engine_requester)
     return _session
+
+
+async def _ensure_connected():
+    """Ensure the browser session is connected."""
+    session = _get_session()
+    if _cdp_ws_url and not session._connected:
+        await session.connect(_cdp_ws_url)
+    elif not _cdp_ws_url and not session._connected:
+        from encre.computer.browser import EncreBrowserSession
+        await session._ensure_browser()
 
 
 async def _browser_execute(**kwargs: Any) -> str:
@@ -66,6 +83,7 @@ async def _browser_execute(**kwargs: Any) -> str:
     """
     action = kwargs.get("action", "")
     session = _get_session()
+    await _ensure_connected()
 
     if action == "navigate":
         url = kwargs.get("url", "")

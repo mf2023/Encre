@@ -25,17 +25,15 @@ from __future__ import annotations
 
 """Context compaction package for Encre.
 
-Exposes the model-driven :class:`CompactEngine` (the primary compaction
-mechanism used by the agent loop) together with a set of legacy,
-backward-compatible compaction strategies (budget reduction, snip, micro
-compact, semantic compact, context collapse and the multi-stage pipeline).
+Exposes the model-driven :class:`CompactEngine` together with the unified
+:class:`CompactionPipeline`, cache-control integration, and a set of
+legacy backward-compatible compaction strategies.
 """
 
 from encre.compact.engine import CompactEngine, EncreCompactEngine
+from encre.compact.pipeline import CompactionPipeline, PipelineReport, StageResult
+from encre.compact.cache_control import inject_cache_breakpoints, supports_cache_control
 
-# Primary model-driven compaction engine (Claude Code style).
-
-# Legacy strategies kept for backward compatibility
 from encre.compact.strategies import (
     EncreAutoCompactStrategy,
     EncreBudgetReductionStrategy,
@@ -49,6 +47,7 @@ from encre.compact.strategies import (
 
 __all__ = [
     "CompactEngine",
+    "CompactionPipeline",
     "EncreAutoCompactStrategy",
     "EncreBudgetReductionStrategy",
     "EncreCompactEngine",
@@ -58,4 +57,8 @@ __all__ = [
     "EncreSemanticCompactStrategy",
     "EncreSnipStrategy",
     "EncreTokenBudgetStrategy",
+    "PipelineReport",
+    "StageResult",
+    "inject_cache_breakpoints",
+    "supports_cache_control",
 ]

@@ -199,6 +199,20 @@ class EncreBrowserSession:
         await self._apply_viewport()
         await self._enable_domains()
 
+    async def connect(self, ws_url: str) -> None:
+        """Connect to an existing CDP WebSocket endpoint (e.g. Electron webview relay).
+
+        Skips browser launch and connects directly to the provided URL.
+        This is used when the frontend provides a CDP relay for its embedded webview.
+        """
+        self._transport = CDPTransport()
+        await self._transport.connect(ws_url)
+        self._connected = True
+        self._page_ws_url = ws_url
+        self._proc = None
+        self._tick()
+        await self._enable_domains()
+
     async def _enable_domains(self) -> None:
         """Enable CDP domains needed for various operations."""
         with contextlib.suppress(Exception):

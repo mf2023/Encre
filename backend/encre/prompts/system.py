@@ -175,41 +175,48 @@ def _iwork_block(workspace_root: str, workspace_name: str, project_summary: str 
 
 def _plan_mode_block() -> PromptBlock:
     """Plan-mode block: instruct the model to plan, not execute."""
-    content = _loader.load("planner", category="skills")
-    content = content.replace(
-        "## Planner Sub-Agent -- Task Breakdown Specialist",
-        "## Planning Mode -- Present a Plan, Do Not Execute",
-    )
-    content = content.replace(
-        "You are a planning sub-agent. Your job is to break down a goal into "
-        "concrete, actionable tasks.",
-        "You are in **planning mode**. Your job is to ANALYZE and PLAN -- NEVER "
-        "to execute. Present a clear, structured plan to the user for approval "
-        "before any changes are made. Break the goal into concrete, actionable "
-        "steps with dependencies and effort estimates.",
-    )
+    content = _loader.load("plan_mode", category="modes")
     return PromptBlock(priority=50, name="plan_mode", condition=None, content=content)
 
 
 def _spec_mode_block() -> PromptBlock:
     """Spec-mode block: instruct the model to specify, not implement."""
-    content = _loader.load("spec_writer", category="skills")
-    content = content.replace(
-        "## Spec Writer Sub-Agent -- Requirements & Specification Specialist\n\n"
-        "You are a specification sub-agent. Your job is to transform ambiguous "
-        "requirements into precise, complete, and actionable specifications.",
-        "## Specification Mode -- Specify Requirements, Do Not Implement\n\n"
-        "You are in **specification mode**. Your job is to produce a complete, "
-        "precise specification -- NOT to write code. Transform the requirements "
-        "into a detailed, actionable specification that covers all states (happy "
-        "path, edge cases, errors). Present the spec for user review before any "
-        "implementation begins.",
-    )
+    content = _loader.load("spec_mode", category="modes")
     return PromptBlock(priority=50, name="spec_mode", condition=None, content=content)
 
 
+def _command_instructions_block(name: str, body: str) -> PromptBlock:
+    """Active-command block: sticky one-shot-style prompt injection.
+
+    A slash *command* (built-in action or user-defined ``*.md`` command) is
+    NOT a mode.  Its prompt body is injected every turn while active, but it
+    must never be confused with plan/spec: there is no tool interception and
+    no spec gate.  The block is framed explicitly so the model treats it as
+    supplementary instructions rather than a mode declaration.
+    """
+    name = (name or "").strip()
+    body = (body or "").strip()
+    if not name:
+        return PromptBlock(priority=190, name="command_instructions",
+                           condition=None, content="")
+    parts = [
+        f"## Active Command: /{name}",
+        "",
+        "These are **command instructions**, active for this session until "
+        "the user clears them. This is **NOT a mode** - the operating mode "
+        "(normal / plan / spec) is unchanged and its rules still apply. "
+        "Treat the text below as additional instructions to follow alongside "
+        "the active mode; do not declare yourself to be in a new mode.",
+        "",
+        body,
+    ]
+    return PromptBlock(priority=190, name="command_instructions",
+                       condition=None, content="\n".join(parts))
+
+
 def _slash_commands_block(
-    slash_command_mode: str, slash_commands: list[dict[str, Any]] | None
+    slash_command_mode: str, slash_commands: list[dict[str, Any]] | None,
+    active_command_name: str = "",
 ) -> PromptBlock:
     """Inform the model about available slash commands and the active mode."""
     commands = slash_commands or []
@@ -217,7 +224,29 @@ def _slash_commands_block(
     if slash_command_mode:
         lines.append(
             f"The current session is in **/{slash_command_mode}** mode. "
-            "Follow the mode instructions above for this turn."
+            "Follow the mode instructions above for this turn. "
+            "This is authoritative -- when asked which mode you are in, "
+            f"answer **{slash_command_mode} mode**."
+        )
+    else:
+        # Normal mode is an explicit, declared state -- not "no mode".
+        # Without this, the model can misread the internal "Work Phase"
+        # (discover/execute/...) hint as the current mode and answer
+        # e.g. "discover mode" when asked.
+        lines.append(
+            "The current session is in **normal mode** (no plan/spec mode "
+            "is active). When asked which mode you are in, answer "
+            "**normal mode**. The 'Work Phase' hint elsewhere is an "
+            "internal scheduling cue, not a mode."
+        )
+    if active_command_name:
+        # A command may be active alongside (or instead of) a mode.  State
+        # it explicitly so the model does not mistake the command's injected
+        # instructions for a mode declaration.
+        lines.append(
+            f"A slash **command** ``/{active_command_name}`` is active. A "
+            "command is NOT a mode - it only injects extra instructions for "
+            "this turn. The session mode above is unchanged by the command."
         )
     if commands:
         modes = [c for c in commands if c.get("kind") == "mode"]
@@ -375,6 +404,7 @@ class EncrePromptBuilder:
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
         skill_summary: str = "",
+        active_command: dict[str, Any] | None = None,
     ) -> str:
         """Assemble the full system prompt from the active blocks.
 
@@ -419,7 +449,20 @@ class EncrePromptBuilder:
 
         # Inform the model about available slash commands and the active mode.
         if "slash_commands" not in blocks:
-            blocks["slash_commands"] = _slash_commands_block(slash_command_mode, slash_commands)
+            blocks["slash_commands"] = _slash_commands_block(
+                slash_command_mode, slash_commands,
+                active_command_name=(active_command or {}).get("name", ""),
+            )
+
+        # Active slash *command* (not a mode): sticky prompt injection,
+        # re-applied every turn while active.  Explicitly framed so the
+        # model never mistakes it for a mode declaration.
+        if active_command and active_command.get("name"):
+            if "command_instructions" not in blocks:
+                blocks["command_instructions"] = _command_instructions_block(
+                    active_command.get("name", ""),
+                    active_command.get("prompt", ""),
+                )
 
         # Dynamic skill catalogue (replaces hard-coded skill lists in mode prompts).
         if "skills" not in blocks:

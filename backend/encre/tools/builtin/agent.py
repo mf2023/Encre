@@ -30,11 +30,15 @@ Agent implementation for the Encre tool system.
 
 import asyncio
 import contextlib
+import os
 import time
 from contextvars import ContextVar
 from typing import Any
 
 from encre.logging_config import get_logger
+from encre.sub_agent.cache import CacheContext
+from encre.sub_agent.lifecycle import SubAgentMode, detect_background_mode
+from encre.sub_agent.worktree import WorktreeIsolation
 from encre.tools.base import build_tool
 
 logger = get_logger(__name__)
@@ -47,6 +51,19 @@ logger = get_logger(__name__)
 MAX_PARALLEL_SUB_AGENTS = 4
 
 MAX_SUB_AGENT_DEPTH = 1
+
+
+def _get_bg_tracker(parent_loop: Any) -> Any:
+    """Get or lazily initialise the background sub-agent tracker on parent_loop."""
+    if parent_loop is None:
+        return None
+    tracker = getattr(parent_loop, "_bg_sub_agents", None)
+    if tracker is not None:
+        return tracker
+    from encre.sub_agent.lifecycle import BackgroundSubAgentTracker
+    tracker = BackgroundSubAgentTracker()
+    parent_loop._bg_sub_agents = tracker
+    return tracker
 
 _current_loop: ContextVar[Any] = ContextVar("encre_agent_current_loop", default=None)
 
@@ -173,6 +190,9 @@ async def _run_one_sub_agent(
     prompt: str,
     agent_name: str,
     progress_callback: Any = None,
+    mode: str = "sync",
+    isolated: bool = False,
+    cache_context: CacheContext | None = None,
 ) -> dict[str, Any]:
     """Run a single sub-agent. Used both by the legacy single-task path
     and by the parallel ``tasks`` path.
@@ -182,7 +202,8 @@ async def _run_one_sub_agent(
     ``system_prompt``.  This ensures Explore runs readonly, Plan runs
     no-writes, and general-purpose runs unrestricted.
     """
-    logger.info("[agent] agent_name=%s | prompt_len=%d", agent_name, len(prompt))
+    logger.info("[agent] agent_name=%s | prompt_len=%d | mode=%s | isolated=%s",
+                agent_name, len(prompt), mode, isolated)
     logger.info("[agent] prompt=%.300s", prompt)
     # Resolve agent_name -> tool_policy + system_prompt
     tool_policy = "all"
@@ -196,30 +217,48 @@ async def _run_one_sub_agent(
                 break
     if parent_loop is not None and parent_loop.sub_agent_depth >= MAX_SUB_AGENT_DEPTH:
         return {"content": "Error: Maximum sub-agent recursion depth reached", "messages": []}
-    if parent_loop is not None:
+    if parent_loop is None:
+        from encre.config import EncreConfig
+        from encre.loop import EncreLoop
+        from encre.session import EncreSession
+        config = EncreConfig()
+        session = EncreSession(config)
+        parent_loop = EncreLoop(config, session)
+
+    # Build cache context from parent if not provided
+    if cache_context is None and hasattr(parent_loop, "_sys_prompt_cache"):
+        cache_context = CacheContext.from_parent_context(
+            parent_loop._sys_prompt_cache,
+            parent_session_id=parent_loop.session.id or "",
+        )
+
+    # Worktree isolation
+    worktree: WorktreeIsolation | None = None
+    if isolated:
+        ws = getattr(parent_loop, "_workspace_root", "") or os.getcwd()
+        worktree = WorktreeIsolation(workspace_root=ws)
+        await worktree.__aenter__()
+
+    try:
         sub_result = await parent_loop._run_sub_agent(
             prompt=prompt,
             system_prompt=system_prompt,
             max_turns=0,
             tool_policy=tool_policy,
             progress_callback=progress_callback,
+            cache_context=cache_context,
         )
         if isinstance(sub_result, dict):
             return sub_result
         return {"content": str(sub_result), "messages": []}
-    from encre.config import EncreConfig
-    from encre.loop import EncreLoop
-    from encre.session import EncreSession
-    config = EncreConfig()
-    session = EncreSession(config)
-    loop = EncreLoop(config, session)
-    sub_result = await loop._run_sub_agent(
-        prompt, system_prompt=system_prompt, tool_policy=tool_policy,
-        progress_callback=progress_callback,
-    )
-    if isinstance(sub_result, dict):
-        return sub_result
-    return {"content": str(sub_result), "messages": []}
+    finally:
+        if worktree is not None:
+            if isolated:
+                changed = worktree.sync_back()
+                if changed:
+                    logger.info("[agent] worktree sync: %d files changed back", len(changed))
+            await worktree.__aexit__()
+            worktree.cleanup()
 
 
 async def _agent_execute(**kwargs: Any) -> Any:
@@ -238,9 +277,21 @@ async def _agent_execute(**kwargs: Any) -> Any:
        parent sees a single tool result that aggregates the parallel
        outcomes -- matching Claude Code's "fire off three Explore agents
        in parallel" UX.
+
+    **Mode parameter** controls the sub-agent lifecycle:
+
+    - ``"sync"`` (default): the parent awaits the sub-agent inline.
+    - ``"async"``: fire-and-forget; returns immediately with a session
+      ID.  The sub-agent continues in the background.
+    - ``"background"``: auto-detects long-running tasks and switches to
+      async mode; otherwise runs sync.
+    - ``"isolated"``: runs the sub-agent in a temporary worktree so it
+      cannot affect the parent's working directory.
     """
     progress_callback = kwargs.get("progress_callback")
     parent_loop = _resolve_loop()
+    mode = kwargs.get("mode", "sync")
+    isolated = kwargs.get("isolated", False)
 
     tasks = kwargs.get("tasks")
     if tasks:
@@ -376,12 +427,63 @@ async def _agent_execute(**kwargs: Any) -> Any:
                     agg_messages.extend(msgs)
         return {"content": "\n".join(lines), "messages": agg_messages, "sub_results": out}
 
+    # Resolve mode: "background" auto-detects if this task should be async
+    resolved_mode = mode
+    if resolved_mode == "background":
+        prompt_text = kwargs.get("prompt", "")
+        agent_name = kwargs.get("agent_name", "")
+        if detect_background_mode(prompt_text, agent_name):
+            resolved_mode = "async"
+            logger.info("[agent] auto-switched to async mode for background task agent=%s", agent_name)
+        else:
+            resolved_mode = "sync"
+
+    if resolved_mode == "async":
+        agent_name = kwargs.get("agent_name", "")
+        prompt_text = kwargs.get("prompt", "")
+        import uuid
+        session_id = str(uuid.uuid4())
+        cache_ctx = None
+        if parent_loop is not None and hasattr(parent_loop, "_sys_prompt_cache"):
+            cache_ctx = CacheContext.from_parent_context(
+                parent_loop._sys_prompt_cache,
+                parent_session_id=parent_loop.session.id or "",
+            )
+
+        async def _bg_run():
+            try:
+                result = await _run_one_sub_agent(
+                    parent_loop, prompt_text, agent_name,
+                    mode="sync", isolated=isolated, cache_context=cache_ctx,
+                )
+                _bg_tracker = _get_bg_tracker(parent_loop)
+                if _bg_tracker is not None:
+                    _bg_tracker.complete(session_id, result=result)
+            except Exception as exc:
+                _bg_tracker = _get_bg_tracker(parent_loop)
+                if _bg_tracker is not None:
+                    _bg_tracker.complete(session_id, error=str(exc))
+
+        task = asyncio.create_task(_bg_run())
+        _bg_tracker = _get_bg_tracker(parent_loop)
+        if _bg_tracker is not None:
+            info = _bg_tracker.register(session_id, agent_name, prompt_text)
+            _bg_tracker.attach_task(session_id, task)
+        return {
+            "content": f"[Background sub-agent launched]\nSession ID: {session_id}\nAgent: {agent_name}\nStatus: running\n\nUse agent status tools or check the sub-agents panel for results.",
+            "session_id": session_id,
+            "messages": [],
+            "mode": "async",
+        }
+
     try:
         return await _run_one_sub_agent(
             parent_loop,
             kwargs.get("prompt", ""),
             kwargs.get("agent_name", ""),
             progress_callback=progress_callback,
+            mode=resolved_mode,
+            isolated=isolated,
         )
     except asyncio.CancelledError:
         # User interrupted the single sub-agent. Return whatever the
@@ -440,6 +542,19 @@ EncreAgentTool = build_tool(
                 "description": "Optional sub-agent name. Built-ins include Explore "
                                "(read-only), Plan (no writes), general-purpose (full), "
                                "coder, researcher, critic, architect, planner.",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["sync", "async", "background", "isolated"],
+                "description": "Execution mode: 'sync' (default, wait for result), "
+                               "'async' (fire-and-forget), 'background' (auto-detect "
+                               "long-running), 'isolated' (run in temp worktree).",
+            },
+            "isolated": {
+                "type": "boolean",
+                "description": "When True, run the sub-agent in an isolated temp "
+                               "worktree so it cannot affect the parent's files. "
+                               "Changes are synced back on completion.",
             },
             "tasks": {
                 "type": "array",

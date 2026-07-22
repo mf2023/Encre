@@ -91,7 +91,7 @@ def temp_dir():
 def sample_config():
     """Return a default EncreConfig instance usable in tests."""
     return EncreConfig(
-        model="gpt-4o",
+        model="gpt-5.6",
         permission_mode="default",
         max_turns=10,
         max_tokens=4096,

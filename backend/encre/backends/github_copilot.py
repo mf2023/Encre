@@ -62,7 +62,7 @@ class GitHubCopilotBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "gpt-4o-copilot",
+        model: str = "gpt-5.6-copilot",
         **kwargs: Any,
     ) -> None:
         """Initialize the GitHub Copilot backend.

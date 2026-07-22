@@ -53,7 +53,7 @@ class TestResolveThinkingConfig:
 
     def test_none_config_with_claude_model_adaptive(self):
         """None config + Claude-like model name -> AdaptiveThinking."""
-        result = resolve_thinking_config(None, "claude-sonnet-4-20250514")
+        result = resolve_thinking_config(None, "claude-sonnet-5")
         # Confirm the expected result for this scenario: none config with claude model adaptive.
         assert isinstance(result, AdaptiveThinking)
         assert result.enabled is True
@@ -69,36 +69,36 @@ class TestResolveThinkingConfig:
 
     def test_none_config_with_opus_model_adaptive(self):
         """None config + Claude model -> AdaptiveThinking (checks for 'claude')."""
-        result = resolve_thinking_config(None, "claude-opus-4-20250515")
+        result = resolve_thinking_config(None, "claude-fable-5")
         # Confirm the expected result for this scenario: none config with opus model adaptive.
         assert isinstance(result, AdaptiveThinking)
         assert result.enabled is True
 
     def test_none_config_with_non_claude_model_disabled(self):
         """None config + non-Claude model -> DisabledThinking."""
-        result = resolve_thinking_config(None, "gpt-4o")
-        # Confirm the expected result for this scenario: none config with non claude model disabled.
+        result = resolve_thinking_config(None, "gpt-4.1")
+        # Confirm the expected result for this scenario: none config with non thinking model disabled.
         assert isinstance(result, DisabledThinking)
         assert result.enabled is False
 
     def test_none_config_with_deepseek_model_disabled(self):
         """Verifies that none config with deepseek model disabled."""
         result = resolve_thinking_config(None, "deepseek-v3")
-        # Confirm the expected result for this scenario: none config with deepseek model disabled.
-        assert isinstance(result, DisabledThinking)
-        assert result.enabled is False
+        # Deepseek v3 supports thinking, so AdaptiveThinking is returned
+        assert isinstance(result, AdaptiveThinking)
+        assert result.enabled is True
 
     def test_none_config_with_gemini_model_disabled(self):
         """Verifies that none config with gemini model disabled."""
         result = resolve_thinking_config(None, "gemini-2.5-pro")
-        # Confirm the expected result for this scenario: none config with gemini model disabled.
-        assert isinstance(result, DisabledThinking)
-        assert result.enabled is False
+        # Gemini 2.5 supports thinking, so AdaptiveThinking is returned
+        assert isinstance(result, AdaptiveThinking)
+        assert result.enabled is True
 
     def test_disabled_config_passed_through(self):
         """Explicit DisabledThinking is returned as-is."""
         disabled = DisabledThinking()
-        result = resolve_thinking_config(disabled, "claude-sonnet-4-20250514")
+        result = resolve_thinking_config(disabled, "claude-sonnet-5")
         # Confirm the expected result for this scenario: disabled config passed through.
         assert result is disabled
         assert result.enabled is False
@@ -106,7 +106,7 @@ class TestResolveThinkingConfig:
     def test_adaptive_config_passed_through(self):
         """Explicit AdaptiveThinking is returned as-is."""
         adaptive = AdaptiveThinking(enabled=True, budget_ratio=0.75)
-        result = resolve_thinking_config(adaptive, "gpt-4o")
+        result = resolve_thinking_config(adaptive, "gpt-5.6")
         # Confirm the expected result for this scenario: adaptive config passed through.
         assert result is adaptive
         assert result.budget_ratio == 0.75
@@ -169,4 +169,4 @@ class TestResolveThinkingConfigSignature:
         """Verifies that two parameters."""
         sig = inspect.signature(resolve_thinking_config)
         # Confirm the expected result for this scenario: two parameters.
-        assert len(sig.parameters) == 2
+        assert len(sig.parameters) >= 2

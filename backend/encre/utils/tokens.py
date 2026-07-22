@@ -56,6 +56,10 @@ _MODEL_ENCODING_PREFIXES: list[tuple[str, str]] = [
     ("text-embedding-3-large", "cl100k_base"),
     ("text-embedding-3-small", "cl100k_base"),
     ("text-embedding-ada-002", "cl100k_base"),
+    ("gpt-5.6-sol", "o200k_base"),
+    ("gpt-5.6", "o200k_base"),
+    ("gpt-5.6-terra", "o200k_base"),
+    ("gpt-5.6-luna", "o200k_base"),
     ("gpt-4.1-nano", "o200k_base"),
     ("gpt-4.1-mini", "o200k_base"),
     ("gpt-4.1", "o200k_base"),
@@ -167,7 +171,7 @@ def _get_encoding(model: str) -> Any:
     return _ENCODING_CACHE.get(encoding_name)
 
 
-def estimate_tokens(text: str, model: str = "gpt-4o") -> int:
+def estimate_tokens(text: str, model: str = "gpt-5.6") -> int:
     """Estimate the number of tokens in *text* for the given *model*.
 
     Priority order: native Rust tokenizer -> tiktoken -> char/4 heuristic.
@@ -196,7 +200,7 @@ def estimate_tokens(text: str, model: str = "gpt-4o") -> int:
 
 def count_message_tokens(
     messages: list[dict[str, Any]] | None,
-    model: str = "gpt-4o",
+    model: str = "gpt-5.6",
 ) -> int:
     """Estimate the total token count for a list of chat messages.
 
@@ -235,7 +239,7 @@ def estimate_tokens_simple(text: str) -> int:
     Kept for compatibility with callers that don't care about model-specific
     tokenization but want a single consistent import point.
     """
-    return estimate_tokens(text, model="gpt-4o")
+    return estimate_tokens(text, model="gpt-5.6")
 
 
 def is_tiktoken_available() -> bool:

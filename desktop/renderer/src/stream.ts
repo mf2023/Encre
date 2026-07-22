@@ -164,6 +164,7 @@ function _isSessionBoundStreamEvent(type: ServerEvent["type"]): boolean {
     type === "plan_update" ||
     type === "plan_proposal" ||
     type === "plan_mode_changed" ||
+    type === "command_changed" ||
     type === "plan_resolved" ||
     type === "assistant_boundary" ||
     type === "compact";
@@ -336,6 +337,20 @@ export function handleEvent(event: ServerEvent): void {
       }
       console.log("[stream] session_ready received, messages:", event.messages?.length ?? 0, "session_id:", event.session_id, "gen:", _sessionGeneration);
       state.setSessionId(event.session_id);
+      // Reset persistent mode on session switch - backend will re-send mode_changed if the session has a mode
+      const _app = (window as any).__app;
+      if (_app) {
+        _app._persistentMode = "";
+        _app._currentChipMode = "";
+        _app._activeCommand = null;
+        // Clear input box on session switch so stale text/chip from the
+        // previous session doesn't leak into the new one.
+        const _input = document.getElementById("prompt-input") as HTMLElement | null;
+        if (_input) { _input.innerHTML = ""; _input.style.height = "56px"; }
+        _app.updateChipState();
+        _app.updatePlaceholder();
+        _app.updateSendButton();
+      }
       if (!(event as any).is_running) {
         _activeStreamSessionId = "";
       } else {
@@ -573,6 +588,8 @@ export function handleEvent(event: ServerEvent): void {
       const resultPatch: Partial<import("./types.js").ToolCallState> = {
         result: event.content,
         isError: event.is_error,
+        errorCode: (event as any).error_code || "",
+        errorCategory: (event as any).error_category || "",
         status: "done",
       };
       if (event.sub_agent_messages && event.sub_agent_messages.length > 0) {
@@ -679,7 +696,8 @@ export function handleEvent(event: ServerEvent): void {
         // Capture turn status card data from finish event
         if (event.reason === "error" || event.error) {
           lastMsg.errorMessage = event.error || "";
-          lastMsg.errorCode = event.reason === "error" ? "execution_error" : "unknown";
+          lastMsg.errorCode = (event as any).error_code || (event.reason === "error" ? "execution_error" : "unknown");
+          lastMsg.errorCategory = (event as any).error_category || "";
         } else if (event.reason === "interrupted" || event.reason === "cancelled") {
           if (event.reason === "cancelled") {
             lastMsg.cancelledText = t("chat.abnormalInterruption");
@@ -712,6 +730,13 @@ export function handleEvent(event: ServerEvent): void {
       btnStop?.classList.remove("cancelling");
       if (btnStop) btnStop.style.pointerEvents = "";
       _ensureAssistantMessage();
+      // If compaction occurred during this turn, reload the session
+      // messages from the backend so the frontend's state matches.
+      // Without this, compacted-away messages stay in the frontend
+      // and cause "Message not found" errors on rollback.
+      if ((event as any).compacted && (event as any).messages) {
+        state.loadSessionMessages((event as any).messages, sid);
+      }
       chat?.render();
       (window as any).__sessionInner?.render?.();
       send({ type: "list_sessions" });
@@ -743,6 +768,7 @@ export function handleEvent(event: ServerEvent): void {
         lastMsg.hasError = true;
         lastMsg.errorMessage = event.message;
         lastMsg.errorCode = event.code;
+        lastMsg.errorCategory = (event as any).category || "";
       }
       state.addNotification({
         id: crypto.randomUUID(),
@@ -810,6 +836,31 @@ export function handleEvent(event: ServerEvent): void {
       state.setPlanModeActive(event.active, _eventSessionId(event));
       (window as any).__sessionInner?.render?.();
       break;
+
+    case "mode_changed":
+      if (!_hasSessionId(event)) break;
+      // Update the persistent mode in state
+      state.setInputMode(event.mode);
+      // Update the toolbar chip via the App instance
+      const app = (window as any).__app;
+      if (app) {
+        app._persistentMode = event.mode;
+        app.updateChipState();
+        app.updatePlaceholder();
+      }
+      break;
+
+    case "command_changed": {
+      // A sticky slash *command* (NOT a mode) was activated/cleared.  Mirror
+      // it into the App so its chip persists across turns / sessions.
+      const cmdApp = (window as any).__app;
+      if (cmdApp) {
+        const c = event.command;
+        cmdApp._activeCommand = (c && c.name) ? c : null;
+        cmdApp.updateChipState();
+      }
+      break;
+    }
 
     case "plan_resolved":
       if (!_hasSessionId(event)) break;
@@ -892,6 +943,14 @@ export function handleEvent(event: ServerEvent): void {
       if (cfg.slash_commands && Array.isArray(cfg.slash_commands)) {
         applyProjectCommands(cfg.slash_commands as any[]);
       }
+      // Restore persisted active_command from config_data (survives restart).
+      const ac = (cfg as any).active_command;
+      if (ac && ac.name) {
+        const cmdApp = (window as any).__app;
+        if (cmdApp) {
+          cmdApp._activeCommand = { name: ac.name, prompt: ac.prompt, icon: ac.icon, title: ac.title };
+        }
+      }
       window.dispatchEvent(new CustomEvent("slash-commands-updated"));
       if (cfg.sub_agents && Array.isArray(cfg.sub_agents)) {
         state.setSubAgents(cfg.sub_agents as any[]);
@@ -902,6 +961,9 @@ export function handleEvent(event: ServerEvent): void {
         permission_mode: (cfg.permission_mode as string) || "default",
         max_turns: (cfg.max_turns as number) ?? 0,
       });
+      if (cfg.permission_settings) {
+        state.setPermissionPolicies(normalizePermissionPolicies(cfg.permission_settings));
+      }
       // Sync workspace mode from server config (don't override active workspace)
       if (!state.getState().activeWorkspace) {
         if (cfg.workspace_mode === "iwork") {
@@ -1106,6 +1168,9 @@ export function handleEvent(event: ServerEvent): void {
         old_tokens: (event as any).old_tokens,
         new_tokens: (event as any).new_tokens,
       }, _eventSessionId(event as any));
+      if ((event as any).messages) {
+        state.loadSessionMessages((event as any).messages, _eventSessionId(event as any));
+      }
       break;
 
     case "system_message":
@@ -1320,6 +1385,7 @@ export function handleEvent(event: ServerEvent): void {
         state.clearMessages("");
         (window as any).__appCleanupContentArea?.({ keepAutomationFlag: false });
         chat?.renderForce?.();
+        (window as any).__sessionInner?.restoreSidebarVisibility?.();
       }
       // Refresh tray dual cache + populate sidebar tree immediately.
       // list_sessions returns sessions from ALL workspace directories on disk,

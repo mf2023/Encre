@@ -1334,6 +1334,22 @@ export function restoreInputModeChip(mode: string): void {
   if ((window as any).lucide) {
     (window as any).lucide.createIcons();
   }
+
+  // Sync toolbar mode chip and input area styling
+  const area = document.getElementById("input-area");
+  if (area) area.setAttribute("data-input-mode", mode);
+  const tbChip = document.getElementById("toolbar-mode-chip");
+  if (tbChip) {
+    tbChip.classList.remove("hidden");
+    tbChip.setAttribute("data-mode", mode);
+    const tbIcon = tbChip.querySelector(".chip-icon") as HTMLElement;
+    const tbLabel = tbChip.querySelector(".toolbar-mode-label") as HTMLElement;
+    if (tbIcon) tbIcon.setAttribute("data-lucide", icon);
+    if (tbLabel) tbLabel.textContent = label;
+    if ((window as any).lucide) {
+      (window as any).lucide.createIcons();
+    }
+  }
 }
 
 /** Replaces the sidebar session list. */

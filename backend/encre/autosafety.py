@@ -106,9 +106,9 @@ class EncreAutoSafetyClassifier:
             # Use cheapest model by default
             if not self._model:
                 if self._backend_type == "anthropic":
-                    self._model = "claude-haiku-4-5-20251001"
+                    self._model = "claude-sonnet-5"
                 elif self._backend_type == "openai":
-                    self._model = "gpt-4o-mini"
+                    self._model = "gpt-5.6-luna"
                 else:
                     self._model = "default"
             self._backend = create_backend(

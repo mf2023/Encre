@@ -52,7 +52,7 @@ class AIGatewayBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "gpt-4.1-mini",
+        model: str = "gpt-5.6-luna",
         **kwargs: Any,
     ) -> None:
         """Initialize the AI Gateway backend.

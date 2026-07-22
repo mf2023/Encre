@@ -325,6 +325,13 @@ class EncreConfig:
     tool_result_max_chars: int = 80000
     permission_mode: PermissionMode = "bypass"
     slash_command_mode: str = ""
+    # Active slash *command* (distinct from a mode).  A command is a
+    # sticky one-shot-style prompt injection: once activated it stays in
+    # effect across turns (re-injected each run) until explicitly cleared,
+    # but it is NOT a mode (no tool interception, no spec gate).  Mirrors
+    # ``session.metadata["active_command"]`` so it survives restart.  The
+    # dict carries ``name``/``prompt``/``icon``/``title``.  ``None`` = none.
+    active_command: dict[str, Any] | None = None
     sandbox_enabled: bool = True
     workspace: str = ""
     session_max_age_hours: float = 24.0
