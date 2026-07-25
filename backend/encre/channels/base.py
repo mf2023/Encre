@@ -118,7 +118,7 @@ class EventRouter:
         return self._manager
 
     def set_connected_adapters(self, names: list[str]) -> None:
-        """Update the list of connected adapter names (set by GatewayServer)."""
+        """Update the list of connected adapter names (set by WsBridgeServer)."""
         self._connected_adapters = names
 
     @asynccontextmanager

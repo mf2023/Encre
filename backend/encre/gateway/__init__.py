@@ -23,26 +23,36 @@
 
 from __future__ import annotations
 
-"""Encre channel-adapter gateway package.
+"""Encre gateway package.
 
-The gateway is a small, fast WebSocket server (localhost-only) that lets external
-channel adapters -- QQ, Telegram, iClaw desktop, etc. -- connect and exchange
-messages with the iClaw engine (EventRouter) without exposing the full agent
-WebSocket protocol.
+The gateway manages platform adapters (Telegram, Discord, QQ, etc.) and routes
+messages between them and the agent runtime (EventRouter).  Core adapters run
+in-process; an optional WS bridge serves remote/plugin adapters.
 
 This package re-exports:
-    * :class:`GatewayServer` -- accepts adapter connections (see :mod:`encre.gateway.server`).
-    * :class:`GatewayClient` -- outbound client used by adapters (see :mod:`encre.gateway.client`).
-    * :class:`GatewayMessage` / :class:`GatewayOp` -- wire protocol (see :mod:`encre.gateway.protocol`).
+    * :class:`GatewayRunner` -- unified lifecycle manager (see :mod:`encre.gateway.run`).
+    * :class:`PlatformRegistry` / :func:`platform_registry` -- adapter registry.
+    * :class:`BasePlatformAdapter` -- abstract base for all adapters.
+    * :class:`GatewayMessage` / :class:`GatewayOp` -- WS bridge wire protocol.
 """
 
-from encre.gateway.client import GatewayClient
-from encre.gateway.protocol import GatewayMessage, GatewayOp
-from encre.gateway.server import GatewayServer
+from encre.gateway.config import GatewayConfig, Platform, PlatformConfig
+from encre.gateway.platform_registry import PlatformEntry, PlatformRegistry, platform_registry
+from encre.gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
+from encre.gateway.run import GatewayRunner
+from encre.gateway.ws_bridge.protocol import GatewayMessage, GatewayOp
 
 __all__ = [
-    "GatewayClient",
+    "BasePlatformAdapter",
+    "GatewayConfig",
     "GatewayMessage",
     "GatewayOp",
-    "GatewayServer",
+    "GatewayRunner",
+    "MessageEvent",
+    "Platform",
+    "PlatformConfig",
+    "PlatformEntry",
+    "PlatformRegistry",
+    "SendResult",
+    "platform_registry",
 ]

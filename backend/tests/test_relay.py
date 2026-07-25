@@ -40,7 +40,8 @@ import time
 
 import pytest
 
-from encre.adapters.base import MessageEvent, MessageType, SendResult, SessionSource
+from encre.gateway.platforms.base import MessageEvent, MessageType, SendResult
+from encre.gateway.session import SessionSource
 from encre.gateway.relay.adapter import RelayAdapter, RELAY_DISABLED_CODE
 from encre.gateway.relay.auth import (
     make_token,
@@ -301,7 +302,7 @@ async def test_relay_adapter_inbound_bridge_routes_to_handler():
 
     seen = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         seen.append(event)
 
     adapter.set_message_handler(handler)

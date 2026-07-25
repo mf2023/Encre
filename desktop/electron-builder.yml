@@ -15,10 +15,10 @@ files:
   - "!renderer/tsconfig.json"
 
 extraResources:
-  - from: ../backend/encre
-    to: encre
+  - from: ../build/server/encre-server
+    to: encre-server
     filter:
-      - "**/*.py"
+      - "**/*"
 
 win:
   target:

@@ -960,6 +960,7 @@ export const en: LocaleMessages = {
     tabReview: "Review",
     tabEditor: "Editor",
     tabBrowser: "Browser",
+    tabMarkdown: "Markdown Preview",
     tabTerminalDesc: "Terminal emulator",
     tabEditorDesc: "Code editor",
     tabReviewDesc: "Review changes",

@@ -180,6 +180,7 @@
       branches: [],
       activeBranchId: "",
       spec: null,
+      planReview: null,
       running: false,
       agentState: null
     };
@@ -219,6 +220,7 @@
       compactEvents: sessionSnapshot.compactEvents,
       systemMessages: sessionSnapshot.systemMessages || [],
       spec: null,
+      planReview: null,
       memoryList: [],
       memoryDetail: null,
       globalRules: [],
@@ -1207,6 +1209,7 @@
           tabReview: "\u5BA1\u67E5",
           tabEditor: "\u7F16\u8F91\u5668",
           tabBrowser: "\u6D4F\u89C8\u5668",
+          tabMarkdown: "Markdown \u9884\u89C8",
           tabTerminalDesc: "\u7EC8\u7AEF\u6A21\u62DF\u5668",
           tabEditorDesc: "\u4EE3\u7801\u7F16\u8F91\u5668",
           tabReviewDesc: "\u5BA1\u67E5\u66F4\u6539",
@@ -2635,6 +2638,7 @@
           tabReview: "Review",
           tabEditor: "Editor",
           tabBrowser: "Browser",
+          tabMarkdown: "Markdown Preview",
           tabTerminalDesc: "Terminal emulator",
           tabEditorDesc: "Code editor",
           tabReviewDesc: "Review changes",
@@ -3448,6 +3452,7 @@
     state.activeBranchId = snapshot.activeBranchId;
     state.running = snapshot.running;
     state.agentState = snapshot.agentState ?? null;
+    state.planReview = snapshot.planReview;
   }
   function syncSessionState(sessionId) {
     if (getSessionKey(sessionId) === getSessionKey(state.sessionId)) {
@@ -3726,7 +3731,13 @@
         }
       }
       const message = {
-        id: crypto.randomUUID(),
+        // Derive a DETERMINISTIC id from the server message id so that
+        // repeated restores of the same logical message (e.g. the automation
+        // detail re-restores on every live update) keep a stable timeline id.
+        // A churning random id would reset the user's expand/collapse state on
+        // every re-render. Only fall back to a random id for transient,
+        // not-yet-persisted messages (which are force-expanded while running).
+        id: raw.id ? `m:${raw.id}` : crypto.randomUUID(),
         role: raw.role === "assistant" ? "assistant" : "user",
         content: cleanContent,
         isStreaming: false,
@@ -4221,6 +4232,13 @@
     const sid = sessionId || state.sessionId;
     const snapshot = getOrCreateSessionSnapshot(sid);
     snapshot.spec = spec;
+    syncSessionState(sid);
+    emit();
+  }
+  function updatePlanReview(data, sessionId) {
+    const sid = sessionId || state.sessionId;
+    const snapshot = getOrCreateSessionSnapshot(sid);
+    snapshot.planReview = data;
     syncSessionState(sid);
     emit();
   }
@@ -4728,6 +4746,9 @@
   }
   function sendRollback(branch_id, message_id) {
     send({ type: "rollback", branch_id, message_id });
+  }
+  function sendSetCdpUrl(url) {
+    send({ type: "browser_cdp_url", url, session_id: getState().sessionId });
   }
   function startPing() {
     stopPing();
@@ -5356,7 +5377,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
       const _activeReadySid = getState().sessionId;
       if (_activeReadySid && eventSid && eventSid !== _activeReadySid && !_requestedSessionRequestId) {
-        console.log("[stream] REJECT session_ready stray sid=%s active=%s", eventSid, _activeReadySid);
+        console.log("[stream] REJECT session_ready stray sid=%s active=%s \u2014 reconnect recovery: resume active session", eventSid, _activeReadySid);
+        _requestedSessionId = "";
+        _requestedSessionRequestId = "";
+        send({ type: "resume", session_id: _activeReadySid, request_id: crypto.randomUUID() });
         return;
       }
     }
@@ -5501,6 +5525,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               chat?.renderForce?.();
             }
           }
+        }
+        if (event.name === "browser") {
+          window.dispatchEvent(new CustomEvent("browser-tool-call"));
         }
         tools?.requestRender();
         chat?.renderForce?.();
@@ -5907,7 +5934,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           "sub_agent_auto_open_view",
           "automation_auto_open_view",
           "startup_session_mode",
-          "startup_session_behavior"
+          "startup_session_behavior",
+          "default_search_engine",
+          "default_search_engine_url"
         ];
         for (const key of _generalKeys) {
           const val = cfg[key];
@@ -6085,6 +6114,21 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           const sev = event;
           updateSpec(sev.spec || null, _eventSessionId(sev));
           window.__sessionInner?.render?.();
+        }
+        break;
+      case "plan_review":
+        {
+          const sev = event;
+          const review = sev.review || {};
+          const existing = getState().planReview || {};
+          updatePlanReview({
+            review_id: review.review_id || existing.review_id || "",
+            content: review.content || existing.content || "",
+            file_path: review.file_path || existing.file_path || "",
+            dir_path: review.dir_path || existing.dir_path || "",
+            mode: review.mode || existing.mode || "",
+            status: sev.status || existing.status || "review"
+          }, _eventSessionId(sev));
         }
         break;
       case "context_usage":
@@ -65181,7 +65225,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   ]);
   var FILE_READ_TOOLS = /* @__PURE__ */ new Set(["read", "file_read"]);
   function isToolItemTool(name) {
-    return name === "skill" || name === "mcp" || name.startsWith("mcp__") || name === "memory" || name.startsWith("memory_") || name === "task" || name.startsWith("task_") || name === "image" || name === "spreadsheet" || name.startsWith("cron_") || name === "todo" || name === "find_tool" || name === "web_fetch" || name === "git" || name === "lsp" || name === "notebook" || name === "rest_client" || name === "browser" || name === "database" || name === "docker" || name === "pdf" || name === "deploy" || name === "apply_patch";
+    return name === "skill" || name === "mcp" || name.startsWith("mcp__") || name === "memory" || name.startsWith("memory_") || name === "task" || name.startsWith("task_") || name === "image" || name === "spreadsheet" || name.startsWith("cron_") || name === "todo" || name === "find_tool" || name === "web_fetch" || name === "git" || name === "lsp" || name === "notebook" || name === "rest_client" || name === "browser" || name === "database" || name === "docker" || name === "pdf" || name === "deploy" || name === "apply_patch" || name === "computer" || name === "desktop";
   }
   function isHiddenTool(name) {
     if (name === "task" || name.startsWith("task_")) return true;
@@ -65262,35 +65306,62 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     if (isFileMutationTool(name)) return "pencil-line";
     if (isFileReadTool(name)) return "eye";
     if (name === "web_search" || name === "web_fetch") return "globe";
-    if (name === "search" || name === "grep" || name === "codebase") return "search";
+    if (name === "search" || name === "grep") return "search";
+    if (name === "codebase" || name.startsWith("codebase")) return "search";
     if (name === "find_tool") return "compass";
     if (name === "glob") return "folder-search";
+    if (name === "memory_profile") return "user-circle";
+    if (name === "memory" || name.startsWith("memory_")) return "database";
+    if (name === "task" || name.startsWith("task_")) return "list-checks";
+    if (name.startsWith("cron_")) return "clock-9";
     if (name === "skill") return "wand-2";
     if (name === "mcp" || name.startsWith("mcp__")) return "plug";
-    if (name.startsWith("memory_")) return "database";
-    if (name.startsWith("task_")) return "list-checks";
     if (name === "agent") return "zap";
+    if (name === "swarm") return "users";
+    if (name === "workflow") return "workflow";
     if (name === "browser") return "monitor";
-    if (name === "computer" || name === "desktop") return "container";
+    if (name === "computer" || name === "computer_use" || name === "vlm_computer_use" || name === "desktop") return "container";
+    if (name === "docker") return "container";
+    if (name === "ssh") return "terminal";
     if (name === "notebook") return "notebook-pen";
     if (name === "git") return "git-branch";
+    if (name === "github") return "github";
     if (name === "lsp") return "code-2";
     if (name === "database") return "database";
-    if (name === "docker") return "container";
-    if (name === "pdf") return "file-text";
-    if (name === "deploy") return "rocket";
-    if (name === "rest_client") return "cloud";
+    if (name === "diff") return "git-compare";
+    if (name === "json_tool") return "braces";
+    if (name === "lint_format") return "check-check";
+    if (name === "test_run") return "flask-conical";
+    if (name === "env_manager") return "settings-2";
     if (name === "apply_patch") return "git-pull-request";
-    if (name === "image") return "image";
+    if (name === "manage") return "settings";
+    if (name === "pdf" || name === "document") return "file-text";
+    if (name === "presentation") return "presentation";
     if (name === "spreadsheet") return "table";
-    if (name.startsWith("cron_")) return "clock-9";
+    if (name === "chart") return "bar-chart-3";
+    if (name === "diagram") return "workflow";
+    if (name === "image" || name === "generate_image" || name === "edit_image" || name === "image_variation") return "image";
+    if (name === "qr_code") return "qr-code";
+    if (name === "media") return "film";
+    if (name === "transcribe_audio" || name === "translate_audio") return "mic";
+    if (name === "translation") return "languages";
+    if (name === "archive") return "archive";
+    if (name === "hash_crypto") return "hash";
+    if (name === "rest_client" || name === "cloud_storage") return "cloud";
+    if (name === "deploy") return "rocket";
+    if (name === "email") return "mail";
+    if (name === "notify") return "bell";
+    if (name === "file_api") return "file";
+    if (name === "batch_api") return "layers";
+    if (name === "fine_tuning_api") return "sliders-horizontal";
+    if (name === "create_embeddings") return "boxes";
+    if (name === "create_moderation") return "shield-check";
     if (name === "todo") return "check-circle-2";
     if (name === "plan") return "file-text";
     if (name === "question") return "help-circle";
-    if (name === "memory_profile") return "user-circle";
     if (name === "compact") return "shrink";
     if (name === "info") return "layout-dashboard";
-    return "";
+    return "wrench";
   }
   function formatToolName(name, terminal) {
     if (terminal && (name === "bash" || name === "shell" || name === "chat.terminal" || name === "run_command")) {
@@ -65334,6 +65405,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       cron_list: "Cron",
       rest_client: "Rest Client",
       desktop: "Desktop",
+      computer: "Computer",
       question: "Question",
       memory_profile: "Memory Profile",
       compact: "Compress",
@@ -65661,6 +65733,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     if (st3.spec) {
       items.push({ kind: "spec_card", id: "spec-card", spec: st3.spec });
     }
+    if (st3.planReview) {
+      items.push({ kind: "plan_card", id: "plan-card", review: st3.planReview });
+    }
     if (st3.workflowState && st3.workflowState.active) {
       items.push({ kind: "workflow", id: `wf-${st3.workflowState.workflowId}` });
     }
@@ -65778,7 +65853,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               textSegIndex++;
             } else if (seg.kind === "tool") {
               const tc2 = seg.toolId ? msg.toolCalls.find((t2) => toolCallMatchesId(t2, seg.toolId)) : void 0;
-              if (tc2) {
+              if (tc2 && tc2.name && !isHiddenTool(tc2.name)) {
                 items.push({ kind: "tool", id: `tc-${tc2.id}`, tc: tc2, messageId: msg.id });
               }
             }
@@ -65788,6 +65863,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             items.push({ kind: "thinking", id: `th-${msg.id}`, text: msg.thinking, elapsed: msg.thinkingElapsed, messageId: msg.id });
           }
           for (const tc2 of msg.toolCalls) {
+            if (!tc2.name || isHiddenTool(tc2.name)) continue;
             items.push({ kind: "tool", id: `tc-${tc2.id}`, tc: tc2, messageId: msg.id });
           }
           if (msg.content.trim().length > 0 || msg.isStreaming) {
@@ -65879,10 +65955,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.renderedKey = "";
       this.expandedItems = /* @__PURE__ */ new Set();
       this.userCollapsedItems = /* @__PURE__ */ new Set();
+      this.userExpandedItems = /* @__PURE__ */ new Set();
       this.lastAssistantMsgId = "";
+      this._lastRunning = false;
       this._inRenderForce = false;
       this.rafPending = false;
       this.liveLoader = null;
+      /** Map of file keys to markdown content for plan file rows (avoids attribute length limits). */
+      this._planFileLookup = /* @__PURE__ */ new Map();
       /** Callback invoked when the user clicks "View Changes" on an artifact file. */
       this.onViewChanges = null;
       this._parallelRenderTimer = null;
@@ -66247,7 +66327,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
       const timeline = buildTimeline(msgs);
       const key = buildRenderKey(timeline);
-      if (key !== this.renderedKey) {
+      const wasRunning = this._lastRunning;
+      this._lastRunning = state2.running;
+      if (key !== this.renderedKey || wasRunning && !state2.running) {
         console.log("[chat.render] fullRender", { msgCount: msgs.length, roles: msgs.map((m) => m.role), serverIds: msgs.map((m) => m.serverId?.slice(-12)) });
         this.fullRender(timeline, msgs);
         this.renderedKey = key;
@@ -66269,32 +66351,72 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const timeline = buildSubAgentTimeline(messages, isRunning);
       const st3 = getState();
       const autoExpand = isEnabled(st3.settings.auto_expand);
-      this.applyAutoExpand(timeline, autoExpand);
+      this.applyAutoExpand(timeline, autoExpand, isRunning);
       const html = this.buildTimelineHTML(timeline, messages, true);
       container.innerHTML = html;
       createLucideIcons();
+      if (!container.dataset.subAgentClickBound) {
+        container.addEventListener("click", (e) => this.handleDelegateClick(e));
+        container.dataset.subAgentClickBound = "true";
+      }
+    }
+    /**
+     * Single source of truth for whether a timeline item should be expanded.
+     * Honors explicit user overrides, then the special "thinking" rule, then
+     * the auto-expand setting.
+     *
+     * Rules:
+     *  - Thinking, while the model is still actively reasoning
+     *    (thinkingActive): ALWAYS expanded so the user can watch the reasoning
+     *    stream, regardless of the auto-expand setting (a user may still
+     *    explicitly collapse it).
+     *  - Otherwise: a manual collapse/expand wins; when the user hasn't touched
+     *    it, follow the auto-expand setting. This applies uniformly to thinking
+     *    (after it finishes) and to every expandable tool card, so the automation
+     *    detail behaves exactly like the main chat.
+     */
+    computeExpanded(kind, id, autoExpand, thinkingActive) {
+      const userCollapsed = this.userCollapsedItems.has(id);
+      if (kind === "thinking" && thinkingActive) {
+        return !userCollapsed;
+      }
+      if (userCollapsed) return false;
+      if (this.userExpandedItems.has(id)) return true;
+      return autoExpand;
+    }
+    /**
+     * Identify the thinking segment the model is *actively* generating.
+     *
+     * "Still thinking" means the reasoning is the last content the model has
+     * produced so far — the moment any text or tool segment appears after it,
+     * the thinking is finished even though the overall turn keeps running (e.g.
+     * while a tool executes). Only the actively-streaming thinking strip is
+     * force-expanded; finished ones fall back to the auto-expand setting.
+     */
+    activeThinkingId(timeline, isRunning) {
+      if (!isRunning) return null;
+      for (let i8 = timeline.length - 1; i8 >= 0; i8--) {
+        const it2 = timeline[i8];
+        if (it2.kind === "thinking") return it2.id;
+        if (it2.kind === "tool" || it2.kind === "assistant_text") return null;
+      }
+      return null;
     }
     /**
      * Shared auto-expand pass used by both fullRender and renderSubAgentInto
-     * so the two never drift. Auto-expands thinking strips and agent tool
-     * cards unless the user manually collapsed them.
+     * so the two never drift. Auto-expands thinking strips and every expandable
+     * tool card unless the user manually collapsed them.
      */
-    applyAutoExpand(timeline, autoExpand) {
+    applyAutoExpand(timeline, autoExpand, isRunning = false) {
+      const activeThinkingId = this.activeThinkingId(timeline, isRunning);
       for (const item of timeline) {
-        if (item.kind === "thinking") {
-          const id = item.id;
-          if (autoExpand && !this.userCollapsedItems.has(id)) {
-            this.expandedItems.add(id);
-          } else if (this.userCollapsedItems.has(id)) {
-            this.expandedItems.delete(id);
-          }
-        } else if (item.kind === "tool" && item.tc.name === "agent") {
-          const id = item.id;
-          if (autoExpand && !this.userCollapsedItems.has(id)) {
-            this.expandedItems.add(id);
-          } else if (this.userCollapsedItems.has(id)) {
-            this.expandedItems.delete(id);
-          }
+        if (item.kind !== "thinking" && item.kind !== "tool") continue;
+        const id = item.id;
+        const thinkingActive = item.kind === "thinking" && id === activeThinkingId;
+        if (this.computeExpanded(item.kind, id, autoExpand, thinkingActive)) {
+          this.expandedItems.add(id);
+        } else {
+          this.expandedItems.delete(id);
         }
       }
     }
@@ -66451,23 +66573,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.ml.classList.remove("parallel-active");
       const st3 = getState();
       const autoExpand = isEnabled(st3.settings.auto_expand);
-      for (const item of timeline) {
-        if (item.kind === "thinking") {
-          const id = item.id;
-          if (autoExpand && !this.userCollapsedItems.has(id)) {
-            this.expandedItems.add(id);
-          } else if (this.userCollapsedItems.has(id)) {
-            this.expandedItems.delete(id);
-          }
-        } else if (item.kind === "tool" && item.tc.name === "agent") {
-          const id = item.id;
-          if (autoExpand && !this.userCollapsedItems.has(id)) {
-            this.expandedItems.add(id);
-          } else if (this.userCollapsedItems.has(id)) {
-            this.expandedItems.delete(id);
-          }
-        }
-      }
+      const isRunning = st3.running;
+      this.applyAutoExpand(timeline, autoExpand, isRunning);
       let html = "";
       let turnMid = "";
       let turnActions = false;
@@ -66564,6 +66671,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           this.lastAssistantMsgId = currentAssistantMsgId;
         }
       }
+      const activeThinkingId = this.activeThinkingId(timeline, getState().running);
       for (let i8 = 0; i8 < timeline.length; i8++) {
         const item = timeline[i8];
         if (item.kind === "thinking") {
@@ -66574,11 +66682,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               bodyEl.textContent = item.text;
             }
             const shouldExpand = isEnabled(getState().settings.auto_expand);
-            const userCollapsed = this.userCollapsedItems.has(item.id);
-            if (shouldExpand && !userCollapsed && !el2.classList.contains("expanded")) {
+            const thinkingActive = item.id === activeThinkingId;
+            const wantExpanded = this.computeExpanded("thinking", item.id, shouldExpand, thinkingActive);
+            const isExpanded = el2.classList.contains("expanded");
+            if (wantExpanded && !isExpanded) {
               el2.classList.add("expanded");
               this.expandedItems.add(item.id);
-            } else if (!shouldExpand && !userCollapsed && el2.classList.contains("expanded")) {
+            } else if (!wantExpanded && isExpanded) {
               el2.classList.remove("expanded");
               this.expandedItems.delete(item.id);
             }
@@ -66619,19 +66729,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             }
           }
         }
-        const expandTool = toolItem.tc.name === "agent";
-        if (expandTool) {
-          const shouldExpandTool = isEnabled(getState().settings.auto_expand);
-          const userCollapsedTool = this.userCollapsedItems.has(toolItem.id);
-          if (shouldExpandTool && !userCollapsedTool && !el2.classList.contains("expanded")) {
-            el2.classList.add("expanded");
-            this.expandedItems.add(toolItem.id);
-          } else if (!shouldExpandTool && userCollapsedTool && el2.classList.contains("expanded")) {
-            el2.classList.remove("expanded");
-            this.expandedItems.delete(toolItem.id);
-          }
+        const shouldExpandTool = isEnabled(getState().settings.auto_expand);
+        const wantExpandedTool = this.computeExpanded("tool", toolItem.id, shouldExpandTool, false);
+        const isExpandedTool = el2.classList.contains("expanded");
+        if (wantExpandedTool && !isExpandedTool) {
+          el2.classList.add("expanded");
+          this.expandedItems.add(toolItem.id);
+        } else if (!wantExpandedTool && isExpandedTool) {
+          el2.classList.remove("expanded");
+          this.expandedItems.delete(toolItem.id);
         }
-        if (expandTool) {
+        if (toolItem.tc.name === "agent") {
           const iconEl = el2.querySelector(".agent-card-icon");
           if (iconEl) {
             const st3 = getState();
@@ -66724,6 +66832,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           return this.renderSystemMessage(item);
         case "spec_card":
           return this.renderSpecCard(item);
+        case "plan_card":
+          return this.renderPlanCard(item);
         case "workflow":
           return this.renderWorkflowCard(item);
       }
@@ -67265,6 +67375,70 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       ${footerHtml}
     </div>`;
     }
+    renderPlanCard(item) {
+      const review = item.review;
+      const status = review.status;
+      const isApproved = status === "approved";
+      const isRejected = status === "rejected";
+      const isReview = status === "review" || status === "draft";
+      const sessionId = getState().sessionId;
+      const sections = this.parsePlanSections(review.content);
+      const fileRows = [
+        { name: "plan.md", content: sections.plan, icon: "file-text" },
+        { name: "steps.md", content: sections.steps, icon: "list-ordered" },
+        { name: "checklist.md", content: sections.checklist, icon: "check-square" }
+      ];
+      const fileRowsHtml = fileRows.map((f, i8) => {
+        const fileKey = `plan-${review.review_id}-${i8}`;
+        this._planFileLookup.set(fileKey, f.content);
+        return `<div class="review-file" data-open-md="${fileKey}" data-md-title="${escapeHtml4(f.name)}">
+        <div class="review-file-row">
+          <span class="review-file-icon"><i data-lucide="${f.icon}"></i></span>
+          <span class="review-file-name">${escapeHtml4(f.name)}</span>
+        </div>
+      </div>`;
+      }).join("");
+      let footerHtml;
+      if (isReview) {
+        footerHtml = `<div class="review-footer">
+        <button class="review-btn review-btn-cancel" data-plan-reject="${sessionId}">${t("chat.reviewCancel") || "Cancel"}</button>
+        <button class="review-btn review-btn-execute" data-plan-approve="${sessionId}">${t("chat.reviewExecute") || "Execute"}</button>
+      </div>`;
+      } else if (isApproved) {
+        footerHtml = `<div class="review-footer"><span class="review-status review-status-ok"><i data-lucide="check-circle"></i> ${t("chat.reviewExecuted") || "Executed"}</span></div>`;
+      } else if (isRejected) {
+        footerHtml = `<div class="review-footer"><span class="review-status review-status-no"><i data-lucide="x-circle"></i> ${t("chat.reviewCancelled") || "Cancelled"}</span></div>`;
+      } else {
+        footerHtml = "";
+      }
+      return `<div class="review-modal review-plan">
+      <div class="review-body">
+        <p class="review-main">${escapeHtml4(t("chat.reviewPlanMain") || "The plan has been generated. Proceed with execution based on this document?")}</p>
+        <p class="review-sub">${escapeHtml4(t("chat.reviewPlanSub") || "If it does not match your intent, review and edit the files, or enter guidance in the input box.")}</p>
+        <div class="review-filelist">${fileRowsHtml}</div>
+      </div>
+      ${footerHtml}
+    </div>`;
+    }
+    parsePlanSections(text2) {
+      const result = { plan: "", steps: "", checklist: "" };
+      const re3 = /^##\s+(Plan|Steps|Checklist)\s*$/gmi;
+      const parts = text2.split(re3);
+      if (parts.length < 3) {
+        result.plan = text2;
+        return result;
+      }
+      let key = "";
+      for (let i8 = 1; i8 < parts.length; i8++) {
+        const trimmed = parts[i8].trim();
+        if (trimmed === "Plan" || trimmed === "Steps" || trimmed === "Checklist") {
+          key = trimmed.toLowerCase();
+        } else if (key) {
+          result[key] = (result[key] + "\n\n" + parts[i8]).trim();
+        }
+      }
+      return result;
+    }
     renderWorkflowCard(_item) {
       const wf = getState().workflowState;
       if (!wf) return "";
@@ -67569,16 +67743,41 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         send({ type: "spec_reject", session_id: sessionId, feedback });
         return;
       }
+      const openMdBtn = target.closest("[data-open-md]");
+      if (openMdBtn) {
+        e.stopPropagation();
+        const fileKey = openMdBtn.getAttribute("data-open-md") || "";
+        const title = openMdBtn.getAttribute("data-md-title") || "";
+        const content = this._planFileLookup.get(fileKey) || "";
+        window.__sessionInner?.openMarkdownPreview(content, title);
+        return;
+      }
+      const planApproveBtn = target.closest("[data-plan-approve]");
+      if (planApproveBtn) {
+        e.stopPropagation();
+        const sessionId = planApproveBtn.getAttribute("data-plan-approve") || "";
+        send({ type: "plan_approve", session_id: sessionId });
+        return;
+      }
+      const planRejectBtn = target.closest("[data-plan-reject]");
+      if (planRejectBtn) {
+        e.stopPropagation();
+        const sessionId = planRejectBtn.getAttribute("data-plan-reject") || "";
+        send({ type: "plan_reject", session_id: sessionId });
+        return;
+      }
     }
     toggleItem(id, el2) {
       if (this.expandedItems.has(id)) {
         this.expandedItems.delete(id);
         el2.classList.remove("expanded");
         this.userCollapsedItems.add(id);
+        this.userExpandedItems.delete(id);
       } else {
         this.expandedItems.add(id);
         el2.classList.add("expanded");
         this.userCollapsedItems.delete(id);
+        this.userExpandedItems.add(id);
       }
     }
     autoScroll() {
@@ -82678,7 +82877,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
 
   // renderer/src/browser.ts
   init_state();
-  init_i18n();
+  init_ws();
   var LOAD_TIMEOUT_MS = 3e4;
   var SEARCH_ENGINES = [
     { id: "bing", name: "Bing", homepage: "https://www.bing.com", searchUrl: "https://www.bing.com/search?q={query}" },
@@ -82716,9 +82915,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this._showedError = false;
       this.explicitNav = true;
       this._destroyed = false;
+      this._webContentsId = -1;
       this._mainLoaded = false;
-      this._siteInfoPopup = null;
-      this._secure = false;
       this._bookmarks = null;
       this.container = container;
       this._onTitleChange = options.onTitleChange;
@@ -82741,7 +82939,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         <button class="browser-nav-btn" data-nav="reload" title="Reload">
           <svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
-        <button class="browser-site-info-btn" title="View site information"></button>
         <input type="text" class="browser-url-input" value="${startUrl}" placeholder="\u641C\u7D22\u6216\u8F93\u5165 web \u5730\u5740 / Search or enter web address" spellcheck="false" />
         <button class="browser-star-btn" title="Bookmark this page">\u2606</button>
         <button class="browser-settings-btn" title="Settings">
@@ -82777,13 +82974,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.retryBtn = container.querySelector(".browser-overlay-retry");
       this._settingsBtn = container.querySelector(".browser-settings-btn");
       this._starBtn = container.querySelector(".browser-star-btn");
-      this._siteInfoBtn = container.querySelector(".browser-site-info-btn");
       this._bindSettings();
       this._bindStarButton();
       this.loadBookmarks();
       const wv = container.querySelector("webview");
       this.webview = wv;
-      this._bindSiteInfo();
       this.bindEvents();
       this.bindNavButtons();
       this.bindUrlInput();
@@ -82815,6 +83010,24 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           }
         });
       }
+      wv.addEventListener("dom-ready", () => {
+        try {
+          const wcId = wv.getWebContentsId();
+          this._webContentsId = wcId;
+          const api2 = window.electronAPI;
+          if (api2?.registerCdpWebview) {
+            api2.registerCdpWebview(wcId).then((port) => {
+              this._cdpPort = port;
+              const url = `ws://127.0.0.1:${port}`;
+              sendSetCdpUrl(url);
+            }).catch((err) => {
+              console.warn("[browser] CDP relay registration failed:", err);
+            });
+          }
+        } catch (err) {
+          console.warn("[browser] CDP setup failed:", err);
+        }
+      }, { once: true });
     }
     get cdpPort() {
       return this._cdpPort;
@@ -82901,6 +83114,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         this.loader.destroy();
         this.loader = null;
       }
+      if (this._webContentsId > 0) {
+        const api = window.electronAPI;
+        if (api?.unregisterCdpWebview) {
+          api.unregisterCdpWebview(this._webContentsId).catch(() => {
+          });
+        }
+      }
       try {
         this.webview.remove();
       } catch {
@@ -82980,161 +83200,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       div.textContent = str;
       return div.innerHTML;
     }
-    _tt(key, fallback) {
-      const r = t(key);
-      return r === key ? fallback : r;
-    }
-    _showCookieDetail(url) {
-      const api = window.electronAPI;
-      if (!api?.getCookiesForOrigin) return;
-      api.getCookiesForOrigin(url).then((res) => {
-        const cookies = res?.cookies || [];
-        const overlay = document.createElement("div");
-        overlay.className = "toast-overlay";
-        overlay.innerHTML = `
-        <div class="toast-dialog dialog-wide">
-          <div class="toast-title">${this._tt("settings.cookies", "Cookies")}</div>
-          <div class="dialog-body" style="max-height:400px;overflow-y:auto">
-            ${cookies.length === 0 ? `<div style="color:var(--text-muted);padding:12px">${this._tt("settings.noCookies", "No cookies")}</div>` : cookies.map((c) => `
-              <div class="cookie-detail-row">
-                <div class="cookie-detail-name">${this.esc(c.name)}</div>
-                <div class="cookie-detail-value">${this.esc(c.value)}</div>
-                <div class="cookie-detail-meta">${this.esc(c.domain)}${c.path} \xB7 ${c.secure ? "HTTPS" : "HTTP"} \xB7 ${c.httpOnly ? "HttpOnly" : ""}</div>
-              </div>
-            `).join("")}
-          </div>
-          <div class="dialog-footer">
-            <button class="btn" id="cookie-detail-close">${this._tt("common.close", "Close")}</button>
-          </div>
-        </div>`;
-        document.body.appendChild(overlay);
-        overlay.querySelector("#cookie-detail-close")?.addEventListener("click", () => overlay.remove());
-        overlay.addEventListener("click", (e) => {
-          if (e.target === overlay) overlay.remove();
-        });
-      }).catch(() => {
-      });
-    }
-    _updateSiteInfoIcon(url) {
-      const isSecure = url.startsWith("https://");
-      this._secure = isSecure;
-      if (isSecure) {
-        this._siteInfoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`;
-        this._siteInfoBtn.style.color = "var(--success)";
-      } else {
-        this._siteInfoBtn.innerHTML = `<span style="font-style:italic;font-weight:700;font-size:13px">i</span>`;
-        this._siteInfoBtn.style.color = "var(--text-muted)";
-      }
-    }
-    _closeSiteInfoPopup() {
-      if (this._siteInfoPopup) {
-        this._siteInfoPopup.remove();
-        this._siteInfoPopup = null;
-      }
-    }
-    async _openSiteInfo() {
-      this._closeSiteInfoPopup();
-      const url = this.webview.getURL();
-      if (!url || url === "about:blank") return;
-      const api = window.electronAPI;
-      if (!api?.getSiteInfo) return;
-      const info = await api.getSiteInfo(url);
-      if (!info) return;
-      const permLabel = (name) => {
-        const r = t("settings.perm." + name);
-        return r === "settings.perm." + name ? name : r;
-      };
-      const popup = document.createElement("div");
-      popup.className = "browser-site-info-popup";
-      const securityIcon = info.isSecure ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>` : `<span style="font-style:italic;font-weight:700;font-size:16px;color:var(--text-muted)">i</span>`;
-      const securityTitle = info.isSecure ? this._tt("settings.connectionSecure", "Connection is secure") : this._tt("settings.connectionNotSecure", "Connection is not secure");
-      popup.innerHTML = `
-      <div class="site-info-section">
-        <div class="site-info-section-title">${this._tt("settings.connection", "Connection")}</div>
-        <div class="site-info-security-row">
-          <span class="site-info-security-icon">${securityIcon}</span>
-          <span class="site-info-security-title">${securityTitle}</span>
-        </div>
-      </div>
-      <div class="site-info-divider"></div>
-      <div class="site-info-section">
-        <div class="site-info-section-title">${this._tt("settings.permissions", "Permissions")}</div>
-        <div class="site-info-permissions" id="site-info-perms">
-          ${info.permissions.length === 0 ? `<div class="site-info-perm-none">${this._tt("settings.noPermissions", "No permissions requested")}</div>` : info.permissions.map((p) => `
-            <label class="site-info-perm-row">
-              <span class="site-info-perm-name">${permLabel(p.name)}</span>
-              <input type="checkbox" class="site-info-perm-toggle" data-perm="${p.name}" ${p.granted ? "checked" : ""}>
-            </label>
-          `).join("")}
-        </div>
-      </div>
-      <div class="site-info-divider"></div>
-      <div class="site-info-section">
-        <div class="site-info-section-title">${this._tt("settings.cookies", "Cookies")}</div>
-        <div class="site-info-cookies-row" id="site-info-cookies-row" style="cursor:pointer">
-          <span class="site-info-cookie-count">${info.cookieCount} ${this._tt("settings.cookiesInUse", "cookies in use")}</span>
-          <span style="color:var(--text-muted)">\u203A</span>
-        </div>
-      </div>`;
-      popup.querySelectorAll(".site-info-perm-toggle").forEach((cb) => {
-        cb.addEventListener("change", async (e) => {
-          const input = e.target;
-          const perm = input.getAttribute("data-perm") || "";
-          const granted = input.checked;
-          if (api.setPermission && info.origin) {
-            await api.setPermission(info.origin, perm, granted);
-          }
-        });
-      });
-      const cookiesRow = popup.querySelector("#site-info-cookies-row");
-      if (cookiesRow) {
-        cookiesRow.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this._closeSiteInfoPopup();
-          this._showCookieDetail(url);
-        });
-      }
-      const navBar = this.container.querySelector(".browser-nav-bar");
-      const btnRect = this._siteInfoBtn.getBoundingClientRect();
-      const navRect = navBar.getBoundingClientRect();
-      popup.style.position = "absolute";
-      popup.style.top = btnRect.bottom - navRect.top + "px";
-      popup.style.left = "0px";
-      popup.style.zIndex = "100";
-      navBar.style.position = "relative";
-      navBar.appendChild(popup);
-      this._siteInfoPopup = popup;
-      const closeHandler = (e) => {
-        if (!popup.contains(e.target) && e.target !== this._siteInfoBtn) {
-          this._closeSiteInfoPopup();
-          document.removeEventListener("mousedown", closeHandler);
-        }
-      };
-      setTimeout(() => document.addEventListener("mousedown", closeHandler), 0);
-    }
-    _bindSiteInfo() {
-      this.webview.addEventListener("dom-ready", () => {
-        try {
-          this._updateSiteInfoIcon(this.webview.getURL() || "");
-        } catch {
-        }
-      }, { once: true });
-      this._siteInfoBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (this._siteInfoPopup) {
-          this._closeSiteInfoPopup();
-        } else {
-          this._openSiteInfo();
-        }
-      });
-      this.webview.addEventListener("did-navigate", (e) => {
-        this._updateSiteInfoIcon(e.url || "");
-        this._closeSiteInfoPopup();
-      });
-      this.webview.addEventListener("did-navigate-in-page", (e) => {
-        this._updateSiteInfoIcon(e.url || "");
-      });
-    }
     bindEvents() {
       const wv = this.webview;
       wv.addEventListener("page-title-updated", (e) => {
@@ -83178,9 +83243,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       wv.addEventListener("did-finish-load", () => {
         this._mainLoaded = true;
         this.clearLoadTimer();
-        if (this.isErrorPage()) {
+        const url = this.webview.getURL();
+        if (url && url.startsWith("chrome-error://")) {
           this.showError("Failed to load", "The page could not be loaded.");
-        } else if (!this._showedError) {
+        } else {
           this.hideStatus();
         }
         this._addHistoryEntry();
@@ -83526,8 +83592,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             if (nextIdx >= 0) activeIdx = nextIdx;
           }
           setModelConfigs(currentModels, activeIdx);
+          send({ type: "update_models", models: currentModels, active_model_index: activeIdx });
         }
-        send({ type: "update_models", models: currentModels, active_model_index: getState().activeModelIndex });
       });
       this.panels.model.addEventListener("click", (e) => {
         const target = e.target;
@@ -83540,6 +83606,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               const currentModels = [...getState().modelConfigs];
               currentModels.splice(idx, 1);
               let activeIdx = getState().activeModelIndex;
+              if (idx < activeIdx) activeIdx--;
               if (activeIdx >= currentModels.length) activeIdx = Math.max(0, currentModels.length - 1);
               setModelConfigs(currentModels, activeIdx);
               send({ type: "delete_model", model_index: idx });
@@ -83821,6 +83888,21 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             successOverlay.style.display = "flex";
             successOverlay.style.animation = "fade-in 0.3s ease";
           }
+          if (event.credentials) {
+            const current = {
+              ...getState().settings,
+              adapter_weixin_enabled: true,
+              adapter_weixin_app_id: event.credentials.ilink_bot_id || "",
+              adapter_weixin_token: event.credentials.bot_token || "",
+              adapter_weixin_api_url: event.credentials.baseurl || ""
+            };
+            setSettings(current);
+          }
+          setTimeout(() => {
+            this._wechatDialogOpen = false;
+            document.getElementById("wechat-qr-overlay")?.remove();
+            if (this.currentPanel === "gateway") this.renderGateway();
+          }, 1500);
           return;
         }
         if (event.success && event.qrcode_url) {
@@ -83870,8 +83952,19 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             countdownEl.textContent = "";
           }
           if (statusEl) {
-            statusEl.style.display = "block";
-            statusEl.textContent = `\u274C ${event.message}`;
+            statusEl.style.display = "flex";
+            statusEl.style.flexDirection = "column";
+            statusEl.style.alignItems = "center";
+            statusEl.style.justifyContent = "center";
+            statusEl.style.gap = "8px";
+            statusEl.style.padding = "40px 0";
+            statusEl.style.color = "var(--text-muted)";
+            statusEl.innerHTML = `
+            <i data-lucide="scan-line" style="width:32px;height:32px;opacity:0.3"></i>
+            <span style="font-size:13px;opacity:0.7">${event.message || t("settings.wechatScanning")}</span>`;
+            if (typeof window.lucide !== "undefined") {
+              window.lucide.createIcons({ root: statusEl });
+            }
           }
         }
       });
@@ -85127,7 +85220,22 @@ ${def.id === "weixin" ? connected ? `
           unbindBtn.addEventListener("click", () => {
             Dialog.confirm(t("settings.wechatUnbind"), t("settings.wechatUnbindConfirm")).then((confirmed) => {
               if (confirmed) {
-                send({ type: "configure", config: { adapter_weixin_app_id: "", adapter_weixin_token: "", adapter_weixin_api_url: "" } });
+                const unbindConfig = {
+                  adapter_weixin_enabled: false,
+                  adapter_weixin_app_id: "",
+                  adapter_weixin_token: "",
+                  adapter_weixin_api_url: ""
+                };
+                send({ type: "configure", config: unbindConfig });
+                const current = {
+                  ...getState().settings,
+                  adapter_weixin_enabled: false,
+                  adapter_weixin_app_id: "",
+                  adapter_weixin_token: "",
+                  adapter_weixin_api_url: ""
+                };
+                setSettings(current);
+                this.renderGateway();
               }
             });
           });
@@ -87320,6 +87428,7 @@ No activity`;
       const s15 = st3.settings;
       const currentSearchEngine = s15.default_search_engine || "bing";
       const searchEngineOptions = SEARCH_ENGINES.map((e) => ({ id: e.id, label: e.name }));
+      const currentSearchEngineUrl = SEARCH_ENGINES.find((e) => e.id === currentSearchEngine)?.searchUrl || "https://www.bing.com/search?q={query}";
       this.panels.browser.innerHTML = `
       <div class="settings-section-title"><i data-lucide="globe" class="lucide section-title-icon"></i> ${t("settings.browserSettings")}</div>
 
@@ -87386,6 +87495,10 @@ No activity`;
       }
       this.bindDropdown("dd-search-engine", (v2) => {
         this.saveSetting("default_search_engine", v2);
+        const engine = SEARCH_ENGINES.find((e) => e.id === v2);
+        if (engine) {
+          this.saveSetting("default_search_engine_url", engine.searchUrl);
+        }
         this.renderBrowser();
       });
       document.getElementById("browser-clear-data")?.addEventListener("click", async () => {
@@ -92166,20 +92279,27 @@ No activity`;
         timeDropdown.classList.add("open");
       });
       let selectedModelIndex = editJob?.model_index ?? getState().activeModelIndex;
+      const _allModelsInit = getState().modelConfigs;
+      if (_allModelsInit && _allModelsInit[selectedModelIndex]?.enabled === false) {
+        const _firstEnabled = _allModelsInit.findIndex((m) => m.enabled !== false);
+        if (_firstEnabled >= 0) selectedModelIndex = _firstEnabled;
+      }
       const modelTrigger = overlay.querySelector("#auto-dlg-model-trigger");
       const modelDropdown = overlay.querySelector("#auto-dlg-model-dropdown");
       const buildModelOptions = () => {
-        const models = getState().modelConfigs;
-        if (!models || models.length === 0) {
+        const allModels = getState().modelConfigs;
+        const models = allModels ? allModels.filter((m) => m.enabled !== false) : [];
+        if (models.length === 0) {
           modelDropdown.innerHTML = `<div class="settings-dropdown-item" style="opacity:0.5;cursor:default">\u2014</div>`;
           return;
         }
-        modelDropdown.innerHTML = models.map(
-          (m, i8) => `<div class="settings-dropdown-item${i8 === selectedModelIndex ? " selected" : ""}" data-index="${i8}">
+        modelDropdown.innerHTML = models.map((m) => {
+          const origIdx = allModels.indexOf(m);
+          return `<div class="settings-dropdown-item${origIdx === selectedModelIndex ? " selected" : ""}" data-index="${origIdx}">
           <span>${escapeHtml5(m.name)}</span>
           <span style="opacity:0.5;margin-left:6px;font-size:11px">${escapeHtml5(m.model_id)}</span>
-        </div>`
-        ).join("");
+        </div>`;
+        }).join("");
         modelDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
           item.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -105703,6 +105823,64 @@ void main() {
 
   // renderer/src/session_inner.ts
   init_context_menu();
+
+  // renderer/src/markdown_preview.ts
+  var MarkdownPreviewView = class {
+    constructor(container, _title, opts) {
+      this._raw = "";
+      this._basePath = "";
+      this._destroyed = false;
+      this.container = container;
+      this._onOpenLink = opts?.onOpenLink;
+      container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;height:100%;";
+      container.innerHTML = `<div class="markdown-preview-body"></div>`;
+      this._body = container.querySelector(".markdown-preview-body");
+      this._body.addEventListener("click", (e) => this._onClick(e));
+    }
+    setContent(markdown, basePath) {
+      this._raw = markdown;
+      if (basePath !== void 0) this._basePath = basePath;
+      this._render();
+    }
+    setTitle(_title) {
+    }
+    _resolveImages(html) {
+      if (!this._basePath) return html;
+      const dir = this._basePath.replace(/\\/g, "/").replace(/\/?$/, "/");
+      return html.replace(/<img\s+[^>]*src="([^"]+)"[^>]*>/gi, (match2, src) => {
+        if (/^(https?:|data:|local:\/\/\/|file:\/\/|\/)/.test(src)) return match2;
+        const parts = dir.split("/").filter(Boolean);
+        const rel = src.replace(/\\/g, "/");
+        for (const seg of rel.split("/")) {
+          if (seg === "..") {
+            if (parts.length > 1) parts.pop();
+          } else if (seg !== "." && seg) parts.push(seg);
+        }
+        return match2.replace(`src="${src}"`, `src="local:///${parts.join("/")}"`);
+      });
+    }
+    _onClick(e) {
+      const a = e.target.closest("a");
+      if (!a || !a.href) return;
+      const href = a.getAttribute("href") || "";
+      if (href.startsWith("#")) return;
+      e.preventDefault();
+      if (this._onOpenLink) {
+        this._onOpenLink(href);
+      }
+    }
+    _render() {
+      if (this._destroyed) return;
+      this._body.innerHTML = renderMarkdown(this._raw);
+      this._body.innerHTML = this._resolveImages(this._body.innerHTML);
+    }
+    destroy() {
+      this._destroyed = true;
+      this.container.innerHTML = "";
+    }
+  };
+
+  // renderer/src/session_inner.ts
   var TABS_STORAGE_KEY = "session-sidebar-tabs";
   function _saveTabs(tabs) {
     try {
@@ -105726,6 +105904,8 @@ void main() {
         return t("sessionInner.tabReview");
       case "browser":
         return t("sessionInner.tabBrowser");
+      case "markdown":
+        return t("sessionInner.tabMarkdown");
       default:
         return id;
     }
@@ -105740,6 +105920,8 @@ void main() {
         return "eye";
       case "browser":
         return "globe";
+      case "markdown":
+        return "file-text";
       default:
         return "square";
     }
@@ -105798,8 +105980,10 @@ void main() {
       this.panelShellPath = /* @__PURE__ */ new Map();
       this.panelShellArgs = /* @__PURE__ */ new Map();
       this.panelBrowsers = /* @__PURE__ */ new Map();
+      this.panelMarkdownPreviews = /* @__PURE__ */ new Map();
       this._terminalCounter = 0;
       this._browserCounter = 0;
+      this._markdownCounter = 0;
       this._availableShells = [];
       this._shellsLoaded = false;
       this._editorView = null;
@@ -105856,6 +106040,20 @@ void main() {
       this.renderTabs();
       this.bindAddButton();
       this.bindResize();
+      window.addEventListener("browser-tool-call", () => {
+        const panel = document.getElementById("session-inner-sidebar");
+        const mainBody = document.getElementById("main-body");
+        if (panel && mainBody && panel.classList.contains("hidden")) {
+          panel.classList.remove("hidden");
+          mainBody.classList.remove("sidebar-hidden");
+          document.getElementById("app")?.classList.add("sidebar-collapsed");
+          this.saveSidebarVisibility();
+        }
+        const existingBrowser = this.tabs.find((t2) => t2.type === "browser");
+        if (!existingBrowser) {
+          this.createTab("browser");
+        }
+      });
     }
     /** Build the storage key: session-level in normal mode, workspace-level in ws mode. */
     _tabStorageKey() {
@@ -106198,6 +106396,10 @@ void main() {
         this._browserCounter++;
         id = `browser-${this._browserCounter}`;
         label = t("sessionInner.tabBrowser");
+      } else if (type === "markdown") {
+        this._markdownCounter++;
+        id = `markdown-${this._markdownCounter}`;
+        label = opts?.title || t("sessionInner.tabMarkdown");
       } else {
         id = type;
         label = tabLabel(type);
@@ -106206,6 +106408,9 @@ void main() {
       if (opts?.shellPath !== void 0) tab.shellPath = opts.shellPath;
       if (opts?.shellArgs !== void 0) tab.shellArgs = opts.shellArgs;
       if (opts?.startUrl !== void 0) tab.startUrl = opts.startUrl;
+      if (opts?.content !== void 0) tab.content = opts.content;
+      if (opts?.title !== void 0) tab.title = opts.title;
+      if (opts?.filePath !== void 0) tab.filePath = opts.filePath;
       this.tabs.push(tab);
       _saveTabs(this.tabs);
       this.activeTab = id;
@@ -106230,6 +106435,8 @@ void main() {
           this.setupReviewPanel(panel);
         } else if (t2.type === "browser") {
           this.setupBrowserPanel(panel, t2.id, t2.startUrl);
+        } else if (t2.type === "markdown") {
+          this.setupMarkdownPanel(panel, t2.id, t2.content, t2.title, t2.filePath);
         }
         this.tabBody.appendChild(panel);
       }
@@ -106259,6 +106466,13 @@ void main() {
             if (bv) {
               bv.destroy();
               this.panelBrowsers.delete(pid);
+            }
+          }
+          if (ptype === "markdown") {
+            const mp = this.panelMarkdownPreviews.get(pid);
+            if (mp) {
+              mp.destroy();
+              this.panelMarkdownPreviews.delete(pid);
             }
           }
           p.remove();
@@ -107357,6 +107571,58 @@ void main() {
         window.lucide.createIcons({ root: panel });
       }
     }
+    setupMarkdownPanel(panel, tabId, content, title, filePath) {
+      panel.style.overflow = "hidden";
+      const existing = this.panelMarkdownPreviews.get(tabId);
+      if (existing) {
+        panel.appendChild(existing.container);
+        return;
+      }
+      const basePath = filePath ? filePath.replace(/[/\\][^/\\]+$/, "") : "";
+      const container = document.createElement("div");
+      container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;height:100%;";
+      panel.appendChild(container);
+      const mp = new MarkdownPreviewView(container, title || "", {
+        onOpenLink: (href) => this._handleMarkdownLink(href, basePath)
+      });
+      if (content) mp.setContent(content, basePath || void 0);
+      this.panelMarkdownPreviews.set(tabId, mp);
+    }
+    async openMarkdownPreview(content, title, filePath) {
+      const existing = filePath ? this.tabs.find((t2) => t2.type === "markdown" && t2.filePath === filePath) : this.tabs.find((t2) => t2.type === "markdown");
+      if (existing) {
+        this.activeTab = existing.id;
+        existing.content = content;
+        if (title) existing.title = title;
+        const mp = this.panelMarkdownPreviews.get(existing.id);
+        const basePath = filePath ? filePath.replace(/[/\\][^/\\]+$/, "") : "";
+        if (mp) mp.setContent(content, basePath || void 0);
+        await this.renderTabs();
+        return;
+      }
+      await this.createTab("markdown", { content, title, filePath });
+    }
+    _handleMarkdownLink(href, basePath) {
+      if (/^https?:\/\//i.test(href)) {
+        const api = window.electronAPI;
+        if (api?.openExternal) api.openExternal(href);
+        return;
+      }
+      if (href.startsWith("/")) {
+        this.openFileInEditor(href);
+        return;
+      }
+      if (basePath) {
+        const dir = basePath.replace(/\\/g, "/").replace(/\/?$/, "/");
+        const parts = dir.split("/").filter(Boolean);
+        for (const seg of href.replace(/\\/g, "/").split("/")) {
+          if (seg === "..") {
+            if (parts.length > 1) parts.pop();
+          } else if (seg !== "." && seg) parts.push(seg);
+        }
+        this.openFileInEditor(parts.join("/"));
+      }
+    }
     renderTabLabels() {
       this.tabList.querySelectorAll(".tab").forEach((el2) => {
         const id = el2.dataset.tab;
@@ -107887,7 +108153,11 @@ void main() {
           };
           addAttachments([att]);
         } else if (action === "preview" && api2) {
-          this.openFileInEditor(treeCtxPath, true);
+          const result = await api2.readFile(treeCtxPath);
+          if (result) {
+            const name = treeCtxPath.split(/[/\\]/).pop() || treeCtxPath;
+            this.openMarkdownPreview(result.content, name, treeCtxPath);
+          }
         }
         treeCtxMenu.classList.add("hidden");
       });
@@ -108066,6 +108336,9 @@ void main() {
     async openFileInEditor(filePath, preview = false) {
       const name = filePath.split(/[/\\]/).pop() || filePath;
       this._editorCtxTarget = name;
+      if (!this.tabs.some((t2) => t2.type === "editor")) {
+        await this.createTab("editor");
+      }
       const panel = this.tabBody.querySelector('[data-panel="editor"]');
       if (!panel) return;
       const emptyEl = panel.querySelector(".si-editor-empty");
@@ -108084,16 +108357,11 @@ void main() {
         if (!api) return;
         const result = await api.readFile(filePath);
         if (!result) return;
-        const html = renderMarkdown(result.content);
-        container.innerHTML = `<div class="si-editor-preview" style="display:flex;flex-direction:column;height:100%"><div class="msg-text" style="padding:16px;overflow-y:auto;flex:1">${html}</div></div>`;
+        await this.openMarkdownPreview(result.content, name);
         return;
       }
       await this._loadEditorFile(filePath);
-      if (!this.tabs.some((t2) => t2.type === "editor")) {
-        this.createTab("editor");
-      } else {
-        this.activateTab("editor");
-      }
+      this.activateTab("editor");
     }
     // ref for CSS class toggling
     /** Public entry point called from App when a "View Changes" button is clicked. */
@@ -108271,6 +108539,13 @@ void main() {
         if (bv) {
           bv.destroy();
           this.panelBrowsers.delete(id);
+        }
+      }
+      if (tab.type === "markdown") {
+        const mp = this.panelMarkdownPreviews.get(id);
+        if (mp) {
+          mp.destroy();
+          this.panelMarkdownPreviews.delete(id);
         }
       }
       if (tab.type === "editor") {
@@ -110492,11 +110767,21 @@ void main() {
       const renderMainPage = (mainPage) => {
         const st3 = getState();
         const allModels = st3.modelConfigs || [];
-        const activeIdx = st3.activeModelIndex;
+        let activeIdx = st3.activeModelIndex;
         const active = allModels[activeIdx];
         const models = allModels.filter((m) => m.enabled !== false);
-        const isActiveUsable = active && active.enabled !== false;
-        selector.textContent = isActiveUsable ? active.name || active.model_id : "NONE";
+        let isActiveUsable = active && active.enabled !== false;
+        if (!isActiveUsable && models.length > 0) {
+          const fallback = models[0];
+          const fallbackIdx = allModels.indexOf(fallback);
+          if (fallbackIdx >= 0 && fallbackIdx !== activeIdx) {
+            activeIdx = fallbackIdx;
+            isActiveUsable = true;
+            setModelConfigs(allModels, activeIdx);
+            send({ type: "set_active_model", model_index: activeIdx });
+          }
+        }
+        selector.textContent = isActiveUsable ? allModels[activeIdx]?.name || allModels[activeIdx]?.model_id || "NONE" : "NONE";
         let thinkingEntry = "";
         if (isActiveUsable && isThinkingSelectable(active)) {
           const lvlLabel = formatLevel(getCurrentLevel(active));

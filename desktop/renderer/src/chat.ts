@@ -138,7 +138,7 @@ const FILE_READ_TOOLS = new Set(["read", "file_read"]);
 
 function isExpandableStripTool(name: string): boolean {
   return name === "search" || name === "grep" || name === "glob" || name === "codebase" ||
-         name === "web_search" || name === "computer" || name === "desktop";
+         name === "web_search";
 }
 
 function isToolItemTool(name: string): boolean {
@@ -149,7 +149,8 @@ function isToolItemTool(name: string): boolean {
          name === "find_tool" ||
          name === "web_fetch" || name === "git" || name === "lsp" || name === "notebook" ||
          name === "rest_client" || name === "browser" || name === "database" || name === "docker" ||
-         name === "pdf" || name === "deploy" || name === "apply_patch";
+         name === "pdf" || name === "deploy" || name === "apply_patch" ||
+         name === "computer" || name === "desktop";
 }
 
 function isHiddenTool(name: string): boolean {
@@ -228,36 +229,73 @@ function getToolIcon(name: string, terminal?: string): string {
   }
   if (isFileMutationTool(name)) return "pencil-line";
   if (isFileReadTool(name)) return "eye";
+  // Web / search / discovery
   if (name === "web_search" || name === "web_fetch") return "globe";
-  if (name === "search" || name === "grep" || name === "codebase") return "search";
+  if (name === "search" || name === "grep") return "search";
+  if (name === "codebase" || name.startsWith("codebase")) return "search";
   if (name === "find_tool") return "compass";
   if (name === "glob") return "folder-search";
+  // Memory / task / cron (specific match before the prefix fallbacks)
+  if (name === "memory_profile") return "user-circle";
+  if (name === "memory" || name.startsWith("memory_")) return "database";
+  if (name === "task" || name.startsWith("task_")) return "list-checks";
+  if (name.startsWith("cron_")) return "clock-9";
+  // Skills / MCP / agents / orchestration
   if (name === "skill") return "wand-2";
   if (name === "mcp" || name.startsWith("mcp__")) return "plug";
-  if (name.startsWith("memory_")) return "database";
-  if (name.startsWith("task_")) return "list-checks";
   if (name === "agent") return "zap";
+  if (name === "swarm") return "users";
+  if (name === "workflow") return "workflow";
+  // Compute / automation environments
   if (name === "browser") return "monitor";
-  if (name === "computer" || name === "desktop") return "container";
+  if (name === "computer" || name === "computer_use" || name === "vlm_computer_use" || name === "desktop") return "container";
+  if (name === "docker") return "container";
+  if (name === "ssh") return "terminal";
+  // Dev tooling
   if (name === "notebook") return "notebook-pen";
   if (name === "git") return "git-branch";
+  if (name === "github") return "github";
   if (name === "lsp") return "code-2";
   if (name === "database") return "database";
-  if (name === "docker") return "container";
-  if (name === "pdf") return "file-text";
-  if (name === "deploy") return "rocket";
-  if (name === "rest_client") return "cloud";
+  if (name === "diff") return "git-compare";
+  if (name === "json_tool") return "braces";
+  if (name === "lint_format") return "check-check";
+  if (name === "test_run") return "flask-conical";
+  if (name === "env_manager") return "settings-2";
   if (name === "apply_patch") return "git-pull-request";
-  if (name === "image") return "image";
+  if (name === "manage") return "settings";
+  // Content / media generation
+  if (name === "pdf" || name === "document") return "file-text";
+  if (name === "presentation") return "presentation";
   if (name === "spreadsheet") return "table";
-  if (name.startsWith("cron_")) return "clock-9";
-    if (name === "todo") return "check-circle-2";
-    if (name === "plan") return "file-text";
-    if (name === "question") return "help-circle";
-    if (name === "memory_profile") return "user-circle";
-    if (name === "compact") return "shrink";
-    if (name === "info") return "layout-dashboard";
-    return "";
+  if (name === "chart") return "bar-chart-3";
+  if (name === "diagram") return "workflow";
+  if (name === "image" || name === "generate_image" || name === "edit_image" || name === "image_variation") return "image";
+  if (name === "qr_code") return "qr-code";
+  if (name === "media") return "film";
+  if (name === "transcribe_audio" || name === "translate_audio") return "mic";
+  if (name === "translation") return "languages";
+  if (name === "archive") return "archive";
+  if (name === "hash_crypto") return "hash";
+  // Cloud / network / provider APIs
+  if (name === "rest_client" || name === "cloud_storage") return "cloud";
+  if (name === "deploy") return "rocket";
+  if (name === "email") return "mail";
+  if (name === "notify") return "bell";
+  if (name === "file_api") return "file";
+  if (name === "batch_api") return "layers";
+  if (name === "fine_tuning_api") return "sliders-horizontal";
+  if (name === "create_embeddings") return "boxes";
+  if (name === "create_moderation") return "shield-check";
+  // Misc known cards
+  if (name === "todo") return "check-circle-2";
+  if (name === "plan") return "file-text";
+  if (name === "question") return "help-circle";
+  if (name === "compact") return "shrink";
+  if (name === "info") return "layout-dashboard";
+  // Fallback: never leave a tool with a blank icon gap — show a neutral
+  // "tool" glyph so unmapped/MCP/provider tools still read as tool calls.
+  return "wrench";
 }
 
 function formatToolName(name: string, terminal?: string): string {
@@ -276,7 +314,7 @@ function formatToolName(name: string, terminal?: string): string {
     memory_create: "Memory", memory_read: "Memory", memory_update: "Memory", memory_delete: "Memory", memory_search: "Memory",
     task_create: "Task", task_list: "Task", task_get: "Task", task_update: "Task", task_stop: "Task", task_output: "Task",
     cron_create: "Cron", cron_delete: "Cron", cron_list: "Cron",
-    rest_client: "Rest Client", desktop: "Desktop",
+    rest_client: "Rest Client", desktop: "Desktop", computer: "Computer",
     question: "Question", memory_profile: "Memory Profile",
     compact: "Compress",
     info: "Info Card",
@@ -694,6 +732,7 @@ export type TimelineItem =
   | { kind: "compact"; id: string }
   | { kind: "system_message"; id: string; content: string; kindTag: string }
   | { kind: "spec_card"; id: string; spec: import("./types.js").SpecData }
+  | { kind: "plan_card"; id: string; review: import("./types.js").PlanReviewData }
   | { kind: "workflow"; id: string };
 
 function buildTimeline(msgs: Message[]): TimelineItem[] {
@@ -716,6 +755,11 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
   // Insert spec card when spec data is available
   if (st.spec) {
     items.push({ kind: "spec_card", id: "spec-card", spec: st.spec });
+  }
+
+  // Insert plan review card when plan review data is available
+  if (st.planReview) {
+    items.push({ kind: "plan_card", id: "plan-card", review: st.planReview });
   }
 
   // Insert workflow progress card when active
@@ -851,7 +895,13 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
             textSegIndex++;
           } else if (seg.kind === "tool") {
             const tc = seg.toolId ? msg.toolCalls.find(t => toolCallMatchesId(t, seg.toolId)) : undefined;
-            if (tc) {
+            // Skip tools that must never render (hidden), and tools whose
+            // name has not streamed in yet (empty name). Rendering an
+            // unnamed tool briefly shows a blank generic strip that then
+            // vanishes once the name resolves (e.g. to a hidden tool),
+            // which reads as a flicker. Keeping them out of the timeline
+            // also keeps them out of the render key entirely.
+            if (tc && tc.name && !isHiddenTool(tc.name)) {
               items.push({ kind: "tool", id: `tc-${tc.id}`, tc, messageId: msg.id });
             }
           }
@@ -862,6 +912,9 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
           items.push({ kind: "thinking", id: `th-${msg.id}`, text: msg.thinking, elapsed: msg.thinkingElapsed, messageId: msg.id });
         }
         for (const tc of msg.toolCalls) {
+          // Mirror the segment path: never surface hidden or not-yet-named
+          // tools so they cannot flash in and out during streaming.
+          if (!tc.name || isHiddenTool(tc.name)) continue;
           items.push({ kind: "tool", id: `tc-${tc.id}`, tc, messageId: msg.id });
         }
         if (msg.content.trim().length > 0 || msg.isStreaming) {
@@ -988,11 +1041,15 @@ export class Chat {
   private renderedKey = "";
   private expandedItems = new Set<string>();
   private userCollapsedItems = new Set<string>();
+  private userExpandedItems = new Set<string>();
   private lastAssistantMsgId = "";
+  private _lastRunning = false;
   private _inRenderForce = false;
   private rafPending = false;
   private liveLoader: EALoader | null = null;
   private scrollIndicator: ChatScrollIndicator;
+  /** Map of file keys to markdown content for plan file rows (avoids attribute length limits). */
+  private _planFileLookup = new Map<string, string>();
   /** Callback invoked when the user clicks "View Changes" on an artifact file. */
   public onViewChanges: ((path: string) => void) | null = null;
 
@@ -1457,7 +1514,12 @@ export class Chat {
     }
     const timeline = buildTimeline(msgs);
     const key = buildRenderKey(timeline);
-    if (key !== this.renderedKey) {
+    const wasRunning = this._lastRunning;
+    this._lastRunning = state.running;
+    // Force full render when streaming completes so auto-expand/collapse
+    // logic in fullRender is applied correctly (the render key may not
+    // change when running transitions from true to false).
+    if (key !== this.renderedKey || (wasRunning && !state.running)) {
       console.log("[chat.render] fullRender", { msgCount: msgs.length, roles: msgs.map(m => m.role), serverIds: msgs.map(m => m.serverId?.slice(-12)) });
       this.fullRender(timeline, msgs);
       this.renderedKey = key;
@@ -1481,7 +1543,7 @@ export class Chat {
     const timeline = buildSubAgentTimeline(messages, isRunning);
     const st = getState();
     const autoExpand = isEnabled(st.settings.auto_expand);
-    this.applyAutoExpand(timeline, autoExpand);
+    this.applyAutoExpand(timeline, autoExpand, isRunning);
     // Treat the automation detail exactly like the tape's sub-agent view:
     // user bubbles belong to the current turn (in-turn), not standalone
     // blocks. Pass treatAsSubAgent=true so buildTimelineHTML matches what
@@ -1489,29 +1551,72 @@ export class Chat {
     const html = this.buildTimelineHTML(timeline, messages, true);
     container.innerHTML = html;
     createLucideIcons();
+    // Bind click delegation for expand/collapse if not already bound
+    if (!container.dataset.subAgentClickBound) {
+      container.addEventListener("click", (e) => this.handleDelegateClick(e));
+      container.dataset.subAgentClickBound = "true";
+    }
+  }
+
+  /**
+   * Single source of truth for whether a timeline item should be expanded.
+   * Honors explicit user overrides, then the special "thinking" rule, then
+   * the auto-expand setting.
+   *
+   * Rules:
+   *  - Thinking, while the model is still actively reasoning
+   *    (thinkingActive): ALWAYS expanded so the user can watch the reasoning
+   *    stream, regardless of the auto-expand setting (a user may still
+   *    explicitly collapse it).
+   *  - Otherwise: a manual collapse/expand wins; when the user hasn't touched
+   *    it, follow the auto-expand setting. This applies uniformly to thinking
+   *    (after it finishes) and to every expandable tool card, so the automation
+   *    detail behaves exactly like the main chat.
+   */
+  private computeExpanded(kind: string, id: string, autoExpand: boolean, thinkingActive: boolean): boolean {
+    const userCollapsed = this.userCollapsedItems.has(id);
+    if (kind === "thinking" && thinkingActive) {
+      return !userCollapsed;
+    }
+    if (userCollapsed) return false;
+    if (this.userExpandedItems.has(id)) return true;
+    return autoExpand;
+  }
+
+  /**
+   * Identify the thinking segment the model is *actively* generating.
+   *
+   * "Still thinking" means the reasoning is the last content the model has
+   * produced so far — the moment any text or tool segment appears after it,
+   * the thinking is finished even though the overall turn keeps running (e.g.
+   * while a tool executes). Only the actively-streaming thinking strip is
+   * force-expanded; finished ones fall back to the auto-expand setting.
+   */
+  private activeThinkingId(timeline: TimelineItem[], isRunning: boolean): string | null {
+    if (!isRunning) return null;
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const it = timeline[i];
+      if (it.kind === "thinking") return it.id;
+      if (it.kind === "tool" || it.kind === "assistant_text") return null;
+    }
+    return null;
   }
 
   /**
    * Shared auto-expand pass used by both fullRender and renderSubAgentInto
-   * so the two never drift. Auto-expands thinking strips and agent tool
-   * cards unless the user manually collapsed them.
+   * so the two never drift. Auto-expands thinking strips and every expandable
+   * tool card unless the user manually collapsed them.
    */
-  private applyAutoExpand(timeline: TimelineItem[], autoExpand: boolean): void {
+  private applyAutoExpand(timeline: TimelineItem[], autoExpand: boolean, isRunning = false): void {
+    const activeThinkingId = this.activeThinkingId(timeline, isRunning);
     for (const item of timeline) {
-      if (item.kind === "thinking") {
-        const id = item.id;
-        if (autoExpand && !this.userCollapsedItems.has(id)) {
-          this.expandedItems.add(id);
-        } else if (this.userCollapsedItems.has(id)) {
-          this.expandedItems.delete(id);
-        }
-      } else if (item.kind === "tool" && item.tc.name === "agent") {
-        const id = item.id;
-        if (autoExpand && !this.userCollapsedItems.has(id)) {
-          this.expandedItems.add(id);
-        } else if (this.userCollapsedItems.has(id)) {
-          this.expandedItems.delete(id);
-        }
+      if (item.kind !== "thinking" && item.kind !== "tool") continue;
+      const id = item.id;
+      const thinkingActive = item.kind === "thinking" && id === activeThinkingId;
+      if (this.computeExpanded(item.kind, id, autoExpand, thinkingActive)) {
+        this.expandedItems.add(id);
+      } else {
+        this.expandedItems.delete(id);
       }
     }
   }
@@ -1701,24 +1806,13 @@ export class Chat {
     const st = getState();
     const autoExpand = isEnabled(st.settings.auto_expand);
 
-    // Auto-expand based on setting (unless user manually collapsed)
-    for (const item of timeline) {
-      if (item.kind === "thinking") {
-        const id = item.id;
-        if (autoExpand && !this.userCollapsedItems.has(id)) {
-          this.expandedItems.add(id);
-        } else if (this.userCollapsedItems.has(id)) {
-          this.expandedItems.delete(id);
-        }
-      } else if (item.kind === "tool" && item.tc.name === "agent") {
-        const id = item.id;
-        if (autoExpand && !this.userCollapsedItems.has(id)) {
-          this.expandedItems.add(id);
-        } else if (this.userCollapsedItems.has(id)) {
-          this.expandedItems.delete(id);
-        }
-      }
-    }
+    // Auto-expand based on setting (unless user manually collapsed).
+    // During streaming, thinking is always expanded so the user sees the
+    // reasoning process in real time. After streaming, follow the setting.
+    // Delegated to the shared applyAutoExpand pass so fullRender, the
+    // streaming incremental path and the automation detail never drift.
+    const isRunning = st.running;
+    this.applyAutoExpand(timeline, autoExpand, isRunning);
 
     let html = "";
     let turnMid = ""; // buffered items inside current turn
@@ -1852,6 +1946,7 @@ export class Chat {
     // Update thinking text if present.  This runs on every render frame
     // (including frames where only a thinking_delta arrived) so the thought
     // card streams in real time just like the assistant text card.
+    const activeThinkingId = this.activeThinkingId(timeline, getState().running);
     for (let i = 0; i < timeline.length; i++) {
       const item = timeline[i];
       if (item.kind === "thinking") {
@@ -1861,15 +1956,19 @@ export class Chat {
           if (bodyEl && bodyEl.textContent !== item.text) {
             bodyEl.textContent = item.text;
           }
-          // Auto-expand based on setting (unless user manually collapsed).
-          // Toggling auto_expand OFF collapses expanded strips so the toggle
-          // takes effect in both directions.
+          // Auto-expand thinking: while the model is ACTIVELY thinking (this is
+          // the last content it has produced) always expand unless the user
+          // manually collapsed it. Once thinking finishes, follow the
+          // auto-expand setting. User manual toggle is respected via
+          // userCollapsedItems/userExpandedItems.
           const shouldExpand = isEnabled(getState().settings.auto_expand);
-          const userCollapsed = this.userCollapsedItems.has(item.id);
-          if (shouldExpand && !userCollapsed && !el.classList.contains("expanded")) {
+          const thinkingActive = item.id === activeThinkingId;
+          const wantExpanded = this.computeExpanded("thinking", item.id, shouldExpand, thinkingActive);
+          const isExpanded = el.classList.contains("expanded");
+          if (wantExpanded && !isExpanded) {
             el.classList.add("expanded");
             this.expandedItems.add(item.id);
-          } else if (!shouldExpand && !userCollapsed && el.classList.contains("expanded")) {
+          } else if (!wantExpanded && isExpanded) {
             el.classList.remove("expanded");
             this.expandedItems.delete(item.id);
           }
@@ -1927,25 +2026,23 @@ export class Chat {
       }
 
       // 4) Auto-expand based on setting (unless user manually collapsed).
-      //    Mirrors the thinking-strip handling above so toggling auto_expand
-      //    takes effect on already-rendered tool/agent cards without a full
-      //    re-render (the subscribe re-render uses the incremental path).
-      const expandTool = toolItem.tc.name === "agent";
-      if (expandTool) {
-        const shouldExpandTool = isEnabled(getState().settings.auto_expand);
-        const userCollapsedTool = this.userCollapsedItems.has(toolItem.id);
-        if (shouldExpandTool && !userCollapsedTool && !el.classList.contains("expanded")) {
-          el.classList.add("expanded");
-          this.expandedItems.add(toolItem.id);
-        } else if (!shouldExpandTool && userCollapsedTool && el.classList.contains("expanded")) {
-          el.classList.remove("expanded");
-          this.expandedItems.delete(toolItem.id);
-        }
+      //    Applies to all expandable tool cards. Mirrors the thinking-strip
+      //    handling above so toggling auto_expand takes effect on already-
+      //    rendered tool cards without a full re-render.
+      const shouldExpandTool = isEnabled(getState().settings.auto_expand);
+      const wantExpandedTool = this.computeExpanded("tool", toolItem.id, shouldExpandTool, false);
+      const isExpandedTool = el.classList.contains("expanded");
+      if (wantExpandedTool && !isExpandedTool) {
+        el.classList.add("expanded");
+        this.expandedItems.add(toolItem.id);
+      } else if (!wantExpandedTool && isExpandedTool) {
+        el.classList.remove("expanded");
+        this.expandedItems.delete(toolItem.id);
       }
       // 5) Agent card icon: toggle spin class in-place so the CSS animation
       //    never restarts during streaming (the icon SVG survives through
       //    incremental updates because the render key is no longer cleared).
-      if (expandTool) {
+      if (toolItem.tc.name === "agent") {
         const iconEl = el.querySelector('.agent-card-icon') as HTMLElement | null;
         if (iconEl) {
           const st = getState();
@@ -2046,6 +2143,7 @@ export class Chat {
       case "compact": return this.renderCompactCard(item);
       case "system_message": return this.renderSystemMessage(item);
       case "spec_card": return this.renderSpecCard(item);
+      case "plan_card": return this.renderPlanCard(item);
       case "workflow": return this.renderWorkflowCard(item);
     }
     return "";
@@ -2659,6 +2757,79 @@ export class Chat {
     </div>`;
   }
 
+  private renderPlanCard(item: Extract<TimelineItem, { kind: "plan_card" }>): string {
+    const review = item.review;
+    const status = review.status;
+    const isApproved = status === "approved";
+    const isRejected = status === "rejected";
+    const isReview = status === "review" || status === "draft";
+    const sessionId = getState().sessionId;
+
+    // Parse sections from the full content using ## Plan/## Steps/## Checklist headers
+    const sections = this.parsePlanSections(review.content);
+
+    // File rows that open in the sidebar markdown tab on click
+    const fileRows = [
+      { name: "plan.md", content: sections.plan, icon: "file-text" },
+      { name: "steps.md", content: sections.steps, icon: "list-ordered" },
+      { name: "checklist.md", content: sections.checklist, icon: "check-square" },
+    ];
+
+    const fileRowsHtml = fileRows.map((f, i) => {
+      const fileKey = `plan-${review.review_id}-${i}`;
+      this._planFileLookup.set(fileKey, f.content);
+      return `<div class="review-file" data-open-md="${fileKey}" data-md-title="${escapeHtml(f.name)}">
+        <div class="review-file-row">
+          <span class="review-file-icon"><i data-lucide="${f.icon}"></i></span>
+          <span class="review-file-name">${escapeHtml(f.name)}</span>
+        </div>
+      </div>`;
+    }).join("");
+
+    let footerHtml: string;
+    if (isReview) {
+      footerHtml = `<div class="review-footer">
+        <button class="review-btn review-btn-cancel" data-plan-reject="${sessionId}">${t("chat.reviewCancel") || "Cancel"}</button>
+        <button class="review-btn review-btn-execute" data-plan-approve="${sessionId}">${t("chat.reviewExecute") || "Execute"}</button>
+      </div>`;
+    } else if (isApproved) {
+      footerHtml = `<div class="review-footer"><span class="review-status review-status-ok"><i data-lucide="check-circle"></i> ${t("chat.reviewExecuted") || "Executed"}</span></div>`;
+    } else if (isRejected) {
+      footerHtml = `<div class="review-footer"><span class="review-status review-status-no"><i data-lucide="x-circle"></i> ${t("chat.reviewCancelled") || "Cancelled"}</span></div>`;
+    } else {
+      footerHtml = "";
+    }
+
+    return `<div class="review-modal review-plan">
+      <div class="review-body">
+        <p class="review-main">${escapeHtml(t("chat.reviewPlanMain") || "The plan has been generated. Proceed with execution based on this document?")}</p>
+        <p class="review-sub">${escapeHtml(t("chat.reviewPlanSub") || "If it does not match your intent, review and edit the files, or enter guidance in the input box.")}</p>
+        <div class="review-filelist">${fileRowsHtml}</div>
+      </div>
+      ${footerHtml}
+    </div>`;
+  }
+
+  private parsePlanSections(text: string): { plan: string; steps: string; checklist: string } {
+    const result = { plan: "", steps: "", checklist: "" };
+    const re = /^##\s+(Plan|Steps|Checklist)\s*$/gmi;
+    const parts = text.split(re);
+    if (parts.length < 3) {
+      result.plan = text;
+      return result;
+    }
+    let key: "plan" | "steps" | "checklist" | "" = "";
+    for (let i = 1; i < parts.length; i++) {
+      const trimmed = parts[i].trim();
+      if (trimmed === "Plan" || trimmed === "Steps" || trimmed === "Checklist") {
+        key = trimmed.toLowerCase() as any;
+      } else if (key) {
+        result[key] = (result[key] + "\n\n" + parts[i]).trim();
+      }
+    }
+    return result;
+  }
+
   private renderWorkflowCard(_item: Extract<TimelineItem, { kind: "workflow" }>): string {
     const wf = getState().workflowState;
     if (!wf) return "";
@@ -2997,6 +3168,33 @@ export class Chat {
       send({ type: "spec_reject", session_id: sessionId, feedback } as any);
       return;
     }
+
+    // Plan file rows: open in sidebar markdown tab
+    const openMdBtn = target.closest("[data-open-md]") as HTMLElement | null;
+    if (openMdBtn) {
+      e.stopPropagation();
+      const fileKey = openMdBtn.getAttribute("data-open-md") || "";
+      const title = openMdBtn.getAttribute("data-md-title") || "";
+      const content = this._planFileLookup.get(fileKey) || "";
+      (window as any).__sessionInner?.openMarkdownPreview(content, title);
+      return;
+    }
+
+    // Plan approve/reject buttons
+    const planApproveBtn = target.closest("[data-plan-approve]") as HTMLElement | null;
+    if (planApproveBtn) {
+      e.stopPropagation();
+      const sessionId = planApproveBtn.getAttribute("data-plan-approve") || "";
+      send({ type: "plan_approve", session_id: sessionId } as any);
+      return;
+    }
+    const planRejectBtn = target.closest("[data-plan-reject]") as HTMLElement | null;
+    if (planRejectBtn) {
+      e.stopPropagation();
+      const sessionId = planRejectBtn.getAttribute("data-plan-reject") || "";
+      send({ type: "plan_reject", session_id: sessionId } as any);
+      return;
+    }
   }
 
   private toggleItem(id: string, el: HTMLElement): void {
@@ -3004,10 +3202,12 @@ export class Chat {
       this.expandedItems.delete(id);
       el.classList.remove("expanded");
       this.userCollapsedItems.add(id);
+      this.userExpandedItems.delete(id);
     } else {
       this.expandedItems.add(id);
       el.classList.add("expanded");
       this.userCollapsedItems.delete(id);
+      this.userExpandedItems.add(id);
     }
   }
 

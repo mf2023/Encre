@@ -22,7 +22,7 @@
 
 import { EALoader } from "./ealoader.js";
 import { getState } from "./state.js";
-import { t } from "./i18n.js";
+import { sendSetCdpUrl } from "./ws.js";
 
 interface BookmarkEntry {
   date_added: string;
@@ -124,15 +124,13 @@ export class BrowserView {
   private explicitNav = true;
   private _destroyed = false;
   private _cdpPort: number;
+  private _webContentsId: number = -1;
   private _onTitleChange?: (title: string) => void;
   private _onUrlChange?: (url: string) => void;
   private _onFaviconChange?: (favicon: string) => void;
   private _onNewWindow?: (url: string) => void;
   private _settingsBtn: HTMLButtonElement;
   private _mainLoaded = false;
-  private _siteInfoBtn: HTMLButtonElement;
-  private _siteInfoPopup: HTMLDivElement | null = null;
-  private _secure = false;
   private _bookmarks: BookmarksData | null = null;
   private _starBtn: HTMLButtonElement;
 
@@ -160,7 +158,6 @@ export class BrowserView {
         <button class="browser-nav-btn" data-nav="reload" title="Reload">
           <svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
-        <button class="browser-site-info-btn" title="View site information"></button>
         <input type="text" class="browser-url-input" value="${startUrl}" placeholder="搜索或输入 web 地址 / Search or enter web address" spellcheck="false" />
         <button class="browser-star-btn" title="Bookmark this page">☆</button>
         <button class="browser-settings-btn" title="Settings">
@@ -198,7 +195,6 @@ export class BrowserView {
     this._settingsBtn = container.querySelector(".browser-settings-btn") as HTMLButtonElement;
 
     this._starBtn = container.querySelector(".browser-star-btn") as HTMLButtonElement;
-    this._siteInfoBtn = container.querySelector(".browser-site-info-btn") as HTMLButtonElement;
 
     this._bindSettings();
     this._bindStarButton();
@@ -206,7 +202,6 @@ export class BrowserView {
 
     const wv = container.querySelector("webview") as Electron.WebviewTag;
     this.webview = wv;
-    this._bindSiteInfo();
 
     this.bindEvents();
     this.bindNavButtons();
@@ -235,6 +230,25 @@ export class BrowserView {
         }
       });
     }
+    // Register CDP relay for the internal webview and send URL to the backend
+    wv.addEventListener("dom-ready", () => {
+      try {
+        const wcId = wv.getWebContentsId();
+        this._webContentsId = wcId;
+        const api = (window as any).electronAPI;
+        if (api?.registerCdpWebview) {
+          api.registerCdpWebview(wcId).then((port: number) => {
+            this._cdpPort = port;
+            const url = `ws://127.0.0.1:${port}`;
+            sendSetCdpUrl(url);
+          }).catch((err: any) => {
+            console.warn("[browser] CDP relay registration failed:", err);
+          });
+        }
+      } catch (err) {
+        console.warn("[browser] CDP setup failed:", err);
+      }
+    }, { once: true });
   }
 
   get cdpPort(): number {
@@ -309,6 +323,13 @@ export class BrowserView {
     if (this.loader) {
       this.loader.destroy();
       this.loader = null;
+    }
+    // Clean up CDP relay
+    if (this._webContentsId > 0) {
+      const api = (window as any).electronAPI;
+      if (api?.unregisterCdpWebview) {
+        api.unregisterCdpWebview(this._webContentsId).catch(() => {});
+      }
     }
     try { this.webview.remove(); } catch {}
     this.container.innerHTML = "";
@@ -393,179 +414,6 @@ export class BrowserView {
     return div.innerHTML;
   }
 
-  private _tt(key: string, fallback: string): string {
-    const r = t(key);
-    return r === key ? fallback : r;
-  }
-
-  private _showCookieDetail(url: string): void {
-    const api = (window as any).electronAPI;
-    if (!api?.getCookiesForOrigin) return;
-    api.getCookiesForOrigin(url).then((res: any) => {
-      const cookies = res?.cookies || [];
-      const overlay = document.createElement("div");
-      overlay.className = "toast-overlay";
-      overlay.innerHTML = `
-        <div class="toast-dialog dialog-wide">
-          <div class="toast-title">${this._tt("settings.cookies", "Cookies")}</div>
-          <div class="dialog-body" style="max-height:400px;overflow-y:auto">
-            ${cookies.length === 0 ? `<div style="color:var(--text-muted);padding:12px">${this._tt("settings.noCookies", "No cookies")}</div>` : cookies.map((c: any) => `
-              <div class="cookie-detail-row">
-                <div class="cookie-detail-name">${this.esc(c.name)}</div>
-                <div class="cookie-detail-value">${this.esc(c.value)}</div>
-                <div class="cookie-detail-meta">${this.esc(c.domain)}${c.path} · ${c.secure ? "HTTPS" : "HTTP"} · ${c.httpOnly ? "HttpOnly" : ""}</div>
-              </div>
-            `).join("")}
-          </div>
-          <div class="dialog-footer">
-            <button class="btn" id="cookie-detail-close">${this._tt("common.close", "Close")}</button>
-          </div>
-        </div>`;
-      document.body.appendChild(overlay);
-      overlay.querySelector("#cookie-detail-close")?.addEventListener("click", () => overlay.remove());
-      overlay.addEventListener("click", (e: any) => { if (e.target === overlay) overlay.remove(); });
-    }).catch(() => {});
-  }
-
-  private _updateSiteInfoIcon(url: string): void {
-    const isSecure = url.startsWith("https://");
-    this._secure = isSecure;
-    if (isSecure) {
-      this._siteInfoBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`;
-      this._siteInfoBtn.style.color = "var(--success)";
-    } else {
-      this._siteInfoBtn.innerHTML = `<span style="font-style:italic;font-weight:700;font-size:13px">i</span>`;
-      this._siteInfoBtn.style.color = "var(--text-muted)";
-    }
-  }
-
-  private _closeSiteInfoPopup(): void {
-    if (this._siteInfoPopup) {
-      this._siteInfoPopup.remove();
-      this._siteInfoPopup = null;
-    }
-  }
-
-  private async _openSiteInfo(): Promise<void> {
-    this._closeSiteInfoPopup();
-    const url = this.webview.getURL();
-    if (!url || url === "about:blank") return;
-    const api = (window as any).electronAPI;
-    if (!api?.getSiteInfo) return;
-    const info = await api.getSiteInfo(url);
-    if (!info) return;
-
-    const permLabel = (name: string): string => {
-      const r = t("settings.perm." + name);
-      return r === "settings.perm." + name ? name : r;
-    };
-    const popup = document.createElement("div");
-    popup.className = "browser-site-info-popup";
-
-    // Connection security
-    const securityIcon = info.isSecure
-      ? `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
-      : `<span style="font-style:italic;font-weight:700;font-size:16px;color:var(--text-muted)">i</span>`;
-    const securityTitle = info.isSecure ? this._tt("settings.connectionSecure", "Connection is secure") : this._tt("settings.connectionNotSecure", "Connection is not secure");
-
-    popup.innerHTML = `
-      <div class="site-info-section">
-        <div class="site-info-section-title">${this._tt("settings.connection", "Connection")}</div>
-        <div class="site-info-security-row">
-          <span class="site-info-security-icon">${securityIcon}</span>
-          <span class="site-info-security-title">${securityTitle}</span>
-        </div>
-      </div>
-      <div class="site-info-divider"></div>
-      <div class="site-info-section">
-        <div class="site-info-section-title">${this._tt("settings.permissions", "Permissions")}</div>
-        <div class="site-info-permissions" id="site-info-perms">
-          ${info.permissions.length === 0 ? `<div class="site-info-perm-none">${this._tt("settings.noPermissions", "No permissions requested")}</div>` : info.permissions.map((p) => `
-            <label class="site-info-perm-row">
-              <span class="site-info-perm-name">${permLabel(p.name)}</span>
-              <input type="checkbox" class="site-info-perm-toggle" data-perm="${p.name}" ${p.granted ? "checked" : ""}>
-            </label>
-          `).join("")}
-        </div>
-      </div>
-      <div class="site-info-divider"></div>
-      <div class="site-info-section">
-        <div class="site-info-section-title">${this._tt("settings.cookies", "Cookies")}</div>
-        <div class="site-info-cookies-row" id="site-info-cookies-row" style="cursor:pointer">
-          <span class="site-info-cookie-count">${info.cookieCount} ${this._tt("settings.cookiesInUse", "cookies in use")}</span>
-          <span style="color:var(--text-muted)">›</span>
-        </div>
-      </div>`;
-
-    // Handle permission toggles
-    popup.querySelectorAll(".site-info-perm-toggle").forEach((cb) => {
-      cb.addEventListener("change", async (e) => {
-        const input = e.target as HTMLInputElement;
-        const perm = input.getAttribute("data-perm") || "";
-        const granted = input.checked;
-        if (api.setPermission && info.origin) {
-          await api.setPermission(info.origin, perm, granted);
-        }
-      });
-    });
-
-    // Handle cookie row click
-    const cookiesRow = popup.querySelector("#site-info-cookies-row");
-    if (cookiesRow) {
-      cookiesRow.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this._closeSiteInfoPopup();
-        this._showCookieDetail(url);
-      });
-    }
-
-    // Position and show
-    const navBar = this.container.querySelector(".browser-nav-bar")!;
-    const btnRect = this._siteInfoBtn.getBoundingClientRect();
-    const navRect = navBar.getBoundingClientRect();
-    popup.style.position = "absolute";
-    popup.style.top = (btnRect.bottom - navRect.top) + "px";
-    popup.style.left = "0px";
-    popup.style.zIndex = "100";
-    navBar.style.position = "relative";
-    navBar.appendChild(popup);
-    this._siteInfoPopup = popup;
-
-    // Close on click outside
-    const closeHandler = (e: MouseEvent) => {
-      if (!popup.contains(e.target as Node) && e.target !== this._siteInfoBtn) {
-        this._closeSiteInfoPopup();
-        document.removeEventListener("mousedown", closeHandler);
-      }
-    };
-    setTimeout(() => document.addEventListener("mousedown", closeHandler), 0);
-  }
-
-  private _bindSiteInfo(): void {
-    // Wait for dom-ready before querying the URL
-    this.webview.addEventListener("dom-ready", () => {
-      try { this._updateSiteInfoIcon(this.webview.getURL() || ""); } catch {}
-    }, { once: true });
-
-    this._siteInfoBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (this._siteInfoPopup) {
-        this._closeSiteInfoPopup();
-      } else {
-        this._openSiteInfo();
-      }
-    });
-
-    // Update icon on navigation
-    this.webview.addEventListener("did-navigate", (e: any) => {
-      this._updateSiteInfoIcon(e.url || "");
-      this._closeSiteInfoPopup();
-    });
-    this.webview.addEventListener("did-navigate-in-page", (e: any) => {
-      this._updateSiteInfoIcon(e.url || "");
-    });
-  }
-
   private bindEvents(): void {
     const wv = this.webview;
 
@@ -616,9 +464,12 @@ export class BrowserView {
     wv.addEventListener("did-finish-load", () => {
       this._mainLoaded = true;
       this.clearLoadTimer();
-      if (this.isErrorPage()) {
+      const url = this.webview.getURL();
+      // Only show error overlay for real chrome-error pages, not for
+      // the initial about:blank state that happens before CDP navigation
+      if (url && url.startsWith("chrome-error://")) {
         this.showError("Failed to load", "The page could not be loaded.");
-      } else if (!this._showedError) {
+      } else {
         this.hideStatus();
       }
       this._addHistoryEntry();

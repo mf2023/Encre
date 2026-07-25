@@ -276,6 +276,18 @@ class PlanResolved:
 
 
 @dataclass
+class PlanReviewData:
+    """A plan/spec document submitted for user review (saved as 3 markdown files)."""
+
+    review_id: str
+    content: str
+    file_path: str  # path to plan.md
+    dir_path: str   # directory containing plan.md, steps.md, checklist.md
+    mode: str  # "plan" | "spec"
+    status: str  # "review" | "approved" | "rejected"
+
+
+@dataclass
 class CompactNotification:
     """Reports the before/after message and token counts of a compaction."""
     old_count: int
@@ -689,6 +701,24 @@ def create_plan_mode_changed(active: bool, reason: str = "") -> PlanModeChanged:
 
 def create_plan_resolved(proposal_id: str, tool_call_id: str, approved: bool) -> PlanResolved:
     return PlanResolved(proposal_id=proposal_id, tool_call_id=tool_call_id, approved=approved)
+
+
+def create_plan_review_data(
+    review_id: str,
+    content: str,
+    file_path: str,
+    dir_path: str = "",
+    mode: str = "plan",
+    status: str = "review",
+) -> PlanReviewData:
+    return PlanReviewData(
+        review_id=review_id,
+        content=content,
+        file_path=file_path,
+        dir_path=dir_path,
+        mode=mode,
+        status=status,
+    )
 
 
 # ── Branch Protocol Types ──────────────────────────────────────────

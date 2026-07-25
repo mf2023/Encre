@@ -37,7 +37,7 @@ import asyncio
 
 import pytest
 
-from encre.adapters.base import BaseAdapter, SendResult
+from encre.gateway.platforms.base import BasePlatformAdapter, SendResult
 from encre.gateway.delivery import (
     MAX_PLATFORM_OUTPUT,
     DeliveryRouter,
@@ -45,18 +45,21 @@ from encre.gateway.delivery import (
 )
 
 
-class _Adapter(BaseAdapter):
+class _Adapter(BasePlatformAdapter):
     """In-memory adapter recording every send."""
 
-    name = "telegram"
-
     def __init__(self, *, push_chat_id=None, splits=False, max_len=0):
-        # Bypass BaseAdapter.__init__ (no gateway client needed for these tests).
-        self.name = "telegram"
+        # Bypass BasePlatformAdapter.__init__ for testing.
         self.max_message_length = max_len
         self.splits_long_messages = splits
-        self._last_push_chat_id = push_chat_id
+        self.default_push_chat_id = push_chat_id
         self.sent: list[tuple[str, str]] = []
+
+    async def connect(self, *, is_reconnect=False) -> bool:
+        return True
+
+    async def disconnect(self) -> None:
+        pass
 
     async def send(self, chat_id, content, *, reply_to=None, metadata=None):
         self.sent.append((chat_id, content))

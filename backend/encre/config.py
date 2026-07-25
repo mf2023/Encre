@@ -381,6 +381,8 @@ class EncreConfig:
     sub_agent_auto_open_view: bool = True
     automation_auto_open_view: bool = False
     shortcut_send_mode: str = "enter"
+    default_search_engine: str = "bing"
+    default_search_engine_url: str = "https://www.bing.com/search?q={query}"
     startup_session_mode: str = "normal"
     startup_session_behavior: str = "new"
     agents: list[AgentConfig] = field(default_factory=list)

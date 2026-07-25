@@ -316,16 +316,16 @@ export class Settings {
       if (isMultimodal) {
         currentModels[idx] = { ...currentModels[idx], multimodal: cb.checked };
       } else {
-        const newEnabled = cb.checked;
+const newEnabled = cb.checked;
         currentModels[idx] = { ...currentModels[idx], enabled: newEnabled };
         let activeIdx = getState().activeModelIndex;
         if (!newEnabled && idx === activeIdx) {
           const nextIdx = currentModels.findIndex((m, i) => i !== idx && m.enabled !== false);
           if (nextIdx >= 0) activeIdx = nextIdx;
         }
-        setModelConfigs(currentModels, activeIdx);
+setModelConfigs(currentModels, activeIdx);
+        send({ type: "update_models", models: currentModels, active_model_index: activeIdx });
       }
-      send({ type: "update_models", models: currentModels, active_model_index: getState().activeModelIndex });
     });
 
     this.panels.model.addEventListener("click", (e) => {
@@ -340,6 +340,7 @@ export class Settings {
             const currentModels = [...getState().modelConfigs];
             currentModels.splice(idx, 1);
             let activeIdx = getState().activeModelIndex;
+            if (idx < activeIdx) activeIdx--;
             if (activeIdx >= currentModels.length) activeIdx = Math.max(0, currentModels.length - 1);
             setModelConfigs(currentModels, activeIdx);
             send({ type: "delete_model", model_index: idx });
@@ -663,6 +664,22 @@ export class Settings {
           successOverlay.style.display = "flex";
           successOverlay.style.animation = "fade-in 0.3s ease";
         }
+        // Save credentials to local state so the card shows correct status
+        if (event.credentials) {
+          const current = { ...getState().settings,
+            adapter_weixin_enabled: true,
+            adapter_weixin_app_id: event.credentials.ilink_bot_id || "",
+            adapter_weixin_token: event.credentials.bot_token || "",
+            adapter_weixin_api_url: event.credentials.baseurl || "",
+          };
+          setSettings(current as any);
+        }
+        // Auto-close dialog after 1.5s and refresh the card
+        setTimeout(() => {
+          (this as any)._wechatDialogOpen = false;
+          document.getElementById("wechat-qr-overlay")?.remove();
+          if (this.currentPanel === "gateway") this.renderGateway();
+        }, 1500);
         return;
       }
       if (event.success && event.qrcode_url) {
@@ -706,8 +723,19 @@ export class Settings {
         if (img) img.style.display = "none";
         if (countdownEl) { countdownEl.style.display = "none"; countdownEl.textContent = ""; }
         if (statusEl) {
-          statusEl.style.display = "block";
-          statusEl.textContent = `❌ ${event.message}`;
+          statusEl.style.display = "flex";
+          statusEl.style.flexDirection = "column";
+          statusEl.style.alignItems = "center";
+          statusEl.style.justifyContent = "center";
+          statusEl.style.gap = "8px";
+          statusEl.style.padding = "40px 0";
+          statusEl.style.color = "var(--text-muted)";
+          statusEl.innerHTML = `
+            <i data-lucide="scan-line" style="width:32px;height:32px;opacity:0.3"></i>
+            <span style="font-size:13px;opacity:0.7">${event.message || t("settings.wechatScanning")}</span>`;
+          if (typeof (window as any).lucide !== "undefined") {
+            (window as any).lucide.createIcons({ root: statusEl });
+          }
         }
       }
     });
@@ -2097,7 +2125,23 @@ ${def.id === "weixin" ? connected ? `
         unbindBtn.addEventListener("click", () => {
           Dialog.confirm(t("settings.wechatUnbind"), t("settings.wechatUnbindConfirm")).then((confirmed) => {
             if (confirmed) {
-              send({ type: "configure", config: { adapter_weixin_app_id: "", adapter_weixin_token: "", adapter_weixin_api_url: "" } });
+              // Disable adapter and clear credentials
+              const unbindConfig: Record<string, any> = {
+                adapter_weixin_enabled: false,
+                adapter_weixin_app_id: "",
+                adapter_weixin_token: "",
+                adapter_weixin_api_url: "",
+              };
+              send({ type: "configure", config: unbindConfig });
+              // Update local state
+              const current = { ...getState().settings,
+                adapter_weixin_enabled: false,
+                adapter_weixin_app_id: "",
+                adapter_weixin_token: "",
+                adapter_weixin_api_url: "",
+              };
+              setSettings(current as any);
+              this.renderGateway();
             }
           });
         });
@@ -4568,6 +4612,7 @@ private _bindModelSelect(): void {
     const s = st.settings;
     const currentSearchEngine = (s.default_search_engine as string) || "bing";
     const searchEngineOptions: DropdownOption[] = SEARCH_ENGINES.map(e => ({ id: e.id, label: e.name }));
+    const currentSearchEngineUrl = SEARCH_ENGINES.find(e => e.id === currentSearchEngine)?.searchUrl || "https://www.bing.com/search?q={query}";
 
     this.panels.browser.innerHTML = `
       <div class="settings-section-title"><i data-lucide="globe" class="lucide section-title-icon"></i> ${t("settings.browserSettings")}</div>
@@ -4632,7 +4677,14 @@ private _bindModelSelect(): void {
       (window as any).lucide.createIcons({ root: this.panels.browser });
     }
 
-    this.bindDropdown("dd-search-engine", (v) => { this.saveSetting("default_search_engine", v); this.renderBrowser(); });
+    this.bindDropdown("dd-search-engine", (v) => {
+      this.saveSetting("default_search_engine", v);
+      const engine = SEARCH_ENGINES.find(e => e.id === v);
+      if (engine) {
+        this.saveSetting("default_search_engine_url", engine.searchUrl);
+      }
+      this.renderBrowser();
+    });
 
     document.getElementById("browser-clear-data")?.addEventListener("click", async () => {
       const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));

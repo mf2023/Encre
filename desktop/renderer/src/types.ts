@@ -125,6 +125,7 @@ export type ServerEvent =
   | ContextUsageEvent
   | ReferencesUpdateEvent
   | SpecUpdateEvent
+  | PlanReviewEvent
   | ModeChanged
   | CommandChanged;
 
@@ -469,9 +470,12 @@ export type ClientMessage =
   | ClientRespondPermission
   | ClientRespondTakeover
   | ClientRespondPlan
+  | ClientPlanApprove
+  | ClientPlanReject
   | ClientRespondQuestion
   | ClientSetPlanMode
   | ClientSetMode
+  | ClientSetCdpUrl
   | ClientRetry
   | ClientSwitchBranch
   | ClientRollback
@@ -1365,6 +1369,18 @@ export interface ClientRespondPlan {
   approved: boolean;
 }
 
+export interface ClientPlanApprove {
+  type: "plan_approve";
+  review_id: string;
+  session_id?: string;
+}
+
+export interface ClientPlanReject {
+  type: "plan_reject";
+  review_id: string;
+  session_id?: string;
+}
+
 export interface ClientRespondQuestion {
   type: "respond_question";
   tool_call_id: string;
@@ -1381,6 +1397,12 @@ export interface ClientSetMode {
   type: "set_mode";
   session_id?: string;
   mode: string; // "plan" | "spec" | ""
+}
+
+export interface ClientSetCdpUrl {
+  type: "browser_cdp_url";
+  url: string;
+  session_id?: string;
 }
 
 export interface ClientRetry {
@@ -1508,6 +1530,7 @@ export interface SessionSnapshot {
   branches: BranchMeta[];
   activeBranchId: string;
   spec: SpecData | null;
+  planReview: PlanReviewData | null;
   running: boolean;
   agentState?: AgentStateSnapshot | null;
 }
@@ -1588,6 +1611,7 @@ export interface AppState {
   contextWindow: number;
   agentState: AgentStateSnapshot | null;
   spec: SpecData | null;
+  planReview: PlanReviewData | null;
 }
 
 export interface WorkflowTaskInfo {
@@ -1643,17 +1667,14 @@ export interface GatewayAdapterInfo {
   name: string;
   platform: string;
   connected: boolean;
-  capabilities: string[];
-  last_seen: number;
+  status: "connected" | "error" | "disconnected";
   error?: string;
 }
 
 export interface GatewayStatusData {
   running: boolean;
-  host: string;
-  port: number;
   adapters: GatewayAdapterInfo[];
-  uptime_seconds: number;
+  adapter_count: number;
 }
 
 export interface ToolsInfo {
@@ -1845,6 +1866,25 @@ export interface SpecUpdateEvent {
   session_id: string;
 }
 
+export interface PlanReviewData {
+  review_id: string;
+  content: string;
+  file_path: string;  // path to plan.md
+  dir_path: string;   // directory containing plan.md, steps.md, checklist.md
+  mode: string;
+  status: string;
+}
+
+export interface PlanReviewEvent {
+  type: "plan_review";
+  review_id: string;
+  content: string;
+  file_path: string;
+  mode: string;
+  status: string;
+  session_id?: string;
+}
+
 // ── Edit proposal (Codex-style inline diff / accept-reject) ─────────────
 
 /**
@@ -1891,6 +1931,7 @@ export function createEmptySessionSnapshot(): SessionSnapshot {
     branches: [],
     activeBranchId: "",
     spec: null,
+    planReview: null,
     running: false,
     agentState: null,
   };
@@ -1947,6 +1988,7 @@ export function createEmptyState(): AppState {
     compactEvents: sessionSnapshot.compactEvents,
     systemMessages: sessionSnapshot.systemMessages || [],
     spec: null,
+    planReview: null,
     memoryList: [],
     memoryDetail: null,
     globalRules: [],

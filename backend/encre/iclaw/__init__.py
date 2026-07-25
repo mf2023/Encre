@@ -117,7 +117,7 @@ from encre.evolution.learner import EncreEvolutionLearner
 from encre.evolution.meta import EncreMetaCognition
 from encre.evolution.reflex import EncreReflexLoop
 from encre.feedback.learner import EncreFeedbackLearner
-from encre.gateway import GatewayServer
+from encre.gateway.ws_bridge.server import WsBridgeServer
 from encre.goal import (
     EncreGoalRunner,
     GoalDefinition,
@@ -525,8 +525,8 @@ class IClawEngine:
         await self._ws_channel.start(self._router)
 
         # ── 14. Gateway server ─────────────────────────────────────
-        self._gateway = GatewayServer(
-            engine=self,
+        self._gateway = WsBridgeServer(
+            runner=self,
             host=ws_host,
             port=18792,
             max_connections=32,

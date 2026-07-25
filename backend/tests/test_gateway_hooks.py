@@ -43,7 +43,8 @@ import textwrap
 
 import pytest
 
-from encre.adapters.base import BaseAdapter, MessageEvent, SendResult, SessionSource
+from encre.gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
+from encre.gateway.session import SessionSource
 from encre.gateway.hooks import (
     AGENT_END,
     AGENT_START,
@@ -255,23 +256,39 @@ def test_discover_nonexistent_dir_returns_empty():
 # ── command:* decision hooks via handle_message ───────────────────────
 
 
-class _CmdAdapter(BaseAdapter):
+class _CmdAdapter(BasePlatformAdapter):
     name = "telegram"
 
     def __init__(self):
-        super().__init__()
+        # Bypass BasePlatformAdapter.__init__ for testing
+        self._message_handler = None
+        self._authz = None
+        self._pairing = None
+        self._running = True
+        self._fatal_error_code = None
+        self._fatal_error_message = None
+        self._active_sessions = {}
+        self._pending_messages = {}
+        self._background_tasks = set()
         self.sent: list[tuple[str, str]] = []
 
-    async def send(self, chat_id, content, *, reply_to=None, metadata=None):
+    async def connect(self, *, is_reconnect=False) -> bool:
+        return True
+
+    async def disconnect(self) -> None:
+        pass
+
+    async def send(self, chat_id, content, reply_to=None, metadata=None):
         self.sent.append((chat_id, content))
         return SendResult(success=True, message_id="m1")
+
+    async def get_chat_info(self, chat_id):
+        return {"id": chat_id}
 
 
 def _cmd_event(text, chat_id="1", user_id="u1"):
     return MessageEvent(
         text=text,
-        chat_id=chat_id,
-        user_id=user_id,
         source=SessionSource(platform="telegram", chat_id=chat_id, chat_type="dm", user_id=user_id),
     )
 
@@ -287,7 +304,7 @@ async def test_command_hook_deny_aborts():
     a = _CmdAdapter()
     dispatched = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         dispatched.append(event)
 
     a.set_message_handler(handler)
@@ -308,7 +325,7 @@ async def test_command_hook_handled_aborts():
     a = _CmdAdapter()
     dispatched = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         dispatched.append(event)
 
     a.set_message_handler(handler)
@@ -327,7 +344,7 @@ async def test_command_hook_rewrite_changes_text():
     a = _CmdAdapter()
     dispatched = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         dispatched.append(event.text)
 
     a.set_message_handler(handler)
@@ -348,7 +365,7 @@ async def test_command_hook_wildcard_fires():
     reg.register(COMMAND_WILDCARD, wild)
     a = _CmdAdapter()
 
-    async def handler(event):
+    async def handler(adapter, event):
         pass
 
     a.set_message_handler(handler)
@@ -367,7 +384,7 @@ async def test_command_hook_allow_proceeds():
     a = _CmdAdapter()
     dispatched = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         dispatched.append(event.text)
 
     a.set_message_handler(handler)
@@ -387,7 +404,7 @@ async def test_non_command_message_skips_command_hooks():
     reg.register(COMMAND_WILDCARD, h)
     a = _CmdAdapter()
 
-    async def handler(event):
+    async def handler(adapter, event):
         pass
 
     a.set_message_handler(handler)
@@ -395,18 +412,18 @@ async def test_non_command_message_skips_command_hooks():
     assert seen == []
 
 
-# ── gateway:startup smoke (AdapterManager) ────────────────────────────
+# ── gateway:startup smoke (GatewayRunner) ────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_gateway_startup_emits(tmp_path):
-    """AdapterManager.start_gateway fires gateway:startup after discovery.
+    """GatewayRunner.start fires gateway:startup after discovery.
 
     Uses a real hook file so discover_and_load registers the handler before
-    the emit (start_gateway clears the registry on discovery, so a handler
+    the emit (start clears the registry on discovery, so a handler
     must come from the filesystem to survive to the emit).
     """
-    from encre.adapters.manager import AdapterManager
+    from encre.gateway.run import GatewayRunner
 
     hooks_root = tmp_path / "hooks"
     hook_dir = hooks_root / "startup_hook"
@@ -422,17 +439,16 @@ async def test_gateway_startup_emits(tmp_path):
     reset_hook_registry(hooks_dir=hooks_root)
     reg = get_hook_registry()
 
-    # Build a manager but stub out the gateway start to avoid binding a port.
-    am = AdapterManager.__new__(AdapterManager)
-    am._running = False
-    am._instances = {}
-
-    class _FakeGateway:
-        async def start(self):
-            pass
-
-    am._gateway = _FakeGateway()
-    await am.start_gateway()
+    # Build a runner with stubbed attributes to avoid real startup.
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner._running = False
+    runner._instances = {}
+    runner._hooks = reg
+    runner._gateway_config = None
+    runner._channel_dir = type('_Dir', (), {'load': lambda self: None})()
+    runner._session_store = None
+    runner._ws_bridge = None
+    await runner.start()
 
     # The hook module recorded the startup event.
     import sys

@@ -74,6 +74,7 @@ state.compactEvents = snapshot.compactEvents;
   state.activeBranchId = snapshot.activeBranchId;
   state.running = snapshot.running;
   state.agentState = snapshot.agentState ?? null;
+  state.planReview = snapshot.planReview;
 }
 
 function syncSessionState(sessionId?: string): void {
@@ -437,7 +438,13 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
     }
 
     const message: Message = {
-      id: crypto.randomUUID(),
+      // Derive a DETERMINISTIC id from the server message id so that
+      // repeated restores of the same logical message (e.g. the automation
+      // detail re-restores on every live update) keep a stable timeline id.
+      // A churning random id would reset the user's expand/collapse state on
+      // every re-render. Only fall back to a random id for transient,
+      // not-yet-persisted messages (which are force-expanded while running).
+      id: (raw as any).id ? `m:${(raw as any).id}` : crypto.randomUUID(),
       role: raw.role === "assistant" ? "assistant" : "user",
       content: cleanContent,
       isStreaming: false,
@@ -1157,6 +1164,14 @@ export function updateSpec(spec: any, sessionId?: string): void {
   const sid = sessionId || state.sessionId;
   const snapshot = getOrCreateSessionSnapshot(sid);
   snapshot.spec = spec;
+  syncSessionState(sid);
+  emit();
+}
+
+export function updatePlanReview(data: import("./types.js").PlanReviewData | null, sessionId?: string): void {
+  const sid = sessionId || state.sessionId;
+  const snapshot = getOrCreateSessionSnapshot(sid);
+  snapshot.planReview = data;
   syncSessionState(sid);
   emit();
 }

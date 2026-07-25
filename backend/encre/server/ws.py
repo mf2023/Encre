@@ -35,7 +35,7 @@ The handler owns a great deal of the product surface: session lifecycle,
 model / skill / agent configuration, workspaces & code indexing, memory &
 rules, terminal control, branch/rollback editing, and the automation
 scheduler bridge.  iClaw (``channel == "iclaw"``) runs are dispatched
-through the adapter :class:`~encre.gateway.server.GatewayServer`'s
+through the adapter :class:`~encre.gateway.ws_bridge.server.WsBridgeServer`'s
 EventRouter in a background task.
 """
 
@@ -132,12 +132,15 @@ from encre.server.protocol import (
     ClientSaveGlobalRule,
     ClientSearch,
     ClientSetActiveModel,
+    ClientSetCdpUrl,
     ClientSetGitignore,
     ClientSetMode,
     ClientSetPlanMode,
     ClientSetCommand,
     ClientSpecApprove,
     ClientSpecReject,
+    ClientPlanApprove,
+    ClientPlanReject,
     ClientSteer,
     ClientSwitchBranch,
     ClientTerminalKill,
@@ -160,6 +163,7 @@ from encre.server.protocol import (
 )
 from encre.server.session_manager import SessionManager
 from encre.spec import EncreSpecEngine
+from encre.tools.builtin.browser import set_cdp_url, set_search_engine_url, set_session_id
 from encre.utils.tokens import count_message_tokens
 
 
@@ -614,6 +618,8 @@ class EncreWSHandler:
                         if value == "" or value is None:
                             logger.info("[configure] skip key=%s (empty/null)", key)
                             continue
+                        if key == "default_search_engine_url":
+                            set_search_engine_url(str(value))
                         if hasattr(session.agent.config, key):
                             old_val = getattr(session.agent.config, key)
                             setattr(session.agent.config, key, value)
@@ -709,19 +715,27 @@ class EncreWSHandler:
                         continue
                     try:
                         # Prefer a running adapter instance; otherwise build a
-                        # temporary one so get_qrcode_url() uses the correct
-                        # api_base derived from the gateway_url.
+                        # temporary one so get_qrcode_url() works without
+                        # the adapter being fully connected (QR fetch needs no token).
                         instances = getattr(self._adapter_manager, "_instances", {}) or {}
                         adapter = instances.get("weixin")
                         if adapter is None:
-                            from encre.adapters.manager import _ADAPTER_CLASSES
-                            cls = _ADAPTER_CLASSES.get("weixin")
-                            if cls is None:
+                            from encre.gateway.platform_registry import platform_registry
+                            from encre.gateway.config import PlatformConfig as _PC
+                            entry = platform_registry.get("weixin")
+                            if entry is None:
                                 await self._send(ws, "wechat_scan_result",
                                     qrcode_url="", success=False,
                                     message="WeChat adapter class not found")
                                 continue
-                            adapter = cls()
+                            # Use stored api_url if available, otherwise defaults
+                            stored = getattr(self._adapter_manager, "_stored_configs", {}).get("weixin", {})
+                            _cfg = _PC(
+                                enabled=False,
+                                token=stored.get("token", ""),
+                                extra={"api_url": stored.get("api_url", "")},
+                            )
+                            adapter = entry.adapter_factory(_cfg)
                         if not hasattr(adapter, "get_qrcode_url"):
                             await self._send(ws, "wechat_scan_result",
                                 qrcode_url="", success=False,
@@ -745,18 +759,41 @@ class EncreWSHandler:
                             adapter_id=msg.adapter_id, success=False,
                             message="Adapter manager not available")
                         continue
-                    from encre.adapters.manager import _ADAPTER_CLASSES
-                    cls = _ADAPTER_CLASSES.get(msg.adapter_id)
-                    if cls is None:
+                    from encre.gateway.platform_registry import platform_registry
+                    entry = platform_registry.get(msg.adapter_id)
+                    if entry is None:
                         await self._send(ws, "adapter_test_result",
                             adapter_id=msg.adapter_id, success=False,
                             message=f"Unknown adapter: {msg.adapter_id}")
                         continue
                     try:
-                        if hasattr(cls, 'validate_config'):
-                            success, message = await cls.validate_config(msg.config)
+                        # Use the entry's validate_config or the adapter class's validate_config
+                        if entry.validate_config is not None:
+                            from encre.gateway.config import PlatformConfig
+                            pconfig = PlatformConfig(
+                                enabled=True,
+                                token=str(msg.config.get("token", "") or msg.config.get("bot_token", "") or ""),
+                                extra={k: v for k, v in msg.config.items() if k not in ("enabled", "token")},
+                            )
+                            result = entry.validate_config(pconfig)
+                            if isinstance(result, bool):
+                                success, message = result, "OK" if result else "Validation failed"
+                            else:
+                                success, message = result
                         else:
-                            success, message = True, "No validation available"
+                            # Try adapter class classmethod validate_config
+                            # Create a minimal dummy config to get the class
+                            from encre.gateway.config import PlatformConfig as _PC
+                            _dummy = _PC(enabled=False, token="", extra={})
+                            try:
+                                _inst = entry.adapter_factory(_dummy)
+                                cls = type(_inst)
+                            except Exception:
+                                cls = None
+                            if cls and hasattr(cls, 'validate_config'):
+                                success, message = await cls.validate_config(msg.config)
+                            else:
+                                success, message = True, "No validation available"
                     except Exception as e:
                         success, message = False, str(e)
 
@@ -1203,6 +1240,15 @@ class EncreWSHandler:
                     if not _mode:
                         logger.info("[set_mode] mode cleared for session=%s", session.session_id[:8])
 
+                elif isinstance(msg, ClientSetCdpUrl):
+                    if msg.url:
+                        if msg.session_id:
+                            set_session_id(msg.session_id)
+                        set_cdp_url(msg.url)
+                        logger.info("[browser] CDP URL set to %s for session %s", msg.url, msg.session_id or "?")
+                    else:
+                        logger.warning("[browser] received empty CDP URL")
+
                 elif isinstance(msg, ClientSetCommand):
                     sid = msg.session_id or self._current_session_id
                     session = (
@@ -1321,10 +1367,32 @@ class EncreWSHandler:
                                          feedback=msg.feedback or "",
                                          session_id=msg.session_id or self._current_session_id or "")
 
+                elif isinstance(msg, ClientPlanApprove):
+                    session = self._get_or_create_session()
+                    if session and msg.review_id:
+                        await self._send(ws, "plan_review",
+                                         review={"review_id": msg.review_id},
+                                         status="approved",
+                                         session_id=msg.session_id or self._current_session_id or "")
+                        logger.info("[plan] review approved by user: %s", msg.review_id)
+
+                elif isinstance(msg, ClientPlanReject):
+                    await self._send(ws, "plan_review",
+                                     review={"review_id": msg.review_id},
+                                     status="rejected",
+                                     feedback=msg.feedback or "",
+                                     session_id=msg.session_id or self._current_session_id or "")
+                    logger.info("[plan] review rejected by user: %s feedback: %s",
+                                msg.review_id, msg.feedback[:80] if msg.feedback else "(none)")
+
                 elif isinstance(msg, ClientGetConfig):
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
                     config_data = info.agent.config.to_dict(encrypt_api_keys=False)
+                    # Sync search engine URL to the browser tool module
+                    se_url = config_data.get("default_search_engine_url", "")
+                    if se_url:
+                        set_search_engine_url(se_url)
                     if "models" in config_data:
                         config_data["models"] = _inject_context_windows(list(config_data["models"]))
                     available = await self._build_skills_list(info)
@@ -1414,6 +1482,8 @@ class EncreWSHandler:
                             logger.info("[delete_model] deleting index=%d, total_models=%d",
                                         msg.model_index, len(info.agent.config.models))
                             del info.agent.config.models[msg.model_index]
+                            if msg.model_index < info.agent.config.active_model_index:
+                                info.agent.config.active_model_index -= 1
                             if info.agent.config.active_model_index >= len(info.agent.config.models):
                                 info.agent.config.active_model_index = max(0, len(info.agent.config.models) - 1)
                             if info.agent.config.models:
@@ -3664,6 +3734,9 @@ class EncreWSHandler:
                 await ws_conn.send(payload)
             except Exception as exc:
                 logger.warning("[broadcast] send failed (will remove connection): %s", exc)
+                # Remove the dead connection so it doesn't accumulate.
+                with contextlib.suppress(ValueError):
+                    self._connections.remove(ws_conn)
 
         closed: list[Any] = []
         for ws in self._connections:
@@ -4188,20 +4261,13 @@ class EncreWSHandler:
         async def _send_agent_state() -> None:
             if _info is None:
                 return
-            sess = _info.agent.session
-            meta = sess.metadata or {}
+            state_mgr = getattr(_info.agent.loop, "_state_mgr", None)
+            if state_mgr is None:
+                return
             await self._send(
                 ws,
                 "agent_state",
-                state={
-                    "task_stage": meta.get("task_stage", "discover"),
-                    "task_stage_history": meta.get("task_stage_history", []),
-                    "working_set": meta.get("working_set", {}),
-                    "turn_summaries": meta.get("turn_summaries", []),
-                    "delegate_history": meta.get("delegate_history", []),
-                    "stuck_events": meta.get("stuck_events", []),
-                    "tool_semantics": meta.get("tool_semantics", {}),
-                },
+                state=state_mgr.snapshot(),
                 session_id=sid,
             )
 
@@ -4318,6 +4384,16 @@ class EncreWSHandler:
                                      session_id=sid)
                 except Exception:
                     logger.warning("[spec] failed to relay spec_update from system message", exc_info=True)
+            elif content.startswith("__plan_review__:"):
+                try:
+                    import json as _json
+                    review_data = _json.loads(content[len("__plan_review__:"):])
+                    await self._send(ws, "plan_review",
+                                     review=review_data,
+                                     status="review",
+                                     session_id=sid)
+                except Exception:
+                    logger.warning("[plan] failed to relay plan_review from system message", exc_info=True)
             else:
                 await self._send(ws, "system_message",
                                 content=content,

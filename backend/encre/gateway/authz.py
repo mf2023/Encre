@@ -92,9 +92,9 @@ class AuthzResult:
 class AuthorizationChecker:
     """5-layer authorization check (mirrors Hermes ``_is_user_authorized``).
 
-    Constructed once per gateway (owned by :class:`~encre.adapters.manager.AdapterManager`)
-    and injected into each adapter via :meth:`BaseAdapter.set_authz`.  The check
-    is evaluated in :meth:`BaseAdapter.handle_message` *before* the two-level
+    Constructed once per gateway (owned by :class:`~encre.gateway.run.GatewayRunner`)
+    and injected into each adapter via :meth:`BasePlatformAdapter.set_authz`.  The check
+    is evaluated in :meth:`BasePlatformAdapter.handle_message` *before* the two-level
     guard, so unauthorized messages never reach the agent loop.
     """
 

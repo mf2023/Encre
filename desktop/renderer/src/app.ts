@@ -1988,11 +1988,24 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const renderMainPage = (mainPage: HTMLElement) => {
       const st = getState();
       const allModels = st.modelConfigs || [];
-      const activeIdx = st.activeModelIndex;
+      let activeIdx = st.activeModelIndex;
       const active = allModels[activeIdx];
       const models = allModels.filter((m) => m.enabled !== false);
-      const isActiveUsable = active && active.enabled !== false;
-      selector.textContent = isActiveUsable ? active.name || active.model_id : "NONE";
+      let isActiveUsable = active && active.enabled !== false;
+
+      // Auto-fallback: if the active model is disabled but other enabled models exist,
+      // pick the first enabled model and update the backend
+      if (!isActiveUsable && models.length > 0) {
+        const fallback = models[0];
+        const fallbackIdx = allModels.indexOf(fallback);
+        if (fallbackIdx >= 0 && fallbackIdx !== activeIdx) {
+          activeIdx = fallbackIdx;
+          isActiveUsable = true;
+          setModelConfigs(allModels, activeIdx);
+          send({ type: "set_active_model", model_index: activeIdx });
+        }
+      }
+      selector.textContent = isActiveUsable ? (allModels[activeIdx]?.name || allModels[activeIdx]?.model_id || "NONE") : "NONE";
 
       // Thinking level entry -- only if active model supports it
       let thinkingEntry = "";

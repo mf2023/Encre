@@ -39,7 +39,8 @@ import time
 
 import pytest
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
+from encre.gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
+from encre.gateway.session import SessionSource
 from encre.gateway.authz import (
     AuthorizationChecker,
     LAYER_ALLOWLIST,
@@ -246,12 +247,18 @@ def test_authz_no_user_id_denies():
 # ── handle_message integration: /pair + reject ─────────────────────────
 
 
-class _AuthzAdapter(BaseAdapter):
+class _AuthzAdapter(BasePlatformAdapter):
     name = "telegram"
 
     def __init__(self):
         super().__init__()
         self.sent: list[tuple[str, str]] = []
+
+    async def connect(self, *, is_reconnect=False) -> bool:
+        return True
+
+    async def disconnect(self) -> None:
+        pass
 
     async def send(self, chat_id, content, *, reply_to=None, metadata=None):
         self.sent.append((chat_id, content))
@@ -261,8 +268,6 @@ class _AuthzAdapter(BaseAdapter):
 def _event(text, chat_id="1", user_id="42"):
     return MessageEvent(
         text=text,
-        chat_id=chat_id,
-        user_id=user_id,
         source=SessionSource(platform="telegram", chat_id=chat_id, chat_type="dm", user_id=user_id),
     )
 
@@ -276,7 +281,7 @@ async def test_handle_message_rejects_unauthorized(tmp_path):
     a.set_authz(AuthorizationChecker(pairing=pairing, config_fn=lambda: {"adapter_telegram_allowed_users": "legit-user"}))
     dispatched = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         dispatched.append(event)
 
     a.set_message_handler(handler)
@@ -323,7 +328,7 @@ async def test_handle_message_pair_redeem_flow(tmp_path):
     # 4. Now the paired newuser can send a normal message -> dispatched.
     dispatched = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         dispatched.append(event)
 
     a2.set_message_handler(handler)
@@ -338,7 +343,7 @@ async def test_handle_message_no_authz_allows_everything():
     a = _AuthzAdapter()
     dispatched = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         dispatched.append(event)
 
     a.set_message_handler(handler)

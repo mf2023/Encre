@@ -37,7 +37,7 @@ import contextlib
 import logging
 from typing import Any
 
-from encre.adapters import AdapterManager
+from encre.gateway.run import GatewayRunner
 from encre.codebase.index_manager import IndexManager
 from encre.config import EncreConfig
 from encre.crypto import ensure_keyfile
@@ -75,10 +75,10 @@ class EncreServer:
             idle_timeout=idle_timeout,
         )
         self._index_manager = IndexManager()
-        self._adapter_manager = AdapterManager(
+        self._adapter_manager = GatewayRunner(
             session_manager=self._manager,
-            status_callback=self._broadcast_gateway_status,
             config=self.config,
+            status_callback=self._broadcast_gateway_status,
         )
         # Create embedded scheduler for automation tasks (or use provided one from iClaw)
         self._scheduler = scheduler or EncreScheduler()
@@ -156,12 +156,12 @@ class EncreServer:
 
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
-        # Start gateway server (fast, localhost)
+        # Start gateway runner (adapter lifecycle manager)
         try:
-            await self._adapter_manager.start_gateway()
+            await self._adapter_manager.start()
         except Exception as e:
-            logger.error("Failed to start adapter gateway: %s", e)
-            logger.warning("Adapter gateway not available -- QQ, Telegram, etc. will not connect")
+            logger.error("Failed to start gateway runner: %s", e)
+            logger.warning("Gateway not available -- QQ, Telegram, etc. will not connect")
 
         # Sync adapter configs (from saved settings) into EncreConfig so the frontend
         # sees adapter_* keys in config_data immediately -- not "not configured".
@@ -245,7 +245,7 @@ class EncreServer:
         return _factory
 
     async def _broadcast_gateway_status(self, status: dict) -> None:
-        """Called by AdapterManager when adapter status changes."""
+        """Called by GatewayRunner when adapter status changes."""
         self._ws_handler.broadcast_gateway_status(status)
 
     async def _cleanup_loop(self) -> None:
@@ -265,7 +265,7 @@ class EncreServer:
     async def stop(self) -> None:
         self._index_manager.shutdown()
         try:
-            await self._adapter_manager.stop_gateway()
+            await self._adapter_manager.stop()
         except Exception as e:
             logger.warning("Error stopping adapters: %s", e)
         try:

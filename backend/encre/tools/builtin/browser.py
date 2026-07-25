@@ -27,7 +27,11 @@ from __future__ import annotations
 
 Browser implementation for the Encre tool system.
 """
+import asyncio
 import json
+import logging
+import re
+import urllib.parse
 from typing import TYPE_CHECKING, Any
 
 from encre.tools.base import build_tool
@@ -35,44 +39,113 @@ from encre.tools.base import build_tool
 if TYPE_CHECKING:
     from encre.computer.browser import EncreBrowserSession
 
-_session: "EncreBrowserSession | None" = None
+logger = logging.getLogger("encre.tools.builtin.browser")
+
+# Per-session browser state — each chat session gets its own isolated browser
+_sessions: dict[str, "EncreBrowserSession"] = {}
 _engine_requester: Any | None = None
-_cdp_ws_url: str | None = None
+_cdp_ws_urls: dict[str, str] = {}
+_search_engine_url: str | None = None
+
+_session_id: str = ""  # set by the tool executor before each call
+
+
+def set_session_id(sid: str) -> None:
+    """Set the current session ID (called by the tool executor)."""
+    global _session_id
+    _session_id = sid
 
 
 def set_engine_requester(requester: Any) -> None:
-    """Install an engine-install requester on the lazily-created browser session."""
+    """Install an engine-install requester on lazily-created browser sessions."""
     global _engine_requester
     _engine_requester = requester
-    if _session is not None:
-        _session.set_engine_requester(requester)
+    for s in _sessions.values():
+        if hasattr(s, "set_engine_requester"):
+            s.set_engine_requester(requester)
 
 
 def set_cdp_url(url: str) -> None:
-    """Set the CDP WebSocket URL to connect to (e.g. Electron webview relay)."""
-    global _cdp_ws_url
-    _cdp_ws_url = url
+    """Set the CDP WebSocket URL for the current session."""
+    global _cdp_ws_urls
+    if _session_id:
+        _cdp_ws_urls[_session_id] = url
+
+
+def set_search_engine_url(url: str) -> None:
+    """Set the search engine URL format for converting search queries."""
+    global _search_engine_url
+    _search_engine_url = url
 
 
 def _get_session():
-    """Get or create the browser session."""
-    global _session
-    if _session is None:
+    """Get or create the browser session for the current session ID."""
+    global _sessions
+    if not _session_id:
         from encre.computer.browser import EncreBrowserSession
-        _session = EncreBrowserSession()
-        if _engine_requester is not None and hasattr(_session, "set_engine_requester"):
-            _session.set_engine_requester(_engine_requester)
-    return _session
+        s = EncreBrowserSession()
+        return s
+    if _session_id not in _sessions:
+        from encre.computer.browser import EncreBrowserSession
+        _sessions[_session_id] = EncreBrowserSession()
+        if _engine_requester is not None and hasattr(_sessions[_session_id], "set_engine_requester"):
+            _sessions[_session_id].set_engine_requester(_engine_requester)
+    return _sessions[_session_id]
+
+
+def _get_cdp_url() -> str | None:
+    """Get the CDP URL for the current session."""
+    return _cdp_ws_urls.get(_session_id) if _session_id else None
 
 
 async def _ensure_connected():
-    """Ensure the browser session is connected."""
+    """Ensure the browser session is connected to the CDP relay."""
     session = _get_session()
-    if _cdp_ws_url and not session._connected:
-        await session.connect(_cdp_ws_url)
-    elif not _cdp_ws_url and not session._connected:
-        from encre.computer.browser import EncreBrowserSession
-        await session._ensure_browser()
+    cdp_url = _get_cdp_url()
+    # If the session thinks it's connected but the transport is dead, reset
+    if session._connected:
+        if session._transport is None or not session._transport.connected:
+            session._connected = False
+            logger.info("[browser] transport disconnected, will reconnect")
+        elif (cdp_url and session._page_ws_url
+              and cdp_url != session._page_ws_url):
+            logger.info("[browser] CDP URL changed: %s -> %s, reconnecting",
+                        session._page_ws_url, cdp_url)
+            await session.close()
+            session._connected = False
+    if cdp_url and not session._connected:
+        logger.info("[browser] connecting to CDP relay at %s", cdp_url)
+        for attempt in range(30):
+            try:
+                await session.connect(cdp_url)
+                logger.info("[browser] connected to CDP relay at %s", cdp_url)
+                return
+            except Exception as e:
+                logger.warning("[browser] connect attempt %d/30 failed: %s", attempt + 1, e)
+                session._connected = False
+                await asyncio.sleep(1)
+        logger.error("[browser] failed to connect to CDP relay after 30 attempts")
+    elif not cdp_url and not session._connected:
+        logger.info("[browser] no CDP URL yet, waiting for frontend to create browser tab")
+        for _ in range(300):
+            if _get_cdp_url():
+                break
+            await asyncio.sleep(0.1)
+        cdp_url = _get_cdp_url()
+        if cdp_url:
+            logger.info("[browser] CDP URL received, connecting to %s", cdp_url)
+            for attempt in range(30):
+                try:
+                    await session.connect(cdp_url)
+                    logger.info("[browser] connected to CDP relay at %s", cdp_url)
+                    return
+                except Exception as e:
+                    logger.warning("[browser] connect attempt %d/30 failed: %s", attempt + 1, e)
+                    session._connected = False
+                    await asyncio.sleep(1)
+            logger.error("[browser] failed to connect to CDP relay after 30 attempts")
+        else:
+            logger.error("[browser] CDP URL not received within 30s, browser tool will not work")
 
 
 async def _browser_execute(**kwargs: Any) -> str:
@@ -81,14 +154,24 @@ async def _browser_execute(**kwargs: Any) -> str:
     Args:
         kwargs: Description of the kwargs parameter.
     """
+    global _session_id
+    # Extract session_id from kwargs (injected by the tool executor)
+    _session_id = kwargs.pop("_session_id", "")
     action = kwargs.get("action", "")
     session = _get_session()
     await _ensure_connected()
+
+    if not session._connected or session._transport is None or not session._transport.connected:
+        return "Error: browser not connected to webview. Try opening the browser tab in the sidebar first."
 
     if action == "navigate":
         url = kwargs.get("url", "")
         if not url:
             return "Error: url parameter required for navigate action"
+        # Convert search queries to the configured search engine URL
+        if not re.match(r'^https?://', url):
+            engine_url = _search_engine_url or "https://www.google.com/search?q={query}"
+            url = engine_url.replace('{query}', urllib.parse.quote(url))
         state = await session.navigate(url)
         return f"Navigated to {state.url}\nTitle: {state.title}"
 
@@ -396,6 +479,19 @@ async def _browser_execute(**kwargs: Any) -> str:
         await session.wait(ms)
         return json.dumps({"action": "wait", "ms": ms})
 
+    elif action == "execute_cdp":
+        method = kwargs.get("method", "")
+        if not method:
+            return "Error: 'method' parameter required for execute_cdp (e.g. 'Network.enable')"
+        params = kwargs.get("params", {})
+        if isinstance(params, str):
+            try:
+                params = json.loads(params)
+            except json.JSONDecodeError:
+                params = {}
+        result = await session._transport.send(method, params)
+        return json.dumps(result, ensure_ascii=False, default=str)
+
     else:
         return f"Error: unknown action '{action}'"
 
@@ -403,14 +499,38 @@ async def _browser_execute(**kwargs: Any) -> str:
 EncreBrowserTool = build_tool(
     name="browser",
     description=(
-        "Browser automation: navigate, click (by selector or coordinates), type, "
-        "screenshot (with viewport info for visual models), get_html, get_text, "
-        "execute_js, wait_for_selector, scroll, fill_form, press_key, hotkey, "
-        "hover, drag, save/load cookies, and close_session on a Chromium browser. "
-        "Supports both DOM selector-driven and coordinate-driven (visual model) actions. "
-        "Use 'get_page_structure' to extract all interactive elements (buttons, links, "
-        "inputs, headings, etc.) with bounding boxes so the model can see and interact "
-        "with the page without requiring vision."
+        "Control an embedded Chromium webview to browse the web, interact with pages, "
+        "and extract information.\n\n"
+        "WORKFLOW:\n"
+        "1. Start with `navigate(url)` to load a page, or pass a plain search query (e.g. "
+        "\"today's weather\") and it will be sent to the configured search engine.\n"
+        "2. Wait for the page to load, then call `get_page_structure()` to get all "
+        "interactive elements (buttons, links, inputs, headings) with their bounding boxes, "
+        "roles, and accessible names — this gives you a complete 'map' of the page.\n"
+        "3. Interact using text/role-based methods first (more reliable):\n"
+        "   - `click_text(\"Sign in\")` — click visible text\n"
+        "   - `click_by_role(\"button\", \"Submit\")` — click by ARIA role + name\n"
+        "   - `type(selector, text)` — type into a field (selector from get_page_structure)\n"
+        "4. If text/role methods fail, use CSS selectors from get_page_structure:\n"
+        "   - `click(selector)`, `type(selector, text)`, `select_option(selector, value)`\n"
+        "5. For vision-capable models, use coordinate actions:\n"
+        "   - `screenshot()` first to see the page, then `click_at(x, y)` / `type_at(x, y, text)`\n"
+        "6. Extract results with `get_all_text()` or `get_text(selector)`.\n\n"
+        "SEARCH:\n"
+        "`navigate(url)` treats any non-URL input as a search query and routes it through "
+        "the user's configured default search engine (set in browser settings).\n\n"
+        "KEY GUIDELINES:\n"
+        "- Always call `get_page_structure()` after navigation to discover what's on the page.\n"
+        "- Prefer text-based methods (`click_text`, `click_by_role`) over CSS selectors — "
+        "they're more robust to page changes.\n"
+        "- Prefer CSS selectors over coordinates — coordinates break on different viewports.\n"
+        "- Use `wait(ms)` to pause between actions (e.g. after a click that triggers navigation).\n"
+        "- Use `screenshot()` with `screenshot_viewport()` for vision models — the viewport "
+        "info tells you the scroll position and page dimensions.\n"
+        "- If a `click` or `type` fails, the element might not be visible — try `scroll_to(x, y)` first.\n"
+        "- Use `execute_js(code)` for complex interactions not covered by the standard actions.\n"
+        "- The webview is embedded in the desktop app sidebar — no external browser window is opened.\n"
+        "- For advanced DevTools access, use `execute_cdp(method, params)` to call any Chrome DevTools Protocol method directly (e.g. Network.enable, Console.enable, DOM.getDocument). This gives you full access to the same capabilities as the F12 DevTools panel."
     ),
     input_schema={
         "type": "object",
@@ -430,17 +550,17 @@ EncreBrowserTool = build_tool(
                     "get_page_structure", "select_option", "get_attribute",
                     "get_property", "list_tabs", "switch_tab", "new_tab",
                     "close_tab", "set_dialog_handler",
-                    "set_file_chooser_handler",
+                    "set_file_chooser_handler", "execute_cdp",
                 ],
-                "description": "Browser action to perform",
+                "description": "Browser action to perform. See tool description for workflow guidance on which action to use when",
             },
             "url": {
                 "type": "string",
-                "description": "URL to navigate to (for navigate action)",
+                "description": "URL to navigate to, or a plain search query (e.g. 'today's news') which will be sent to the configured search engine",
             },
             "selector": {
                 "type": "string",
-                "description": "CSS selector for DOM-based actions",
+                "description": "CSS selector for DOM-based actions (click, type, hover, etc.). Get valid selectors from get_page_structure() output",
             },
             "x": {
                 "type": "integer",
@@ -462,7 +582,7 @@ EncreBrowserTool = build_tool(
             },
             "text": {
                 "type": "string",
-                "description": "Text to type (for type, type_at actions)",
+                "description": "Text to match or type: for click_text/find_text the visible text to find; for type/type_at the text to input",
             },
             "full_page": {
                 "type": "boolean",
@@ -529,6 +649,14 @@ EncreBrowserTool = build_tool(
             "ms": {
                 "type": "integer",
                 "description": "wait: milliseconds to sleep before returning",
+            },
+            "method": {
+                "type": "string",
+                "description": "CDP method name for execute_cdp (e.g. 'Network.enable', 'Console.enable', 'DOM.getDocument', 'Network.getCookies')",
+            },
+            "params": {
+                "type": "object",
+                "description": "CDP method parameters as JSON object for execute_cdp",
             },
             "accept": {
                 "type": "boolean",

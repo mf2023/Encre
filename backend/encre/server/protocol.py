@@ -136,7 +136,10 @@ ClientMessageType = Literal[
     "steer",
     "spec_approve",
     "spec_reject",
+    "plan_approve",
+    "plan_reject",
     "set_mode",
+    "browser_cdp_url",
 ]
 
 
@@ -168,6 +171,25 @@ class ClientSpecReject:
 
     type: str = "spec_reject"
     session_id: str | None = None
+    feedback: str = ""
+
+
+@dataclass
+class ClientPlanApprove:
+    """Approve the current plan, allowing the agent to proceed with execution."""
+
+    type: str = "plan_approve"
+    session_id: str | None = None
+    review_id: str = ""
+
+
+@dataclass
+class ClientPlanReject:
+    """Reject the current plan with feedback, asking the agent to revise."""
+
+    type: str = "plan_reject"
+    session_id: str | None = None
+    review_id: str = ""
     feedback: str = ""
 
 
@@ -272,6 +294,23 @@ class ClientSetMode:
             type="set_mode",
             session_id=str(d.get("session_id", "")) or None,
             mode=str(d.get("mode", "")),
+        )
+
+
+@dataclass
+class ClientSetCdpUrl:
+    """Set the CDP WebSocket URL for the embedded browser webview."""
+
+    type: str = "browser_cdp_url"
+    url: str = ""
+    session_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientSetCdpUrl":
+        return cls(
+            type="browser_cdp_url",
+            url=str(d.get("url", "")),
+            session_id=str(d.get("session_id", "")),
         )
 
 
@@ -1396,7 +1435,12 @@ ClientMessage = (
     | ClientAutomationDeleteJob
     | ClientAutomationDeleteExecution
     | ClientAutomationRenameExecution
+    | ClientSpecApprove
+    | ClientSpecReject
+    | ClientPlanApprove
+    | ClientPlanReject
     | ClientSetMode
+    | ClientSetCdpUrl
 )
 
 
@@ -1501,7 +1545,12 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "automation_delete_execution": ClientAutomationDeleteExecution,
         "automation_rename_execution": ClientAutomationRenameExecution,
         "engine_install_response": ClientEngineInstallResponse,
+        "spec_approve": ClientSpecApprove,
+        "spec_reject": ClientSpecReject,
+        "plan_approve": ClientPlanApprove,
+        "plan_reject": ClientPlanReject,
         "set_mode": ClientSetMode,
+        "browser_cdp_url": ClientSetCdpUrl,
     }
     cls = parsers.get(msg_type)
     if cls is None:
@@ -1529,6 +1578,7 @@ ServerMessageType = Literal[
     "plan_update",
     "agent_state",
     "spec_update",
+    "plan_review",
     "models_list",
     "sessions_list",
     "config_data",
@@ -1722,6 +1772,15 @@ def encode_spec_update(
 ) -> str:
     """Encode a spec update event for the frontend."""
     return encode_server_message("spec_update", spec=spec, status=status, feedback=feedback)
+
+
+def encode_plan_review(
+    review: dict[str, Any] | None,
+    status: str = "review",
+    feedback: str = "",
+) -> str:
+    """Encode a plan review event for the frontend."""
+    return encode_server_message("plan_review", review=review, status=status, feedback=feedback)
 
 
 def encode_models_list(models: list[str]) -> str:

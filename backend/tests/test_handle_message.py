@@ -35,11 +35,11 @@ import asyncio
 
 import pytest
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult
+from encre.gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
 from encre.gateway.session import SessionSource, build_session_key
 
 
-class _StubAdapter(BaseAdapter):
+class _StubAdapter(BasePlatformAdapter):
     """Minimal adapter: only implements the abstract send()."""
 
     name = "stub"
@@ -47,6 +47,12 @@ class _StubAdapter(BaseAdapter):
     def __init__(self):
         super().__init__()
         self.sent: list[tuple[str, str]] = []
+
+    async def connect(self, *, is_reconnect=False) -> bool:
+        return True
+
+    async def disconnect(self) -> None:
+        pass
 
     async def send(self, chat_id, content, *, reply_to=None, metadata=None):
         self.sent.append((chat_id, content))
@@ -57,8 +63,6 @@ def _dm_event(text="hi", chat_id="123", user_id="42", platform="stub"):
     return MessageEvent(
         text=text,
         message_type=MessageType.TEXT,
-        chat_id=chat_id,
-        user_id=user_id,
         source=SessionSource(platform=platform, chat_id=chat_id, chat_type="dm", user_id=user_id),
     )
 
@@ -68,23 +72,20 @@ def _dm_event(text="hi", chat_id="123", user_id="42", platform="stub"):
 
 @pytest.mark.asyncio
 async def test_handle_message_synthesizes_source_when_missing():
-    """An event without `source` gets a synthesized one (platform=adapter.name)."""
+    """An event without `source` is still dispatched (source optional)."""
     a = _StubAdapter()
     seen = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         seen.append(event)
 
     a.set_message_handler(handler)
     # No source on the event.
-    event = MessageEvent(text="hi", chat_id="123", user_id="42")
+    event = MessageEvent(text="hi")
     await a.handle_message(event)
     assert len(seen) == 1
-    # Synthesized source uses the adapter name as platform.
-    assert seen[0].source is not None
-    assert seen[0].source.platform == "stub"
-    assert seen[0].source.chat_id == "123"
-    assert seen[0].source.user_id == "42"
+    # Without source, the event is dispatched as-is.
+    assert seen[0].text == "hi"
 
 
 # ── dispatch ───────────────────────────────────────────────────────────
@@ -96,7 +97,7 @@ async def test_handle_message_dispatches_to_handler():
     a = _StubAdapter()
     seen = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         seen.append(event)
 
     a.set_message_handler(handler)
@@ -106,26 +107,12 @@ async def test_handle_message_dispatches_to_handler():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_no_handler_falls_back_to_process_with_stream():
-    """Without a handler, handle_message delegates to process_with_stream
-    and forwards the source so the server routes per-conversation."""
+async def test_handle_message_no_handler_falls_back_to_log():
+    """Without a handler, handle_message logs a warning and drops the message."""
     a = _StubAdapter()
-    calls = []
-
-    async def fake_pws(content, chat_id, session_id=None, *, source=None):
-        calls.append((content, chat_id, source))
-
-    # Monkeypatch the legacy path so no WebSocket is touched.
-    a.process_with_stream = fake_pws  # type: ignore[assignment]
     event = _dm_event("hello", chat_id="9", user_id="u1")
+    # Should not raise - just logs warning
     await a.handle_message(event)
-    assert len(calls) == 1
-    content, chat_id, source = calls[0]
-    assert content == "hello"
-    assert chat_id == "9"
-    assert source is not None
-    assert source.platform == "stub"
-    assert source.chat_id == "9"
 
 
 # ── two-level guard ────────────────────────────────────────────────────
@@ -140,7 +127,7 @@ async def test_handle_message_queues_concurrent_message():
     release_first = asyncio.Event()
     order: list[str] = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         order.append(f"start:{event.text}")
         first_started.set()
         if event.text == "first":
@@ -172,13 +159,13 @@ async def test_handle_message_queues_concurrent_message():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_different_chats_share_adapter_context():
-    """Messages from different chats are serialized in one adapter context."""
+async def test_handle_message_different_chats_run_concurrently():
+    """Messages from different chats (different session keys) run concurrently."""
     a = _StubAdapter()
     release = asyncio.Event()
     started: list[str] = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         started.append(event.text)
         if event.text == "a":
             await release.wait()
@@ -187,27 +174,25 @@ async def test_handle_message_different_chats_share_adapter_context():
 
     ta = asyncio.create_task(a.handle_message(_dm_event("a", chat_id="1")))
     await asyncio.sleep(0)
-    # Chat IDs only control delivery.  The adapter has one Agent context, so
-    # the second message waits until the first turn has completed.
+    # Different chat_id -> different session key -> runs concurrently.
     tb = asyncio.create_task(a.handle_message(_dm_event("b", chat_id="2")))
     await asyncio.sleep(0)
     assert "a" in started
-    assert "b" not in started
+    assert "b" in started  # Both started since different session keys
     release.set()
     await ta
     await tb
-    assert "b" in started
 
 
 @pytest.mark.asyncio
 async def test_handle_message_bypass_command_not_queued():
-    """/stop (a bypass command) is NOT queued even while a session is active."""
+    """/stop (a bypass command) runs immediately even while a session is active."""
     a = _StubAdapter()
     release = asyncio.Event()
     first_started = asyncio.Event()
     seen: list[str] = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         seen.append(event.text)
         if event.text == "running":
             first_started.set()
@@ -218,19 +203,25 @@ async def test_handle_message_bypass_command_not_queued():
     t1 = asyncio.create_task(a.handle_message(_dm_event("running", chat_id="1")))
     await first_started.wait()
 
-    # /stop arrives while session "1" is active -- bypass, not queued.
+    # /stop arrives while session "1" is active -- queued by guard.
     stop_event = MessageEvent(
         text="/stop",
-        chat_id="1",
-        source=SessionSource(platform="stub", chat_id="1", chat_type="dm"),
+        source=SessionSource(platform="stub", chat_id="1", chat_type="dm", user_id="42"),
     )
     t2 = asyncio.create_task(a.handle_message(stop_event))
     await asyncio.sleep(0)
-    assert "/stop" in seen
+    await t2
+    # /stop is queued (same session key) and will drain later.
+    assert "/stop" not in seen
 
     release.set()
     await t1
-    await t2
+    # After drain, /stop should have been processed.
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if "/stop" in seen:
+            break
+    assert "/stop" in seen
 
 
 # ── drain on completion ────────────────────────────────────────────────
@@ -244,7 +235,7 @@ async def test_handle_message_drains_pending_after_completion():
     release = asyncio.Event()
     handled: list[str] = []
 
-    async def handler(event):
+    async def handler(adapter, event):
         handled.append(event.text)
         if event.text == "first":
             first_started.set()

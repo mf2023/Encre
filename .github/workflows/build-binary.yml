@@ -44,6 +44,14 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install Python dependencies
+        run: |
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Install Node dependencies
+        run: cd desktop && npm ci
+
       - name: Build
         run: python build.py
 

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 Aligns with Hermes' ``gateway/relay/__init__.py``.  The relay is an
 **indirect** platform path: instead of a direct platform adapter
-(:mod:`encre.adapters.*`), the gateway dials out to a connector over a
+(:mod:`encre.gateway.platforms.*`), the gateway dials out to a connector over a
 WebSocket and lets the connector front the real platform.  This lets a hosted
 gateway (no public inbound IP) still serve platform traffic.
 
@@ -43,7 +43,7 @@ Public surface:
 - :func:`relay_url` / :func:`relay_gateway_id` / :func:`relay_upgrade_secret`
   / :func:`relay_wake_url` -- read the relay config.
 - :func:`register_relay_adapter` -- build a :class:`RelayAdapter` from config
-  and register it as the ``relay`` platform in an :class:`AdapterManager`.
+  and register it as the ``relay`` platform in a :class:`GatewayRunner`.
 - :func:`relay_relevance_policy` / :func:`send_relay_policy` -- declare the
   gateway's message-relevance policy to the connector at boot.
 - :func:`self_provision_relay` -- (stub) self-provision with the connector.
@@ -140,7 +140,7 @@ def relay_is_configured() -> bool:
 async def register_relay_adapter(manager: Any) -> bool:
     """Build a :class:`RelayAdapter` from config and register it with ``manager``.
 
-    Called by :class:`~encre.adapters.manager.AdapterManager` at async startup
+    Called by :class:`~encre.gateway.run.GatewayRunner` at async startup
     when :func:`relay_is_configured` is True.  Returns True on success; False
     (and a logged warning) when the relay is not configured or registration
     fails -- never raises, so a misconfigured relay never aborts gateway startup.
@@ -172,13 +172,11 @@ async def register_relay_adapter(manager: Any) -> bool:
         )
         adapter = RelayAdapter(transport=transport)
 
-        # Register into the manager's instance map directly (the relay platform
-        # is not in _ADAPTER_CLASSES, so start_adapter cannot construct it).
+        # Register into the runner's instance map directly (the relay platform
+        # is not in the platform_registry, so start_adapter cannot construct it).
         manager._instances["relay"] = adapter
-        # Inject authz/pairing like any other adapter (relay bypasses authz via
-        # authorization_is_upstream, but the handler/hook wiring still applies).
-        adapter.set_authz(getattr(manager, "_authz", None))
-        adapter.set_pairing(getattr(manager, "_pairing", None))
+        # Wire up the message handler so inbound messages route through the runner.
+        adapter.set_message_handler(getattr(manager, "_on_message", None))
         ok = await adapter.connect()
         if ok:
             logger.info("[relay] registered relay platform (fronting %d identity/ies)", len(identities) or 1)

@@ -30,20 +30,17 @@ import json
 import os
 import re
 import time
-import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from encre.backend import create_backend
 from encre.backends.base import BaseBackend, format_backend_error
-from encre.codebase.document_manager import EncreDocumentManager
 from encre.codebase.indexer import EncreCodeIndex
 from encre.compact.engine import CompactEngine
 from encre.compact.pipeline import CompactionPipeline
 from encre.config import EncreConfig
 from encre.evolution.config import EvolutionConfig
 from encre.feedback.learner import EncreFeedbackLearner
-from encre.git.repo import EncreGitRepo
 from encre.hooks.system import EncreHookSystem
 from encre.logging_config import get_logger
 from encre.memdir.system import EncreMemorySystem
@@ -51,6 +48,13 @@ from encre.profile.system import EncreProfileSystem
 from encre.prompts.base import EncrePromptTemplate
 from encre.prompts.classifier import classify_intents
 from encre.recovery import ErrorRecoveryEngine, RetryableExecutor
+from encre.loop_commands import CommandManager
+from encre.loop_context import ContextBuilder
+from encre.loop_plan_mode import PlanModeManager
+from encre.loop_skills import SkillManager
+from encre.loop_sub_agent import SubAgentRunner
+from encre.loop_working_set import WorkingSetManager
+from encre.loop_state.manager import StateManager
 from encre.loop_stability import (
     BudgetState,
     SteerQueue,
@@ -117,6 +121,7 @@ from encre.utils.types import (
     Finish,
     PlanModeChanged,
     PlanProposal,
+    PlanReviewData,
     PlanUpdate,
     Reference,
     TextDelta,
@@ -130,11 +135,9 @@ from encre.utils.types import (
     WorkflowTaskEvent,
     create_assistant_boundary,
     create_finish,
+    create_plan_review_data,
     create_system_message,
     create_permission_request,
-    create_plan_mode_changed,
-    create_plan_proposal,
-    create_plan_resolved,
     create_question_request,
     create_text_delta,
     create_thinking_delta,
@@ -149,28 +152,31 @@ from encre.loop_state.state import LoopState
 from encre.loop_state.transition import TurnTransition
 from encre.loop_error import ErrorOrchestrator, RecoveryAction, PostStreamAction
 from encre.errors import classify_error_code, get_error_metadata, ErrorCode
+from encre.utils.loop_helpers import (
+    _WRITE_TOOL_NAMES,
+    _apply_result_budget,
+    _args_summary,
+    _ensure_plan_items,
+    _extract_apply_patch_paths,
+    _extract_diff_text,
+    _extract_file_path,
+    _extract_ref_summary,
+    _extract_write_target_paths,
+    _infer_tool_semantics,
+    _is_reference_tool,
+    _permission_reason,
+    _PROMPT_CACHE_TTL_SECONDS,
+    _spillover_dir,
+    _split_writes_by_path_conflict,
+    _STUCK_LOOP_THRESHOLD,
+    _tool_retry_allowed,
+    _try_lsp_diagnostics,
+    _MAX_TOOL_CONCURRENCY,
+    _EVOLUTION_ENABLED,
+    _PLAN_STATUS_MAP,
+)
 
 logger = get_logger(__name__)
-
-_WRITE_TOOL_NAMES = {"file_write", "file_edit", "write_file", "writeFile", "apply_patch"}
-_PROMPT_CACHE_TTL_SECONDS = 30.0
-_TASK_STAGES = ("discover", "plan", "execute", "verify", "report")
-_STUCK_LOOP_THRESHOLD = 6
-_SUMMARY_INTERVAL_TURNS = 3
-
-# Max concurrency-safe tools executed in parallel per turn. Mirrors Claude
-# Code's getMaxToolUseConcurrency() default of 10 (CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY).
-# Overridable via the same-spirited ENCRE_MAX_TOOL_USE_CONCURRENCY env var.
-_MAX_TOOL_CONCURRENCY = max(1, int(os.environ.get("ENCRE_MAX_TOOL_USE_CONCURRENCY", "10") or "10"))
-
-# Master switch for Encre's self-modification "evolution" layer (learner/reflex/
-# meta/advisor guidance injected into the request each turn, plus the post-turn
-# evolution pipeline). Disabled to match Claude Code's clean execution cadence.
-# Set ENCRE_EVOLUTION=1 to re-enable.
-_EVOLUTION_ENABLED = os.environ.get("ENCRE_EVOLUTION", "0") == "1"
-_WORKING_SET_ARTIFACT_LIMIT = 8
-_WORKING_SET_REFERENCE_LIMIT = 8
-_WORKING_SET_TOOL_LIMIT = 12
 
 # ── Context overflow detection (reactive compact) ──────────────
 _CONTEXT_OVERFLOW_PATTERN = re.compile(
@@ -182,423 +188,6 @@ _CONTEXT_OVERFLOW_PATTERN = re.compile(
 # Used by this module for backward compatibility; new code should import
 # is_context_overflow directly from encre.recovery_loop.
 _is_context_overflow = is_context_overflow
-
-
-def _spillover_dir(session_id: str) -> str | None:
-    """Return the directory for spillover files for *session_id*, creating it.
-
-    Spillover lets a tool result larger than the context budget keep its full
-    content on disk (so the agent can retrieve it later) instead of losing it
-    to truncation.  Returns None when the data dir is unavailable so callers
-    fall back to plain truncation.
-    """
-    try:
-        from encre.config import get_data_dir
-        import pathlib
-        d = get_data_dir() / "spillover" / (session_id or "default")
-        d.mkdir(parents=True, exist_ok=True)
-        return str(d)
-    except Exception:
-        return None
-
-
-def _apply_result_budget(
-    result: str,
-    tool: Any,
-    max_chars: int = 100_000,
-    context_ratio: float = 1.0,
-    session_id: str = "",
-    tool_name: str = "",
-) -> str:
-    """Truncate a tool result if it exceeds the tool's size budget.
-
-    Each tool can declare ``max_result_size_chars``.  The default is
-    100 000 characters (≈ 25 000 tokens).  Results beyond that are
-    truncated with a count of removed characters.
-    """
-    budget = getattr(tool, "max_result_size_chars", max_chars) or max_chars
-    if context_ratio < 0.5:
-        # Context is nearly full: scale the budget down so the result leaves
-        # more room, but never below a minimum usable preview size.
-        scaled = int(budget * context_ratio)
-        budget = max(500, min(budget, scaled))
-    if len(result) <= budget:
-        return result
-    excess = len(result) - budget
-    spillover_path = None
-    if session_id:
-        import hashlib
-        spillover_dir = _spillover_dir(session_id)
-        if spillover_dir:
-            digest = hashlib.sha1(result.encode("utf-8", errors="replace")).hexdigest()[:16]
-            label = (tool_name or "tool").replace("/", "_")[:32]
-            fname = f"spillover_{label}_{digest}.txt"
-            import os as _os
-            fpath = _os.path.join(spillover_dir, fname)
-            try:
-                with open(fpath, "w", encoding="utf-8") as f:
-                    f.write(result)
-                spillover_path = fpath
-            except Exception:
-                spillover_path = None
-    preview = result[:1000]
-    if spillover_path:
-        return (
-            preview
-            + f"\n... (truncated {excess} characters; full output saved to {spillover_path})"
-        )
-    return result[:budget] + f"\n... (truncated {excess} characters)"
-
-
-def _extract_file_path(tool_name: str, result: str) -> str | None:
-    if tool_name not in _WRITE_TOOL_NAMES:
-        return None
-
-    if tool_name == "apply_patch":
-        # Result format: "{summary}\n{json}"
-        import json as _json
-        try:
-            json_part = result.split("\n", 1)[1] if "\n" in result else result
-            data = _json.loads(json_part)
-            files = data.get("files", []) if isinstance(data, dict) else []
-            if files:
-                fp = files[0].get("new_path") or files[0].get("old_path", "")
-                if fp and os.path.isabs(fp) and os.path.exists(fp):
-                    return fp
-        except (_json.JSONDecodeError, IndexError, KeyError):
-            pass
-        return None
-
-    for pattern in [
-        r"Successfully wrote \d+ characters to (.+)",
-        r"Applied \d+ edit\(s\) to (.+?)\.\s*\n",  # file_edit -- \n forces lazy match past file extension periods
-        r"Wrote .+ to (.+)",
-    ]:
-        m = re.search(pattern, result, re.IGNORECASE)
-        if m:
-            path = m.group(1).strip()
-            if os.path.isabs(path) and os.path.exists(path):
-                return path
-    return None
-
-
-def _extract_diff_text(_tool_name: str, result: str) -> str:
-    """Extract the unified diff block from a tool result string."""
-    m = re.search(r"```diff\n(.+?)\n```", result, re.DOTALL)
-    if m:
-        return m.group(1).strip()
-    return ""
-
-
-def _args_summary(args: dict[str, Any]) -> str:
-    try:
-        return json.dumps(args, ensure_ascii=False)[:600]
-    except Exception:
-        return str(args)[:600]
-
-
-def _turn_to_message_index(
-    messages: list[dict[str, Any]], target_turn: int,
-) -> int | None:
-    """P1 helper: convert an absolute turn index to a message index.
-
-    The loop tracks ``turn_count`` as the number of assistant turns so
-    far; messages and turns are not 1:1.  This walks messages in order
-    and returns the index of the *N*-th assistant message (or ``None``
-    if the conversation has fewer turns than requested).
-    """
-    if target_turn <= 0:
-        return 0
-    seen = 0
-    for i, m in enumerate(messages):
-        if m.get("role") == "assistant":
-            seen += 1
-            if seen == target_turn:
-                return i
-    return None
-
-
-def _permission_reason(tool_name: str) -> str:
-    return f"Tool {tool_name} requires permission"
-
-
-def _extract_apply_patch_paths(result: str) -> list[str]:
-    """Extract all successful file paths from an apply_patch result JSON."""
-    import json as _json
-    try:
-        json_part = result.split("\n", 1)[1] if "\n" in result else result
-        data = _json.loads(json_part)
-        files = data.get("files", []) if isinstance(data, dict) else []
-        paths = []
-        for f in files:
-            if f.get("status") != "ok":
-                continue
-            fp = f.get("new_path") or f.get("old_path", "")
-            if fp and os.path.isabs(fp) and os.path.exists(fp):
-                paths.append(fp)
-        return paths
-    except (_json.JSONDecodeError, IndexError, KeyError):
-        return []
-
-
-def _extract_write_target_paths(tool_name: str, args: dict[str, Any]) -> set[str]:
-    """Return the normalised absolute file paths a write tool will modify.
-
-    Used by the path-aware parallel grouping so two write tools touching
-    *different* files can run concurrently (mirrors Hermes' ``_paths_overlap``
-    check).  Returns an empty set for tools whose target paths cannot be
-    statically determined (e.g. ``bash``), which keeps them sequential.
-    """
-    if tool_name not in _WRITE_TOOL_NAMES:
-        return set()
-    if tool_name == "apply_patch":
-        paths: set[str] = set()
-        for fd in (args.get("files") or []):
-            if isinstance(fd, dict):
-                for key in ("old_path", "new_path"):
-                    p = fd.get(key) or ""
-                    if p:
-                        try:
-                            paths.add(os.path.abspath(p))
-                        except Exception:
-                            paths.add(p)
-        return paths
-    fp = args.get("file_path") or args.get("path") or ""
-    if not fp:
-        return set()
-    try:
-        return {os.path.abspath(fp)}
-    except Exception:
-        return {fp}
-
-
-def _split_writes_by_path_conflict(
-    write_tools: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Partition write tools into (parallel-safe, sequential) by path overlap.
-
-    A write tool is parallel-safe only when none of its target paths overlap
-    with any other write tool's paths in the same turn.  Tools whose paths
-    cannot be determined (empty set -- e.g. bash, or a write tool missing its
-    path arg) are always sequential to avoid racing on an unknown file.
-    """
-    path_map: dict[int, set[str]] = {
-        i: _extract_write_target_paths(p["name"], p.get("args", {}))
-        for i, p in enumerate(write_tools)
-    }
-    parallel: list[dict[str, Any]] = []
-    sequential: list[dict[str, Any]] = []
-    for i, p in enumerate(write_tools):
-        my_paths = path_map[i]
-        if not my_paths:
-            sequential.append(p)
-            continue
-        conflict = any(
-            bool(my_paths & path_map[j])
-            for j in range(len(write_tools))
-            if j != i
-        )
-        (sequential if conflict else parallel).append(p)
-    return parallel, sequential
-
-
-async def _try_lsp_diagnostics(file_path: str) -> str:
-    """Run LSP diagnostics on *file_path* and return a formatted summary.
-
-    Returns an empty string when LSP is unavailable (no server started for
-    this workspace, unsupported language, or any error) so the caller falls
-    back to the generic VERIFY reminder.  Mirrors Hermes' pattern of piping
-    real language-server diagnostics into write-tool results so the model
-    sees type errors immediately without a separate tool call.
-    """
-    try:
-        from encre.tools.builtin.lsp import _get_manager
-        mgr = _get_manager()
-        if not getattr(mgr, "_workspace", ""):
-            return ""
-        diags = await mgr.get_diagnostics(file_path)
-        if not diags:
-            return ""
-        sev_name = {1: "Error", 2: "Warning", 3: "Info", 4: "Hint"}
-        lines = [f"\n\n[LSP Diagnostics for {file_path}] ({len(diags)})"]
-        for d in diags[:20]:
-            sev = sev_name.get(d.severity, "Issue")
-            raw_msg = (d.message or "").strip()
-            msg = (raw_msg.splitlines()[0][:200] if raw_msg else "")
-            loc = ""
-            try:
-                if d.range and d.range.start is not None:
-                    loc = f" line {d.range.start.line}:{d.range.start.character}"
-            except Exception:
-                pass
-            src = f" ({d.source})" if d.source else ""
-            lines.append(f"  [{sev}]{loc}{src} {msg}")
-        return "\n".join(lines)
-    except Exception:
-        return ""
-
-
-def _is_reference_tool(tool_name: str) -> bool:
-    """Memory, MCP, and web tools generate sidebar references."""
-    name = tool_name.lower()
-    if tool_name.startswith("mcp__") or name.startswith("memory_") or name.startswith("web_"):
-        return True
-    return False
-
-
-def _extract_ref_summary(tool_name: str, args: dict[str, Any], result: str) -> str:
-    """Generate a human-readable summary of a tool invocation for the references panel."""
-    if tool_name.startswith("mcp__"):
-        parts = tool_name.split("__", 2)
-        if len(parts) >= 3:
-            server = parts[1]
-            inner = parts[2]
-            sub = args.get("tool_name") or args.get("name") or inner
-            return f"MCP {server}: {sub}"
-        return f"MCP: {tool_name}"
-
-    name = tool_name.lower()
-
-    if name in ("memory_create", "memory_update"):
-        fn = args.get("filename", "") or args.get("name", "")
-        return f"Memory: {fn}" if fn else f"Memory: {tool_name}"
-
-    if name == "memory_read":
-        fn = args.get("filename", "") or args.get("name", "")
-        return f"Read memory: {fn}" if fn else "Read memory"
-
-    if name == "memory_delete":
-        fn = args.get("filename", "") or args.get("name", "")
-        return f"Deleted memory: {fn}" if fn else "Deleted memory"
-
-    if name == "memory_search":
-        q = args.get("query", "")
-        return f"Searched memory: {q[:60]}" if q else "Searched memory"
-
-    if name == "memory_profile":
-        field = args.get("field", "")
-        val = args.get("value", "")
-        return f"Profile: {field} = {val[:40]}" if field else "Profile updated"
-
-    if name == "web_search":
-        q = args.get("query", "")
-        return f"Web search: {q[:80]}" if q else "Web search"
-
-    if name == "web_fetch":
-        url = args.get("url", "")
-        return f"Fetched: {url[:80]}" if url else "Web fetch"
-
-    return tool_name
-
-
-_PLAN_STATUS_MAP = {
-    "pending": "pending",
-    "in_progress": "active",
-    "completed": "done",
-}
-
-
-def _ensure_plan_items(tool_name: str, args: dict[str, Any]) -> list[dict[str, Any]] | None:
-    if tool_name != "todo":
-        return None
-    todos = args.get("todos")
-    if not todos or not isinstance(todos, list):
-        return None
-    items: list[dict[str, Any]] = []
-    for i, todo in enumerate(todos):
-        content = todo.get("content", "")
-        if not content:
-            continue
-        status = _PLAN_STATUS_MAP.get(todo.get("status", "pending"), "pending")
-        items.append({
-            "id": f"plan-{i}",
-            "text": content,
-            "status": status,
-        })
-    return items if items else None
-
-
-def _infer_tool_semantics(tool_name: str, tool: Any) -> dict[str, str]:
-    semantic_type = str(getattr(tool, "semantic_type", "") or "").strip().lower()
-    cost_level = str(getattr(tool, "cost_level", "") or "").strip().lower()
-    retryability = str(getattr(tool, "retryability", "") or "").strip().lower()
-    safe_fallback = str(getattr(tool, "safe_fallback", "") or "").strip()
-    lowered = tool_name.lower()
-
-    if not semantic_type or semantic_type == "general":
-        if lowered in _WRITE_TOOL_NAMES or "write" in lowered or "edit" in lowered or "patch" in lowered or "delete" in lowered:
-            semantic_type = "write"
-        elif "read" in lowered or "cat" in lowered or "view" in lowered:
-            semantic_type = "read"
-        elif "search" in lowered or "grep" in lowered or "glob" in lowered or "find" in lowered:
-            semantic_type = "search"
-        elif lowered in {"bash", "shell", "execute", "run"}:
-            semantic_type = "exec"
-        elif lowered.startswith("web_") or lowered in {"browser", "rest_client"}:
-            semantic_type = "network"
-        elif lowered in {"agent", "workflow"}:
-            semantic_type = "orchestrate"
-        else:
-            semantic_type = "general"
-
-    if not cost_level:
-        if semantic_type in {"search", "read"}:
-            cost_level = "low"
-        elif semantic_type in {"write", "exec", "network", "orchestrate"}:
-            cost_level = "high"
-        else:
-            cost_level = "medium"
-
-    if not retryability:
-        if semantic_type in {"search", "read", "network"}:
-            retryability = "auto"
-        elif semantic_type in {"write", "exec", "orchestrate"}:
-            retryability = "guarded"
-        else:
-            retryability = "manual"
-
-    if not safe_fallback:
-        fallback_map = {
-            "write": "Read the target file again, narrow the scope, and propose a smaller change.",
-            "exec": "Inspect the environment and command preconditions before retrying.",
-            "search": "Refine the query or switch to a more specific file/path filter.",
-            "network": "Use local context first and only retry if an external lookup is necessary.",
-            "orchestrate": "Summarize the sub-task and continue in the main thread if delegation is unnecessary.",
-        }
-        safe_fallback = fallback_map.get(semantic_type, "Gather more context before retrying.")
-
-    return {
-        "semantic_type": semantic_type,
-        "cost_level": cost_level,
-        "retryability": retryability,
-        "safe_fallback": safe_fallback,
-    }
-
-
-def _tool_retry_allowed(p: dict[str, Any], repeated_signatures: list[tuple[str, ...]]) -> bool:
-    semantics = p.get("semantics", {}) or {}
-    retryability = str(semantics.get("retryability", "auto"))
-    if retryability == "auto":
-        return True
-    # The guard only targets genuine *repeats*: a first-time invocation (no
-    # prior history, or a signature that never appeared before) is always
-    # allowed.  Blocking the first call would make high-value tools such as
-    # `agent` (retryability="manual") unusable.
-    if not repeated_signatures:
-        return True
-    sig = f"{p.get('name', '')}:{p.get('args_summary', '')[:80]}"
-    if retryability == "manual":
-        # Manual tools must not silently auto-repeat: block only when the same
-        # call was just issued in the immediately preceding turn (a tight
-        # re-spawn loop), not for distinct delegations across the session.
-        last = repeated_signatures[-1]
-        return not any(sig == item for item in last)
-    if retryability == "guarded":
-        last = repeated_signatures[-1]
-        if any(sig == item for item in last):
-            return False
-    return True
-
 
 class EncreLoop:
     def __init__(
@@ -628,12 +217,7 @@ class EncreLoop:
         self.profile_system = profile_system
         self.soul_system = soul_system
         self.skill_registry = skill_registry
-        # Per-session cache of auto-activated tool skills (tool_name -> body).
-        # Populated after each tool run; rendered into the next turn's system
-        # prompt so the model sees detailed usage guidance for tools it has
-        # already used.  Idempotent and de-duplicated by tool name.
-        self._active_tool_skills: dict[str, str] = {}
-        self._active_doc_skills: dict[str, str] = {}
+        self._skill_mgr = SkillManager(skill_registry)
         self.telemetry = telemetry or EncreTelemetry(enabled=False)
         # Initialise OpenTelemetry tracer from config (no-op when disabled
         # or when opentelemetry-api is not installed).
@@ -660,7 +244,6 @@ class EncreLoop:
         # pay zero cost.  Mirrors Claude Code's ``CachedMCState``.
         self._cache_edits_state: Any = None
         self.feedback = feedback
-        self._code_index: EncreCodeIndex | None = code_index
         self._pending_code_scan: EncreCodeIndex | None = None
 
         # Context renderer for tracking what changed between turns.
@@ -688,11 +271,6 @@ class EncreLoop:
         self._compaction_pipeline = CompactionPipeline()
         self.prompt_builder = EncrePromptTemplate()
         self.rollback = EncreRollbackGit()
-        self._permission_event: asyncio.Event | None = None
-        self._permission_decision: bool = False
-        self._pending_tool_name: str = ""
-        self._question_event: asyncio.Event | None = None
-        self._question_answers: str = ""
         self._cancel_event = asyncio.Event()
         # Active sub-agent loops spawned by THIS loop.  When the user hits
         # the Stop button on the parent, we cancel every child here so a
@@ -712,22 +290,29 @@ class EncreLoop:
         # All mode transitions go through :meth:`set_mode`, which keeps the
         # ``config.slash_command_mode`` string, ``session.metadata`` mirror,
         # and the derived ``plan_mode_active`` flag consistent atomically.
-        self._plan_event: asyncio.Event | None = None
-        self._plan_decision: bool = False
-        self._plan_proposals: dict[str, dict[str, Any]] = {}
+        self._state_mgr = StateManager(self.session)
+        self._cmd_mgr = CommandManager(self.config, self._state_mgr)
+        self._plan_mode = PlanModeManager(
+            config=self.config,
+            state_mgr=self._state_mgr,
+            safety=self.safety,
+            cancel_event=self._cancel_event,
+        )
         self._rules_loader = RulesLoader()
         self._recent_tool_names: list[tuple[str, ...]] = []  # tool_name:args_sig signatures
         self._error_tool_names: set[str] = set()
-        self._document_manager: EncreDocumentManager | None = None
-        self._document_manager_data_dir: str | None = None
-        self._workspace_info_cache: tuple[str, float, tuple[str, str, str]] | None = None
-        self._memory_prompt_cache: tuple[str, float, str] | None = None
-        self._soul_prompt_cache: tuple[str, float, str] | None = None
-        self._document_prompt_cache: tuple[str, float, str] | None = None
-        self._codebase_context_cache: tuple[tuple[str, int, int], float, str] | None = None
-        self._profile_prompt_cache: tuple[str, str, float, str] | None = None
-        self._rules_prompt_cache: tuple[tuple[str, bool, bool], float, str] | None = None
         self._sanitized_branches: set[str] = set()
+        self._ctx_bldr = ContextBuilder(
+            self.config, self.session,
+            cache_fresh=self._cache_fresh,
+            memory_system=self.memory_system,
+            soul_system=self.soul_system,
+            profile_system=self.profile_system,
+            git=getattr(self, "git", None) or getattr(self, "_git", None),
+            rules_loader=self._rules_loader,
+        )
+        if code_index is not None:
+            self._ctx_bldr._code_index = code_index
         # Background compaction task -- runs in parallel to avoid blocking the main loop
         self._compact_task: asyncio.Task[None] | None = None
         # Pending compact notification to yield at next turn start
@@ -776,202 +361,138 @@ class EncreLoop:
         self._thinking_prefill_enabled: bool = getattr(
             self.config, "thinking_prefill_enabled", False
         )
-        self.session.metadata.setdefault("task_stage", "discover")
-        self.session.metadata.setdefault("task_stage_history", [])
-        self.session.metadata.setdefault("working_set", {})
-        self.session.metadata.setdefault("turn_summaries", [])
-        self.session.metadata.setdefault("tool_semantics", {})
-        self.session.metadata.setdefault("stuck_events", [])
-        # P1: milestone summarisation state.  ``_milestone_last_turn`` is
-        # the last turn_count at which we wrote a milestone; when the
-        # current turn exceeds it by MILESTONE_INTERVAL we trigger a
-        # fresh milestone write.
-        self.session.metadata.setdefault("milestone_summaries", [])
-        self._milestone_last_turn: int = -1
+        self._working_set = WorkingSetManager(
+            session=self.session,
+            state_mgr=self._state_mgr,
+            config=self.config,
+        )
+        self._sub_agent_runner = SubAgentRunner(
+            config=self.config,
+            tool_registry=self.tool_registry,
+            memory_system=self.memory_system,
+            profile_system=self.profile_system,
+            soul_system=self.soul_system,
+            skill_registry=self.skill_registry,
+            hook_system=self.hook_system,
+            safety=self.safety,
+            sub_agent_depth=self.sub_agent_depth,
+            child_loops=self._child_loops,
+            session=self.session,
+        )
+
+    # ── PlanModeManager bridge properties ──────────────────────────
+    # External code (executor.py, _run_impl inline sites) accesses
+    # these plan-mode attributes directly on EncreLoop.  The properties
+    # forward to PlanModeManager so the old access patterns still work.
+
+    @property
+    def _permission_event(self) -> asyncio.Event | None:
+        return self._plan_mode._permission_event
+
+    @_permission_event.setter
+    def _permission_event(self, value: asyncio.Event | None) -> None:
+        self._plan_mode._permission_event = value
+
+    @property
+    def _permission_decision(self) -> bool:
+        return self._plan_mode._permission_decision
+
+    @_permission_decision.setter
+    def _permission_decision(self, value: bool) -> None:
+        self._plan_mode._permission_decision = value
+
+    @property
+    def _pending_tool_name(self) -> str:
+        return self._plan_mode._pending_tool_name
+
+    @_pending_tool_name.setter
+    def _pending_tool_name(self, value: str) -> None:
+        self._plan_mode._pending_tool_name = value
+
+    @property
+    def _plan_decision(self) -> bool:
+        return self._plan_mode._plan_decision
+
+    @_plan_decision.setter
+    def _plan_decision(self, value: bool) -> None:
+        self._plan_mode._plan_decision = value
+
+    @property
+    def _plan_event(self) -> asyncio.Event | None:
+        return self._plan_mode._plan_event
+
+    @_plan_event.setter
+    def _plan_event(self, value: asyncio.Event | None) -> None:
+        self._plan_mode._plan_event = value
+
+    @property
+    def _plan_proposals(self) -> dict[str, dict[str, Any]]:
+        return self._plan_mode._plan_proposals
+
+    @_plan_proposals.setter
+    def _plan_proposals(self, value: dict[str, dict[str, Any]]) -> None:
+        self._plan_mode._plan_proposals = value
+
+    @property
+    def _question_event(self) -> asyncio.Event | None:
+        return self._plan_mode._question_event
+
+    @_question_event.setter
+    def _question_event(self, value: asyncio.Event | None) -> None:
+        self._plan_mode._question_event = value
+
+    @property
+    def _question_answers(self) -> str:
+        return self._plan_mode._question_answers
+
+    @_question_answers.setter
+    def _question_answers(self, value: str) -> None:
+        self._plan_mode._question_answers = value
+
+    @property
+    def _active_tool_skills(self) -> dict[str, str]:
+        return self._skill_mgr.active_tool_skills
+
+    @_active_tool_skills.setter
+    def _active_tool_skills(self, value: dict[str, str]) -> None:
+        self._skill_mgr.active_tool_skills.clear()
+        self._skill_mgr.active_tool_skills.update(value)
+
+    @property
+    def _active_doc_skills(self) -> dict[str, str]:
+        return self._skill_mgr.active_doc_skills
+
+    @_active_doc_skills.setter
+    def _active_doc_skills(self, value: dict[str, str]) -> None:
+        self._skill_mgr.active_doc_skills.clear()
+        self._skill_mgr.active_doc_skills.update(value)
 
     def _cache_fresh(self, built_at: float, ttl: float = _PROMPT_CACHE_TTL_SECONDS) -> bool:
         return (time.time() - built_at) < ttl
 
     def _set_task_stage(self, stage: str, reason: str = "") -> None:
-        if stage not in _TASK_STAGES:
-            return
-        prev = str(self.session.metadata.get("task_stage", "discover"))
-        if prev == stage:
-            return
-        history = self.session.metadata.setdefault("task_stage_history", [])
-        history.append({
-            "from": prev,
-            "to": stage,
-            "reason": reason[:240],
-            "turn": self.session.turn_count,
-            "timestamp": time.time(),
-        })
-        self.session.metadata["task_stage"] = stage
+        self._working_set.set_task_stage(stage, reason)
 
     # ── P1 milestone summarisation ─────────────────────────────────────
 
     async def _maybe_write_milestone(
         self, context_msgs: list[dict[str, Any]],
     ) -> None:
-        """Periodically snapshot the conversation into a small milestone.
-
-        Strategy:
-        - Trigger when ``turn_count - _milestone_last_turn >= MILESTONE_INTERVAL``
-        - Slice the messages from the last milestone to now
-        - Summarise that slice via the compact engine (cheap, since the
-          slice is small)
-        - Append the result to ``session.metadata["milestone_summaries"]``
-          so the next full compact pass only needs to summarise
-          ``messages[since_last_milestone:]``.
-        - Cap the list at MILESTONE_MAX_ENTRIES to keep the metadata small.
-        """
-        from encre.compact.engine import MILESTONE_INTERVAL, MILESTONE_MAX_ENTRIES
-        if MILESTONE_INTERVAL <= 0:
-            return
-        turn = self.session.turn_count
-        if turn - self._milestone_last_turn < MILESTONE_INTERVAL:
-            return
-        start_turn = (
-            max(0, turn - MILESTONE_INTERVAL)
-            if self._milestone_last_turn < 0
-            else self._milestone_last_turn
-        )
-        # Convert turn count to message index by counting assistant
-        # messages from the end.  ``start_turn`` is an absolute turn
-        # index; we approximate the message boundary.
-        boundary = _turn_to_message_index(context_msgs, start_turn)
-        if boundary is None or boundary >= len(context_msgs) - 2:
-            # Nothing new to milestone
-            self._milestone_last_turn = turn
-            return
-        slice_msgs = context_msgs[boundary:]
-        if len(slice_msgs) < 4:
-            self._milestone_last_turn = turn
-            return
-        try:
-            summary = await self.compact_engine.compact(
-                slice_msgs,
-                backend=self.backend,
-                turn_count=turn,
-                enable_caching=self.config.enable_prompt_caching,
-                        session_id=self.session.id or "",
-            )
-        except Exception as exc:
-            logger.warning("[milestone] compact call failed: %s", exc)
-            return
-        if not summary:
-            return
-        # Pull the generated summary out of the compacted list (it's
-        # marked is_compact_summary) and store just the text.
-        summary_text = ""
-        for m in summary:
-            if m.get("is_compact_summary"):
-                summary_text = str(m.get("content", ""))
-                break
-        if not summary_text:
-            return
-        entries = self.session.metadata.setdefault("milestone_summaries", [])
-        entries.append({
-            "from_turn": start_turn,
-            "to_turn": turn,
-            "text": summary_text[:8_000],
-            "ts": time.time(),
-        })
-        if len(entries) > MILESTONE_MAX_ENTRIES:
-            # Drop oldest; we only need recent context for the next compact.
-            del entries[: len(entries) - MILESTONE_MAX_ENTRIES]
-        self._milestone_last_turn = turn
-        logger.info(
-            "[milestone] wrote turn=%d slice=%d entries=%d",
-            turn, len(slice_msgs), len(entries),
+        await self._working_set.maybe_write_milestone(
+            context_msgs, backend=self.backend, compact_engine=self.compact_engine,
         )
 
     def _infer_task_stage(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> str:
-        current = str(self.session.metadata.get("task_stage", "discover"))
-        prompt_lower = (prompt or "").lower()
-        prepared = prepared or []
-        names = [str(p.get("name", "")).lower() for p in prepared]
-        semantic_types = [str(p.get("semantics", {}).get("semantic_type", "")).lower() for p in prepared]
-
-        if any(x in prompt_lower for x in ("summary", "report", "what did", "结果", "总结", "汇报")):
-            return "report"
-        if any(x in prompt_lower for x in ("plan", "方案", "设计", "spec", "步骤")):
-            return "plan"
-        if any(t in {"write", "exec"} for t in semantic_types) or any(n in _WRITE_TOOL_NAMES for n in names):
-            return "execute"
-        if any(x in prompt_lower for x in ("verify", "test", "check", "确认", "验证")) or any("test" in n or "lint" in n for n in names):
-            return "verify"
-        if any(t in {"read", "search", "network"} for t in semantic_types) or current == "discover":
-            return "discover"
-        return current
+        return self._working_set.infer_task_stage(prompt, prepared)
 
     def _summarize_args(self, args: dict[str, Any]) -> str:
-        summary = _args_summary(args)
-        return summary if len(summary) <= 180 else summary[:177] + "..."
+        return self._working_set._summarize_args(args)
 
     def _refresh_working_set(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> None:
-        prepared = prepared or []
-        tool_entries = []
-        for p in prepared[-_WORKING_SET_TOOL_LIMIT:]:
-            tool_entries.append({
-                "name": p.get("name", ""),
-                "semantic_type": p.get("semantics", {}).get("semantic_type", ""),
-                "cost_level": p.get("semantics", {}).get("cost_level", ""),
-                "args": self._summarize_args(p.get("args", {})),
-            })
-        artifacts = []
-        for a in self.session.artifacts[-_WORKING_SET_ARTIFACT_LIMIT:]:
-            artifacts.append({
-                "path": a.get("path", ""),
-                "tool": a.get("tool", ""),
-                "name": a.get("name", ""),
-            })
-        references = []
-        for r in self.session.references[-_WORKING_SET_REFERENCE_LIMIT:]:
-            references.append({
-                "tool": r.get("tool", ""),
-                "summary": r.get("summary", ""),
-            })
-        self.session.metadata["working_set"] = {
-            "prompt": (prompt or "")[:500],
-            "stage": self.session.metadata.get("task_stage", "discover"),
-            "tools": tool_entries,
-            "artifacts": artifacts,
-            "references": references,
-            "plan_items": self.session.plan_items[-10:],
-            "updated_at": time.time(),
-        }
+        self._working_set.refresh_working_set(prompt, prepared)
 
     def _build_working_set_prompt(self) -> str:
-        ws = self.session.metadata.get("working_set") or {}
-        if not ws:
-            return ""
-        lines = ["## Current Task State"]
-        lines.append(f"Stage: {ws.get('stage', 'discover')}")
-        prompt = str(ws.get("prompt", "")).strip()
-        if prompt:
-            lines.append(f"Current objective: {prompt[:260]}")
-        plan_items = ws.get("plan_items") or []
-        if plan_items:
-            lines.append("Plan:")
-            for item in plan_items[:6]:
-                lines.append(f"- [{item.get('status', 'pending')}] {item.get('text', '')}")
-        tools = ws.get("tools") or []
-        if tools:
-            lines.append("Recent tools:")
-            for t in tools[:8]:
-                lines.append(f"- {t.get('name')} ({t.get('semantic_type')}, {t.get('cost_level')}): {t.get('args')}")
-        artifacts = ws.get("artifacts") or []
-        if artifacts:
-            lines.append("Touched files:")
-            for a in artifacts[:6]:
-                lines.append(f"- {a.get('path')}")
-        references = ws.get("references") or []
-        if references:
-            lines.append("Recent external references:")
-            for r in references[:6]:
-                lines.append(f"- {r.get('summary')}")
-        return "\n".join(lines)
+        return self._working_set.build_working_set_prompt()
 
     def _maybe_record_turn_summary(
         self,
@@ -979,67 +500,19 @@ class EncreLoop:
         prepared: list[dict[str, Any]],
         tool_outcomes: list[dict[str, Any]],
     ) -> None:
-        if self.session.turn_count == 0:
-            return
-        if self.session.turn_count % _SUMMARY_INTERVAL_TURNS != 0 and not any(r.get("is_error") for r in tool_outcomes):
-            return
-        artifacts = [a.get("path", "") for a in self.session.artifacts[-4:]]
-        summary = {
-            "turn": self.session.turn_count,
-            "stage": self.session.metadata.get("task_stage", "discover"),
-            "goal": prompt[:220],
-            "tools": [p.get("name", "") for p in prepared[:8]],
-            "errors": [r.get("tool_name", "") for r in tool_outcomes if r.get("is_error")][:6],
-            "artifacts": artifacts,
-            "timestamp": time.time(),
-        }
-        summaries = self.session.metadata.setdefault("turn_summaries", [])
-        summaries.append(summary)
-        if len(summaries) > 30:
-            del summaries[:-30]
+        self._working_set.maybe_record_turn_summary(prompt, prepared, tool_outcomes)
 
     def _build_turn_summary_prompt(self) -> str:
-        summaries = self.session.metadata.get("turn_summaries") or []
-        if not summaries:
-            return ""
-        lines = ["## Prior Turn Summaries"]
-        for entry in summaries[-5:]:
-            tools = ", ".join(entry.get("tools", [])[:5]) or "none"
-            errors = ", ".join(entry.get("errors", [])[:4]) or "none"
-            files = ", ".join(entry.get("artifacts", [])[:3]) or "none"
-            lines.append(
-                f"- Turn {entry.get('turn')}: stage={entry.get('stage')} | tools={tools} | errors={errors} | files={files}"
-            )
-        return "\n".join(lines)
+        return self._working_set.build_turn_summary_prompt()
 
     def _build_stage_prompt(self) -> str:
-        stage = str(self.session.metadata.get("task_stage", "discover"))
-        guidance = {
-            "discover": "Collect missing facts first. Prefer read/search tools. Do not edit until the target is clear.",
-            "plan": "State the intended sequence of work and keep changes scoped. Avoid premature execution.",
-            "execute": "Make the smallest effective change. Prefer one concrete action over repeated searching.",
-            "verify": "Validate with reads, tests, or checks. Look for regressions and mismatches with the plan.",
-            "report": "Summarize outcomes, touched files, verification evidence, and remaining risks.",
-        }
-        # NOTE: this is an internal WORK PHASE, not a user-facing "mode".
-        # The user-visible mode is the slash-command mode (plan/spec/normal)
-        # declared in the Slash Commands block.  Keep the wording distinct so
-        # the model never confuses "phase" with "mode" when asked which mode
-        # it is in.
-        return (
-            f"## Work Phase (internal, not a user mode)\n"
-            f"Current work phase: {stage}\n"
-            f"Guidance: {guidance.get(stage, '')}\n"
-            f"This is an internal scheduling hint. It is NOT a mode. "
-            f"When asked which mode you are in, answer based on the "
-            f"Slash Commands / mode block, not this phase."
-        )
+        return self._working_set.build_stage_prompt()
 
     def _should_delegate_sub_agent(self, prompt: str, prepared: list[dict[str, Any]]) -> tuple[bool, str, str]:
         if self.sub_agent_depth > 0:
             return False, "", ""
         prompt_lower = (prompt or "").lower()
-        stage = str(self.session.metadata.get("task_stage", "discover"))
+        stage = str(self._state_mgr.task_stage)
         tool_count = len(prepared)
         search_count = sum(1 for p in prepared if p.get("semantics", {}).get("semantic_type") in {"search", "read", "network"})
         write_count = sum(1 for p in prepared if p.get("semantics", {}).get("semantic_type") in {"write", "exec"})
@@ -1067,7 +540,7 @@ class EncreLoop:
             return ""
         advisor_prompt = (
             f"Parent task: {prompt}\n\n"
-            f"Current work phase: {self.session.metadata.get('task_stage', 'discover')}\n"
+            f"Current work phase: {self._state_mgr.task_stage}\n"
             f"Reason for delegation: {reason}\n\n"
             "Return only concise guidance for the parent agent:\n"
             "1. What facts matter most now\n"
@@ -1083,7 +556,7 @@ class EncreLoop:
             )
             content = str(result.get("content", "") or "").strip()
             if content:
-                history = self.session.metadata.setdefault("delegate_history", [])
+                history = list(self._state_mgr.delegate_history)
                 history.append({
                     "delegate": delegate,
                     "reason": reason,
@@ -1091,7 +564,8 @@ class EncreLoop:
                     "timestamp": time.time(),
                 })
                 if len(history) > 20:
-                    del history[:-20]
+                    history = history[-20:]
+                self._state_mgr.delegate_history = history
                 self.meta.record_delegation(prompt, delegate, True)
                 return content[:1500]
         except Exception:
@@ -1100,7 +574,7 @@ class EncreLoop:
         return ""
 
     def _build_stuck_recovery_prompt(self) -> str:
-        stuck_events = self.session.metadata.get("stuck_events") or []
+        stuck_events = self._state_mgr.stuck_events
         if not stuck_events:
             return ""
         latest = stuck_events[-1]
@@ -1115,14 +589,15 @@ class EncreLoop:
         return "\n".join(lines)
 
     def _record_stuck_event(self, signature: tuple[str, ...]) -> None:
-        stuck = self.session.metadata.setdefault("stuck_events", [])
+        stuck = list(self._state_mgr.stuck_events)
         stuck.append({
             "turn": self.session.turn_count,
             "signature": " | ".join(signature),
             "timestamp": time.time(),
         })
         if len(stuck) > 20:
-            del stuck[:-20]
+            stuck = stuck[-20:]
+        self._state_mgr.stuck_events = stuck
 
     async def aclose(self) -> None:
         """Release backend resources (httpx clients, model memory, etc.)."""
@@ -1133,69 +608,13 @@ class EncreLoop:
                 logger.warning(f"Error closing backend: {e}", extra={"backend": type(self.backend).__name__})
 
     async def _wait_for_permission_decision(self, tool_name: str) -> bool:
-        """Wait for a permission decision or cancel signal.
-
-        Returns True only when the user explicitly allows the request.
-        Cancellation is treated as denial so the loop never leaves an
-        unresolved permission request behind.  Never times out — the
-        user must explicitly Allow or Deny before the tool proceeds.
-        """
-        if self._permission_event is None:
-            return False
-
-        permission_waiter = asyncio.create_task(self._permission_event.wait())
-        cancel_waiter = asyncio.create_task(self._cancel_event.wait())
-
-        async def _drain(tasks: list[asyncio.Task[Any]]) -> None:
-            for task in tasks:
-                if task.done():
-                    continue
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-                except Exception:
-                    pass
-
-        try:
-            done, pending = await asyncio.wait(
-                [permission_waiter, cancel_waiter],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            await _drain(pending)
-
-            if cancel_waiter in done:
-                logger.info(
-                    "Permission request cancelled for tool '%s'", tool_name,
-                )
-                return False
-            return self._permission_decision
-        except asyncio.CancelledError:
-            await _drain([permission_waiter, cancel_waiter])
-            raise
+        return await self._plan_mode.wait_for_permission_decision(tool_name)
 
     def resolve_permission(self, decision: bool) -> None:
-        """Called by the agent owner to approve or deny a pending permission request."""
-        self._permission_decision = decision
-        if self._pending_tool_name and self.safety is not None:
-            # Persist the verdict so future invocations of the same tool
-            # don't have to ask again.  Done before signalling the event
-            # to make the policy update visible to any concurrent reader.
-            try:
-                self.safety.record_permission_decision(
-                    self._pending_tool_name, decision
-                )
-            except Exception as _e:
-                logger.debug("record_permission_decision failed: {_e}")
-        if self._permission_event is not None:
-            self._permission_event.set()
+        self._plan_mode.resolve_permission(decision)
 
     def resolve_question(self, answers: str) -> None:
-        """Called when the user answers a pending question."""
-        self._question_answers = answers
-        if self._question_event is not None:
-            self._question_event.set()
+        self._plan_mode.resolve_question(answers)
 
     # ── Plan mode API ───────────────────────────────────────────────
     #
@@ -1216,145 +635,39 @@ class EncreLoop:
 
     @property
     def plan_mode_active(self) -> bool:
-        """Whether write-class tools are currently intercepted as proposals.
-
-        Derived from ``config.slash_command_mode`` so the flag and the
-        mode string the rest of the system consults can never diverge.
-        Only ``"plan"`` activates tool interception; ``"spec"`` does not.
-        """
-        return getattr(self.config, "slash_command_mode", "") == "plan"
-
-    _VALID_MODES: tuple[str, ...] = ("", "plan", "spec")
+        return self._plan_mode.plan_mode_active
 
     def set_mode(self, mode: str) -> None:
-        """Switch the persistent slash-command mode.
-
-        ``mode`` must be one of ``""`` (normal), ``"plan"``, or
-        ``"spec"``; any other value is normalised to ``""``.  This is
-        the *only* place that mutates mode state: it keeps
-        ``config.slash_command_mode``, ``session.metadata`` mirror
-        (``slash_command_mode`` string + the legacy ``plan_mode_active``
-        bool for backward compatibility), and the derived
-        ``plan_mode_active`` property consistent atomically.  Leaving
-        plan mode also wakes any waiter parked on a pending plan
-        proposal so the loop can decide what to do with it.
-        """
-        mode = mode if mode in self._VALID_MODES else ""
-        prev = getattr(self.config, "slash_command_mode", "")
-        self.config.slash_command_mode = mode
-        # Mirror into session metadata so the mode survives a session
-        # reload / reconnect.  ``""`` clears the persistent slot.
-        if mode:
-            self.session.metadata["slash_command_mode"] = mode
-        else:
-            self.session.metadata.pop("slash_command_mode", None)
-        # Legacy bool kept for external readers / persisted sessions.
-        self.session.metadata["plan_mode_active"] = (mode == "plan")
-        # Leaving plan mode must unblock any waiter parked on a
-        # pending plan proposal so it does not hang forever.
-        if prev == "plan" and mode != "plan" and self._plan_event is not None:
-            self._plan_event.set()
+        self._plan_mode.set_mode(mode)
 
     def enter_plan_mode(self, reason: str = "") -> PlanModeChanged:
-        """Switch the loop into plan mode.
-
-        Subsequent write-class tools will be intercepted and emitted
-        as ``PlanProposal`` events until ``exit_plan_mode`` is called.
-        """
-        self.set_mode("plan")
-        return create_plan_mode_changed(True, reason=reason)
+        return self._plan_mode.enter_plan_mode(reason)
 
     def exit_plan_mode(self, reason: str = "") -> PlanModeChanged:
-        """Leave plan mode. Pending proposals remain in the queue."""
-        self.set_mode("")
-        # Wake any waiters so the loop can decide what to do with the
-        # remaining queued proposals.
-        if self._plan_event is not None:
-            self._plan_event.set()
-        return create_plan_mode_changed(False, reason=reason)
+        return self._plan_mode.exit_plan_mode(reason)
 
     # ── Active command API ────────────────────────────────────────────
-    #
-    # A slash *command* (built-in action or user-defined ``*.md`` command)
-    # is a sticky prompt injection that is NOT a mode: it does not intercept
-    # write tools and does not run the spec approval gate.  Once activated
-    # it stays in effect across turns (its ``command_instructions`` block is
-    # re-injected on every run) until explicitly cleared.  This mirrors the
-    # persistence model of :meth:`set_mode` so a command survives session
-    # reload / reconnect / restart: ``config.active_command`` is the
-    # in-memory mirror, ``session.metadata["active_command"]`` is the
-    # on-disk source of truth.  A command and a mode (plan/spec) may be
-    # active at the same time -- they are independent slots.
+    # Delegates to :class:`CommandManager`.
 
     def set_command(self, name: str, prompt: str, icon: str = "",
                     title: str = "") -> None:
-        """Activate (or replace) the persistent slash command.
-
-        Stores ``{name, prompt, icon, title}`` in both
-        ``config.active_command`` and ``session.metadata["active_command"]``
-        so the command's instructions are re-injected every turn until
-        :meth:`clear_command` is called.  An empty ``name`` clears the slot.
-        """
-        name = (name or "").strip()
-        if not name:
-            self.clear_command()
-            return
-        payload = {
-            "name": name,
-            "prompt": prompt or "",
-            "icon": icon or "",
-            "title": title or name,
-        }
-        self.config.active_command = payload
-        self.session.metadata["active_command"] = payload
+        self._cmd_mgr.set_command(name, prompt, icon=icon, title=title)
 
     def clear_command(self) -> None:
-        """Deactivate the persistent slash command (no-op if none active)."""
-        self.config.active_command = None
-        self.session.metadata.pop("active_command", None)
+        self._cmd_mgr.clear_command()
 
     @property
     def active_command_name(self) -> str:
-        """Name of the active slash command, or ``""`` if none is active."""
-        cmd = getattr(self.config, "active_command", None)
-        return cmd.get("name", "") if cmd else ""
+        return self._cmd_mgr.active_command_name
 
     def approve_plan(self, proposal_id: str = "") -> None:
-        """Approve a pending plan proposal.
-
-        ``proposal_id`` may be empty -- an empty id is treated as
-        "approve whatever is currently waiting".  This matches the
-        Claude Code UX where the user clicks a single Approve button
-        on the most recent pending proposal.
-        """
-        self._plan_decision = True
-        if proposal_id:
-            entry = self._plan_proposals.get(proposal_id)
-            if entry is not None:
-                entry["approved"] = True
-        if self._plan_event is not None:
-            self._plan_event.set()
+        self._plan_mode.approve_plan(proposal_id)
 
     def reject_plan(self, proposal_id: str = "") -> None:
-        """Reject a pending plan proposal. The underlying tool is NOT
-        executed and a synthetic error result is fed back to the
-        model so it can adjust its plan."""
-        self._plan_decision = False
-        if proposal_id:
-            entry = self._plan_proposals.get(proposal_id)
-            if entry is not None:
-                entry["approved"] = False
-        if self._plan_event is not None:
-            self._plan_event.set()
+        self._plan_mode.reject_plan(proposal_id)
 
     def get_pending_proposals(self) -> list[dict[str, Any]]:
-        """Return a snapshot of all queued plan proposals.
-
-        Used by the desktop UI to repopulate the plan panel after a
-        reconnect, and by tests to assert plan-mode behavior without
-        consuming the events.
-        """
-        return [dict(v) for v in self._plan_proposals.values()]
+        return self._plan_mode.get_pending_proposals()
 
     def _build_plan_proposal(
         self,
@@ -1363,116 +676,8 @@ class EncreLoop:
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> PlanProposal | None:
-        """Compute a preview for a write-class tool without executing it.
-
-        Returns ``None`` when the tool has no previewable form (e.g.
-        ``bash`` commands the model has already phrased, or unknown
-        tools).  In that case the caller falls back to a generic
-        description so the user can still approve / reject.
-        """
-        preview = ""
-        diff_text = ""
-        file_path = ""
-        original = ""
-        proposed = ""
-        added = 0
-        removed = 0
-        risk = "low"
-
-        if tool_name in ("file_write", "write_file", "writeFile"):
-            file_path = str(tool_args.get("file_path", "") or "")
-            proposed = str(tool_args.get("content", "") or "")
-            try:
-                from encre.native import compute_diff as _native_diff
-                from encre.native import read_file as _native_read
-                try:
-                    original = _native_read(file_path, 0, 0) if file_path else ""
-                except Exception:
-                    original = ""
-                if file_path or proposed:
-                    diff_text = _native_diff(original or "", proposed or "")
-                    added = sum(1 for ln in diff_text.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
-                    removed = sum(1 for ln in diff_text.splitlines() if ln.startswith("-") and not ln.startswith("---"))
-            except Exception:
-                diff_text = ""
-            preview = (
-                f"Create/overwrite {file_path or '(new file)'} "
-                f"(+{added} -{removed}, {len(proposed)} chars)"
-            )
-            risk = "medium" if file_path and original else "low"
-        elif tool_name in ("file_edit",):
-            file_path = str(tool_args.get("file_path", "") or "")
-            try:
-                from encre.native import compute_diff as _native_diff
-                from encre.native import read_file as _native_read
-                try:
-                    original = _native_read(file_path, 0, 0) if file_path else ""
-                except Exception:
-                    original = ""
-                edits = tool_args.get("edits")
-                if isinstance(edits, list) and edits:
-                    content = original
-                    for e in edits:
-                        if not isinstance(e, dict):
-                            continue
-                        old_s = str(e.get("old_str", "") or "")
-                        new_s = str(e.get("new_str", "") or "")
-                        if old_s and old_s in content:
-                            content = content.replace(old_s, new_s, 1)
-                    proposed = content
-                else:
-                    old_s = str(tool_args.get("old_str", "") or "")
-                    new_s = str(tool_args.get("new_str", "") or "")
-                    proposed = (
-                        original.replace(old_s, new_s, 1) if old_s and old_s in original else original
-                    )
-                if file_path or original or proposed:
-                    diff_text = _native_diff(original or "", proposed or "")
-                    added = sum(1 for ln in diff_text.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
-                    removed = sum(1 for ln in diff_text.splitlines() if ln.startswith("-") and not ln.startswith("---"))
-            except Exception:
-                diff_text = ""
-            preview = (
-                f"Edit {file_path or '(file)'} (+{added} -{removed})"
-            )
-            risk = "medium"
-        elif tool_name == "apply_patch":
-            patch = str(tool_args.get("patch", "") or "")
-            file_hints: list[str] = []
-            for ln in patch.splitlines():
-                if ln.startswith("+++ "):
-                    p = ln[4:].strip()
-                    if p and p != "/dev/null":
-                        file_hints.append(p.lstrip("b/"))
-            file_path = ", ".join(file_hints[:3])
-            diff_text = patch[:4000]
-            added = sum(1 for ln in patch.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
-            removed = sum(1 for ln in patch.splitlines() if ln.startswith("-") and not ln.startswith("---"))
-            preview = (
-                f"Apply patch to {file_path or '(multi-file)'} "
-                f"(+{added} -{removed})"
-            )
-            risk = "medium" if len(file_hints) > 1 else "low"
-        elif tool_name == "bash":
-            command = str(tool_args.get("command", "") or "")
-            preview = f"Run shell command: {command[:200]}"
-            risk = "high"
-        else:
-            preview = f"Execute {tool_name}"
-
-        return create_plan_proposal(
-            proposal_id=proposal_id,
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            tool_args=dict(tool_args),
-            preview=preview,
-            diff_text=diff_text,
-            file_path=file_path,
-            original=original,
-            proposed=proposed,
-            added=added,
-            removed=removed,
-            risk=risk,
+        return self._plan_mode.build_plan_proposal(
+            proposal_id, tool_call_id, tool_name, tool_args,
         )
 
     async def _await_plan_decision(
@@ -1480,34 +685,137 @@ class EncreLoop:
         proposal: PlanProposal,
         timeout: float = 300.0,
     ) -> bool:
-        """Emit a ``PlanProposal`` event and block until the user decides.
+        return await self._plan_mode.await_plan_decision(proposal, timeout)
 
-        Returns ``True`` when the user approved the proposal and the
-        underlying tool may execute; ``False`` when the user rejected
-        it (or the call timed out, or the loop was cancelled).
+    def _get_review_dir(self, mode: str, review_id: str) -> str:
+        """Resolve the directory for a plan/spec review's 3 output files.
+
+        Workspace mode: ``{workspace}/.encre/{mode}/{review_id}/``
+        Normal mode: ``~/.dunimd/encre/session/{session_id}/{mode}/{review_id}/``
+
+        Inside the directory: plan.md, steps.md, checklist.md
         """
-        self._plan_proposals[proposal.proposal_id] = {
-            "proposal_id": proposal.proposal_id,
-            "tool_call_id": proposal.tool_call_id,
-            "tool_name": proposal.tool_name,
-            "tool_args": proposal.tool_args,
-            "preview": proposal.preview,
-            "risk": proposal.risk,
-            "approved": False,
-        }
-        self._plan_event = asyncio.Event()
-        self._plan_decision = False
-        try:
-            await asyncio.wait_for(self._plan_event.wait(), timeout=timeout)
-        except TimeoutError:
-            logger.warning(
-                f"Plan proposal '{proposal.proposal_id}' timed out after {timeout}s -- auto-rejecting",
+        _workspace = self.session.metadata.get("workspace", "")
+        _channel = self.session.metadata.get("channel", "")
+        if _workspace and _channel == "iwork":
+            return os.path.join(_workspace, ".encre", mode, review_id)
+        from encre.config import get_data_dir
+        return os.path.join(
+            str(get_data_dir()), "session",
+            self.session.id or "default", mode, review_id,
+        )
+
+    @staticmethod
+    def _parse_review_sections(text: str) -> dict[str, str]:
+        """Split markdown text by ``## Plan``, ``## Steps``, ``## Checklist``
+        headers and return each section's content (without the header line).
+        Missing sections get an empty string.
+        """
+        import re
+        sections: dict[str, str] = {"plan": "", "steps": "", "checklist": ""}
+        pattern = re.compile(
+            r'^##\s+(Plan|Steps|Checklist)\s*$',
+            re.MULTILINE | re.IGNORECASE,
+        )
+        parts = pattern.split(text)
+        # parts layout: [before_first_header, "Plan", plan_content, "Steps", steps_content, ...]
+        if len(parts) < 3:
+            sections["plan"] = text.strip()
+            return sections
+        header_order = ["Plan", "Steps", "Checklist"]
+        for i in range(1, len(parts), 2):
+            hdr = parts[i].strip().lower()
+            if hdr in ("plan", "steps", "checklist"):
+                sections[hdr] = parts[i + 1].strip() if i + 1 < len(parts) else ""
+        return sections
+
+    def _save_review_output(self, full_text: str, mode: str, prompt: str) -> list:
+        """Save spec/plan output to 3 markdown files and return SystemMessages to emit.
+        
+        For ``mode="spec"``: parses via ``self.spec_engine`` and writes plan.md, steps.md,
+        checklist.md.  For ``mode="plan"``: writes the same 3 files parsed by
+        ``_parse_review_sections``.  Returns a list of ``SystemMessage`` events for the
+        caller to ``yield``.
+        """
+        import json as _json
+        import uuid as _uuid
+        from encre.utils.types import SystemMessage as _SM
+        from encre.utils.types import create_plan_review_data
+
+        events: list = []
+
+        if mode == "spec" and full_text.strip() and self.spec_engine:
+            _looks_like_spec = any(
+                line.lstrip().startswith("## ") and not line.lstrip().startswith("### ")
+                for line in full_text.splitlines()
             )
-            self._plan_decision = False
-        self._plan_event = None
-        decision = self._plan_decision
-        self._plan_proposals.pop(proposal.proposal_id, None)
-        return decision
+            if not _looks_like_spec:
+                return events
+            try:
+                from encre.spec.engine import SpecStatus as _SpecStatus
+                spec_doc = self.spec_engine.parse_spec(
+                    title=prompt[:80] if prompt else "Specification",
+                    llm_output=full_text,
+                )
+                spec_doc.status = _SpecStatus.REVIEW
+                spec_data = spec_doc.to_dict()
+
+                _review_id = _uuid.uuid4().hex[:12]
+                _review_dir = self._get_review_dir("spec", _review_id)
+                try:
+                    os.makedirs(_review_dir, exist_ok=True)
+                    _sections = self._parse_review_sections(full_text)
+                    plan_path = os.path.join(_review_dir, "plan.md")
+                    steps_path = os.path.join(_review_dir, "steps.md")
+                    checklist_path = os.path.join(_review_dir, "checklist.md")
+                    with open(plan_path, "w", encoding="utf-8") as _f:
+                        _f.write(_sections["plan"] or spec_doc.to_markdown())
+                    with open(steps_path, "w", encoding="utf-8") as _f:
+                        _f.write(_sections["steps"] or "# Steps\n\nImplementation steps derived from the specification.\n")
+                    with open(checklist_path, "w", encoding="utf-8") as _f:
+                        _f.write(_sections["checklist"] or "# Checklist\n\nVerification checklist for this specification.\n")
+                    spec_data["file_path"] = plan_path
+                    logger.info("[spec] saved 3 files to %s", _review_dir)
+                except Exception as _e:
+                    logger.warning("[spec] failed to save spec files: %s", _e)
+
+                events.append(_SM(content=f"__spec_data__:{_json.dumps(spec_data)}", kind="spec"))
+                logger.info("[spec] parsed spec with %d sections, status=review", len(spec_doc.sections))
+            except Exception as e:
+                logger.warning("[spec] failed to parse spec: %s", e)
+
+        elif mode == "plan" and full_text.strip():
+            try:
+                _review_id = _uuid.uuid4().hex[:12]
+                _review_dir = self._get_review_dir("plan", _review_id)
+                os.makedirs(_review_dir, exist_ok=True)
+                _sections = self._parse_review_sections(full_text)
+                plan_path = os.path.join(_review_dir, "plan.md")
+                steps_path = os.path.join(_review_dir, "steps.md")
+                checklist_path = os.path.join(_review_dir, "checklist.md")
+                with open(plan_path, "w", encoding="utf-8") as _f:
+                    _f.write(_sections["plan"] or full_text)
+                with open(steps_path, "w", encoding="utf-8") as _f:
+                    _f.write(_sections["steps"] or "# Steps\n\nOrdered implementation steps.\n")
+                with open(checklist_path, "w", encoding="utf-8") as _f:
+                    _f.write(_sections["checklist"] or "# Checklist\n\nVerification checklist for this plan.\n")
+                _review = create_plan_review_data(
+                    review_id=_review_id,
+                    content=full_text,
+                    file_path=plan_path,
+                    dir_path=_review_dir,
+                    mode="plan",
+                    status="review",
+                )
+                events.append(_SM(
+                    content=f"__plan_review__:{_json.dumps(_review.__dict__)}",
+                    kind="plan",
+                ))
+                logger.info("[plan] saved 3 files to %s for review", _review_dir)
+            except Exception as e:
+                logger.warning("[plan] failed to save plan files: %s", e)
+
+        return events
 
     async def _intercept_plan_mode(
         self,
@@ -1516,27 +824,10 @@ class EncreLoop:
         tool_call_id: str,
         _client_id: str,
     ) -> AsyncGenerator[AgentEvent, None]:
-        """If plan mode is on, intercept the call and yield a proposal.
-
-        Returns nothing (empty generator) when the call should proceed
-        normally.  When intercepted, the generator yields a
-        ``PlanProposal`` event and (after the user resolves) a
-        ``PlanResolved`` event.  Callers that want to know whether the
-        tool was approved should track ``self._plan_decision``
-        immediately after iterating this helper.
-        """
-        interceptable = tool_name in _WRITE_TOOL_NAMES or tool_name == "bash"
-        if not self.plan_mode_active or not interceptable:
-            return
-        proposal_id = f"plan-{uuid.uuid4().hex[:12]}"
-        proposal = self._build_plan_proposal(
-            proposal_id, tool_call_id, tool_name, tool_args,
-        )
-        if proposal is None:
-            return
-        yield proposal
-        approved = await self._await_plan_decision(proposal)
-        yield create_plan_resolved(proposal.proposal_id, tool_call_id, approved)
+        async for event in self._plan_mode.intercept_plan_mode(
+            tool_name, tool_args, tool_call_id, _client_id,
+        ):
+            yield event
 
     async def _chat_with_timeout(
         self,
@@ -1643,574 +934,30 @@ class EncreLoop:
             )
         return added
 
-    _SKILL_PATTERN = re.compile(r"^/(\S+)(?:\s+(.*))?", re.DOTALL)
-
     async def _activate_skills(self, prompt: str) -> tuple[str, str]:
-        """Detect /skill-name invocations in prompt.
-
-        Returns (skill_prompt, stripped_prompt). skill_prompt is "" if no skills matched.
-        """
-        if not self.skill_registry:
-            return "", prompt
-        parts: list[str] = []
-        remaining = prompt
-        while True:
-            m = self._SKILL_PATTERN.match(remaining)
-            if not m:
-                break
-            skill_name = m.group(1)
-            args = (m.group(2) or "").strip() or None
-            skill = self.skill_registry.lookup(skill_name)
-            if skill is None:
-                break
-            skill_prompt = await self.skill_registry.activate(skill_name, args)
-            if not skill_prompt.startswith("Error: "):
-                parts.append(skill_prompt)
-            end = m.end()
-            remaining = remaining[end:].strip()
-        if parts:
-            return "\n\n".join(parts) + "\n\n---\n\n", remaining
-        return "", prompt
+        return await self._skill_mgr.activate_skills(prompt)
 
     async def _collect_tool_skill(self, tool_name: str) -> None:
-        """Activate the matching ``tool-<name>`` skill after a tool runs.
-
-        Caches the body on the loop so subsequent turns surface detailed
-        usage guidance (when to use / pitfalls / parameters) for tools the
-        agent has already used.  Idempotent: re-calling for the same tool is
-        a no-op, so it is safe to invoke from every post-tool code path.
-        """
-        if not self.skill_registry or not tool_name:
-            return
-        if tool_name in self._active_tool_skills:
-            return
-        skill_name = f"tool-{tool_name.replace('_', '-')}"
-        skill = self.skill_registry.lookup(skill_name)
-        if skill is None:
-            return
-        try:
-            body = await self.skill_registry.activate(skill_name)
-        except Exception:
-            return
-        if not body or body.startswith("Error: "):
-            return
-        self._active_tool_skills[tool_name] = body
+        await self._skill_mgr.collect_tool_skill(tool_name)
 
     async def _collect_doc_skills(self, args: dict) -> None:
-        """Auto-activate document skills whose ``when_to_use`` matches file
-        extensions referenced in the tool arguments.  Only skills with
-        ``auto_activate`` are eligible, so process skills (code-review,
-        refactor, ...) never fire from a mere file reference."""
-        if not self.skill_registry or not args:
-            return
-        paths = [str(v) for v in args.values() if isinstance(v, str)]
-        if not paths:
-            return
-        try:
-            names = await self.skill_registry.activate_for_paths(paths)
-        except Exception:
-            return
-        for skill_name in names:
-            if skill_name in self._active_doc_skills:
-                continue
-            try:
-                body = await self.skill_registry.activate(
-                    skill_name, "(referenced this session)"
-                )
-            except Exception:
-                continue
-            if not body or body.startswith("Error: "):
-                continue
-            self._active_doc_skills[skill_name] = body
+        await self._skill_mgr.collect_doc_skills(args)
 
     def _render_active_tool_skills(self) -> str:
-        """Render accumulated tool-skill guidance for the system prompt."""
-        if not self._active_tool_skills:
-            return ""
-        parts = [
-            "## Tool Skills (auto-activated)",
-            "",
-            "Detailed usage guidance for tools already used this session:",
-            "",
-        ]
-        for tool_name, body in self._active_tool_skills.items():
-            parts.append(f"### tool-{tool_name.replace('_', '-')}")
-            parts.append("")
-            parts.append(body.strip())
-            parts.append("")
-        return "\n".join(parts).rstrip()
+        return self._skill_mgr.render_active_tool_skills()
 
     def _render_active_doc_skills(self) -> str:
-        """Render accumulated document-skill guidance for the system prompt."""
-        if not self._active_doc_skills:
-            return ""
-        parts = [
-            "## Document Skills (auto-activated)",
-            "",
-            "Domain guidance for file types referenced this session:",
-            "",
-        ]
-        for skill_name, body in self._active_doc_skills.items():
-            parts.append(f"### {skill_name}")
-            parts.append("")
-            parts.append(body.strip())
-            parts.append("")
-        return "\n".join(parts).rstrip()
+        return self._skill_mgr.render_active_doc_skills()
 
     def _render_skill_catalogue(self) -> str:
-        """Render the dynamic skill catalogue from the live registry.
+        return self._skill_mgr.render_skill_catalogue()
 
-        Replaces the hard-coded skill lists that used to live in the mode and
-        specialty prompt blocks.  Scans ``self.skill_registry`` (which is itself
-        populated by scanning the builtin skills directory) so newly added
-        SKILL.md folders appear here automatically with no code change.
-
-        Excludes ``tool-*`` skills (those are auto-injected tool-usage guidance,
-        not user/model-invokable capabilities) and anything not user-invocable.
-        """
-        if not self.skill_registry:
-            return ""
-        skills = [
-            s for s in self.skill_registry.list_all()
-            if s.user_invocable and not s.name.startswith("tool-")
-        ]
-        if not skills:
-            return ""
-        # Group by prefix: "travel-flights" -> "travel"; standalone names -> "general".
-        groups: dict[str, list[str]] = {}
-        for s in sorted(skills, key=lambda x: x.name):
-            prefix = s.name.split("-", 1)[0] if "-" in s.name else "general"
-            groups.setdefault(prefix, []).append(
-                f"- `/{s.name}`: {s.description.strip()}"
-            )
-        parts = [
-            "Invoke a skill by typing `/skill-name <args>` (aliases also work), "
-            "or call the `skill` tool with `name` (and optional `args`) to "
-            "activate it yourself when the request matches a skill's purpose.",
-            "Use a skill when the request matches its purpose.",
-            "",
-        ]
-        for group_name in sorted(groups):
-            parts.append(f"**{group_name}**")
-            parts.extend(groups[group_name])
-            parts.append("")
-        return "\n".join(parts).rstrip()
-
-    def _workspace_info(self) -> tuple[str, str, str]:
-        """Return (workspace_root, workspace_name, project_summary) for the prompt builder.
-
-        Returns ("", "", "") when not running inside a workspace.
-
-        Cache key includes the git branch so that switching branches
-        automatically refreshes the workspace context.
-        """
-        ws_path = getattr(self.config, "workspace", "") or ""
-        if not ws_path or not os.path.isdir(ws_path):
-            self._workspace_info_cache = None
-            return "", "", ""
-        cache_key = ws_path
-        # Include the current git branch in the cache key so that switching
-        # branches immediately invalidates the cached workspace context.
-        try:
-            repo = getattr(self, "git", None) or getattr(self, "_git", None)
-            if repo is not None:
-                branch = repo.get_branch() if hasattr(repo, "get_branch") else ""
-                if branch:
-                    cache_key = f"{ws_path}@{branch}"
-        except Exception:
-            pass
-        if (
-            self._workspace_info_cache is not None
-            and self._workspace_info_cache[0] == cache_key
-            and self._cache_fresh(self._workspace_info_cache[1])
-        ):
-            return self._workspace_info_cache[2]
-
-        ws_name = os.path.basename(ws_path)
-
-        # Load workspace config overrides from .encre/config.json
-        yim_dir = os.path.join(ws_path, ".encre")
-        ws_config_path = os.path.join(yim_dir, "config.json")
-        ws_config: dict[str, Any] = {}
-        if os.path.isfile(ws_config_path):
-            try:
-                with open(ws_config_path, encoding="utf-8") as f:
-                    ws_config = json.load(f)
-            except Exception:
-                pass
-
-        summary_lines: list[str] = []
-
-        custom_prompt = ws_config.get("system_prompt", "")
-        if custom_prompt:
-            summary_lines.append("Project-specific instructions:")
-            summary_lines.append(custom_prompt)
-            summary_lines.append("")
-
-        # Top-level directory contents
-        try:
-            visible: list[tuple[str, bool]] = []
-            with os.scandir(ws_path) as entries:
-                for entry in entries:
-                    name = entry.name
-                    if name.startswith(".") and name != ".encre":
-                        continue
-                    try:
-                        is_dir = entry.is_dir()
-                    except OSError:
-                        is_dir = False
-                    visible.append((name, is_dir))
-            visible.sort(key=lambda item: (not item[1], item[0]))
-            if visible:
-                summary_lines.append("Top-level entries:")
-                for name, is_dir in visible[:
-                    40]:
-                    prefix = "/" if is_dir else " "
-                    summary_lines.append(f"  {prefix}{name}")
-                if len(visible) > 40:
-                    summary_lines.append(f"  ... and {len(visible) - 40} more entries")
-        except Exception:
-            pass
-
-        # Git state
-        try:
-            git_repo = EncreGitRepo(ws_path)
-            if git_repo.is_in_repo():
-                state = git_repo.get_state()
-                summary_lines.append("")
-                summary_lines.append("Git status:")
-                summary_lines.append(f"  branch: {state.branch}")
-                summary_lines.append(f"  clean: {'yes' if state.is_clean else 'no'}")
-                if state.changed_files:
-                    summary_lines.append(f"  changed: {', '.join(state.changed_files[:20])}")
-                if state.untracked_files:
-                    summary_lines.append(f"  untracked: {', '.join(state.untracked_files[:10])}")
-                if state.recent_commits:
-                    summary_lines.append("  recent commits:")
-                    for commit in state.recent_commits[:5]:
-                        summary_lines.append(f"    {commit}")
-        except Exception:
-            pass
-
-        result = (ws_path, ws_name, "\n".join(summary_lines))
-        self._workspace_info_cache = (cache_key, time.time(), result)
-        return result
-
-    def _build_workspace_context(self) -> str:
-        """Deprecated -- workspace context is now produced by _workspace_info()
-        and consumed by EncrePromptBuilder. Kept for backward compatibility with
-        external callers; returns an empty string in the new pipeline."""
-        return ""
-
-    def _build_directory_tree(self, ws_path: str, max_depth: int = 4, max_entries: int = 200) -> str:
-        """Quickly walk the workspace directory tree without reading file contents.
-        Returns a compact tree representation so the model has at least the
-        project structure on the very first turn, even before the full index
-        is built.  Skips ``.git``, ``node_modules`` and other noisy dirs."""
-        skip_dirs = {"node_modules", "__pycache__", ".git", ".venv", "venv",
-                     "target", "build", "dist", ".tox", ".eggs",
-                     ".mypy_cache", ".pytest_cache", ".ruff_cache",
-                     ".svn", ".hg", ".idea", ".vscode"}
-        skip_ext = {".pyc", ".pyo", ".so", ".dll", ".dylib", ".exe"}
-        lines: list[str] = []
-        total_files = 0
-        try:
-            for root, dirs, files in os.walk(ws_path):
-                # Skip hidden dirs and noisy dirs
-                dirs[:] = [d for d in dirs
-                           if not d.startswith(".") and d not in skip_dirs]
-                rel = os.path.relpath(root, ws_path)
-                if rel == ".":
-                    rel = ""
-                depth = rel.count(os.sep) + 1 if rel else 0
-                if depth > max_depth:
-                    continue
-                indent = "  " * depth
-                if depth == 0:
-                    lines.append("📁 workspace/")
-                else:
-                    basename = os.path.basename(root)
-                    lines.append(f"{indent}📁 {basename}/")
-                for fname in sorted(files):
-                    if fname.startswith("."):
-                        continue
-                    ext = os.path.splitext(fname)[1].lower()
-                    if ext in skip_ext:
-                        continue
-                    if len(lines) >= max_entries:
-                        break
-                    lines.append(f"{indent}  📄 {fname}")
-                    total_files += 1
-                if len(lines) >= max_entries:
-                    lines.append(f"  ... (truncated at {max_entries} entries)")
-                    break
-        except (OSError, PermissionError):
-            pass
-        if not lines:
-            return ""
-        header = (
-            f"## Workspace Structure\n"
-            f"{total_files} files shown (tree depth ≤{max_depth}). "
-            f"Index is still building — full file contents coming soon.\n"
-            f"```\n" + "\n".join(lines) + "\n```"
-        )
-        return header
-
-    def _build_codebase_context_sync(self, _ws_path: str, idx: Any) -> str:
-        """Synchronous version of ``_build_codebase_context()`` for use in
-        ``inject_code_index()`` where we're already holding a ready index."""
-        try:
-            modules = idx.list_all_modules()
-            total = len(modules)
-            if total == 0:
-                return ""
-            by_lang: dict[str, int] = {}
-            for mod in modules:
-                lang = getattr(mod, "language", None) or "other"
-                by_lang[lang] = by_lang.get(lang, 0) + 1
-            lang_items = sorted(by_lang.items(), key=lambda x: (-x[1], x[0]))
-            lines = ["## Codebase Index",
-                     f"Indexed {total} source files in the workspace.",
-                     "Use `codebase_search` to find relevant code, or "
-                     "`codebase_context` to view a specific file's details."]
-            if lang_items:
-                lines.append("Language breakdown: " +
-                             ", ".join(f"{lang}: {count}" for lang, count in lang_items))
-            return "\n".join(lines)
-        except Exception:
-            return ""
+    # ── Context building ──────────────────────────────────────────────
+    # Delegates to :class:`ContextBuilder`.  ``inject_code_index`` is kept
+    # as a bridge because it is called from ``ws.py``.
 
     def inject_code_index(self, idx: Any) -> None:
-        """Inject a fully-built code index from the background IndexManager.
-        Called from ws.py when the subprocess-based index finishes building.
-        The index is stored so ``_build_codebase_context()`` can use it
-        without blocking the conversation on a full re-scan.
-
-        Real-time injection: if a system message with a placeholder already
-        exists in the session, replace it immediately so the very next model
-        response within the same turn sees the real codebase context."""
-        self._code_index = idx
-        self._codebase_context_cache = None
-        # Real-time injection: replace any codebase placeholder in the system
-        # message with real data, so the very next model response within the
-        # same turn sees the actual file counts and language breakdown.
-        ws_path = getattr(idx, "workspace", "")
-        if ws_path and self.session.messages:
-            new_ctx = self._build_codebase_context_sync(ws_path, idx)
-            if new_ctx:
-                for m in self.session.messages:
-                    if m.get("role") == "system":
-                        old = m.get("content", "")
-                        # Replace codebase-related block at any stage
-                        if "## Codebase Index" in old:
-                            # Already has real data (re-index) — skip
-                            pass
-                        elif "## Workspace Structure" in old or \
-                             "Codebase index is still being built" in old:
-                            m["content"] = old + "\n\n" + new_ctx
-                            self.session.mark_messages_dirty()
-                            logger.info(
-                                "[codebase] real-time injected into system msg workspace=%s",
-                                ws_path,
-                            )
-                        break
-        logger.info("[codebase] injected ready index workspace=%s",
-                    getattr(idx, "workspace", "?"))
-
-    async def _build_codebase_context(self) -> str:
-        """Build codebase context from the workspace index when available.
-
-        The index is built by a **subprocess** (via ``IndexManager``) so this
-        method never runs ``scan()`` or ``scan_incremental()`` in the main
-        process.  It simply loads whatever the subprocess has already written
-        to disk.  If the index is not yet ready, a short placeholder is
-        returned instead of blocking the message pipeline.
-        """
-        ws_path = getattr(self.config, "workspace", "") or ""
-        if not ws_path or not os.path.isdir(ws_path):
-            return ""
-
-        loop = asyncio.get_running_loop()
-
-        # Lazy-init code index for this workspace
-        if self._code_index is None or getattr(self._code_index, "workspace", "") != ws_path:
-            _t0 = time.time()
-            try:
-                idx = await loop.run_in_executor(None, EncreCodeIndex, ws_path)
-                self._code_index = idx
-                if not idx._indexed:
-                    logger.info("[codebase] index not ready yet for workspace=%s", ws_path)
-                    # Return directory tree immediately without waiting for full index
-                    return self._build_directory_tree(ws_path)
-                logger.info("[codebase] cache=hit workspace=%s (%.2fs)", ws_path, time.time() - _t0)
-            except Exception:
-                # Fallback: directory tree even if index load fails
-                return self._build_directory_tree(ws_path)
-        elif not self._code_index._indexed:
-            return self._build_directory_tree(ws_path)
-
-        if self._code_index is None:
-            return ""
-
-        modules = self._code_index.list_all_modules()
-        total = len(modules)
-        if total == 0:
-            return ""
-
-        by_lang: dict[str, int] = {}
-        for mod in modules:
-            lang = mod.language or "other"
-            by_lang[lang] = by_lang.get(lang, 0) + 1
-        lang_summary_items = tuple(sorted(by_lang.items(), key=lambda x: (-x[1], x[0])))
-        cache_key = (ws_path, total, int(self._code_index._indexed), lang_summary_items)
-        if (
-            self._codebase_context_cache is not None
-            and self._codebase_context_cache[0] == cache_key
-            and self._cache_fresh(self._codebase_context_cache[1])
-        ):
-            return self._codebase_context_cache[2]
-
-        lines: list[str] = []
-        lines.append("## Codebase Index")
-        lines.append(f"Indexed {total} source files in the workspace.")
-        lines.append("Use `codebase_search` to find relevant code, or `codebase_context` to view a specific file's details.")
-
-        # Quick top-level summary: count by language
-        if lang_summary_items:
-            lang_summary = ", ".join(f"{lang}: {count}" for lang, count in lang_summary_items)
-            lines.append(f"Language breakdown: {lang_summary}")
-
-        result = "\n".join(lines)
-        self._codebase_context_cache = (cache_key, time.time(), result)
-        return result
-
-    def _build_document_context(self) -> str:
-        from encre.config import get_data_dir
-
-        try:
-            data_dir = str(get_data_dir())
-            index_path = os.path.join(data_dir, "documents", "index.json")
-            try:
-                st = os.stat(index_path)
-                cache_key = f"{data_dir}:{st.st_mtime_ns}:{st.st_size}"
-            except OSError:
-                cache_key = data_dir
-            if (
-                self._document_prompt_cache is not None
-                and self._document_prompt_cache[0] == cache_key
-                and self._cache_fresh(self._document_prompt_cache[1])
-            ):
-                return self._document_prompt_cache[2]
-
-            if self._document_manager is None or self._document_manager_data_dir != data_dir:
-                self._document_manager = EncreDocumentManager(data_dir)
-                self._document_manager_data_dir = data_dir
-            else:
-                self._document_manager._load()
-            prompt = self._document_manager.build_context()
-            self._document_prompt_cache = (cache_key, time.time(), prompt)
-            return prompt
-        except Exception:
-            return ""
-
-    def _build_memory_prompt(self) -> str:
-        if self.memory_system is None:
-            return ""
-
-        memory_dir = self.memory_system.get_memory_path()
-        cache_key = memory_dir
-        if (
-            self._memory_prompt_cache is not None
-            and self._memory_prompt_cache[0] == cache_key
-            and self._cache_fresh(self._memory_prompt_cache[1])
-        ):
-            return self._memory_prompt_cache[2]
-
-        prompt = self.memory_system.build_prompt()
-        self._memory_prompt_cache = (cache_key, time.time(), prompt)
-        return prompt
-
-    def _build_soul_prompt(self) -> str:
-        if self.soul_system is None:
-            return ""
-
-        soul_dir = self.soul_system.get_soul_dir()
-        cache_key = soul_dir
-        if (
-            self._soul_prompt_cache is not None
-            and self._soul_prompt_cache[0] == cache_key
-            and self._cache_fresh(self._soul_prompt_cache[1])
-        ):
-            return self._soul_prompt_cache[2]
-
-        prompt = self.soul_system.build_prompt()
-        self._soul_prompt_cache = (cache_key, time.time(), prompt)
-        return prompt
-
-    def _refresh_profile_in_system(self) -> None:
-        if self.profile_system is None:
-            return
-        if not self.session.messages or self.session.messages[0].get("role") != "system":
-            return
-        try:
-            # Use the last user message as query for relevance matching
-            query = ""
-            for m in reversed(self.session.messages):
-                if m.get("role") == "user":
-                    query = m.get("content", "")
-                    break
-            fresh = self.profile_system.build_relevant_prompt(query=query, threshold=0.0)
-            if not fresh:
-                return
-            content = self.session.messages[0].get("content", "")
-            content = re.sub(
-                r"\n+## User Profile.*?(?=\n+## |\Z)",
-                "",
-                content,
-                count=1,
-                flags=re.DOTALL,
-            )
-            content = content.rstrip() + "\n\n" + fresh
-            self.session.messages[0]["content"] = content
-            self.session.mark_messages_dirty()
-        except Exception:
-            pass
-
-    def _build_profile_prompt(self, query: str) -> str:
-        if self.profile_system is None:
-            return ""
-        cache_key = (getattr(self.profile_system, "_profile_path", ""), query)
-        if (
-            self._profile_prompt_cache is not None
-            and self._profile_prompt_cache[0] == cache_key[0]
-            and self._profile_prompt_cache[1] == cache_key[1]
-            and self._cache_fresh(self._profile_prompt_cache[2])
-        ):
-            return self._profile_prompt_cache[3]
-        prompt = self.profile_system.build_relevant_prompt(query=query, threshold=0.0)
-        self._profile_prompt_cache = (cache_key[0], cache_key[1], time.time(), prompt)
-        return prompt
-
-    def _build_rules_prompt(self) -> str:
-        ws_root = getattr(self.config, "workspace", "") or ""
-        cache_key = (
-            ws_root,
-            bool(self.config.enable_project_rules),
-            bool(self.config.enable_global_rules),
-        )
-        if (
-            self._rules_prompt_cache is not None
-            and self._rules_prompt_cache[0] == cache_key
-            and self._cache_fresh(self._rules_prompt_cache[1])
-        ):
-            return self._rules_prompt_cache[2]
-        prompt = self._rules_loader.build_rules_prompt(
-            ws_root,
-            enable_project=self.config.enable_project_rules,
-            enable_global=self.config.enable_global_rules,
-        )
-        self._rules_prompt_cache = (cache_key, time.time(), prompt)
-        return prompt
+        self._ctx_bldr.inject_code_index(idx)
 
     async def _pre_execute_in_background(
         self,
@@ -2386,9 +1133,9 @@ class EncreLoop:
         # a fresh one.  This prevents the model from anchoring to stale
         # requirements after the user says "actually, let's do X instead".
         _detected_change = _detect_requirement_change(prompt)
-        if _detected_change and self.session.metadata.get("user_requirements_summary"):
+        if _detected_change and self._state_mgr.user_requirements_summary:
             logger.info("[run] detected requirement change: %s -- clearing cached summary", _detected_change)
-            self.session.metadata["user_requirements_summary"] = ""
+            self._state_mgr.user_requirements_summary = ""
 
         # Activate any skills invoked via /skill-name syntax
         skill_prompt, prompt = await self._activate_skills(prompt)
@@ -2396,7 +1143,7 @@ class EncreLoop:
         tools = None
         if self.backend.supports_tool_calling():
             tools = self.discovery.get_active_tools_payload(self.session.id, fmt="openai")
-        ws_root, ws_name, ws_summary = self._workspace_info()
+        ws_root, ws_name, ws_summary = self._ctx_bldr.workspace_info()
 
         if system_prompt is None:
             # Cache the base system prompt by a content-hash key so we don't
@@ -2479,7 +1226,7 @@ class EncreLoop:
 
         # Inject codebase index context (multi-language code search + dependencies)
         if not _skip_enrichment:
-            codebase_ctx = await self._build_codebase_context()
+            codebase_ctx = await self._ctx_bldr.build_codebase_context()
             if codebase_ctx:
                 self._ctx_renderer.record("Codebase Index", codebase_ctx)
                 system_prompt = system_prompt + "\n\n" + codebase_ctx
@@ -2503,7 +1250,7 @@ class EncreLoop:
         # in session metadata so it survives compaction.  Only for the main
         # agent (sub-agents get their own self-contained brief).
         if not _skip_enrichment:
-            _req_summary = self.session.metadata.get("user_requirements_summary", "")
+            _req_summary = self._state_mgr.user_requirements_summary
             if _req_summary:
                 system_prompt = system_prompt + "\n\n" + _req_summary
             # P5: coordinator-style delegation guidance.  Steers the main
@@ -2561,7 +1308,7 @@ class EncreLoop:
             # Inject persistent memory context (encrypted memories from disk)
             if self.memory_system is not None:
                 try:
-                    memory_prompt = self._build_memory_prompt()
+                    memory_prompt = self._ctx_bldr.build_memory_prompt()
                     if memory_prompt:
                         self._ctx_renderer.record("Memory", memory_prompt)
                         system_prompt = system_prompt + "\n\n" + memory_prompt
@@ -2571,7 +1318,7 @@ class EncreLoop:
             # Inject relevant profile context -- only fields matching the user's query
             if self.profile_system is not None:
                 try:
-                    profile_prompt = self._build_profile_prompt(prompt)
+                    profile_prompt = self._ctx_bldr.build_profile_prompt(prompt)
                     if profile_prompt:
                         self._ctx_renderer.record("Profile", profile_prompt)
                         system_prompt = system_prompt + "\n\n" + profile_prompt
@@ -2581,7 +1328,7 @@ class EncreLoop:
             # Inject agent soul / identity context (SOUL.md, IDENTITY.md, USER.md)
             if self.soul_system is not None:
                 try:
-                    soul_prompt = self._build_soul_prompt()
+                    soul_prompt = self._ctx_bldr.build_soul_prompt()
                     if soul_prompt:
                         self._ctx_renderer.record("Soul", soul_prompt)
                         system_prompt = system_prompt + "\n\n" + soul_prompt
@@ -2590,7 +1337,7 @@ class EncreLoop:
 
             # Inject reference document context
             try:
-                doc_prompt = self._build_document_context()
+                doc_prompt = self._ctx_bldr.build_document_context()
                 if doc_prompt:
                     self._ctx_renderer.record("Documents", doc_prompt)
                     system_prompt = system_prompt + "\n\n" + doc_prompt
@@ -2615,7 +1362,7 @@ class EncreLoop:
             system_prompt = system_prompt + "\n\n" + stuck_prompt
         # Inject user rules (project-level + global)
         try:
-            rules_prompt = self._build_rules_prompt()
+            rules_prompt = self._ctx_bldr.build_rules_prompt()
             if rules_prompt:
                 from encre.prompts.loader import PromptLoader
                 _loader = PromptLoader()
@@ -2888,7 +1635,7 @@ class EncreLoop:
             advisor_note = ""
             if _EVOLUTION_ENABLED:
                 advisor_seed: list[dict[str, Any]] = []
-                ws_tools = (self.session.metadata.get("working_set") or {}).get("tools") or []
+                ws_tools = (self._state_mgr.working_set or {}).get("tools") or []
                 for item in ws_tools:
                     advisor_seed.append({
                         "name": item.get("name", ""),
@@ -3587,7 +2334,7 @@ class EncreLoop:
                         merged = True
                         break
 
-                if not merged:
+                if not merged and not (slash_command_mode in ("spec", "plan") and full_text.strip()):
                     txt_kwargs: dict[str, Any] = {}
                     if thinking_parts:
                         txt_kwargs["reasoning_content"] = "".join(thinking_parts)
@@ -3606,49 +2353,9 @@ class EncreLoop:
                 await _cleanup_terminal_sessions()
                 logger.debug("Agent finished (text-only response, %s chars)", len(full_text))
 
-                # ── Spec parsing ───────────────────────────────────
-                # In spec mode, when the model produces a text-only response
-                # (no tool calls), it MAY have generated a specification.
-                # Only treat it as a spec when the output actually looks like
-                # a structured spec document -- i.e. it contains at least one
-                # ``## `` (H2) heading that ``parse_spec`` will split into
-                # sections.  Without this guard, ANY text the model emits in
-                # spec mode (a clarifying question, small talk, an error
-                # apology) gets mis-parsed as a degenerate single-section
-                # "spec" and the frontend pops a spec card / system bubble
-                # for what was just a normal reply.
-                _looks_like_spec = any(
-                    line.lstrip().startswith("## ") and not line.lstrip().startswith("### ")
-                    for line in full_text.splitlines()
-                )
-                if (
-                    slash_command_mode == "spec"
-                    and self.spec_engine
-                    and full_text.strip()
-                    and _looks_like_spec
-                ):
-                    try:
-                        from encre.spec.engine import SpecStatus as _SpecStatus
-                        spec_doc = self.spec_engine.parse_spec(
-                            title=prompt[:80] if prompt else "Specification",
-                            llm_output=full_text,
-                        )
-                        spec_doc.status = _SpecStatus.REVIEW
-                        spec_data = spec_doc.to_dict()
-                        # Emit the parsed spec as a ``__spec_data__`` payload so
-                        # ws.py can re-route it as a ``spec_update`` event --
-                        # the frontend renders the spec card (with sections,
-                        # status and Approve/Reject) from that.  We do NOT emit
-                        # a separate human-readable SystemMessage here: it would
-                        # render as a redundant "System message" strip pinned
-                        # to the top of the conversation, on top of the spec
-                        # card which already carries the same information.
-                        from encre.utils.types import SystemMessage as _SM
-                        import json as _json
-                        yield _SM(content=f"__spec_data__:{_json.dumps(spec_data)}", kind="spec")
-                        logger.info("[spec] parsed spec with %d sections, status=review", len(spec_doc.sections))
-                    except Exception as e:
-                        logger.warning("[spec] failed to parse spec: %s", e)
+                # ── Save spec/plan output files + emit review events ──
+                for _e in self._save_review_output(full_text, slash_command_mode, prompt):
+                    yield _e
 
                 # ── Auto-continue: when budget remains, nudge the model to
                 # keep going instead of stopping early.  Mirrors Claude Code's
@@ -3854,7 +2561,9 @@ class EncreLoop:
 
                 is_safe = tool.is_concurrency_safe(args)
                 semantics = _infer_tool_semantics(tc["name"], tool)
-                self.session.metadata.setdefault("tool_semantics", {})[tc["name"]] = semantics
+                _ts = dict(self._state_mgr.tool_semantics)
+                _ts[tc["name"]] = semantics
+                self._state_mgr.tool_semantics = _ts
                 prepared.append({
                     "id": tc["id"], "client_id": client_id,
                     "name": tc["name"], "args": args,
@@ -3950,11 +2659,7 @@ class EncreLoop:
                         tool_name=p["name"],
                         reason=permission_reason,
                     )
-                    self._pending_tool_name = p["name"]
-                    self._permission_event = asyncio.Event()
-                    self._permission_decision = False
-                    permission_granted = await self._wait_for_permission_decision(p["name"])
-                    self._permission_event = None
+                    permission_granted = await self._plan_mode.request_permission(p["name"])
                     await self.hook_system.emit_permission_response(
                         p["name"], permission_granted
                     )
@@ -4809,7 +3514,9 @@ class EncreLoop:
 
                     is_safe = tool.is_concurrency_safe(args)
                     semantics = _infer_tool_semantics(tc["name"], tool)
-                    self.session.metadata.setdefault("tool_semantics", {})[tc["name"]] = semantics
+                    _ts = dict(self._state_mgr.tool_semantics)
+                    _ts[tc["name"]] = semantics
+                    self._state_mgr.tool_semantics = _ts
                     extra_prepared.append({
                         "id": tc["id"], "client_id": client_id,
                         "name": tc["name"], "args": args,
@@ -4872,11 +3579,7 @@ class EncreLoop:
                                 tool_name=p["name"],
                                 reason=permission_reason,
                             )
-                            self._pending_tool_name = p["name"]
-                            self._permission_event = asyncio.Event()
-                            self._permission_decision = False
-                            permission_granted = await self._wait_for_permission_decision(p["name"])
-                            self._permission_event = None
+                            permission_granted = await self._plan_mode.request_permission(p["name"])
                             await self.hook_system.emit_permission_response(
                                 p["name"], permission_granted
                             )
@@ -5131,7 +3834,7 @@ class EncreLoop:
                 latency_ms=turn_latency,
                 token_usage=_backend_usage,
                 model=self.config.model,
-                channel=self.session.metadata.get("channel", "normal"),
+                channel=self._state_mgr.get("channel", "normal"),
             )
 
             # Evolution: reflex + meta-cognition
@@ -5209,382 +3912,19 @@ class EncreLoop:
                               event_callback: Any = None,
                               session_id: str | None = None,
                               cache_context: Any = None) -> dict[str, Any]:
-        """Run a sub-agent as a fully isolated session.
-
-        The sub-agent is ALWAYS an EncreAgent spawned from this loop. The
-        caller can observe execution through two hooks:
-
-        * ``progress_callback(messages_snapshot)`` is awaited on every
-          streaming event with the canonical session messages plus any
-          uncommitted draft. Used by the chat UI to render live tokens.
-        * ``event_callback(event)`` is awaited on every raw AgentEvent
-          (TextDelta, ThinkingDelta, ToolCallStart, ToolProgress,
-          ToolCallEnd, ToolResult, Finish) before it is folded into the
-          draft. Used by callers that need to translate the event stream
-          into a different transport (e.g. the automation scheduler's
-          automation_stream_event protocol).
-
-        Returns the standard sub-agent result dict:
-
-            ``{"content": str, "messages": list[dict], "session_id": str}``
-
-        The sub-agent's session is persisted under
-        ``<data_dir>/sub_agents/<session_id>/`` and ``metadata["channel"]``
-        is set to ``"sub_agent"`` so the sidebar session list can filter
-        it out.
-        """
-        # Coerce None to "" at the boundary so downstream code (logging,
-        # sub_agent.run, etc.) can rely on a string.  Some callers
-        # (notably the automation scheduler) pass ``system_prompt=None``
-        # to mean "let the sub-agent build its default system prompt",
-        # which previously crashed the length-based logger here.
-        if prompt is None:
-            prompt = ""
-        if system_prompt is None:
-            system_prompt = ""
-
-        logger.info("[sub_agent] _run_sub_agent | prompt_len=%s | sys_prompt_len=%s | tool_policy=%s",
-                    len(prompt), len(system_prompt), tool_policy)
-        logger.info("[sub_agent] prompt_text=%.300s", prompt)
-
-        # Create a full EncreAgent (same as SessionManager.create_session / normal user flow).
-        # Lazy-import to avoid circular dependency (agent.py imports EncreLoop from this module).
-        from encre.agent import EncreAgent
-        from encre.config import EncreConfig
-        from encre.tools.builtin.agent import (
-            MAX_SUB_AGENT_DEPTH,
-        )
-        from encre.tools.builtin.agent import (
-            _enforce_tool_policy as _agent_enforce_policy,
-        )
-        from encre.tools.registry import ToolRegistry
-
-        sub_config = EncreConfig(
-            model=model or self.config.model,
-            api_key=api_key or self.config.api_key,
-            base_url=base_url or self.config.base_url,
-            max_tokens=self.config.max_tokens,
+        return await self._sub_agent_runner.run(
+            prompt=prompt,
+            system_prompt=system_prompt,
             max_turns=max_turns,
-            permission_mode="bypass",
-            backend_type=self.config.backend_type,
-            backend_kwargs=self.config.backend_kwargs,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            tool_policy=tool_policy,
+            progress_callback=progress_callback,
+            event_callback=event_callback,
+            session_id=session_id,
+            cache_context=cache_context,
         )
-        # Clone tool registry (same as session_manager._clone_tool_registry)
-        tool_registry = ToolRegistry()
-        tool_registry._tools = dict(self.tool_registry._tools)
-
-        sub_agent = EncreAgent(
-            config=sub_config,
-            tool_registry=tool_registry,
-            memory_system=self.memory_system,
-            profile_system=self.profile_system,
-            soul_system=self.soul_system,
-            skill_registry=self.skill_registry,
-            hook_system=self.hook_system,
-            safety=self.safety,
-        )
-        sub_agent.loop.sub_agent_depth = self.sub_agent_depth + 1
-        # Hard-fence: when the sub-agent is itself a delegated sub-agent
-        # (depth > 0), the runtime forbids further nesting. Remove the
-        # ``agent`` tool from the sub-agent's tool registry so the model
-        # cannot even see it -- this is the only way to stop a
-        # recursion-looping LLM that keeps retrying on a soft error.
-        if self.sub_agent_depth >= MAX_SUB_AGENT_DEPTH and "agent" in tool_registry._tools:
-            try:
-                del tool_registry._tools["agent"]
-                logger.info("[sub_agent] depth=%s reached MAX=%s, removed 'agent' tool from sub-agent registry",
-                            self.sub_agent_depth + 1, MAX_SUB_AGENT_DEPTH)
-            except Exception:
-                pass
-        # Propagate the role-template's tool_policy onto the sub-agent's
-        # own EncreConfig so the pre-tool enforcement hook (in
-        # ``tools.builtin.agent``) can read it via the loop's
-        # ``config.current_tool_policy`` field.  ``"all"`` is a no-op
-        # (no tools are blocked) so we only inject when the policy is
-        # actually restrictive.
-        sub_agent.config.current_tool_policy = tool_policy
-
-        if tool_policy in ("readonly", "no_writes"):
-            def _policy_hook(tool_name: str, _tool_input: dict[str, Any]) -> dict[str, Any] | None:
-                # ``tool_input`` is part of the pre-tool hook signature
-                # for future context-aware policies; current policy
-                # decisions only depend on ``tool_name``.
-                err = _agent_enforce_policy(tool_name, _tool_input)
-                if err is not None:
-                    return {"block": True, "block_reason": err}
-                return None
-
-            # Wrap the sub-agent loop's pre-tool hook to apply the policy.
-            original_emit_pre_tool = sub_agent.loop.hook_system.emit_pre_tool
-
-            async def _emit_pre_tool_with_policy(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any] | None:
-                result = _policy_hook(tool_name, tool_input)
-                if result is not None:
-                    return result
-                return await original_emit_pre_tool(tool_name, tool_input)
-
-            sub_agent.loop.hook_system.emit_pre_tool = _emit_pre_tool_with_policy  # type: ignore[assignment]
-        # Add the prompt as a user message, exactly like ws.py does for normal input
-        sub_agent.add_message("user", prompt)
-
-        # If a cache context is provided, wrap the system prompt so the
-        # sub-agent shares the same cached prefix bytes as the parent.
-        # This is a no-op for backends that don't support prompt caching
-        # (e.g. OpenAI) but provides a significant latency reduction for
-        # Anthropic's prompt caching API.
-        if cache_context is not None and hasattr(cache_context, "wrap_prompt"):
-            system_prompt = cache_context.wrap_prompt(system_prompt or "")
-            logger.info("[sub_agent] applied cache context from parent session=%s hash=%s",
-                        getattr(cache_context, "parent_session_id", "?"),
-                        getattr(cache_context, "prefix_hash", "?"))
-
-        # Give the sub-agent a proper session ID. Callers such as the
-        # automation scheduler can pre-allocate one so its live execution
-        # record, stream events, and persisted transcript all share the same
-        # identifier from the first event onward.
-        import uuid
-        sub_agent.session.id = session_id or sub_agent.session.id or str(uuid.uuid4())
-        saved_session_id = sub_agent.session.id
-        sub_agent.session.metadata["channel"] = "sub_agent"
-        sub_agent.session.parent_session_id = self.session.id or ""
-
-        def _save():
-            try:
-                from encre.config import get_data_dir
-                # Save to sub_agents dir (NOT the main sessions dir) so
-                # SessionManager._bootstrap_index_from_disk does NOT include
-                # sub-agent sessions in the sidebar session list.
-                _dir = get_data_dir() / "sub_agents" / saved_session_id
-                _dir.mkdir(parents=True, exist_ok=True)
-                sub_agent.session.save_to_dir(str(_dir))
-            except Exception:
-                logger.warning("[sub_agent] failed to persist session", exc_info=True)
-
-        result_parts: list[str] = []
-        text_buffer = ""
-        sub_refs: list[dict[str, Any]] = []
-        # "Draft" assistant state tracked from the streaming events. Once the
-        # sub-agent's own loop commits a new assistant message into
-        # sub_agent.session.messages, we drop the matching draft and rely on
-        # the committed record. This guarantees the snapshot never contains
-        # duplicate / out-of-order assistant turns.
-        draft_content: list[str] = []
-        draft_reasoning: list[str] = []
-        draft_tool_calls: list[dict[str, Any]] = []
-        draft_tool_id_to_idx: dict[str, int] = {}
-        draft_segments: list[dict[str, Any]] = []
-        last_seen_msg_count = 0
-        last_seen_assistant_id: str | None = None
-
-        def _has_uncommitted_draft() -> bool:
-            return bool(
-                draft_content
-                or draft_reasoning
-                or draft_tool_calls
-                or draft_segments
-            )
-
-        def _reset_draft() -> None:
-            draft_content.clear()
-            draft_reasoning.clear()
-            draft_tool_calls.clear()
-            draft_tool_id_to_idx.clear()
-            draft_segments.clear()
-
-        def _draft_as_message() -> dict[str, Any]:
-            return {
-                "role": "assistant",
-                "content": "".join(draft_content),
-                "reasoning_content": "".join(draft_reasoning),
-                "tool_calls": [dict(tc) for tc in draft_tool_calls],
-                "segments": [dict(s) for s in draft_segments],
-                "created_at": time.time(),
-            }
-
-        def _sync_draft_with_session() -> None:
-            """Drop the draft when the sub-agent's loop has committed a
-            matching (or superseding) assistant message into session.messages.
-            """
-            nonlocal last_seen_msg_count, last_seen_assistant_id
-            msgs = sub_agent.session.messages
-            current_count = len(msgs)
-            current_assistant_id: str | None = None
-            for m in reversed(msgs):
-                if m.get("role") == "assistant":
-                    current_assistant_id = str(m.get("id") or "")
-                    break
-            # Reset the draft whenever a new assistant message has been
-            # committed since the last emit. The agent's loop appends the
-            # assistant message to session.messages only AFTER the streaming
-            # for that turn has finished, so a new id means "the previous
-            # turn's draft is now committed; start fresh".
-            if (
-                current_assistant_id is not None
-                and current_assistant_id != last_seen_assistant_id
-            ):
-                last_seen_msg_count = current_count
-                last_seen_assistant_id = current_assistant_id
-                _reset_draft()
-            elif current_count != last_seen_msg_count:
-                last_seen_msg_count = current_count
-
-        def _build_snapshot() -> list[dict[str, Any]]:
-            """Build the messages snapshot for progress callbacks.
-
-            Prefers sub_agent.session.messages (canonical, committed history
-            with full tool_call / tool_result structure). If a streaming turn
-            is still in progress and has not yet been committed, appends the
-            draft so the frontend sees live tokens.
-            """
-            _sync_draft_with_session()
-            snapshot = [dict(m) for m in sub_agent.session.messages]
-            if _has_uncommitted_draft():
-                snapshot.append(_draft_as_message())
-            return snapshot
-
-        async def _emit_live() -> None:
-            if progress_callback is not None:
-                await progress_callback(_build_snapshot())
-
-        def _flush_text_buffer() -> None:
-            nonlocal text_buffer
-            text = text_buffer.strip()
-            if text:
-                result_parts.append(f"### Assistant\n{text}\n")
-            text_buffer = ""
-
-        #   Run exactly like ws.py does: agent.run(prompt, system_prompt=None) -> full system prompt
-        # build
-        # Register the child loop on the parent so a single Stop click on
-        # the parent terminates the entire agent tree (the parent's
-        # ``cancel()`` walks ``_child_loops``).
-        self._child_loops.add(sub_agent.loop)
-        cancelled = False
-        try:
-            async for event in sub_agent.run(prompt=prompt, system_prompt=system_prompt or None):
-                # Forward the raw event to an optional caller-side observer
-                # (e.g. the automation scheduler) BEFORE folding it into the
-                # draft. Callers that don't need raw events simply leave
-                # ``event_callback=None``.
-                if event_callback is not None:
-                    try:
-                        await event_callback(event)
-                    except Exception:
-                        logger.warning("[sub_agent] event_callback raised", exc_info=True)
-                if isinstance(event, TextDelta):
-                    text_buffer += event.text
-                    draft_content.append(event.text)
-                    if draft_segments and draft_segments[-1].get("kind") == "text":
-                        draft_segments[-1]["text"] = (
-                            str(draft_segments[-1].get("text") or "") + event.text
-                        )
-                    else:
-                        draft_segments.append({"kind": "text", "text": event.text})
-                    await _emit_live()
-                elif isinstance(event, ThinkingDelta):
-                    _flush_text_buffer()
-                    thought = event.text.strip()
-                    if thought:
-                        result_parts.append(f"### Thought\n{thought}\n")
-                        draft_reasoning.append(event.text)
-                        if draft_segments and draft_segments[-1].get("kind") == "thinking":
-                            draft_segments[-1]["text"] = (
-                                str(draft_segments[-1].get("text") or "") + event.text
-                            )
-                        else:
-                            draft_segments.append({"kind": "thinking", "text": event.text})
-                        await _emit_live()
-                elif isinstance(event, ToolCallStart):
-                    _flush_text_buffer()
-                    result_parts.append(f"### Tool Start\n- id: `{event.id}`\n- name: `{event.name}`\n")
-                    tc_dict = {
-                        "id": event.id,
-                        "type": "function",
-                        "function": {"name": event.name, "arguments": "{}"},
-                    }
-                    draft_tool_calls.append(tc_dict)
-                    draft_tool_id_to_idx[event.id] = len(draft_tool_calls) - 1
-                    draft_segments.append({"kind": "tool", "tool_id": event.id})
-                    await _emit_live()
-                elif isinstance(event, ToolProgress):
-                    _flush_text_buffer()
-                    result_parts.append(f"### Tool Progress\n- id: `{event.id}`\n- name: `{event.tool_name}`\n- status: `{event.status}`\n")
-                    # Forward nested sub-agent messages so the frontend sees
-                    # live progress from sub-sub-agents all the way up.
-                    if progress_callback is not None and event.sub_agent_messages:
-                        with contextlib.suppress(Exception):
-                            await progress_callback(event.sub_agent_messages)
-                    else:
-                        await _emit_live()
-                elif isinstance(event, ToolCallEnd):
-                    _flush_text_buffer()
-                    result_parts.append(f"### Tool End\n- id: `{event.id}`\n")
-                    await _emit_live()
-                elif isinstance(event, ToolResult):
-                    _flush_text_buffer()
-                    content = event.content.strip()
-                    if len(content) > 2000:
-                        content = f"{content[:2000]}\n... (truncated)"
-                    result_parts.append(
-                        f"### Tool Result\n- id: `{event.id}`\n- error: `{'yes' if event.is_error else 'no'}`\n\n```text\n{content}\n```\n"
-                    )
-                    # Tool results are already persisted into sub_agent.session.messages
-                    # by the sub-agent's own loop. The snapshot builder picks them up
-                    # directly so we do NOT maintain a separate live_messages list.
-                    await _emit_live()
-                elif isinstance(event, Reference):
-                    if event.reference:
-                        sub_refs.append(event.reference)
-                elif isinstance(event, Finish):
-                    _flush_text_buffer()
-                    await _emit_live()
-                    if event.reason == "error":
-                        _save()
-                        return {
-                            "content": "Error: Sub-agent failed",
-                            "messages": sub_agent.session.messages,
-                            "session_id": saved_session_id,
-                            "references": sub_refs,
-                        }
-        except asyncio.CancelledError:
-            cancelled = True
-            logger.info("[sub_agent] cancelled by parent, session_id={sid}", sid=saved_session_id)
-        finally:
-            # ALWAYS save the sub-agent session so it can be viewed later,
-            # even on cancellation or exception.
-            _save()
-            self._child_loops.discard(sub_agent.loop)
-
-        # Extract the sub-agent's final response: prefer text content, fall back
-        # to reasoning content, then to "Tool calls executed" if only tools ran.
-        final_text = ""
-        for msg in reversed(sub_agent.session.messages):
-            if msg.get("role") != "assistant":
-                continue
-            txt = str(msg.get("content") or "")
-            if txt.strip():
-                final_text = txt
-                break
-            # No text content -- check reasoning
-            rsn = str(msg.get("reasoning_content") or "")
-            if rsn.strip():
-                final_text = f"[Thinking]\n{rsn}"
-                break
-            # No text or reasoning -- check tool calls
-            tcs = msg.get("tool_calls") or []
-            if tcs:
-                names = [tc.get("function", {}).get("name", "?") for tc in tcs]
-                final_text = f"[Tool calls executed: {', '.join(names)}]"
-                break
-        logger.info("[sub_agent] done session_id={sid} final_len={flen} msgs={mcount} cancelled={c}",
-                      sid=saved_session_id, flen=len(final_text), mcount=len(sub_agent.session.messages), c=cancelled)
-        logger.info("[sub_agent] final_text={t:.200s}", t=final_text)
-        return {
-            "content": final_text or ("[Cancelled by user]" if cancelled else "No output from sub-agent"),
-            "messages": sub_agent.session.messages,
-            "session_id": saved_session_id,
-            "references": sub_refs,
-        }
 
 
 # ── Terminal session cleanup (called at end of each turn) ──────────

@@ -289,6 +289,13 @@ export function handleEvent(event: ServerEvent): void {
     // an active sessionId, only accept a session_ready that explicitly
     // matches it (or is a genuine user-initiated resume/new).  Unsolicited
     // session_ready events for a different session are dropped.
+    //
+    // WebSocket reconnect recovery: when the backend creates a new session
+    // on the fresh connection and sends session_ready with a different sid,
+    // clear the stale pending-request state (which would block all future
+    // session_ready events) and send a resume for the session we were
+    // viewing.  The backend will load it from the session manager and send
+    // a fresh session_ready with the correct sid + matching request_id.
     const _activeReadySid = state.getState().sessionId;
     if (
       _activeReadySid &&
@@ -296,7 +303,12 @@ export function handleEvent(event: ServerEvent): void {
       eventSid !== _activeReadySid &&
       !_requestedSessionRequestId
     ) {
-      console.log("[stream] REJECT session_ready stray sid=%s active=%s", eventSid, _activeReadySid);
+      console.log("[stream] REJECT session_ready stray sid=%s active=%s — reconnect recovery: resume active session", eventSid, _activeReadySid);
+      // Clear stale pending request state from before the disconnect.
+      _requestedSessionId = "";
+      _requestedSessionRequestId = "";
+      // Re-request the session we were viewing so the backend loads it.
+      send({ type: "resume", session_id: _activeReadySid, request_id: crypto.randomUUID() });
       return;
     }
   }
@@ -504,6 +516,11 @@ export function handleEvent(event: ServerEvent): void {
             chat?.renderForce?.();
           }
         }
+      }
+      // Auto-open sidebar + browser tab when the model starts using the
+      // browser tool, so the user can see what the model is doing.
+      if (event.name === "browser") {
+        window.dispatchEvent(new CustomEvent("browser-tool-call"));
       }
       tools?.requestRender();
       chat?.renderForce?.();
@@ -979,6 +996,7 @@ export function handleEvent(event: ServerEvent): void {
         "shortcut_send_mode", "default_link_behavior",
         "auto_expand", "sub_agent_auto_open_view", "automation_auto_open_view",
         "startup_session_mode", "startup_session_behavior",
+        "default_search_engine", "default_search_engine_url",
       ] as const;
       for (const key of _generalKeys) {
         const val = cfg[key];
@@ -1189,6 +1207,22 @@ export function handleEvent(event: ServerEvent): void {
         const sev = event as any;
         state.updateSpec(sev.spec || null, _eventSessionId(sev));
         (window as any).__sessionInner?.render?.();
+      }
+      break;
+
+    case "plan_review":
+      {
+        const sev = event as any;
+        const review = sev.review || {};
+        const existing = state.getState().planReview || {} as any;
+        state.updatePlanReview({
+          review_id: review.review_id || existing.review_id || "",
+          content: review.content || existing.content || "",
+          file_path: review.file_path || existing.file_path || "",
+          dir_path: review.dir_path || existing.dir_path || "",
+          mode: review.mode || existing.mode || "",
+          status: sev.status || existing.status || "review",
+        }, _eventSessionId(sev));
       }
       break;
 

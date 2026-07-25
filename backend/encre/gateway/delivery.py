@@ -108,7 +108,7 @@ class DeliveryResult:
 class DeliveryRouter:
     """Routes outbound content to one or more platform targets.
 
-    Owned by :class:`~encre.adapters.manager.AdapterManager` (which holds the
+    Owned by :class:`~encre.gateway.run.GatewayRunner` (which holds the
     live adapter instances).  Callers (automation/cron push, the send engine)
     pass a content blob and a list of target strings; the router resolves each
     to a live adapter, applies truncation, and sends.

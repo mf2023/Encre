@@ -22,21 +22,33 @@
 # Rust
 # =============================================================================
 target/
-Cargo.lock
+**/target/
+native/target/
 **/*.rs.bk
 *.pdb
 rust-project.json
+*.rlib
+*.so.*
+*.dylib
+*.dll
+*.dll.manifest
+*.lib
+Cargo.lock
 
 # =============================================================================
 # Python
 # =============================================================================
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.so.*
+*.pyd
 .Python
 .pytest_cache/
 build/
+build.py
 develop-eggs/
 dist/
 downloads/
@@ -52,6 +64,14 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.mypy_cache/
+.ruff_cache/
+*.opt-1/
+*.opt-2/
+*.profraw
+coverage.xml
+.pyre/
+.pytest_cache/
 
 # =============================================================================
 # Virtual Environment
@@ -79,6 +99,18 @@ tsconfig.tsbuildinfo
 *.next.css
 static/
 desktop/package-lock.json
+desktop/dist/
+desktop/dev/
+desktop/renderer/bundle.js
+desktop/renderer/monaco/
+desktop/renderer/fonts/
+desktop/renderer/assets/
+desktop/renderer/codicon.*
+desktop/renderer/xterm.css
+desktop/renderer/_components.css
+desktop/renderer/design-system.css
+desktop/renderer/devicon.css
+desktop/release
 
 # TypeScript / esbuild artifacts
 *.d.ts.map

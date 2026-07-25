@@ -177,6 +177,11 @@ export function sendRollback(branch_id: string, message_id: string): void {
   send({ type: "rollback", branch_id, message_id });
 }
 
+/** Sends the CDP WebSocket URL for the internal browser webview to the backend. */
+export function sendSetCdpUrl(url: string): void {
+  send({ type: "browser_cdp_url", url, session_id: getState().sessionId });
+}
+
 function startPing(): void {
   stopPing();
   pingTimer = setInterval(() => {

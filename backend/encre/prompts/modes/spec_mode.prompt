@@ -25,29 +25,30 @@ Your **ONLY** job right now is to produce a complete, precise specification. You
 - **Do NOT** end your response with a mode declaration such as "Current mode: ...". The system prompt already declares the mode.
 
 ### Output Format
-Present your specification in this structure:
+Organize your specification into these three sections using the exact
+headers shown below. Each section becomes a separate file saved to
+disk for review.
 
 ```
-## Specification: [Title]
+## Plan
+[Full specification document: overview, goals, functional/non-functional
+requirements, scope, edge cases, acceptance criteria — as a single
+structured document.]
 
-### Overview
-[Brief description of what is being specified]
+## Steps
+[Implementation steps derived from the specification. Ordered steps with
+file paths and effort estimates.]
 
-### Goals
-- [Goal 1]
-- [Goal 2]
+## Checklist
+[Verification checklist: acceptance criteria, edge cases to test,
+quality gates to pass before the spec is considered implemented.]
+```
 
-### Functional Requirements
-1. [FR1: description]
-2. [FR2: description]
+- **## Plan** — The complete specification document (requirements, scope, edge cases, acceptance criteria).
+- **## Steps** — Concrete implementation steps with file paths.
+- **## Checklist** — Verification items to confirm the spec is satisfied.
 
-### Non-Functional Requirements
-- [NFR1: description]
-
-### Scope
-- **In scope**: [list]
-- **Out of scope**: [list]
-
-### Edge Cases & Error Handling
-- [Case 1]: [Handling]
-- [Case 2]: [Handling]
+### Important
+- If the user's request is vague, ask clarifying questions first.
+- Keep each section concise but complete.
+- After presenting the spec, **stop**. Wait for user feedback.

@@ -94,11 +94,11 @@ class CDPTransport:
                 fut.cancel()
         self._pending.clear()
 
-    async def send(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def send(self, method: str, params: dict[str, Any] | None = None, timeout: float = 60.0) -> dict[str, Any]:
         """Send a CDP command and wait for its result.
 
         Returns the ``result`` dict from the response.
-        Raises :exc:`RuntimeError` if the command fails.
+        Raises :exc:`RuntimeError` if the command fails or times out.
         """
         if not self._connected or self._ws is None:
             raise RuntimeError("CDP transport not connected")
@@ -109,7 +109,10 @@ class CDPTransport:
         self._pending[msg_id] = fut
         try:
             await self._ws.send(json.dumps(body))
-            resp = await fut
+            resp = await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(msg_id, None)
+            raise RuntimeError(f"CDP timeout ({method}): no response within {timeout}s")
         except asyncio.CancelledError:
             self._pending.pop(msg_id, None)
             raise

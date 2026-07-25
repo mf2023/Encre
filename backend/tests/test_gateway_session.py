@@ -40,15 +40,15 @@ from pathlib import Path
 
 import pytest
 
-from encre.adapters.base import (
+from encre.gateway.platforms.base import (
     SEND_ERROR_KINDS,
-    BaseAdapter,
+    BasePlatformAdapter,
     MessageEvent,
     MessageType,
     SendResult,
     classify_send_error,
 )
-from encre.gateway.protocol import GatewayMessage, GatewayOp
+from encre.gateway.ws_bridge.protocol import GatewayMessage, GatewayOp
 from encre.gateway.session import (
     SessionSource,
     SessionStore,
@@ -315,17 +315,24 @@ def test_message_event_accepts_source():
     assert e.source.platform == "telegram"
 
 
-class _StubAdapter(BaseAdapter):
+class _StubAdapter(BasePlatformAdapter):
     """Minimal adapter for testing base-class defaults."""
 
     name = "stub"
+
+    async def connect(self, *, is_reconnect=False) -> bool:
+        return True
+
+    async def disconnect(self) -> None:
+        pass
 
     async def send(self, chat_id, content, *, reply_to=None, metadata=None):
         return SendResult(success=True)
 
 
 def test_get_chat_info_default_impl():
-    a = _StubAdapter()
+    from encre.gateway.config import Platform, PlatformConfig
+    a = _StubAdapter(config=PlatformConfig(enabled=True), platform=Platform.TELEGRAM)
     info = asyncio.run(a.get_chat_info("123"))
     assert info == {"name": "123", "type": "dm"}
 

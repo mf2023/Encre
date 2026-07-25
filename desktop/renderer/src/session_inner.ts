@@ -33,7 +33,6 @@ import { getState, subscribe, addAttachments, showToast } from "./state.js";
 import type { ArtifactItem, AttachmentMeta, ReferenceItem } from "./types.js";
 import { getFileIcon, getCodeIcon } from "./files.js";
 import { t, onLocaleChange } from "./i18n.js";
-import { renderMarkdown } from "./chat.js";
 import { send } from "./ws.js";
 import { getMonaco, monacoLang, registerEditor, unregisterEditor } from "./monaco.js";
 import { Terminal } from "@xterm/xterm";
@@ -43,17 +42,21 @@ import { renderDiffHtml } from "./diff_render.js";
 import { showContextMenu } from "./context-menu.js";
 import { BrowserView } from "./browser.js";
 import { getDefaultHomepage } from "./browser.js";
+import { MarkdownPreviewView } from "./markdown_preview.js";
 
 /** Definition of a sidebar tab. */
 export interface TabDef {
   id: string;            /** unique instance ID: "terminal-1", "browser-1", "editor", "review" */
-  type: string;          /** panel type: "terminal" | "editor" | "review" | "browser" */
+  type: string;          /** panel type: "terminal" | "editor" | "review" | "browser" | "markdown" */
   label: string;         /** display label shown in the tab bar */
   closable: boolean;
   shellPath?: string;    /** for terminal tabs */
   shellArgs?: string[];  /** for terminal tabs */
   startUrl?: string;     /** for browser tabs */
   favicon?: string;      /** for browser tabs: favicon URL from the page */
+  content?: string;      /** for markdown tabs: initial markdown content */
+  title?: string;        /** for markdown tabs: preview title */
+  filePath?: string;     /** for markdown tabs: file path for dedup */
 }
 
 const TABS_STORAGE_KEY = "session-sidebar-tabs";
@@ -87,6 +90,7 @@ function tabLabel(id: string): string {
     case "editor": return t("sessionInner.tabEditor");
     case "review": return t("sessionInner.tabReview");
     case "browser": return t("sessionInner.tabBrowser");
+    case "markdown": return t("sessionInner.tabMarkdown");
     default: return id;
   }
 }
@@ -97,6 +101,7 @@ function tabIcon(type: string): string {
     case "editor": return "code-2";
     case "review": return "eye";
     case "browser": return "globe";
+    case "markdown": return "file-text";
     default: return "square";
   }
 }
@@ -271,8 +276,10 @@ export class SessionInner {
   private panelShellPath = new Map<string, string>();
   private panelShellArgs = new Map<string, string[]>();
   private panelBrowsers = new Map<string, BrowserView>();
+  private panelMarkdownPreviews = new Map<string, MarkdownPreviewView>();
   private _terminalCounter = 0;
   private _browserCounter = 0;
+  private _markdownCounter = 0;
   private _availableShells: Array<{ name: string; path: string; args?: string[] }> = [];
   private _shellsLoaded = false;
 /**
@@ -301,6 +308,24 @@ export class SessionInner {
     this.renderTabs();
     this.bindAddButton();
     this.bindResize();
+
+    // Auto-open sidebar + browser tab when the model uses the browser tool
+    window.addEventListener("browser-tool-call", () => {
+      const panel = document.getElementById("session-inner-sidebar");
+      const mainBody = document.getElementById("main-body");
+      if (panel && mainBody && panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        mainBody.classList.remove("sidebar-hidden");
+        document.getElementById("app")?.classList.add("sidebar-collapsed");
+        this.saveSidebarVisibility();
+      }
+      // Only create a browser tab if none exists yet, so the model
+      // operates the same webview across multiple tool calls
+      const existingBrowser = this.tabs.find(t => t.type === "browser");
+      if (!existingBrowser) {
+        this.createTab("browser");
+      }
+    });
   }
 
   /** Re-renders the active tab's content (reactive to state/locale). */
@@ -569,7 +594,7 @@ export class SessionInner {
     }
   }
 
-  public async createTab(type: string, opts?: { shellPath?: string; shellArgs?: string[]; startUrl?: string }): Promise<void> {
+  public async createTab(type: string, opts?: { shellPath?: string; shellArgs?: string[]; startUrl?: string; content?: string; title?: string; filePath?: string }): Promise<void> {
     let id: string;
     let label: string;
     if (type === "terminal") {
@@ -581,6 +606,10 @@ export class SessionInner {
       this._browserCounter++;
       id = `browser-${this._browserCounter}`;
       label = t("sessionInner.tabBrowser");
+    } else if (type === "markdown") {
+      this._markdownCounter++;
+      id = `markdown-${this._markdownCounter}`;
+      label = opts?.title || t("sessionInner.tabMarkdown");
     } else {
       id = type;
       label = tabLabel(type);
@@ -589,6 +618,9 @@ export class SessionInner {
     if (opts?.shellPath !== undefined) tab.shellPath = opts.shellPath;
     if (opts?.shellArgs !== undefined) tab.shellArgs = opts.shellArgs;
     if (opts?.startUrl !== undefined) tab.startUrl = opts.startUrl;
+    if (opts?.content !== undefined) tab.content = opts.content;
+    if (opts?.title !== undefined) tab.title = opts.title;
+    if (opts?.filePath !== undefined) tab.filePath = opts.filePath;
     this.tabs.push(tab);
     _saveTabs(this.tabs);
     this.activeTab = id;
@@ -616,6 +648,8 @@ export class SessionInner {
         this.setupReviewPanel(panel);
       } else if (t.type === "browser") {
         this.setupBrowserPanel(panel, t.id, t.startUrl);
+      } else if (t.type === "markdown") {
+        this.setupMarkdownPanel(panel, t.id, t.content, t.title, t.filePath);
       }
 
       this.tabBody.appendChild(panel);
@@ -647,6 +681,13 @@ export class SessionInner {
           if (bv) {
             bv.destroy();
             this.panelBrowsers.delete(pid);
+          }
+        }
+        if (ptype === "markdown") {
+          const mp = this.panelMarkdownPreviews.get(pid);
+          if (mp) {
+            mp.destroy();
+            this.panelMarkdownPreviews.delete(pid);
           }
         }
         p.remove();
@@ -1810,6 +1851,79 @@ export class SessionInner {
     }
   }
 
+  private setupMarkdownPanel(panel: HTMLElement, tabId: string, content?: string, title?: string, filePath?: string): void {
+    panel.style.overflow = "hidden";
+
+    const existing = this.panelMarkdownPreviews.get(tabId);
+    if (existing) {
+      panel.appendChild(existing.container);
+      return;
+    }
+
+    const basePath = filePath ? filePath.replace(/[/\\][^/\\]+$/, "") : "";
+    const container = document.createElement("div");
+    container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;height:100%;";
+    panel.appendChild(container);
+    const mp = new MarkdownPreviewView(container, title || "", {
+      onOpenLink: (href) => this._handleMarkdownLink(href, basePath),
+    });
+    if (content) mp.setContent(content, basePath || undefined);
+    this.panelMarkdownPreviews.set(tabId, mp);
+  }
+
+  public async openMarkdownPreview(content: string, title?: string, filePath?: string): Promise<void> {
+    const existing = filePath
+      ? this.tabs.find(t => t.type === "markdown" && t.filePath === filePath)
+      : this.tabs.find(t => t.type === "markdown");
+    if (existing) {
+      this.activeTab = existing.id;
+      existing.content = content;
+      if (title) existing.title = title;
+      const mp = this.panelMarkdownPreviews.get(existing.id);
+      const basePath = filePath ? filePath.replace(/[/\\][^/\\]+$/, "") : "";
+      if (mp) mp.setContent(content, basePath || undefined);
+      await this.renderTabs();
+      return;
+    }
+    await this.createTab("markdown", { content, title, filePath });
+  }
+
+  private _handleMarkdownLink(href: string, basePath?: string): void {
+    if (/^https?:\/\//i.test(href)) {
+      const api = (window as any).electronAPI;
+      if (api?.openExternal) api.openExternal(href);
+      return;
+    }
+    let fullPath: string;
+    if (href.startsWith("/")) {
+      fullPath = href;
+    } else if (basePath) {
+      const dir = basePath.replace(/\\/g, "/").replace(/\/?$/, "/");
+      const parts = dir.split("/").filter(Boolean);
+      for (const seg of href.replace(/\\/g, "/").split("/")) {
+        if (seg === "..") { if (parts.length > 1) parts.pop(); }
+        else if (seg !== "." && seg) parts.push(seg);
+      }
+      fullPath = parts.join("/");
+    } else {
+      return;
+    }
+    if (/\.md$/i.test(fullPath)) {
+      this._openMdInPreview(fullPath);
+    } else {
+      this.openFileInEditor(fullPath);
+    }
+  }
+
+  private async _openMdInPreview(filePath: string): Promise<void> {
+    const api = (window as any).electronAPI;
+    if (!api) return;
+    const result = await api.readFile(filePath);
+    if (!result) return;
+    const name = filePath.split(/[/\\]/).pop() || "Markdown";
+    this.openMarkdownPreview(result.content, name, filePath);
+  }
+
   private renderTabLabels(): void {
     this.tabList.querySelectorAll(".tab").forEach((el) => {
       const id = (el as HTMLElement).dataset.tab;
@@ -2382,7 +2496,11 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         };
         addAttachments([att]);
       } else if (action === "preview" && api) {
-        this.openFileInEditor(treeCtxPath, true);
+        const result = await api.readFile(treeCtxPath);
+        if (result) {
+          const name = treeCtxPath.split(/[/\\]/).pop() || treeCtxPath;
+          this.openMarkdownPreview(result.content, name, treeCtxPath);
+        }
       }
       treeCtxMenu.classList.add("hidden");
       });
@@ -2581,6 +2699,10 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
     const name = filePath.split(/[/\\]/).pop() || filePath;
     this._editorCtxTarget = name;
 
+    if (!this.tabs.some((t) => t.type === "editor")) {
+      await this.createTab("editor");
+    }
+
     const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
     if (!panel) return;
     const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
@@ -2601,18 +2723,12 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       if (!api) return;
       const result = await api.readFile(filePath);
       if (!result) return;
-      const html = renderMarkdown(result.content);
-      container.innerHTML = `<div class="si-editor-preview" style="display:flex;flex-direction:column;height:100%"><div class="msg-text" style="padding:16px;overflow-y:auto;flex:1">${html}</div></div>`;
+      await this.openMarkdownPreview(result.content, name);
       return;
     }
 
     await this._loadEditorFile(filePath);
-
-    if (!this.tabs.some((t) => t.type === "editor")) {
-      this.createTab("editor");
-    } else {
-      this.activateTab("editor");
-    }
+    this.activateTab("editor");
   }
 
   private _reviewLoad: ((filePath?: string) => Promise<void>) | null = null;
@@ -2836,6 +2952,13 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       if (bv) {
         bv.destroy();
         this.panelBrowsers.delete(id);
+      }
+    }
+    if (tab.type === "markdown") {
+      const mp = this.panelMarkdownPreviews.get(id);
+      if (mp) {
+        mp.destroy();
+        this.panelMarkdownPreviews.delete(id);
       }
     }
     if (tab.type === "editor") {

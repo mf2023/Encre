@@ -1108,30 +1108,58 @@ function killAllEncreProcesses(): void {
 }
 
 /**
- * Spawns the Python backend service (`python -m encre.server.app`) as a
- * detached child process and resolves once it logs "Server ready".
+ * Spawns the backend service as a detached child process and resolves once it
+ * logs "Server ready".  In release mode (PyInstaller bundle exists), launches
+ * the standalone `encre-server` executable directly; in development mode,
+ * falls back to spawning the system Python interpreter.
  * Rejects on timeout (30s) or early exit/error.
  * @returns A promise that resolves when the server is ready.
  */
 function startPythonServer(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const pythonCmd = process.platform === "win32" ? "python" : "python3";
-
+    const isWin = process.platform === "win32";
     const rootDir = path.resolve(__dirname, "..", "..");
-    // The encre Python package lives under backend/, so that dir must be on
-    // PYTHONPATH (ahead of any pip-installed copy in site-packages) for the
-    // desktop to run the in-repo source rather than a stale installed wheel.
-    const backendDir = path.resolve(rootDir, "backend");
-    const pythonPath =
-      process.platform === "win32"
+
+    // --- Detect bundled server executable (release mode) ---
+    // In a packaged app, resources are under process.resourcesPath;
+    // in dev mode, check the build/server output directory.
+    const bundledExeName = isWin ? "encre-server.exe" : "encre-server";
+    const candidatePaths = [
+      path.join(process.resourcesPath || "", "encre-server", bundledExeName),
+      path.join(rootDir, "build", "server", "encre-server", bundledExeName),
+    ];
+    const bundledExe = candidatePaths.find((p) => fs.existsSync(p));
+
+    let spawnCmd: string;
+    let spawnArgs: string[];
+    let spawnEnv: NodeJS.ProcessEnv;
+    let spawnCwd: string;
+
+    if (bundledExe) {
+      // Release mode: use the PyInstaller-bundled standalone executable.
+      console.log(`[server] using bundled exe: ${bundledExe}`);
+      spawnCmd = bundledExe;
+      spawnArgs = ["--port", String(WS_PORT), "--service", "--log-level", "DEBUG"];
+      spawnEnv = { ...process.env, ENCRE_DATA_DIR: DATA_DIR };
+      spawnCwd = path.dirname(bundledExe);
+    } else {
+      // Development mode: spawn system Python with in-repo source.
+      console.log("[server] bundled exe not found, falling back to system Python");
+      const pythonCmd = isWin ? "python" : "python3";
+      const backendDir = path.resolve(rootDir, "backend");
+      const pythonPath = isWin
         ? `${backendDir};${rootDir};${process.env.PYTHONPATH || ""}`
         : `${backendDir}:${rootDir}:${process.env.PYTHONPATH || ""}`;
+      spawnCmd = pythonCmd;
+      spawnArgs = ["-m", "encre.server.app", "--port", String(WS_PORT), "--service", "--log-level", "DEBUG"];
+      spawnEnv = { ...process.env, PYTHONPATH: pythonPath, ENCRE_DATA_DIR: DATA_DIR };
+      spawnCwd = rootDir;
+    }
 
-    const isWin = process.platform === "win32";
-    serverProcess = spawn(pythonCmd, ["-m", "encre.server.app", "--port", String(WS_PORT), "--service", "--log-level", "DEBUG"], {
-      cwd: rootDir,
+    serverProcess = spawn(spawnCmd, spawnArgs, {
+      cwd: spawnCwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PYTHONPATH: pythonPath, ENCRE_DATA_DIR: DATA_DIR },
+      env: spawnEnv,
       detached: isWin ? true : false,
       windowsHide: isWin ? true : false,
     });
@@ -2428,44 +2456,60 @@ ipcMain.handle("open-settings", (_event, panel: string) => {
 /* 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞?CDP WebSocket Relay for BrowserView 闂傚倷绀侀崯鍧楀储濠婂牆纾婚柟鍓х帛閻撳啴鏌涜箛鎿冩Ц濞?*/
 const cdpRelays = new Map<number, { wsc: WebSocket.Server; clients: Set<WebSocket.WebSocket>; debuggerAttached: boolean }>();
 
-function startCdpRelay(webContentsId: number): number {
-  const wsc = new WebSocket.Server({ port: 0, host: "127.0.0.1" });
-  const port = (wsc.address() as any).port;
-  const clients = new Set<WebSocket.WebSocket>();
-  cdpRelays.set(webContentsId, { wsc, clients, debuggerAttached: false });
+function startCdpRelay(webContentsId: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const wsc = new WebSocket.Server({ port: 0, host: "127.0.0.1" });
+    const clients = new Set<WebSocket.WebSocket>();
+    let debuggerAttached = false;
 
-  wsc.on("connection", (ws) => {
-    clients.add(ws);
-    const wc = webContents.fromId(webContentsId);
-    ws.on("message", (data) => {
-      if (!wc || wc.isDestroyed()) return;
-      try {
-        const msg = JSON.parse(data.toString());
-        wc.debugger.sendCommand(msg.method, msg.params || {})
-          .then((result: any) => {
-            if (msg.id !== undefined) ws.send(JSON.stringify({ id: msg.id, result }));
-          })
-          .catch((err: any) => {
-            if (msg.id !== undefined) ws.send(JSON.stringify({ id: msg.id, error: { code: -32000, message: err.message || String(err) } }));
+    wsc.on("listening", () => {
+      const addr = wsc.address();
+      if (!addr) {
+        reject(new Error("WebSocket server address is null"));
+        return;
+      }
+      const port = (addr as any).port;
+      cdpRelays.set(webContentsId, { wsc, clients, debuggerAttached });
+
+      const wc = webContents.fromId(webContentsId);
+      if (wc && !wc.isDestroyed()) {
+        try {
+          wc.debugger.attach("1.3");
+          const relay = cdpRelays.get(webContentsId);
+          if (relay) relay.debuggerAttached = true;
+          wc.debugger.on("message", (_event: any, method: string, params: any) => {
+            for (const c of clients) {
+              if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ method, params }));
+            }
           });
-      } catch {}
+        } catch (e) { console.error("[cdp-relay] Failed to attach debugger:", e); }
+      }
+      resolve(port);
     });
-    ws.on("close", () => clients.delete(ws));
-  });
 
-  const wc = webContents.fromId(webContentsId);
-  if (wc && !wc.isDestroyed()) {
-    try {
-      wc.debugger.attach("1.3");
-      cdpRelays.get(webContentsId)!.debuggerAttached = true;
-      wc.debugger.on("message", (_event: any, method: string, params: any) => {
-        for (const c of clients) {
-          if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ method, params }));
-        }
+    wsc.on("error", (err) => {
+      reject(err);
+    });
+
+    wsc.on("connection", (ws) => {
+      clients.add(ws);
+      const wc = webContents.fromId(webContentsId);
+      ws.on("message", (data) => {
+        if (!wc || wc.isDestroyed()) return;
+        try {
+          const msg = JSON.parse(data.toString());
+          wc.debugger.sendCommand(msg.method, msg.params || {})
+            .then((result: any) => {
+              if (msg.id !== undefined) ws.send(JSON.stringify({ id: msg.id, result }));
+            })
+            .catch((err: any) => {
+              if (msg.id !== undefined) ws.send(JSON.stringify({ id: msg.id, error: { code: -32000, message: err.message || String(err) } }));
+            });
+        } catch {}
       });
-    } catch (e) { console.error("[cdp-relay] Failed to attach debugger:", e); }
-  }
-  return port;
+      ws.on("close", () => clients.delete(ws));
+    });
+  });
 }
 
 function stopCdpRelay(webContentsId: number): void {
@@ -2479,13 +2523,16 @@ function stopCdpRelay(webContentsId: number): void {
   cdpRelays.delete(webContentsId);
 }
 
-ipcMain.handle("browser:get-cdp-port", (_event, webContentsId: number): number => {
+ipcMain.handle("browser:get-cdp-port", async (_event, webContentsId: number): Promise<number> => {
   const existing = cdpRelays.get(webContentsId);
-  if (existing) return (existing.wsc.address() as any).port;
-  return startCdpRelay(webContentsId);
+  if (existing) {
+    const addr = existing.wsc.address();
+    if (addr) return (addr as any).port;
+  }
+  return await startCdpRelay(webContentsId);
 });
 
-ipcMain.handle("browser:register-cdp-webview", (_event, webContentsId: number): number => startCdpRelay(webContentsId));
+ipcMain.handle("browser:register-cdp-webview", async (_event, webContentsId: number): Promise<number> => startCdpRelay(webContentsId));
 ipcMain.handle("browser:unregister-cdp-webview", (_event, webContentsId: number): void => stopCdpRelay(webContentsId));
 
 app.on("web-contents-created", (_event, wc) => {

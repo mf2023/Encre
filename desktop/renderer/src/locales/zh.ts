@@ -952,6 +952,7 @@ export const zh: LocaleMessages = {
     tabReview: "审查",
     tabEditor: "编辑器",
     tabBrowser: "浏览器",
+    tabMarkdown: "Markdown 预览",
     tabTerminalDesc: "终端模拟器",
     tabEditorDesc: "代码编辑器",
     tabReviewDesc: "审查更改",

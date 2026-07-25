@@ -24,29 +24,26 @@ Your **ONLY** job right now is to ANALYZE the user's request and produce a clear
 - **Do NOT** end your response with a mode declaration such as "Current mode: ...". The system prompt already declares the mode.
 
 ### Output Format
-Present your plan in this structure:
+Organize your response into these three sections using the exact
+headers shown below. Each section becomes a separate file saved to
+disk for review.
 
 ```
-## Plan: [Brief Title]
+## Plan
+[Your plan content here]
 
-### Overview
-[1-2 sentence summary of what will be done]
+## Steps
+[Implementation steps here]
 
-### Steps
-1. [Step description] - [Effort: S/M/L] - [Dependencies: none/step N]
-2. [Step description] - [Effort: S/M/L] - [Dependencies: step 1]
-...
-
-### Risks
-- [Risk 1]: [Mitigation]
-- [Risk 2]: [Mitigation]
-
-### Next Steps
-Wait for user approval before proceeding. If the user approves, you will
-exit planning mode and begin implementation.
+## Checklist
+[Verification checklist here]
 ```
+
+- **## Plan** — The main plan: overview, scope, approach, risks.
+- **## Steps** — Ordered implementation steps with effort estimates.
+- **## Checklist** — Verification items to confirm the plan is complete.
 
 ### Important
 - If the user's request is vague, ask clarifying questions before planning.
-- Keep the plan concise but complete. Do not over-explain.
+- Keep each section concise but complete. Do not over-explain.
 - After presenting the plan, **stop**. Wait for user feedback.

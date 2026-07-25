@@ -211,6 +211,7 @@ class EncreBrowserSession:
         self._page_ws_url = ws_url
         self._proc = None
         self._tick()
+        # Don't override viewport for internal webview — it uses its own size
         await self._enable_domains()
 
     async def _enable_domains(self) -> None:
@@ -223,6 +224,57 @@ class EncreBrowserSession:
             await self._transport.send("DOM.enable")
         with contextlib.suppress(Exception):
             await self._transport.send("Runtime.enable")
+        await self._apply_stealth()
+
+    async def _apply_stealth(self) -> None:
+        """Apply anti-detection measures to avoid being flagged as a bot."""
+        # Override User-Agent to look like a real Chrome browser
+        with contextlib.suppress(Exception):
+            await self._transport.send("Network.setUserAgentOverride", {
+                "userAgent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                "acceptLanguage": "zh-CN,zh;q=0.9,en;q=0.8",
+                "platform": "Windows",
+            })
+
+        # Inject anti-detection script before every page load
+        with contextlib.suppress(Exception):
+            await self._transport.send("Page.addScriptToEvaluateOnNewDocument", {
+                "source": """
+                    // Hide webdriver flag
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined,
+                        configurable: true,
+                    });
+
+                    // Fake plugins array
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5],
+                        configurable: true,
+                    });
+
+                    // Fake languages
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['zh-CN', 'zh', 'en'],
+                        configurable: true,
+                    });
+
+                    // Override chrome.runtime to look like a real browser
+                    if (window.chrome) {
+                        window.chrome.runtime = window.chrome.runtime || {};
+                    }
+
+                    // Remove CDP-specific detection properties
+                    for (const key of Object.getOwnPropertyNames(window)) {
+                        if (key.startsWith('$cdc_') || key.startsWith('$chrome_')) {
+                            delete window[key];
+                        }
+                    }
+                """,
+            })
 
     async def _apply_viewport(self) -> None:
         """Set the viewport dimensions via CDP."""
@@ -686,7 +738,17 @@ class EncreBrowserSession:
         try:
             await self._ensure_browser()
             await self.click_at(x, y)
-            await self._transport.send("Input.insertText", {"text": text})
+            # Type each character with full keyDown+char+keyUp sequence
+            for ch in text:
+                await self._transport.send("Input.dispatchKeyEvent", {
+                    "type": "keyDown", "key": ch,
+                })
+                await self._transport.send("Input.dispatchKeyEvent", {
+                    "type": "char", "text": ch,
+                })
+                await self._transport.send("Input.dispatchKeyEvent", {
+                    "type": "keyUp", "key": ch,
+                })
             self._tick()
             return True
         except Exception:
@@ -700,6 +762,13 @@ class EncreBrowserSession:
             "type": "rawKeyDown",
             "key": cdp_key,
         })
+        # For Enter, also send a char event so the page processes the submission
+        if cdp_key == "Enter":
+            await self._transport.send("Input.dispatchKeyEvent", {
+                "type": "char",
+                "text": "\r",
+                "key": "Enter",
+            })
         await self._transport.send("Input.dispatchKeyEvent", {
             "type": "keyUp",
             "key": cdp_key,
@@ -769,32 +838,36 @@ class EncreBrowserSession:
             cx = int(rect["x"] + rect["width"] / 2)
             cy = int(rect["y"] + rect["height"] / 2)
             await self.click_at(cx, cy)
-            # Clear existing content
+            # Clear existing content via Ctrl+A + Delete
             await self._transport.send("Input.dispatchKeyEvent", {
-                "type": "rawKeyDown",
-                "key": "Control",
+                "type": "rawKeyDown", "key": "Control",
             })
             await self._transport.send("Input.dispatchKeyEvent", {
-                "type": "rawKeyDown",
-                "key": "a",
+                "type": "rawKeyDown", "key": "a",
             })
             await self._transport.send("Input.dispatchKeyEvent", {
-                "type": "keyUp",
-                "key": "a",
+                "type": "keyUp", "key": "a",
             })
             await self._transport.send("Input.dispatchKeyEvent", {
-                "type": "keyUp",
-                "key": "Control",
+                "type": "keyUp", "key": "Control",
             })
             await self._transport.send("Input.dispatchKeyEvent", {
-                "type": "rawKeyDown",
-                "key": "Delete",
+                "type": "rawKeyDown", "key": "Delete",
             })
             await self._transport.send("Input.dispatchKeyEvent", {
-                "type": "keyUp",
-                "key": "Delete",
+                "type": "keyUp", "key": "Delete",
             })
-            await self._transport.send("Input.insertText", {"text": text})
+            # Type each character with full keyDown+char+keyUp sequence
+            for ch in text:
+                await self._transport.send("Input.dispatchKeyEvent", {
+                    "type": "keyDown", "key": ch,
+                })
+                await self._transport.send("Input.dispatchKeyEvent", {
+                    "type": "char", "text": ch,
+                })
+                await self._transport.send("Input.dispatchKeyEvent", {
+                    "type": "keyUp", "key": ch,
+                })
             self._tick()
             return True
         except Exception:

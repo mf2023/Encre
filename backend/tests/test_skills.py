@@ -562,11 +562,13 @@ class TestLoopSkillInjection:
         create_bundled_skills(registry)
         registry.load_from_dir(builtin_skills_dir(), source=SkillSource.BUNDLED)
 
+        from encre.loop_skills import SkillManager
         stub = types.SimpleNamespace(
             skill_registry=registry,
-            _active_tool_skills={},
-            _active_doc_skills={},
+            _skill_mgr=SkillManager(registry),
         )
+        stub._active_tool_skills = stub._skill_mgr._active_tool_skills
+        stub._active_doc_skills = stub._skill_mgr._active_doc_skills
         stub._collect_tool_skill = EncreLoop._collect_tool_skill.__get__(stub)
         stub._collect_doc_skills = EncreLoop._collect_doc_skills.__get__(stub)
         stub._render_active_tool_skills = EncreLoop._render_active_tool_skills.__get__(stub)

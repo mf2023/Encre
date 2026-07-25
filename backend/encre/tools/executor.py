@@ -731,7 +731,7 @@ class ToolPipeline:
                 state = await executor.execute(
                     tool_name=p["name"],
                     tool_args=p["args"],
-                    execute_fn=lambda a, p=p: p["tool"].execute(**a),
+                    execute_fn=lambda a, p=p, sid=loop.session.session_id: p["tool"].execute(**{**a, "_session_id": sid}),
                 )
                 if state.succeeded:
                     r = state.final_result

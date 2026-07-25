@@ -33,6 +33,7 @@ from encre.loop_state.collapse import (
     compute_collapse_boundaries,
     count_collapsed,
 )
+from encre.loop_state.manager import StateManager
 from encre.loop_state.state import LoopState
 from encre.loop_state.stop_hooks import (
     MAX_STOP_HOOK_BLOCKS,
@@ -60,6 +61,7 @@ __all__ = [
     "MAX_STAGED_COLLAPSES",
     "MIN_MESSAGES_FOR_COLLAPSE",
     "LoopState",
+    "StateManager",
     "execute_stop_hooks",
     "should_block_stop",
     "MAX_STOP_HOOK_BLOCKS",

@@ -49,19 +49,13 @@ if _os.name == "nt":
     del _orig, _make_patched
 del _os
 
-from encre.adapters import (
-    BaseAdapter,
-    DingTalkAdapter,
-    DiscordAdapter,
-    EmailAdapter,
-    FeishuAdapter,
-    SignalAdapter,
-    SlackAdapter,
-    TelegramAdapter,
-    WeComAdapter,
-    WeixinAdapter,
-    WhatsAppAdapter,
+from encre.gateway.platforms.base import (
+    BasePlatformAdapter,
+    MessageEvent,
+    MessageType,
+    SendResult,
 )
+from encre.gateway.run import GatewayRunner
 from encre.agent import EncreAgent
 from encre.autosafety import (
     AutoDecision,
@@ -148,7 +142,7 @@ from encre.evolution.meta import CapabilityProfile, EncreMetaCognition
 from encre.evolution.optimizer import EncreStrategyOptimizer, ToolStrategy
 from encre.evolution.reflex import EncreReflexLoop, ReflexResult
 from encre.feedback.learner import CorrectionRecord, EncreFeedbackLearner
-from encre.gateway import GatewayClient, GatewayServer
+from encre.gateway import GatewayMessage, GatewayOp
 from encre.git.diff import EncreGitDiff, GitDiffResult
 from encre.git.repo import EncreGitRepo, GitState
 from encre.goal import (
@@ -406,7 +400,7 @@ __all__ = [
     "BackendText",
     "BackendToolCall",
     "BackendToolCallDelta",
-    "BaseAdapter",
+    "BasePlatformAdapter",
     "BaseBackend",
     "BashAnalysis",
     "BedrockBackend",
@@ -438,10 +432,10 @@ __all__ = [
     "DeepSeekBackend",
     "DesktopLocateResult",
     "DesktopScreenState",
-    "DingTalkAdapter",
+    "GatewayRunner",
     "DisabledThinking",
-    "DiscordAdapter",
-    "EmailAdapter",
+    "MessageEvent",
+    "MessageType",
     "EnabledThinking",
     "EncreAgent",
     "EncreAgentTool",
@@ -553,12 +547,12 @@ __all__ = [
     "EventRouter",
     "EvolutionConfig",
     "FailoverBackend",
-    "FeishuAdapter",
+    "SendResult",
     "Finish",
     "FinishReason",
     "SystemMessage",
-    "GatewayClient",
-    "GatewayServer",
+    "GatewayMessage",
+    "GatewayOp",
     "GitDiffResult",
     "GitState",
     "GoalDefinition",
@@ -629,9 +623,7 @@ __all__ = [
     "SessionCheckpoint",
     "SessionInfo",
     "SessionManager",
-    "SignalAdapter",
     "SkillGenerator",
-    "SlackAdapter",
     "SpecDocument",
     "SpecSection",
     "SpecStatus",
@@ -645,7 +637,7 @@ __all__ = [
     "TaskTree",
     "TaskType",
     "TeammateHandle",
-    "TelegramAdapter",
+    "BasePlatformAdapter",
     "TerminalChannel",
     "TextDelta",
     "ThinkingConfig",
@@ -663,9 +655,6 @@ __all__ = [
     "UserDecisionRecord",
     "UserProfile",
     "Vote",
-    "WeComAdapter",
-    "WeixinAdapter",
-    "WhatsAppAdapter",
     "WorkingMemory",
     "analyze_bash_command",
     "bootstrap_mcp_servers",

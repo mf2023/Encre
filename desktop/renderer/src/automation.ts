@@ -664,21 +664,29 @@ private createDropdown: HTMLElement;
     });
 
     let selectedModelIndex = editJob?.model_index ?? getState().activeModelIndex;
+    // If the pre-selected model is disabled, fall back to the first enabled model
+    const _allModelsInit = getState().modelConfigs;
+    if (_allModelsInit && _allModelsInit[selectedModelIndex]?.enabled === false) {
+      const _firstEnabled = _allModelsInit.findIndex(m => m.enabled !== false);
+      if (_firstEnabled >= 0) selectedModelIndex = _firstEnabled;
+    }
     const modelTrigger = overlay.querySelector("#auto-dlg-model-trigger") as HTMLElement;
     const modelDropdown = overlay.querySelector("#auto-dlg-model-dropdown") as HTMLElement;
 
     const buildModelOptions = () => {
-      const models = getState().modelConfigs;
-      if (!models || models.length === 0) {
+      const allModels = getState().modelConfigs;
+      const models = allModels ? allModels.filter((m) => m.enabled !== false) : [];
+      if (models.length === 0) {
         modelDropdown.innerHTML = `<div class="settings-dropdown-item" style="opacity:0.5;cursor:default">—</div>`;
         return;
       }
-      modelDropdown.innerHTML = models.map((m, i) =>
-        `<div class="settings-dropdown-item${i === selectedModelIndex ? " selected" : ""}" data-index="${i}">
+      modelDropdown.innerHTML = models.map((m) => {
+        const origIdx = allModels.indexOf(m);
+        return `<div class="settings-dropdown-item${origIdx === selectedModelIndex ? " selected" : ""}" data-index="${origIdx}">
           <span>${escapeHtml(m.name)}</span>
           <span style="opacity:0.5;margin-left:6px;font-size:11px">${escapeHtml(m.model_id)}</span>
-        </div>`
-      ).join("");
+        </div>`;
+      }).join("");
       modelDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
         item.addEventListener("click", (e) => {
           e.stopPropagation();

@@ -26,7 +26,7 @@ from __future__ import annotations
 """Relay adapter: front N platforms over a single connector WebSocket.
 
 Aligns with Hermes' ``gateway/relay/adapter.py``.  :class:`RelayAdapter` is
-itself a :class:`~encre.adapters.base.BaseAdapter` subclass (registered as the
+itself a :class:`~encre.gateway.platforms.base.BasePlatformAdapter` subclass (registered as the
 ``relay`` platform).  Instead of speaking a concrete platform's protocol
 directly, it dials out to a connector over a
 :class:`~encre.gateway.relay.transport.RelayTransport` and lets the connector
@@ -52,7 +52,8 @@ import asyncio
 import logging
 from typing import Any
 
-from encre.adapters.base import BaseAdapter, MessageEvent, MessageType, SendResult, SessionSource
+from encre.gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult
+from encre.gateway.session import SessionSource
 from encre.gateway.relay.descriptor import CapabilityDescriptor
 from encre.gateway.relay.transport import RelayTransport
 from encre.gateway.relay.ws_transport import WebSocketRelayTransport
@@ -63,7 +64,7 @@ logger = logging.getLogger("encre.gateway.relay.adapter")
 RELAY_DISABLED_CODE = "relay_disabled"
 
 
-class RelayAdapter(BaseAdapter):
+class RelayAdapter(BasePlatformAdapter):
     """A platform adapter that fronts connector-backed platforms.
 
     Registered as the ``relay`` platform when ``GATEWAY_RELAY_URL`` /
@@ -77,18 +78,14 @@ class RelayAdapter(BaseAdapter):
         transport: RelayTransport | None = None,
         *,
         descriptor: CapabilityDescriptor | None = None,
-        gateway_url: str = "",
+        config=None,
+        platform=None,
     ) -> None:
-        # Bypass BaseAdapter.__init__'s GatewayClient wiring -- the relay
-        # adapter does not submit to a local gateway server; inbound messages
-        # arrive over the relay transport and are routed via handle_message
-        # -> the injected message handler (same as any other adapter).
+        # RelayAdapter has a custom init that doesn't use PlatformConfig directly.
+        # Initialize minimal base state without calling super().__init__().
         self._transport: RelayTransport | None = transport
         self._descriptor = descriptor
-        self._client = None  # no local GatewayClient
         self._running = False
-        self._gateway_started = False
-        self._reconnecting = False
         self._fatal_error_code: str | None = None
         self._fatal_error_message: str | None = None
         self._message_handler = None
@@ -122,21 +119,14 @@ class RelayAdapter(BaseAdapter):
         # adapter self-chunk; otherwise the router truncates.
         return bool(self._descriptor and self._descriptor.supports_edit)
 
-    # RelayAdapter has no local GatewayClient -- override the base properties
-    # that read self._client so they report transport state instead.
+    # RelayAdapter has no local GatewayClient -- report transport state.
     @property
     def is_connected(self) -> bool:
         return self._running and self._transport is not None and getattr(self._transport, "is_connected", True)
 
-    @property
-    def client(self):  # type: ignore[override]
-        """The relay adapter has no local GatewayClient (it fronts via the
-        connector transport).  Returns None."""
-        return None
-
     # ── lifecycle ──────────────────────────────────────────────────────
 
-    async def connect(self) -> bool:
+    async def connect(self, *, is_reconnect: bool = False) -> bool:
         """Open the relay transport and register inbound/passthrough handlers."""
         if self._transport is None:
             self._set_fatal_error(RELAY_DISABLED_CODE, "no relay transport configured")
@@ -154,6 +144,7 @@ class RelayAdapter(BaseAdapter):
                 self._set_fatal_error("connect_failed", "relay transport connect failed")
             return False
         self._descriptor = await self._transport.handshake()
+        self._running = True
         self._mark_connected()
         # Monitor for a post-handshake revocation (4401) in the background.
         _t = asyncio.ensure_future(self._monitor_revocation())
@@ -176,7 +167,7 @@ class RelayAdapter(BaseAdapter):
                 return
 
     async def disconnect(self) -> None:
-        self._mark_disconnected()
+        self._running = False
         if self._transport is not None:
             await self._transport.disconnect()
 
@@ -191,7 +182,7 @@ class RelayAdapter(BaseAdapter):
             return False
         return await self._transport.go_idle()
 
-    # ── the BaseAdapter abstract surface ───────────────────────────────
+    # ── the BasePlatformAdapter abstract surface ───────────────────────────────
 
     async def send(
         self,
@@ -275,13 +266,11 @@ class RelayAdapter(BaseAdapter):
             text=event.get("text", ""),
             message_type=MessageType.TEXT,
             message_id=event.get("message_id"),
-            chat_id=chat_id,
-            user_id=event.get("user_id") or (source.user_id if source else None),
             reply_to_message_id=event.get("reply_to_message_id"),
             reply_to_text=event.get("reply_to_text"),
             media_urls=event.get("media_urls", []),
             media_types=event.get("media_types", []),
-            raw=event.get("raw"),
+            raw_message=event.get("raw"),
             source=source,
         )
         _t = asyncio.ensure_future(self.handle_message(me))
