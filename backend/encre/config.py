@@ -23,6 +23,15 @@
 
 from __future__ import annotations
 
+"""Central configuration model for Encre.
+
+Defines the dataclasses that describe an Encre session -- the top-level
+:class:`EncreConfig`, per-model :class:`ModelConfig`, sub-agent and
+agent configs, and the serialisation helpers that read/write the
+encrypted ``config.toml`` under the data directory. Also provides the
+``ThinkingConfig`` union (de)serialisation shared with other modules.
+"""
+
 import contextlib
 import os
 import tomllib

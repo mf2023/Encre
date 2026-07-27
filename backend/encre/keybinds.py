@@ -447,7 +447,7 @@ def default_keybinds() -> dict[str, Any]:
             },
             {
                 "id": "show_shortcuts",
-                "keys": ["ctrlcmd+/", "shift+?"],
+                "keys": ["ctrlcmd+/"],
                 "category": "general",
                 "description": "Show keyboard shortcuts reference",
             },

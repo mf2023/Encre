@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,12 +25,19 @@ from __future__ import annotations
 
 """Remote platform adapter: wraps a WS connection as a BasePlatformAdapter.
 
-When a remote adapter connects to the WsBridgeServer, it is wrapped in a
-:class:`RemotePlatformAdapter` instance which presents the standard
-BasePlatformAdapter interface to the GatewayRunner.
+When a remote adapter connects to the WsBridgeServer, the server wraps that
+socket in a :class:`RemotePlatformAdapter` instance. To the rest of the
+gateway this object looks exactly like any in-process
+:class:`~encre.gateway.platforms.base.BasePlatformAdapter`, so the
+GatewayRunner can drive it uniformly.
 
-Inbound: WS receives SUBMIT_STREAM -> builds MessageEvent -> handle_message
-Outbound: send() -> sends TEXT_DELTA/FINISH frames over WS
+Data flow:
+    * Inbound -- the server receives a ``SUBMIT`` / ``SUBMIT_STREAM`` frame
+      over the socket, builds a :class:`MessageEvent`, and dispatches it via
+      ``handle_message`` (inherited from the base adapter).
+    * Outbound -- calls to ``send()`` are translated into ``TEXT_DELTA`` (and a
+      following ``FINISH``) frames written back over the same WebSocket, so the
+      remote side receives the agent's reply.
 """
 
 import asyncio
@@ -48,13 +55,15 @@ logger = logging.getLogger("encre.gateway.ws_bridge.remote_adapter")
 class RemotePlatformAdapter(BasePlatformAdapter):
     """Wraps a remote WebSocket connection as a local BasePlatformAdapter.
 
-    This adapter serves as a proxy for a remote adapter connected via the
-    WS bridge.  The remote adapter sends SUBMIT/SUBMIT_STREAM frames, and
-    this adapter translates them into MessageEvent dispatches.  Outbound
-    send() calls are translated into TEXT_DELTA + FINISH frames sent back
-    over the WebSocket.
+    Acts as a proxy for an adapter that lives behind the WS bridge: the remote
+    side sends ``SUBMIT`` / ``SUBMIT_STREAM`` frames which this adapter turns
+    into ``MessageEvent`` dispatches, and this adapter's ``send()`` calls become
+    ``TEXT_DELTA`` + ``FINISH`` frames returned over the socket. The gateway
+    therefore never needs to know whether an adapter is local or remote.
     """
 
+    # The gateway can deliver replies to this adapter without blocking on a
+    # synchronous reply, since the WS socket is already asynchronous.
     supports_async_delivery: bool = True
 
     def __init__(
@@ -71,15 +80,34 @@ class RemotePlatformAdapter(BasePlatformAdapter):
 
     @property
     def name(self) -> str:  # type: ignore[override]
+        """Return the remote adapter's identifier, overriding the base."""
         return self._remote_name
 
     async def connect(self, *, is_reconnect: bool = False) -> bool:
-        """Remote adapter is already connected via WS."""
+        """Mark the adapter running; the WS link is already established.
+
+        The underlying socket is owned by the bridge server, so "connecting"
+        here only flips the running flag rather than opening a new transport.
+
+        Args:
+            is_reconnect: Whether this is a reconnect attempt (unused; the link
+                is already live).
+
+        Returns:
+            True to signal the gateway that the adapter is usable.
+        """
         self._running = True
         return True
 
     async def disconnect(self) -> None:
-        """Close the WS connection to the remote adapter."""
+        """Close the WS connection to the remote adapter and drop the socket.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         self._running = False
         if self._ws:
             try:
@@ -95,7 +123,24 @@ class RemotePlatformAdapter(BasePlatformAdapter):
         reply_to: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> SendResult:
-        """Send content back to the remote adapter via WS."""
+        """Send reply content back to the remote adapter over the WebSocket.
+
+        Serializes a ``TEXT_DELTA`` frame keyed to ``chat_id`` (used as the
+        session id on the wire) and writes it to the socket. Failures are
+        captured into a retryable :class:`SendResult` so the gateway can decide
+        whether to retry.
+
+        Args:
+            chat_id: The conversation/session id; mapped to the wire session id.
+            content: The text to deliver.
+            reply_to: Optional id of the message being replied to (currently
+                not encoded into the frame).
+            metadata: Optional metadata (currently not encoded into the frame).
+
+        Returns:
+            A :class:`SendResult` indicating success, or failure with a
+            retryable flag when the socket write raised.
+        """
         if not self._ws:
             return SendResult(success=False, error="WS disconnected")
         try:
@@ -109,5 +154,16 @@ class RemotePlatformAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(e), retryable=True)
 
     async def get_chat_info(self, chat_id: str) -> dict[str, Any]:
-        """Remote adapters don't provide chat info."""
+        """Return minimal chat-info metadata for a remote conversation.
+
+        Remote adapters do not expose richer chat details, so this returns only
+        the identifiers the gateway needs to label the conversation.
+
+        Args:
+            chat_id: The conversation/session id being described.
+
+        Returns:
+            A dict with the chat id, a fixed ``"remote"`` type, and the adapter
+            name.
+        """
         return {"id": chat_id, "type": "remote", "adapter": self._remote_name}

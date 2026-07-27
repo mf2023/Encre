@@ -23,7 +23,24 @@
 
 from __future__ import annotations
 
-# Public API for the "git" package: repository state inspection and diffing.
+"""Public API for the ``encre.git`` package: repository state inspection and diffing.
+
+This package bundles Encre's git helpers used by the agent to reason about a
+working tree before and after making changes. It exposes two collaborating
+pieces:
+
+* :class:`~encre.git.diff.EncreGitDiff` -- a stateless helper that computes,
+  applies, and parses git-style (unified / numstat) diffs. The heavy lifting of
+  diff computation and application is delegated to a Rust-backed native module
+  for speed; this class is the small, typed Python-facing surface.
+* :class:`~encre.git.repo.EncreGitRepo` -- a wrapper around a local repository
+  that snapshots its state (branch, head, status) into a :class:`GitState`.
+
+Re-exports keep the common names importable directly from ``encre.git``::
+
+    from encre.git import EncreGitDiff, EncreGitRepo, GitDiffResult, GitState
+"""
+
 # Re-export the diff engine and its result container.
 from encre.git.diff import EncreGitDiff, GitDiffResult
 # Re-export the repository wrapper and its snapshot state model.

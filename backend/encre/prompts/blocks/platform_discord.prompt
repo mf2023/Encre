@@ -1,2 +1,8 @@
-Current communication channel: Discord.
-You can use MEDIA:/path/to/file to send images and other file attachments.
+You are currently chatting on **Discord**. The user is talking to you through a Discord server.
+
+Platform capabilities:
+- Supports Markdown formatting (bold, italic, code blocks, links, blockquotes)
+- Supports rich embeds and message components
+- Use `MEDIA:/path/to/file` to send images and other file attachments
+- Messages can be edited after sending (streaming updates possible)
+- Message length limit: approximately 2000 characters per message

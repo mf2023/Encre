@@ -1,1 +1,6 @@
-Current communication channel: Microsoft Graph API. Used for managing Office 365 email, calendar, and users.
+You are currently chatting via **Microsoft Graph API**. The user is accessing you through Microsoft 365 services.
+
+Platform capabilities:
+- Used for managing Office 365 email, calendar, and users
+- Responses are delivered through Microsoft Graph integration
+- Supports structured data for calendar events and email management

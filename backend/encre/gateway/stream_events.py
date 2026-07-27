@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,15 +25,18 @@ from __future__ import annotations
 
 """Structured streaming events -- the agent-to-gateway delivery contract.
 
-Defines a typed event vocabulary that names *what happened* without prescribing
-*how it is delivered*.  The gateway's stream consumer is the single sink; the
-platform adapter decides how to render each event.
+This module defines a typed event vocabulary that names *what happened* during
+an agent turn without prescribing *how* it is delivered. The gateway's stream
+consumer is the single sink for these events, while the platform adapter decides
+how each event is rendered to the end user.
 
-These are intentionally plain frozen dataclasses -- no behavior, no platform
-knowledge, no I/O.  They are cheap to construct and safe to hand across the
-thread/async boundary into the consumer queue.
-
-Aligns with Hermes ``gateway/stream_events.py``.
+Design constraints:
+    * Every event is a plain frozen (immutable) dataclass -- no behavior, no
+      platform knowledge, and no I/O. This keeps construction cheap and makes
+      the objects safe to pass across thread/async boundaries into the consumer
+      queue.
+    * Events are intentionally decoupled from the lower-level ``AgentEvent``
+      union emitted by the runtime; the gateway translates between the two.
 """
 
 from dataclasses import dataclass, field
@@ -47,8 +50,12 @@ from typing import Any, Dict, Optional, Union
 class MessageChunk:
     """A delta of streamed assistant text.
 
-    ``text`` is the incremental content as it arrives from the model.  The
-    consumer accumulates chunks and progressively renders them.
+    ``text`` is the incremental content as it arrives from the model token by
+    token. The stream consumer accumulates these chunks and progressively
+    renders the growing message to the platform.
+
+    Attributes:
+        text: The incremental piece of assistant text for this chunk.
     """
 
     text: str
@@ -56,9 +63,15 @@ class MessageChunk:
 
 @dataclass(frozen=True)
 class MessageStop:
-    """The current assistant message segment is complete.
+    """Marks the end of the current assistant message segment.
 
-    ``final`` is True only for the terminal stop of the whole turn.
+    A turn can emit several message segments (e.g. text, then a tool, then more
+    text). Each segment boundary produces a ``MessageStop``; only the very last
+    one of the whole turn carries ``final=True``.
+
+    Attributes:
+        final: True only for the terminal stop of the entire turn, signaling
+            the consumer that it may finalize delivery.
     """
 
     final: bool = False
@@ -68,8 +81,13 @@ class MessageStop:
 class Commentary:
     """A complete interim assistant message emitted between tool iterations.
 
-    Unlike a MessageChunk this is already-complete text (not a delta); the
-    consumer renders it as its own message so it reads as a distinct beat.
+    Unlike ``MessageChunk`` this is already-complete text rather than an
+    incremental delta. The consumer renders it as its own standalone message so
+    it reads as a distinct beat (e.g. "Let me check the repository…") before the
+    next tool call.
+
+    Attributes:
+        text: The full, already-finalized commentary text.
     """
 
     text: str
@@ -80,10 +98,18 @@ class Commentary:
 
 @dataclass(frozen=True)
 class ToolCallChunk:
-    """A tool invocation has started (or its in-progress state changed).
+    """Signals that a tool invocation started (or changed in-progress state).
 
-    Carries the raw facts about the call -- name, a short argument preview,
-    and the full args dict -- letting the gateway decide presentation.
+    Carries the raw facts about the call -- its name, a short argument preview
+    for compact display, and the full arguments dict -- so the gateway can
+    decide how much detail to present without re-parsing the call.
+
+    Attributes:
+        tool_name: The identifier of the invoked tool.
+        preview: A short, human-friendly preview of the arguments, or None.
+        args: The complete argument mapping passed to the tool, or None.
+        index: The zero-based index of this tool call within the turn, used to
+            correlate chunks with their matching ``ToolCallFinished``.
     """
 
     tool_name: str
@@ -94,10 +120,16 @@ class ToolCallChunk:
 
 @dataclass(frozen=True)
 class ToolCallFinished:
-    """A tool invocation completed.
+    """Signals that a tool invocation completed.
 
-    ``duration`` is wall-clock seconds.  ``ok`` reflects whether the tool
-    returned without raising.
+    Pairs with a preceding ``ToolCallChunk`` of the same ``index`` so the
+    gateway can close out any in-progress tool UI.
+
+    Attributes:
+        tool_name: The identifier of the finished tool.
+        duration: Wall-clock seconds the tool took to run.
+        ok: True if the tool returned without raising an exception.
+        index: The zero-based index matching the originating ``ToolCallChunk``.
     """
 
     tool_name: str
@@ -111,7 +143,15 @@ class ToolCallFinished:
 
 @dataclass(frozen=True)
 class LongToolHint:
-    """One-shot onboarding nudge when a tool runs longer than the threshold."""
+    """A one-shot onboarding nudge emitted when a tool runs too long.
+
+    Sent a single time per slow tool so the user understands the delay rather
+    than assuming the agent is stuck.
+
+    Attributes:
+        tool_name: The identifier of the slow-running tool.
+        duration: The elapsed seconds that triggered the hint.
+    """
 
     tool_name: str = ""
     duration: float = 0.0
@@ -121,9 +161,16 @@ class LongToolHint:
 class GatewayNotice:
     """A gateway-originated control message (restart, online, long-run notice).
 
-    ``kind`` is a stable string the adapter can switch on.  ``text`` is the
-    human-readable default rendered when an adapter has no platform-specific
-    treatment.
+    These are emitted by the gateway/infrastructure rather than the agent model.
+    ``kind`` is a stable string the adapter can switch on to pick a
+    platform-specific presentation; ``text`` is the human-readable default used
+    when an adapter has no specialized handling.
+
+    Attributes:
+        kind: A stable category string identifying the notice type.
+        text: A default human-readable message rendered when no platform-
+            specific treatment exists.
+        extra: An open dict for kind-specific supplementary data.
     """
 
     kind: str

@@ -23,6 +23,24 @@
 
 from __future__ import annotations
 
+"""Autonomous, goal-driven agent execution for Encre.
+
+This module implements a self-improving agent loop: instead of running a single
+turn, :class:`EncreGoalRunner` repeatedly drives the standard
+:class:`~encre.loop.EncreLoop`, then asks a (typically cheaper) *evaluator*
+model whether the stated goal has been met. If the goal is unmet, the evaluator
+feedback is injected and the agent tries again, carrying its prior conversation
+history forward so partial progress is preserved. The loop stops on success, on
+timeout, or after ``max_attempts``.
+
+The evaluator model defaults to a fast/cheap variant of the configured provider
+(see :meth:`EncreGoalRunner._make_evaluator_backend`) and is prompted to return
+a strict JSON verdict (met / confidence / reasoning / feedback).
+
+:class:`EncreGoalLoop` is a thin convenience wrapper that attaches the same
+behaviour to an existing agent-shaped object.
+"""
+
 import json
 import time
 from collections.abc import Callable
@@ -53,6 +71,8 @@ logger = get_logger("encre.goal")
 
 
 class GoalStatus(Enum):
+    """Lifecycle states of a goal-driven execution run."""
+
     PENDING = auto()
     IN_PROGRESS = auto()
     SUCCESS = auto()
@@ -129,6 +149,19 @@ class EncreGoalRunner:
         self.telemetry = telemetry or EncreTelemetry(enabled=False)
 
     def _make_evaluator_backend(self, goal: GoalDefinition) -> BaseBackend:
+        """Build the backend used for goal evaluation.
+
+        Uses the goal's explicit ``evaluator_provider``/``evaluator_model`` when
+        given; otherwise it reuses the configured provider but swaps in a
+        cheaper model per provider so evaluation is inexpensive. The mapping of
+        which cheap model each provider gets is hard-coded here.
+
+        Args:
+            goal: The goal whose evaluator settings should be applied.
+
+        Returns:
+            A configured :class:`~encre.backends.base.BaseBackend` instance.
+        """
         provider = goal.evaluator_provider or self.config.backend_type
         model = goal.evaluator_model or self.config.model
         if goal.evaluator_provider:
@@ -281,6 +314,18 @@ class EncreGoalRunner:
         return result
 
     def _build_goal_prompt(self, goal: GoalDefinition) -> str:
+        """Render the initial goal prompt from the goal's template.
+
+        Substitutes the goal's description, success criteria and attempt budget
+        into the ``goal_prompt`` template (category ``"goal"``) loaded via the
+        prompt loader, producing the first-turn instruction the agent sees.
+
+        Args:
+            goal: The goal providing the template variables.
+
+        Returns:
+            The fully rendered goal prompt string.
+        """
         return _loader.load_with_context(
             "goal_prompt", category="goal",
             description=goal.description,

@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,10 +25,10 @@ from __future__ import annotations
 
 """DM pairing flow for gateway user authorization.
 
-Aligns with Hermes' ``gateway/pairing.py``: an already-authorized user (or
-the gateway operator) mints a short-lived pairing code; a new user redeems it
-by DMing the bot ``/pair <code>``, which binds their platform ``user_id`` to
-the authorized set.  Pairing state persists across restarts.
+An already-authorized user (or the gateway operator) mints a short-lived
+pairing code; a new user redeems it by DMing the bot ``/pair <code>``, which
+binds their platform ``user_id`` to the authorized set.  Pairing state persists
+across restarts.
 
 Flow::
 
@@ -52,7 +52,7 @@ from encre.config import get_data_dir
 
 logger = logging.getLogger("encre.gateway.pairing")
 
-# Pairing code lifetime (seconds).  Mirrors Hermes' default 10-minute window.
+# Pairing code lifetime (seconds).  Default 10-minute window.
 PAIRING_CODE_TTL = 600.0
 # Length of the human-friendly pairing code (no ambiguous chars).
 PAIRING_CODE_LEN = 6

@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,10 +25,9 @@ from __future__ import annotations
 
 """WebSocket relay transport (production).
 
-Aligns with Hermes' ``gateway/relay/ws_transport.py``.  The gateway dials
-**out** to the connector's ``/relay`` WebSocket endpoint, authenticates the
-upgrade with a per-gateway HMAC bearer token, and exchanges newline-delimited
-JSON frames:
+The gateway dials **out** to the connector's ``/relay`` WebSocket endpoint,
+authenticates the upgrade with a per-gateway HMAC bearer token, and exchanges
+newline-delimited JSON frames:
 
   gateway -> connector:
     hello            {type, gatewayId?}
@@ -79,8 +78,7 @@ def _ws_dial_url(url: str) -> str:
     """Normalize a relay URL to a ``ws(s)://host/relay`` dial target.
 
     ``https://`` -> ``wss://``, ``http://`` -> ``ws://``; the path is forced to
-    end with ``/relay`` (the connector's WS endpoint).  Mirrors Hermes
-    ``_ws_dial_url``.
+    end with ``/relay`` (the connector's WS endpoint).
     """
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()

@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 This is distinct from ``test_hooks.py`` (which covers the tool-execution hook
 system in ``encre.hooks.*``).  These tests cover the gateway lifecycle hooks
-in ``encre.gateway.hooks`` (aligns with Hermes ``gateway/hooks.py``):
+in ``encre.gateway.hooks``:
 
 - :class:`HookRegistry` programmatic register / emit / emit_collect.
 - Wildcard ``base:*`` resolution (bare base does NOT match).

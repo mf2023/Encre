@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -27,8 +27,6 @@ from __future__ import annotations
 
 Detects intentional-silence responses, partial markers, and other patterns
 that should suppress or modify delivery behavior.
-
-Aligns with Hermes ``gateway/response_filters.py``.
 """
 
 import re

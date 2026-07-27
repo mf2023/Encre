@@ -48,6 +48,7 @@ _cdp_ws_urls: dict[str, str] = {}
 _search_engine_url: str | None = None
 
 _session_id: str = ""  # set by the tool executor before each call
+_DEFAULT_KEY = "__default__"  # fallback key for CDP URL when no session_id
 
 
 def set_session_id(sid: str) -> None:
@@ -70,6 +71,9 @@ def set_cdp_url(url: str) -> None:
     global _cdp_ws_urls
     if _session_id:
         _cdp_ws_urls[_session_id] = url
+    else:
+        # Store under default key; will be migrated when session_id is set
+        _cdp_ws_urls[_DEFAULT_KEY] = url
 
 
 def set_search_engine_url(url: str) -> None:
@@ -80,22 +84,24 @@ def set_search_engine_url(url: str) -> None:
 
 def _get_session():
     """Get or create the browser session for the current session ID."""
-    global _sessions
-    if not _session_id:
+    global _sessions, _cdp_ws_urls
+    key = _session_id if _session_id else _DEFAULT_KEY
+    if key not in _sessions:
         from encre.computer.browser import EncreBrowserSession
-        s = EncreBrowserSession()
-        return s
-    if _session_id not in _sessions:
-        from encre.computer.browser import EncreBrowserSession
-        _sessions[_session_id] = EncreBrowserSession()
-        if _engine_requester is not None and hasattr(_sessions[_session_id], "set_engine_requester"):
-            _sessions[_session_id].set_engine_requester(_engine_requester)
-    return _sessions[_session_id]
+        _sessions[key] = EncreBrowserSession()
+        if _engine_requester is not None and hasattr(_sessions[key], "set_engine_requester"):
+            _sessions[key].set_engine_requester(_engine_requester)
+    # Migrate URL from default key to real session ID when it becomes available
+    if _session_id and _DEFAULT_KEY in _cdp_ws_urls:
+        _cdp_ws_urls[_session_id] = _cdp_ws_urls.pop(_DEFAULT_KEY)
+    return _sessions[key]
 
 
 def _get_cdp_url() -> str | None:
     """Get the CDP URL for the current session."""
-    return _cdp_ws_urls.get(_session_id) if _session_id else None
+    if _session_id and _session_id in _cdp_ws_urls:
+        return _cdp_ws_urls[_session_id]
+    return _cdp_ws_urls.get(_DEFAULT_KEY)
 
 
 async def _ensure_connected():

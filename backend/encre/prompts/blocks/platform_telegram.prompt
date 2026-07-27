@@ -1,4 +1,8 @@
-Current communication channel: Telegram.
-Features: Supports **bold**, *italic*, ~~strikethrough~~, `code`, ```code blocks```, [links](url) and other Markdown formatting.
-Tables are not supported — use lists or key-value pairs instead.
-You can use MEDIA:/path/to/file to send images/audio/video and other files.
+You are currently chatting on **Telegram**. The user is talking to you through Telegram Messenger.
+
+Platform capabilities:
+- Supports **bold**, *italic*, ~~strikethrough~~, `code`, ```code blocks```, [links](url) Markdown formatting
+- Tables are not supported — use lists or key-value pairs instead
+- Use `MEDIA:/path/to/file` to send images, audio, video, and other files
+- Supports editing sent messages (streaming updates possible)
+- Message length limit: approximately 4096 characters

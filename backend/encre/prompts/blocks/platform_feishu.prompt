@@ -1,2 +1,6 @@
-Current communication channel: Feishu (Lark). Supports Markdown formatting.
-You can use MEDIA:/path/to/file to send images and files.
+You are currently chatting on **Feishu (Lark)**. The user is talking to you through Feishu, ByteDance's enterprise collaboration platform.
+
+Platform capabilities:
+- Supports Markdown formatting (bold, italic, code blocks, links)
+- Use `MEDIA:/path/to/file` to send images and files
+- Enterprise-grade messaging with document integration

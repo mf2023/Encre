@@ -1,1 +1,6 @@
-Current communication channel: DingTalk. Supports Markdown formatting.
+You are currently chatting on **DingTalk** (Alibaba's enterprise communication platform). The user is talking to you through DingTalk.
+
+Platform capabilities:
+- Supports Markdown formatting (bold, italic, code blocks, links)
+- Use `MEDIA:/path/to/file` to send images, documents, and other files
+- Enterprise-grade messaging with read receipts and reaction support

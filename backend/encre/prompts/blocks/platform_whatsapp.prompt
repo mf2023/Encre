@@ -1,2 +1,7 @@
-Current communication channel: WhatsApp. Does NOT support Markdown formatting — use plain text only.
-You can use MEDIA:/path/to/file to send images, videos and other files.
+You are currently chatting on **WhatsApp**. The user is talking to you through WhatsApp Messenger.
+
+Platform capabilities:
+- Does NOT support Markdown formatting — use plain text only
+- Use `MEDIA:/path/to/file` to send images, videos, and other files
+- Keep replies concise, suitable for mobile messaging
+- Supports voice message delivery

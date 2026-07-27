@@ -94,6 +94,7 @@ from encre.server.protocol import (
     ClientEditMessage,
     ClientEngineInstallResponse,
     ClientExportSession,
+    ClientExportSessionsBatch,
     ClientFetchModels,
     ClientGetConfig,
     ClientGetGitignore,
@@ -159,6 +160,7 @@ from encre.server.protocol import (
     ClientUpdateSubAgents,
     ClientValidateModel,
     encode_server_message,
+    encode_sessions_exported_zip,
     parse_client_message,
 )
 from encre.server.session_manager import SessionManager
@@ -241,6 +243,9 @@ try:
     _loguru_handler.setLevel(logging.DEBUG)
     logging.getLogger("encre.server.ws").addHandler(_loguru_handler)
     logging.getLogger("encre.server.ws").setLevel(logging.DEBUG)
+    # Suppress noisy websocket keepalive PING/PONG/DEBUG logs
+    for _name in ("websockets.server", "websockets.client", "websockets"):
+        logging.getLogger(_name).setLevel(logging.WARNING)
 except Exception:
     pass
 
@@ -728,12 +733,12 @@ class EncreWSHandler:
                                     qrcode_url="", success=False,
                                     message="WeChat adapter class not found")
                                 continue
-                            # Use stored api_url if available, otherwise defaults
+                            # Use stored base_url if available, otherwise defaults
                             stored = getattr(self._adapter_manager, "_stored_configs", {}).get("weixin", {})
                             _cfg = _PC(
                                 enabled=False,
                                 token=stored.get("token", ""),
-                                extra={"api_url": stored.get("api_url", "")},
+                                extra={"base_url": stored.get("base_url", "")},
                             )
                             adapter = entry.adapter_factory(_cfg)
                         if not hasattr(adapter, "get_qrcode_url"):
@@ -1242,10 +1247,11 @@ class EncreWSHandler:
 
                 elif isinstance(msg, ClientSetCdpUrl):
                     if msg.url:
-                        if msg.session_id:
-                            set_session_id(msg.session_id)
+                        sid = msg.session_id or self._current_session_id or ""
+                        if sid:
+                            set_session_id(sid)
                         set_cdp_url(msg.url)
-                        logger.info("[browser] CDP URL set to %s for session %s", msg.url, msg.session_id or "?")
+                        logger.info("[browser] CDP URL set to %s for session %s", msg.url, sid or "?")
                     else:
                         logger.warning("[browser] received empty CDP URL")
 
@@ -1970,6 +1976,35 @@ class EncreWSHandler:
                     except Exception as e:
                         logger.error(f"Export session failed: {e}")
                         await self._send(ws, "error", message=str(e), code="export_error")
+
+                elif isinstance(msg, ClientExportSessionsBatch):
+                    if not msg.session_ids:
+                        await self._send(ws, "error", message="No session_ids provided", code="invalid_request")
+                        continue
+                    from encre.session import EncreSession
+                    import zipfile, io, base64
+                    buf = io.BytesIO()
+                    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for sid in msg.session_ids:
+                            dir_path = self._manager._session_dir_path(sid)
+                            if not dir_path or not dir_path.is_dir():
+                                continue
+                            try:
+                                md = EncreSession.export_to_markdown(str(dir_path))
+                                name = self._manager._index.get(sid, {}).get("name", sid[:8])
+                                # Organise into workspace subfolder if applicable
+                                ws_path = self._manager._index.get(sid, {}).get("workspace", "") or ""
+                                if ws_path:
+                                    ws_dir = os.path.basename(ws_path.rstrip("/\\"))
+                                    arcname = f"{ws_dir}/{name or sid[:8]}.md"
+                                else:
+                                    arcname = f"{name or sid[:8]}.md"
+                                zf.writestr(arcname, md)
+                            except Exception:
+                                continue
+                    zip_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+                    fname = f"encre-export-{len(msg.session_ids)}-sessions.zip"
+                    await self._send(ws, "sessions_exported_zip", zip_base64=zip_b64, filename=fname)
 
                 elif isinstance(msg, ClientRenameSession):
                     if not msg.session_id or not msg.new_name.strip():
@@ -3489,9 +3524,14 @@ class EncreWSHandler:
 
     async def _poll_wechat_scan(self, ws, adapter, qrcode_token: str) -> None:
         """Poll iLink Bot QR code status in background and notify frontend."""
+        deadline = 120.0
+        start = time.monotonic()
         try:
-            result = await adapter.poll_qrcode_status(qrcode_token)
-            if result:
+            while time.monotonic() - start < deadline:
+                result = await adapter.poll_qrcode_status(qrcode_token)
+                if not result:
+                    await asyncio.sleep(1)
+                    continue
                 ilink_bot_id = result.get("ilink_bot_id", "")
                 bot_token = result.get("bot_token", "")
                 baseurl = result.get("baseurl", "")
@@ -3505,35 +3545,35 @@ class EncreWSHandler:
                         "baseurl": baseurl,
                         "ilink_user_id": ilink_user_id,
                     })
-                # Save credentials and start the adapter
                 if self._adapter_manager and ilink_bot_id and bot_token:
-                    # Clear any stale stored config for weixin
                     if hasattr(self._adapter_manager, "_stored_configs"):
                         self._adapter_manager._stored_configs.pop("weixin", None)
                     cfg = {
-                        "app_id": ilink_bot_id,
+                        "account_id": ilink_bot_id,
+                        "WEIXIN_ACCOUNT_ID": ilink_bot_id,
                         "token": bot_token,
-                        "api_url": baseurl,
+                        "base_url": baseurl,
+                        "WEIXIN_BASE_URL": baseurl,
                         "enabled": True,
                     }
                     await self._adapter_manager.start_adapter("weixin", cfg)
-                    # Persist to adapter_configs
                     info = self._info
                     if info and hasattr(info, "agent") and hasattr(info.agent, "config"):
                         info.agent.config.adapter_configs["weixin"] = {
-                            "app_id": ilink_bot_id,
+                            "account_id": ilink_bot_id,
                             "token": bot_token,
-                            "api_url": baseurl,
+                            "base_url": baseurl,
                             "enabled": True,
                         }
                         if hasattr(self, "_default_config"):
                             self._default_config.adapter_configs["weixin"] = {
-                                "app_id": ilink_bot_id,
+                                "account_id": ilink_bot_id,
                                 "token": bot_token,
-                                "api_url": baseurl,
+                                "base_url": baseurl,
                                 "enabled": True,
                             }
                         self._persist_settings(info)
+                return
         except Exception as e:
             logger.warning("[wechat_scan] poll error: %s", e)
         finally:

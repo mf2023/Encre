@@ -23,6 +23,28 @@
 
 from __future__ import annotations
 
+"""Repository inspection wrapper for the Encre agent.
+
+This module provides :class:`EncreGitRepo`, a thin, read-mostly wrapper around
+the ``git`` command-line tool that lets the agent reason about a working tree
+before and after editing files. It never performs destructive operations on its
+own -- stash/pop helpers exist but are best-effort and only invoked by callers
+that explicitly ask for them.
+
+Key responsibilities:
+    * Locate the enclosing ``.git`` root by walking up from a workspace.
+    * Snapshot repository state into a :class:`GitState` dataclass (head,
+      branch, remote, cleanliness, changed/untracked files, unpushed commits,
+      worktree count, recent commits).
+    * Produce unified diffs for the review panel, including synthesizing a diff
+      for brand-new untracked files that ``git diff HEAD`` cannot see.
+    * Detect transient in-progress operations (merge/rebase/cherry-pick/...).
+
+All git invocation output is decoded as UTF-8 with byte replacement so a
+multi-byte filename or diff on a non-UTF-8 host locale does not crash the
+request.
+"""
+
 import contextlib
 import subprocess
 from dataclasses import dataclass, field

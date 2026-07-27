@@ -76,7 +76,7 @@ interface ElectronAPI {
   gitCreatePr(repoPath: string): Promise<{ output?: string; error?: string; compare_url?: string }>;
   gitPull(repoPath: string): Promise<{ output?: string; error?: string }>;
   gitBehind(repoPath: string): Promise<{ behind: number; error?: string }>;
-  getServiceStatus(): Promise<{ running: boolean; pid: number | null; port: number }>;
+  getServiceStatus(): Promise<{ running: boolean; pid: number | null; port: number; error: string | null }>;
   getAutoStart(): Promise<boolean>;
   setAutoStart(enabled: boolean): Promise<{ success: boolean; error?: string }>;
   trayLocaleUpdate(locale: string): void;
@@ -104,6 +104,7 @@ interface ElectronAPI {
   addHistoryEntry(entry: { url: string; title: string }): Promise<{ success: boolean }>;
   clearHistory(): Promise<{ success: boolean }>;
   exportFile(options: { content: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>;
+  exportBinary(options: { base64: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>;
 
   // Browser import/export
   detectBrowsers(): Promise<Array<{ id: string; name: string; profilePath: string; hasBookmarks: boolean; hasCookies: boolean; hasHistory: boolean }>>;
@@ -138,6 +139,7 @@ interface ElectronAPI {
     fileExists: boolean;
     rawLines: number;
   }>;
+  getLogFileInfo(): Promise<{ exists: boolean; size: number; mtimeMs: number }>;
   clearLogs(): Promise<{ success: boolean }>;
   setWinKeyCapture(enabled: boolean): Promise<void>;
   onRestartProgress(callback: (data: { progress: number }) => void): () => void;
@@ -160,6 +162,9 @@ interface Window {
   electronAPI?: ElectronAPI;
   lucide?: any;
 }
+
+declare var monaco: any;
+declare class EditorView {}
 
 /** Ambient module shim so `import Fuse from "fuse.js"` type-checks without types. */
 declare module "markdown-it" {

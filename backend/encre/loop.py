@@ -23,6 +23,35 @@
 
 from __future__ import annotations
 
+"""The core agent loop for Encre.
+
+``EncreLoop`` is the heart of the Encre backend: it drives a single
+conversational agent turn-by-turn, streaming model output and tool calls to the
+frontend while managing an extensive set of cross-cutting concerns. In
+addition to calling the model backend it orchestrates:
+
+* **Tool execution** -- discovery, permission gating, safety checks, streaming
+  pre-execution, and bounded concurrency.
+* **Recovery** -- a unified :class:`~encre.loop_error.ErrorOrchestrator` that
+  classifies backend/tool errors and decides retry, fallback, compact, or
+  graceful-stop actions.
+* **Compaction** -- reactive and background context compaction to stay under
+  token budgets, with a frontend refresh flag.
+* **Plan mode** -- a "plan-first" workflow where write-class tools are
+  previewed and require explicit user approval.
+* **Skills & sub-agents** -- dynamic skill activation and delegation to
+  specialised sub-agent roles (researcher / executor / critic).
+* **Stability** -- token-budget "grace" calls, steer injections, and stuck-loop
+  detection.
+* **Persistence & observability** -- session metadata, OpenTelemetry tracing,
+  and milestone summaries.
+
+The loop is intentionally a large coordinator; fine-grained behaviour lives in
+the collaborating manager classes it constructs in ``__init__`` (see
+``StateManager``, ``CommandManager``, ``PlanModeManager``, ``SkillManager``,
+``WorkingSetManager``, ``SubAgentRunner`` and the ``loop_stability`` helpers).
+"""
+
 import asyncio
 import builtins
 import contextlib
@@ -190,6 +219,37 @@ _CONTEXT_OVERFLOW_PATTERN = re.compile(
 _is_context_overflow = is_context_overflow
 
 class EncreLoop:
+    """Turn-by-turn conversational agent loop with full recovery and tooling.
+
+    ``EncreLoop`` owns a session and a configured backend and runs the agent:
+    it builds the prompt context, streams model output and tool calls, executes
+    tools with safety/permission gating, and applies recovery/compaction
+    strategies when things go wrong. It also exposes the plan-mode, skill, and
+    sub-agent surfaces that the desktop UI drives through method calls.
+
+    Rather than implementing every concern inline, the loop composes a set of
+    manager objects (state, commands, plan mode, skills, working set, sub-agent
+    runner) and a unified error orchestrator. Many public attributes are thin
+    properties that forward to those managers so legacy call sites keep working.
+
+    Attributes
+    ----------
+    config, session:
+        The immutable-ish configuration and the persistent session this loop
+        drives.
+    backend:
+        The lazily created model backend (``None`` only before construction in
+        ``__init__`` completes).
+    _child_loops:
+        Set of sub-loop references spawned by this loop, cancelled together when
+        the user stops the parent.
+    _state:
+        Per-run :class:`~encre.loop_state.state.LoopState`, rebuilt each run.
+    _error_orch:
+        The :class:`~encre.loop_error.ErrorOrchestrator` owning all recovery
+        decisions and counters.
+    """
+
     def __init__(
         self,
         config: EncreConfig,
@@ -208,6 +268,38 @@ class EncreLoop:
         code_index: EncreCodeIndex | None = None,
         sub_agent_depth: int = 0,
     ) -> None:
+        """Construct the loop and wire up all collaborating subsystems.
+
+        Every long-lived collaborator (backend, safety engine, compaction
+        pipeline, plan-mode manager, skill manager, working-set manager,
+        sub-agent runner, error orchestrator, evolution components, etc.) is
+        built here exactly once. Optional arguments fall back to freshly
+        constructed defaults when ``None`` so a loop can be created with minimal
+        explicit wiring.
+
+        Args:
+            config: The Encre configuration controlling backend, model,
+                thinking, tracing, token budget and more.
+            session: The persistent session this loop runs against.
+            tool_registry: Optional tool registry; a new one is created if
+                omitted.
+            hook_system: Optional hook system; a new one is created if omitted.
+            safety: Optional safety engine; a default is built from ``config``.
+            memory_system: Optional memory system, used to enrich context.
+            profile_system: Optional profile system.
+            soul_system: Optional "soul"/persona system.
+            skill_registry: Optional skill registry; activates skill support.
+            telemetry: Optional telemetry; defaults to a disabled instance.
+            evolution: Optional evolution configuration; defaults are applied.
+            recovery: Optional error recovery engine; a default is used.
+            feedback: Optional feedback learner.
+            code_index: Optional pre-built code index, injected into the context
+                builder.
+            sub_agent_depth: Nesting depth for sub-agents; the top loop is 0.
+
+        Returns:
+            None.
+        """
         self.config = config
         self.session = session
         self.tool_registry = tool_registry or ToolRegistry()
@@ -387,90 +479,130 @@ class EncreLoop:
 
     @property
     def _permission_event(self) -> asyncio.Event | None:
+        """Expose the plan-mode permission event (read accessor)."""
         return self._plan_mode._permission_event
 
     @_permission_event.setter
     def _permission_event(self, value: asyncio.Event | None) -> None:
+        """Expose the plan-mode permission event (write accessor)."""
         self._plan_mode._permission_event = value
 
     @property
     def _permission_decision(self) -> bool:
+        """Expose the plan-mode permission decision (read accessor)."""
         return self._plan_mode._permission_decision
 
     @_permission_decision.setter
     def _permission_decision(self, value: bool) -> None:
+        """Expose the plan-mode permission decision (write accessor)."""
         self._plan_mode._permission_decision = value
 
     @property
     def _pending_tool_name(self) -> str:
+        """Expose the tool name awaiting plan-mode approval (read accessor)."""
         return self._plan_mode._pending_tool_name
 
     @_pending_tool_name.setter
     def _pending_tool_name(self, value: str) -> None:
+        """Expose the tool name awaiting plan-mode approval (write accessor)."""
         self._plan_mode._pending_tool_name = value
 
     @property
     def _plan_decision(self) -> bool:
+        """Expose the plan approval decision (read accessor)."""
         return self._plan_mode._plan_decision
 
     @_plan_decision.setter
     def _plan_decision(self, value: bool) -> None:
+        """Expose the plan approval decision (write accessor)."""
         self._plan_mode._plan_decision = value
 
     @property
     def _plan_event(self) -> asyncio.Event | None:
+        """Expose the plan-mode await event (read accessor)."""
         return self._plan_mode._plan_event
 
     @_plan_event.setter
     def _plan_event(self, value: asyncio.Event | None) -> None:
+        """Expose the plan-mode await event (write accessor)."""
         self._plan_mode._plan_event = value
 
     @property
     def _plan_proposals(self) -> dict[str, dict[str, Any]]:
+        """Expose the pending plan proposals map (read accessor)."""
         return self._plan_mode._plan_proposals
 
     @_plan_proposals.setter
     def _plan_proposals(self, value: dict[str, dict[str, Any]]) -> None:
+        """Expose the pending plan proposals map (write accessor)."""
         self._plan_mode._plan_proposals = value
 
     @property
     def _question_event(self) -> asyncio.Event | None:
+        """Expose the question/answer await event (read accessor)."""
         return self._plan_mode._question_event
 
     @_question_event.setter
     def _question_event(self, value: asyncio.Event | None) -> None:
+        """Expose the question/answer await event (write accessor)."""
         self._plan_mode._question_event = value
 
     @property
     def _question_answers(self) -> str:
+        """Expose the accumulated question answers text (read accessor)."""
         return self._plan_mode._question_answers
 
     @_question_answers.setter
     def _question_answers(self, value: str) -> None:
+        """Expose the accumulated question answers text (write accessor)."""
         self._plan_mode._question_answers = value
 
     @property
     def _active_tool_skills(self) -> dict[str, str]:
+        """Expose the active tool-skill mapping (read accessor)."""
         return self._skill_mgr.active_tool_skills
 
     @_active_tool_skills.setter
     def _active_tool_skills(self, value: dict[str, str]) -> None:
+        """Replace the active tool-skill mapping, clearing old entries first."""
         self._skill_mgr.active_tool_skills.clear()
         self._skill_mgr.active_tool_skills.update(value)
 
     @property
     def _active_doc_skills(self) -> dict[str, str]:
+        """Expose the active doc-skill mapping (read accessor)."""
         return self._skill_mgr.active_doc_skills
 
     @_active_doc_skills.setter
     def _active_doc_skills(self, value: dict[str, str]) -> None:
+        """Replace the active doc-skill mapping, clearing old entries first."""
         self._skill_mgr.active_doc_skills.clear()
         self._skill_mgr.active_doc_skills.update(value)
 
     def _cache_fresh(self, built_at: float, ttl: float = _PROMPT_CACHE_TTL_SECONDS) -> bool:
+        """Return ``True`` if a cached item built at ``built_at`` is still valid.
+
+        Args:
+            built_at: Epoch timestamp when the item was cached.
+            ttl: Time-to-live in seconds; defaults to the module-level
+                ``_PROMPT_CACHE_TTL_SECONDS``.
+
+        Returns:
+            ``True`` when ``ttl`` seconds have not elapsed since ``built_at``.
+        """
         return (time.time() - built_at) < ttl
 
     def _set_task_stage(self, stage: str, reason: str = "") -> None:
+        """Update the working-set task stage and its reason string.
+
+        Args:
+            stage: The new stage label (e.g. ``discover``/``execute``/
+                ``verify``/``report``).
+            reason: Optional human-readable explanation for the transition.
+
+        Returns:
+            None.
+        """
         self._working_set.set_task_stage(stage, reason)
 
     # ── P1 milestone summarisation ─────────────────────────────────────
@@ -478,20 +610,64 @@ class EncreLoop:
     async def _maybe_write_milestone(
         self, context_msgs: list[dict[str, Any]],
     ) -> None:
+        """Write a milestone summary if the working set decides it is due.
+
+        Delegates to the working-set manager, passing the live backend and
+        compaction engine so the manager can summarise context when the session
+        reaches a configured milestone.
+
+        Args:
+            context_msgs: The current context messages to summarise.
+
+        Returns:
+            None.
+        """
         await self._working_set.maybe_write_milestone(
             context_msgs, backend=self.backend, compact_engine=self.compact_engine,
         )
 
     def _infer_task_stage(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> str:
+        """Infer the current task stage from the prompt and prepared tools.
+
+        Args:
+            prompt: The user prompt used to detect stage keywords.
+            prepared: Optional prepared tool list whose semantics inform the
+                stage.
+
+        Returns:
+            The inferred stage label as a string.
+        """
         return self._working_set.infer_task_stage(prompt, prepared)
 
     def _summarize_args(self, args: dict[str, Any]) -> str:
+        """Produce a short human-readable summary of a tool's arguments.
+
+        Args:
+            args: The tool argument mapping to summarise.
+
+        Returns:
+            A condensed string description of the arguments.
+        """
         return self._working_set._summarize_args(args)
 
     def _refresh_working_set(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> None:
+        """Refresh the working-set view from the latest prompt and tools.
+
+        Args:
+            prompt: The latest user prompt.
+            prepared: The latest prepared tool list.
+
+        Returns:
+            None.
+        """
         self._working_set.refresh_working_set(prompt, prepared)
 
     def _build_working_set_prompt(self) -> str:
+        """Render the working-set section of the system prompt.
+
+        Returns:
+            The working-set prompt fragment as a string.
+        """
         return self._working_set.build_working_set_prompt()
 
     def _maybe_record_turn_summary(
@@ -500,15 +676,54 @@ class EncreLoop:
         prepared: list[dict[str, Any]],
         tool_outcomes: list[dict[str, Any]],
     ) -> None:
+        """Record a per-turn summary into the working set when appropriate.
+
+        Args:
+            prompt: The turn's user prompt.
+            prepared: The prepared tools for the turn.
+            tool_outcomes: The outcomes of the tool executions this turn.
+
+        Returns:
+            None.
+        """
         self._working_set.maybe_record_turn_summary(prompt, prepared, tool_outcomes)
 
     def _build_turn_summary_prompt(self) -> str:
+        """Render the accumulated turn summaries as a prompt fragment.
+
+        Returns:
+            The turn-summary prompt fragment as a string.
+        """
         return self._working_set.build_turn_summary_prompt()
 
     def _build_stage_prompt(self) -> str:
+        """Render the current task-stage prompt fragment.
+
+        Returns:
+            The stage prompt fragment as a string.
+        """
         return self._working_set.build_stage_prompt()
 
     def _should_delegate_sub_agent(self, prompt: str, prepared: list[dict[str, Any]]) -> tuple[bool, str, str]:
+        """Decide whether to delegate the current task to a sub-agent.
+
+        Delegation is only considered at the top level (``sub_agent_depth == 0``)
+        to avoid nested sub-agents. The decision combines rule-based heuristics
+        (current task stage plus counts of search/write tools, plus prompt
+        keywords) with the evolution ``meta`` model's own ``should_delegate``
+        judgement.
+
+        Args:
+            prompt: The user prompt, lower-cased internally for keyword checks.
+            prepared: The prepared tool list whose ``semantics`` inform the
+                counts.
+
+        Returns:
+            A ``(should_delegate, role, reason)`` tuple. ``role`` is one of
+            ``"researcher"``, ``"executor"`` or ``"critic"`` and ``reason`` is a
+            short explanation; both are empty strings when delegation is not
+            recommended.
+        """
         if self.sub_agent_depth > 0:
             return False, "", ""
         prompt_lower = (prompt or "").lower()
@@ -529,6 +744,23 @@ class EncreLoop:
         return False, "", ""
 
     async def _maybe_run_advisor_sub_agent(self, prompt: str, prepared: list[dict[str, Any]]) -> str:
+        """Run an advisor sub-agent and return its condensed guidance.
+
+        First consults :meth:`_should_delegate_sub_agent`; if delegation is not
+        recommended, or no configured sub-agent matches the chosen role, returns
+        an empty string. Otherwise it spawns a short-lived advisor sub-agent
+        (two turns max) with a focused prompt and returns up to 1500 characters
+        of its reply. Success and failure are both recorded with the evolution
+        ``meta`` tracker, and the delegation is appended to the session's
+        delegate history (capped at 20 entries).
+
+        Args:
+            prompt: The parent task prompt.
+            prepared: The prepared tool list used for the delegation decision.
+
+        Returns:
+            The advisor's trimmed guidance string, or ``""`` when no advisor ran.
+        """
         should_delegate, delegate, reason = self._should_delegate_sub_agent(prompt, prepared)
         if not should_delegate or not delegate:
             return ""
@@ -538,6 +770,7 @@ class EncreLoop:
             role = None
         if role is None:
             return ""
+        # Build a tightly scoped prompt so the advisor stays concise and on-task.
         advisor_prompt = (
             f"Parent task: {prompt}\n\n"
             f"Current work phase: {self._state_mgr.task_stage}\n"
@@ -563,6 +796,7 @@ class EncreLoop:
                     "turn": self.session.turn_count,
                     "timestamp": time.time(),
                 })
+                # Keep the delegate history bounded to the most recent 20 events.
                 if len(history) > 20:
                     history = history[-20:]
                 self._state_mgr.delegate_history = history
@@ -574,6 +808,15 @@ class EncreLoop:
         return ""
 
     def _build_stuck_recovery_prompt(self) -> str:
+        """Build an instruction prompt injected when the loop is stuck.
+
+        Returns an empty string when no stuck events have been recorded;
+        otherwise returns a short remediation checklist that names the repeated
+        tool-call signature and tells the model to diverge from the loop.
+
+        Returns:
+            The stuck-recovery prompt fragment, or ``""`` if not stuck.
+        """
         stuck_events = self._state_mgr.stuck_events
         if not stuck_events:
             return ""
@@ -589,6 +832,17 @@ class EncreLoop:
         return "\n".join(lines)
 
     def _record_stuck_event(self, signature: tuple[str, ...]) -> None:
+        """Record a repeated tool-call signature as a stuck event.
+
+        Appends a ``(turn, signature, timestamp)`` record to the session's stuck
+        event list, keeping at most the most recent 20 entries.
+
+        Args:
+            signature: The tuple identifying the repeated tool-call pattern.
+
+        Returns:
+            None.
+        """
         stuck = list(self._state_mgr.stuck_events)
         stuck.append({
             "turn": self.session.turn_count,
@@ -600,7 +854,11 @@ class EncreLoop:
         self._state_mgr.stuck_events = stuck
 
     async def aclose(self) -> None:
-        """Release backend resources (httpx clients, model memory, etc.)."""
+        """Release backend resources (httpx clients, model memory, etc.).
+
+        Returns:
+            None.
+        """
         if self.backend is not None:
             try:
                 await self.backend.aclose()
@@ -608,12 +866,36 @@ class EncreLoop:
                 logger.warning(f"Error closing backend: {e}", extra={"backend": type(self.backend).__name__})
 
     async def _wait_for_permission_decision(self, tool_name: str) -> bool:
+        """Forward a permission wait to the plan-mode manager.
+
+        Args:
+            tool_name: The tool whose execution is awaiting approval.
+
+        Returns:
+            ``True`` if the user approved, ``False`` if denied.
+        """
         return await self._plan_mode.wait_for_permission_decision(tool_name)
 
     def resolve_permission(self, decision: bool) -> None:
+        """Resolve a pending permission request with the given decision.
+
+        Args:
+            decision: ``True`` to approve the pending tool, ``False`` to deny.
+
+        Returns:
+            None.
+        """
         self._plan_mode.resolve_permission(decision)
 
     def resolve_question(self, answers: str) -> None:
+        """Submit answers to a pending question/answer request.
+
+        Args:
+            answers: The user's answer text.
+
+        Returns:
+            None.
+        """
         self._plan_mode.resolve_question(answers)
 
     # ── Plan mode API ───────────────────────────────────────────────
@@ -635,15 +917,40 @@ class EncreLoop:
 
     @property
     def plan_mode_active(self) -> bool:
+        """Report whether the loop is currently in plan mode (read accessor)."""
         return self._plan_mode.plan_mode_active
 
     def set_mode(self, mode: str) -> None:
+        """Transition the loop to a new command mode atomically.
+
+        Args:
+            mode: One of ``""`` (normal), ``"plan"`` or ``"spec"``.
+
+        Returns:
+            None.
+        """
         self._plan_mode.set_mode(mode)
 
     def enter_plan_mode(self, reason: str = "") -> PlanModeChanged:
+        """Enter plan mode, returning a ``PlanModeChanged`` event.
+
+        Args:
+            reason: Optional human-readable reason for entering plan mode.
+
+        Returns:
+            The emitted :class:`~encre.utils.types.PlanModeChanged` event.
+        """
         return self._plan_mode.enter_plan_mode(reason)
 
     def exit_plan_mode(self, reason: str = "") -> PlanModeChanged:
+        """Exit plan mode, returning a ``PlanModeChanged`` event.
+
+        Args:
+            reason: Optional human-readable reason for exiting plan mode.
+
+        Returns:
+            The emitted :class:`~encre.utils.types.PlanModeChanged` event.
+        """
         return self._plan_mode.exit_plan_mode(reason)
 
     # ── Active command API ────────────────────────────────────────────
@@ -651,22 +958,60 @@ class EncreLoop:
 
     def set_command(self, name: str, prompt: str, icon: str = "",
                     title: str = "") -> None:
+        """Register or replace the active slash command for this loop.
+
+        Args:
+            name: Command name.
+            prompt: The prompt body associated with the command.
+            icon: Optional icon hint for the UI.
+            title: Optional display title.
+
+        Returns:
+            None.
+        """
         self._cmd_mgr.set_command(name, prompt, icon=icon, title=title)
 
     def clear_command(self) -> None:
+        """Clear the active slash command.
+
+        Returns:
+            None.
+        """
         self._cmd_mgr.clear_command()
 
     @property
     def active_command_name(self) -> str:
+        """Expose the name of the currently active slash command."""
         return self._cmd_mgr.active_command_name
 
     def approve_plan(self, proposal_id: str = "") -> None:
+        """Approve a pending plan proposal (or the only proposal if omitted).
+
+        Args:
+            proposal_id: The proposal to approve; defaults to the pending one.
+
+        Returns:
+            None.
+        """
         self._plan_mode.approve_plan(proposal_id)
 
     def reject_plan(self, proposal_id: str = "") -> None:
+        """Reject a pending plan proposal (or the only proposal if omitted).
+
+        Args:
+            proposal_id: The proposal to reject; defaults to the pending one.
+
+        Returns:
+            None.
+        """
         self._plan_mode.reject_plan(proposal_id)
 
     def get_pending_proposals(self) -> list[dict[str, Any]]:
+        """Return the list of plan proposals still awaiting a decision.
+
+        Returns:
+            A list of proposal dictionaries from the plan-mode manager.
+        """
         return self._plan_mode.get_pending_proposals()
 
     def _build_plan_proposal(
@@ -676,6 +1021,18 @@ class EncreLoop:
         tool_name: str,
         tool_args: dict[str, Any],
     ) -> PlanProposal | None:
+        """Build a plan proposal for an intercepted write-class tool call.
+
+        Args:
+            proposal_id: Unique id for the proposal.
+            tool_call_id: The originating tool-call id.
+            tool_name: The intercepted tool name.
+            tool_args: The tool arguments (the change to preview).
+
+        Returns:
+            A :class:`~encre.utils.types.PlanProposal`, or ``None`` when the
+            plan-mode manager declines to build one.
+        """
         return self._plan_mode.build_plan_proposal(
             proposal_id, tool_call_id, tool_name, tool_args,
         )
@@ -685,6 +1042,15 @@ class EncreLoop:
         proposal: PlanProposal,
         timeout: float = 300.0,
     ) -> bool:
+        """Wait for the user to approve or reject a plan proposal.
+
+        Args:
+            proposal: The proposal awaiting a decision.
+            timeout: Maximum seconds to wait before giving up.
+
+        Returns:
+            ``True`` if approved, ``False`` on rejection or timeout.
+        """
         return await self._plan_mode.await_plan_decision(proposal, timeout)
 
     def _get_review_dir(self, mode: str, review_id: str) -> str:
@@ -824,6 +1190,21 @@ class EncreLoop:
         tool_call_id: str,
         _client_id: str,
     ) -> AsyncGenerator[AgentEvent, None]:
+        """Delegate write-class tool interception to the plan-mode manager.
+
+        Yields the same stream of plan-proposal / preview events that the
+        underlying :class:`~encre.loop_plan_mode.PlanModeManager` produces, so
+        callers can ``async for`` over this method transparently.
+
+        Args:
+            tool_name: The intercepted tool name.
+            tool_args: The intercepted tool arguments.
+            tool_call_id: The originating tool-call id.
+            _client_id: Opaque client-side id forwarded to the manager.
+
+        Yields:
+            :class:`~encre.utils.types.AgentEvent` items from plan mode.
+        """
         async for event in self._plan_mode.intercept_plan_mode(
             tool_name, tool_args, tool_call_id, _client_id,
         ):
@@ -935,21 +1316,60 @@ class EncreLoop:
         return added
 
     async def _activate_skills(self, prompt: str) -> tuple[str, str]:
+        """Activate relevant skills for the prompt via the skill manager.
+
+        Args:
+            prompt: The user prompt used to match skill triggers.
+
+        Returns:
+            The ``(skills_block, sources_block)`` tuple from the manager.
+        """
         return await self._skill_mgr.activate_skills(prompt)
 
     async def _collect_tool_skill(self, tool_name: str) -> None:
+        """Collect a tool-referenced skill for ``tool_name`` in the background.
+
+        Args:
+            tool_name: The tool whose associated skill should be collected.
+
+        Returns:
+            None.
+        """
         await self._skill_mgr.collect_tool_skill(tool_name)
 
     async def _collect_doc_skills(self, args: dict) -> None:
+        """Collect documentation skills described by ``args``.
+
+        Args:
+            args: Arguments describing which doc skills to collect.
+
+        Returns:
+            None.
+        """
         await self._skill_mgr.collect_doc_skills(args)
 
     def _render_active_tool_skills(self) -> str:
+        """Render the active tool-skill block for inclusion in the prompt.
+
+        Returns:
+            The rendered tool-skill markdown string.
+        """
         return self._skill_mgr.render_active_tool_skills()
 
     def _render_active_doc_skills(self) -> str:
+        """Render the active documentation-skill block for the prompt.
+
+        Returns:
+            The rendered doc-skill markdown string.
+        """
         return self._skill_mgr.render_active_doc_skills()
 
     def _render_skill_catalogue(self) -> str:
+        """Render the full skill catalogue block for the prompt.
+
+        Returns:
+            The rendered skill-catalogue markdown string.
+        """
         return self._skill_mgr.render_skill_catalogue()
 
     # ── Context building ──────────────────────────────────────────────
@@ -957,6 +1377,14 @@ class EncreLoop:
     # as a bridge because it is called from ``ws.py``.
 
     def inject_code_index(self, idx: Any) -> None:
+        """Inject a pre-built code index into the context builder.
+
+        Args:
+            idx: The code index object to attach.
+
+        Returns:
+            None.
+        """
         self._ctx_bldr.inject_code_index(idx)
 
     async def _pre_execute_in_background(
@@ -1053,6 +1481,30 @@ class EncreLoop:
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
+        """Run a single agent turn and stream its events to the caller.
+
+        Sets this loop as the "active loop" for context-aware tools (so nested
+        sub-agents see the correct registry/session/workspace), delegates to
+        :meth:`_run_impl`, and -- whether the run finishes normally or is torn
+        down by an exception or a hard cancel -- guarantees that any orphaned
+        tool-use left by an interrupted tool execution is finalized so the
+        persisted session history stays self-consistent.
+
+        Args:
+            prompt: The user prompt for this turn.
+            system_prompt: Optional override for the system prompt.
+            custom_instructions: Extra instructions appended to the context.
+            slash_command_mode: Optional initial slash-command mode.
+            slash_commands: Optional slash-command definitions.
+
+        Yields:
+            :class:`~encre.utils.types.AgentEvent` items (text deltas, tool
+            events, finish, etc.).
+
+        Raises:
+            Propagates unexpected exceptions after the cleanup ``finally`` block
+            has run.
+        """
         if self.backend is None:
             logger.warning("Agent run requested but no backend configured")
             yield create_finish("error", error="No backend configured. Send a 'configure' message first.")
@@ -1106,6 +1558,35 @@ class EncreLoop:
         slash_command_mode: str = "",
         slash_commands: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
+        """Execute one agent turn; the core streaming/recovery driver.
+
+        This is the heart of the loop. For a single user prompt it:
+
+        * resets per-run recovery/loop state and classifies the user intent;
+        * detects mid-conversation requirement changes and clears the cached
+          requirements summary when the user redirects;
+        * activates ``/skill`` invocations and builds (and caches) the system
+          prompt, including workspace, codebase, memory, profile, skill and
+          delegation context;
+        * streams model output via ``backend.chat``, handling tool calls,
+          permission gating, plan-mode interception, safety, streaming
+          pre-execution, and bounded tool concurrency;
+        * applies the error orchestrator's recovery decisions (retry, fallback,
+          compact, grace call, steer injection, auto-continue);
+        * yields a stream of :class:`~encre.utils.types.AgentEvent` items back
+          to :meth:`run`.
+
+        Args:
+            prompt: The user prompt for this turn.
+            system_prompt: Optional override; when ``None`` the full system
+                prompt is built and cached.
+            custom_instructions: Extra instructions appended to the context.
+            slash_command_mode: Optional initial slash-command mode.
+            slash_commands: Optional slash-command definitions.
+
+        Yields:
+            :class:`~encre.utils.types.AgentEvent` items.
+        """
         # Reset per-run recovery state via the unified orchestrator.
         self._error_orch.reset_for_new_turn()
         # Initialize per-run loop state with transition history tracking.
@@ -1514,6 +1995,19 @@ class EncreLoop:
                     )
 
                     async def _do_compact(context_msgs=context_msgs, est_tokens=est_tokens):
+                        """Run one synchronous compaction pass over the context.
+
+                        Archives the current context, emits a pre-compact hook,
+                        compacts via the compaction engine, and on success
+                        replaces the active branch's messages and sets the
+                        ``_compacted_this_turn`` flag so the frontend can refresh.
+
+                        Args:
+                            context_msgs: The messages to compact (captured by
+                                closure default).
+                            est_tokens: Estimated token count (captured by
+                                closure default), used for the pre-compact hook.
+                        """
                         try:
                             self.session.set_compact_archive(context_msgs)
                             await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
@@ -1647,6 +2141,16 @@ class EncreLoop:
                 advisor_note = await self._maybe_run_advisor_sub_agent(prompt, advisor_seed)
             if advisor_note:
                 def _merge_advisor(msgs: list[dict[str, Any]], suffix: str) -> None:
+                    """Append advisor guidance `suffix` to the last user message.
+
+                    Mirrors :func:`_merge_into_last_user` but is used to fold the
+                    advisor sub-agent's guidance into the context without mutating
+                    the original session message.
+
+                    Args:
+                        msgs: The message list to modify in place.
+                        suffix: Guidance text appended to the last user message.
+                    """
                     for i in range(len(msgs) - 1, -1, -1):
                         if msgs[i].get("role") == "user":
                             msg = dict(msgs[i])
@@ -2870,6 +3374,21 @@ class EncreLoop:
                     yield create_tool_progress(id=p["client_id"], tool_name=p["name"], status="running")
 
                 async def _execute_safe(p: dict[str, Any]) -> dict[str, Any]:
+                    """Execute a single safe (auto-allowed) tool with retries.
+
+                    Wraps the tool in a :class:`~encre.recovery.RetryableExecutor`,
+                    runs tracing/telemetry around it, validates the output through
+                    the safety engine, and returns a normalised result dict carrying
+                    the content, error flag, latency and references.
+
+                    Args:
+                        p: A prepared-tool dict with ``name``, ``args`` and ``tool``.
+
+                    Returns:
+                        A dict with ``client_id``, ``name``, ``result``,
+                        ``is_error``, ``latency_ms``, ``references`` and any
+                        sub-agent ``messages``.
+                    """
                     tool_start = time.time()
                     tool_error = False
                     _span = trace_tool_call(self._tracer, p["name"], p["args"])

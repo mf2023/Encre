@@ -48,6 +48,8 @@ import { WebSocketServer, WebSocket as WS } from "ws";
 
 // Handle to the spawned Python backend process (null when not running).
 let serverProcess: ChildProcess | null = null;
+// Stores the last backend startup error (stderr) for display in the splash screen.
+let serverStartError: string | null = null;
 // The primary application window (null when hidden/closed).
 let mainWindow: BrowserWindow | null = null;
 // System tray icon handle.
@@ -566,6 +568,21 @@ ipcMain.handle("browser:export-file", async (_event, options: { content: string;
   if (result.canceled || !result.filePath) return { success: false, canceled: true };
   try {
     fs.writeFileSync(result.filePath, options.content, "utf-8");
+    return { success: true, filePath: result.filePath };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("browser:export-binary", async (_event, options: { base64: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }) => {
+  const result = await dialog.showSaveDialog({
+    defaultPath: options.defaultName,
+    filters: options.filters,
+  });
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+  try {
+    const buf = Buffer.from(options.base64, "base64");
+    fs.writeFileSync(result.filePath, buf);
     return { success: true, filePath: result.filePath };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -1093,16 +1110,20 @@ function killProcessOnPort(port: number): void {
   } catch { /* nothing on that port */ }
 }
 
-/** Kills ALL Python processes whose command line contains "encre". */
+/** Kills ALL processes (python.exe or encre-server.exe) whose command line contains "encre". */
 function killAllEncreProcesses(): void {
   try {
     if (process.platform === "win32") {
+      // Kill python.exe processes running encre (dev mode)
       execSync(
         `powershell -Command "Get-CimInstance Win32_Process -Filter \\"name='python.exe'\\" | Where-Object { $_.CommandLine -match 'encre' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`,
         { stdio: "ignore", timeout: 5000 },
       );
+      // Kill bundled encre-server.exe processes (release mode)
+      execSync(`taskkill /F /IM "encre-server.exe" 2>nul`, { stdio: "ignore", timeout: 3000 });
     } else {
       execSync(`pkill -f "python.*encre" 2>/dev/null`, { stdio: "ignore" });
+      execSync(`pkill -f "encre-server" 2>/dev/null`, { stdio: "ignore" });
     }
   } catch { /* no remaining encre processes */ }
 }
@@ -1172,15 +1193,23 @@ function startPythonServer(): Promise<void> {
     }
 
     let resolved = false;
+    let stderrOutput = "";
     const timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        reject(new Error("Server start timed out after 30s"));
+        const msg = stderrOutput
+          ? `Server start timed out after 30s\n\n${stderrOutput}`
+          : "Server start timed out after 30s";
+        reject(new Error(msg));
       }
     }, 30000);
 
     const onData = (chunk: Buffer, src: string) => {
       const text = chunk.toString("utf-8");
+      if (src === "stderr") {
+        stderrOutput += text;
+        console.error("[encre server]", text);
+      }
       if (!resolved) {
         const match = text.match(/Server ready: ws:\/\/[\w.-]+:(\d+)\/ws/);
         if (match) {
@@ -1188,9 +1217,6 @@ function startPythonServer(): Promise<void> {
           clearTimeout(timeout);
           resolve();
         }
-      }
-      if (src === "stderr") {
-        console.error("[encre server]", text);
       }
     };
 
@@ -1201,7 +1227,10 @@ function startPythonServer(): Promise<void> {
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
-        reject(new Error(`Server exited with code ${code}`));
+        const msg = stderrOutput
+          ? `Server exited with code ${code}\n\n${stderrOutput}`
+          : `Server exited with code ${code}`;
+        reject(new Error(msg));
       }
     });
 
@@ -1246,11 +1275,13 @@ async function restartService(event: Electron.IpcMainInvokeEvent): Promise<{ suc
   // Start again
   try {
     await startPythonServer();
+    serverStartError = null;
     updateTrayStatus(true);
     sendProgress(100);
     return { success: true };
   } catch (err) {
     console.error("Failed to restart service:", err);
+    serverStartError = String(err);
     updateTrayStatus(false);
     return { success: false, error: String(err) };
   }
@@ -1627,7 +1658,7 @@ ipcMain.handle("getServiceStatus", () => {
   if (pid !== null && isProcessRunning(pid)) {
     running = true;
   }
-  return { running, pid, port: WS_PORT };
+  return { running, pid, port: WS_PORT, error: running ? null : serverStartError };
 });
 
 // Restarts the backend service on demand.
@@ -1785,6 +1816,17 @@ ipcMain.handle("getLogs", async (_event, filters: {
   }
 });
 
+/** Lightweight stat check — does NOT read file content. */
+ipcMain.handle("getLogFileInfo", async () => {
+  const logFile = path.join(getDataDir(), "yimd.log");
+  try {
+    const stat = fs.statSync(logFile);
+    return { exists: true, size: stat.size, mtimeMs: stat.mtimeMs };
+  } catch {
+    return { exists: false, size: 0, mtimeMs: 0 };
+  }
+});
+
 // Reads a file and returns its content as base64 with mime type (for images, etc.).
 ipcMain.handle("readFileBase64", async (_event, filePath: string) => {
   try {
@@ -1925,6 +1967,25 @@ ipcMain.on("tray-popup-action", (_event, payload: { action?: string; sessionId?:
         });
       } else {
         setTimeout(sendSwitch, 100);
+      }
+    }
+  } else if (action === "settings") {
+    if (mainWindow === null) {
+      createWindow();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const openSettings = () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("open-settings-panel");
+        }
+      };
+      if (mainWindow.webContents.isLoading()) {
+        mainWindow.webContents.once("did-finish-load", () => setTimeout(openSettings, 200));
+      } else {
+        setTimeout(openSettings, 100);
       }
     }
   } else if (action === "quit") {
@@ -2572,6 +2633,11 @@ async function healthCheck(): Promise<boolean> {
 
 // Application entry: runs once Electron is ready.
 app.whenReady().then(async () => {
+  // Force the app's theme to dark so native browser widgets (e.g. the
+  // <input type="date"> calendar popup) render with dark colors regardless
+  // of the OS-level light/dark setting.
+  nativeTheme.themeSource = "dark";
+
   // Pin the AppUserModelID so Windows taskbar/notification icons attach to Encre
   // (and not the generic electron.exe icon).
   app.setAppUserModelId("com.encre.desktop");
@@ -2628,15 +2694,18 @@ app.whenReady().then(async () => {
         await startPythonServer();
       } catch (err) {
         console.error("Failed to start background service:", err);
+        serverStartError = String(err);
         updateTrayStatus(false);
       }
     }
   } else {
     try {
       await startPythonServer();
+      serverStartError = null;
       console.log(`Background service started on port ${WS_PORT}`);
     } catch (err) {
       console.error("Failed to start background service:", err);
+      serverStartError = String(err);
       updateTrayStatus(false);
     }
   }
@@ -2674,7 +2743,7 @@ app.on("activate", () => {
 });
 
 // Tear down everything (terminals, backend, port) on quit.
-app.on("before-quit", () => {
+function cleanupOnQuit(): void {
   console.log("[app] before-quit …cleaning up all child processes");
   // Kill all terminal sessions
   for (const [, t] of terminals) {
@@ -2682,31 +2751,40 @@ app.on("before-quit", () => {
   }
   terminals.clear();
 
-  // Kill Python backend via PID file (tree kill on Windows)
+  // 1. Kill by PID file
   const pid = readPidFile();
   if (pid !== null) {
     killServiceByPid(pid);
   }
 
-  // Direct kill the serverProcess reference if we still hold it
+  // 2. Direct kill the serverProcess reference
   if (serverProcess) {
     if (serverProcess.pid) killServiceByPid(serverProcess.pid);
+    try { serverProcess.kill("SIGKILL"); } catch {}
     try { serverProcess.kill(); } catch {}
     serverProcess = null;
   }
 
-  // Extra: force-free the port (catches any orphans)
+  // 3. Kill any Python process running encre (works for both bundled exe and dev mode)
+  killAllEncreProcesses();
+
+  // 4. Force-free the port
   killProcessOnPort(WS_PORT);
 
-  // Clean up PID file
+  // 5. Delete PID file
   try { fs.unlinkSync(PID_FILE); } catch {}
-});
+}
+app.on("before-quit", cleanupOnQuit);
 
-// On exit, make absolutely sure nothing is left running
-// Last-resort cleanup: force-kill stray python/Encre processes on exit.
+// Last-resort cleanup: kill any stray encre-related processes.
 process.on("exit", () => {
-  try { execSync(`taskkill /F /IM python.exe 2>nul`, { stdio: "ignore" }); } catch {}
-  try { execSync(`taskkill /F /IM "Encre.exe" /FI "PID ne ${process.pid}" 2>nul`, { stdio: "ignore" }); } catch {}
+  if (process.platform === "win32") {
+    try { execSync(`taskkill /F /IM "encre-server.exe" 2>nul`, { stdio: "ignore", timeout: 3000 }); } catch {}
+    try { execSync(`taskkill /F /FI "PID ne ${process.pid}" /IM "Encre.exe" 2>nul`, { stdio: "ignore", timeout: 3000 }); } catch {}
+  } else {
+    try { execSync(`pkill -f "encre-server" 2>/dev/null`, { stdio: "ignore", timeout: 3000 }); } catch {}
+    try { execSync(`pkill -f "Encre" 2>/dev/null`, { stdio: "ignore", timeout: 3000 }); } catch {}
+  }
 });
 
 

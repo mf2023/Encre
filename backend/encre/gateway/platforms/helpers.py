@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -34,6 +34,8 @@ Utility classes and functions used across multiple adapters:
 
 import hashlib
 import logging
+import re
+import threading
 import time
 from collections import OrderedDict
 from typing import Any
@@ -55,20 +57,22 @@ class MessageDeduplicator:
         self._cache: OrderedDict[str, float] = OrderedDict()
         self._max_size = max_size
         self._ttl = ttl_seconds
+        self._lock = threading.Lock()
 
-    def is_duplicate(self, chat_id: str, message_id: str | None, text: str = "") -> bool:
+    def is_duplicate(self, chat_id: str, message_id: str | None = None, text: str = "") -> bool:
         """Return True if this message was already seen recently."""
-        key = self._make_key(chat_id, message_id, text)
-        now = time.time()
-        self._evict_expired(now)
+        with self._lock:
+            key = self._make_key(chat_id, message_id, text)
+            now = time.time()
+            self._evict_expired(now)
 
-        if key in self._cache:
-            return True
+            if key in self._cache:
+                return True
 
-        self._cache[key] = now
-        if len(self._cache) > self._max_size:
-            self._cache.popitem(last=False)
-        return False
+            self._cache[key] = now
+            if len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+            return False
 
     def _make_key(self, chat_id: str, message_id: str | None, text: str) -> str:
         if message_id:
@@ -112,6 +116,9 @@ class ThreadParticipationTracker:
 
 
 # -- Text formatting utilities -------------------------------------------------
+
+
+TABLE_SEPARATOR_RE = re.compile(r"^\|[-| :]+\|$", re.MULTILINE)
 
 
 def convert_table_to_bullets(text: str) -> str:
@@ -164,6 +171,12 @@ def utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
+def redact_phone(text: str) -> str:
+    """Redact phone numbers in text, preserving first 3 and last 4 digits."""
+    import re
+    return re.sub(r'\+\d{10,15}', lambda m: m.group(0)[:4] + '****' + m.group(0)[-4:], str(text))
+
+
 # -- Media cache helpers -------------------------------------------------------
 
 
@@ -209,3 +222,24 @@ def cache_media_from_url(url: str, extension: str = ".bin") -> str | None:
     except Exception as e:
         logger.warning("Failed to cache media from %s: %s", url, e)
         return None
+
+
+def strip_markdown(text: str) -> str:
+    """Remove markdown formatting from text."""
+    text = re.sub(r"\*+([^*]+)\*+", r"\1", text)
+    text = re.sub(r"_([^_]+)_", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"^###?\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\d+\.\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def redact_phone(phone: str) -> str:
+    """Redact a phone number showing last 4 digits."""
+    cleaned = re.sub(r"[^\d+]", "", phone)
+    if len(cleaned) > 4:
+        return f"...{cleaned[-4:]}"
+    return cleaned

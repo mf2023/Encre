@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,9 +25,8 @@ from __future__ import annotations
 
 """Gateway hook registry: lifecycle event callbacks.
 
-Aligns with Hermes' ``gateway/hooks.py``: a lightweight event-driven callback
-registry that discovers user-installed hooks from the filesystem and dispatches
-lifecycle events to them.
+A lightweight event-driven callback registry that discovers user-installed
+hooks from the filesystem and dispatches lifecycle events to them.
 
 A hook is a directory under ``~/.dunimd/encre/hooks/<name>/`` containing:
 
@@ -37,7 +36,7 @@ A hook is a directory under ``~/.dunimd/encre/hooks/<name>/`` containing:
   The handler may be sync or async; non-None return values are collected by
   :meth:`HookRegistry.emit_collect` for decision-type hooks.
 
-Hook events (mirrors Hermes' named points):
+Hook events:
 
 - ``gateway:startup`` -- gateway process starts.
 - ``session:start`` -- new conversation session begins.
@@ -50,7 +49,7 @@ Hook events (mirrors Hermes' named points):
   (decision-type: handlers may return ``{"decision": ...}`` to allow/deny/
   handle/rewrite it).
 
-Design notes (1:1 with Hermes):
+Design notes:
 
 - No ``Hook`` class, no ``HookContext`` class -- the context is a plain ``dict``.
 - Handlers resolve by exact event type first, then a wildcard ``base:*`` (a bare
@@ -77,7 +76,7 @@ logger = logging.getLogger("encre.gateway.hooks")
 # The directory user-installed hooks live in.
 HOOKS_DIR = Path(get_data_dir()) / "hooks"
 
-# ── Named event-type constants (mirrors Hermes) ────────────────────────
+# ── Named event-type constants ────────────────────────────────────────
 
 GATEWAY_STARTUP = "gateway:startup"
 SESSION_START = "session:start"
@@ -184,10 +183,9 @@ class HookRegistry:
                     continue
                 # The handler registers itself via register() calls inside the
                 # module, OR we register it as a wildcard for every event.
-                # Hermes ships none; Encre follows the same convention: the
-                # handler module's register() (if defined) wires events.  If the
-                # module exposes ``EVENTS`` (a list of event types), register
-                # handle() for each.
+                # Encre follows the same convention: the handler module's
+                # register() (if defined) wires events.  If the module exposes
+                # ``EVENTS`` (a list of event types), register handle() for each.
                 events = getattr(module, "EVENTS", None)
                 if events:
                     for ev in events:
@@ -205,7 +203,7 @@ class HookRegistry:
         """Resolve handlers for an event: exact match first, then ``base:*``.
 
         A bare base (e.g. ``"agent"``) does NOT match ``"agent:start"`` -- the
-        ``:*`` wildcard suffix is required (mirrors Hermes).
+        ``:*`` wildcard suffix is required.
         """
         handlers: list[Callable[..., Any]] = []
         exact = self._handlers.get(event_type)

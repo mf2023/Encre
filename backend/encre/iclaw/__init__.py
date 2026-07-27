@@ -1306,6 +1306,29 @@ async def run_iclaw(
     enable_hooks: bool = True,
     compact_max_tokens: int = 128000,
 ) -> None:
+    """Entry point for ``python -m encre.iclaw``.
+
+    Builds a default agent when none is supplied, wraps it in an
+    :class:`IClawDaemon`, then starts it, blocks until a termination signal
+    arrives, and performs a clean shutdown. Registers an ``atexit`` handler so
+    the PID file is always cleared even on unexpected exit.
+
+    Args:
+        agent: A pre-configured :class:`EncreAgent`, or ``None`` to construct a
+            default one.
+        host: Bind address for the WebSocket server.
+        port: WebSocket port.
+        max_concurrent: Maximum concurrent agent sessions.
+        consolidation_interval: Seconds between memory consolidation cycles
+            (``0`` disables it).
+        scheduler_poll_interval: Seconds between scheduler polling cycles.
+        enable_compact/evolution/reflex/metacognition/feedback/swarm/hooks:
+            Subsystem enable flags forwarded to the engine/daemon.
+        compact_max_tokens: Token budget that triggers compaction.
+
+    Returns:
+        None.
+    """
     # Build a default agent when the caller did not supply one.
     if agent is None:
         agent = _create_default_agent()

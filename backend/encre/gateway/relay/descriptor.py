@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,12 +25,11 @@ from __future__ import annotations
 
 """Relay capability descriptor (handshake payload).
 
-Aligns with Hermes' ``gateway/relay/descriptor.py``.  The descriptor is the
-immutable capability profile the connector returns at handshake: it tells the
-gateway how to render/stream/truncate for the fronted platform without the
-gateway knowing which concrete platform it is.  A single ``RelayAdapter``
-instance can therefore front Discord, Telegram, Matrix, ... driven only by
-the descriptor.
+The descriptor is the immutable capability profile the connector returns at
+handshake: it tells the gateway how to render/stream/truncate for the fronted
+platform without the gateway knowing which concrete platform it is.  A single
+``RelayAdapter`` instance can therefore front Discord, Telegram, Matrix, ...
+driven only by the descriptor.
 
 The descriptor is frozen so it cannot mutate after handshake -- the adapter
 advertises a fixed capability profile for the life of the connection.
@@ -45,11 +44,10 @@ from typing import Any
 
 # Relay connector contract version.  Experimental -- additive-only within a
 # version; a breaking change requires a coordinated update of both repos and
-# a version bump.  Mirrors Hermes CONTRACT_VERSION.
+# a version bump.
 CONTRACT_VERSION = 1
 
-# When max_message_length is 0 / absent, treat it as this default (mirrors
-# Hermes' from_platform_entry behaviour and the connector's own default).
+# When max_message_length is 0 / absent, treat it as this default.
 DEFAULT_MAX_MESSAGE_LENGTH = 4096
 
 
@@ -78,8 +76,8 @@ class CapabilityDescriptor:
     def to_json(self) -> str:
         """Serialize to a compact, stable JSON string for the handshake frame.
 
-        Keys are sorted for a stable wire representation (mirrors Hermes
-        ``to_json``: ``json.dumps(asdict(self), sort_keys=True, ...)``).
+        Keys are sorted for a stable wire representation
+        (``json.dumps(asdict(self), sort_keys=True, ...)``).
         """
         return json.dumps(asdict(self), sort_keys=True, ensure_ascii=False)
 
@@ -96,15 +94,14 @@ class CapabilityDescriptor:
     def from_dict(cls, d: dict[str, Any]) -> "CapabilityDescriptor":
         """Reconstruct from a dict; unknown keys ignored, missing optionals defaulted.
 
-        Mirrors Hermes ``from_json``: forward-compatible -- a connector that
-        adds a new optional field does not break an older gateway.  Required
-        fields that are absent raise ``TypeError`` (deliberate: a handshake
-        missing a required field is a contract violation, not a graceful-degrade
-        case).
+        Forward-compatible -- a connector that adds a new optional field does
+        not break an older gateway.  Required fields that are absent raise
+        ``TypeError`` (deliberate: a handshake missing a required field is a
+        contract violation, not a graceful-degrade case).
         """
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         filtered = {k: v for k, v in d.items() if k in known}
-        # max_message_length == 0 -> default (mirrors from_platform_entry).
+        # max_message_length == 0 -> default.
         if filtered.get("max_message_length") == 0:
             filtered["max_message_length"] = DEFAULT_MAX_MESSAGE_LENGTH
         return cls(**filtered)

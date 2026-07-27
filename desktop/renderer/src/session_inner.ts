@@ -56,7 +56,7 @@ export interface TabDef {
   favicon?: string;      /** for browser tabs: favicon URL from the page */
   content?: string;      /** for markdown tabs: initial markdown content */
   title?: string;        /** for markdown tabs: preview title */
-  filePath?: string;     /** for markdown tabs: file path for dedup */
+   filePath?: string;     /** for editor/markdown tabs: file path */
 }
 
 const TABS_STORAGE_KEY = "session-sidebar-tabs";
@@ -189,7 +189,8 @@ export class SessionInner {
         browserCopy.set(k, bv);
       }
       this._sessionBrowsers.set(this._tabKey, browserCopy);
-      const editorWrap = this.tabBody.querySelector('[data-panel="editor"] > .si-editor-wrap') as HTMLElement | null;
+      const panelId = this._editorPanelId;
+      const editorWrap = panelId ? this.tabBody.querySelector(`[data-panel="${panelId}"] > .si-editor-wrap`) as HTMLElement | null : null;
       if (editorWrap) editorWrap.remove();
       this._sessionEditors.set(this._tabKey, {
         el: editorWrap as HTMLElement,
@@ -198,8 +199,6 @@ export class SessionInner {
         activeTab: this._activeEditorTab,
       });
       this._editorView = null;
-      this._editorTabs = [];
-      this._activeEditorTab = "";
       this._sessionReviewState.set(this._tabKey, {
         filter: this._reviewFilter,
         mode: this._reviewMode,
@@ -219,8 +218,8 @@ export class SessionInner {
     const savedEditor = this._sessionEditors.get(newKey);
     if (savedEditor) {
       this._editorView = savedEditor.view;
-      this._editorTabs = savedEditor.tabs;
-      this._activeEditorTab = savedEditor.activeTab;
+      this._editorTabs = savedEditor.tabs || [];
+      this._activeEditorTab = savedEditor.activeTab || "";
     } else {
       this._editorView = null;
       this._editorTabs = [];
@@ -280,6 +279,7 @@ export class SessionInner {
   private _terminalCounter = 0;
   private _browserCounter = 0;
   private _markdownCounter = 0;
+  private _editorCounter = 0;
   private _availableShells: Array<{ name: string; path: string; args?: string[] }> = [];
   private _shellsLoaded = false;
 /**
@@ -610,6 +610,11 @@ export class SessionInner {
       this._markdownCounter++;
       id = `markdown-${this._markdownCounter}`;
       label = opts?.title || t("sessionInner.tabMarkdown");
+    } else if (type === "editor") {
+      this._editorCounter = (this._editorCounter || 0) + 1;
+      id = `editor-${this._editorCounter}`;
+      const fileName = opts?.filePath ? opts.filePath.split(/[/\\]/).pop() || opts.filePath : "Editor";
+      label = fileName;
     } else {
       id = type;
       label = tabLabel(type);
@@ -643,7 +648,7 @@ export class SessionInner {
       if (t.type === "terminal") {
         await this.setupTerminalPanel(panel, t.id, t.shellPath, t.shellArgs);
       } else if (t.type === "editor") {
-        this.setupEditorPanel(panel);
+        this.setupEditorPanel(panel, t.filePath);
       } else if (t.type === "review") {
         this.setupReviewPanel(panel);
       } else if (t.type === "browser") {
@@ -688,6 +693,12 @@ export class SessionInner {
           if (mp) {
             mp.destroy();
             this.panelMarkdownPreviews.delete(pid);
+          }
+        }
+        if (ptype === "editor") {
+          if (this._editorView) {
+            this._editorView.dispose();
+            this._editorView = null;
           }
         }
         p.remove();
@@ -861,8 +872,8 @@ export class SessionInner {
       api.terminalWrite(ptyId, data);
     });
 
-    const dataCleanup = api.onTerminalData((d: { id: number; data: string }) => {
-      if (d.id === ptyId) term.write(d.data);
+    const dataCleanup = api.onTerminalData((d: { id: number; text: string }) => {
+      if (d.id === ptyId) term.write(d.text);
     });
     const exitCleanup = api.onTerminalExit((d: { id: number }) => {
       if (d.id === ptyId) {
@@ -2225,12 +2236,12 @@ export class SessionInner {
   private _renderEditorTabs(tabBar: HTMLElement): void {
     tabBar.innerHTML = this._editorTabs.map((t) => {
       const active = t.path === this._activeEditorTab ? " active" : "";
-      return `<div class="tab${active} tab--editor" data-path="${this.esc(t.path)}">
+      return `<div class="tab${active}" style="flex:0 1 auto;max-width:160px;min-width:60px;border-bottom:none${active ? ';background:var(--editor-sidebar-bg);color:var(--editor-sidebar-text)' : ''}" data-path="${this.esc(t.path)}">
         <span class="tab-label">${this.esc(t.name)}</span>
         <button class="tab-close" data-path="${this.esc(t.path)}"><i data-lucide="x" class="lucide lucide-sm"></i></button>
       </div>`;
     }).join("");
-    tabBar.querySelectorAll(".tab--editor").forEach((el) => {
+    tabBar.querySelectorAll(".tab").forEach((el) => {
       el.addEventListener("click", (e) => {
         if ((e.target as HTMLElement).closest(".tab-close")) return;
         if ((this as any)._editorDragMoved) { (this as any)._editorDragMoved = false; return; }
@@ -2245,7 +2256,6 @@ export class SessionInner {
           this._closeEditorTab(path);
         }
       });
-      // Drag to reorder editor tabs.
       el.addEventListener("mousedown", (e) => {
         const ev = e as MouseEvent;
         if (ev.button !== 0) return;
@@ -2257,11 +2267,11 @@ export class SessionInner {
           if (!moved && Math.abs(evMove.clientX - startX) < 5) return;
           if (!moved) { moved = true; dragEl.classList.add("dragging"); (this as any)._editorDragMoved = true; }
           const rect = tabBar.getBoundingClientRect();
-          const over = Array.from(tabBar.querySelectorAll(".tab--editor")).find((t) => {
+          const over = Array.from(tabBar.querySelectorAll(".tab")).find((t) => {
             const r = (t as HTMLElement).getBoundingClientRect();
             return ev.clientX >= r.left && ev.clientX <= r.right;
           }) as HTMLElement | undefined;
-          tabBar.querySelectorAll(".tab--editor.drop-target").forEach((t) => t.classList.remove("drop-target"));
+          tabBar.querySelectorAll(".tab.drop-target").forEach((t) => t.classList.remove("drop-target"));
           if (over && over !== dragEl) over.classList.add("drop-target");
           void rect;
         };
@@ -2269,7 +2279,7 @@ export class SessionInner {
           document.removeEventListener("mousemove", onMove);
           document.removeEventListener("mouseup", onUp);
           dragEl.classList.remove("dragging");
-          const target = tabBar.querySelector(".tab--editor.drop-target") as HTMLElement | null;
+          const target = tabBar.querySelector(".tab.drop-target") as HTMLElement | null;
           if (target) {
             const fromIdx = this._editorTabs.findIndex((t) => t.path === (dragEl as HTMLElement).dataset.path);
             const toIdx = this._editorTabs.findIndex((t) => t.path === target.dataset.path);
@@ -2279,7 +2289,7 @@ export class SessionInner {
               this._renderEditorTabs(tabBar);
             }
           }
-          tabBar.querySelectorAll(".tab--editor.drop-target").forEach((t) => t.classList.remove("drop-target"));
+          tabBar.querySelectorAll(".tab.drop-target").forEach((t) => t.classList.remove("drop-target"));
         };
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", onUp);
@@ -2301,9 +2311,11 @@ export class SessionInner {
   private async _switchEditorTab(filePath: string): Promise<void> {
     if (filePath === this._activeEditorTab) return;
     this._activeEditorTab = filePath;
-    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+    const editorTab = this.tabs.find((t) => t.type === "editor");
+    if (!editorTab) return;
+    const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
     if (!panel) return;
-    const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+    const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
     if (tabBar) this._renderEditorTabs(tabBar);
     await this._loadEditorFile(filePath);
   }
@@ -2312,11 +2324,13 @@ export class SessionInner {
     const idx = this._editorTabs.findIndex((t) => t.path === filePath);
     if (idx < 0) return;
     this._editorTabs.splice(idx, 1);
+    const editorTab = this.tabs.find((t) => t.type === "editor");
+    if (!editorTab) return;
     if (this._editorTabs.length === 0) {
       this._activeEditorTab = "";
-      const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+      const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
       if (panel) {
-        const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+        const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
         const container = panel.querySelector(".si-code-container") as HTMLElement;
         const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
         if (tabBar) tabBar.style.display = "none";
@@ -2331,11 +2345,16 @@ export class SessionInner {
       this._activeEditorTab = next.path;
       await this._loadEditorFile(next.path);
     }
-    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+    const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
     if (panel) {
-      const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
+      const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
       if (tabBar) this._renderEditorTabs(tabBar);
     }
+  }
+
+  private get _editorPanelId(): string | null {
+    const t = this.tabs.find((t) => t.type === "editor");
+    return t ? t.id : null;
   }
 
   private async _loadEditorFile(filePath: string): Promise<void> {
@@ -2343,7 +2362,9 @@ export class SessionInner {
     if (!api) return;
     const result = await api.readFile(filePath);
     if (!result) return;
-    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
+    const panelId = this._editorPanelId;
+    if (!panelId) return;
+    const panel = this.tabBody.querySelector(`[data-panel="${panelId}"]`) as HTMLElement;
     if (!panel) return;
     const container = panel.querySelector(".si-code-container") as HTMLElement;
     if (!container) return;
@@ -2392,17 +2413,12 @@ export class SessionInner {
     this._editorView.focus();
   }
 
-  private async setupEditorPanel(panel: HTMLElement): Promise<void> {
+  private async setupEditorPanel(panel: HTMLElement, filePath?: string): Promise<void> {
     const savedEditor = this._sessionEditors.get(this._tabKey);
     if (savedEditor?.el) {
       panel.style.overflow = "hidden";
       panel.appendChild(savedEditor.el);
       this._sessionEditors.delete(this._tabKey);
-      const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
-      if (tabBar && this._editorTabs.length > 0) {
-        tabBar.style.display = "flex";
-        this._renderEditorTabs(tabBar);
-      }
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: panel });
       }
@@ -2427,13 +2443,13 @@ export class SessionInner {
     }
 
 panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
-      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-secondary)">
+        <div class="tab-bar" style="display:none;padding:0 4px;border-bottom:none;background:var(--bg-secondary)"></div>
         <div class="si-editor-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:4px;padding:20px;color:var(--editor-empty,#888);font-size:13px;text-align:center">
           <i data-lucide="file-code-2" class="lucide" style="width:24px;height:24px;opacity:0.35"></i>
           <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
           <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
         </div>
-        <div class="tab-bar tab-bar--editor" style="display:none"></div>
         <div class="si-code-container" style="display:none;flex:1;overflow:hidden"></div>
       </div>
       <div class="si-editor-divider"></div>
@@ -2697,26 +2713,43 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
 
   private async openFileInEditor(filePath: string, preview = false): Promise<void> {
     const name = filePath.split(/[/\\]/).pop() || filePath;
-    this._editorCtxTarget = name;
 
-    if (!this.tabs.some((t) => t.type === "editor")) {
-      await this.createTab("editor");
+    // Ensure editor main tab exists
+    let editorTab = this.tabs.find((t) => t.type === "editor");
+    if (!editorTab) {
+      await this.createTab("editor", {});
+      editorTab = this.tabs.find((t) => t.type === "editor");
+      if (!editorTab) return;
+    }
+    if (this.activeTab !== editorTab.id) {
+      this.activeTab = editorTab.id;
+      await this.renderTabs();
     }
 
-    const panel = this.tabBody.querySelector('[data-panel="editor"]') as HTMLElement;
-    if (!panel) return;
-    const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
-    const container = panel.querySelector(".si-code-container") as HTMLElement;
-    const tabBar = panel.querySelector(".tab-bar--editor") as HTMLElement;
-    if (!container || !tabBar) return;
-    emptyEl.style.display = "none";
-    container.style.display = "flex";
-    tabBar.style.display = "flex";
-
     const existing = this._editorTabs.find((t) => t.path === filePath);
-    if (!existing) this._editorTabs.push({ path: filePath, name });
+    if (existing) {
+      this._activeEditorTab = filePath;
+      const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
+      if (panel) {
+        const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
+        if (tabBar) this._renderEditorTabs(tabBar);
+      }
+      await this._loadEditorFile(filePath);
+      return;
+    }
+
+    this._editorTabs.push({ path: filePath, name });
     this._activeEditorTab = filePath;
-    this._renderEditorTabs(tabBar);
+
+    const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
+    if (panel) {
+      const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
+      const container = panel.querySelector(".si-code-container") as HTMLElement;
+      const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
+      if (tabBar) { tabBar.style.display = ""; this._renderEditorTabs(tabBar); }
+      if (emptyEl) emptyEl.style.display = "none";
+      if (container) container.style.display = "";
+    }
 
     if (preview) {
       const api = (window as any).electronAPI;
@@ -2728,7 +2761,6 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
     }
 
     await this._loadEditorFile(filePath);
-    this.activateTab("editor");
   }
 
   private _reviewLoad: ((filePath?: string) => Promise<void>) | null = null;
@@ -2925,6 +2957,11 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       this._reviewArtifact = null;
       if (this._reviewLoad) this._reviewLoad(undefined);
     }
+    // Editor tab: load the file associated with this tab
+    const editorTab = this.tabs.find(t => t.id === id && t.type === "editor");
+    if (editorTab && editorTab.filePath) {
+      this._loadEditorFile(editorTab.filePath);
+    }
   }
 
   private closeTab(id: string): void {
@@ -2966,9 +3003,13 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         this._editorView.dispose();
         this._editorView = null;
       }
+      const container = this.tabBody.querySelector(`[data-panel="${id}"] .si-code-container`) as HTMLElement | null;
+      const emptyEl = this.tabBody.querySelector(`[data-panel="${id}"] .si-editor-empty`) as HTMLElement | null;
+      if (container) { container.style.display = "none"; container.innerHTML = ""; }
+      if (emptyEl) emptyEl.style.display = "flex";
+      this._sessionEditors.delete(this._tabKey);
       this._editorTabs = [];
       this._activeEditorTab = "";
-      this._sessionEditors.delete(this._tabKey);
     }
     this.tabs.splice(idx, 1);
     _saveTabs(this.tabs);

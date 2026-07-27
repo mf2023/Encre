@@ -32,12 +32,12 @@
       <!-- Shared mode switch (same .seg component as tray popup) -->
       <div class="seg" id="mode-seg" role="tablist" aria-label="Mode switch">
         <button type="button" class="seg-item active" data-mode="normal" role="tab" aria-selected="true">
-          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span data-i18n="mode.normal">Chats</span>
+          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          <span data-i18n="mode.normal">General</span>
         </button>
         <button type="button" class="seg-item" data-mode="iwork" role="tab" aria-selected="false">
           <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          <span data-i18n="mode.iwork">iWork</span>
+          <span data-i18n="mode.iwork">Work</span>
         </button>
         <button type="button" class="seg-item" data-mode="automation" role="tab" aria-selected="false">
           <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
@@ -89,7 +89,7 @@
             <div id="batch-action-bar" class="hidden">
               <button id="btn-batch-cancel" class="btn-icon btn-sm" data-i18n-title="dialog.cancel"><i data-lucide="x" class="lucide"></i></button>
               <button id="btn-batch-select-all" class="btn-icon btn-sm" data-i18n-title="session.batchSelectAll"><i data-lucide="check-square" class="lucide"></i></button>
-              <button id="btn-batch-export" class="btn-icon btn-sm batch-color-accent" data-i18n-title="session.batchExport"><i data-lucide="download" class="lucide"></i></button>
+              <button id="btn-batch-export" class="btn-icon btn-sm batch-color-accent" data-i18n-title="session.batchExport"><i data-lucide="arrow-up-right" class="lucide"></i></button>
               <button id="btn-batch-delete" class="btn-icon btn-sm batch-color-danger" data-i18n-title="session.batchDelete"><i data-lucide="trash-2" class="lucide"></i></button>
             </div>
           </div>
@@ -415,17 +415,27 @@
                       <div class="settings-dropdown" id="history-filter-task-dropdown"></div>
                     </div>
                     <div class="history-date-range">
-                      <input type="date" id="history-date-from" class="history-date-input" aria-label="开始日期" />
+                      <div class="history-date-field" id="history-date-from-wrap">
+                        <button type="button" class="history-date-btn" id="history-date-from-btn">
+                          <span id="history-date-from-text">开始日期</span>
+                          <svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        </button>
+                        <div class="settings-dropdown history-calendar-dropdown" id="history-date-from-dd"></div>
+                        <input type="hidden" id="history-date-from" value="" />
+                      </div>
                       <span class="history-date-sep">—</span>
-                      <input type="date" id="history-date-to" class="history-date-input" aria-label="结束日期" />
+                      <div class="history-date-field" id="history-date-to-wrap">
+                        <button type="button" class="history-date-btn" id="history-date-to-btn">
+                          <span id="history-date-to-text">结束日期</span>
+                          <svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        </button>
+                        <div class="settings-dropdown history-calendar-dropdown" id="history-date-to-dd"></div>
+                        <input type="hidden" id="history-date-to" value="" />
+                      </div>
                       <button type="button" class="history-date-clear" id="history-date-clear" title="清空时间">
                         <i data-lucide="x" class="lucide"></i>
                       </button>
                     </div>
-                    <button type="button" class="btn-add-model-top history-export-btn" id="history-export-btn" title="导出为 Markdown">
-                      <i data-lucide="download" class="lucide"></i>
-                      <span data-i18n="automation.exportHistory">导出</span>
-                    </button>
                   </div>
                   <div class="history-timeline" id="history-timeline"></div>
                 </div>

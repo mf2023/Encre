@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,8 +25,7 @@ from __future__ import annotations
 
 """Encre gateway session routing: structured source identity + persistence.
 
-This module aligns Encre's inbound routing with the Hermes gateway contract
-(``gateway-internals.md`` / ``relay-connector-contract.md``):
+This module provides:
 
 - :class:`SessionSource` -- the structured origin of a message (platform,
   chat_id, chat_type, user, thread, scope).  Replaces the opaque ``session_id``
@@ -35,18 +34,15 @@ This module aligns Encre's inbound routing with the Hermes gateway contract
 - :func:`build_session_key` -- the single source of truth that turns a
   :class:`SessionSource` into a deterministic key
   (``agent:main:{platform}:{chat_type}:{chat_id}[:{thread_id}][:{user_id}]``).
-  Mirrors ``gateway.session.build_session_key`` in Hermes so the wire contract
-  matches.
 - :class:`SessionStore` -- a SQLite-backed map from session_key to the agent
-  loop's ``session_id`` (the transcript identity).  This is Encre's equivalent
-  of Hermes' ``gateway_routing`` table: it persists the routing decision so a
-  follow-up message from the same conversation resumes the same agent session.
+  loop's ``session_id`` (the transcript identity).  It persists the routing
+  decision so a follow-up message from the same conversation resumes the same
+  agent session.
 
 Design notes:
 
 - Encre's adapters identify their platform by a plain ``name`` string (not a
-  ``Platform`` enum), so :attr:`SessionSource.platform` is ``str`` here.  The
-  key format is otherwise byte-identical to Hermes for the common cases.
+  ``Platform`` enum), so :attr:`SessionSource.platform` is ``str`` here.
 - Platform-specific canonicalization (e.g. WhatsApp JID/LID flip) is deferred;
   the contract leaves room for it via :meth:`SessionSource.canonicalize`.
 - :class:`SessionStore` is sync (a single locked connection) -- the inbound
@@ -67,16 +63,15 @@ from encre.config import get_data_dir
 
 logger = logging.getLogger("encre.gateway.session")
 
-# Default session-key namespace.  Mirrors Hermes ``agent:main``; a non-default
-# profile namespaces multiplexed gateways (``agent:{profile}``).
+# Default session-key namespace.  A non-default profile namespaces
+# multiplexed gateways (``agent:{profile}``).
 _DEFAULT_NAMESPACE = "agent:main"
 
 
 def _session_key_namespace(profile: str | None) -> str:
     """Resolve the session-key namespace for a profile.
 
-    ``None`` (the common case) yields the legacy ``agent:main`` namespace so
-    non-multiplexing gateways produce byte-identical keys.
+    ``None`` (the common case) yields the legacy ``agent:main`` namespace.
     """
     if profile is None:
         return _DEFAULT_NAMESPACE
@@ -94,7 +89,7 @@ class SessionSource:
     2. Persist the routing decision in :class:`SessionStore`.
     3. Project platform origin into the system prompt and the desktop UI.
 
-    Mirrors ``gateway.session.SessionSource`` in Hermes.  ``platform`` is a
+    Mirrors ``gateway.session.SessionSource`` in Encre.  ``platform`` is a
     plain ``str`` in Encre (adapters use the class ``name`` attribute, not an
     enum).  ``is_bot`` is intentionally NOT serialized on the wire in v1 --
     it stays a gateway-side attribute only (see the relay connector contract).
@@ -116,7 +111,7 @@ class SessionSource:
     def canonicalize(self) -> "SessionSource":
         """Hook for platform-specific id canonicalization.
 
-        Hermes canonicalizes WhatsApp JID/LID aliases here so a reshuffled
+        WhatsApp JID/LID aliases are canonicalized here so a reshuffled
         alias form does not split one conversation into two sessions.  Encre
         returns ``self`` unchanged; adapters that need canonicalization can
         override this (or we add a per-platform hook later).
@@ -180,10 +175,7 @@ def build_session_key(
 ) -> str:
     """Build a deterministic session key from a message source.
 
-    This is the single source of truth for session-key construction -- the
-    Encre conformance oracle for inbound routing.  Mirrors Hermes'
-    ``build_session_key`` so the two produce byte-identical keys for the same
-    source.
+    This is the single source of truth for session-key construction.
 
     Format: ``{ns}:{platform}:{chat_type}[:{chat_id}][:{thread_id}][:{user_id}]``
 
@@ -273,7 +265,7 @@ class SessionStore:
 
     Persists the routing decision so a follow-up message from the same
     conversation resumes the existing agent session rather than starting a new
-    one.  This is Encre's equivalent of Hermes' ``gateway_routing`` table.
+    one.
 
     The store is process-local (one ``gateway_routing.db`` under the Encre
     data dir) and thread-safe via a single connection guarded by a lock.  The

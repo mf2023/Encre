@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -31,8 +31,6 @@ can discover and instantiate them without hardcoded if/elif chains.
 Built-in adapters register at module import time (bottom of their file).
 Plugin adapters register via plugin discovery.  The registry supports deferred
 (lazy) loading to avoid importing heavy SDKs at startup.
-
-Aligns with Hermes ``gateway/platform_registry.py``.
 
 Usage (adapter module):
 

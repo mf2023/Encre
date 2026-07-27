@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,11 +25,11 @@ from __future__ import annotations
 
 """Gateway outbound delivery routing.
 
-Aligns with Hermes' ``gateway/delivery.py``: a single router that takes a
-content blob plus a list of targets and delivers to each, handling:
+A single router that takes a content blob plus a list of targets and delivers
+to each, handling:
 
 - **Explicit targets** -- ``"platform:chat_id"`` strings (e.g.
-  ``"telegram:123456789"``), the canonical cron / ``hermes send`` form.
+  ``"telegram:123456789"``), the canonical cron send form.
 - **Adapter-id targets** -- bare adapter names (e.g. ``"telegram"``), delivered
   to the adapter's auto-detected push target (``default_push_chat_id``).
 - **Origin fallback** -- when no targets are given, deliver back to the
@@ -41,8 +41,7 @@ content blob plus a list of targets and delivers to each, handling:
 
 This is independent of the live chat stream (which is driven by
 :meth:`BaseAdapter.handle_message`): cron outputs and explicit-target sends
-flow through here and are deliberately NOT mirrored into session history (a
-Hermes design choice to avoid message-alternation violations).
+flow through here and are deliberately NOT mirrored into session history.
 """
 
 import logging
@@ -57,9 +56,8 @@ logger = logging.getLogger("encre.gateway.delivery")
 
 # Soft cap for platform output.  Over this, the full text is saved to disk and
 # the adapter receives a truncated payload + note (unless it self-chunks).
-# Mirrors Hermes MAX_PLATFORM_OUTPUT.
 MAX_PLATFORM_OUTPUT = 4000
-# Suffix appended to truncated payloads.  Hermes uses a similar note.
+# Suffix appended to truncated payloads.
 _TRUNCATION_NOTE = "... [truncated, full output saved to {path}]"
 
 

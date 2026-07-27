@@ -103,3 +103,34 @@ class GroqBackend(OpenAISSEBackend):
         context windows.
         """
         return 131072
+
+    # ── Multimodal/Extended API capabilities ──────────────────────
+    # Groq supports chat, audio (transcription/translation/TTS),
+    # file management, and batch processing.
+    # It does NOT support image generation, embeddings, moderation
+    # (Llama Guard is exposed via chat, not a dedicated /moderations
+    # endpoint), fine-tuning, responses, or realtime APIs.
+
+    def supports_image_generation(self) -> bool:
+        return False
+
+    def supports_image_edit(self) -> bool:
+        return False
+
+    def supports_image_variation(self) -> bool:
+        return False
+
+    def supports_embeddings(self) -> bool:
+        return False
+
+    def supports_moderation(self) -> bool:
+        return False
+
+    def supports_fine_tuning(self) -> bool:
+        return False
+
+    def supports_responses_api(self) -> bool:
+        return False
+
+    def supports_realtime(self) -> bool:
+        return False

@@ -61,10 +61,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica N
 .e{padding:18px;text-align:center;font-size:12px;color:var(--tp-empty);display:flex;align-items:center;justify-content:center;gap:6px}
 .e svg.icon{width:14px;height:14px;opacity:.4}
 .actions{display:flex;border-top:1px solid var(--tp-border)}
-.actions>div{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:12px 8px;cursor:pointer;font-weight:600;font-size:13px;color:var(--tp-color);transition:background .1s}
-.actions>div:hover{background:var(--tp-hover)}
-.actions>div:first-child{border-right:1px solid var(--tp-border)}
-.actions svg.icon{width:15px;height:15px;flex-shrink:0}
+.actions>div{flex:1;display:flex;align-items:center;justify-content:center;padding:10px 4px;cursor:pointer;color:var(--tp-accent);transition:background .1s}
+.actions>div:hover{background:var(--tp-hover);color:var(--tp-color)}
+.actions>div:not(:last-child){border-right:1px solid var(--tp-border)}
+.actions svg.icon{width:16px;height:16px;flex-shrink:0}
+/* ── Tray tooltip (same pattern as main app's encre-tooltip) ── */
+#tp-tip{position:fixed;z-index:999999;max-width:240px;padding:5px 9px;font-size:11.5px;line-height:1.4;border-radius:4px;pointer-events:none;white-space:pre-wrap;word-break:break-word;opacity:0;transition:opacity .12s ease;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+[data-theme="dark"] #tp-tip{background:#2a2a2a;color:#eee;border:1px solid #444}
+[data-theme="light"] #tp-tip{background:#f5f5f5;color:#1f1f1f;border:1px solid #ddd}
+#tp-tip.show{opacity:1}
 </style>
 <link rel="stylesheet" href="_components.css" />
 </head>
@@ -73,35 +78,39 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica N
   <div class="sub" id="title-sub"></div>
   <div class="seg" id="mode-seg" role="tablist" aria-label="Mode switch">
     <button type="button" class="seg-item active" data-mode="normal" role="tab" aria-selected="true">
-      <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      <span id="seg-chats">Chats</span>
+      <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span id="seg-chats">General</span>
     </button>
     <button type="button" class="seg-item" data-mode="iwork" role="tab" aria-selected="false">
       <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-      <span id="seg-workspaces">Workspaces</span>
+      <span id="seg-workspaces">Work</span>
     </button>
   </div>
 </div>
 <div id="sessions-container"></div>
 <div class="actions">
-  <div id="btn-open">
-    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-    <span id="lbl-open">Open Encre</span>
+  <div id="btn-open" data-tp-title="Open Encre">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg>
   </div>
-  <div id="btn-quit">
+  <div id="btn-settings" title="Settings">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </div>
+  <div id="btn-quit" title="Quit">
     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-    <span id="lbl-quit">Quit</span>
   </div>
 </div>
+<div id="tp-tip"></div>
 <script>
 var LABELS = {
   en: {
-    openYim: "Open Encre", sessions: "Sessions", chats: "Chats", workspaces: "Workspace",
-    noSessions: "No active sessions", noWorkspaces: "No workspace sessions", quit: "Quit", messages: "msgs"
+    openYim: "Open Encre", sessions: "Sessions", chats: "General", workspaces: "Work",
+    noSessions: "No active sessions", noWorkspaces: "No work sessions", quit: "Quit", messages: "msgs",
+    settings: "Settings"
   },
   zh: {
-    openYim: "打开 Encre", sessions: "会话", chats: "聊天", workspaces: "工作区",
-    noSessions: "暂无活跃会话", noWorkspaces: "暂无工作区会话", quit: "退出", messages: "条消息"
+    openYim: "打开 Encre", sessions: "会话", chats: "通用", workspaces: "工作",
+    noSessions: "暂无活跃会话", noWorkspaces: "暂无工作区会话", quit: "退出", messages: "条消息",
+    settings: "设置"
   }
 };
 var currentLabels = LABELS.en;
@@ -197,8 +206,9 @@ function renderIworkSessions(sessions) {
 
 function render() {
   var labels = currentLabels;
-  document.getElementById("lbl-open").textContent = labels.openYim;
-  document.getElementById("lbl-quit").textContent = labels.quit;
+  document.getElementById("btn-open").setAttribute("data-tp-title", labels.openYim);
+  document.getElementById("btn-settings").setAttribute("data-tp-title", labels.settings);
+  document.getElementById("btn-quit").setAttribute("data-tp-title", labels.quit);
   document.getElementById("seg-chats").textContent = labels.chats;
   document.getElementById("seg-workspaces").textContent = labels.workspaces;
   document.getElementById("title-sub").innerHTML = '<span>' + labels.sessions + '</span>';
@@ -243,9 +253,60 @@ function applyTheme(theme) {
   }
 }
 
+/* ── Custom tooltip (same pattern as main app's encre-tooltip) ── */
+(function(){
+  var tip = document.getElementById("tp-tip");
+  var currentEl = null, showTimer = null, SHOW_DELAY = 600;
+  function show(el, text) {
+    tip.textContent = text;
+    var r = el.getBoundingClientRect();
+    var left = r.left + r.width / 2 - tip.offsetWidth / 2;
+    var top = r.bottom + 6;
+    if (top + tip.offsetHeight > window.innerHeight - 4) top = r.top - tip.offsetHeight - 6;
+    left = Math.max(4, Math.min(left, window.innerWidth - tip.offsetWidth - 4));
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+    tip.classList.add("show");
+  }
+  function hide() {
+    clearTimeout(showTimer); showTimer = null;
+    tip.classList.remove("show");
+    currentEl = null;
+  }
+  document.addEventListener("mouseover", function(e) {
+    var target = e.target;
+    var el = target.closest ? target.closest("[title],[data-tp-title]") : null;
+    if (!el || el.closest(".seg")) { if (currentEl) hide(); return; }
+    // Read from data-tp-title (set by render), fallback to title, then strip native
+    var text = el.getAttribute("data-tp-title") || el.getAttribute("title");
+    if (!text) { if (currentEl) hide(); return; }
+    el.removeAttribute("title");
+    if (currentEl === el) return;
+    clearTimeout(showTimer);
+    if (currentEl) tip.classList.remove("show");
+    currentEl = el;
+    showTimer = setTimeout(function() {
+      if (currentEl === el) show(el, text);
+    }, SHOW_DELAY);
+  }, true);
+  document.addEventListener("mouseout", function(e) {
+    if (!currentEl) return;
+    var r = e.relatedTarget;
+    if (r && (r === currentEl || currentEl.contains(r))) return;
+    hide();
+  }, true);
+  document.addEventListener("scroll", hide, true);
+  document.addEventListener("pointerdown", hide, true);
+})();
+
 document.getElementById("btn-open").addEventListener("click", function() {
   if (window.electronAPI && window.electronAPI.trayPopupAction) {
     window.electronAPI.trayPopupAction("open", null);
+  }
+});
+document.getElementById("btn-settings").addEventListener("click", function() {
+  if (window.electronAPI && window.electronAPI.trayPopupAction) {
+    window.electronAPI.trayPopupAction("settings", null);
   }
 });
 document.getElementById("btn-quit").addEventListener("click", function() {

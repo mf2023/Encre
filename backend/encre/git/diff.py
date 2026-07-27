@@ -23,6 +23,21 @@
 
 from __future__ import annotations
 
+"""Git-style diffing helpers for the Encre agent.
+
+This module wraps the operations the agent needs to describe and replay changes
+to text files: computing a unified diff between two blobs, applying a diff back
+onto text, parsing ``git diff --numstat`` output into aggregate counts, and
+detecting in-progress (transient) git operations.
+
+Implementation notes:
+    * Diff computation and application are delegated to a Rust-backed native
+      module (``encre.native``) for speed; this module is a thin, typed Python
+      facade over those primitives plus pure-Python parsing/inspection helpers.
+    * Nothing here shells out to the ``git`` CLI; numstat parsing and transient
+      state detection are filesystem/string operations only.
+"""
+
 import os
 from dataclasses import dataclass
 

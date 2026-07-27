@@ -117,7 +117,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("gitBehind", repoPath),
 
   // Service
-  getServiceStatus: (): Promise<{ running: boolean; pid: number | null; port: number }> =>
+  getServiceStatus: (): Promise<{ running: boolean; pid: number | null; port: number; error: string | null }> =>
     ipcRenderer.invoke("getServiceStatus"),
   restartService: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("restartService"),
@@ -196,6 +196,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   exportFile: (options: { content: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
     ipcRenderer.invoke("browser:export-file", options),
+  exportBinary: (options: { base64: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke("browser:export-binary", options),
 
   // Browser import/export
   detectBrowsers: (): Promise<Array<{ id: string; name: string; profilePath: string; hasBookmarks: boolean; hasCookies: boolean; hasHistory: boolean }>> =>
@@ -269,6 +271,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     fileExists: boolean;
     rawLines: number;
   }> => ipcRenderer.invoke("getLogs", filters),
+  getLogFileInfo: (): Promise<{ exists: boolean; size: number; mtimeMs: number }> =>
+    ipcRenderer.invoke("getLogFileInfo"),
 
   clearLogs: (): Promise<{ success: boolean }> => ipcRenderer.invoke("clearLogs"),
 

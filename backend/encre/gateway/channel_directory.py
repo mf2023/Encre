@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -28,8 +28,6 @@ from __future__ import annotations
 Built on gateway startup, refreshed periodically, and saved to the data dir.
 The send_message tool reads this file for action="list" and for resolving
 human-friendly channel names to numeric IDs.
-
-Aligns with Hermes ``gateway/channel_directory.py``.
 """
 
 import json
@@ -85,6 +83,8 @@ class ChannelDirectory:
         Returns the matching channel entry, or None.
         """
         entries = self._platforms.get(platform, [])
+        # Normalise the query: drop surrounding whitespace, lowercase, and strip
+        # a leading '#' so "#general" and "general" match the same channel name.
         query_lower = query.strip().lower().lstrip("#")
         for entry in entries:
             if str(entry.get("id", "")) == query:

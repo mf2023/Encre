@@ -108,6 +108,25 @@ class EncreHookSystem:
         handler_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
+        """Register a hook ``handler`` for a single ``event_type``.
+
+        Assigns (or accepts) a stable handler id, appends the handler to the
+        event's list, and records any supplied metadata for later inspection via
+        :meth:`list_handlers`.
+
+        Args:
+            event_type: The lifecycle event the handler observes.
+            handler: The async callable invoked when the event fires.
+            handler_id: Optional explicit id; a random UUID is used if omitted.
+            metadata: Optional metadata attached to the handler (e.g. source
+                path, command, matcher).
+
+        Returns:
+            The handler id used (given or freshly generated).
+
+        Raises:
+            ValueError: If ``event_type`` is not a known event.
+        """
         hid = handler_id or str(uuid.uuid4())
         if event_type not in self._handlers:
             raise ValueError(f"Unknown hook event type: {event_type}")
@@ -117,6 +136,14 @@ class EncreHookSystem:
         return hid
 
     def unregister_handler(self, handler_id: str) -> bool:
+        """Remove a previously registered handler by its id.
+
+        Args:
+            handler_id: The id returned by :meth:`register_handler`.
+
+        Returns:
+            True if a handler with that id was found and removed, else False.
+        """
         for handlers in self._handlers.values():
             for i, (hid, _) in enumerate(handlers):
                 if hid == handler_id:
@@ -186,7 +213,7 @@ class EncreHookSystem:
         """Raised specifically before bash commands. May block dangerous commands."""
         return await self._emit_with_modify("pre_bash", "bash", {"command": command})
 
-    # ── Session hooks ──────────────────────────────────��─────────
+    # ── Session hooks ──────────────────────────────────────────────
 
     async def emit_session_start(self) -> None:
         await self._run_handlers("on_session_start", "_session", {})
@@ -275,6 +302,15 @@ class EncreHookSystem:
                                             {"prompt": prompt, "tools": tool_names})
 
     async def emit_post_sub_agent(self, result: str, latency_ms: float) -> str | None:
+        """Raised after a sub-agent finishes, exposing its result and latency.
+
+        Args:
+            result: The sub-agent's output text.
+            latency_ms: Time the sub-agent took to complete, in milliseconds.
+
+        Returns:
+            Optional extra context string injected by handlers.
+        """
         return await self._emit_with_extra("post_sub_agent", "_sub_agent",
                                           {"result": result, "latency_ms": latency_ms})
 

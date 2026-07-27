@@ -185,7 +185,7 @@ class App {
       window.electronAPI.onChildEvent("open-settings-panel", (panel: string) => {
         this.automationPanel.hide();
         this.settings.open();
-        if (panel) this.settings.switchPanel(panel);
+        if (panel) this.settings.switchPanel(panel as PanelId);
       });
     }
     this.files = new Files(this.input);
@@ -396,10 +396,12 @@ class App {
     // Listen for session switch from tray popup
     if (window.electronAPI) {
       window.electronAPI.onSwitchWorkspace((path: string) => {
+        this.settings.close();
         void this.workspace.open(path);
       });
 
       window.electronAPI.onSwitchSession((sessionId: string) => {
+        this.settings.close();
         const st = getState();
         if (!sessionId || sessionId === st.sessionId) return;
         // The tray popup maintains a dual cache (normal + iwork); search both.
@@ -507,6 +509,8 @@ class App {
       const mode = st.settings.startup_session_mode as string;
       if (mode === "iwork") {
         this.workspace.enter();
+      } else if (mode === "automation") {
+        this.modeTransition.toggleAutomation();
       }
     });
 
@@ -1035,6 +1039,34 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           }
         });
       }
+
+      // ── Auto-refresh: poll for new entries every 5 seconds ──────
+      let lastSize = -1;
+      const refreshIntervalId = window.setInterval(async () => {
+        if (!bodyEl || !document.body.contains(bodyEl)) {
+          clearInterval(refreshIntervalId);
+          return;
+        }
+        if (loading) return;
+        try {
+          const info = await api.getLogFileInfo();
+          if (!info.exists) return;
+          if (lastSize >= 0 && info.size === lastSize) return;
+          lastSize = info.size;
+          // File changed — reload from top
+          loading = true;
+          const result = await api.getLogs({ offset: 0, limit: BATCH });
+          if (result && result.entries) {
+            allEntries = result.entries;
+            loadedCount = result.entries.length;
+            total = result.total;
+            render();
+          }
+          loading = false;
+        } catch {
+          loading = false;
+        }
+      }, 5000);
     }
   }
 
@@ -1288,20 +1320,29 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
   }
 
   private async handleSplashError(message: string): Promise<void> {
-    this.splash.showError(message, async () => {
+    let detail = "";
+    try {
+      const status = await window.electronAPI?.getServiceStatus?.();
+      if (status?.error) {
+        detail = status.error;
+      }
+    } catch {}
+    this.splash.showError(message, detail, async () => {
       try {
         const result = await window.electronAPI?.restartService?.();
         if (result?.success) {
           location.reload();
         } else {
           this.splash.showError(
-            t("app.splashRestartFailed") + (result?.error ? ": " + result.error : ""),
+            t("app.splashRestartFailed"),
+            result?.error || "",
             () => this.handleSplashError(t("app.splashRetry"))
           );
         }
       } catch (err) {
         this.splash.showError(
-          t("app.splashRestartFailed") + ": " + String(err),
+          t("app.splashRestartFailed"),
+          String(err),
           () => this.handleSplashError(t("app.splashRetry"))
         );
       }
@@ -3785,6 +3826,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         this.settings.close();
         setActiveToolId(null);
         this.search.close();
+        return;
+      }
+
+      // Never intercept Shift-only + printable character (e.g. shift+? = typing ?)
+      if (shift && !mod && !alt && key.length === 1) {
         return;
       }
 

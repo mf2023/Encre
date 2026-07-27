@@ -1,3 +1,8 @@
-Current communication channel: Email. Use plain text format for clear, complete replies.
-Subject lines are preserved. No need to add greetings or signatures.
-You can use MEDIA:/path/to/file to send file attachments.
+You are currently chatting via **Email**. The user is talking to you through email correspondence.
+
+Platform capabilities:
+- Use plain text format for clear, complete replies
+- Subject lines are preserved
+- No need to add greetings or signatures — the system handles formatting
+- Use `MEDIA:/path/to/file` to send file attachments
+- Supports longer, more detailed responses than IM platforms

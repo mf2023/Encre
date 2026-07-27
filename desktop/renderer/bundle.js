@@ -283,6 +283,13 @@
     "renderer/src/locales/zh.ts"() {
       "use strict";
       zh = {
+        browserNav: {
+          back: "\u540E\u9000",
+          forward: "\u524D\u8FDB",
+          reload: "\u5237\u65B0",
+          bookmark: "\u6536\u85CF\u6B64\u9875\u9762",
+          settings: "\u8BBE\u7F6E"
+        },
         common: {
           saved: "\u8BBE\u7F6E\u5DF2\u4FDD\u5B58",
           modelUpdated: "Model updated",
@@ -361,6 +368,8 @@
           messages: "\u6761\u6D88\u606F",
           rename: "\u91CD\u547D\u540D",
           exportMd: "\u5BFC\u51FA\u4E3A Markdown",
+          exporting: "\u5BFC\u51FA\u4E2D",
+          packaging: "\u6B63\u5728\u6253\u5305\u4F1A\u8BDD\u2026",
           delete: "\u5220\u9664",
           renameDialogTitle: "\u91CD\u547D\u540D\u4F1A\u8BDD",
           renamePlaceholder: "\u8F93\u5165\u65B0\u540D\u79F0...",
@@ -492,8 +501,9 @@
           ctrlEnterSend: "Ctrl+Enter \u53D1\u9001",
           startupSessionMode: "\u542F\u52A8\u65F6\u7684\u6A21\u5F0F",
           startupSessionModeDesc: "\u5E94\u7528\u542F\u52A8\u65F6\u9ED8\u8BA4\u8FDB\u5165\u7684\u4EA4\u4E92\u6A21\u5F0F",
-          normalMode: "\u666E\u901A\u5BF9\u8BDD",
-          iworkMode: "iWork \u6A21\u5F0F",
+          normalMode: "\u901A\u7528\u6A21\u5F0F",
+          iworkMode: "\u5DE5\u4F5C\u6A21\u5F0F",
+          automationMode: "\u81EA\u52A8\u5316\u6A21\u5F0F",
           startupSessionBehavior: "\u542F\u52A8\u65F6\u6062\u590D\u4F1A\u8BDD",
           startupSessionBehaviorDesc: "\u542F\u52A8\u65F6\u65B0\u5EFA\u4F1A\u8BDD\u8FD8\u662F\u6062\u590D\u4E0A\u6B21\u4F1A\u8BDD",
           startupNew: "\u65B0\u5EFA\u4F1A\u8BDD",
@@ -512,6 +522,7 @@
           browserData: "\u6D4F\u89C8\u5668\u6570\u636E",
           browserDataDesc: "\u6D4F\u89C8\u5668\u4E2D\u7684\u7AD9\u70B9\u6570\u636E\uFF08\u5982 Cookies\u3001\u672C\u5730\u5B58\u50A8\u7B49\uFF09",
           clear: "\u6E05\u9664",
+          expand: "\u5C55\u5F00",
           confirmClearBrowserDataTitle: "\u6E05\u9664\u6D4F\u89C8\u5668\u6570\u636E",
           confirmClearBrowserData: "\u8FD9\u5C06\u6E05\u9664\u6240\u6709\u7AD9\u70B9\u6570\u636E\uFF0C\u5305\u62EC Cookies\u3001\u672C\u5730\u5B58\u50A8\u548C\u7F13\u5B58\u3002\u662F\u5426\u7EE7\u7EED\uFF1F",
           confirmClearHistoryTitle: "\u6E05\u9664\u6D4F\u89C8\u8BB0\u5F55",
@@ -581,6 +592,7 @@
           modelManagementDesc: "\u914D\u7F6E API key \u6DFB\u52A0\u66F4\u591A\u53EF\u7528\u6A21\u578B\uFF0C\u9884\u7F6E\u6A21\u578B\u9ED8\u8BA4\u4F7F\u7528\u7A33\u5B9A\u7248\u672C\u3002",
           addModel: "\u6DFB\u52A0\u6A21\u578B",
           multimodalToggle: "\u591A\u6A21\u6001",
+          multimodalHint: "\u5F00\u542F\u540E\u53EF\u5904\u7406\u56FE\u7247\u3001\u97F3\u9891\u7B49\u591A\u6A21\u6001\u5185\u5BB9\uFF0C\u6A21\u578B\u9700\u652F\u6301\u6B64\u80FD\u529B",
           model: "\u6A21\u578B",
           provider: "\u670D\u52A1\u5546",
           actions: "\u64CD\u4F5C",
@@ -597,6 +609,7 @@
           apiKey: "API \u5BC6\u94A5",
           enterApiKey: "\u8F93\u5165 API \u5BC6\u94A5",
           baseUrl: "Base URL",
+          baseUrlHint: "API \u670D\u52A1\u57FA\u5730\u5740\uFF0C\u7CFB\u7EDF\u4F1A\u81EA\u52A8\u62FC\u63A5\u5177\u4F53\u63A5\u53E3\u8DEF\u5F84\uFF0C\u65E0\u9700\u6DFB\u52A0\u989D\u5916\u540E\u7F00",
           maxTokens: "Max Tokens",
           enableThinkingLevel: "\u5141\u8BB8\u63A8\u7406\u7B49\u7EA7",
           enableThinkingLevelHint: "\u5F00\u542F\u540E\u53EF\u624B\u52A8\u9009\u62E9\u63A8\u7406\u7B49\u7EA7\uFF0C\u5173\u95ED\u65F6\u4F7F\u7528\u6A21\u578B\u9ED8\u8BA4\u7B49\u7EA7",
@@ -774,7 +787,7 @@
           ignoreFilePlaceholder: "\u6CA1\u6709\u627E\u5230 .gitignore \u6587\u4EF6\uFF0C\u6216\u6587\u4EF6\u4E3A\u7A7A",
           indexOnlyInWorkspace: "\u7D22\u5F15\u4E0E\u6587\u6863\u4EC5\u5728\u5DE5\u4F5C\u533A\u6A21\u5F0F\u4E0B\u53EF\u7528\u3002\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A\u5DE5\u4F5C\u533A\u3002",
           modeHintAll: "\u9002\u7528\u4E8E\u6240\u6709\u6A21\u5F0F",
-          modeHintIwork: "\u4EC5\u9002\u7528\u4E8E iWork \u6A21\u5F0F",
+          modeHintIwork: "\u4EC5\u9002\u7528\u4E8E\u5DE5\u4F5C\u6A21\u5F0F",
           documentManage: "\u6587\u6863",
           docManagementDesc: "\u7BA1\u7406\u53C2\u8003\u6587\u6863\u3002\u4ECE\u672C\u5730\u6587\u4EF6\u6216 URL \u6DFB\u52A0\uFF0C\u4E3A AI \u63D0\u4F9B\u4E0A\u4E0B\u6587\u53C2\u8003\u3002",
           documentCount: "\u6587\u6863\u6570",
@@ -789,6 +802,7 @@
           docSourceLocal: "\u672C\u5730\u6587\u4EF6",
           docSourceUrl: "URL \u94FE\u63A5",
           docSize: "\u5927\u5C0F",
+          deleteDoc: "\u5220\u9664\u6587\u6863",
           confirmDeleteDoc: '\u786E\u5B9A\u8981\u5220\u9664\u6587\u6863 "{name}" \u5417\uFF1F',
           noDocuments: "\u6682\u65E0\u6587\u6863\u3002\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u6DFB\u52A0\u3002",
           documentError: "\u6587\u6863\u64CD\u4F5C\u5931\u8D25",
@@ -891,7 +905,7 @@
           dailyUsageByChannel: "\u6BCF\u65E5\u7528\u91CF\uFF08\u6309\u6A21\u5F0F\u5806\u53E0\uFF09",
           usageGroupByModel: "\u6309\u6A21\u578B",
           usageGroupByMode: "\u6309\u6A21\u5F0F",
-          modeNormal: "\u5BF9\u8BDD",
+          modeNormal: "\u901A\u7528",
           modeAutomation: "\u81EA\u52A8\u5316",
           activityHeatmap: "\u6D3B\u8DC3\u5EA6\u70ED\u529B\u56FE",
           deletedModel: "\u5DF2\u5220\u9664",
@@ -963,6 +977,7 @@
           fieldAuthToken: "\u8BA4\u8BC1\u4EE4\u724C",
           fieldAppKey: "\u5E94\u7528\u5BC6\u94A5",
           fieldAppSecret: "\u5E94\u7528\u5BC6\u94A5",
+          fieldClientSecret: "Client Secret",
           fieldServerUrl: "\u670D\u52A1\u5668\u5730\u5740",
           fieldApiKey: "API \u5BC6\u94A5",
           fieldListenPath: "\u76D1\u542C\u8DEF\u5F84",
@@ -974,6 +989,18 @@
           fieldAgentId: "\u5E94\u7528 ID",
           fieldToken: "\u4EE4\u724C",
           fieldEncodingAesKey: "Encoding AES Key",
+          fieldServiceAccount: "\u670D\u52A1\u8D26\u53F7 JSON",
+          fieldServer: "\u670D\u52A1\u5668",
+          fieldPort: "\u7AEF\u53E3",
+          fieldNickname: "\u6635\u79F0",
+          fieldPassword: "\u5BC6\u7801",
+          fieldChannelAccessToken: "Channel Access Token",
+          fieldChannelSecret: "Channel Secret",
+          fieldTopic: "\u4E3B\u9898",
+          fieldNodeId: "\u8282\u70B9 ID",
+          fieldPeers: "\u5BF9\u7B49\u8282\u70B9",
+          fieldDisplayName: "\u663E\u793A\u540D\u79F0",
+          fieldAppPassword: "\u5E94\u7528\u5BC6\u7801",
           enabled: "\u5DF2\u542F\u7528",
           disabled: "\u5DF2\u7981\u7528",
           error: "\u9519\u8BEF",
@@ -998,7 +1025,15 @@
           adapterNameBluebubbles: "BlueBubbles",
           adapterNameWebhook: "Webhook",
           adapterNameHomeassistant: "Home Assistant",
-          adapterNameMsgraph: "Microsoft Graph",
+          adapterNameGoogle_chat: "Google Chat",
+          adapterNameIrc: "IRC",
+          adapterNameLine: "LINE",
+          adapterNameMattermost: "Mattermost",
+          adapterNameNtfy: "ntfy",
+          adapterNamePhoton: "Photon",
+          adapterNameRaft: "Raft",
+          adapterNameSimplex: "SimpleX",
+          adapterNameTeams: "Microsoft Teams",
           // 网关适配器描述
           adapterDescQqbot: "\u63A5\u5165 QQ \u673A\u5668\u4EBA\u5E73\u53F0\uFF0C\u5B9E\u65F6\u63A5\u6536\u4E0E\u56DE\u590D\u7FA4\u804A\u53CA\u79C1\u804A\u6D88\u606F",
           adapterDescTelegram: "\u8FDE\u63A5 Telegram Bot API\uFF0C\u81EA\u52A8\u5904\u7406\u9891\u9053\u4E0E\u79C1\u4FE1\u4E2D\u7684\u6307\u4EE4\u548C\u5BF9\u8BDD",
@@ -1017,7 +1052,15 @@
           adapterDescBluebubbles: "\u8FDE\u63A5 BlueBubbles \u670D\u52A1\u5668\uFF0C\u5B9E\u73B0 iMessage \u6D88\u606F\u6536\u53D1",
           adapterDescWebhook: "\u542F\u52A8 Webhook \u76D1\u542C\u670D\u52A1\uFF0C\u63A5\u6536\u5916\u90E8\u7CFB\u7EDF\u7684 HTTP \u56DE\u8C03\u8BF7\u6C42",
           adapterDescHomeassistant: "\u8FDE\u63A5 Home Assistant \u667A\u80FD\u5BB6\u5C45\u5E73\u53F0\uFF0C\u6267\u884C\u8BBE\u5907\u63A7\u5236\u4E0E\u72B6\u6001\u67E5\u8BE2",
-          adapterDescMsgraph: "\u901A\u8FC7 Microsoft Graph API \u63A5\u5165 Office 365\uFF0C\u7BA1\u7406\u90AE\u4EF6\u65E5\u5386\u548C\u7528\u6237",
+          adapterDescGoogle_chat: "\u8FDE\u63A5 Google Chat \u7A7A\u95F4\uFF0C\u901A\u8FC7 Webhook \u6536\u53D1\u6D88\u606F",
+          adapterDescIrc: "\u8FDE\u63A5 IRC \u670D\u52A1\u5668\uFF0C\u52A0\u5165\u9891\u9053\u5E76\u81EA\u52A8\u54CD\u5E94\u6D88\u606F",
+          adapterDescLine: "\u8FDE\u63A5 LINE Messaging API\uFF0C\u81EA\u52A8\u5904\u7406\u597D\u53CB\u4E0E\u7FA4\u804A\u6D88\u606F",
+          adapterDescMattermost: "\u96C6\u6210 Mattermost \u56E2\u961F\u534F\u4F5C\u5E73\u53F0\uFF0C\u76D1\u542C\u548C\u53D1\u9001\u9891\u9053\u6D88\u606F",
+          adapterDescNtfy: "\u901A\u8FC7 ntfy \u63A8\u9001\u670D\u52A1\u53D1\u9001\u901A\u77E5\u6D88\u606F",
+          adapterDescPhoton: "\u8FDE\u63A5 Photon \u793E\u4EA4\u5E73\u53F0\uFF0C\u5B9E\u73B0\u6D88\u606F\u6536\u53D1\u4E0E\u4EA4\u4E92",
+          adapterDescRaft: "\u63A5\u5165 Raft \u5206\u5E03\u5F0F\u901A\u4FE1\u7F51\u7EDC\uFF0C\u5904\u7406\u8282\u70B9\u95F4\u6D88\u606F",
+          adapterDescSimplex: "\u8FDE\u63A5 SimpleX \u53BB\u4E2D\u5FC3\u5316\u6D88\u606F\u5E73\u53F0\uFF0C\u4FDD\u62A4\u9690\u79C1\u5B89\u5168\u901A\u4FE1",
+          adapterDescTeams: "\u96C6\u6210 Microsoft Teams\uFF0C\u901A\u8FC7 Bot Framework \u5904\u7406\u9891\u9053\u4E0E\u7FA4\u804A\u6D88\u606F",
           // 网关适配器缩写
           abbrFeishu: "\u98DE",
           abbrDingtalk: "\u9489",
@@ -1387,8 +1430,8 @@
           close: "\u5173\u95ED"
         },
         mode: {
-          normal: "\u804A\u5929",
-          iwork: "\u5DE5\u4F5C\u533A",
+          normal: "\u901A\u7528",
+          iwork: "\u5DE5\u4F5C",
           automation: "\u81EA\u52A8\u5316"
         },
         slashCommands: {
@@ -1526,7 +1569,7 @@
           everyMinute: "\u6BCF\u5206\u949F",
           daily: "\u6BCF\u5929",
           onWeekdays: "\u5DE5\u4F5C\u65E5",
-          whatToDo: "\u4F60\u5E0C\u671B Encre \u505A\u4EC0\u4E48\uFF1F",
+          whatToDo: "\u4F60\u5E0C\u671B Encre Agent \u505A\u4EC0\u4E48\uFF1F",
           create: "\u521B\u5EFA",
           noTasks: "\u6682\u65E0\u5DF2\u914D\u7F6E\u4EFB\u52A1",
           noTasksHint: "\u4ECE\u4EFB\u52A1\u6A21\u677F\u521B\u5EFA\u4F60\u7684\u7B2C\u4E00\u4E2A\u81EA\u52A8\u5316\u4EFB\u52A1",
@@ -1549,7 +1592,9 @@
           exportHistoryEmpty: "\u6CA1\u6709\u53EF\u5BFC\u51FA\u7684\u6267\u884C\u8BB0\u5F55",
           modelLabel: "\u6267\u884C\u6A21\u578B",
           enablePush: "\u542F\u7528\u63A8\u9001",
+          enablePushHint: "\u4EFB\u52A1\u6267\u884C\u5B8C\u6210\u540E\u63A8\u9001\u901A\u77E5\u5230\u5DF2\u8FDE\u63A5\u7684\u7F51\u5173",
           pushGateways: "\u76EE\u6807\u7F51\u5173",
+          confirmDeleteRecord: "\u786E\u5B9A\u8981\u5220\u9664\u8FD9\u6761\u6267\u884C\u8BB0\u5F55\uFF1F",
           templateAiNewsTitle: "\u6BCF\u65E5 AI \u65B0\u95FB\u7B80\u62A5",
           templateAiNewsDesc: "\u6BCF\u5929\u65E9\u4E0A\u63A8\u9001 AI \u884C\u4E1A\u70ED\u70B9\u65B0\u95FB\u6458\u8981\u4E0E\u8D8B\u52BF\u5206\u6790",
           templateBrandMonitorTitle: "\u54C1\u724C\u8206\u60C5\u76D1\u63A7\u5468\u62A5",
@@ -1705,6 +1750,13 @@
     "renderer/src/locales/en.ts"() {
       "use strict";
       en = {
+        browserNav: {
+          back: "Back",
+          forward: "Forward",
+          reload: "Reload",
+          bookmark: "Bookmark this page",
+          settings: "Settings"
+        },
         common: {
           saved: "Saved",
           modelUpdated: "Model updated",
@@ -1777,6 +1829,8 @@
           messages: "msgs",
           rename: "Rename",
           exportMd: "Export as Markdown",
+          exporting: "Exporting",
+          packaging: "Packaging sessions\u2026",
           delete: "Delete",
           renameDialogTitle: "Rename Session",
           renamePlaceholder: "Enter new name...",
@@ -1909,8 +1963,9 @@
           ctrlEnterSend: "Ctrl+Enter to Send",
           startupSessionMode: "Startup Mode",
           startupSessionModeDesc: "Default UI mode when the app launches",
-          normalMode: "Normal Chat",
-          iworkMode: "iWork Mode",
+          normalMode: "General Mode",
+          iworkMode: "Work Mode",
+          automationMode: "Automation Mode",
           startupSessionBehavior: "Session Recovery",
           startupSessionBehaviorDesc: "Start a new session or resume the last one on launch",
           startupNew: "New Session",
@@ -1929,6 +1984,7 @@
           browserData: "Browser Data",
           browserDataDesc: "Site data in browser (Cookies, local storage, etc.)",
           clear: "Clear",
+          expand: "Expand",
           confirmClearBrowserDataTitle: "Clear Browser Data",
           confirmClearBrowserData: "This will clear all site data including cookies, local storage, and cache. Continue?",
           confirmClearHistoryTitle: "Clear Browsing History",
@@ -1998,6 +2054,7 @@
           modelManagementDesc: "Configure API key to add more available models. Pre-configured models use stable versions.",
           addModel: "Add Model",
           multimodalToggle: "Multimodal",
+          multimodalHint: "Enable to process images, audio and other multimodal content. The model must support this feature",
           model: "Model",
           provider: "Provider",
           actions: "Actions",
@@ -2014,6 +2071,7 @@
           apiKey: "API Key",
           enterApiKey: "Enter API key",
           baseUrl: "Base URL",
+          baseUrlHint: "API root URL. Endpoint paths are appended automatically \u2014 do not add extra suffixes",
           maxTokens: "Max Tokens",
           enableThinkingLevel: "Enable Reasoning Level",
           enableThinkingLevelHint: "When enabled, you can select the reasoning level; otherwise the model default is used",
@@ -2191,7 +2249,7 @@
           ignoreFilePlaceholder: "No .gitignore file found, or the file is empty",
           indexOnlyInWorkspace: "Index & Document is only available in workspace mode. Please open a workspace first.",
           modeHintAll: "Applies to all modes",
-          modeHintIwork: "Applies to iWork mode only",
+          modeHintIwork: "Applies to Work mode only",
           documentManage: "Document",
           docManagementDesc: "Manage reference documents. Add files or URLs to provide context for the AI.",
           documentCount: "Documents",
@@ -2206,6 +2264,7 @@
           docSourceLocal: "Local File",
           docSourceUrl: "URL Link",
           docSize: "Size",
+          deleteDoc: "Delete Document",
           confirmDeleteDoc: 'Are you sure you want to delete "{name}"?',
           noDocuments: "No documents yet. Click the button above to add one.",
           documentError: "Document operation failed",
@@ -2311,7 +2370,7 @@
           dailyUsageByChannel: "Daily usage (stacked by mode)",
           usageGroupByModel: "By model",
           usageGroupByMode: "By mode",
-          modeNormal: "Chat",
+          modeNormal: "General",
           modeAutomation: "Automation",
           activityHeatmap: "Activity heatmap",
           deletedModel: "deleted",
@@ -2394,6 +2453,18 @@
           fieldAgentId: "Agent ID",
           fieldToken: "Token",
           fieldEncodingAesKey: "Encoding AES Key",
+          fieldServiceAccount: "Service Account JSON",
+          fieldServer: "Server",
+          fieldPort: "Port",
+          fieldNickname: "Nickname",
+          fieldPassword: "Password",
+          fieldChannelAccessToken: "Channel Access Token",
+          fieldChannelSecret: "Channel Secret",
+          fieldTopic: "Topic",
+          fieldNodeId: "Node ID",
+          fieldPeers: "Peers",
+          fieldDisplayName: "Display Name",
+          fieldAppPassword: "App Password",
           // States and labels
           enabled: "Enabled",
           disabled: "Disabled",
@@ -2419,7 +2490,15 @@
           adapterDescBluebubbles: "Connect to a BlueBubbles server to send and receive iMessage",
           adapterDescWebhook: "Start a Webhook listener to receive HTTP callbacks from external systems",
           adapterDescHomeassistant: "Connect to the Home Assistant smart home platform to control devices and query state",
-          adapterDescMsgraph: "Connect to Office 365 via the Microsoft Graph API to manage mail, calendar, and users",
+          adapterDescGoogle_chat: "Connect to Google Chat spaces to send and receive messages via Webhook",
+          adapterDescIrc: "Connect to an IRC server to join channels and auto-respond to messages",
+          adapterDescLine: "Connect to the LINE Messaging API to handle friend and group chat messages",
+          adapterDescMattermost: "Integrate the Mattermost team collaboration platform to listen and send channel messages",
+          adapterDescNtfy: "Send notification messages via the ntfy push service",
+          adapterDescPhoton: "Connect to the Photon social platform for messaging and interaction",
+          adapterDescRaft: "Connect to the Raft distributed communication network to handle inter-node messages",
+          adapterDescSimplex: "Connect to the SimpleX decentralized messaging platform for private secure communication",
+          adapterDescTeams: "Integrate Microsoft Teams to handle channel and group chat messages via Bot Framework",
           // Gateway adapter names
           adapterNameQqbot: "QQ Bot",
           adapterNameTelegram: "Telegram",
@@ -2438,7 +2517,15 @@
           adapterNameBluebubbles: "BlueBubbles",
           adapterNameWebhook: "Webhook",
           adapterNameHomeassistant: "Home Assistant",
-          adapterNameMsgraph: "Microsoft Graph",
+          adapterNameGoogle_chat: "Google Chat",
+          adapterNameIrc: "IRC",
+          adapterNameLine: "LINE",
+          adapterNameMattermost: "Mattermost",
+          adapterNameNtfy: "ntfy",
+          adapterNamePhoton: "Photon",
+          adapterNameRaft: "Raft",
+          adapterNameSimplex: "SimpleX",
+          adapterNameTeams: "Microsoft Teams",
           // Gateway adapter fallback abbreviations (shown when no icon is available)
           abbrFeishu: "FS",
           abbrDingtalk: "DT",
@@ -2816,8 +2903,8 @@
           close: "Close"
         },
         mode: {
-          normal: "Chats",
-          iwork: "Workspace",
+          normal: "General",
+          iwork: "Work",
           automation: "Automation"
         },
         slashCommands: {
@@ -2955,7 +3042,7 @@
           everyMinute: "Every minute",
           daily: "Daily",
           onWeekdays: "Weekdays",
-          whatToDo: "What do you want Encre to do?",
+          whatToDo: "What do you want the Encre Agent to do?",
           create: "Create",
           noTasks: "No tasks configured",
           noTasksHint: "Create your first automation task from a template",
@@ -2979,7 +3066,9 @@
           exportHistoryEmpty: "No records to export",
           modelLabel: "Model",
           enablePush: "Push Notification",
+          enablePushHint: "Send notifications to connected gateways after the task completes",
           pushGateways: "Target Gateways",
+          confirmDeleteRecord: "Delete this execution record?",
           templateAiNewsTitle: "Daily AI News Brief",
           templateAiNewsDesc: "Morning push of AI industry hot news summaries and trend analysis",
           templateBrandMonitorTitle: "Brand Sentiment Weekly",
@@ -5277,7 +5366,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   }
   function _shouldRejectSessionScopedEvent(event) {
     if (event.type === "session_ready") return false;
-    if (event.type === "session_deleted" || event.type === "session_exported" || event.type === "session_renamed") return false;
+    if (event.type === "session_deleted" || event.type === "session_exported" || event.type === "sessions_exported_zip" || event.type === "session_renamed") return false;
     const activeSid = getState().sessionId;
     const eventSid = event.session_id || void 0;
     if (eventSid) {
@@ -6248,6 +6337,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         break;
       case "session_exported":
         downloadMarkdownFile(event.markdown, event.filename || event.session_id);
+        break;
+      case "sessions_exported_zip":
+        {
+          const api = window.electronAPI;
+          if (api?.exportBinary) {
+            api.exportBinary({
+              base64: event.zip_base64,
+              defaultName: event.filename || "export.zip",
+              filters: [{ name: "ZIP Archive", extensions: ["zip"] }]
+            });
+          }
+        }
         break;
       case "session_renamed":
         send({ type: "list_sessions" });
@@ -58443,7 +58544,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     if (!noExport) {
       items += `
     <div class="context-menu-item" id="ctx-export-ws">
-      <i data-lucide="download" class="lucide lucide-sm"></i>
+      <i data-lucide="arrow-up-right" class="lucide lucide-sm"></i>
       <span>${escHtml(t("session.exportMd"))}</span>
     </div>`;
     }
@@ -58645,8 +58746,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         async batchExport() {
           const ids = Array.from(this.selectedIds);
           if (ids.length === 0) return;
-          for (const sid of ids) {
-            send({ type: "export_session", session_id: sid });
+          if (ids.length === 1) {
+            send({ type: "export_session", session_id: ids[0] });
+          } else {
+            send({ type: "export_sessions_batch", session_ids: ids });
           }
           this.exitBatchMode();
         }
@@ -58724,10 +58827,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             matrix: "Matrix",
             email: "Email",
             sms: "SMS",
-            msgraph: "MS Graph",
             yuanbao: "Yuanbao",
             bluebubbles: "iMessage",
-            homeassistant: "HomeAssistant"
+            homeassistant: "HomeAssistant",
+            google_chat: "GoogleChat",
+            irc: "IRC",
+            line: "LINE",
+            mattermost: "Mattermost",
+            ntfy: "ntfy",
+            photon: "Photon",
+            raft: "Raft",
+            simplex: "SimpleX",
+            teams: "Teams"
           };
           const chatTypeLabels = {
             dm: "DM",
@@ -58803,7 +58914,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         <span>${this.esc(t("session.rename"))}</span>
       </div>
       <div class="context-menu-item" id="ctx-export">
-        <i data-lucide="download" class="lucide lucide-sm"></i>
+        <i data-lucide="arrow-up-right" class="lucide lucide-sm"></i>
         <span>${this.esc(t("session.exportMd"))}</span>
       </div>
       <div class="context-menu-divider"></div>
@@ -65973,6 +66084,15 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.container = document.getElementById("chat-container");
       this.statusBar = document.getElementById("chat-status-bar");
       this.scrollIndicator = new ChatScrollIndicator(this.container);
+      const scrollBtn = document.createElement("button");
+      scrollBtn.id = "chat-scroll-bottom-btn";
+      scrollBtn.className = "chat-scroll-bottom-btn hidden";
+      scrollBtn.setAttribute("aria-label", "Scroll to bottom");
+      scrollBtn.innerHTML = '<i data-lucide="chevron-down" style="width:18px;height:18px"></i>';
+      this.container.parentElement?.appendChild(scrollBtn);
+      scrollBtn.addEventListener("click", () => {
+        this.container.scrollTo({ top: this.container.scrollHeight, behavior: "smooth" });
+      });
       const w = window;
       w.__openSubAgentView = (toolCallId, taskIndex) => {
         const st3 = getState();
@@ -66167,6 +66287,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.container.addEventListener("scroll", () => {
         const { scrollTop, scrollHeight, clientHeight } = this.container;
         this.userScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
+        const btn = document.getElementById("chat-scroll-bottom-btn");
+        if (btn) {
+          btn.classList.toggle("hidden", !this.userScrolledUp);
+        }
       });
       this.ml.addEventListener("click", (e) => this.handleDelegateClick(e));
       let _lastSid = getState().sessionId;
@@ -67928,12 +68052,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
   };
 
   // renderer/src/tooltip.ts
+  init_i18n();
   var tooltipEl = null;
   var currentEl = null;
   var showTimer = null;
   var hideTimer = null;
   var OFFSET = 8;
   var SHOW_DELAY = 1e3;
+  var TITLE_ATTR = "data-encre-original-title";
   var SKIP_SELECTOR = ".window-btn, .header-window-controls";
   function ensureTooltip() {
     if (tooltipEl) return tooltipEl;
@@ -68010,37 +68136,52 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       hideTimer = null;
     }
     if (currentEl) {
-      const src = currentEl.dataset.encreTooltipSrc;
-      const text2 = currentEl.dataset.encreTooltip || "";
-      if (src === "title") currentEl.setAttribute("title", text2);
-      else if (src === "data-tooltip") currentEl.setAttribute("data-tooltip", text2);
       delete currentEl.dataset.encreTooltip;
       delete currentEl.dataset.encreTooltipSrc;
       currentEl = null;
     }
     if (tooltipEl) tooltipEl.classList.remove("encre-tooltip--visible");
   }
+  function getTooltipText(el2) {
+    const i18nKey = el2.getAttribute("data-i18n-title");
+    if (i18nKey) {
+      return { attr: "data-i18n-title", text: t(i18nKey).trim() };
+    }
+    if (el2.dataset.tooltip != null && el2.dataset.tooltip !== "") {
+      return { attr: "data-tooltip", text: el2.dataset.tooltip.trim() };
+    }
+    const stored = el2.getAttribute(TITLE_ATTR);
+    if (stored) {
+      return { attr: TITLE_ATTR, text: stored.trim() };
+    }
+    return null;
+  }
   function activate(el2) {
-    const attr = el2.dataset.tooltip != null && el2.dataset.tooltip !== "" ? "data-tooltip" : el2.getAttribute("title") ? "title" : null;
-    if (!attr) return;
-    const text2 = (attr === "data-tooltip" ? el2.dataset.tooltip || "" : el2.getAttribute("title") || "").trim();
-    if (!text2) return;
-    el2.dataset.encreTooltip = text2;
-    el2.dataset.encreTooltipSrc = attr;
-    el2.removeAttribute(attr);
+    const info = getTooltipText(el2);
+    if (!info || !info.text) return;
+    el2.dataset.encreTooltip = info.text;
+    el2.dataset.encreTooltipSrc = info.attr;
     currentEl = el2;
     if (showTimer) clearTimeout(showTimer);
     showTimer = window.setTimeout(() => {
       showTimer = null;
-      if (currentEl === el2) show(el2, text2);
+      if (currentEl === el2) show(el2, info.text);
     }, SHOW_DELAY);
   }
   function handleOver(e) {
-    if (currentEl) return;
     const target = e.target;
     if (!target) return;
-    const el2 = target.closest("[data-tooltip], [title]");
+    const el2 = target.closest(
+      `[data-tooltip], [data-i18n-title], [${TITLE_ATTR}]`
+    );
     if (!el2 || el2.closest(SKIP_SELECTOR)) return;
+    if (currentEl === el2) return;
+    if (showTimer) clearTimeout(showTimer);
+    if (hideTimer) clearTimeout(hideTimer);
+    showTimer = null;
+    hideTimer = null;
+    if (tooltipEl) tooltipEl.classList.remove("encre-tooltip--visible");
+    currentEl = null;
     activate(el2);
   }
   function handleOut(e) {
@@ -68053,7 +68194,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     if (currentEl) return;
     const target = e.target;
     if (!target) return;
-    const el2 = target.closest("[data-tooltip], [title]");
+    const el2 = target.closest(
+      `[data-tooltip], [data-i18n-title], [${TITLE_ATTR}]`
+    );
     if (!el2 || el2.closest(SKIP_SELECTOR)) return;
     activate(el2);
   }
@@ -68063,9 +68206,38 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     if (related && currentEl.contains(related)) return;
     restoreAndHide();
   }
+  function stripTitle(el2) {
+    const existing = el2.getAttribute(TITLE_ATTR);
+    const t2 = el2.getAttribute("title");
+    if (t2 && !existing) {
+      el2.setAttribute(TITLE_ATTR, t2);
+    }
+    el2.removeAttribute("title");
+  }
   function initTooltip() {
     ensureTooltip();
     syncBackground();
+    document.querySelectorAll("[title]").forEach(stripTitle);
+    const titleObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "title") {
+          stripTitle(mutation.target);
+        }
+      }
+    });
+    titleObserver.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["title"]
+    });
+    document.addEventListener(
+      "mouseover",
+      (e) => {
+        const target = e.target;
+        if (target?.hasAttribute("title")) stripTitle(target);
+      },
+      true
+    );
     document.addEventListener("mouseover", handleOver, true);
     document.addEventListener("mouseout", handleOut, true);
     document.addEventListener("focusin", handleFocus, true);
@@ -68094,10 +68266,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       showTimer = null;
     }
     if (currentEl) {
-      const src = currentEl.dataset.encreTooltipSrc;
-      const t2 = currentEl.dataset.encreTooltip || "";
-      if (src === "title") currentEl.setAttribute("title", t2);
-      else if (src === "data-tooltip") currentEl.setAttribute("data-tooltip", t2);
       delete currentEl.dataset.encreTooltip;
       delete currentEl.dataset.encreTooltipSrc;
       currentEl = null;
@@ -68140,13 +68308,20 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
       this.errorEl = null;
     }
-    showError(message, onRestart) {
+    showError(title, detail, onRestart) {
       if (this.errorEl) {
-        const msgEl = this.errorEl.querySelector(".splash-error-message");
-        if (msgEl) msgEl.textContent = message;
+        document.getElementById("splash-screen")?.classList.add("splash-error-active");
+        const titleEl = this.errorEl.querySelector(".splash-error-title");
+        if (titleEl) titleEl.textContent = title;
+        const detailEl = this.errorEl.querySelector(".splash-error-detail");
+        if (detailEl) {
+          detailEl.textContent = detail;
+          detailEl.classList.toggle("hidden", !detail);
+        }
         this.errorEl.classList.remove("hidden");
         const btn = this.errorEl.querySelector(".splash-restart-btn");
         if (btn) {
+          btn.disabled = false;
           btn.textContent = t("app.splashRestart");
           btn.onclick = () => {
             btn.textContent = t("app.splashRestarting");
@@ -68166,7 +68341,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>
       </div>
-      <div class="splash-error-message"></div>
+      <div class="splash-error-title"></div>
+      <div class="splash-error-detail hidden"></div>
       <button class="splash-restart-btn btn btn-sm"></button>
     `;
       parent.appendChild(el2);
@@ -68314,10 +68490,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       inner: `<path fill="#E9A823" d="M663.860476 63.038882c-15.94608-47.838239-67.141388-73.855527-114.979628-58.748715-47.838239 15.94608-73.855527 67.141388-58.748714 114.979627l235.834126 725.126993c15.94608 44.48117 64.623586 69.65919 110.78329 56.230912 48.677506-14.267545 78.051864-65.462853 62.105784-112.461825 0-1.678535-234.994859-725.126992-234.994858-725.126992z"/><path fill="#3FB991" d="M298.779177 182.214846c-15.94608-47.838239-67.141388-73.855527-114.979627-58.748715s-73.855527 67.141388-58.748714 114.979627L360.884962 963.572751c15.94608 44.48117 64.623586 69.65919 110.78329 56.230912 48.677506-14.267545 78.051864-65.462853 62.105784-112.461825 0-1.678535-234.994859-725.126992-234.994859-725.126992z"/><path fill="#E11765" d="M960.961118 663.954306c47.838239-15.94608 73.855527-67.141388 58.748715-114.979627-15.94608-47.838239-67.141388-73.855527-114.979627-58.748715L178.763946 726.06009c-44.48117 15.94608-69.65919 64.623586-56.230913 110.78329 14.267545 48.677506 65.462853 78.051864 112.461826 62.105784 1.678535 0 725.96626-234.994859 725.966259-234.994858z"/><path fill="#472A49" d="M329.832069 868.73554c46.998972-15.106812 108.265488-35.249229 173.728342-56.230913-15.106812-46.998972-35.249229-108.265488-56.230912-173.728342l-173.728342 56.230913 56.230912 173.728342z"/><path fill="#CD2027" d="M694.913368 750.398843c65.462853-20.981684 126.72937-41.1241 173.728342-56.230912-15.106812-46.998972-35.249229-108.265488-56.230913-173.728342l-173.728342 56.230912 56.230913 173.728342z"/><path fill="#71CBDC" d="M841.785154 298.873008c47.838239-15.94608 73.855527-67.141388 58.748715-114.979628s-67.141388-73.855527-114.979627-58.748714L60.427249 360.978792C15.94608 376.924871-9.231941 425.602378 4.196337 471.762082c14.267545 48.677506 65.462853 78.051864 112.461825 62.105784 1.678535 0 725.126992-234.994859 725.126992-234.994858z"/><path fill="#1D947E" d="M211.495373 503.654242c46.998972-15.106812 108.265488-35.249229 173.728342-56.230913-20.981684-65.462853-41.1241-126.72937-56.230913-173.728342l-173.728342 56.230913L211.495373 503.654242z"/><path fill="#66873A" d="M576.576671 384.478277c65.462853-20.981684 126.72937-41.1241 173.728342-56.230912-20.981684-65.462853-41.1241-126.72937-56.230913-173.728342L520.345758 211.589203l56.230913 172.889074z"/>`,
       viewBox: "0 0 1024 1024"
     },
-    msgraph: {
-      inner: `<rect x="0" y="0" width="486.592" height="486.592" fill="#F25022"/><rect x="537.408" y="0" width="486.592" height="486.592" fill="#7FBA00"/><rect x="0" y="537.408" width="486.592" height="486.592" fill="#00A4EF"/><rect x="537.408" y="537.408" width="486.592" height="486.592" fill="#FFB900"/>`,
-      viewBox: "0 0 1024 1024"
-    },
     yuanbao: {
       inner: `<path fill="#FFFFFF" d="M301.056 67.584c-79.872 71.68-113.664 214.016-54.272 294.912 62.464 86.016 204.8 74.752 296.96 5.12 103.424-78.848 258.048-76.8 308.224 40.96 38.912 94.208 3.072 209.92-90.112 276.48-183.296 132.096-451.584 107.52-575.488-61.44C64.512 455.68 129.024 208.896 301.056 67.584z"/><path fill="#00CC70" d="M512 24.576C229.376 24.576 0 241.664 0 508.928s229.376 485.376 512 485.376 512-217.088 512-485.376S794.624 24.576 512 24.576z m249.856 660.48c-183.296 132.096-451.584 107.52-575.488-61.44C64.512 455.68 129.024 208.896 301.056 67.584c-79.872 71.68-113.664 214.016-54.272 294.912 62.464 86.016 204.8 74.752 296.96 5.12 103.424-78.848 258.048-76.8 308.224 40.96 38.912 94.208 3.072 209.92-90.112 276.48z"/><path d="M630.784 632.832c-9.216 0-17.408-4.096-22.528-11.264L564.224 563.2c-7.168-10.24-7.168-24.576 0-34.816l44.032-56.32c9.216-12.288 27.648-14.336 39.936-5.12 12.288 9.216 14.336 27.648 5.12 39.936l-30.72 39.936 30.72 40.96c9.216 12.288 7.168 30.72-6.144 39.936-5.12 4.096-11.264 5.12-17.408 5.12zM463.872 547.84c0 76.8-15.36 91.136-49.152 91.136s-49.152-14.336-49.152-91.136 15.36-91.136 49.152-91.136 49.152 14.336 49.152 91.136z"/>`,
       viewBox: "0 0 1024 1024"
@@ -68337,6 +68509,33 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     sms: {
       inner: `<path fill="#2c2c2c" d="M726.016 470.016l0-86.016-86.016 0 0 86.016 86.016 0zM553.984 470.016l0-86.016-84.010667 0 0 86.016 84.010667 0zM384 470.016l0-86.016-86.016 0 0 86.016 86.016 0zM854.016 86.016q34.005333 0 59.008 25.002667t25.002667 59.008l0 512q0 34.005333-25.002667 59.989333t-59.008 25.984l-598.016 0-169.984 169.984 0-768q0-34.005333 25.002667-59.008t59.008-25.002667l683.989333 0z"/>`,
       viewBox: "0 0 1024 1024"
+    },
+    google_chat: {
+      inner: `<path d="M1.637 0C.733 0 0 .733 0 1.637v16.5c0 .904.733 1.636 1.637 1.636h3.955v3.323c0 .804.97 1.207 1.539.638l3.963-3.96h11.27c.903 0 1.636-.733 1.636-1.637V5.592L18.408 0Zm3.955 5.592h12.816v8.59H8.455l-2.863 2.863Z"/>`
+    },
+    irc: {
+      inner: `<path d="M4 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h7l3 3v-3h6a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm1 5h10v2H5V7zm0 4h8v2H5v-2zm0 4h12v2H5v-2z"/>`
+    },
+    line: {
+      inner: `<path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/>`
+    },
+    mattermost: {
+      inner: `<path d="M12.081 0C7.048-.034 2.339 3.125.637 8.153c-2.125 6.276 1.24 13.086 7.516 15.21 6.276 2.125 13.086-1.24 15.21-7.516 1.727-5.1-.172-10.552-4.311-13.557l.126 2.547c2.065 2.282 2.88 5.512 1.852 8.549-1.534 4.532-6.594 6.915-11.3 5.321-4.708-1.593-7.28-6.559-5.745-11.092 1.031-3.046 3.655-5.121 6.694-5.67l1.642-1.94A4.87 4.87 0 0 0 12.08 0zm3.528 1.094a.284.284 0 0 0-.123.024l-.004.001a.33.33 0 0 0-.109.071c-.145.142-.657.828-.657.828L13.6 3.4l-1.3 1.585-2.232 2.776s-1.024 1.278-.798 2.851c.226 1.574 1.396 2.34 2.304 2.648.907.307 2.302.408 3.438-.704 1.135-1.112 1.098-2.75 1.098-2.75l-.087-3.56-.07-2.05-.047-1.775s.01-.856-.02-1.057a.33.33 0 0 0-.035-.107l-.006-.012-.007-.011a.277.277 0 0 0-.229-.14z"/>`
+    },
+    ntfy: {
+      inner: `<path d="M12.597 13.693v2.156h6.205v-2.156ZM5.183 6.549v2.363l3.591 1.901.023.01-.023.009-3.591 1.901v2.35l.386-.211 5.456-2.969V9.729ZM3.659 2.037C1.915 2.037.42 3.41.42 5.154v.002L.438 18.73 0 21.963l5.956-1.583h14.806c1.744 0 3.238-1.374 3.238-3.118V5.154c0-1.744-1.493-3.116-3.237-3.117h-.001zm0 2.2h17.104c.613.001 1.037.447 1.037.917v12.108c0 .47-.424.916-1.038.916H5.633l-3.026.915.031-.179-.017-13.76c0-.47.424-.917 1.038-.917z"/>`
+    },
+    photon: {
+      inner: `<path d="m7.454 16.915-3.379 4.091a13.47 13.47 0 0 1-1.089-1.079l4.091-3.38c.123.116.252.246.377.368Zm1.045.809-2.517 4.679a11.334 11.334 0 0 1-1.281-.856l3.364-4.138c.357.262.434.262.434.315Zm-1.913-1.772-4.119 3.345a11.75 11.75 0 0 1-.856-1.277l4.682-2.518c.008.053.235.371.293.45ZM9.682 18.3l-1.558 5.063a12.111 12.111 0 0 1-1.419-.588l2.492-4.693c.416.192.478.177.485.217v.001ZM5.72 14.319c.059.163.125.324.198.481l-4.691 2.496a11.458 11.458 0 0 1-.589-1.423l5.082-1.554Zm5.23 4.292-.532 5.287a12.157 12.157 0 0 1-1.51-.315l1.532-5.073c.167.041.337.073.51.101Zm-5.56-5.56c.026.17.06.339.1.509L.402 15.09a11.897 11.897 0 0 1-.299-1.508l5.287-.531Zm-.079-1.306v.522l-5.286.513a11.623 11.623 0 0 1 0-1.539l5.286.504Zm6.948 6.942.51 5.29c-.513.03-1.026.03-1.539 0l.51-5.29c.173.007.346.007.519 0Zm2.832 4.912c-.496.137-1.001.242-1.51.315l-.532-5.287c.17-.026.343-.06.51-.1l1.532 5.072Zm-9.6-13.16c-.041.17-.076.339-.101.513l-5.286-.535c.067-.508.167-1.01.299-1.505l5.088 1.53v-.003Zm9.311 7.644 2.492 4.692c-.462.225-.937.422-1.423.588l-1.551-5.082c.16-.059.32-.125.482-.198ZM5.928 9.177a5.404 5.404 0 0 0-.201.481L.651 8.085c.168-.487.366-.962.595-1.423L5.928 9.18v-.003Zm10.003 8.232 3.364 4.126c-.409.311-.837.597-1.281.856L15.5 17.724c.148-.091.29-.186.431-.29v-.025ZM6.586 8.063a5.238 5.238 0 0 0-.29.431L1.617 5.976c.259-.443.545-.87.856-1.277l4.113 3.364Zm14.427 11.864a12.27 12.27 0 0 1-1.089 1.089l-3.379-4.101c.129-.116.245-.245.368-.368l4.1 3.38ZM4.075 2.987l3.379 4.091c-.129.115-.245.245-.368.368l-4.091-3.38c.688-.778 1.163-1.135 1.08-1.079Zm18.313 15.029a11.61 11.61 0 0 1-.856 1.281l-4.116-3.364a6.02 6.02 0 0 0 .29-.431l4.682 2.518v-.004ZM5.985 1.612l2.517 4.679a7.444 7.444 0 0 0-.434.29L4.704 2.468c.408-.314.835-.6 1.281-.856ZM23.36 15.873c-.163.487-.36.963-.588 1.423L18.08 14.8c.072-.157.138-.318.199-.481l5.081 1.554ZM8.137.633l1.548 5.085a5.78 5.78 0 0 0-.481.198L6.715 1.221A12.33 12.33 0 0 1 8.137.633Zm4.9-.165-1.535 5.078a5.43 5.43 0 0 0-.528.002L10.301.624a12.352 12.352 0 0 1 2.736-.156Zm4.11 1.269-2.516 4.682a6.338 6.338 0 0 0-.485-.205l1.554-5.085c.504.179.993.387 1.447.608v.001ZM5.948 24.15l2.517-4.682c.159.071.32.138.485.204l-1.555 5.087a12.044 12.044 0 0 1-1.447-.609Zm13.005-1.34c-.489.324-1.001.611-1.533.856L15.42 19.09c.166-.077.331-.158.489-.243l3.044 5.963v.001Zm-3.911 1.625c-.543.168-1.1.298-1.668.388l-.538-5.285c.174-.019.345-.045.518-.075l1.688 4.972Z"/>`
+    },
+    raft: {
+      inner: `<path d="M3 3v18h2V5h14V3H3zm4 4v14h2V9h10V7H7zm4 4v10h2V13h6v-2h-8z"/>`
+    },
+    simplex: {
+      inner: `<path d="m16.1 0-4.026 4.025L8.125.076 6.113 2.09l3.95 3.947-3.975 3.977L2.14 6.066.109 8.096l3.948 3.947L0 16.1l1.975 1.972 4.056-4.056 3.95 3.947 2.029-2.027-3.95-3.95 3.975-3.972 3.951 3.949-4.025 4.023v.002L9.947 18l-4.023 4.025L7.896 24l4.026-4.025 3.95 3.949 2.013-2.014-3.951-3.95 4.027-4.024 3.95 3.949 2.013-2.012-3.95-3.95L24 7.899l-1.975-1.972L18 9.949 14.049 6l4.025-4.025z"/>`
+    },
+    teams: {
+      inner: `<path d="M19.5 12c0 2.21-1.79 4-4 4h-7c-2.21 0-4-1.79-4-4V7c0-2.21 1.79-4 4-4h7c2.21 0 4 1.79 4 4v5z"/><path d="M9 7.5h3v1H9.5v1.5H12v1H9.5V13H9V7.5zm5 0h.5L16 11.5V7.5h1V13h-1l-1.5-4v4H14l-.5-4V8.5H14v4l-.5-4H13v-.5c0-.3.2-.5.5-.5h.5z"/><circle cx="17.5" cy="7.5" r="2.5"/><path d="M21 8c0-1.1-.9-2-2-2v5c1.1 0 2-.9 2-2V8z"/>`
     }
   };
 
@@ -82930,18 +83129,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const compact = options.compact ? " browser-compact" : "";
       container.innerHTML = `
       <div class="browser-nav-bar${compact}">
-        <button class="browser-nav-btn" data-nav="back" title="Back">
+        <button class="browser-nav-btn" data-nav="back" data-i18n-title="browserNav.back">
           <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
-        <button class="browser-nav-btn" data-nav="forward" title="Forward">
+        <button class="browser-nav-btn" data-nav="forward" data-i18n-title="browserNav.forward">
           <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
-        <button class="browser-nav-btn" data-nav="reload" title="Reload">
+        <button class="browser-nav-btn" data-nav="reload" data-i18n-title="browserNav.reload">
           <svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
         <input type="text" class="browser-url-input" value="${startUrl}" placeholder="\u641C\u7D22\u6216\u8F93\u5165 web \u5730\u5740 / Search or enter web address" spellcheck="false" />
-        <button class="browser-star-btn" title="Bookmark this page">\u2606</button>
-        <button class="browser-settings-btn" title="Settings">
+        <button class="browser-star-btn" data-i18n-title="browserNav.bookmark">\u2606</button>
+        <button class="browser-settings-btn" data-i18n-title="browserNav.settings">
           <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/></svg>
         </button>
       </div>
@@ -83161,7 +83360,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const target = url.replace(/\/+$/, "");
       function search2(children) {
         for (const c of children) {
-          if (c.type === "url" && c.url.replace(/\/+$/, "") === target) return true;
+          if (c.type === "url" && c.url && c.url.replace(/\/+$/, "") === target) return true;
           if (c.type === "folder" && c.children && search2(c.children)) return true;
         }
         return false;
@@ -83406,10 +83605,119 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     } catch {
     }
   }
+  var ADAPTER_DEFS = [
+    { id: "qqbot", name: "QQ Bot", desc: "\u63A5\u5165 QQ \u673A\u5668\u4EBA\u5E73\u53F0\uFF0C\u5B9E\u65F6\u63A5\u6536\u4E0E\u56DE\u590D\u7FA4\u804A\u53CA\u79C1\u804A\u6D88\u606F", fields: [
+      { key: "app_id", labelKey: "fieldAppId", type: "text" },
+      { key: "client_secret", labelKey: "fieldClientSecret", type: "password" }
+    ], docs: "https://bot.q.qq.com/wiki/" },
+    { id: "telegram", name: "Telegram", desc: "\u8FDE\u63A5 Telegram Bot API\uFF0C\u81EA\u52A8\u5904\u7406\u9891\u9053\u4E0E\u79C1\u4FE1\u4E2D\u7684\u6307\u4EE4\u548C\u5BF9\u8BDD", fields: [
+      { key: "bot_token", labelKey: "fieldBotToken", type: "password" }
+    ], docs: "https://core.telegram.org/bots#how-do-i-create-a-bot" },
+    { id: "discord", name: "Discord", desc: "\u96C6\u6210 Discord \u673A\u5668\u4EBA\uFF0C\u7BA1\u7406\u670D\u52A1\u5668\u9891\u9053\u6D88\u606F\u4E0E\u4EA4\u4E92", fields: [
+      { key: "bot_token", labelKey: "fieldBotToken", type: "password" }
+    ], docs: "https://discord.com/developers/applications" },
+    { id: "weixin", name: "\u5FAE\u4FE1", desc: "\u901A\u8FC7 iLink Bot \u626B\u7801\u7ED1\u5B9A\u5FAE\u4FE1\u4E2A\u4EBA\u53F7\uFF0C\u81EA\u52A8\u6536\u53D1\u6D88\u606F", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
+    { id: "wecom", name: "\u4F01\u4E1A\u5FAE\u4FE1", desc: "\u5BF9\u63A5\u4F01\u4E1A\u5FAE\u4FE1\u81EA\u5EFA\u5E94\u7528\u56DE\u8C03\uFF0C\u63A5\u6536\u6210\u5458\u6D88\u606F\u5E76\u81EA\u52A8\u56DE\u590D", fields: [
+      { key: "token", labelKey: "fieldWecomToken", type: "text" },
+      { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
+      { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" }
+    ], docs: "https://developer.work.weixin.qq.com/document/" },
+    { id: "feishu", name: "\u98DE\u4E66", desc: "\u8FDE\u63A5\u98DE\u4E66\u5F00\u653E\u5E73\u53F0\u673A\u5668\u4EBA\uFF0C\u63A5\u6536\u673A\u5668\u4EBA\u4E8B\u4EF6\u5E76\u56DE\u590D\u6D88\u606F", fields: [
+      { key: "app_id", labelKey: "fieldAppId", type: "text" },
+      { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
+      { key: "verify_token", labelKey: "fieldVerifyToken", type: "password" }
+    ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
+    { id: "dingtalk", name: "\u9489\u9489", desc: "\u63A5\u5165\u9489\u9489\u5F00\u653E\u5E73\u53F0\u673A\u5668\u4EBA\uFF0C\u901A\u8FC7 WebSocket \u63A5\u6536\u4E8B\u4EF6\u5E76\u901A\u8FC7 OpenAPI \u56DE\u590D\u6D88\u606F", fields: [
+      { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
+      { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" }
+    ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
+    { id: "slack", name: "Slack", desc: "\u96C6\u6210 Slack \u5DE5\u4F5C\u7A7A\u95F4\uFF0C\u901A\u8FC7 Bot Token \u76D1\u542C\u548C\u53D1\u9001\u9891\u9053\u6D88\u606F", fields: [
+      { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+      { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" }
+    ], docs: "https://api.slack.com/apps" },
+    { id: "whatsapp", name: "WhatsApp", desc: "\u8FDE\u63A5 WhatsApp Business API\uFF0C\u5904\u7406\u5BA2\u6237\u6D88\u606F\u4E0E\u5BF9\u8BDD", fields: [
+      { key: "phone_number_id", labelKey: "fieldPhoneNumberId", type: "text" },
+      { key: "access_token", labelKey: "fieldAccessToken", type: "password" }
+    ], docs: "https://developers.facebook.com/docs/whatsapp/" },
+    { id: "signal", name: "Signal", desc: "\u5BF9\u63A5 Signal \u6D88\u606F\u670D\u52A1\uFF0C\u901A\u8FC7 REST API \u6536\u53D1\u52A0\u5BC6\u6D88\u606F", fields: [
+      { key: "phone_number", labelKey: "fieldPhoneNumber", type: "text" },
+      { key: "api_url", labelKey: "fieldApiUrl", type: "text" }
+    ] },
+    { id: "matrix", name: "Matrix", desc: "\u63A5\u5165 Matrix \u53BB\u4E2D\u5FC3\u5316\u901A\u4FE1\u7F51\u7EDC\uFF0C\u52A0\u5165\u623F\u95F4\u5E76\u81EA\u52A8\u54CD\u5E94\u6D88\u606F", fields: [
+      { key: "homeserver_url", labelKey: "fieldHomeserverUrl", type: "text" },
+      { key: "access_token", labelKey: "fieldAccessToken", type: "password" }
+    ], docs: "https://matrix.org/docs/guides/" },
+    { id: "email", name: "Email", desc: "\u901A\u8FC7 SMTP/IMAP \u534F\u8BAE\u6536\u53D1\u7535\u5B50\u90AE\u4EF6\uFF0C\u652F\u6301\u81EA\u52A8\u56DE\u590D\u4E0E\u7BA1\u7406", fields: [
+      { key: "smtp_host", labelKey: "fieldSmtpHost", type: "text" },
+      { key: "smtp_port", labelKey: "fieldSmtpPort", type: "number" },
+      { key: "smtp_user", labelKey: "fieldSmtpUser", type: "text" },
+      { key: "smtp_pass", labelKey: "fieldSmtpPass", type: "password" },
+      { key: "imap_host", labelKey: "fieldImapHost", type: "text" },
+      { key: "imap_port", labelKey: "fieldImapPort", type: "number" }
+    ] },
+    { id: "sms", name: "SMS", desc: "\u5BF9\u63A5\u77ED\u4FE1\u670D\u52A1\u5546 API\uFF0C\u53D1\u9001\u548C\u63A5\u6536\u77ED\u4FE1\u901A\u77E5", fields: [
+      { key: "provider", labelKey: "fieldProvider", type: "text" },
+      { key: "account_sid", labelKey: "fieldAccountSid", type: "text" },
+      { key: "auth_token", labelKey: "fieldAuthToken", type: "password" }
+    ] },
+    { id: "yuanbao", name: "\u5143\u5B9D", desc: "\u63A5\u5165\u5143\u5B9D\u5F00\u653E\u5E73\u53F0\uFF0C\u901A\u8FC7 API \u5B9E\u73B0\u6D88\u606F\u4EA4\u4E92", fields: [
+      { key: "app_key", labelKey: "fieldAppKey", type: "text" },
+      { key: "app_secret", labelKey: "fieldAppSecret", type: "password" }
+    ] },
+    { id: "bluebubbles", name: "BlueBubbles", desc: "\u8FDE\u63A5 BlueBubbles \u670D\u52A1\u5668\uFF0C\u5B9E\u73B0 iMessage \u6D88\u606F\u6536\u53D1", fields: [
+      { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+      { key: "api_key", labelKey: "fieldApiKey", type: "password" }
+    ], docs: "https://bluebubbles.app/" },
+    { id: "webhook", name: "Webhook", desc: "\u542F\u52A8 Webhook \u76D1\u542C\u670D\u52A1\uFF0C\u63A5\u6536\u5916\u90E8\u7CFB\u7EDF\u7684 HTTP \u56DE\u8C03\u8BF7\u6C42", fields: [
+      { key: "listen_path", labelKey: "fieldListenPath", type: "text" },
+      { key: "secret", labelKey: "fieldSecret", type: "password" }
+    ] },
+    { id: "homeassistant", name: "Home Assistant", desc: "\u8FDE\u63A5 Home Assistant \u667A\u80FD\u5BB6\u5C45\u5E73\u53F0\uFF0C\u6267\u884C\u8BBE\u5907\u63A7\u5236\u4E0E\u72B6\u6001\u67E5\u8BE2", fields: [
+      { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+      { key: "access_token", labelKey: "fieldLongLivedToken", type: "password" }
+    ], docs: "https://www.home-assistant.io/docs/authentication/" },
+    { id: "google_chat", name: "Google Chat", desc: "\u8FDE\u63A5 Google Chat \u7A7A\u95F4\uFF0C\u901A\u8FC7 Webhook \u6536\u53D1\u6D88\u606F", fields: [
+      { key: "webhook_url", labelKey: "fieldWebhookUrl", type: "text" },
+      { key: "service_account", labelKey: "fieldServiceAccount", type: "textarea" }
+    ], docs: "https://developers.google.com/chat" },
+    { id: "irc", name: "IRC", desc: "\u8FDE\u63A5 IRC \u670D\u52A1\u5668\uFF0C\u52A0\u5165\u9891\u9053\u5E76\u81EA\u52A8\u54CD\u5E94\u6D88\u606F", fields: [
+      { key: "server", labelKey: "fieldServer", type: "text" },
+      { key: "port", labelKey: "fieldPort", type: "number" },
+      { key: "nickname", labelKey: "fieldNickname", type: "text" },
+      { key: "password", labelKey: "fieldPassword", type: "password" }
+    ] },
+    { id: "line", name: "LINE", desc: "\u8FDE\u63A5 LINE Messaging API\uFF0C\u81EA\u52A8\u5904\u7406\u597D\u53CB\u4E0E\u7FA4\u804A\u6D88\u606F", fields: [
+      { key: "channel_access_token", labelKey: "fieldChannelAccessToken", type: "password" },
+      { key: "channel_secret", labelKey: "fieldChannelSecret", type: "password" }
+    ], docs: "https://developers.line.biz/en/services/messaging-api/" },
+    { id: "mattermost", name: "Mattermost", desc: "\u96C6\u6210 Mattermost \u56E2\u961F\u534F\u4F5C\u5E73\u53F0\uFF0C\u76D1\u542C\u548C\u53D1\u9001\u9891\u9053\u6D88\u606F", fields: [
+      { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+      { key: "bot_token", labelKey: "fieldBotToken", type: "password" }
+    ], docs: "https://developers.mattermost.com/" },
+    { id: "ntfy", name: "ntfy", desc: "\u901A\u8FC7 ntfy \u63A8\u9001\u670D\u52A1\u53D1\u9001\u901A\u77E5\u6D88\u606F", fields: [
+      { key: "topic", labelKey: "fieldTopic", type: "text" },
+      { key: "server_url", labelKey: "fieldServerUrl", type: "text" }
+    ], docs: "https://ntfy.sh/docs/" },
+    { id: "photon", name: "Photon", desc: "\u8FDE\u63A5 Photon \u793E\u4EA4\u5E73\u53F0\uFF0C\u5B9E\u73B0\u6D88\u606F\u6536\u53D1\u4E0E\u4EA4\u4E92", fields: [
+      { key: "api_url", labelKey: "fieldApiUrl", type: "text" },
+      { key: "api_key", labelKey: "fieldApiKey", type: "password" }
+    ] },
+    { id: "raft", name: "Raft", desc: "\u63A5\u5165 Raft \u5206\u5E03\u5F0F\u901A\u4FE1\u7F51\u7EDC\uFF0C\u5904\u7406\u8282\u70B9\u95F4\u6D88\u606F", fields: [
+      { key: "node_id", labelKey: "fieldNodeId", type: "text" },
+      { key: "peers", labelKey: "fieldPeers", type: "text" }
+    ] },
+    { id: "simplex", name: "SimpleX", desc: "\u8FDE\u63A5 SimpleX \u53BB\u4E2D\u5FC3\u5316\u6D88\u606F\u5E73\u53F0\uFF0C\u4FDD\u62A4\u9690\u79C1\u5B89\u5168\u901A\u4FE1", fields: [
+      { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+      { key: "display_name", labelKey: "fieldDisplayName", type: "text" }
+    ], docs: "https://simplex.chat/" },
+    { id: "teams", name: "Microsoft Teams", desc: "\u96C6\u6210 Microsoft Teams\uFF0C\u901A\u8FC7 Bot Framework \u5904\u7406\u9891\u9053\u4E0E\u7FA4\u804A\u6D88\u606F", fields: [
+      { key: "app_id", labelKey: "fieldAppId", type: "text" },
+      { key: "app_password", labelKey: "fieldAppPassword", type: "password" }
+    ], docs: "https://learn.microsoft.com/en-us/microsoftteams/platform/" }
+  ];
   var Settings = class _Settings {
     constructor() {
       this.currentPanel = "general";
-      this._expandedAdapterId = null;
       this._adapterTestResults = {};
       this.searchTimer = 0;
       this._versions = null;
@@ -83494,11 +83802,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           }
           return;
         }
-        const removeBtn = target.closest(".btn-doc-remove");
+        const removeBtn = target.closest("[data-action='delete-doc']");
         if (removeBtn) {
           const id = removeBtn.getAttribute("data-doc-id");
           const name = removeBtn.getAttribute("data-doc-name");
-          if (id && name) this._showDocDeleteConfirm(id, name, t);
+          if (id && name) {
+            Dialog.confirm(t("settings.deleteDoc"), t("settings.confirmDeleteDoc", { name })).then((ok) => {
+              if (ok) {
+                send({ type: "remove_document", id });
+              }
+            });
+          }
         }
       });
       this.panels.skills.addEventListener("click", (e) => {
@@ -83726,10 +84040,16 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           if (this.panels.skills) this.renderSkills();
         }
       });
+      let lastModelIdx = getState().activeModelIndex;
       subscribe2(() => {
         const app2 = document.getElementById("app");
         if (!app2?.classList.contains("settings-mode")) return;
-        if (this.currentPanel === "model" && this.panels.model) this.renderModel();
+        const st3 = getState();
+        const idxChanged = st3.activeModelIndex !== lastModelIdx;
+        if (idxChanged) {
+          lastModelIdx = st3.activeModelIndex;
+          if (this.currentPanel === "model" && this.panels.model) this.renderModel();
+        }
       });
       let lastMcpLen = getState().mcpServers.length;
       subscribe2(() => {
@@ -83839,7 +84159,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const cur = getState().gatewayStatus;
         if (cur !== lastGatewayStatus) {
           lastGatewayStatus = cur;
-          if (this.currentPanel === "gateway" && this.panels.gateway) this.renderGateway();
+          if (this.currentPanel === "gateway" && this.panels.gateway) requestAnimationFrame(() => this.renderGateway());
         }
       });
       let lastMemoryDetail = getState().memoryDetail;
@@ -83862,7 +84182,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       onAdapterTestResult((event) => {
         this._adapterTestResults[event.adapter_id] = { success: event.success, message: event.message };
         if (this.currentPanel === "gateway") {
-          this.renderGateway();
+          requestAnimationFrame(() => this.renderGateway());
         }
       });
       onWechatScanResult((event) => {
@@ -83966,71 +84286,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
               window.lucide.createIcons({ root: statusEl });
             }
           }
-        }
-      });
-    }
-    /** Show a standalone QR code popup window for WeChat login. */
-    _showWechatQrDialog() {
-      document.getElementById("wechat-qr-overlay")?.remove();
-      this._wechatDialogOpen = true;
-      this._qrResultReceived = false;
-      const overlay = document.createElement("div");
-      overlay.id = "wechat-qr-overlay";
-      overlay.className = "toast-overlay";
-      overlay.innerHTML = `
-      <div class="toast-dialog" style="width:320px;text-align:center;padding:24px">
-        <div class="toast-title" style="text-align:center;font-size:15px;font-weight:600;border-bottom:none;padding-bottom:0;margin-bottom:0">${t("settings.wechatScanDialogTitle")}</div>
-        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0" />
-        <div style="position:relative;display:inline-block;margin:0 auto">
-          <img id="wechat-qr-img" style="display:none;width:240px;height:240px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.12)" />
-          <div id="wechat-qr-success-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center">
-            <div style="width:56px;height:56px;border-radius:50%;background:#07C160;display:flex;align-items:center;justify-content:center">
-              <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block">
-                <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-              </svg>
-            </div>
-          </div>
-          <div id="wechat-qr-refresh-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center;cursor:pointer">
-            <div style="width:56px;height:56px;border-radius:50%;background:#9aa0a6;display:flex;align-items:center;justify-content:center">
-              <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block">
-                <path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-              </svg>
-            </div>
-          </div>
-        </div>
-        <div id="wechat-qr-status" style="padding:60px 0 0;font-size:14px;color:var(--text-muted)">${t("settings.wechatScanning")}</div>
-        <div id="wechat-qr-countdown" style="display:none;font-size:12px;color:var(--text-muted);margin-top:4px"></div>
-        <div style="margin-top:16px">
-          <button class="btn" id="wechat-qr-close" style="padding:6px 24px;font-size:13px">${t("header.close")}</button>
-        </div>
-      </div>`;
-      document.body.appendChild(overlay);
-      overlay.querySelector("#wechat-qr-close")?.addEventListener("click", () => {
-        if (this._qrCountdown) clearInterval(this._qrCountdown);
-        this._wechatDialogOpen = false;
-        overlay.remove();
-      });
-      const refreshOverlay = overlay.querySelector("#wechat-qr-refresh-overlay");
-      if (refreshOverlay) {
-        refreshOverlay.addEventListener("click", () => {
-          refreshOverlay.style.display = "none";
-          const statusEl = document.getElementById("wechat-qr-status");
-          if (statusEl) {
-            statusEl.textContent = t("settings.wechatScanning");
-            statusEl.style.display = "block";
-          }
-          const img = document.getElementById("wechat-qr-img");
-          if (img) {
-            img.style.display = "none";
-            img.src = "";
-          }
-          this._qrResultReceived = false;
-          send({ type: "wechat_scan", adapter_id: "weixin" });
-        });
-      }
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) {
-          e.stopPropagation();
         }
       });
     }
@@ -84431,6 +84686,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const trigger = document.getElementById(`${id}-trigger`);
       const dropdown = document.getElementById(`${id}-dropdown`);
       if (!wrap || !trigger || !dropdown) return;
+      if (wrap.classList.contains("is-disabled")) return;
       trigger.addEventListener("click", (e) => {
         e.stopPropagation();
         const isOpen = dropdown.classList.contains("open");
@@ -84480,12 +84736,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       ];
       const startupModes = [
         { id: "normal", label: t("settings.normalMode") },
-        { id: "iwork", label: t("settings.iworkMode") }
+        { id: "iwork", label: t("settings.iworkMode") },
+        { id: "automation", label: t("settings.automationMode") }
       ];
       const startupBehaviors = [
         { id: "new", label: t("settings.startupNew") },
         { id: "last", label: t("settings.startupLast") }
       ];
+      const currentBehavior = startupBehaviors.find((o2) => o2.id === currentStartupBehavior) || startupBehaviors[0];
+      const behaviorItems = startupBehaviors.map(
+        (o2) => `<div class="settings-dropdown-item${o2.id === currentStartupBehavior ? " selected" : ""}" data-value="${o2.id}">${o2.label}</div>`
+      ).join("");
       const langPrefOptions = [
         { id: "auto", label: t("language.autoFollow") },
         { id: "zh", label: t("language.zh") },
@@ -84552,10 +84813,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             <div class="settings-item-desc">${t("settings.startupSessionBehaviorDesc")}</div>
           </div>
           <div class="settings-item-control">
-            ${this.renderDropdown("dd-startup-behavior", startupBehaviors, currentStartupBehavior, (v2) => {
-        this.saveSetting("startup_session_behavior", v2);
-        this.renderGeneral();
-      })}
+            <div class="settings-dropdown-wrap${currentStartupMode === "automation" ? " is-disabled" : ""}" id="dd-startup-behavior-wrap">
+              <button class="settings-dropdown-trigger" id="dd-startup-behavior-trigger" type="button">
+                <span>${currentBehavior.label}</span>
+                <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+              </button>
+              <div class="settings-dropdown" id="dd-startup-behavior-dropdown">${behaviorItems}</div>
+            </div>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -84884,7 +85148,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             <button class="btn-icon" data-action="edit" data-idx="${i8}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" data-idx="${i8}" data-tooltip="${t("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete" data-idx="${i8}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -84924,92 +85188,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const s15 = st3.settings;
       const gs3 = st3.gatewayStatus;
       const adapters2 = gs3?.adapters ?? [];
-      const adapterDefs = [
-        { id: "qqbot", name: "QQ Bot", desc: "\u63A5\u5165 QQ \u673A\u5668\u4EBA\u5E73\u53F0\uFF0C\u5B9E\u65F6\u63A5\u6536\u4E0E\u56DE\u590D\u7FA4\u804A\u53CA\u79C1\u804A\u6D88\u606F", fields: [
-          { key: "app_id", labelKey: "fieldAppId", type: "text" },
-          { key: "client_secret", labelKey: "fieldClientSecret", type: "password" }
-        ], docs: "https://bot.q.qq.com/wiki/" },
-        { id: "telegram", name: "Telegram", desc: "\u8FDE\u63A5 Telegram Bot API\uFF0C\u81EA\u52A8\u5904\u7406\u9891\u9053\u4E0E\u79C1\u4FE1\u4E2D\u7684\u6307\u4EE4\u548C\u5BF9\u8BDD", fields: [
-          { key: "bot_token", labelKey: "fieldBotToken", type: "password" }
-        ], docs: "https://core.telegram.org/bots#how-do-i-create-a-bot" },
-        { id: "discord", name: "Discord", desc: "\u96C6\u6210 Discord \u673A\u5668\u4EBA\uFF0C\u7BA1\u7406\u670D\u52A1\u5668\u9891\u9053\u6D88\u606F\u4E0E\u4EA4\u4E92", fields: [
-          { key: "bot_token", labelKey: "fieldBotToken", type: "password" }
-        ], docs: "https://discord.com/developers/applications" },
-        { id: "weixin", name: "\u5FAE\u4FE1", desc: "\u901A\u8FC7 iLink Bot \u626B\u7801\u7ED1\u5B9A\u5FAE\u4FE1\u4E2A\u4EBA\u53F7\uFF0C\u81EA\u52A8\u6536\u53D1\u6D88\u606F", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
-        { id: "wecom", name: "\u4F01\u4E1A\u5FAE\u4FE1", desc: "\u5BF9\u63A5\u4F01\u4E1A\u5FAE\u4FE1\u81EA\u5EFA\u5E94\u7528\u56DE\u8C03\uFF0C\u63A5\u6536\u6210\u5458\u6D88\u606F\u5E76\u81EA\u52A8\u56DE\u590D", fields: [
-          { key: "token", labelKey: "fieldWecomToken", type: "text" },
-          { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
-          { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" }
-        ], docs: "https://developer.work.weixin.qq.com/document/" },
-        { id: "feishu", name: "\u98DE\u4E66", desc: "\u8FDE\u63A5\u98DE\u4E66\u5F00\u653E\u5E73\u53F0\u673A\u5668\u4EBA\uFF0C\u63A5\u6536\u673A\u5668\u4EBA\u4E8B\u4EF6\u5E76\u56DE\u590D\u6D88\u606F", fields: [
-          { key: "app_id", labelKey: "fieldAppId", type: "text" },
-          { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-          { key: "verify_token", labelKey: "fieldVerifyToken", type: "password" }
-        ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
-        { id: "dingtalk", name: "\u9489\u9489", desc: "\u63A5\u5165\u9489\u9489\u5F00\u653E\u5E73\u53F0\u673A\u5668\u4EBA\uFF0C\u901A\u8FC7 WebSocket \u63A5\u6536\u4E8B\u4EF6\u5E76\u901A\u8FC7 OpenAPI \u56DE\u590D\u6D88\u606F", fields: [
-          { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
-          { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" }
-        ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
-        { id: "slack", name: "Slack", desc: "\u96C6\u6210 Slack \u5DE5\u4F5C\u7A7A\u95F4\uFF0C\u901A\u8FC7 Bot Token \u76D1\u542C\u548C\u53D1\u9001\u9891\u9053\u6D88\u606F", fields: [
-          { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
-          { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" }
-        ], docs: "https://api.slack.com/apps" },
-        { id: "whatsapp", name: "WhatsApp", desc: "\u8FDE\u63A5 WhatsApp Business API\uFF0C\u5904\u7406\u5BA2\u6237\u6D88\u606F\u4E0E\u5BF9\u8BDD", fields: [
-          { key: "phone_number_id", labelKey: "fieldPhoneNumberId", type: "text" },
-          { key: "access_token", labelKey: "fieldAccessToken", type: "password" }
-        ], docs: "https://developers.facebook.com/docs/whatsapp/" },
-        { id: "signal", name: "Signal", desc: "\u5BF9\u63A5 Signal \u6D88\u606F\u670D\u52A1\uFF0C\u901A\u8FC7 REST API \u6536\u53D1\u52A0\u5BC6\u6D88\u606F", fields: [
-          { key: "phone_number", labelKey: "fieldPhoneNumber", type: "text" },
-          { key: "api_url", labelKey: "fieldApiUrl", type: "text" }
-        ] },
-        { id: "matrix", name: "Matrix", desc: "\u63A5\u5165 Matrix \u53BB\u4E2D\u5FC3\u5316\u901A\u4FE1\u7F51\u7EDC\uFF0C\u52A0\u5165\u623F\u95F4\u5E76\u81EA\u52A8\u54CD\u5E94\u6D88\u606F", fields: [
-          { key: "homeserver_url", labelKey: "fieldHomeserverUrl", type: "text" },
-          { key: "access_token", labelKey: "fieldAccessToken", type: "password" }
-        ], docs: "https://matrix.org/docs/guides/" },
-        { id: "email", name: "Email", desc: "\u901A\u8FC7 SMTP/IMAP \u534F\u8BAE\u6536\u53D1\u7535\u5B50\u90AE\u4EF6\uFF0C\u652F\u6301\u81EA\u52A8\u56DE\u590D\u4E0E\u5904\u7406", fields: [
-          { key: "smtp_host", labelKey: "fieldSmtpHost", type: "text" },
-          { key: "smtp_port", labelKey: "fieldSmtpPort", type: "number" },
-          { key: "smtp_user", labelKey: "fieldSmtpUser", type: "text" },
-          { key: "smtp_pass", labelKey: "fieldSmtpPass", type: "password" },
-          { key: "imap_host", labelKey: "fieldImapHost", type: "text" },
-          { key: "imap_port", labelKey: "fieldImapPort", type: "number" }
-        ] },
-        { id: "sms", name: "SMS", desc: "\u5BF9\u63A5\u77ED\u4FE1\u670D\u52A1\u5546 API\uFF0C\u53D1\u9001\u548C\u63A5\u6536\u77ED\u4FE1\u901A\u77E5", fields: [
-          { key: "provider", labelKey: "fieldProvider", type: "text" },
-          { key: "account_sid", labelKey: "fieldAccountSid", type: "text" },
-          { key: "auth_token", labelKey: "fieldAuthToken", type: "password" }
-        ] },
-        { id: "yuanbao", name: "\u5143\u5B9D", desc: "\u63A5\u5165\u5143\u5B9D\u5F00\u653E\u5E73\u53F0\uFF0C\u901A\u8FC7 API \u5B9E\u73B0\u6D88\u606F\u4EA4\u4E92", fields: [
-          { key: "app_key", labelKey: "fieldAppKey", type: "text" },
-          { key: "app_secret", labelKey: "fieldAppSecret", type: "password" }
-        ] },
-        { id: "bluebubbles", name: "BlueBubbles", desc: "\u8FDE\u63A5 BlueBubbles \u670D\u52A1\u5668\uFF0C\u5B9E\u73B0 iMessage \u6D88\u606F\u6536\u53D1", fields: [
-          { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-          { key: "api_key", labelKey: "fieldApiKey", type: "password" }
-        ], docs: "https://bluebubbles.app/" },
-        { id: "webhook", name: "Webhook", desc: "\u542F\u52A8 Webhook \u76D1\u542C\u670D\u52A1\uFF0C\u63A5\u6536\u5916\u90E8\u7CFB\u7EDF\u7684 HTTP \u56DE\u8C03\u8BF7\u6C42", fields: [
-          { key: "listen_path", labelKey: "fieldListenPath", type: "text" },
-          { key: "secret", labelKey: "fieldSecret", type: "password" }
-        ] },
-        { id: "homeassistant", name: "Home Assistant", desc: "\u8FDE\u63A5 Home Assistant \u667A\u80FD\u5BB6\u5C45\u5E73\u53F0\uFF0C\u6267\u884C\u8BBE\u5907\u63A7\u5236\u4E0E\u72B6\u6001\u67E5\u8BE2", fields: [
-          { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-          { key: "access_token", labelKey: "fieldLongLivedToken", type: "password" }
-        ], docs: "https://www.home-assistant.io/docs/authentication/" },
-        { id: "msgraph", name: "Microsoft Graph", desc: "\u901A\u8FC7 Microsoft Graph API \u63A5\u5165 Office 365\uFF0C\u7BA1\u7406\u90AE\u4EF6\u65E5\u5386\u548C\u7528\u6237", fields: [
-          { key: "tenant_id", labelKey: "fieldTenantId", type: "text" },
-          { key: "client_id", labelKey: "fieldClientId", type: "text" },
-          { key: "client_secret", labelKey: "fieldClientSecret", type: "password" }
-        ], docs: "https://learn.microsoft.com/en-us/graph/auth/" }
-      ];
-      const expandedAdapter = this._expandedAdapterId;
       let cardsHtml = "";
-      for (const def of adapterDefs) {
+      for (const def of ADAPTER_DEFS) {
         const adapterNameKey = `settings.adapterName${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`;
         const displayName = t(adapterNameKey);
         const enabled = !!s15[`adapter_${def.id}_enabled`];
         const statusInfo = adapters2.find((a) => a.name === def.id);
         const connected = statusInfo?.connected ?? false;
-        const isExpanded = expandedAdapter === def.id;
         const fieldCount = def.fields.length;
         const allConfigured = def.fields.every((f) => {
           const val = s15[`adapter_${def.id}_${f.key}`];
@@ -85049,51 +85234,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         } else {
           descHtml = `<span style="color:var(--text-muted);font-size:11px">${this.esc(t(`settings.adapterDesc${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`))}</span>`;
         }
-        let configBodyHtml = "";
-        if (isExpanded) {
-          let fieldsHtml = "";
-          for (const f of def.fields) {
-            const val = s15[`adapter_${def.id}_${f.key}`] ?? "";
-            fieldsHtml += `
-            <div style="display:flex;align-items:center;justify-content:center;padding:8px 0;gap:12px">
-              <div style="font-size:13px;color:var(--text-primary);white-space:nowrap;width:140px;flex-shrink:0;margin:0;text-align:right">${t("settings." + f.labelKey)}</div>
-              <input type="${f.type}" id="adapter-${def.id}-${f.key}" class="model-form-input" style="width:380px;flex:0 0 auto" value="${this.esc(val)}" spellcheck="false" />
-            </div>`;
-          }
-          configBodyHtml = `
-	          <div style="padding:12px 16px 8px">
-	            ${fieldsHtml}
-${def.id === "weixin" ? connected ? `
-            <div style="display:flex;align-items:center;justify-content:center;min-height:60px">
-              <button class="btn btn-sm" id="wechat-unbind-btn" style="padding:6px 16px;font-size:12px;color:var(--text-danger)">
-                <i data-lucide="unlink" style="width:14px;height:14px;margin-right:4px"></i>
-                ${t("settings.wechatUnbind")}
-              </button>
-            </div>
-            ` : `
-            <div style="display:flex;align-items:center;justify-content:center;min-height:60px">
-              <button class="btn btn-primary" id="wechat-scan-btn" style="padding:8px 28px;font-size:14px">
-                <i data-lucide="scan-qr-code" style="width:16px;height:16px;margin-right:6px"></i>
-                ${t("settings.wechatScan")}
-              </button>
-            </div>
-            ` : `
-	            <div id="adapter-test-status-${def.id}" style="font-size:12px;padding:4px 0;min-height:20px"></div>
-	            <div style="padding-top:12px;display:flex;justify-content:flex-end;gap:8px">
-	              <button class="btn btn-sm" id="adapter-test-${def.id}" style="padding:6px 20px;font-size:13px">
-	                <i data-lucide="plug" style="width:14px;height:14px;margin-right:4px"></i>
-	                ${t("settings.adapterTest")}
-	              </button>
-	              <button class="btn btn-primary btn-sm" id="adapter-save-${def.id}" style="padding:6px 20px;font-size:13px">
-	                <i data-lucide="check" style="width:14px;height:14px;margin-right:4px"></i>
-	                ${t("settings.adapterSave")}
-	              </button>
-	            </div>
-	            `}
-	          </div>`;
-        }
         const iconData = PLATFORM_ICONS[def.id];
-        const isMonoIcon = def.id === "matrix" || def.id === "sms" || def.id === "webhook";
+        const isMonoIcon = def.id === "matrix" || def.id === "sms" || def.id === "webhook" || def.id === "google_chat" || def.id === "irc" || def.id === "line" || def.id === "mattermost" || def.id === "ntfy" || def.id === "photon" || def.id === "raft" || def.id === "simplex" || def.id === "teams";
         let iconHtml;
         if (iconData) {
           const vb = iconData.viewBox || "0 0 24 24";
@@ -85103,7 +85245,6 @@ ${def.id === "weixin" ? connected ? `
             feishu: "#3370FF",
             dingtalk: "#0089FF",
             slack: "#4A154B",
-            msgraph: "#0078D4",
             yuanbao: "#FF6A00",
             bluebubbles: "#007AFF",
             webhook: "#6B7280",
@@ -85113,7 +85254,6 @@ ${def.id === "weixin" ? connected ? `
             feishu: t("settings.abbrFeishu"),
             dingtalk: t("settings.abbrDingtalk"),
             slack: "Sl",
-            msgraph: "MS",
             yuanbao: t("settings.abbrYuanbao"),
             bluebubbles: "BB",
             webhook: "WH",
@@ -85125,7 +85265,7 @@ ${def.id === "weixin" ? connected ? `
         }
         cardsHtml += `
         <div class="settings-card" style="margin-bottom:12px">
-          <div class="settings-item-row" style="cursor:pointer" data-adapter-toggle="${def.id}">
+          <div class="settings-item-row" data-adapter-toggle="${def.id}">
             <div class="settings-item-info">
               <div class="settings-item-title" style="display:flex;align-items:center">
                 ${iconHtml}
@@ -85135,23 +85275,21 @@ ${def.id === "weixin" ? connected ? `
               <div class="settings-item-desc">${descHtml}</div>
             </div>
             <div class="settings-item-control" style="gap:8px">
-              ${isExpanded && def.docs && def.id !== "weixin" ? `<a href="#" class="model-get-apikey-link" data-adapter-docs="${def.id}" style="font-size:12px">${t("settings.viewDocs")}</a>` : ""}
               <label class="toggle-switch" onclick="event.stopPropagation()">
                 <input type="checkbox" id="adapter-enable-${def.id}" ${enabled ? "checked" : ""} />
                 <span class="toggle-slider"></span>
               </label>
-              <button class="btn-icon" id="adapter-expand-${def.id}" data-adapter-expand="${def.id}" style="transition:transform 0.2s${isExpanded ? ";transform:rotate(180deg)" : ""}">
-                <i data-lucide="chevron-down" style="width:16px;height:16px"></i>
+              <button class="btn-icon" id="adapter-expand-${def.id}" data-adapter-expand="${def.id}" data-tooltip="${t("settings.adapterConfig")}">
+                <i data-lucide="arrow-up-right" style="width:16px;height:16px"></i>
               </button>
             </div>
           </div>
-          ${configBodyHtml}
         </div>`;
       }
       this.panels.gateway.innerHTML = `
       <div class="settings-section-title"><i data-lucide="network" class="lucide section-title-icon"></i> ${t("settings.gatewayManagement")}</div>
       ${cardsHtml}`;
-      for (const def of adapterDefs) {
+      for (const def of ADAPTER_DEFS) {
         const enableToggle = document.getElementById(`adapter-enable-${def.id}`);
         if (enableToggle) {
           enableToggle.addEventListener("change", () => {
@@ -85167,103 +85305,7 @@ ${def.id === "weixin" ? connected ? `
         if (expandBtn) {
           expandBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            this._expandedAdapterId = this._expandedAdapterId === def.id ? null : def.id;
-            this.renderGateway();
-          });
-        }
-        const toggleRow = document.querySelector(`[data-adapter-toggle="${def.id}"]`);
-        if (toggleRow) {
-          toggleRow.addEventListener("click", () => {
-            this._expandedAdapterId = this._expandedAdapterId === def.id ? null : def.id;
-            this.renderGateway();
-          });
-        }
-        const saveBtn = document.getElementById(`adapter-save-${def.id}`);
-        if (saveBtn) {
-          saveBtn.addEventListener("click", () => {
-            const current = { ...getState().settings };
-            for (const f of def.fields) {
-              const input = document.getElementById(`adapter-${def.id}-${f.key}`);
-              if (input) {
-                current[`adapter_${def.id}_${f.key}`] = input.value;
-              }
-            }
-            const config2 = {};
-            for (const f of def.fields) {
-              const input = document.getElementById(`adapter-${def.id}-${f.key}`);
-              if (input) {
-                config2[`adapter_${def.id}_${f.key}`] = input.value;
-              }
-            }
-            setSettings(current);
-            const enableInput = document.getElementById(`adapter-enable-${def.id}`);
-            if (enableInput) {
-              config2[`adapter_${def.id}_enabled`] = enableInput.checked;
-            }
-            send({ type: "configure", config: config2 });
-            delete this._adapterTestResults[def.id];
-            this.renderGateway();
-          });
-        }
-        const scanBtn = document.getElementById("wechat-scan-btn");
-        if (scanBtn) {
-          scanBtn.addEventListener("click", () => {
-            scanBtn.setAttribute("disabled", "disabled");
-            this._lastQrUrl = "";
-            this._showWechatQrDialog();
-            send({ type: "wechat_scan", adapter_id: "weixin" });
-            setTimeout(() => scanBtn.removeAttribute("disabled"), 3e4);
-          });
-        }
-        const unbindBtn = document.getElementById("wechat-unbind-btn");
-        if (unbindBtn) {
-          unbindBtn.addEventListener("click", () => {
-            Dialog.confirm(t("settings.wechatUnbind"), t("settings.wechatUnbindConfirm")).then((confirmed) => {
-              if (confirmed) {
-                const unbindConfig = {
-                  adapter_weixin_enabled: false,
-                  adapter_weixin_app_id: "",
-                  adapter_weixin_token: "",
-                  adapter_weixin_api_url: ""
-                };
-                send({ type: "configure", config: unbindConfig });
-                const current = {
-                  ...getState().settings,
-                  adapter_weixin_enabled: false,
-                  adapter_weixin_app_id: "",
-                  adapter_weixin_token: "",
-                  adapter_weixin_api_url: ""
-                };
-                setSettings(current);
-                this.renderGateway();
-              }
-            });
-          });
-        }
-        const testBtn = document.getElementById(`adapter-test-${def.id}`);
-        if (testBtn) {
-          testBtn.addEventListener("click", () => {
-            const config2 = {};
-            for (const f of def.fields) {
-              const input = document.getElementById(`adapter-${def.id}-${f.key}`);
-              if (input) {
-                config2[f.key] = input.value;
-              }
-            }
-            const enableInput = document.getElementById(`adapter-enable-${def.id}`);
-            config2.enabled = enableInput ? enableInput.checked : false;
-            delete this._adapterTestResults[def.id];
-            withLoading(testBtn, () => new Promise((resolve2) => {
-              const poll = () => {
-                if (this._adapterTestResults[def.id] !== void 0) {
-                  resolve2();
-                } else {
-                  setTimeout(poll, 100);
-                }
-              };
-              setTimeout(poll, 100);
-              send({ type: "test_adapter", adapter_id: def.id, config: config2 });
-            }));
+            this._showAdapterConfigDialog(def.id);
           });
         }
         const docsLink = document.querySelector(`[data-adapter-docs="${def.id}"]`);
@@ -85292,6 +85334,210 @@ ${def.id === "weixin" ? connected ? `
       }
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: this.panels.gateway });
+      }
+    }
+    /** Open a modal dialog (model-config style) for any adapter. */
+    _showAdapterConfigDialog(defId) {
+      const def = ADAPTER_DEFS.find((d) => d.id === defId);
+      if (!def) return;
+      const st3 = getState();
+      const s15 = st3.settings;
+      const tFn = t;
+      let bodyHtml = "";
+      if (defId === "weixin") {
+        const gs3 = st3.gatewayStatus;
+        const adapters2 = gs3?.adapters ?? [];
+        const statusInfo = adapters2.find((a) => a.name === "weixin");
+        const connected = statusInfo?.connected ?? false;
+        const appId = s15[`adapter_weixin_app_id`] ?? "";
+        const token = s15[`adapter_weixin_token`] ?? "";
+        const apiUrl = s15[`adapter_weixin_api_url`] ?? "";
+        if (connected && appId) {
+          bodyHtml = `
+          <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
+            <label class="model-form-label">${tFn("settings.fieldAppId")}</label>
+            <input type="text" class="model-form-input" value="${this.esc(appId)}" readonly style="user-select:none;-webkit-user-select:none" />
+          </div>
+          <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
+            <label class="model-form-label"><span class="model-form-required">*</span>${tFn("settings.fieldToken")}</label>
+            <div class="model-form-input-wrap" style="position:relative;width:100%">
+              <input type="password" id="dlg-weixin-token-input" class="model-form-input" value="${this.esc(token)}" readonly style="user-select:none;-webkit-user-select:none;padding-right:30px" />
+              <div class="model-form-spinners" style="right:2px;display:flex;align-items:center">
+                <button class="model-form-spinner-btn" id="dlg-weixin-eye-btn" type="button" title="\u663E\u793A" style="width:24px;height:24px;border:none;background:transparent;cursor:pointer;padding:0;color:var(--text-muted)">
+                  <i data-lucide="eye" style="width:14px;height:14px"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
+            <label class="model-form-label">${tFn("settings.fieldWeixinApiUrl")}</label>
+            <input type="text" class="model-form-input" value="${this.esc(apiUrl)}" readonly style="user-select:none;-webkit-user-select:none" />
+          </div>`;
+        } else {
+          bodyHtml = `<div id="dlg-weixin-qr-area" style="text-align:center;padding:8px 0">
+          <div style="position:relative;display:inline-block;margin:0 auto">
+            <img id="dlg-weixin-qr-img" style="display:none;width:240px;height:240px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.12)" />
+            <div id="dlg-weixin-qr-success" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center">
+              <div style="width:56px;height:56px;border-radius:50%;background:#07C160;display:flex;align-items:center;justify-content:center">
+                <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              </div>
+            </div>
+            <div id="dlg-weixin-qr-refresh" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center;cursor:pointer">
+              <div style="width:56px;height:56px;border-radius:50%;background:#9aa0a6;display:flex;align-items:center;justify-content:center">
+                <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+              </div>
+            </div>
+          </div>
+          <div id="dlg-weixin-qr-status" style="padding:8px 0 0;font-size:14px;color:var(--text-muted)">${tFn("settings.wechatScanning")}</div>
+        </div>`;
+        }
+      } else {
+        for (const f of def.fields) {
+          const val = s15[`adapter_${defId}_${f.key}`] ?? "";
+          if (f.type === "textarea") {
+            bodyHtml += `
+                <div class="model-form-row">
+                    <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
+                    <textarea id="dlg-${defId}-${f.key}" class="model-form-input" style="resize:vertical;min-height:80px" spellcheck="false">${this.esc(val)}</textarea>
+                </div>`;
+          } else {
+            bodyHtml += `
+                <div class="model-form-row">
+                    <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
+                    <input type="${f.type}" id="dlg-${defId}-${f.key}" class="model-form-input" value="${this.esc(val)}" spellcheck="false" />
+                </div>`;
+          }
+        }
+      }
+      const titleKey = `settings.adapterName${defId.charAt(0).toUpperCase() + defId.slice(1)}`;
+      const title = tFn(titleKey);
+      const { overlay, close } = this._showFormDialog(title, bodyHtml, false);
+      const okBtn = overlay.querySelector("#dialog-form-ok");
+      if (def.docs) {
+        const titleBar = overlay.querySelector(".toast-title");
+        if (titleBar) {
+          titleBar.style.display = "flex";
+          titleBar.style.justifyContent = "space-between";
+          titleBar.style.alignItems = "center";
+          titleBar.innerHTML = "<span>" + this.esc(title) + '</span><a href="#" class="model-get-apikey-link" id="dlg-' + defId + '-docs" style="font-size:12px">' + tFn("settings.viewDocs") + "</a>";
+          const docsLink = titleBar.querySelector("#dlg-" + defId + "-docs");
+          if (docsLink) {
+            docsLink.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const url = def.docs || "";
+              const behavior = getState().settings.default_link_behavior || "system";
+              if (behavior === "in_app") {
+                window.electronAPI?.openChildWindow?.(url, url);
+              } else {
+                window.electronAPI?.openExternal?.(url);
+              }
+            });
+          }
+        }
+      }
+      if (defId === "weixin") {
+        const gs3 = getState().gatewayStatus;
+        const adapters2 = gs3?.adapters ?? [];
+        const statusInfo = adapters2.find((a) => a.name === "weixin");
+        const connected = statusInfo?.connected ?? false;
+        const appId = getState().settings[`adapter_weixin_app_id`] ?? "";
+        if (connected && appId) {
+          okBtn.textContent = tFn("settings.wechatUnbind");
+          okBtn.className = "btn";
+          const unbindFn = () => {
+            Dialog.confirm(tFn("settings.wechatUnbind"), tFn("settings.wechatUnbindConfirm")).then((confirmed) => {
+              if (confirmed) {
+                const unbindConfig = {
+                  adapter_weixin_enabled: false,
+                  adapter_weixin_app_id: "",
+                  adapter_weixin_token: "",
+                  adapter_weixin_api_url: ""
+                };
+                send({ type: "configure", config: unbindConfig });
+                const current = {
+                  ...getState().settings,
+                  adapter_weixin_enabled: false,
+                  adapter_weixin_app_id: "",
+                  adapter_weixin_token: "",
+                  adapter_weixin_api_url: ""
+                };
+                setSettings(current);
+                this.renderGateway();
+                close();
+              }
+            });
+          };
+          okBtn.addEventListener("click", unbindFn);
+          const eyeBtn = overlay.querySelector("#dlg-weixin-eye-btn");
+          const tokenInput = overlay.querySelector("#dlg-weixin-token-input");
+          if (eyeBtn && tokenInput) {
+            let visible = false;
+            eyeBtn.addEventListener("click", () => {
+              visible = !visible;
+              tokenInput.type = visible ? "text" : "password";
+              const iconEl = eyeBtn.querySelector("i");
+              if (iconEl) iconEl.setAttribute("data-lucide", visible ? "eye-off" : "eye");
+              if (typeof window.lucide !== "undefined") {
+                window.lucide.createIcons({ root: eyeBtn });
+              }
+            });
+          }
+        } else {
+          okBtn.style.display = "none";
+          send({ type: "wechat_scan", adapter_id: "weixin" });
+          const refreshEl = overlay.querySelector("#dlg-weixin-qr-refresh");
+          if (refreshEl) {
+            refreshEl.addEventListener("click", () => {
+              refreshEl.style.display = "none";
+              const statusEl = document.getElementById("dlg-weixin-qr-status");
+              if (statusEl) {
+                statusEl.textContent = tFn("settings.wechatScanning");
+                statusEl.style.display = "block";
+              }
+              const img = document.getElementById("dlg-weixin-qr-img");
+              if (img) {
+                img.style.display = "none";
+                img.src = "";
+              }
+              send({ type: "wechat_scan", adapter_id: "weixin" });
+            });
+          }
+          const cancelBtn = overlay.querySelector("#dialog-form-cancel");
+          if (cancelBtn) {
+            cancelBtn.addEventListener("click", () => {
+              this.renderGateway();
+              close();
+            });
+          }
+        }
+      } else {
+        okBtn.textContent = tFn("settings.adapterSave");
+        okBtn.addEventListener("click", () => {
+          const current = { ...getState().settings };
+          const config2 = {};
+          for (const f of def.fields) {
+            const input = document.getElementById(`dlg-${defId}-${f.key}`);
+            const val = input?.value ?? "";
+            current[`adapter_${defId}_${f.key}`] = val;
+            config2[`adapter_${defId}_${f.key}`] = val;
+          }
+          const enableInput = document.getElementById(`adapter-enable-${defId}`);
+          if (enableInput) {
+            config2[`adapter_${defId}_enabled`] = enableInput.checked;
+          }
+          setSettings(current);
+          send({ type: "configure", config: config2 });
+          delete this._adapterTestResults[defId];
+          send({ type: "test_adapter", adapter_id: defId, config: {
+            /* use raw field keys */
+          } });
+          this.renderGateway();
+          close();
+        });
+      }
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: overlay });
       }
     }
     _getCatalog() {
@@ -85397,10 +85643,6 @@ ${def.id === "weixin" ? connected ? `
         <div class="model-form-dropdown-row" style="display:flex;align-items:center;gap:10px">
           ${modelOptions.length > 0 ? this.renderDropdown("new-model-select", modelOptions, initialModelSelectValue, () => {
       }) : `<div class="model-form-hint">${t("settings.customModelIdHint")}</div>`}
-          <label class="toggle-switch">
-            <input type="checkbox" id="new-model-multimodal" ${existing?.multimodal ? "checked" : ""} />
-            <span class="toggle-slider"></span>
-          </label>
         </div>
       </div>
       <div class="model-form-row" id="model-id-row"${isCurated ? ` style="display:none"` : ""}>
@@ -85423,15 +85665,51 @@ ${def.id === "weixin" ? connected ? `
         <input type="password" id="new-model-apikey" class="model-form-input" placeholder="${t("settings.enterApiKey")}" value="${existing ? this.esc(existing.api_key) : ""}" />
       </div>
       <div class="model-form-row">
-        <label class="model-form-label" for="new-model-url">${t("settings.baseUrl")}</label>
+        <label class="model-form-label model-form-label--inline" for="new-model-url">
+          ${t("settings.baseUrl")}
+          <button type="button" class="model-form-help-btn" data-tooltip="${t("settings.baseUrlHint")}" tabindex="-1">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+              <path d="M12 17h.01"/>
+            </svg>
+          </button>
+        </label>
         <input type="text" id="new-model-url" class="model-form-input" placeholder="${t("settings.baseUrlPlaceholder")}" value="${existing ? this.esc(existing.base_url) : provider ? this.esc(provider.base_url) : ""}" ${isCurated ? "readonly" : ""} />
       </div>
       <div class="model-form-row">
         <label class="model-form-label" for="new-model-tokens">${t("settings.maxTokens")}</label>
-        <input type="number" id="new-model-tokens" class="model-form-input" min="1" value="${initialTokens}" ${isCurated ? "readonly" : ""} />
+        <div class="model-form-input-wrap">
+          <input type="number" id="new-model-tokens" class="model-form-input" min="1" value="${initialTokens}" ${isCurated ? "readonly" : ""} />
+          <div class="model-form-spinners">
+            <button type="button" class="model-form-spinner-btn" data-spinner="up" tabindex="-1">
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                <path d="M1 5L5 1L9 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button type="button" class="model-form-spinner-btn" data-spinner="down" tabindex="-1">
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
-      <div class="model-form-row model-form-row-inline">
-        <label class="model-form-label" for="new-model-thinking-enabled">${t("settings.enableThinkingLevel")}</label>
+      <div class="model-form-thinking-card" style="margin-bottom:12px">
+        <div class="model-form-thinking-info">
+          <div class="model-form-thinking-title">${t("settings.multimodalToggle")}</div>
+          <div class="model-form-thinking-desc">${t("settings.multimodalHint")}</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="new-model-multimodal" ${existing?.multimodal ? "checked" : ""} />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="model-form-thinking-card">
+        <div class="model-form-thinking-info">
+          <div class="model-form-thinking-title">${t("settings.enableThinkingLevel")}</div>
+          <div class="model-form-thinking-desc">${t("settings.enableThinkingLevelHint")}</div>
+        </div>
         <label class="toggle-switch">
           <input type="checkbox" id="new-model-thinking-enabled" ${initialThinkingEnabled ? "checked" : ""} />
           <span class="toggle-slider"></span>
@@ -85549,6 +85827,21 @@ ${def.id === "weixin" ? connected ? `
         const el2 = document.getElementById("new-model-name");
         if (el2) el2.dataset.userModified = "true";
       });
+      document.querySelectorAll(".model-form-spinner-btn[data-spinner]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const input = btn.closest(".model-form-input-wrap")?.querySelector(".model-form-input[type='number']");
+          if (!input || input.readOnly) return;
+          const step = parseInt(input.step) || 1;
+          const min = parseInt(input.min) || 0;
+          const current = parseInt(input.value) || 0;
+          if (btn.getAttribute("data-spinner") === "up") {
+            input.value = String(Math.max(min, current + step));
+          } else {
+            input.value = String(Math.max(min, current - step));
+          }
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      });
       okBtn.addEventListener("click", async () => {
         const name = document.getElementById("new-model-name")?.value.trim();
         const modelIdEl = document.getElementById("new-model-id");
@@ -85641,7 +85934,7 @@ ${def.id === "weixin" ? connected ? `
       const header = `
       <div class="model-table-header">
         <div class="model-table-cell model-cell-name">${tFn("settings.docName")}</div>
-        <div class="model-table-cell model-cell-provider">${tFn("settings.docSourceLocal")} / ${tFn("settings.docSize")}</div>
+        <div class="model-table-cell model-cell-provider">${tFn("settings.docSize")}</div>
         <div class="model-table-cell model-cell-actions">${tFn("settings.actions")}</div>
       </div>`;
       let rows = "";
@@ -85660,7 +85953,7 @@ ${def.id === "weixin" ? connected ? `
             <div class="skill-aliases-sub">${sizeStr}</div>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon btn-doc-remove" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" data-tooltip="${tFn("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-doc" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" data-tooltip="${tFn("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -85674,7 +85967,9 @@ ${def.id === "weixin" ? connected ? `
       overlay.innerHTML = `
       <div class="toast-dialog">
         <div class="toast-title">${tFn("settings.docName")}</div>
-        <input class="toast-input" id="dialog-doc-name" value="${this._escapeHtml(defaultName)}" placeholder="${tFn("settings.docNamePlaceholder")}">
+        <div class="input-wrapper input-wrapper--dialog">
+          <input id="dialog-doc-name" value="${this._escapeHtml(defaultName)}" placeholder="${tFn("settings.docNamePlaceholder")}" style="width:100%;border:none;outline:none;background:transparent;color:var(--text-primary);font-family:inherit;font-size:13px">
+        </div>
         <div class="toast-actions">
           <button class="btn" id="dialog-doc-cancel">${tFn("common.cancel")}</button>
           <button class="btn btn--primary" id="dialog-doc-ok">${tFn("common.confirm")}</button>
@@ -85719,27 +86014,6 @@ ${def.id === "weixin" ? connected ? `
         overlay.remove();
       });
       overlay.querySelector("#dialog-url-cancel")?.addEventListener("click", () => overlay.remove());
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) overlay.remove();
-      });
-    }
-    _showDocDeleteConfirm(id, name, tFn) {
-      const overlay = document.createElement("div");
-      overlay.className = "toast-overlay";
-      overlay.innerHTML = `
-      <div class="toast-dialog">
-        <div class="toast-title">${tFn("settings.confirmDeleteDoc").replace("{name}", this._escapeHtml(name))}</div>
-        <div class="toast-actions">
-          <button class="btn" id="dialog-del-cancel">${tFn("common.cancel")}</button>
-          <button class="btn btn--danger" id="dialog-del-ok">${tFn("common.delete")}</button>
-        </div>
-      </div>`;
-      document.body.appendChild(overlay);
-      overlay.querySelector("#dialog-del-ok")?.addEventListener("click", () => {
-        send({ type: "remove_document", id });
-        overlay.remove();
-      });
-      overlay.querySelector("#dialog-del-cancel")?.addEventListener("click", () => overlay.remove());
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) overlay.remove();
       });
@@ -85816,7 +86090,7 @@ ${def.id === "weixin" ? connected ? `
             ${isUser ? `<button class="btn-icon" data-action="edit-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>` : ""}
-            ${canDelete ? `<button class="btn-icon" data-action="delete-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.delete")}">
+            ${canDelete ? `<button class="btn-icon btn-icon--danger" data-action="delete-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>` : ""}
             <label class="toggle-switch toggle-sm">
@@ -85884,7 +86158,7 @@ ${def.id === "weixin" ? connected ? `
             <button class="btn-icon" data-action="edit-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -85926,7 +86200,9 @@ ${def.id === "weixin" ? connected ? `
       </div>
       <div class="model-form-row">
         <label class="model-form-label">${t("settings.commandPrompt")}</label>
-        <textarea id="cmd-prompt" class="model-form-input" placeholder="${t("settings.commandPromptPlaceholder")}" rows="4">${this.esc(existing?.prompt || "")}</textarea>
+        <div class="input-wrapper input-wrapper--dialog">
+          <textarea id="cmd-prompt" class="setting-rich-text" placeholder="${t("settings.commandPromptPlaceholder")}" style="min-height:80px">${this.esc(existing?.prompt || "")}</textarea>
+        </div>
       </div>`;
       const title = isEdit ? t("settings.editCommand") : t("settings.createCommand");
       const { overlay, close } = this._showFormDialog(title, bodyHtml);
@@ -86115,7 +86391,7 @@ ${content}`;
             <button class="btn-icon" data-action="edit-mcp" data-idx="${i8}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-mcp" data-idx="${i8}" data-tooltip="${t("settings.removeServer")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-mcp" data-idx="${i8}" data-tooltip="${t("settings.removeServer")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -86227,9 +86503,11 @@ ${content}`;
           ${t("settings.importMcpJsonFmt1")}<br>
           ${t("settings.importMcpJsonFmt2")}
         </div>
-        <textarea id="mcp-import-textarea" class="code-textarea"
-          placeholder="${this.esc(t("settings.importMcpJsonPlaceholder"))}">${this.esc(initialJson)}</textarea>
-        <div id="mcp-import-preview" style="margin-top:10px"></div>
+        <div class="input-wrapper input-wrapper--dialog" style="margin-bottom:10px">
+          <textarea id="mcp-import-textarea" class="setting-rich-text"
+            placeholder="${this.esc(t("settings.importMcpJsonPlaceholder"))}">${this.esc(initialJson)}</textarea>
+        </div>
+        <div id="mcp-import-preview" style="margin-top:0"></div>
         <div id="mcp-import-options" class="hidden" style="margin-top:10px">
           ${isEdit ? "" : `
           <div style="font-size:12px;font-weight:500;color:var(--text-primary);margin-bottom:6px">${t("settings.importMode")}</div>
@@ -86247,6 +86525,15 @@ ${content}`;
       const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
       const okBtn = overlay.querySelector("#dialog-form-ok");
       okBtn.textContent = t("settings.importMcpJsonParse");
+      const ta2 = overlay.querySelector("#mcp-import-textarea");
+      if (ta2) {
+        const grow = () => {
+          ta2.style.height = "auto";
+          ta2.style.height = Math.min(ta2.scrollHeight, 200) + "px";
+        };
+        ta2.addEventListener("input", grow);
+        setTimeout(grow, 0);
+      }
       let parsedServers = null;
       okBtn.addEventListener("click", () => {
         if (parsedServers) {
@@ -86331,7 +86618,7 @@ ${content}`;
             <button class="btn-icon" data-action="edit-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -86393,7 +86680,9 @@ ${content}`;
       </div>
       <div class="model-form-row">
         <label class="model-form-label" for="rule-form-content">${t("settings.ruleContent")}</label>
-        <textarea id="rule-form-content" class="model-form-input" placeholder="${t("settings.ruleContent")}..." style="min-height:300px;resize:vertical">${this._escapeHtml(content)}</textarea>
+        <div class="input-wrapper input-wrapper--dialog">
+          <textarea id="rule-form-content" class="setting-rich-text" placeholder="${t("settings.ruleContent")}..." style="min-height:300px">${this._escapeHtml(content)}</textarea>
+        </div>
       </div>`;
       const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
       const okBtn = overlay.querySelector("#dialog-form-ok");
@@ -86538,10 +86827,10 @@ ${content}`;
                 <span class="skill-desc-text">${this.esc(a.description || "-")}</span>
               </div>
               <div class="model-table-cell model-cell-actions">
-                <button class="btn-icon" data-action="edit" data-index="${i8}">
+                <button class="btn-icon" data-action="edit" data-index="${i8}" data-tooltip="${t("settings.edit")}">
                   <i data-lucide="pencil" class="lucide icon-sm"></i>
                 </button>
-                <button class="btn-icon" data-action="delete" data-index="${i8}">
+                <button class="btn-icon btn-icon--danger" data-action="delete" data-index="${i8}" data-tooltip="${t("settings.delete")}">
                   <i data-lucide="trash-2" class="lucide icon-sm"></i>
                 </button>
               </div>
@@ -86577,7 +86866,9 @@ ${content}`;
       </div>
       <div class="model-form-row">
         <label class="model-form-label">${t("settings.systemPrompt")}</label>
-        <textarea id="agent-system-prompt" class="code-textarea" placeholder="${t("settings.subAgentSystemPromptPlaceholder")}" style="min-height:120px">${this.esc(existing?.system_prompt || "")}</textarea>
+        <div class="input-wrapper input-wrapper--dialog" style="margin-top:6px">
+          <textarea id="agent-system-prompt" class="setting-rich-text" placeholder="${t("settings.subAgentSystemPromptPlaceholder")}" style="min-height:80px">${this.esc(existing?.system_prompt || "")}</textarea>
+        </div>
       </div>`;
       const title = isEdit ? t("settings.editSubAgent") : t("settings.addSubAgent");
       const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
@@ -87279,7 +87570,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.devDevToolsDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-open-devtools">${t("settings.devDevToolsBtn")}</button>
+            <button class="btn-icon" id="dev-open-devtools" data-tooltip="${t("settings.devDevToolsBtn")}"><i data-lucide="terminal" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -87289,7 +87580,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.devCloseDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-close-mode" style="color:var(--error)">${t("settings.devCloseBtn")}</button>
+            <button class="btn-icon btn-icon--danger" id="dev-close-mode" data-tooltip="${t("settings.devCloseBtn")}"><i data-lucide="x-circle" class="lucide"></i></button>
           </div>
         </div>
       </div>
@@ -87301,7 +87592,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.devRestartAppDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-reset-state" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
+            <button class="btn-icon btn-icon--danger" id="dev-reset-state" data-tooltip="${t("settings.devRestartBtn")}"><i data-lucide="refresh-cw" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -87311,7 +87602,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.devRestartServerDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-restart-server" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
+            <button class="btn-icon btn-icon--danger" id="dev-restart-server" data-tooltip="${t("settings.devRestartBtn")}"><i data-lucide="refresh-cw" class="lucide"></i></button>
           </div>
         </div>
       </div>`;
@@ -87373,7 +87664,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.aboutLogsDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="storage-open-logs">${t("settings.aboutLogs")}</button>
+            <button class="btn-icon" id="storage-open-logs" data-tooltip="${t("settings.aboutLogs")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -87383,7 +87674,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.aboutOpenDataDir")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="storage-open-data-dir">${t("settings.aboutOpenDataDir")}</button>
+            <button class="btn-icon" id="storage-open-data-dir" data-tooltip="${t("settings.aboutOpenDataDir")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -87393,10 +87684,9 @@ No activity`;
             <div class="settings-item-desc">${t("settings.storageSessionsDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="storage-clear-sessions" style="color:var(--error)">${t("settings.storageClearSessions")}</button>
+            <button class="btn-icon btn-icon--danger" id="storage-clear-sessions" data-tooltip="${t("settings.storageClearSessions")}"><i data-lucide="trash-2" class="lucide"></i></button>
           </div>
         </div>
-        <div class="settings-item-divider"></div>
       </div>`;
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: this.panels.storage });
@@ -87452,7 +87742,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="browser-clear-data" style="color:var(--error)">${t("settings.clear")}</button>
+            <button class="btn-icon btn-icon--danger" id="browser-clear-data" data-tooltip="${t("settings.clear")}"><i data-lucide="trash-2" class="lucide"></i></button>
           </div>
         </div>
       </div>
@@ -87465,7 +87755,7 @@ No activity`;
             <div class="settings-item-desc">${t("settings.importBrowserDataDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="browser-import-btn">${t("settings.import")}</button>
+            <button class="btn-icon" id="browser-import-btn" data-tooltip="${t("settings.import")}"><i data-lucide="arrow-down-right" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -87475,21 +87765,21 @@ No activity`;
             <div class="settings-item-desc">${t("settings.exportAllBrowserDataDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="browser-export-all">${t("settings.export")}</button>
+            <button class="btn-icon" id="browser-export-all" data-tooltip="${t("settings.export")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
           </div>
         </div>
       </div>
 
       <div class="settings-section-title" style="margin-top:24px"><i data-lucide="bookmark" class="lucide section-title-icon"></i> ${t("settings.bookmarks")}
-        <button class="btn btn-sm" id="browser-export-bookmarks" style="margin-left:auto">${t("settings.export")}</button>
+        <button class="btn-icon" id="browser-export-bookmarks" style="margin-left:auto" data-tooltip="${t("settings.export")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
       </div>
       <div id="browser-bookmarks-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
 
       <div class="settings-section-title" style="margin-top:24px"><i data-lucide="clock" class="lucide section-title-icon"></i> ${t("settings.history")}
-        <button class="btn btn-sm" id="browser-export-history" style="margin-left:auto">${t("settings.export")}</button>
+        <button class="btn-icon btn-icon--danger" id="browser-clear-history" style="margin-left:auto" data-tooltip="${t("settings.clear")}"><i data-lucide="trash-2" class="lucide"></i></button>
+        <button class="btn-icon" id="browser-export-history" data-tooltip="${t("settings.export")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
       </div>
-      <div id="browser-history-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
-      <button class="btn btn-sm" id="browser-clear-history" style="color:var(--error);margin-top:8px">${t("settings.clear")}</button>`;
+      <div id="browser-history-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>`;
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: this.panels.browser });
       }
@@ -87544,7 +87834,7 @@ No activity`;
             <span class="model-name-text">${this.esc(b2.name)}</span>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn btn-sm" data-action="browser-import" data-browser-id="${this.esc(b2.id)}" data-profile="${this.esc(b2.profilePath)}">${t("settings.import")}</button>
+            <button class="btn-icon" data-action="browser-import" data-browser-id="${this.esc(b2.id)}" data-profile="${this.esc(b2.profilePath)}" data-tooltip="${t("settings.import")}"><i data-lucide="arrow-down-right" class="lucide"></i></button>
           </div>
         </div>
       `).join("");
@@ -87553,7 +87843,7 @@ No activity`;
             const browserId = btn.getAttribute("data-browser-id");
             const profilePath = btn.getAttribute("data-profile");
             if (!browserId || !profilePath) return;
-            btn.textContent = t("settings.importing");
+            btn.setAttribute("data-tooltip", t("settings.importing"));
             btn.disabled = true;
             const res = await api.importBrowserData(browserId, profilePath);
             if (res.success && res.data) {
@@ -87563,7 +87853,7 @@ No activity`;
               this.renderBrowser();
             } else {
               showToast(t("settings.importFailed") + (res.error ? ": " + res.error : ""), "error");
-              btn.textContent = t("settings.import");
+              btn.setAttribute("data-tooltip", t("settings.import"));
               btn.disabled = false;
             }
           });
@@ -87697,10 +87987,10 @@ No activity`;
             </div>
             <div class="model-table-cell model-cell-actions">
               <button class="btn-icon" data-action="bm-navigate" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.openInBrowser")}">
-                <i data-lucide="external-link" class="lucide"></i>
+                <i data-lucide="arrow-up-right" class="lucide"></i>
               </button>
-              <button class="btn-icon" data-action="bm-remove" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.remove")}">
-                <i data-lucide="trash-2" class="lucide"></i>
+              <button class="btn-icon btn-icon--danger" data-action="bm-remove" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.remove")}">
+                <i data-lucide="x" class="lucide"></i>
               </button>
             </div>
           </div>
@@ -87744,7 +88034,7 @@ No activity`;
             </div>
             <div class="model-table-cell model-cell-actions">
               <button class="btn-icon" data-action="hist-navigate" data-url="${this.esc(entry.url)}" data-tooltip="${t("settings.openInBrowser")}">
-                <i data-lucide="external-link" class="lucide"></i>
+                <i data-lucide="arrow-up-right" class="lucide"></i>
               </button>
             </div>
           </div>`;
@@ -89962,8 +90252,8 @@ No activity`;
   ];
   var APP_ACTIONS = [
     { id: "new_session", nameEn: "New Session", nameZh: "\u65B0\u5EFA\u5BF9\u8BDD" },
-    { id: "normal_mode", nameEn: "Normal Mode", nameZh: "\u666E\u901A\u6A21\u5F0F" },
-    { id: "iwork_mode", nameEn: "iWork Mode", nameZh: "\u5DE5\u4F5C\u533A\u6A21\u5F0F" },
+    { id: "normal_mode", nameEn: "General Mode", nameZh: "\u901A\u7528\u6A21\u5F0F" },
+    { id: "iwork_mode", nameEn: "Work Mode", nameZh: "\u5DE5\u4F5C\u6A21\u5F0F" },
     { id: "tools_panel", nameEn: "Tools Panel", nameZh: "\u5DE5\u5177\u9762\u677F" }
   ];
   var SECTION_ORDER = [
@@ -91029,7 +91319,9 @@ No activity`;
         el2.style.width = "";
         el2.style.height = "";
       });
+      if (this.treeSectionEl) this.treeSectionEl.style.maxHeight = "";
       if (parentEnter) parentEnter.style.position = "";
+      setWorkspaceMode("iwork");
       const workspaces = getState().workspaces;
       const activeWs = getState().activeWorkspace;
       const pendingWorkspacePath = this.pendingWorkspacePath;
@@ -91058,7 +91350,6 @@ No activity`;
       }
       this.syncFirstNavActive();
       this._transitioning = false;
-      setWorkspaceMode("iwork");
       this.onModeChange?.();
     }
     async exitWorkspaceMode() {
@@ -91156,22 +91447,22 @@ No activity`;
       header.innerHTML = `
       <span class="sidebar-section-title" data-i18n="search.sectionWorkspaces">Workspaces</span>
       <div class="workspace-tree-actions">
-        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder" data-tooltip="Open Folder">
+        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder">
           <i data-lucide="folder-plus" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage" data-tooltip="Manage">
+        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage">
           <i data-lucide="sliders-horizontal" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel" data-tooltip="Cancel">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel">
           <i data-lucide="x" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll" data-tooltip="Select All">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll">
           <i data-lucide="check-square" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport" data-tooltip="Export Selected">
-          <i data-lucide="download" class="lucide"></i>
+        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport">
+          <i data-lucide="arrow-up-right" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete" data-tooltip="Delete Selected">
+        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete">
           <i data-lucide="trash-2" class="lucide"></i>
         </button>
       </div>`;
@@ -91417,8 +91708,10 @@ No activity`;
       }
       for (const sid of covered) toExport.push(sid);
       if (toExport.length === 0) return;
-      for (const sid of toExport) {
-        send({ type: "export_session", session_id: sid });
+      if (toExport.length === 1) {
+        send({ type: "export_session", session_id: toExport[0] });
+      } else {
+        send({ type: "export_sessions_batch", session_ids: toExport });
       }
       this.selectedPaths.clear();
       this.toggleBatchMode();
@@ -91797,7 +92090,7 @@ No activity`;
       titleKey: "automation.templateAiNewsTitle",
       descKey: "automation.templateAiNewsDesc",
       defaultNameKey: "defaultNameAiNews",
-      defaultPrompt: "\u641C\u7D22\u4ECA\u65E5 AI \u884C\u4E1A\u7684\u70ED\u70B9\u65B0\u95FB\uFF0C\u8986\u76D6\u4EE5\u4E0B\u65B9\u9762\uFF1A\n1. \u91CD\u8981\u4EA7\u54C1\u53D1\u5E03\u6216\u529F\u80FD\u66F4\u65B0\uFF08\u5982 OpenAI\u3001Google\u3001Anthropic \u7B49\u516C\u53F8\u52A8\u6001\uFF09\n2. \u878D\u8D44\u4E8B\u4EF6\u4E0E\u884C\u4E1A\u5E76\u8D2D\n3. \u6280\u672F\u7A81\u7834\u6216\u91CD\u8981\u8BBA\u6587\u53D1\u5E03\n4. \u884C\u4E1A\u6807\u51C6\u4E0E\u89C4\u8303\u52A8\u6001\uFF08\u5982 AI \u5B89\u5168\u6846\u67B6\u3001\u6570\u636E\u6CBB\u7406\u6807\u51C6\u7684\u8FDB\u5C55\uFF09\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- \u6309\u91CD\u8981\u6027\u6392\u5E8F\uFF0C\u5217\u51FA 5-8 \u6761\u65B0\u95FB",
+      defaultPrompt: "You are an AI industry analyst. Search and summarize today's important AI developments across these dimensions:\n\n1. \u{1F680} Product Launches & Feature Updates\n   - Updates from OpenAI, Google, Anthropic, Meta, and other major labs\n   - New model releases, API updates, product iterations\n\n2. \u{1F4B0} Funding & Business\n   - Key funding rounds (amount, stage, investors)\n   - M&A and strategic partnerships\n\n3. \u{1F52C} Research Breakthroughs\n   - Notable papers and technical reports\n   - Open-source project updates\n\n4. \u{1F4CB} Governance & Standards\n   - AI safety framework changes\n   - Regulatory developments\n\nOutput format:\n- Rank by importance, 5-8 items\n- Each item: title, 1-2 sentence summary, source link",
       defaultCron: "0 9 * * 1-5"
     },
     {
@@ -91806,7 +92099,7 @@ No activity`;
       titleKey: "automation.templateBrandMonitorTitle",
       descKey: "automation.templateBrandMonitorDesc",
       defaultNameKey: "defaultNameBrandMonitor",
-      defaultPrompt: "\u76D1\u63A7\u54C1\u724C\u5728\u793E\u4EA4\u5A92\u4F53\u548C\u793E\u533A\u4E2D\u7684\u63D0\u53CA\u4E0E\u8BC4\u4EF7\uFF0C\u751F\u6210\u8206\u60C5\u6458\u8981\u3002\n\u8986\u76D6\u5E73\u53F0\uFF1A\u5FAE\u535A\u3001\u77E5\u4E4E\u3001Twitter\u3001Reddit\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- \u6B63\u9762/\u8D1F\u9762/\u4E2D\u6027\u60C5\u7EEA\u5360\u6BD4\n- \u91CD\u70B9\u63D0\u53CA\u6C47\u603B\n- \u98CE\u9669\u63D0\u793A",
+      defaultPrompt: "You are a brand reputation analyst. Monitor the latest mentions and sentiment about the specified brand across social media and communities.\n\nPlatforms: Weibo, Zhihu, Twitter, Reddit\n\nOutput format:\n\n1. \u{1F4CA} Sentiment Breakdown\n   - Positive / Negative / Neutral percentages\n   - Overall trend\n\n2. \u{1F4CC} Key Mentions Summary\n   - High-traffic discussions (platform, summary, engagement metrics)\n   - Influencer/key opinion comments\n\n3. \u26A0\uFE0F Risk Alerts\n   - Potential PR incidents\n   - Rising negative sentiment trends\n\n4. Recommendations\n   - Suggested response strategies based on current sentiment",
       defaultCron: "0 9 * * 1"
     },
     {
@@ -91815,7 +92108,7 @@ No activity`;
       titleKey: "automation.templateCompetitorTitle",
       descKey: "automation.templateCompetitorDesc",
       defaultNameKey: "defaultNameCompetitorTrack",
-      defaultPrompt: "\u8FFD\u8E2A\u6307\u5B9A\u7ADE\u54C1\u7684\u4EA7\u54C1\u66F4\u65B0\u3001\u793E\u533A\u53CD\u9988\u548C\u91CD\u8981\u65B0\u95FB\u3002\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- \u4EA7\u54C1\u66F4\u65B0\u5217\u8868\n- \u7528\u6237\u53CD\u9988\u6458\u8981\n- \u5E02\u573A\u52A8\u6001",
+      defaultPrompt: "You are a competitive intelligence analyst. Track the latest developments of specified competitors and produce a monitoring report.\n\nOutput format:\n\n1. \u{1F195} Product Changes\n   - New features (version, release date)\n   - UI/UX changes\n   - Pricing adjustments\n\n2. \u{1F4AC} Community & User Feedback\n   - User sentiment trends across platforms\n   - Common complaints and feature requests\n   - Rating changes\n\n3. \u{1F4C8} Market Dynamics\n   - Market share shifts\n   - Media coverage highlights\n   - Hiring and strategic moves\n\n4. \u26A1 Impact Assessment\n   - Potential impact on our product/brand\n   - Recommended countermeasures",
       defaultCron: "0 10 * * 1"
     },
     {
@@ -91824,7 +92117,7 @@ No activity`;
       titleKey: "automation.templateStockTitle",
       descKey: "automation.templateStockDesc",
       defaultNameKey: "defaultNameStockMonitor",
-      defaultPrompt: "\u76D1\u63A7\u5173\u6CE8\u80A1\u7968\u7684\u4EF7\u683C\u53D8\u52A8\uFF0C\u5F02\u5E38\u6CE2\u52A8\u65F6\u751F\u6210\u9884\u8B66\u62A5\u544A\u3002\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- \u4EF7\u683C\u53D8\u52A8\u6458\u8981\n- \u5F02\u5E38\u6CE2\u52A8\u5206\u6790\n- \u76F8\u5173\u65B0\u95FB\u5173\u8054",
+      defaultPrompt: "You are a financial risk analyst. Monitor the latest price movements and anomalies in the watchlist and produce an alert report.\n\nOutput format:\n\n1. \u{1F4CA} Price Movement Summary\n   - Top 5 gainers / losers\n   - Volume anomalies\n\n2. \u26A0\uFE0F Anomaly Analysis\n   - Stocks exceeding daily volatility thresholds\n   - Unusual trading patterns\n   - Possible triggers (earnings, news, macro factors)\n\n3. \u{1F4F0} Related News\n   - Key news affecting stock prices\n   - Policy or regulatory changes\n\n4. \u{1F4A1} Risk Assessment\n   - Current portfolio risk score\n   - Items requiring attention",
       defaultCron: "0 */1 * * 1-5"
     },
     {
@@ -91833,7 +92126,7 @@ No activity`;
       titleKey: "automation.templateSecurityTitle",
       descKey: "automation.templateSecurityDesc",
       defaultNameKey: "defaultNameSecurityScan",
-      defaultPrompt: "\u626B\u63CF\u4EE3\u7801\u4ED3\u5E93\uFF0C\u53D1\u73B0\u7ECF\u8FC7\u9A8C\u8BC1\u7684\u4E2D\u9AD8\u5371\u5B89\u5168\u6F0F\u6D1E\u3002\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- \u6F0F\u6D1E\u5217\u8868\uFF08\u6309\u4E25\u91CD\u7A0B\u5EA6\u6392\u5E8F\uFF09\n- \u4FEE\u590D\u5EFA\u8BAE\n- \u53C2\u8003\u94FE\u63A5",
+      defaultPrompt: "You are a senior security engineer. Scan the code repository for verified high and medium severity security vulnerabilities.\n\nOutput format:\n\n1. \u{1F534} High Severity Vulnerabilities (descending by severity)\n   - Vulnerability type (SQL injection, XSS, RCE, privilege escalation, etc.)\n   - Affected files and line numbers\n   - Risk level (CVSS score)\n\n2. \u{1F7E1} Medium Severity Vulnerabilities\n   - Same format as above\n\n3. \u{1F527} Fix Recommendations\n   - Concrete fix for each vulnerability\n   - Code change examples\n\n4. \u{1F517} References\n   - CVE IDs (if applicable)\n   - Related security advisories\n   - Best practice documentation",
       defaultCron: "0 */3 * * *"
     },
     {
@@ -91842,7 +92135,7 @@ No activity`;
       titleKey: "automation.templateBugScanTitle",
       descKey: "automation.templateBugScanDesc",
       defaultNameKey: "defaultNameBugScan",
-      defaultPrompt: "\u5206\u6790\u6700\u8FD1\u7684\u4EE3\u7801\u63D0\u4EA4\uFF0C\u53D1\u73B0\u53EF\u80FD\u5BFC\u81F4\u4E25\u91CD\u540E\u679C\u7684\u9AD8\u5371 Bug\u3002\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- Bug \u63CF\u8FF0\n- \u5F71\u54CD\u8303\u56F4\n- \u4FEE\u590D\u5EFA\u8BAE",
+      defaultPrompt: "You are a senior code review engineer. Analyze recent commits and identify high-risk changes that could introduce critical bugs.\n\nOutput format:\n\n1. \u{1F41B} Bug Description\n   - Risk type (null pointer, resource leak, concurrency, logic error, etc.)\n   - Related commits (hash + author)\n   - Affected files and functions\n\n2. \u{1F4D0} Impact Scope\n   - Trigger conditions\n   - Potentially affected users/modules\n   - Severity assessment\n\n3. \u{1F6E0}\uFE0F Fix Recommendations\n   - Specific fix code examples\n   - Verification steps\n   - Whether hotfix is needed",
       defaultCron: "0 */2 * * *"
     },
     {
@@ -91851,7 +92144,7 @@ No activity`;
       titleKey: "automation.templateTestCoverageTitle",
       descKey: "automation.templateTestCoverageDesc",
       defaultNameKey: "defaultNameTestCoverage",
-      defaultPrompt: "\u8BC6\u522B\u6700\u8FD1\u53D8\u66F4\u4E2D\u7F3A\u5C11\u6D4B\u8BD5\u7684\u9AD8\u98CE\u9669\u4EE3\u7801\uFF0C\u81EA\u52A8\u8865\u5145\u6D4B\u8BD5\u3002\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- \u672A\u8986\u76D6\u4EE3\u7801\u7247\u6BB5\n- \u5EFA\u8BAE\u6D4B\u8BD5\u7528\u4F8B\n- \u6D4B\u8BD5\u6846\u67B6\u9002\u914D\u4EE3\u7801",
+      defaultPrompt: "You are a QA engineer. Identify high-risk areas in recent code changes that lack test coverage and generate suggested test cases.\n\nOutput format:\n\n1. \u{1F3AF} Uncovered Code Analysis\n   - Functions/methods missing tests\n   - Cyclomatic complexity assessment\n   - Risk level\n\n2. \u2705 Suggested Test Cases\n   - Test scenarios for each high-risk area\n   - Boundary conditions and error paths\n   - Mock/stub recommendations\n\n3. \u{1F527} Test Implementation\n   - Ready-to-use test code snippets\n   - Required fixtures\n   - How to run",
       defaultCron: "0 9 * * 1"
     },
     {
@@ -91860,7 +92153,7 @@ No activity`;
       titleKey: "automation.templateDailySummaryTitle",
       descKey: "automation.templateDailySummaryDesc",
       defaultNameKey: "defaultNameDailySummary",
-      defaultPrompt: "\u6C47\u603B\u4EE3\u7801\u4ED3\u5E93\u7684\u53D8\u66F4\u60C5\u51B5\uFF0C\u751F\u6210\u56E2\u961F\u53EF\u8BFB\u7684\u5DE5\u7A0B\u65E5\u62A5\u3002\n\u8F93\u51FA\u8981\u6C42\uFF1A\n- \u63D0\u4EA4\u7EDF\u8BA1\n- \u91CD\u70B9\u53D8\u66F4\u8BF4\u660E\n- \u98CE\u9669\u63D0\u9192",
+      defaultPrompt: "You are an engineering team assistant. Summarize today's code repository changes into a readable engineering daily report.\n\nOutput format:\n\n1. \u{1F4CA} Commit Statistics\n   - Total commits\n   - Files changed\n   - Contributors\n\n2. \u{1F504} Key Changes\n   - Grouped by module/feature\n   - Each entry: author, commit message, scope\n   - Highlight breaking changes\n\n3. \u26A0\uFE0F Risk Notices\n   - High-risk changes\n   - PRs pending review\n   - Rollback suggestions if needed\n\n4. \u{1F3D7}\uFE0F Build & Deploy Status\n   - CI/CD pipeline status\n   - Build failures summary (if any)",
       defaultCron: "0 20 * * 1-5"
     }
   ];
@@ -92169,9 +92462,12 @@ No activity`;
               </div>
             </div>
           </div>
-          <div class="model-form-row" style="display:flex;align-items:center;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-            <label class="model-form-label" style="margin:0">${t("automation.enablePush")}</label>
-            <label class="toggle-switch" style="margin-left:12px">
+          <div class="model-form-thinking-card" style="margin-bottom:12px;margin-top:8px">
+            <div class="model-form-thinking-info">
+              <div class="model-form-thinking-title">${t("automation.enablePush")}</div>
+              <div class="model-form-thinking-desc">${t("automation.enablePushHint")}</div>
+            </div>
+            <label class="toggle-switch">
               <input type="checkbox" id="auto-dlg-push-toggle" ${editJob?.push_gateways?.length ? "checked" : ""} />
               <span class="toggle-slider"></span>
             </label>
@@ -92183,10 +92479,7 @@ No activity`;
           <div class="model-form-row" style="flex-direction:column;align-items:stretch">
             <label class="model-form-label">${t("automation.whatToDo")}</label>
             <div class="input-wrapper input-wrapper--dialog">
-              <div class="input-row">
-                <div id="auto-dlg-prompt" class="prompt-input" contenteditable="true" role="textbox" aria-multiline="true" style="min-height:56px;max-height:300px">${escapeHtml5(editJob?.prompt || template.defaultPrompt)}</div>
-                <div class="prompt-placeholder" style="left:14px;top:10px">${t("automation.whatToDo")}</div>
-              </div>
+              <textarea id="auto-dlg-prompt" class="setting-rich-text" placeholder="${t("automation.whatToDo")}" style="min-height:80px">${escapeHtml5(editJob?.prompt || template.defaultPrompt)}</textarea>
             </div>
           </div>
         </div>
@@ -92199,18 +92492,15 @@ No activity`;
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: overlay });
       }
-      overlay.querySelectorAll(".prompt-input[contenteditable]").forEach((el2) => {
-        const ph = el2.parentElement?.querySelector(".prompt-placeholder");
-        const update2 = () => {
-          el2.style.height = "auto";
-          el2.style.height = Math.min(el2.scrollHeight, 300) + "px";
-          if (ph) {
-            ph.classList.toggle("hidden", (el2.textContent || "").trim().length > 0);
-          }
+      const promptTa = overlay.querySelector("#auto-dlg-prompt");
+      if (promptTa) {
+        const resize = () => {
+          promptTa.style.height = "auto";
+          promptTa.style.height = Math.min(promptTa.scrollHeight, 300) + "px";
         };
-        el2.addEventListener("input", update2);
-        update2();
-      });
+        promptTa.addEventListener("input", resize);
+        setTimeout(resize, 0);
+      }
       let scheduleValue = parsed.scheduleType;
       let timeValue = parsed.time;
       const timeRow = overlay.querySelector("#auto-dlg-time-row");
@@ -92384,7 +92674,7 @@ No activity`;
       overlay.querySelector("#auto-dlg-ok")?.addEventListener("click", () => {
         const name = document.getElementById("auto-dlg-name")?.value.trim();
         if (!name) return;
-        const prompt2 = document.getElementById("auto-dlg-prompt")?.textContent?.trim() || template.defaultPrompt;
+        const prompt2 = document.getElementById("auto-dlg-prompt")?.value?.trim() || template.defaultPrompt;
         const time = timeValue || "09:00";
         const [h3, m] = time.split(":").map((s15) => s15.padStart(2, "0"));
         let cron;
@@ -92498,10 +92788,10 @@ No activity`;
     renderConfigured() {
       const wrap = this.configuredListEl;
       if (this.jobs.length === 0) {
-        wrap.innerHTML = `<div class="configured-empty">
+        wrap.innerHTML = `<div class="si-panel-empty">
         <i data-lucide="calendar" class="lucide"></i>
-        <div class="empty-title">${t("automation.noTasks")}</div>
-        <div class="empty-sub">${t("automation.noTasksHint")}</div>
+        <div class="si-panel-empty-title">${t("automation.noTasks")}</div>
+        <div class="si-panel-empty-sub">${t("automation.noTasksHint")}</div>
       </div>`;
         if (typeof window.lucide !== "undefined") {
           window.lucide.createIcons({ root: wrap });
@@ -92534,7 +92824,7 @@ No activity`;
             <button class="btn-icon" data-action="edit" data-tooltip="${t("general.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" data-tooltip="${t("general.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete" data-tooltip="${t("general.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -92598,16 +92888,18 @@ No activity`;
       });
       const renderTaskOptions = () => {
         const opts = [{ id: "", label: t("automation.filterAllTasks") }];
-        const seen = /* @__PURE__ */ new Set();
+        const seenNames = /* @__PURE__ */ new Set();
         for (const h3 of getState().automationHistory) {
-          if (seen.has(h3.job_id)) continue;
-          seen.add(h3.job_id);
-          opts.push({ id: h3.job_id, label: h3.name });
+          const name = h3.name || h3.job_id || "";
+          if (!name || seenNames.has(name)) continue;
+          seenNames.add(name);
+          opts.push({ id: h3.job_id || "", label: name });
         }
         for (const j3 of this.jobs) {
-          if (seen.has(j3.id)) continue;
-          seen.add(j3.id);
-          opts.push({ id: j3.id, label: j3.name });
+          const name = j3.name || j3.id || "";
+          if (!name || seenNames.has(name)) continue;
+          seenNames.add(name);
+          opts.push({ id: j3.id, label: name });
         }
         return opts;
       };
@@ -92619,42 +92911,118 @@ No activity`;
       };
       rebindTask();
       this.onHistoryFiltersRebind = rebindTask;
-      const dateFrom = document.getElementById("history-date-from");
-      const dateTo = document.getElementById("history-date-to");
-      const applyDateLocale = () => {
-        const lang = getLocale() === "en" ? "en" : "zh-CN";
-        if (dateFrom) dateFrom.setAttribute("lang", lang);
-        if (dateTo) dateTo.setAttribute("lang", lang);
-      };
-      applyDateLocale();
-      onLocaleChange(() => applyDateLocale());
-      if (dateFrom) {
-        dateFrom.addEventListener("change", () => {
-          this.historyDateFrom = dateFrom.value || "";
-          this.renderHistory();
+      const dateFromHidden = document.getElementById("history-date-from");
+      const dateToHidden = document.getElementById("history-date-to");
+      const dateFromBtn = document.getElementById("history-date-from-btn");
+      const dateToBtn = document.getElementById("history-date-to-btn");
+      const dateFromDD = document.getElementById("history-date-from-dd");
+      const dateToDD = document.getElementById("history-date-to-dd");
+      const dateFromText = document.getElementById("history-date-from-text");
+      const dateToText = document.getElementById("history-date-to-text");
+      const MONTHS_SHORT = getLocale() === "en" ? ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] : ["1\u6708", "2\u6708", "3\u6708", "4\u6708", "5\u6708", "6\u6708", "7\u6708", "8\u6708", "9\u6708", "10\u6708", "11\u6708", "12\u6708"];
+      const WEEKDAYS_SHORT = getLocale() === "en" ? ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] : ["\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D", "\u65E5"];
+      function renderCalendar(container, currentDate, onSelect) {
+        const { year, month } = currentDate;
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const daysInPrev = new Date(year, month, 0).getDate();
+        const today = /* @__PURE__ */ new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        const prevMonth = () => {
+          if (--currentDate.month < 0) {
+            currentDate.month = 11;
+            currentDate.year--;
+          }
+          renderCalendar(container, currentDate, onSelect);
+        };
+        const nextMonth = () => {
+          if (++currentDate.month > 11) {
+            currentDate.month = 0;
+            currentDate.year++;
+          }
+          renderCalendar(container, currentDate, onSelect);
+        };
+        let html = `<div class="cal-header">
+        <button type="button" class="cal-header-btn" id="cal-prev"><svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <span class="cal-title">${year} ${MONTHS_SHORT[month]}</span>
+        <button type="button" class="cal-header-btn" id="cal-next"><svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+      <div class="cal-weekdays">${WEEKDAYS_SHORT.map((d) => `<span class="cal-weekday">${d}</span>`).join("")}</div>
+      <div class="cal-grid">`;
+        const startOffset = firstDay === 0 ? 6 : firstDay - 1;
+        for (let i8 = 0; i8 < startOffset; i8++) {
+          const d = daysInPrev - startOffset + i8 + 1;
+          html += `<span class="cal-day other-month">${d}</span>`;
+        }
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const isToday = dateStr === todayStr;
+          const cls = `cal-day${isToday ? " today" : ""}`;
+          html += `<span class="${cls}" data-date="${dateStr}">${d}</span>`;
+        }
+        const remaining = (7 - (startOffset + daysInMonth) % 7) % 7;
+        for (let d = 1; d <= remaining; d++) {
+          html += `<span class="cal-day other-month">${d}</span>`;
+        }
+        html += `</div>`;
+        container.innerHTML = html;
+        if (typeof window.lucide !== "undefined") window.lucide.createIcons({ root: container });
+        container.querySelector("#cal-prev")?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          prevMonth();
+        });
+        container.querySelector("#cal-next")?.addEventListener("click", (e) => {
+          e.stopPropagation();
+          nextMonth();
+        });
+        container.querySelectorAll(".cal-day[data-date]").forEach((el2) => {
+          el2.addEventListener("click", (e) => {
+            e.stopPropagation();
+            onSelect(el2.getAttribute("data-date") || "");
+            container.classList.remove("open");
+          });
         });
       }
-      if (dateTo) {
-        dateTo.addEventListener("change", () => {
-          this.historyDateTo = dateTo.value || "";
-          this.renderHistory();
+      function bindDateField(btn, dd, textEl, hidden, setter) {
+        if (!btn || !dd || !textEl) return;
+        const cur = { year: (/* @__PURE__ */ new Date()).getFullYear(), month: (/* @__PURE__ */ new Date()).getMonth() };
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isOpen = dd.classList.contains("open");
+          document.querySelectorAll(".history-calendar-dropdown.open").forEach((el2) => el2.classList.remove("open"));
+          if (!isOpen) {
+            renderCalendar(dd, cur, (dateStr) => {
+              if (hidden) hidden.value = dateStr;
+              textEl.textContent = dateStr;
+              setter(dateStr);
+            });
+            dd.classList.add("open");
+          }
         });
       }
+      bindDateField(dateFromBtn, dateFromDD, dateFromText, dateFromHidden, (v2) => {
+        this.historyDateFrom = v2;
+        this.renderHistory();
+      });
+      bindDateField(dateToBtn, dateToDD, dateToText, dateToHidden, (v2) => {
+        this.historyDateTo = v2;
+        this.renderHistory();
+      });
+      document.addEventListener("click", () => {
+        document.querySelectorAll(".history-calendar-dropdown.open").forEach((el2) => el2.classList.remove("open"));
+      });
       const dateClear = document.getElementById("history-date-clear");
       if (dateClear) {
         dateClear.setAttribute("title", t("automation.clearDate"));
         dateClear.addEventListener("click", () => {
           this.historyDateFrom = "";
           this.historyDateTo = "";
-          if (dateFrom) dateFrom.value = "";
-          if (dateTo) dateTo.value = "";
+          if (dateFromHidden) dateFromHidden.value = "";
+          if (dateToHidden) dateToHidden.value = "";
+          if (dateFromText) dateFromText.textContent = getLocale() === "en" ? "Start Date" : "\u5F00\u59CB\u65E5\u671F";
+          if (dateToText) dateToText.textContent = getLocale() === "en" ? "End Date" : "\u7ED3\u675F\u65E5\u671F";
           this.renderHistory();
         });
-      }
-      const exportBtn = document.getElementById("history-export-btn");
-      if (exportBtn) {
-        exportBtn.setAttribute("title", t("automation.exportHistory"));
-        exportBtn.addEventListener("click", () => this.exportHistory());
       }
     }
     exportHistory() {
@@ -92796,10 +93164,10 @@ No activity`;
       this.currentFilteredHistory = displayHistory;
       if (displayHistory.length === 0 && getState().automationHistory.length === 0) {
         filtersEl.style.display = "none";
-        this.historyTimelineEl.innerHTML = `<div class="history-empty">
+        this.historyTimelineEl.innerHTML = `<div class="si-panel-empty">
         <i data-lucide="history" class="lucide"></i>
-        <div class="empty-title">${t("automation.noHistory")}</div>
-        <div class="empty-sub">${t("automation.noHistoryHint")}</div>
+        <div class="si-panel-empty-title">${t("automation.noHistory")}</div>
+        <div class="si-panel-empty-sub">${t("automation.noHistoryHint")}</div>
       </div>`;
         if (typeof window.lucide !== "undefined") {
           window.lucide.createIcons({ root: this.historyTimelineEl });
@@ -92808,9 +93176,9 @@ No activity`;
       }
       filtersEl.style.display = "";
       if (displayHistory.length === 0) {
-        this.historyTimelineEl.innerHTML = `<div class="history-empty">
+        this.historyTimelineEl.innerHTML = `<div class="si-panel-empty">
         <i data-lucide="search-x" class="lucide"></i>
-        <div class="empty-title">${t("automation.noMatchingHistory")}</div>
+        <div class="si-panel-empty-title">${t("automation.noMatchingHistory")}</div>
       </div>`;
         if (typeof window.lucide !== "undefined") {
           window.lucide.createIcons({ root: this.historyTimelineEl });
@@ -92896,6 +93264,8 @@ No activity`;
             if (entryId) {
               Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
                 if (confirmed) {
+                  const history = getState().automationHistory.filter((h3) => h3.id !== entryId);
+                  setAutomationHistory(history);
                   send({ type: "automation_delete_execution", entry_id: entryId });
                 }
               });
@@ -105984,6 +106354,7 @@ void main() {
       this._terminalCounter = 0;
       this._browserCounter = 0;
       this._markdownCounter = 0;
+      this._editorCounter = 0;
       this._availableShells = [];
       this._shellsLoaded = false;
       this._editorView = null;
@@ -106089,7 +106460,8 @@ void main() {
           browserCopy.set(k2, bv);
         }
         this._sessionBrowsers.set(this._tabKey, browserCopy);
-        const editorWrap = this.tabBody.querySelector('[data-panel="editor"] > .si-editor-wrap');
+        const panelId = this._editorPanelId;
+        const editorWrap = panelId ? this.tabBody.querySelector(`[data-panel="${panelId}"] > .si-editor-wrap`) : null;
         if (editorWrap) editorWrap.remove();
         this._sessionEditors.set(this._tabKey, {
           el: editorWrap,
@@ -106098,8 +106470,6 @@ void main() {
           activeTab: this._activeEditorTab
         });
         this._editorView = null;
-        this._editorTabs = [];
-        this._activeEditorTab = "";
         this._sessionReviewState.set(this._tabKey, {
           filter: this._reviewFilter,
           mode: this._reviewMode,
@@ -106117,8 +106487,8 @@ void main() {
       const savedEditor = this._sessionEditors.get(newKey);
       if (savedEditor) {
         this._editorView = savedEditor.view;
-        this._editorTabs = savedEditor.tabs;
-        this._activeEditorTab = savedEditor.activeTab;
+        this._editorTabs = savedEditor.tabs || [];
+        this._activeEditorTab = savedEditor.activeTab || "";
       } else {
         this._editorView = null;
         this._editorTabs = [];
@@ -106400,6 +106770,11 @@ void main() {
         this._markdownCounter++;
         id = `markdown-${this._markdownCounter}`;
         label = opts?.title || t("sessionInner.tabMarkdown");
+      } else if (type === "editor") {
+        this._editorCounter = (this._editorCounter || 0) + 1;
+        id = `editor-${this._editorCounter}`;
+        const fileName = opts?.filePath ? opts.filePath.split(/[/\\]/).pop() || opts.filePath : "Editor";
+        label = fileName;
       } else {
         id = type;
         label = tabLabel(type);
@@ -106430,7 +106805,7 @@ void main() {
         if (t2.type === "terminal") {
           await this.setupTerminalPanel(panel, t2.id, t2.shellPath, t2.shellArgs);
         } else if (t2.type === "editor") {
-          this.setupEditorPanel(panel);
+          this.setupEditorPanel(panel, t2.filePath);
         } else if (t2.type === "review") {
           this.setupReviewPanel(panel);
         } else if (t2.type === "browser") {
@@ -106473,6 +106848,12 @@ void main() {
             if (mp) {
               mp.destroy();
               this.panelMarkdownPreviews.delete(pid);
+            }
+          }
+          if (ptype === "editor") {
+            if (this._editorView) {
+              this._editorView.dispose();
+              this._editorView = null;
             }
           }
           p.remove();
@@ -106661,7 +107042,7 @@ void main() {
         api.terminalWrite(ptyId, data);
       });
       const dataCleanup = api.onTerminalData((d) => {
-        if (d.id === ptyId) term.write(d.data);
+        if (d.id === ptyId) term.write(d.text);
       });
       const exitCleanup = api.onTerminalExit((d) => {
         if (d.id === ptyId) {
@@ -107608,11 +107989,10 @@ void main() {
         if (api?.openExternal) api.openExternal(href);
         return;
       }
+      let fullPath;
       if (href.startsWith("/")) {
-        this.openFileInEditor(href);
-        return;
-      }
-      if (basePath) {
+        fullPath = href;
+      } else if (basePath) {
         const dir = basePath.replace(/\\/g, "/").replace(/\/?$/, "/");
         const parts = dir.split("/").filter(Boolean);
         for (const seg of href.replace(/\\/g, "/").split("/")) {
@@ -107620,8 +108000,23 @@ void main() {
             if (parts.length > 1) parts.pop();
           } else if (seg !== "." && seg) parts.push(seg);
         }
-        this.openFileInEditor(parts.join("/"));
+        fullPath = parts.join("/");
+      } else {
+        return;
       }
+      if (/\.md$/i.test(fullPath)) {
+        this._openMdInPreview(fullPath);
+      } else {
+        this.openFileInEditor(fullPath);
+      }
+    }
+    async _openMdInPreview(filePath) {
+      const api = window.electronAPI;
+      if (!api) return;
+      const result = await api.readFile(filePath);
+      if (!result) return;
+      const name = filePath.split(/[/\\]/).pop() || "Markdown";
+      this.openMarkdownPreview(result.content, name, filePath);
     }
     renderTabLabels() {
       this.tabList.querySelectorAll(".tab").forEach((el2) => {
@@ -107884,12 +108279,12 @@ void main() {
     _renderEditorTabs(tabBar) {
       tabBar.innerHTML = this._editorTabs.map((t2) => {
         const active = t2.path === this._activeEditorTab ? " active" : "";
-        return `<div class="tab${active} tab--editor" data-path="${this.esc(t2.path)}">
+        return `<div class="tab${active}" style="flex:0 1 auto;max-width:160px;min-width:60px;border-bottom:none${active ? ";background:var(--editor-sidebar-bg);color:var(--editor-sidebar-text)" : ""}" data-path="${this.esc(t2.path)}">
         <span class="tab-label">${this.esc(t2.name)}</span>
         <button class="tab-close" data-path="${this.esc(t2.path)}"><i data-lucide="x" class="lucide lucide-sm"></i></button>
       </div>`;
       }).join("");
-      tabBar.querySelectorAll(".tab--editor").forEach((el2) => {
+      tabBar.querySelectorAll(".tab").forEach((el2) => {
         el2.addEventListener("click", (e) => {
           if (e.target.closest(".tab-close")) return;
           if (this._editorDragMoved) {
@@ -107922,11 +108317,11 @@ void main() {
               this._editorDragMoved = true;
             }
             const rect = tabBar.getBoundingClientRect();
-            const over = Array.from(tabBar.querySelectorAll(".tab--editor")).find((t2) => {
+            const over = Array.from(tabBar.querySelectorAll(".tab")).find((t2) => {
               const r = t2.getBoundingClientRect();
               return ev.clientX >= r.left && ev.clientX <= r.right;
             });
-            tabBar.querySelectorAll(".tab--editor.drop-target").forEach((t2) => t2.classList.remove("drop-target"));
+            tabBar.querySelectorAll(".tab.drop-target").forEach((t2) => t2.classList.remove("drop-target"));
             if (over && over !== dragEl) over.classList.add("drop-target");
             void rect;
           };
@@ -107934,7 +108329,7 @@ void main() {
             document.removeEventListener("mousemove", onMove);
             document.removeEventListener("mouseup", onUp);
             dragEl.classList.remove("dragging");
-            const target = tabBar.querySelector(".tab--editor.drop-target");
+            const target = tabBar.querySelector(".tab.drop-target");
             if (target) {
               const fromIdx = this._editorTabs.findIndex((t2) => t2.path === dragEl.dataset.path);
               const toIdx = this._editorTabs.findIndex((t2) => t2.path === target.dataset.path);
@@ -107944,7 +108339,7 @@ void main() {
                 this._renderEditorTabs(tabBar);
               }
             }
-            tabBar.querySelectorAll(".tab--editor.drop-target").forEach((t2) => t2.classList.remove("drop-target"));
+            tabBar.querySelectorAll(".tab.drop-target").forEach((t2) => t2.classList.remove("drop-target"));
           };
           document.addEventListener("mousemove", onMove);
           document.addEventListener("mouseup", onUp);
@@ -107965,9 +108360,11 @@ void main() {
     async _switchEditorTab(filePath) {
       if (filePath === this._activeEditorTab) return;
       this._activeEditorTab = filePath;
-      const panel = this.tabBody.querySelector('[data-panel="editor"]');
+      const editorTab = this.tabs.find((t2) => t2.type === "editor");
+      if (!editorTab) return;
+      const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`);
       if (!panel) return;
-      const tabBar = panel.querySelector(".tab-bar--editor");
+      const tabBar = panel.querySelector(".tab-bar");
       if (tabBar) this._renderEditorTabs(tabBar);
       await this._loadEditorFile(filePath);
     }
@@ -107975,11 +108372,13 @@ void main() {
       const idx = this._editorTabs.findIndex((t2) => t2.path === filePath);
       if (idx < 0) return;
       this._editorTabs.splice(idx, 1);
+      const editorTab = this.tabs.find((t2) => t2.type === "editor");
+      if (!editorTab) return;
       if (this._editorTabs.length === 0) {
         this._activeEditorTab = "";
-        const panel2 = this.tabBody.querySelector('[data-panel="editor"]');
+        const panel2 = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`);
         if (panel2) {
-          const tabBar = panel2.querySelector(".tab-bar--editor");
+          const tabBar = panel2.querySelector(".tab-bar");
           const container = panel2.querySelector(".si-code-container");
           const emptyEl = panel2.querySelector(".si-editor-empty");
           if (tabBar) tabBar.style.display = "none";
@@ -108000,18 +108399,24 @@ void main() {
         this._activeEditorTab = next.path;
         await this._loadEditorFile(next.path);
       }
-      const panel = this.tabBody.querySelector('[data-panel="editor"]');
+      const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`);
       if (panel) {
-        const tabBar = panel.querySelector(".tab-bar--editor");
+        const tabBar = panel.querySelector(".tab-bar");
         if (tabBar) this._renderEditorTabs(tabBar);
       }
+    }
+    get _editorPanelId() {
+      const t2 = this.tabs.find((t3) => t3.type === "editor");
+      return t2 ? t2.id : null;
     }
     async _loadEditorFile(filePath) {
       const api = window.electronAPI;
       if (!api) return;
       const result = await api.readFile(filePath);
       if (!result) return;
-      const panel = this.tabBody.querySelector('[data-panel="editor"]');
+      const panelId = this._editorPanelId;
+      if (!panelId) return;
+      const panel = this.tabBody.querySelector(`[data-panel="${panelId}"]`);
       if (!panel) return;
       const container = panel.querySelector(".si-code-container");
       if (!container) return;
@@ -108057,17 +108462,12 @@ void main() {
       };
       this._editorView.focus();
     }
-    async setupEditorPanel(panel) {
+    async setupEditorPanel(panel, filePath) {
       const savedEditor = this._sessionEditors.get(this._tabKey);
       if (savedEditor?.el) {
         panel.style.overflow = "hidden";
         panel.appendChild(savedEditor.el);
         this._sessionEditors.delete(this._tabKey);
-        const tabBar = panel.querySelector(".tab-bar--editor");
-        if (tabBar && this._editorTabs.length > 0) {
-          tabBar.style.display = "flex";
-          this._renderEditorTabs(tabBar);
-        }
         if (typeof window.lucide !== "undefined") {
           window.lucide.createIcons({ root: panel });
         }
@@ -108089,13 +108489,13 @@ void main() {
         return;
       }
       panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
-      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-secondary)">
+        <div class="tab-bar" style="display:none;padding:0 4px;border-bottom:none;background:var(--bg-secondary)"></div>
         <div class="si-editor-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:4px;padding:20px;color:var(--editor-empty,#888);font-size:13px;text-align:center">
           <i data-lucide="file-code-2" class="lucide" style="width:24px;height:24px;opacity:0.35"></i>
           <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
           <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
         </div>
-        <div class="tab-bar tab-bar--editor" style="display:none"></div>
         <div class="si-code-container" style="display:none;flex:1;overflow:hidden"></div>
       </div>
       <div class="si-editor-divider"></div>
@@ -108282,8 +108682,8 @@ void main() {
           el2.addEventListener("click", () => {
             treeBody.querySelectorAll(".si-tree-entry.selected").forEach((s15) => s15.classList.remove("selected"));
             el2.classList.add("selected");
-            const filePath = el2.dataset.path;
-            this.openFileInEditor(filePath);
+            const filePath2 = el2.dataset.path;
+            this.openFileInEditor(filePath2);
           });
           el2.addEventListener("contextmenu", (ev) => {
             showTreeCtx(ev, el2.dataset.path, false);
@@ -108335,23 +108735,41 @@ void main() {
     }
     async openFileInEditor(filePath, preview = false) {
       const name = filePath.split(/[/\\]/).pop() || filePath;
-      this._editorCtxTarget = name;
-      if (!this.tabs.some((t2) => t2.type === "editor")) {
-        await this.createTab("editor");
+      let editorTab = this.tabs.find((t2) => t2.type === "editor");
+      if (!editorTab) {
+        await this.createTab("editor", {});
+        editorTab = this.tabs.find((t2) => t2.type === "editor");
+        if (!editorTab) return;
       }
-      const panel = this.tabBody.querySelector('[data-panel="editor"]');
-      if (!panel) return;
-      const emptyEl = panel.querySelector(".si-editor-empty");
-      const container = panel.querySelector(".si-code-container");
-      const tabBar = panel.querySelector(".tab-bar--editor");
-      if (!container || !tabBar) return;
-      emptyEl.style.display = "none";
-      container.style.display = "flex";
-      tabBar.style.display = "flex";
+      if (this.activeTab !== editorTab.id) {
+        this.activeTab = editorTab.id;
+        await this.renderTabs();
+      }
       const existing = this._editorTabs.find((t2) => t2.path === filePath);
-      if (!existing) this._editorTabs.push({ path: filePath, name });
+      if (existing) {
+        this._activeEditorTab = filePath;
+        const panel2 = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`);
+        if (panel2) {
+          const tabBar = panel2.querySelector(".tab-bar");
+          if (tabBar) this._renderEditorTabs(tabBar);
+        }
+        await this._loadEditorFile(filePath);
+        return;
+      }
+      this._editorTabs.push({ path: filePath, name });
       this._activeEditorTab = filePath;
-      this._renderEditorTabs(tabBar);
+      const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`);
+      if (panel) {
+        const tabBar = panel.querySelector(".tab-bar");
+        const container = panel.querySelector(".si-code-container");
+        const emptyEl = panel.querySelector(".si-editor-empty");
+        if (tabBar) {
+          tabBar.style.display = "";
+          this._renderEditorTabs(tabBar);
+        }
+        if (emptyEl) emptyEl.style.display = "none";
+        if (container) container.style.display = "";
+      }
       if (preview) {
         const api = window.electronAPI;
         if (!api) return;
@@ -108361,7 +108779,6 @@ void main() {
         return;
       }
       await this._loadEditorFile(filePath);
-      this.activateTab("editor");
     }
     // ref for CSS class toggling
     /** Public entry point called from App when a "View Changes" button is clicked. */
@@ -108513,6 +108930,10 @@ void main() {
         this._reviewArtifact = null;
         if (this._reviewLoad) this._reviewLoad(void 0);
       }
+      const editorTab = this.tabs.find((t2) => t2.id === id && t2.type === "editor");
+      if (editorTab && editorTab.filePath) {
+        this._loadEditorFile(editorTab.filePath);
+      }
     }
     closeTab(id) {
       const idx = this.tabs.findIndex((tab2) => tab2.id === id);
@@ -108553,9 +108974,16 @@ void main() {
           this._editorView.dispose();
           this._editorView = null;
         }
+        const container = this.tabBody.querySelector(`[data-panel="${id}"] .si-code-container`);
+        const emptyEl = this.tabBody.querySelector(`[data-panel="${id}"] .si-editor-empty`);
+        if (container) {
+          container.style.display = "none";
+          container.innerHTML = "";
+        }
+        if (emptyEl) emptyEl.style.display = "flex";
+        this._sessionEditors.delete(this._tabKey);
         this._editorTabs = [];
         this._activeEditorTab = "";
-        this._sessionEditors.delete(this._tabKey);
       }
       this.tabs.splice(idx, 1);
       _saveTabs(this.tabs);
@@ -109376,9 +109804,11 @@ void main() {
       });
       if (window.electronAPI) {
         window.electronAPI.onSwitchWorkspace((path) => {
+          this.settings.close();
           void this.workspace.open(path);
         });
         window.electronAPI.onSwitchSession((sessionId) => {
+          this.settings.close();
           const st3 = getState();
           if (!sessionId || sessionId === st3.sessionId) return;
           const tray = getTraySessions();
@@ -109455,6 +109885,8 @@ void main() {
         const mode = st3.settings.startup_session_mode;
         if (mode === "iwork") {
           this.workspace.enter();
+        } else if (mode === "automation") {
+          this.modeTransition.toggleAutomation();
         }
       });
       subscribe2(() => this.updateSessionBarName());
@@ -109919,6 +110351,31 @@ void main() {
             }
           });
         }
+        let lastSize = -1;
+        const refreshIntervalId = window.setInterval(async () => {
+          if (!bodyEl || !document.body.contains(bodyEl)) {
+            clearInterval(refreshIntervalId);
+            return;
+          }
+          if (loading) return;
+          try {
+            const info = await api.getLogFileInfo();
+            if (!info.exists) return;
+            if (lastSize >= 0 && info.size === lastSize) return;
+            lastSize = info.size;
+            loading = true;
+            const result = await api.getLogs({ offset: 0, limit: BATCH });
+            if (result && result.entries) {
+              allEntries = result.entries;
+              loadedCount = result.entries.length;
+              total = result.total;
+              render();
+            }
+            loading = false;
+          } catch {
+            loading = false;
+          }
+        }, 5e3);
       }
     }
     bindChildRegionDropdown(id, onChange) {
@@ -110124,20 +110581,30 @@ void main() {
       this.splash.hide();
     }
     async handleSplashError(message) {
-      this.splash.showError(message, async () => {
+      let detail = "";
+      try {
+        const status = await window.electronAPI?.getServiceStatus?.();
+        if (status?.error) {
+          detail = status.error;
+        }
+      } catch {
+      }
+      this.splash.showError(message, detail, async () => {
         try {
           const result = await window.electronAPI?.restartService?.();
           if (result?.success) {
             location.reload();
           } else {
             this.splash.showError(
-              t("app.splashRestartFailed") + (result?.error ? ": " + result.error : ""),
+              t("app.splashRestartFailed"),
+              result?.error || "",
               () => this.handleSplashError(t("app.splashRetry"))
             );
           }
         } catch (err) {
           this.splash.showError(
-            t("app.splashRestartFailed") + ": " + String(err),
+            t("app.splashRestartFailed"),
+            String(err),
             () => this.handleSplashError(t("app.splashRetry"))
           );
         }
@@ -112168,6 +112635,9 @@ ${a.content}
           this.settings.close();
           setActiveToolId(null);
           this.search.close();
+          return;
+        }
+        if (shift && !mod && !alt && key.length === 1) {
           return;
         }
         const keybindsCfg = getState().settings.keybinds;

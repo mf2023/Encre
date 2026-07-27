@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 """
-Volcengine Ark (火山方舟) backend -- Doubao and partner models via Ark API.
+Volcengine Ark (Volcano Ark) backend -- Doubao and partner models via Ark API.
 
 This is a thin wrapper around ``OpenAICompatibleBackend``.  Volcengine Ark
 exposes an OpenAI-compatible ``/chat/completions`` endpoint so no special

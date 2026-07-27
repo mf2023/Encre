@@ -269,7 +269,12 @@ export class Workspace {
       el.style.width = "";
       el.style.height = "";
     });
+    if (this.treeSectionEl) this.treeSectionEl.style.maxHeight = "";
     if (parentEnter) parentEnter.style.position = "";
+
+    // Set workspace mode BEFORE sending requests so the sessions_list handler's
+    // channel check (workspaceMode === "iwork") passes when the response arrives.
+    setWorkspaceMode("iwork");
 
     const workspaces = getState().workspaces;
     const activeWs = getState().activeWorkspace;
@@ -308,7 +313,6 @@ export class Workspace {
 
     this.syncFirstNavActive();
     this._transitioning = false;
-    setWorkspaceMode("iwork");
     this.onModeChange?.();
   }
 
@@ -421,22 +425,22 @@ export class Workspace {
     header.innerHTML = `
       <span class="sidebar-section-title" data-i18n="search.sectionWorkspaces">Workspaces</span>
       <div class="workspace-tree-actions">
-        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder" data-tooltip="Open Folder">
+        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder">
           <i data-lucide="folder-plus" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage" data-tooltip="Manage">
+        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage">
           <i data-lucide="sliders-horizontal" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel" data-tooltip="Cancel">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel">
           <i data-lucide="x" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll" data-tooltip="Select All">
+        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll">
           <i data-lucide="check-square" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport" data-tooltip="Export Selected">
-          <i data-lucide="download" class="lucide"></i>
+        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport">
+          <i data-lucide="arrow-up-right" class="lucide"></i>
         </button>
-        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete" data-tooltip="Delete Selected">
+        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete">
           <i data-lucide="trash-2" class="lucide"></i>
         </button>
       </div>`;
@@ -721,8 +725,10 @@ export class Workspace {
     // Every session that belongs to a selected workspace.
     for (const sid of covered) toExport.push(sid);
     if (toExport.length === 0) return;
-    for (const sid of toExport) {
-      send({ type: "export_session", session_id: sid });
+    if (toExport.length === 1) {
+      send({ type: "export_session", session_id: toExport[0] });
+    } else {
+      send({ type: "export_sessions_batch", session_ids: toExport });
     }
     this.selectedPaths.clear();
     this.toggleBatchMode();

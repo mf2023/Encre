@@ -178,8 +178,8 @@ interface AppActionDef {
 
 const APP_ACTIONS: AppActionDef[] = [
   { id: "new_session", nameEn: "New Session", nameZh: "新建对话" },
-  { id: "normal_mode", nameEn: "Normal Mode", nameZh: "普通模式" },
-  { id: "iwork_mode", nameEn: "iWork Mode", nameZh: "工作区模式" },
+  { id: "normal_mode", nameEn: "General Mode", nameZh: "通用模式" },
+  { id: "iwork_mode", nameEn: "Work Mode", nameZh: "工作模式" },
   { id: "tools_panel", nameEn: "Tools Panel", nameZh: "工具面板" },
 ];
 

@@ -284,6 +284,44 @@ class DeepSeekBackend(OpenAISSEBackend):
         """DeepSeek V4 models support prompt caching (80-92% discount)."""
         return True
 
+    # ── Multimodal/Extended API capabilities ──────────────────────
+    # DeepSeek is a text-only chat API.  None of the OpenAI multimodal
+    # or extended endpoints (images, audio, embeddings, moderation, files,
+    # batch, fine-tuning, responses, realtime) are available.
+
+    def supports_image_generation(self) -> bool:
+        return False
+
+    def supports_image_edit(self) -> bool:
+        return False
+
+    def supports_image_variation(self) -> bool:
+        return False
+
+    def supports_embeddings(self) -> bool:
+        return False
+
+    def supports_moderation(self) -> bool:
+        return False
+
+    def supports_files(self) -> bool:
+        return False
+
+    def supports_batch(self) -> bool:
+        return False
+
+    def supports_fine_tuning(self) -> bool:
+        return False
+
+    def supports_responses_api(self) -> bool:
+        return False
+
+    def supports_realtime(self) -> bool:
+        return False
+
+    def supports_vision_input(self) -> bool:
+        return False
+
     def _build_request_data(
         self,
         messages: list[dict[str, Any]],

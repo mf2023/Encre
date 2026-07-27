@@ -74,6 +74,7 @@ export type ServerEvent =
   | MessagesUpdated
   | SessionDeleted
   | SessionExported
+  | SessionsExportedZip
   | SessionRenamed
   | SubAgentsUpdated
   | WorkspaceOpened
@@ -453,6 +454,7 @@ export type ClientMessage =
   | ClientDeleteMessage
   | ClientDeleteSession
   | ClientExportSession
+  | ClientExportSessionsBatch
   | ClientRenameSession
   | ClientListWorkspaces
   | ClientOpenWorkspace
@@ -719,6 +721,11 @@ export interface ClientDeleteSession {
 export interface ClientExportSession {
   type: "export_session";
   session_id: string;
+}
+
+export interface ClientExportSessionsBatch {
+  type: "export_sessions_batch";
+  session_ids: string[];
 }
 
 export interface ClientRenameSession {
@@ -1056,6 +1063,12 @@ export interface SessionExported {
   type: "session_exported";
   session_id: string;
   markdown: string;
+  filename: string;
+}
+
+export interface SessionsExportedZip {
+  type: "sessions_exported_zip";
+  zip_base64: string;
   filename: string;
 }
 

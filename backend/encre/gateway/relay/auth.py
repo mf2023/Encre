@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,10 +25,9 @@ from __future__ import annotations
 
 """Relay channel authentication (gateway half).
 
-Aligns with Hermes' ``gateway/relay/auth.py``.  The connector⇄gateway channel
-is itself authenticated because a gateway may be customer-managed and
-internet-exposed.  This module implements the gateway half of two HMAC
-schemes whose wire bytes match the connector's TypeScript exactly:
+The connector⇄gateway channel is itself authenticated because a gateway may be
+customer-managed and internet-exposed.  This module implements the gateway half
+of two HMAC schemes whose wire bytes match the connector's TypeScript exactly:
 
 1. **WS upgrade auth** (gateway -> connector): the gateway presents
    ``Authorization: Bearer <token>`` on the ``/relay`` WebSocket upgrade,

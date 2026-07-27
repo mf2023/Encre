@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,13 +25,12 @@ from __future__ import annotations
 
 """Relay transport interface.
 
-Aligns with Hermes' ``gateway/relay/transport.py``: a :class:`RelayTransport`
-Protocol describing the contract between :class:`~encre.gateway.relay.adapter.RelayAdapter`
-and a concrete transport (the production
-:class:`~encre.gateway.relay.ws_transport.WebSocketRelayTransport`, or a test
-double).  The transport carries **normalized event/action dicts**, not raw
-bytes -- the connector already verified the platform signature at the edge and
-stripped credentials, so the gateway re-processes a sanitized event.
+A :class:`RelayTransport` Protocol describing the contract between
+:class:`~encre.gateway.relay.adapter.RelayAdapter` and a concrete transport
+(the production :class:`~encre.gateway.relay.ws_transport.WebSocketRelayTransport`,
+or a test double).  The transport carries **normalized event/action dicts**,
+not raw bytes -- the connector already verified the platform signature at the
+edge and stripped credentials, so the gateway re-processes a sanitized event.
 """
 
 from typing import Any, Callable, Protocol, runtime_checkable

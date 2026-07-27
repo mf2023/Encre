@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -29,11 +29,15 @@ Replaces the former AdapterManager.  Core adapters run in-process (direct
 callbacks); the optional WS bridge serves remote/plugin adapters.
 
 Message flow:
-    Adapter.handle_message -> GatewayRunner._on_message
+    Adapter.handle_message -> GatewayRunner._handle_message
     -> AuthorizationChecker -> build_session_key -> SessionStore
-    -> EventRouter.submit_stream -> GatewayStreamConsumer -> adapter.send
+    -> _handle_message_with_agent -> GatewayStreamConsumer -> adapter.send
 
-Aligns with Hermes ``gateway/run.py``.
+Architecture:
+    - _handle_message: entry point, authorization, session routing
+    - _handle_message_with_agent: session creation, agent execution, response delivery
+    - _handle_adapter_fatal_error: error handling and reconnection
+    - Adapter lifecycle: start_adapter / stop_adapter / apply_config
 """
 
 import asyncio
@@ -244,7 +248,12 @@ class GatewayRunner:
             self._last_errors[name] = msg
             return False
 
-        # Build PlatformConfig from the provided dict
+        # Build PlatformConfig from the provided dict, setting env vars
+        # for adapters that read from os.environ.
+        import os
+        for k, v in config.items():
+            if k not in ("enabled",):
+                os.environ[str(k)] = str(v)
         pconfig = PlatformConfig(
             enabled=True,
             token=str(config.get("token", "") or ""),
@@ -272,7 +281,10 @@ class GatewayRunner:
                 return False
 
             # Wire up the message handler
-            adapter.set_message_handler(self._on_message)
+            adapter.set_message_handler(self._handle_message)
+            adapter.set_fatal_error_handler(self._handle_adapter_fatal_error)
+            if hasattr(adapter, 'set_session_store') and self._session_store is not None:
+                adapter.set_session_store(self._session_store)
 
             # Connect
             ok = await adapter.connect()
@@ -381,18 +393,28 @@ class GatewayRunner:
 
     # -- Core message handling --
 
-    async def _on_message(self, adapter: BasePlatformAdapter, event: MessageEvent) -> None:
+    async def _handle_message(self, adapter: BasePlatformAdapter, event: MessageEvent) -> None:
         """Core inbound message handler.
 
         Called by adapters when they receive a message from a platform user.
         Performs authorization, session routing, and agent invocation.
+
+        Steps:
+            1. Source resolution
+            2. Authorization check
+            3. Session key resolution
+            4. Delegate to _handle_message_with_agent
         """
         source = event.source
         if source is None:
-            # Build a minimal source from available info
+            chat_id = event.message_id or "unknown"
             source = adapter.build_source(
-                chat_id=event.message_id or "unknown",
+                chat_id=chat_id,
                 user_id=None,
+            )
+            logger.warning(
+                "[gateway] Message received without source, constructed from event: chat_id=%s",
+                chat_id
             )
 
         # 1. Authorization check
@@ -401,21 +423,54 @@ class GatewayRunner:
             if not result.authorized:
                 logger.info("[gateway] Unauthorized message from %s/%s: %s",
                            source.platform, source.user_id, result.reason)
-                # Optionally send a rejection notice
+                try:
+                    await adapter.send(
+                        source.chat_id,
+                        "⛔ Not authorized. Please contact administrator or use /pair <code> to pair."
+                    )
+                except Exception as send_err:
+                    logger.warning("[gateway] Failed to send auth rejection notice: %s", send_err)
                 return
 
-        # 2. Session routing
+        # 2. Session key
         session_key = build_session_key(source)
-        session_id = self._session_store.get_or_create(session_key)
 
-        # 3. Route to agent via EventRouter
+        # 3. Delegate to agent execution
+        await self._handle_message_with_agent(adapter, source, event, session_key)
+
+    async def _handle_message_with_agent(
+        self,
+        adapter: BasePlatformAdapter,
+        source: SessionSource,
+        event: MessageEvent,
+        session_key: str,
+    ) -> None:
+        """Execute the agent for an incoming message and deliver the response.
+
+        Steps:
+            1. Resolve session_id via SessionStore
+            2. Set up streaming consumer
+            3. Route to agent via EventRouter
+            4. Finalize delivery
+            5. Apply silence filter
+        """
+        # 1. Resolve fixed session_id per adapter
+        session_id = await self.ensure_adapter_session(adapter.name)
+
+        # 2. Check router is configured
         if self._router is None:
-            logger.warning("[gateway] No router configured, dropping message")
+            logger.error("[gateway] No router configured, cannot process message from %s", source.chat_id)
+            try:
+                await adapter.send(
+                    source.chat_id,
+                    "⚠️ Gateway error: Router not configured. Please contact administrator."
+                )
+            except Exception as send_err:
+                logger.warning("[gateway] Failed to send router error notice: %s", send_err)
             return
 
-        # 4. Stream consumer for progressive delivery
+        # 3. Stream consumer for progressive delivery
         consumer_config = StreamConsumerConfig()
-        # Disable progressive editing for platforms that don't support it
         if not hasattr(adapter, "edit_message") or adapter.max_message_length == 0:
             consumer_config.buffer_only = True
 
@@ -427,7 +482,7 @@ class GatewayRunner:
             metadata={"thread_id": source.thread_id} if source.thread_id else None,
         )
 
-        # 5. Submit to agent and consume the stream
+        # 4. Submit to agent and consume the stream
         try:
             async with self._router.iclaw_context():
                 async for agent_event in self._router.submit_stream(
@@ -435,27 +490,62 @@ class GatewayRunner:
                 ):
                     await consumer.feed(agent_event)
 
-            # 6. Finalize delivery
+            # 5. Finalize delivery
             final_text = await consumer.finalize()
 
-            # 7. Filter silence responses
+            # 6. Filter silence responses
             if is_intentional_silence_response(final_text):
                 logger.info("[gateway] Suppressed silence response for %s", session_key)
 
         except Exception as e:
-            logger.error("[gateway] Message processing error: %s %s", type(e).__name__, e)
-            # Try to send an error notice
+            logger.error("[gateway] Message processing error: %s %s", type(e).__name__, e, exc_info=True)
+            error_msg = f"⚠️ Error processing message: {type(e).__name__}: {e}"
             try:
-                await adapter.send(source.chat_id, f"[Error: {e}]")
-            except Exception:
-                pass
+                result = await adapter.send(source.chat_id, error_msg)
+                if not result.success:
+                    logger.warning("[gateway] Failed to send error notice: %s", result.error)
+            except Exception as send_err:
+                logger.error("[gateway] Failed to send error notice: %s -> %s", send_err, type(send_err).__name__)
+
+    # -- Fatal error handling --
+
+    async def _handle_adapter_fatal_error(self, adapter: BasePlatformAdapter) -> None:
+        """Called when an adapter encounters a fatal error.
+
+        Logs the error, removes the adapter from active instances, and
+        triggers reconnection if the error is retryable.
+        """
+        name = adapter.name
+        code = adapter._fatal_error_code or "unknown"
+        message = adapter._fatal_error_message or "Unknown error"
+        retryable = adapter._fatal_error_retryable
+
+        logger.error("[gateway] Adapter '%s' fatal error [%s]: %s (retryable=%s)",
+                      name, code, message, retryable)
+
+        # Remove from active instances
+        self._instances.pop(name, None)
+        self._last_errors[name] = message
+
+        # Broadcast status update
+        try:
+            await self._notify_status()
+        except Exception as e:
+                logger.warning("[gateway] Status callback error: %s", e)
+
+        # Update router's connected adapters list
+        if self._router:
+            self._router.set_connected_adapters(list(self._instances.keys()))
 
     # -- Session management --
 
     async def resolve_session(self, adapter_name: str, source: SessionSource) -> str:
         """Resolve a session_id for a given source (used by WS bridge)."""
-        session_key = build_session_key(source)
-        return self._session_store.get_or_create(session_key)
+        import uuid
+        return self._session_store.get_or_create(
+            source,
+            create_fn=lambda: uuid.uuid4().hex,
+        )
 
     async def ensure_adapter_session(self, adapter_name: str) -> str:
         """Ensure a fixed session exists for an adapter (legacy compat)."""

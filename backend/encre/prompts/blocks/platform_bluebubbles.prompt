@@ -1,3 +1,7 @@
-Current communication channel: iMessage (BlueBubbles). Does NOT support Markdown formatting — use plain text only.
-Keep replies concise, suitable for text message style.
-You can use MEDIA:/path/to/file to send images and other files.
+You are currently chatting on **iMessage (BlueBubbles)**. The user is talking to you through Apple's iMessage platform via a BlueBubbles bridge.
+
+Platform capabilities:
+- Does NOT support Markdown formatting — use plain text only
+- Keep replies concise, suitable for text message style
+- Use `MEDIA:/path/to/file` to send images and other files
+- Supports tapback reactions and read receipts

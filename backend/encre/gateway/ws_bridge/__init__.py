@@ -25,16 +25,30 @@ from __future__ import annotations
 
 """WebSocket bridge for remote/plugin adapters.
 
-This subpackage contains the WS bridge server and client that allow remote
-adapters (running in separate processes or on different hosts) to connect to
-the Encre gateway over WebSocket.  Core adapters run in-process and do NOT
-use this bridge.
+This subpackage contains the WebSocket bridge server and client that let remote
+adapters -- code running in a separate process, a plugin host, or a different
+machine -- attach to the Encre gateway over a WebSocket connection. Core
+adapters run in-process and therefore never use this bridge; it exists purely to
+extend the gateway beyond the local process boundary.
+
+Architecture at a glance::
+
+    remote adapter (plugin)  <--WebSocket-->  WsBridgeServer  <--in-process-->  gateway
+            |                                      |
+    GatewayClient (SDK)                  RemotePlatformAdapter (server-side wrapper)
 
 Modules:
-    server.py       - WsBridgeServer (accepts remote adapter connections)
-    client.py       - GatewayClient (SDK for remote adapters)
-    protocol.py     - Wire protocol (GatewayOp, GatewayMessage)
-    remote_adapter.py - RemotePlatformAdapter (wraps a WS connection)
+    server.py         - ``WsBridgeServer``: accepts inbound remote-adapter
+        WebSocket connections and manages their lifecycle.
+    client.py         - ``GatewayClient``: the SDK a remote adapter uses to
+        connect to the server and exchange messages.
+    protocol.py       - Wire protocol: ``GatewayOp`` (message opcodes) and
+        ``GatewayMessage`` (the envelope sent over the socket).
+    remote_adapter.py - ``RemotePlatformAdapter``: server-side object that
+        wraps a single WS connection as if it were a normal platform adapter.
+
+The wire protocol is defined once in ``protocol.py`` and shared by both ends so
+the client and server can never drift apart.
 """
 
 from encre.gateway.ws_bridge.protocol import GatewayMessage, GatewayOp

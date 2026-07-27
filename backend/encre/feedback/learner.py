@@ -150,6 +150,10 @@ class EncreFeedbackLearner:
         intersection = a_tokens & b_tokens
         union = a_tokens | b_tokens
         jaccard = len(intersection) / len(union)
+        # For longer context strings, reward an exact long-token match so that
+        # a shared distinctive word boosts similarity beyond the base Jaccard.
+        # The 8.0 divisor normalises the bonus against token length, and 0.3 is
+        # the maximum bonus that can be added to avoid overstating relevance.
         if len(a_tokens) > 5:
             longest = 0
             for token_a in a_tokens:
@@ -171,6 +175,9 @@ class EncreFeedbackLearner:
             if rec.stale:
                 continue
             sim = self._context_similarity(rec.error_context, context)
+            # Frequently-triggered corrections are weighted higher; each past
+            # trigger adds a 0.2 multiplier so proven advice ranks above guesses.
+            # The 0.3 cutoff ignores only weakly relevant records.
             weight = sim * (1.0 + rec.trigger_count * 0.2)
             if weight > 0.3:
                 candidates.append((weight, rec))

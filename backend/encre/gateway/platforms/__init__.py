@@ -66,11 +66,22 @@ _BUILTIN_PLATFORMS = [
     "slack",
     "sms",
     "telegram",
+    "test_adapter",
     "webhook",
     "wecom",
     "weixin",
     "whatsapp",
     "yuanbao",
+    "api_server",
+    "google_chat",
+    "irc",
+    "line",
+    "mattermost",
+    "ntfy",
+    "photon",
+    "raft",
+    "simplex",
+    "teams",
 ]
 
 _discovered = False

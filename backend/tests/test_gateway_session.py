@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -23,10 +23,10 @@
 
 from __future__ import annotations
 
-"""Tests for the gateway session routing layer (Phase 0 contract alignment).
+"""Tests for the gateway session routing layer.
 
 Covers:
-- :func:`build_session_key` conformance vs the Hermes oracle format.
+- :func:`build_session_key` conformance.
 - :class:`SessionSource` wire round-trip (``is_bot`` stays off the wire).
 - :class:`SessionStore` get / put / get_or_create / reset persistence.
 - :class:`SendResult` new fields + :func:`classify_send_error` + SEND_ERROR_KINDS.
@@ -113,7 +113,7 @@ from encre.gateway.session import (
     ],
 )
 def test_build_session_key_conformance(source, expected):
-    """build_session_key matches the Hermes oracle format byte-for-byte."""
+    """build_session_key matches the expected format byte-for-byte."""
     # The thread case above passes a pre-built key as `source`; handle both.
     if isinstance(source, str):
         assert source == expected

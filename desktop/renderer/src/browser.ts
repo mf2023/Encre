@@ -110,7 +110,7 @@ export interface BrowserViewOptions {
 
 export class BrowserView {
   readonly container: HTMLElement;
-  readonly webview: Electron.WebviewTag;
+  readonly webview: any;
   private urlInput: HTMLInputElement;
   private statusEl: HTMLElement | null;
   private loadingEl: HTMLElement | null;
@@ -149,18 +149,18 @@ export class BrowserView {
 
     container.innerHTML = `
       <div class="browser-nav-bar${compact}">
-        <button class="browser-nav-btn" data-nav="back" title="Back">
+        <button class="browser-nav-btn" data-nav="back" data-i18n-title="browserNav.back">
           <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
-        <button class="browser-nav-btn" data-nav="forward" title="Forward">
+        <button class="browser-nav-btn" data-nav="forward" data-i18n-title="browserNav.forward">
           <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
-        <button class="browser-nav-btn" data-nav="reload" title="Reload">
+        <button class="browser-nav-btn" data-nav="reload" data-i18n-title="browserNav.reload">
           <svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
         <input type="text" class="browser-url-input" value="${startUrl}" placeholder="搜索或输入 web 地址 / Search or enter web address" spellcheck="false" />
-        <button class="browser-star-btn" title="Bookmark this page">☆</button>
-        <button class="browser-settings-btn" title="Settings">
+        <button class="browser-star-btn" data-i18n-title="browserNav.bookmark">☆</button>
+        <button class="browser-settings-btn" data-i18n-title="browserNav.settings">
           <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/></svg>
         </button>
       </div>
@@ -200,7 +200,7 @@ export class BrowserView {
     this._bindStarButton();
     this.loadBookmarks();
 
-    const wv = container.querySelector("webview") as Electron.WebviewTag;
+    const wv = container.querySelector("webview") as any;
     this.webview = wv;
 
     this.bindEvents();
@@ -371,7 +371,7 @@ export class BrowserView {
     const target = url.replace(/\/+$/, "");
     function search(children: BookmarkEntry[]): boolean {
       for (const c of children) {
-        if (c.type === "url" && c.url.replace(/\/+$/, "") === target) return true;
+        if (c.type === "url" && c.url && c.url.replace(/\/+$/, "") === target) return true;
         if (c.type === "folder" && c.children && search(c.children)) return true;
       }
       return false;

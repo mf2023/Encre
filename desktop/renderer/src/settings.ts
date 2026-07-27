@@ -93,10 +93,134 @@ const PERMISSION_OPTIONS = ["default", "accept_edits", "plan", "auto", "dont_ask
 
 interface DropdownOption { id: string; label: string }
 
+interface AdapterFieldDef {
+  key: string;
+  labelKey: string;
+  type: "text" | "password" | "number" | "textarea";
+}
+
+interface AdapterDef {
+  id: string;
+  name: string;
+  desc: string;
+  fields: AdapterFieldDef[];
+  docs?: string;
+}
+
+const ADAPTER_DEFS: AdapterDef[] = [
+  { id: "qqbot", name: "QQ Bot", desc: "接入 QQ 机器人平台，实时接收与回复群聊及私聊消息", fields: [
+    { key: "app_id", labelKey: "fieldAppId", type: "text" },
+    { key: "client_secret", labelKey: "fieldClientSecret", type: "password" },
+  ], docs: "https://bot.q.qq.com/wiki/" },
+  { id: "telegram", name: "Telegram", desc: "连接 Telegram Bot API，自动处理频道与私信中的指令和对话", fields: [
+    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+  ], docs: "https://core.telegram.org/bots#how-do-i-create-a-bot" },
+  { id: "discord", name: "Discord", desc: "集成 Discord 机器人，管理服务器频道消息与交互", fields: [
+    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+  ], docs: "https://discord.com/developers/applications" },
+  { id: "weixin", name: "微信", desc: "通过 iLink Bot 扫码绑定微信个人号，自动收发消息", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
+  { id: "wecom", name: "企业微信", desc: "对接企业微信自建应用回调，接收成员消息并自动回复", fields: [
+    { key: "token", labelKey: "fieldWecomToken", type: "text" },
+    { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
+    { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" },
+  ], docs: "https://developer.work.weixin.qq.com/document/" },
+  { id: "feishu", name: "飞书", desc: "连接飞书开放平台机器人，接收机器人事件并回复消息", fields: [
+    { key: "app_id", labelKey: "fieldAppId", type: "text" },
+    { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
+    { key: "verify_token", labelKey: "fieldVerifyToken", type: "password" },
+  ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
+  { id: "dingtalk", name: "钉钉", desc: "接入钉钉开放平台机器人，通过 WebSocket 接收事件并通过 OpenAPI 回复消息", fields: [
+    { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
+    { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" },
+  ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
+  { id: "slack", name: "Slack", desc: "集成 Slack 工作空间，通过 Bot Token 监听和发送频道消息", fields: [
+    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+    { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" },
+  ], docs: "https://api.slack.com/apps" },
+  { id: "whatsapp", name: "WhatsApp", desc: "连接 WhatsApp Business API，处理客户消息与对话", fields: [
+    { key: "phone_number_id", labelKey: "fieldPhoneNumberId", type: "text" },
+    { key: "access_token", labelKey: "fieldAccessToken", type: "password" },
+  ], docs: "https://developers.facebook.com/docs/whatsapp/" },
+  { id: "signal", name: "Signal", desc: "对接 Signal 消息服务，通过 REST API 收发加密消息", fields: [
+    { key: "phone_number", labelKey: "fieldPhoneNumber", type: "text" },
+    { key: "api_url", labelKey: "fieldApiUrl", type: "text" },
+  ]},
+  { id: "matrix", name: "Matrix", desc: "接入 Matrix 去中心化通信网络，加入房间并自动响应消息", fields: [
+    { key: "homeserver_url", labelKey: "fieldHomeserverUrl", type: "text" },
+    { key: "access_token", labelKey: "fieldAccessToken", type: "password" },
+  ], docs: "https://matrix.org/docs/guides/" },
+  { id: "email", name: "Email", desc: "通过 SMTP/IMAP 协议收发电子邮件，支持自动回复与管理", fields: [
+    { key: "smtp_host", labelKey: "fieldSmtpHost", type: "text" },
+    { key: "smtp_port", labelKey: "fieldSmtpPort", type: "number" },
+    { key: "smtp_user", labelKey: "fieldSmtpUser", type: "text" },
+    { key: "smtp_pass", labelKey: "fieldSmtpPass", type: "password" },
+    { key: "imap_host", labelKey: "fieldImapHost", type: "text" },
+    { key: "imap_port", labelKey: "fieldImapPort", type: "number" },
+  ]},
+  { id: "sms", name: "SMS", desc: "对接短信服务商 API，发送和接收短信通知", fields: [
+    { key: "provider", labelKey: "fieldProvider", type: "text" },
+    { key: "account_sid", labelKey: "fieldAccountSid", type: "text" },
+    { key: "auth_token", labelKey: "fieldAuthToken", type: "password" },
+  ]},
+  { id: "yuanbao", name: "元宝", desc: "接入元宝开放平台，通过 API 实现消息交互", fields: [
+    { key: "app_key", labelKey: "fieldAppKey", type: "text" },
+    { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
+  ]},
+  { id: "bluebubbles", name: "BlueBubbles", desc: "连接 BlueBubbles 服务器，实现 iMessage 消息收发", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+    { key: "api_key", labelKey: "fieldApiKey", type: "password" },
+  ], docs: "https://bluebubbles.app/" },
+  { id: "webhook", name: "Webhook", desc: "启动 Webhook 监听服务，接收外部系统的 HTTP 回调请求", fields: [
+    { key: "listen_path", labelKey: "fieldListenPath", type: "text" },
+    { key: "secret", labelKey: "fieldSecret", type: "password" },
+  ]},
+  { id: "homeassistant", name: "Home Assistant", desc: "连接 Home Assistant 智能家居平台，执行设备控制与状态查询", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+    { key: "access_token", labelKey: "fieldLongLivedToken", type: "password" },
+  ], docs: "https://www.home-assistant.io/docs/authentication/" },
+  { id: "google_chat", name: "Google Chat", desc: "连接 Google Chat 空间，通过 Webhook 收发消息", fields: [
+    { key: "webhook_url", labelKey: "fieldWebhookUrl", type: "text" },
+    { key: "service_account", labelKey: "fieldServiceAccount", type: "textarea" },
+  ], docs: "https://developers.google.com/chat" },
+  { id: "irc", name: "IRC", desc: "连接 IRC 服务器，加入频道并自动响应消息", fields: [
+    { key: "server", labelKey: "fieldServer", type: "text" },
+    { key: "port", labelKey: "fieldPort", type: "number" },
+    { key: "nickname", labelKey: "fieldNickname", type: "text" },
+    { key: "password", labelKey: "fieldPassword", type: "password" },
+  ]},
+  { id: "line", name: "LINE", desc: "连接 LINE Messaging API，自动处理好友与群聊消息", fields: [
+    { key: "channel_access_token", labelKey: "fieldChannelAccessToken", type: "password" },
+    { key: "channel_secret", labelKey: "fieldChannelSecret", type: "password" },
+  ], docs: "https://developers.line.biz/en/services/messaging-api/" },
+  { id: "mattermost", name: "Mattermost", desc: "集成 Mattermost 团队协作平台，监听和发送频道消息", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+  ], docs: "https://developers.mattermost.com/" },
+  { id: "ntfy", name: "ntfy", desc: "通过 ntfy 推送服务发送通知消息", fields: [
+    { key: "topic", labelKey: "fieldTopic", type: "text" },
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+  ], docs: "https://ntfy.sh/docs/" },
+  { id: "photon", name: "Photon", desc: "连接 Photon 社交平台，实现消息收发与交互", fields: [
+    { key: "api_url", labelKey: "fieldApiUrl", type: "text" },
+    { key: "api_key", labelKey: "fieldApiKey", type: "password" },
+  ]},
+  { id: "raft", name: "Raft", desc: "接入 Raft 分布式通信网络，处理节点间消息", fields: [
+    { key: "node_id", labelKey: "fieldNodeId", type: "text" },
+    { key: "peers", labelKey: "fieldPeers", type: "text" },
+  ]},
+  { id: "simplex", name: "SimpleX", desc: "连接 SimpleX 去中心化消息平台，保护隐私安全通信", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+    { key: "display_name", labelKey: "fieldDisplayName", type: "text" },
+  ], docs: "https://simplex.chat/" },
+  { id: "teams", name: "Microsoft Teams", desc: "集成 Microsoft Teams，通过 Bot Framework 处理频道与群聊消息", fields: [
+    { key: "app_id", labelKey: "fieldAppId", type: "text" },
+    { key: "app_password", labelKey: "fieldAppPassword", type: "password" },
+  ], docs: "https://learn.microsoft.com/en-us/microsoftteams/platform/" },
+];
+
 export class Settings {
   private nav: HTMLElement;
   private currentPanel: PanelId = "general";
-  private _expandedAdapterId: string | null = null;
   private _adapterTestResults: Record<string, {success: boolean, message: string}> = {};
   private panels: Record<PanelId, HTMLElement>;
   private searchInput: HTMLInputElement;
@@ -204,11 +328,17 @@ export class Settings {
       }
 
       // Remove document button
-      const removeBtn = target.closest(".btn-doc-remove");
+      const removeBtn = target.closest("[data-action='delete-doc']");
       if (removeBtn) {
         const id = removeBtn.getAttribute("data-doc-id");
         const name = removeBtn.getAttribute("data-doc-name");
-        if (id && name) this._showDocDeleteConfirm(id, name, t);
+        if (id && name) {
+          Dialog.confirm(t("settings.deleteDoc"), t("settings.confirmDeleteDoc", { name })).then((ok) => {
+            if (ok) {
+              send({ type: "remove_document", id } as any);
+            }
+          });
+        }
       }
     });
 
@@ -482,11 +612,17 @@ setModelConfigs(currentModels, activeIdx);
       }
     });
 
-    // Auto-refresh model panel when modelConfigs change (count or enabled status)
+    // Auto-refresh model panel when modelConfigs or activeModelIndex change
+    let lastModelIdx = getState().activeModelIndex;
     subscribe(() => {
       const app = document.getElementById("app");
       if (!app?.classList.contains("settings-mode")) return;
-      if (this.currentPanel === "model" && this.panels.model) this.renderModel();
+      const st = getState();
+      const idxChanged = st.activeModelIndex !== lastModelIdx;
+      if (idxChanged) {
+        lastModelIdx = st.activeModelIndex;
+        if (this.currentPanel === "model" && this.panels.model) this.renderModel();
+      }
     });
 
     // Auto-refresh MCP panel when mcpServers change
@@ -612,7 +748,7 @@ setModelConfigs(currentModels, activeIdx);
       const cur = getState().gatewayStatus;
       if (cur !== lastGatewayStatus) {
         lastGatewayStatus = cur;
-        if (this.currentPanel === "gateway" && this.panels.gateway) this.renderGateway();
+        if (this.currentPanel === "gateway" && this.panels.gateway) requestAnimationFrame(() => this.renderGateway());
       }
     });
 
@@ -639,7 +775,7 @@ setModelConfigs(currentModels, activeIdx);
     onAdapterTestResult((event) => {
       this._adapterTestResults[event.adapter_id] = { success: event.success, message: event.message };
       if (this.currentPanel === "gateway") {
-        this.renderGateway();
+        requestAnimationFrame(() => this.renderGateway());
       }
     });
 
@@ -737,69 +873,6 @@ setModelConfigs(currentModels, activeIdx);
             (window as any).lucide.createIcons({ root: statusEl });
           }
         }
-      }
-    });
-  }
-
-  /** Show a standalone QR code popup window for WeChat login. */
-  private _showWechatQrDialog(): void {
-    document.getElementById("wechat-qr-overlay")?.remove();
-    (this as any)._wechatDialogOpen = true;
-    (this as any)._qrResultReceived = false;
-    const overlay = document.createElement("div");
-    overlay.id = "wechat-qr-overlay";
-    overlay.className = "toast-overlay";
-    overlay.innerHTML = `
-      <div class="toast-dialog" style="width:320px;text-align:center;padding:24px">
-        <div class="toast-title" style="text-align:center;font-size:15px;font-weight:600;border-bottom:none;padding-bottom:0;margin-bottom:0">${t("settings.wechatScanDialogTitle")}</div>
-        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0" />
-        <div style="position:relative;display:inline-block;margin:0 auto">
-          <img id="wechat-qr-img" style="display:none;width:240px;height:240px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.12)" />
-          <div id="wechat-qr-success-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center">
-            <div style="width:56px;height:56px;border-radius:50%;background:#07C160;display:flex;align-items:center;justify-content:center">
-              <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block">
-                <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-              </svg>
-            </div>
-          </div>
-          <div id="wechat-qr-refresh-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center;cursor:pointer">
-            <div style="width:56px;height:56px;border-radius:50%;background:#9aa0a6;display:flex;align-items:center;justify-content:center">
-              <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block">
-                <path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-              </svg>
-            </div>
-          </div>
-        </div>
-        <div id="wechat-qr-status" style="padding:60px 0 0;font-size:14px;color:var(--text-muted)">${t("settings.wechatScanning")}</div>
-        <div id="wechat-qr-countdown" style="display:none;font-size:12px;color:var(--text-muted);margin-top:4px"></div>
-        <div style="margin-top:16px">
-          <button class="btn" id="wechat-qr-close" style="padding:6px 24px;font-size:13px">${t("header.close")}</button>
-        </div>
-      </div>`;
-    document.body.appendChild(overlay);
-    overlay.querySelector("#wechat-qr-close")?.addEventListener("click", () => {
-      if ((this as any)._qrCountdown) clearInterval((this as any)._qrCountdown);
-      (this as any)._wechatDialogOpen = false;
-      overlay.remove();
-    });
-    const refreshOverlay = overlay.querySelector("#wechat-qr-refresh-overlay") as HTMLElement | null;
-    if (refreshOverlay) {
-      refreshOverlay.addEventListener("click", () => {
-        refreshOverlay.style.display = "none";
-        const statusEl = document.getElementById("wechat-qr-status");
-        if (statusEl) {
-          statusEl.textContent = t("settings.wechatScanning");
-          statusEl.style.display = "block";
-        }
-        const img = document.getElementById("wechat-qr-img") as HTMLImageElement | null;
-        if (img) { img.style.display = "none"; img.src = ""; }
-        (this as any)._qrResultReceived = false;
-        send({ type: "wechat_scan", adapter_id: "weixin" });
-      });
-    }
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) {
-        e.stopPropagation();
       }
     });
   }
@@ -1267,6 +1340,7 @@ setModelConfigs(currentModels, activeIdx);
     const trigger = document.getElementById(`${id}-trigger`);
     const dropdown = document.getElementById(`${id}-dropdown`);
     if (!wrap || !trigger || !dropdown) return;
+    if (wrap.classList.contains("is-disabled")) return;
 
     trigger.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1327,12 +1401,17 @@ setModelConfigs(currentModels, activeIdx);
     const startupModes: DropdownOption[] = [
       { id: "normal", label: t("settings.normalMode") },
       { id: "iwork", label: t("settings.iworkMode") },
+      { id: "automation", label: t("settings.automationMode") },
     ];
 
     const startupBehaviors: DropdownOption[] = [
       { id: "new", label: t("settings.startupNew") },
       { id: "last", label: t("settings.startupLast") },
     ];
+    const currentBehavior = startupBehaviors.find(o => o.id === currentStartupBehavior) || startupBehaviors[0];
+    const behaviorItems = startupBehaviors.map(o =>
+      `<div class="settings-dropdown-item${o.id === currentStartupBehavior ? " selected" : ""}" data-value="${o.id}">${o.label}</div>`
+    ).join("");
 
     const langPrefOptions: DropdownOption[] = [
       { id: "auto", label: t("language.autoFollow") },
@@ -1392,7 +1471,13 @@ setModelConfigs(currentModels, activeIdx);
             <div class="settings-item-desc">${t("settings.startupSessionBehaviorDesc")}</div>
           </div>
           <div class="settings-item-control">
-            ${this.renderDropdown("dd-startup-behavior", startupBehaviors, currentStartupBehavior, (v) => { this.saveSetting("startup_session_behavior", v); this.renderGeneral(); })}
+            <div class="settings-dropdown-wrap${currentStartupMode === "automation" ? " is-disabled" : ""}" id="dd-startup-behavior-wrap">
+              <button class="settings-dropdown-trigger" id="dd-startup-behavior-trigger" type="button">
+                <span>${currentBehavior.label}</span>
+                <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+              </button>
+              <div class="settings-dropdown" id="dd-startup-behavior-dropdown">${behaviorItems}</div>
+            </div>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -1753,7 +1838,7 @@ this.renderShortcuts();
             <button class="btn-icon" data-action="edit" data-idx="${i}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" data-idx="${i}" data-tooltip="${t("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete" data-idx="${i}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -1800,108 +1885,13 @@ this.renderShortcuts();
     const gs = st.gatewayStatus;
     const adapters = gs?.adapters ?? [];
 
-    interface AdapterFieldDef {
-      key: string;
-      labelKey: string;
-      type: "text" | "password" | "number";
-    }
-
-    interface AdapterDef {
-      id: string;
-      name: string;
-      desc: string;
-      fields: AdapterFieldDef[];
-      docs?: string;
-    }
-
-    const adapterDefs: AdapterDef[] = [
-      { id: "qqbot", name: "QQ Bot", desc: "接入 QQ 机器人平台，实时接收与回复群聊及私聊消息", fields: [
-        { key: "app_id", labelKey: "fieldAppId", type: "text" },
-        { key: "client_secret", labelKey: "fieldClientSecret", type: "password" },
-      ], docs: "https://bot.q.qq.com/wiki/" },
-      { id: "telegram", name: "Telegram", desc: "连接 Telegram Bot API，自动处理频道与私信中的指令和对话", fields: [
-        { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
-      ], docs: "https://core.telegram.org/bots#how-do-i-create-a-bot" },
-      { id: "discord", name: "Discord", desc: "集成 Discord 机器人，管理服务器频道消息与交互", fields: [
-        { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
-      ], docs: "https://discord.com/developers/applications" },
-      { id: "weixin", name: "微信", desc: "通过 iLink Bot 扫码绑定微信个人号，自动收发消息", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
-      { id: "wecom", name: "企业微信", desc: "对接企业微信自建应用回调，接收成员消息并自动回复", fields: [
-        { key: "token", labelKey: "fieldWecomToken", type: "text" },
-        { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
-        { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" },
-      ], docs: "https://developer.work.weixin.qq.com/document/" },
-      { id: "feishu", name: "飞书", desc: "连接飞书开放平台机器人，接收机器人事件并回复消息", fields: [
-        { key: "app_id", labelKey: "fieldAppId", type: "text" },
-        { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-        { key: "verify_token", labelKey: "fieldVerifyToken", type: "password" },
-      ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
-      { id: "dingtalk", name: "钉钉", desc: "接入钉钉开放平台机器人，通过 WebSocket 接收事件并通过 OpenAPI 回复消息", fields: [
-        { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
-        { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" },
-      ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
-      { id: "slack", name: "Slack", desc: "集成 Slack 工作空间，通过 Bot Token 监听和发送频道消息", fields: [
-        { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
-        { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" },
-      ], docs: "https://api.slack.com/apps" },
-      { id: "whatsapp", name: "WhatsApp", desc: "连接 WhatsApp Business API，处理客户消息与对话", fields: [
-        { key: "phone_number_id", labelKey: "fieldPhoneNumberId", type: "text" },
-        { key: "access_token", labelKey: "fieldAccessToken", type: "password" },
-      ], docs: "https://developers.facebook.com/docs/whatsapp/" },
-      { id: "signal", name: "Signal", desc: "对接 Signal 消息服务，通过 REST API 收发加密消息", fields: [
-        { key: "phone_number", labelKey: "fieldPhoneNumber", type: "text" },
-        { key: "api_url", labelKey: "fieldApiUrl", type: "text" },
-      ]},
-      { id: "matrix", name: "Matrix", desc: "接入 Matrix 去中心化通信网络，加入房间并自动响应消息", fields: [
-        { key: "homeserver_url", labelKey: "fieldHomeserverUrl", type: "text" },
-        { key: "access_token", labelKey: "fieldAccessToken", type: "password" },
-      ], docs: "https://matrix.org/docs/guides/" },
-      { id: "email", name: "Email", desc: "通过 SMTP/IMAP 协议收发电子邮件，支持自动回复与处理", fields: [
-        { key: "smtp_host", labelKey: "fieldSmtpHost", type: "text" },
-        { key: "smtp_port", labelKey: "fieldSmtpPort", type: "number" },
-        { key: "smtp_user", labelKey: "fieldSmtpUser", type: "text" },
-        { key: "smtp_pass", labelKey: "fieldSmtpPass", type: "password" },
-        { key: "imap_host", labelKey: "fieldImapHost", type: "text" },
-        { key: "imap_port", labelKey: "fieldImapPort", type: "number" },
-      ]},
-      { id: "sms", name: "SMS", desc: "对接短信服务商 API，发送和接收短信通知", fields: [
-        { key: "provider", labelKey: "fieldProvider", type: "text" },
-        { key: "account_sid", labelKey: "fieldAccountSid", type: "text" },
-        { key: "auth_token", labelKey: "fieldAuthToken", type: "password" },
-      ]},
-      { id: "yuanbao", name: "元宝", desc: "接入元宝开放平台，通过 API 实现消息交互", fields: [
-        { key: "app_key", labelKey: "fieldAppKey", type: "text" },
-        { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-      ]},
-      { id: "bluebubbles", name: "BlueBubbles", desc: "连接 BlueBubbles 服务器，实现 iMessage 消息收发", fields: [
-        { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-        { key: "api_key", labelKey: "fieldApiKey", type: "password" },
-      ], docs: "https://bluebubbles.app/" },
-      { id: "webhook", name: "Webhook", desc: "启动 Webhook 监听服务，接收外部系统的 HTTP 回调请求", fields: [
-        { key: "listen_path", labelKey: "fieldListenPath", type: "text" },
-        { key: "secret", labelKey: "fieldSecret", type: "password" },
-      ]},
-      { id: "homeassistant", name: "Home Assistant", desc: "连接 Home Assistant 智能家居平台，执行设备控制与状态查询", fields: [
-        { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-        { key: "access_token", labelKey: "fieldLongLivedToken", type: "password" },
-      ], docs: "https://www.home-assistant.io/docs/authentication/" },
-      { id: "msgraph", name: "Microsoft Graph", desc: "通过 Microsoft Graph API 接入 Office 365，管理邮件日历和用户", fields: [
-        { key: "tenant_id", labelKey: "fieldTenantId", type: "text" },
-        { key: "client_id", labelKey: "fieldClientId", type: "text" },
-        { key: "client_secret", labelKey: "fieldClientSecret", type: "password" },
-      ], docs: "https://learn.microsoft.com/en-us/graph/auth/" },
-    ];
-
-    const expandedAdapter = this._expandedAdapterId;
-
     let cardsHtml = "";
-    for (const def of adapterDefs) {
+    for (const def of ADAPTER_DEFS) {
       const adapterNameKey = `settings.adapterName${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`;
       const displayName = t(adapterNameKey);
       const enabled = !!(s[`adapter_${def.id}_enabled` as keyof typeof s]);
       const statusInfo = adapters.find(a => a.name === def.id);
       const connected = statusInfo?.connected ?? false;
-      const isExpanded = expandedAdapter === def.id;
 
       const fieldCount = def.fields.length;
       const allConfigured = def.fields.every(f => {
@@ -1947,66 +1937,21 @@ this.renderShortcuts();
         descHtml = `<span style="color:var(--text-muted);font-size:11px">${this.esc(t(`settings.adapterDesc${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`))}</span>`;
       }
 
-      let configBodyHtml = "";
-      if (isExpanded) {
-        let fieldsHtml = "";
-        for (const f of def.fields) {
-          const val = (s[`adapter_${def.id}_${f.key}` as keyof typeof s] as string) ?? "";
-          fieldsHtml += `
-            <div style="display:flex;align-items:center;justify-content:center;padding:8px 0;gap:12px">
-              <div style="font-size:13px;color:var(--text-primary);white-space:nowrap;width:140px;flex-shrink:0;margin:0;text-align:right">${t("settings." + f.labelKey)}</div>
-              <input type="${f.type}" id="adapter-${def.id}-${f.key}" class="model-form-input" style="width:380px;flex:0 0 auto" value="${this.esc(val)}" spellcheck="false" />
-            </div>`;
-        }
-        configBodyHtml = `
-	          <div style="padding:12px 16px 8px">
-	            ${fieldsHtml}
-${def.id === "weixin" ? connected ? `
-            <div style="display:flex;align-items:center;justify-content:center;min-height:60px">
-              <button class="btn btn-sm" id="wechat-unbind-btn" style="padding:6px 16px;font-size:12px;color:var(--text-danger)">
-                <i data-lucide="unlink" style="width:14px;height:14px;margin-right:4px"></i>
-                ${t("settings.wechatUnbind")}
-              </button>
-            </div>
-            ` : `
-            <div style="display:flex;align-items:center;justify-content:center;min-height:60px">
-              <button class="btn btn-primary" id="wechat-scan-btn" style="padding:8px 28px;font-size:14px">
-                <i data-lucide="scan-qr-code" style="width:16px;height:16px;margin-right:6px"></i>
-                ${t("settings.wechatScan")}
-              </button>
-            </div>
-            ` : `
-	            <div id="adapter-test-status-${def.id}" style="font-size:12px;padding:4px 0;min-height:20px"></div>
-	            <div style="padding-top:12px;display:flex;justify-content:flex-end;gap:8px">
-	              <button class="btn btn-sm" id="adapter-test-${def.id}" style="padding:6px 20px;font-size:13px">
-	                <i data-lucide="plug" style="width:14px;height:14px;margin-right:4px"></i>
-	                ${t("settings.adapterTest")}
-	              </button>
-	              <button class="btn btn-primary btn-sm" id="adapter-save-${def.id}" style="padding:6px 20px;font-size:13px">
-	                <i data-lucide="check" style="width:14px;height:14px;margin-right:4px"></i>
-	                ${t("settings.adapterSave")}
-	              </button>
-	            </div>
-	            `}
-	          </div>`;
-      }
-
       const iconData = PLATFORM_ICONS[def.id];
-      const isMonoIcon = def.id === "matrix" || def.id === "sms" || def.id === "webhook";
+      const isMonoIcon = def.id === "matrix" || def.id === "sms" || def.id === "webhook" || def.id === "google_chat" || def.id === "irc" || def.id === "line" || def.id === "mattermost" || def.id === "ntfy" || def.id === "photon" || def.id === "raft" || def.id === "simplex" || def.id === "teams";
       let iconHtml: string;
       if (iconData) {
         const vb = iconData.viewBox || "0 0 24 24";
         iconHtml = `<svg viewBox="${vb}" width="22" height="22" class="adapter-platform-icon${isMonoIcon ? " pi-mono" : ""}" style="margin-right:10px;flex-shrink:0">${iconData.inner}</svg>`;
       } else {
         const fbColors: Record<string, string> = {
-          feishu: "#3370FF", dingtalk: "#0089FF", slack: "#4A154B", msgraph: "#0078D4",
+          feishu: "#3370FF", dingtalk: "#0089FF", slack: "#4A154B",
           yuanbao: "#FF6A00", bluebubbles: "#007AFF", webhook: "#6B7280", sms: "#34A853",
         };
         const fbText: Record<string, string> = {
           feishu: t("settings.abbrFeishu"),
           dingtalk: t("settings.abbrDingtalk"),
           slack: "Sl",
-          msgraph: "MS",
           yuanbao: t("settings.abbrYuanbao"),
           bluebubbles: "BB",
           webhook: "WH",
@@ -2019,7 +1964,7 @@ ${def.id === "weixin" ? connected ? `
 
       cardsHtml += `
         <div class="settings-card" style="margin-bottom:12px">
-          <div class="settings-item-row" style="cursor:pointer" data-adapter-toggle="${def.id}">
+          <div class="settings-item-row" data-adapter-toggle="${def.id}">
             <div class="settings-item-info">
               <div class="settings-item-title" style="display:flex;align-items:center">
                 ${iconHtml}
@@ -2029,17 +1974,15 @@ ${def.id === "weixin" ? connected ? `
               <div class="settings-item-desc">${descHtml}</div>
             </div>
             <div class="settings-item-control" style="gap:8px">
-              ${isExpanded && def.docs && def.id !== "weixin" ? `<a href="#" class="model-get-apikey-link" data-adapter-docs="${def.id}" style="font-size:12px">${t("settings.viewDocs")}</a>` : ""}
               <label class="toggle-switch" onclick="event.stopPropagation()">
                 <input type="checkbox" id="adapter-enable-${def.id}" ${enabled ? "checked" : ""} />
                 <span class="toggle-slider"></span>
               </label>
-              <button class="btn-icon" id="adapter-expand-${def.id}" data-adapter-expand="${def.id}" style="transition:transform 0.2s${isExpanded ? ";transform:rotate(180deg)" : ""}">
-                <i data-lucide="chevron-down" style="width:16px;height:16px"></i>
+              <button class="btn-icon" id="adapter-expand-${def.id}" data-adapter-expand="${def.id}" data-tooltip="${t("settings.adapterConfig")}">
+                <i data-lucide="arrow-up-right" style="width:16px;height:16px"></i>
               </button>
             </div>
           </div>
-          ${configBodyHtml}
         </div>`;
     }
 
@@ -2048,7 +1991,7 @@ ${def.id === "weixin" ? connected ? `
       ${cardsHtml}`;
 
     // Bind event listeners
-    for (const def of adapterDefs) {
+    for (const def of ADAPTER_DEFS) {
       const enableToggle = document.getElementById(`adapter-enable-${def.id}`) as HTMLInputElement;
       if (enableToggle) {
         enableToggle.addEventListener("change", () => {
@@ -2065,113 +2008,7 @@ ${def.id === "weixin" ? connected ? `
       if (expandBtn) {
         expandBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          this._expandedAdapterId = this._expandedAdapterId === def.id ? null : def.id;
-          this.renderGateway();
-        });
-      }
-
-      const toggleRow = document.querySelector(`[data-adapter-toggle="${def.id}"]`);
-      if (toggleRow) {
-        toggleRow.addEventListener("click", () => {
-          this._expandedAdapterId = this._expandedAdapterId === def.id ? null : def.id;
-          this.renderGateway();
-        });
-      }
-
-      const saveBtn = document.getElementById(`adapter-save-${def.id}`);
-      if (saveBtn) {
-        saveBtn.addEventListener("click", () => {
-          const current = { ...getState().settings };
-          for (const f of def.fields) {
-            const input = document.getElementById(`adapter-${def.id}-${f.key}`) as HTMLInputElement;
-            if (input) {
-              (current as any)[`adapter_${def.id}_${f.key}`] = input.value;
-            }
-          }
-          const config: Record<string, any> = {};
-          for (const f of def.fields) {
-            const input = document.getElementById(`adapter-${def.id}-${f.key}`) as HTMLInputElement;
-            if (input) {
-              config[`adapter_${def.id}_${f.key}`] = input.value;
-            }
-          }
-          setSettings(current as any);
-          // Include enable state so adapter starts immediately after save
-          const enableInput = document.getElementById(`adapter-enable-${def.id}`) as HTMLInputElement;
-          if (enableInput) {
-            config[`adapter_${def.id}_enabled`] = enableInput.checked;
-          }
-          send({ type: "configure", config });
-          delete this._adapterTestResults[def.id];
-          this.renderGateway();
-        });
-      }
-
-      // WeChat scan button (QR code login) - opens a standalone popup window
-      const scanBtn = document.getElementById("wechat-scan-btn");
-      if (scanBtn) {
-        scanBtn.addEventListener("click", () => {
-          scanBtn.setAttribute("disabled", "disabled");
-          (this as any)._lastQrUrl = "";
-          this._showWechatQrDialog();
-          send({ type: "wechat_scan", adapter_id: "weixin" });
-          // Re-enable after the result arrives (or after 30s timeout).
-          setTimeout(() => scanBtn.removeAttribute("disabled"), 30000);
-        });
-      }
-      // WeChat unbind button
-      const unbindBtn = document.getElementById("wechat-unbind-btn");
-      if (unbindBtn) {
-        unbindBtn.addEventListener("click", () => {
-          Dialog.confirm(t("settings.wechatUnbind"), t("settings.wechatUnbindConfirm")).then((confirmed) => {
-            if (confirmed) {
-              // Disable adapter and clear credentials
-              const unbindConfig: Record<string, any> = {
-                adapter_weixin_enabled: false,
-                adapter_weixin_app_id: "",
-                adapter_weixin_token: "",
-                adapter_weixin_api_url: "",
-              };
-              send({ type: "configure", config: unbindConfig });
-              // Update local state
-              const current = { ...getState().settings,
-                adapter_weixin_enabled: false,
-                adapter_weixin_app_id: "",
-                adapter_weixin_token: "",
-                adapter_weixin_api_url: "",
-              };
-              setSettings(current as any);
-              this.renderGateway();
-            }
-          });
-        });
-      }
-
-      const testBtn = document.getElementById(`adapter-test-${def.id}`) as HTMLButtonElement | null;
-      if (testBtn) {
-        testBtn.addEventListener("click", () => {
-          const config: Record<string, any> = {};
-          for (const f of def.fields) {
-            const input = document.getElementById(`adapter-${def.id}-${f.key}`) as HTMLInputElement;
-            if (input) {
-              config[f.key] = input.value;
-            }
-          }
-          const enableInput = document.getElementById(`adapter-enable-${def.id}`) as HTMLInputElement;
-          config.enabled = enableInput ? enableInput.checked : false;
-
-          delete this._adapterTestResults[def.id];
-          withLoading(testBtn, () => new Promise<void>((resolve) => {
-            const poll = () => {
-              if (this._adapterTestResults[def.id] !== undefined) {
-                resolve();
-              } else {
-                setTimeout(poll, 100);
-              }
-            };
-            setTimeout(poll, 100);
-            send({ type: "test_adapter", adapter_id: def.id, config });
-          }));
+          this._showAdapterConfigDialog(def.id);
         });
       }
 
@@ -2196,6 +2033,218 @@ ${def.id === "weixin" ? connected ? `
 
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: this.panels.gateway });
+    }
+  }
+
+  /** Open a modal dialog (model-config style) for any adapter. */
+  private _showAdapterConfigDialog(defId: string): void {
+    const def = ADAPTER_DEFS.find(d => d.id === defId);
+    if (!def) return;
+    const st = getState();
+    const s = st.settings;
+    const tFn = t;
+
+    // Build bodyHtml from fields
+    let bodyHtml = "";
+    if (defId === "weixin") {
+      const gs = st.gatewayStatus;
+      const adapters = gs?.adapters ?? [];
+      const statusInfo = adapters.find(a => a.name === "weixin");
+      const connected = statusInfo?.connected ?? false;
+      const appId = (s[`adapter_weixin_app_id` as keyof typeof s] as string) ?? "";
+      const token = (s[`adapter_weixin_token` as keyof typeof s] as string) ?? "";
+      const apiUrl = (s[`adapter_weixin_api_url` as keyof typeof s] as string) ?? "";
+
+      if (connected && appId) {
+        bodyHtml = `
+          <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
+            <label class="model-form-label">${tFn("settings.fieldAppId")}</label>
+            <input type="text" class="model-form-input" value="${this.esc(appId)}" readonly style="user-select:none;-webkit-user-select:none" />
+          </div>
+          <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
+            <label class="model-form-label"><span class="model-form-required">*</span>${tFn("settings.fieldToken")}</label>
+            <div class="model-form-input-wrap" style="position:relative;width:100%">
+              <input type="password" id="dlg-weixin-token-input" class="model-form-input" value="${this.esc(token)}" readonly style="user-select:none;-webkit-user-select:none;padding-right:30px" />
+              <div class="model-form-spinners" style="right:2px;display:flex;align-items:center">
+                <button class="model-form-spinner-btn" id="dlg-weixin-eye-btn" type="button" title="显示" style="width:24px;height:24px;border:none;background:transparent;cursor:pointer;padding:0;color:var(--text-muted)">
+                  <i data-lucide="eye" style="width:14px;height:14px"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
+            <label class="model-form-label">${tFn("settings.fieldWeixinApiUrl")}</label>
+            <input type="text" class="model-form-input" value="${this.esc(apiUrl)}" readonly style="user-select:none;-webkit-user-select:none" />
+          </div>`;
+      } else {
+        // Not connected — show QR scan area
+        bodyHtml = `<div id="dlg-weixin-qr-area" style="text-align:center;padding:8px 0">
+          <div style="position:relative;display:inline-block;margin:0 auto">
+            <img id="dlg-weixin-qr-img" style="display:none;width:240px;height:240px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.12)" />
+            <div id="dlg-weixin-qr-success" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center">
+              <div style="width:56px;height:56px;border-radius:50%;background:#07C160;display:flex;align-items:center;justify-content:center">
+                <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              </div>
+            </div>
+            <div id="dlg-weixin-qr-refresh" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.35);border-radius:12px;align-items:center;justify-content:center;cursor:pointer">
+              <div style="width:56px;height:56px;border-radius:50%;background:#9aa0a6;display:flex;align-items:center;justify-content:center">
+                <svg viewBox="0 0 24 24" width="32" height="32" style="color:#fff;display:block"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+              </div>
+            </div>
+          </div>
+          <div id="dlg-weixin-qr-status" style="padding:8px 0 0;font-size:14px;color:var(--text-muted)">${tFn("settings.wechatScanning")}</div>
+        </div>`;
+      }
+    } else {
+      for (const f of def.fields) {
+        const val = (s[`adapter_${defId}_${f.key}` as keyof typeof s] as string) ?? "";
+        if (f.type === "textarea") {
+          bodyHtml += `
+                <div class="model-form-row">
+                    <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
+                    <textarea id="dlg-${defId}-${f.key}" class="model-form-input" style="resize:vertical;min-height:80px" spellcheck="false">${this.esc(val)}</textarea>
+                </div>`;
+        } else {
+          bodyHtml += `
+                <div class="model-form-row">
+                    <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
+                    <input type="${f.type}" id="dlg-${defId}-${f.key}" class="model-form-input" value="${this.esc(val)}" spellcheck="false" />
+                </div>`;
+        }
+      }
+    }
+
+    const titleKey = `settings.adapterName${defId.charAt(0).toUpperCase() + defId.slice(1)}`;
+    const title = tFn(titleKey);
+    const { overlay, close } = this._showFormDialog(title, bodyHtml, false);
+    const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
+
+    // Inject docs link into title bar
+    if (def.docs) {
+      const titleBar = overlay.querySelector(".toast-title") as HTMLElement;
+      if (titleBar) {
+        titleBar.style.display = "flex";
+        titleBar.style.justifyContent = "space-between";
+        titleBar.style.alignItems = "center";
+        titleBar.innerHTML = '<span>' + this.esc(title) + '</span><a href="#" class="model-get-apikey-link" id="dlg-' + defId + '-docs" style="font-size:12px">' + tFn("settings.viewDocs") + '</a>';
+        const docsLink = titleBar.querySelector('#dlg-' + defId + '-docs') as HTMLAnchorElement;
+        if (docsLink) {
+          docsLink.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const url = def.docs || "";
+            const behavior = (getState().settings.default_link_behavior as string) || "system";
+            if (behavior === "in_app") {
+              window.electronAPI?.openChildWindow?.(url, url);
+            } else {
+              window.electronAPI?.openExternal?.(url);
+            }
+          });
+        }
+      }
+    }
+
+    if (defId === "weixin") {
+      const gs = getState().gatewayStatus;
+      const adapters = gs?.adapters ?? [];
+      const statusInfo = adapters.find(a => a.name === "weixin");
+      const connected = statusInfo?.connected ?? false;
+      const appId = (getState().settings as any)[`adapter_weixin_app_id`] ?? "";
+
+      if (connected && appId) {
+        // Connected: turn OK button into "解绑" (danger), add eye toggle
+        okBtn.textContent = tFn("settings.wechatUnbind");
+        okBtn.className = "btn";
+        const unbindFn = () => {
+          Dialog.confirm(tFn("settings.wechatUnbind"), tFn("settings.wechatUnbindConfirm")).then((confirmed) => {
+            if (confirmed) {
+              const unbindConfig: Record<string, any> = {
+                adapter_weixin_enabled: false, adapter_weixin_app_id: "",
+                adapter_weixin_token: "", adapter_weixin_api_url: "",
+              };
+              send({ type: "configure", config: unbindConfig });
+              const current = { ...getState().settings,
+                adapter_weixin_enabled: false, adapter_weixin_app_id: "",
+                adapter_weixin_token: "", adapter_weixin_api_url: "",
+              };
+              setSettings(current as any);
+              this.renderGateway();
+              close();
+            }
+          });
+        };
+        okBtn.addEventListener("click", unbindFn);
+
+        // Eye toggle for token field
+        const eyeBtn = overlay.querySelector("#dlg-weixin-eye-btn") as HTMLButtonElement;
+        const tokenInput = overlay.querySelector("#dlg-weixin-token-input") as HTMLInputElement;
+        if (eyeBtn && tokenInput) {
+          let visible = false;
+          eyeBtn.addEventListener("click", () => {
+            visible = !visible;
+            tokenInput.type = visible ? "text" : "password";
+            const iconEl = eyeBtn.querySelector("i");
+            if (iconEl) iconEl.setAttribute("data-lucide", visible ? "eye-off" : "eye");
+            if (typeof (window as any).lucide !== "undefined") {
+              (window as any).lucide.createIcons({ root: eyeBtn });
+            }
+          });
+        }
+      } else {
+        // Not connected: QR scan mode — hide OK button
+        okBtn.style.display = "none";
+
+        // Start QR scan when dialog opens
+        send({ type: "wechat_scan", adapter_id: "weixin" });
+
+        // QR refresh overlay click
+        const refreshEl = overlay.querySelector("#dlg-weixin-qr-refresh") as HTMLElement;
+        if (refreshEl) {
+          refreshEl.addEventListener("click", () => {
+            refreshEl.style.display = "none";
+            const statusEl = document.getElementById("dlg-weixin-qr-status");
+            if (statusEl) { statusEl.textContent = tFn("settings.wechatScanning"); statusEl.style.display = "block"; }
+            const img = document.getElementById("dlg-weixin-qr-img") as HTMLImageElement | null;
+            if (img) { img.style.display = "none"; img.src = ""; }
+            send({ type: "wechat_scan", adapter_id: "weixin" });
+          });
+        }
+
+        // Override cancel to clean up
+        const cancelBtn = overlay.querySelector("#dialog-form-cancel") as HTMLButtonElement;
+        if (cancelBtn) {
+          cancelBtn.addEventListener("click", () => { this.renderGateway(); close(); });
+        }
+      }
+    } else {
+      okBtn.textContent = tFn("settings.adapterSave");
+
+      // Save button
+      okBtn.addEventListener("click", () => {
+        const current = { ...getState().settings };
+        const config: Record<string, any> = {};
+        for (const f of def.fields) {
+          const input = document.getElementById(`dlg-${defId}-${f.key}`) as HTMLInputElement | HTMLTextAreaElement;
+          const val = input?.value ?? "";
+          (current as any)[`adapter_${defId}_${f.key}`] = val;
+          config[`adapter_${defId}_${f.key}`] = val;
+        }
+        const enableInput = document.getElementById(`adapter-enable-${defId}`) as HTMLInputElement;
+        if (enableInput) {
+          config[`adapter_${defId}_enabled`] = enableInput.checked;
+        }
+        setSettings(current as any);
+        send({ type: "configure", config });
+        delete this._adapterTestResults[defId];
+        send({ type: "test_adapter", adapter_id: defId, config: { /* use raw field keys */ } });
+        // We don't wait for test result, just save and close
+        this.renderGateway();
+        close();
+      });
+    }
+
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: overlay });
     }
   }
 
@@ -2310,10 +2359,6 @@ private _bindModelSelect(): void {
         </label>
         <div class="model-form-dropdown-row" style="display:flex;align-items:center;gap:10px">
           ${modelOptions.length > 0 ? this.renderDropdown("new-model-select", modelOptions, initialModelSelectValue, () => {}) : `<div class="model-form-hint">${t("settings.customModelIdHint")}</div>`}
-          <label class="toggle-switch">
-            <input type="checkbox" id="new-model-multimodal" ${existing?.multimodal ? "checked" : ""} />
-            <span class="toggle-slider"></span>
-          </label>
         </div>
       </div>
       <div class="model-form-row" id="model-id-row"${isCurated ? ` style="display:none"` : ""}>
@@ -2336,15 +2381,51 @@ private _bindModelSelect(): void {
         <input type="password" id="new-model-apikey" class="model-form-input" placeholder="${t("settings.enterApiKey")}" value="${existing ? this.esc(existing.api_key) : ""}" />
       </div>
       <div class="model-form-row">
-        <label class="model-form-label" for="new-model-url">${t("settings.baseUrl")}</label>
+        <label class="model-form-label model-form-label--inline" for="new-model-url">
+          ${t("settings.baseUrl")}
+          <button type="button" class="model-form-help-btn" data-tooltip="${t("settings.baseUrlHint")}" tabindex="-1">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+              <path d="M12 17h.01"/>
+            </svg>
+          </button>
+        </label>
         <input type="text" id="new-model-url" class="model-form-input" placeholder="${t("settings.baseUrlPlaceholder")}" value="${existing ? this.esc(existing.base_url) : (provider ? this.esc(provider.base_url) : "")}" ${isCurated ? "readonly" : ""} />
       </div>
       <div class="model-form-row">
         <label class="model-form-label" for="new-model-tokens">${t("settings.maxTokens")}</label>
-        <input type="number" id="new-model-tokens" class="model-form-input" min="1" value="${initialTokens}" ${isCurated ? "readonly" : ""} />
+        <div class="model-form-input-wrap">
+          <input type="number" id="new-model-tokens" class="model-form-input" min="1" value="${initialTokens}" ${isCurated ? "readonly" : ""} />
+          <div class="model-form-spinners">
+            <button type="button" class="model-form-spinner-btn" data-spinner="up" tabindex="-1">
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                <path d="M1 5L5 1L9 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button type="button" class="model-form-spinner-btn" data-spinner="down" tabindex="-1">
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
-      <div class="model-form-row model-form-row-inline">
-        <label class="model-form-label" for="new-model-thinking-enabled">${t("settings.enableThinkingLevel")}</label>
+      <div class="model-form-thinking-card" style="margin-bottom:12px">
+        <div class="model-form-thinking-info">
+          <div class="model-form-thinking-title">${t("settings.multimodalToggle")}</div>
+          <div class="model-form-thinking-desc">${t("settings.multimodalHint")}</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="new-model-multimodal" ${existing?.multimodal ? "checked" : ""} />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="model-form-thinking-card">
+        <div class="model-form-thinking-info">
+          <div class="model-form-thinking-title">${t("settings.enableThinkingLevel")}</div>
+          <div class="model-form-thinking-desc">${t("settings.enableThinkingLevelHint")}</div>
+        </div>
         <label class="toggle-switch">
           <input type="checkbox" id="new-model-thinking-enabled" ${initialThinkingEnabled ? "checked" : ""} />
           <span class="toggle-slider"></span>
@@ -2465,6 +2546,23 @@ private _bindModelSelect(): void {
       if (el) el.dataset.userModified = "true";
     });
 
+    // Custom number spinner buttons for max tokens
+    document.querySelectorAll(".model-form-spinner-btn[data-spinner]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const input = (btn.closest(".model-form-input-wrap")?.querySelector(".model-form-input[type='number']")) as HTMLInputElement;
+        if (!input || input.readOnly) return;
+        const step = parseInt(input.step) || 1;
+        const min = parseInt(input.min) || 0;
+        const current = parseInt(input.value) || 0;
+        if (btn.getAttribute("data-spinner") === "up") {
+          input.value = String(Math.max(min, current + step));
+        } else {
+          input.value = String(Math.max(min, current - step));
+        }
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+
     okBtn.addEventListener("click", async () => {
       const name = (document.getElementById("new-model-name") as HTMLInputElement)?.value.trim();
       const modelIdEl = document.getElementById("new-model-id") as HTMLInputElement;
@@ -2569,7 +2667,7 @@ private _bindModelSelect(): void {
     const header = `
       <div class="model-table-header">
         <div class="model-table-cell model-cell-name">${tFn("settings.docName")}</div>
-        <div class="model-table-cell model-cell-provider">${tFn("settings.docSourceLocal")} / ${tFn("settings.docSize")}</div>
+        <div class="model-table-cell model-cell-provider">${tFn("settings.docSize")}</div>
         <div class="model-table-cell model-cell-actions">${tFn("settings.actions")}</div>
       </div>`;
     let rows = "";
@@ -2594,7 +2692,7 @@ private _bindModelSelect(): void {
             <div class="skill-aliases-sub">${sizeStr}</div>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon btn-doc-remove" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" data-tooltip="${tFn("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-doc" data-doc-id="${d.id}" data-doc-name="${this._escapeHtml(d.name)}" data-tooltip="${tFn("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -2609,7 +2707,9 @@ private _bindModelSelect(): void {
     overlay.innerHTML = `
       <div class="toast-dialog">
         <div class="toast-title">${tFn("settings.docName")}</div>
-        <input class="toast-input" id="dialog-doc-name" value="${this._escapeHtml(defaultName)}" placeholder="${tFn("settings.docNamePlaceholder")}">
+        <div class="input-wrapper input-wrapper--dialog">
+          <input id="dialog-doc-name" value="${this._escapeHtml(defaultName)}" placeholder="${tFn("settings.docNamePlaceholder")}" style="width:100%;border:none;outline:none;background:transparent;color:var(--text-primary);font-family:inherit;font-size:13px">
+        </div>
         <div class="toast-actions">
           <button class="btn" id="dialog-doc-cancel">${tFn("common.cancel")}</button>
           <button class="btn btn--primary" id="dialog-doc-ok">${tFn("common.confirm")}</button>
@@ -2659,28 +2759,6 @@ private _bindModelSelect(): void {
     overlay.querySelector("#dialog-url-cancel")?.addEventListener("click", () => overlay.remove());
     overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
   }
-
-  private _showDocDeleteConfirm(id: string, name: string, tFn: any): void {
-    const overlay = document.createElement("div");
-    overlay.className = "toast-overlay";
-    overlay.innerHTML = `
-      <div class="toast-dialog">
-        <div class="toast-title">${tFn("settings.confirmDeleteDoc").replace("{name}", this._escapeHtml(name))}</div>
-        <div class="toast-actions">
-          <button class="btn" id="dialog-del-cancel">${tFn("common.cancel")}</button>
-          <button class="btn btn--danger" id="dialog-del-ok">${tFn("common.delete")}</button>
-        </div>
-      </div>`;
-    document.body.appendChild(overlay);
-
-    overlay.querySelector("#dialog-del-ok")?.addEventListener("click", () => {
-      send({ type: "remove_document", id } as any);
-      overlay.remove();
-    });
-    overlay.querySelector("#dialog-del-cancel")?.addEventListener("click", () => overlay.remove());
-    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-  }
-
   private _escapeHtml(str: string): string {
     const div = document.createElement("div");
     div.textContent = str;
@@ -2770,7 +2848,7 @@ private _bindModelSelect(): void {
             ${isUser ? `<button class="btn-icon" data-action="edit-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>` : ""}
-            ${canDelete ? `<button class="btn-icon" data-action="delete-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.delete")}">
+            ${canDelete ? `<button class="btn-icon btn-icon--danger" data-action="delete-skill" data-name="${this.esc(sk.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>` : ""}
             <label class="toggle-switch toggle-sm">
@@ -2847,7 +2925,7 @@ private _bindModelSelect(): void {
             <button class="btn-icon" data-action="edit-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-command" data-name="${this.esc(cmd.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -2893,7 +2971,9 @@ private _bindModelSelect(): void {
       </div>
       <div class="model-form-row">
         <label class="model-form-label">${t("settings.commandPrompt")}</label>
-        <textarea id="cmd-prompt" class="model-form-input" placeholder="${t("settings.commandPromptPlaceholder")}" rows="4">${this.esc(existing?.prompt || "")}</textarea>
+        <div class="input-wrapper input-wrapper--dialog">
+          <textarea id="cmd-prompt" class="setting-rich-text" placeholder="${t("settings.commandPromptPlaceholder")}" style="min-height:80px">${this.esc(existing?.prompt || "")}</textarea>
+        </div>
       </div>`;
 
     const title = isEdit ? t("settings.editCommand") : t("settings.createCommand");
@@ -3084,7 +3164,7 @@ private _bindModelSelect(): void {
             <button class="btn-icon" data-action="edit-mcp" data-idx="${i}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-mcp" data-idx="${i}" data-tooltip="${t("settings.removeServer")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-mcp" data-idx="${i}" data-tooltip="${t("settings.removeServer")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -3220,9 +3300,11 @@ private _bindModelSelect(): void {
           ${t("settings.importMcpJsonFmt1")}<br>
           ${t("settings.importMcpJsonFmt2")}
         </div>
-        <textarea id="mcp-import-textarea" class="code-textarea"
-          placeholder="${this.esc(t("settings.importMcpJsonPlaceholder"))}">${this.esc(initialJson)}</textarea>
-        <div id="mcp-import-preview" style="margin-top:10px"></div>
+        <div class="input-wrapper input-wrapper--dialog" style="margin-bottom:10px">
+          <textarea id="mcp-import-textarea" class="setting-rich-text"
+            placeholder="${this.esc(t("settings.importMcpJsonPlaceholder"))}">${this.esc(initialJson)}</textarea>
+        </div>
+        <div id="mcp-import-preview" style="margin-top:0"></div>
         <div id="mcp-import-options" class="hidden" style="margin-top:10px">
           ${isEdit ? "" : `
           <div style="font-size:12px;font-weight:500;color:var(--text-primary);margin-bottom:6px">${t("settings.importMode")}</div>
@@ -3241,6 +3323,17 @@ private _bindModelSelect(): void {
     const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
     const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
     okBtn.textContent = t("settings.importMcpJsonParse");
+
+    // ── Auto-grow textarea: height = content, capped at max-height ──
+    const ta = overlay.querySelector("#mcp-import-textarea") as HTMLTextAreaElement;
+    if (ta) {
+      const grow = () => {
+        ta.style.height = "auto";
+        ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+      };
+      ta.addEventListener("input", grow);
+      setTimeout(grow, 0);
+    }
 
     let parsedServers: MCPServerConfig[] | null = null;
 
@@ -3343,7 +3436,7 @@ private _bindModelSelect(): void {
             <button class="btn-icon" data-action="edit-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete-rule" data-name="${this._escapeHtml(r.name)}" data-tooltip="${t("settings.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
           </div>
@@ -3417,7 +3510,9 @@ private _bindModelSelect(): void {
       </div>
       <div class="model-form-row">
         <label class="model-form-label" for="rule-form-content">${t("settings.ruleContent")}</label>
-        <textarea id="rule-form-content" class="model-form-input" placeholder="${t("settings.ruleContent")}..." style="min-height:300px;resize:vertical">${this._escapeHtml(content)}</textarea>
+        <div class="input-wrapper input-wrapper--dialog">
+          <textarea id="rule-form-content" class="setting-rich-text" placeholder="${t("settings.ruleContent")}..." style="min-height:300px">${this._escapeHtml(content)}</textarea>
+        </div>
       </div>`;
 
     const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
@@ -3563,10 +3658,10 @@ private _bindModelSelect(): void {
                 <span class="skill-desc-text">${this.esc(a.description || "-")}</span>
               </div>
               <div class="model-table-cell model-cell-actions">
-                <button class="btn-icon" data-action="edit" data-index="${i}">
+                <button class="btn-icon" data-action="edit" data-index="${i}" data-tooltip="${t("settings.edit")}">
                   <i data-lucide="pencil" class="lucide icon-sm"></i>
                 </button>
-                <button class="btn-icon" data-action="delete" data-index="${i}">
+                <button class="btn-icon btn-icon--danger" data-action="delete" data-index="${i}" data-tooltip="${t("settings.delete")}">
                   <i data-lucide="trash-2" class="lucide icon-sm"></i>
                 </button>
               </div>
@@ -3605,7 +3700,9 @@ private _bindModelSelect(): void {
       </div>
       <div class="model-form-row">
         <label class="model-form-label">${t("settings.systemPrompt")}</label>
-        <textarea id="agent-system-prompt" class="code-textarea" placeholder="${t("settings.subAgentSystemPromptPlaceholder")}" style="min-height:120px">${this.esc(existing?.system_prompt || "")}</textarea>
+        <div class="input-wrapper input-wrapper--dialog" style="margin-top:6px">
+          <textarea id="agent-system-prompt" class="setting-rich-text" placeholder="${t("settings.subAgentSystemPromptPlaceholder")}" style="min-height:80px">${this.esc(existing?.system_prompt || "")}</textarea>
+        </div>
       </div>`;
 
     const title = isEdit ? t("settings.editSubAgent") : t("settings.addSubAgent");
@@ -4447,7 +4544,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.devDevToolsDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-open-devtools">${t("settings.devDevToolsBtn")}</button>
+            <button class="btn-icon" id="dev-open-devtools" data-tooltip="${t("settings.devDevToolsBtn")}"><i data-lucide="terminal" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -4457,7 +4554,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.devCloseDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-close-mode" style="color:var(--error)">${t("settings.devCloseBtn")}</button>
+            <button class="btn-icon btn-icon--danger" id="dev-close-mode" data-tooltip="${t("settings.devCloseBtn")}"><i data-lucide="x-circle" class="lucide"></i></button>
           </div>
         </div>
       </div>
@@ -4469,7 +4566,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.devRestartAppDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-reset-state" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
+            <button class="btn-icon btn-icon--danger" id="dev-reset-state" data-tooltip="${t("settings.devRestartBtn")}"><i data-lucide="refresh-cw" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -4479,7 +4576,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.devRestartServerDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="dev-restart-server" style="color:var(--error)">${t("settings.devRestartBtn")}</button>
+            <button class="btn-icon btn-icon--danger" id="dev-restart-server" data-tooltip="${t("settings.devRestartBtn")}"><i data-lucide="refresh-cw" class="lucide"></i></button>
           </div>
         </div>
       </div>`;
@@ -4547,7 +4644,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.aboutLogsDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="storage-open-logs">${t("settings.aboutLogs")}</button>
+            <button class="btn-icon" id="storage-open-logs" data-tooltip="${t("settings.aboutLogs")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -4557,7 +4654,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.aboutOpenDataDir")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="storage-open-data-dir">${t("settings.aboutOpenDataDir")}</button>
+            <button class="btn-icon" id="storage-open-data-dir" data-tooltip="${t("settings.aboutOpenDataDir")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -4567,10 +4664,9 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.storageSessionsDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="storage-clear-sessions" style="color:var(--error)">${t("settings.storageClearSessions")}</button>
+            <button class="btn-icon btn-icon--danger" id="storage-clear-sessions" data-tooltip="${t("settings.storageClearSessions")}"><i data-lucide="trash-2" class="lucide"></i></button>
           </div>
         </div>
-        <div class="settings-item-divider"></div>
       </div>`;
 
     if (typeof (window as any).lucide !== "undefined") {
@@ -4634,7 +4730,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.browserDataDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="browser-clear-data" style="color:var(--error)">${t("settings.clear")}</button>
+            <button class="btn-icon btn-icon--danger" id="browser-clear-data" data-tooltip="${t("settings.clear")}"><i data-lucide="trash-2" class="lucide"></i></button>
           </div>
         </div>
       </div>
@@ -4647,7 +4743,7 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.importBrowserDataDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="browser-import-btn">${t("settings.import")}</button>
+            <button class="btn-icon" id="browser-import-btn" data-tooltip="${t("settings.import")}"><i data-lucide="arrow-down-right" class="lucide"></i></button>
           </div>
         </div>
         <div class="settings-item-divider"></div>
@@ -4657,21 +4753,21 @@ private _bindModelSelect(): void {
             <div class="settings-item-desc">${t("settings.exportAllBrowserDataDesc")}</div>
           </div>
           <div class="settings-item-control">
-            <button class="btn btn-sm" id="browser-export-all">${t("settings.export")}</button>
+            <button class="btn-icon" id="browser-export-all" data-tooltip="${t("settings.export")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
           </div>
         </div>
       </div>
 
       <div class="settings-section-title" style="margin-top:24px"><i data-lucide="bookmark" class="lucide section-title-icon"></i> ${t("settings.bookmarks")}
-        <button class="btn btn-sm" id="browser-export-bookmarks" style="margin-left:auto">${t("settings.export")}</button>
+        <button class="btn-icon" id="browser-export-bookmarks" style="margin-left:auto" data-tooltip="${t("settings.export")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
       </div>
       <div id="browser-bookmarks-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
 
       <div class="settings-section-title" style="margin-top:24px"><i data-lucide="clock" class="lucide section-title-icon"></i> ${t("settings.history")}
-        <button class="btn btn-sm" id="browser-export-history" style="margin-left:auto">${t("settings.export")}</button>
+        <button class="btn-icon btn-icon--danger" id="browser-clear-history" style="margin-left:auto" data-tooltip="${t("settings.clear")}"><i data-lucide="trash-2" class="lucide"></i></button>
+        <button class="btn-icon" id="browser-export-history" data-tooltip="${t("settings.export")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
       </div>
-      <div id="browser-history-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
-      <button class="btn btn-sm" id="browser-clear-history" style="color:var(--error);margin-top:8px">${t("settings.clear")}</button>`;
+      <div id="browser-history-list" class="model-table" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)"></div>`;
 
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: this.panels.browser });
@@ -4736,7 +4832,7 @@ private _bindModelSelect(): void {
             <span class="model-name-text">${this.esc(b.name)}</span>
           </div>
           <div class="model-table-cell model-cell-actions">
-            <button class="btn btn-sm" data-action="browser-import" data-browser-id="${this.esc(b.id)}" data-profile="${this.esc(b.profilePath)}">${t("settings.import")}</button>
+            <button class="btn-icon" data-action="browser-import" data-browser-id="${this.esc(b.id)}" data-profile="${this.esc(b.profilePath)}" data-tooltip="${t("settings.import")}"><i data-lucide="arrow-down-right" class="lucide"></i></button>
           </div>
         </div>
       `).join("");
@@ -4745,7 +4841,7 @@ private _bindModelSelect(): void {
           const browserId = btn.getAttribute("data-browser-id");
           const profilePath = btn.getAttribute("data-profile");
           if (!browserId || !profilePath) return;
-          btn.textContent = t("settings.importing");
+          btn.setAttribute("data-tooltip", t("settings.importing"));
           (btn as HTMLButtonElement).disabled = true;
           const res = await api.importBrowserData(browserId, profilePath);
           if (res.success && res.data) {
@@ -4755,7 +4851,7 @@ private _bindModelSelect(): void {
             this.renderBrowser();
           } else {
             showToast(t("settings.importFailed") + (res.error ? ": " + res.error : ""), "error");
-            btn.textContent = t("settings.import");
+            btn.setAttribute("data-tooltip", t("settings.import"));
             (btn as HTMLButtonElement).disabled = false;
           }
         });
@@ -4889,10 +4985,10 @@ private _bindModelSelect(): void {
             </div>
             <div class="model-table-cell model-cell-actions">
               <button class="btn-icon" data-action="bm-navigate" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.openInBrowser")}">
-                <i data-lucide="external-link" class="lucide"></i>
+                <i data-lucide="arrow-up-right" class="lucide"></i>
               </button>
-              <button class="btn-icon" data-action="bm-remove" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.remove")}">
-                <i data-lucide="trash-2" class="lucide"></i>
+              <button class="btn-icon btn-icon--danger" data-action="bm-remove" data-url="${this.esc(bm.url)}" data-tooltip="${t("settings.remove")}">
+                <i data-lucide="x" class="lucide"></i>
               </button>
             </div>
           </div>
@@ -4937,7 +5033,7 @@ private _bindModelSelect(): void {
             </div>
             <div class="model-table-cell model-cell-actions">
               <button class="btn-icon" data-action="hist-navigate" data-url="${this.esc(entry.url)}" data-tooltip="${t("settings.openInBrowser")}">
-                <i data-lucide="external-link" class="lucide"></i>
+                <i data-lucide="arrow-up-right" class="lucide"></i>
               </button>
             </div>
           </div>`;

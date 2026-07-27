@@ -202,3 +202,36 @@ class OllamaBackend(OpenAISSEBackend):
         self._models_cache_ts = now
         self._models_cache_key = cache_key
         return models
+
+    # ── Multimodal/Extended API capabilities ──────────────────────
+    # Ollama is a local inference server.  It supports chat and
+    # embeddings (model-dependent).  Vision (image input) depends on
+    # the specific model.  It does NOT support image generation/editing,
+    # moderation, batch, fine-tuning, responses, or realtime.
+
+    def supports_image_generation(self) -> bool:
+        return False
+
+    def supports_image_edit(self) -> bool:
+        return False
+
+    def supports_image_variation(self) -> bool:
+        return False
+
+    def supports_moderation(self) -> bool:
+        return False
+
+    def supports_files(self) -> bool:
+        return False
+
+    def supports_batch(self) -> bool:
+        return False
+
+    def supports_fine_tuning(self) -> bool:
+        return False
+
+    def supports_responses_api(self) -> bool:
+        return False
+
+    def supports_realtime(self) -> bool:
+        return False

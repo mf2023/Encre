@@ -185,7 +185,7 @@ class EncreBrowserSession:
         # Get or create a page target
         if not self._page_targets:
             target = await _ensure_page_target(self._transport)
-            page_ws = await _get_page_websocket_url(self._port, target["id"])
+            page_ws = await _get_page_websocket_url(self._port, target["targetId"])
 
             # Reconnect transport to the page-level WS for simpler commands
             await self._transport.disconnect()
@@ -224,6 +224,12 @@ class EncreBrowserSession:
             await self._transport.send("DOM.enable")
         with contextlib.suppress(Exception):
             await self._transport.send("Runtime.enable")
+        # Force prefers-color-scheme: light so web pages never inherit the
+        # app's dark mode and show dark content.
+        with contextlib.suppress(Exception):
+            await self._transport.send("Emulation.setEmulatedMedia", {
+                "features": [{"name": "prefers-color-scheme", "value": "light"}],
+            })
         await self._apply_stealth()
 
     async def _apply_stealth(self) -> None:
@@ -738,16 +744,22 @@ class EncreBrowserSession:
         try:
             await self._ensure_browser()
             await self.click_at(x, y)
-            # Type each character with full keyDown+char+keyUp sequence
-            for ch in text:
-                await self._transport.send("Input.dispatchKeyEvent", {
-                    "type": "keyDown", "key": ch,
-                })
-                await self._transport.send("Input.dispatchKeyEvent", {
-                    "type": "char", "text": ch,
-                })
-                await self._transport.send("Input.dispatchKeyEvent", {
-                    "type": "keyUp", "key": ch,
+            # Use Input.insertText for non-ASCII text to avoid keyDown/keyUp
+            # corruption with CJK characters.
+            if text.isascii():
+                for ch in text:
+                    await self._transport.send("Input.dispatchKeyEvent", {
+                        "type": "keyDown", "key": ch,
+                    })
+                    await self._transport.send("Input.dispatchKeyEvent", {
+                        "type": "char", "text": ch,
+                    })
+                    await self._transport.send("Input.dispatchKeyEvent", {
+                        "type": "keyUp", "key": ch,
+                    })
+            else:
+                await self._transport.send("Input.insertText", {
+                    "text": text,
                 })
             self._tick()
             return True
@@ -857,16 +869,23 @@ class EncreBrowserSession:
             await self._transport.send("Input.dispatchKeyEvent", {
                 "type": "keyUp", "key": "Delete",
             })
-            # Type each character with full keyDown+char+keyUp sequence
-            for ch in text:
-                await self._transport.send("Input.dispatchKeyEvent", {
-                    "type": "keyDown", "key": ch,
-                })
-                await self._transport.send("Input.dispatchKeyEvent", {
-                    "type": "char", "text": ch,
-                })
-                await self._transport.send("Input.dispatchKeyEvent", {
-                    "type": "keyUp", "key": ch,
+            # Use Input.insertText for non-ASCII text (CJK, etc.) to avoid
+            # keyDown/keyUp corruption; for pure ASCII use per-char events
+            # so the page sees realistic keyboard typing.
+            if text.isascii():
+                for ch in text:
+                    await self._transport.send("Input.dispatchKeyEvent", {
+                        "type": "keyDown", "key": ch,
+                    })
+                    await self._transport.send("Input.dispatchKeyEvent", {
+                        "type": "char", "text": ch,
+                    })
+                    await self._transport.send("Input.dispatchKeyEvent", {
+                        "type": "keyUp", "key": ch,
+                    })
+            else:
+                await self._transport.send("Input.insertText", {
+                    "text": text,
                 })
             self._tick()
             return True

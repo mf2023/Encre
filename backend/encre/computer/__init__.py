@@ -23,6 +23,20 @@
 
 from __future__ import annotations
 
+"""Public API for the ``computer`` package.
+
+This package provides Encre's computer-automation surface: browser
+automation (via the Chrome DevTools Protocol), a unified
+"computer-use" action dispatcher that routes to either a browser or a
+desktop backend, desktop interaction sessions (screenshots, mouse /
+keyboard, OCR, UI automation), and VLM-driven UI control.
+
+The package re-exports the key public types -- browser session
+primitives, computer-use action/step/trajectory models, and desktop
+screen state / locate results -- so callers can import them from
+``encre.computer`` directly.
+"""
+
 # Public API for the "computer" package: browser automation, computer-use
 # (mouse/keyboard/screenshot) control loops, and desktop interaction sessions.
 # Re-export the browser session primitives (state, viewport, session handle).

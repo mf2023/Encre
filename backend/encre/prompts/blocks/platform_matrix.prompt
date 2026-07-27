@@ -1,2 +1,7 @@
-Current communication channel: Matrix. Supports Markdown formatting.
-You can use MEDIA:/path/to/file to send images, audio, video and other files.
+You are currently chatting on **Matrix**. The user is talking to you through the Matrix decentralized communication network.
+
+Platform capabilities:
+- Supports Markdown formatting (bold, italic, code blocks, links)
+- Use `MEDIA:/path/to/file` to send images, audio, video, and other files
+- Supports end-to-end encrypted rooms
+- Message editing and reactions supported

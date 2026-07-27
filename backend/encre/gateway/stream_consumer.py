@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,14 +25,19 @@ from __future__ import annotations
 
 """Gateway streaming consumer -- bridges agent events to platform delivery.
 
-The agent produces a stream of events (TextDelta, ToolResult, Finish) via
-EventRouter.submit_stream().  GatewayStreamConsumer:
-  1. Receives events via feed()
-  2. Buffers text deltas
-  3. Rate-limits platform edits (progressive message editing)
-  4. Finalizes the complete response via the adapter's send/edit methods
+The agent runtime emits a stream of events (``TextDelta``, ``ToolResult``,
+``Finish``) through ``EventRouter.submit_stream()``. ``GatewayStreamConsumer``
+is the per-conversation object that turns that event stream into a smooth,
+rate-limited delivery to a chat platform:
 
-Aligns with Hermes ``gateway/stream_consumer.py``.
+  1. ``feed()`` / ``feed_stream_event()`` receive events from the agent.
+  2. Text deltas are buffered in memory as they arrive.
+  3. Buffered text is pushed to the platform at a throttled cadence using
+     progressive message editing, so the user sees the reply grow instead of
+     appearing all at once.
+  4. ``finalize()`` delivers the complete response (a final edit to strip the
+     typing cursor, or a fresh send in buffer-only mode) and returns the full
+     text.
 """
 
 import asyncio
@@ -63,7 +68,25 @@ logger = logging.getLogger("encre.gateway.stream_consumer")
 
 @dataclass
 class StreamConsumerConfig:
-    """Runtime config for a single stream consumer instance."""
+    """Runtime configuration for a single stream consumer instance.
+
+    These values tune how aggressively the consumer pushes incremental edits to
+    the platform. They are sourced from the gateway config defaults but can be
+    overridden per conversation.
+
+    Attributes:
+        edit_interval: Minimum seconds between two consecutive progressive
+            edits to the same preview message. Prevents flooding the platform
+            with an edit on every keystroke.
+        buffer_threshold: Minimum number of accumulated characters before an
+            edit is pushed, unless a preview message already exists. Keeps very
+            short replies from triggering chatty edits.
+        cursor: A short marker (e.g. a typed-text glyph) appended to the
+            preview text to signal "still streaming". Removed on finalize.
+        buffer_only: When True, the consumer only buffers text and never
+            performs progressive editing. Used for platforms that do not
+            support editing an already-sent message.
+    """
 
     edit_interval: float = DEFAULT_STREAMING_EDIT_INTERVAL
     buffer_threshold: int = DEFAULT_STREAMING_BUFFER_THRESHOLD
@@ -76,11 +99,24 @@ class StreamConsumerConfig:
 class GatewayStreamConsumer:
     """Bridges agent stream events to platform-specific progressive delivery.
 
-    Usage:
+    One instance handles one agent turn for one chat. It owns a text buffer and
+    a "preview" message on the platform that is repeatedly edited as text
+    arrives, giving the appearance of live typing. When the turn ends it
+    finalizes the message and returns the complete text.
+
+    Typical usage::
+
         consumer = GatewayStreamConsumer(adapter, chat_id, config)
         async for event in router.submit_stream(...):
             await consumer.feed(event)
         result = await consumer.finalize()
+
+    Attributes worth knowing:
+        ``_preview_message_id`` tracks the platform message being edited; it is
+        ``None`` until the first edit is sent.
+        ``_finalized`` guards against feeding or finalizing more than once.
+        ``_finish_error`` captures an agent error reported via a ``Finish``
+        event so it can be surfaced to the user.
     """
 
     def __init__(
@@ -97,27 +133,41 @@ class GatewayStreamConsumer:
         self._reply_to = reply_to
         self._metadata = metadata
 
-        # Accumulated full response text
+        # Accumulated full response text, kept as a list of string fragments
+        # for cheap appends before a final join at read time.
         self._buffer: list[str] = []
-        # The message_id of the "preview" message being progressively edited
+        # The message_id of the "preview" message being progressively edited.
         self._preview_message_id: Optional[str] = None
-        # Last time we pushed an edit to the platform
+        # Wall-clock timestamp of the last edit pushed to the platform.
         self._last_edit_time: float = 0.0
-        # Whether the stream has been finalized
+        # Whether the stream has been finalized (guards double finalize).
         self._finalized = False
-        # Complete response (set after finalize)
+        # Complete response text, populated only after finalize().
         self._final_text: str = ""
+        # Agent error captured from a Finish event, if any.
+        self._finish_error: str | None = None
 
     @property
     def accumulated_text(self) -> str:
-        """The full text accumulated so far."""
+        """Return the full text accumulated in the buffer so far."""
         return "".join(self._buffer)
 
     async def feed(self, event: AgentEvent) -> None:
-        """Feed an agent event into the consumer.
+        """Feed a raw agent event into the consumer.
 
-        Handles TextDelta (progressive text), ToolResult (tool output indicator),
-        and Finish (finalization trigger).
+        Routes the three event kinds the agent emits during a turn:
+        ``TextDelta`` (incremental reply text), ``ToolResult`` (tool output,
+        informational only), and ``Finish`` (turn complete, possibly with an
+        error). Buffering and progressive edits are driven here.
+
+        Args:
+            event: The agent event produced by the runtime stream.
+
+        Returns:
+            None.
+
+        Raises:
+            None. Errors from platform edits are logged by the adapter layer.
         """
         if self._finalized:
             return
@@ -132,14 +182,25 @@ class GatewayStreamConsumer:
             pass
 
         elif isinstance(event, Finish):
-            # Finish is handled by finalize(); just record any error.
             if event.error:
+                self._finish_error = event.error
                 logger.warning(
                     "[stream-consumer] finish with error: %s", event.error
                 )
 
     async def feed_stream_event(self, event: StreamEvent) -> None:
-        """Feed a typed StreamEvent (alternative to raw AgentEvent)."""
+        """Feed a typed gateway ``StreamEvent`` instead of a raw agent event.
+
+        Provides an alternative ingestion path for callers that already produce
+        typed stream events (``MessageChunk``, ``Commentary``, ``ToolCallChunk``,
+        ``MessageStop``) rather than the lower-level ``AgentEvent`` union.
+
+        Args:
+            event: A typed stream event from ``encre.gateway.stream_events``.
+
+        Returns:
+            None.
+        """
         if self._finalized:
             return
 
@@ -149,10 +210,12 @@ class GatewayStreamConsumer:
 
         elif isinstance(event, Commentary):
             # Commentary is a complete intermediate message -- send it as-is
+            # rather than merging it into the streaming preview buffer.
             await self._adapter.send(self._chat_id, event.text, metadata=self._metadata)
 
         elif isinstance(event, ToolCallChunk):
-            # Optionally show tool progress (platform-dependent)
+            # Optionally show tool progress (platform-dependent). Currently a
+            # no-op; platforms can later render tool activity here.
             pass
 
         elif isinstance(event, MessageStop):
@@ -160,14 +223,22 @@ class GatewayStreamConsumer:
                 await self.finalize()
 
     async def finalize(self) -> str:
-        """Finalize the stream: deliver the complete response.
+        """Finalize the stream and deliver the complete response.
 
-        If progressive editing was used, performs a final edit to remove the
-        cursor and deliver the complete text.  If buffer_only mode, sends the
-        complete message.
+        Performs the terminal delivery: if progressive editing was used it does
+        a final edit that strips the typing cursor and shows the complete text;
+        otherwise (buffer-only mode or no preview message) it sends the full
+        message fresh. If the turn produced no real text but ended with an
+        agent error, a warning message is delivered instead.
+
+        Args:
+            None.
 
         Returns:
-            The complete response text.
+            The complete response text (or the error notice) as a string.
+
+        Raises:
+            None. Platform send/edit failures are handled by the adapter.
         """
         if self._finalized:
             return self._final_text
@@ -176,10 +247,18 @@ class GatewayStreamConsumer:
         self._final_text = self.accumulated_text
 
         if not self._final_text.strip():
+            if self._finish_error:
+                self._final_text = f"⚠️ Agent error: {self._finish_error}"
+                await self._adapter.send(
+                    self._chat_id,
+                    self._final_text,
+                    reply_to=self._reply_to,
+                    metadata=self._metadata,
+                )
             return self._final_text
 
         if self._config.buffer_only or self._preview_message_id is None:
-            # No progressive editing was done; send the complete message
+            # No progressive editing was done; send the complete message.
             await self._adapter.send(
                 self._chat_id,
                 self._final_text,
@@ -187,7 +266,7 @@ class GatewayStreamConsumer:
                 metadata=self._metadata,
             )
         else:
-            # Final edit to remove cursor and show complete text
+            # Final edit to remove the cursor and show the complete text.
             await self._adapter.edit_message(
                 self._chat_id, self._preview_message_id, self._final_text
             )
@@ -195,7 +274,19 @@ class GatewayStreamConsumer:
         return self._final_text
 
     async def _maybe_progressive_edit(self) -> None:
-        """Check if we should push a progressive edit to the platform."""
+        """Push a throttled progressive edit of the preview message if due.
+
+        Decides whether enough time has elapsed and enough new text has
+        accumulated to justify another edit. On the first qualifying edit it
+        sends a brand-new message and records its id; afterwards it edits the
+        existing preview message. Cancels silently when in buffer-only mode.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         if self._config.buffer_only:
             return
 
@@ -203,7 +294,7 @@ class GatewayStreamConsumer:
         elapsed = now - self._last_edit_time
         text_so_far = self.accumulated_text
 
-        # Only edit if enough time has passed AND enough new text accumulated
+        # Only edit if enough time has passed AND enough new text accumulated.
         if elapsed < self._config.edit_interval:
             return
         if len(text_so_far) < self._config.buffer_threshold and self._preview_message_id is not None:
@@ -213,7 +304,8 @@ class GatewayStreamConsumer:
         self._last_edit_time = now
 
         if self._preview_message_id is None:
-            # First progressive message: send a new message
+            # First progressive message: send a new message and remember its id
+            # so subsequent edits target the same platform message.
             result = await self._adapter.send(
                 self._chat_id,
                 preview_text,
@@ -223,7 +315,7 @@ class GatewayStreamConsumer:
             if result.success and result.message_id:
                 self._preview_message_id = result.message_id
         else:
-            # Subsequent: edit the existing preview message
+            # Subsequent edits: mutate the existing preview message in place.
             await self._adapter.edit_message(
                 self._chat_id, self._preview_message_id, preview_text
             )

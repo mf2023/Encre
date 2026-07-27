@@ -1063,6 +1063,17 @@ export class Chat {
     this.statusBar = document.getElementById("chat-status-bar")!;
     this.scrollIndicator = new ChatScrollIndicator(this.container);
 
+    // Scroll-to-bottom floating button
+    const scrollBtn = document.createElement("button");
+    scrollBtn.id = "chat-scroll-bottom-btn";
+    scrollBtn.className = "chat-scroll-bottom-btn hidden";
+    scrollBtn.setAttribute("aria-label", "Scroll to bottom");
+    scrollBtn.innerHTML = '<i data-lucide="chevron-down" style="width:18px;height:18px"></i>';
+    this.container.parentElement?.appendChild(scrollBtn);
+    scrollBtn.addEventListener("click", () => {
+      this.container.scrollTo({ top: this.container.scrollHeight, behavior: "smooth" });
+    });
+
     const w = window as any;
     w.__openSubAgentView = (toolCallId: string, taskIndex?: number) => {
       const st = getState();
@@ -1306,6 +1317,10 @@ export class Chat {
     this.container.addEventListener("scroll", () => {
       const { scrollTop, scrollHeight, clientHeight } = this.container;
       this.userScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
+      const btn = document.getElementById("chat-scroll-bottom-btn");
+      if (btn) {
+        btn.classList.toggle("hidden", !this.userScrolledUp);
+      }
     });
 
     this.ml.addEventListener("click", (e) => this.handleDelegateClick(e));

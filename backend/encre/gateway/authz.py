@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,8 +25,7 @@ from __future__ import annotations
 
 """Gateway authorization: the 5-layer user-allow check.
 
-Aligns with Hermes' ``gateway/run.py._is_user_authorized`` -- evaluated in
-order, first match wins:
+Evaluated in order, first match wins:
 
 1. **Per-platform allow-all** -- ``adapter_<name>_allow_all`` (settings) or
    ``<NAME>_ALLOW_ALL_USERS`` (env).  If set, every user on that platform is
@@ -44,7 +43,7 @@ order, first match wins:
 Config sources: the encrypted ``settings.json`` (loaded via
 :func:`encre.settings_manager.load_settings`) provides ``adapter_<name>_*``
 and ``gateway_*`` keys; environment variables override settings and use the
-Hermes-style ``<NAME>_ALLOWED_USERS`` / ``<NAME>_ALLOW_ALL_USERS`` names so a
+``<NAME>_ALLOWED_USERS`` / ``<NAME>_ALLOW_ALL_USERS`` names so a
 deployment can drive authorization purely from env.
 
 Design: stateless per-call -- the checker reads the latest config + pairing
@@ -90,7 +89,7 @@ class AuthzResult:
 
 
 class AuthorizationChecker:
-    """5-layer authorization check (mirrors Hermes ``_is_user_authorized``).
+    """5-layer authorization check.
 
     Constructed once per gateway (owned by :class:`~encre.gateway.run.GatewayRunner`)
     and injected into each adapter via :meth:`BasePlatformAdapter.set_authz`.  The check

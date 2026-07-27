@@ -23,6 +23,16 @@
 
 from __future__ import annotations
 
+"""Context subsystem for Encre.
+
+Exposes the building blocks for assembling the per-turn context that is
+handed to the model: :class:`ContextSource` / :class:`LambdaSource`
+define where context blocks come from, :class:`ReconcileStatus` /
+:class:`ReconciledBlock` describe how a block changed since the last
+turn, and :class:`ContextRenderer` produces the reconciliation
+annotation summarising those changes.
+"""
+
 from encre.context.source import ContextSource, LambdaSource, ReconcileStatus, ReconciledBlock
 from encre.context.renderer import ContextRenderer
 

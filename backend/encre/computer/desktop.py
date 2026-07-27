@@ -23,6 +23,17 @@
 
 from __future__ import annotations
 
+"""Desktop automation session: screenshots, mouse/keyboard, OCR and UI automation.
+
+Wraps ``mss`` (screen capture) and ``pyautogui`` (input) on top of
+optional Windows-only capabilities -- Win32 DPI awareness, the
+``PrintWindow`` foreground-window capture, the Windows UIAutomation
+(UIA) accessibility tree, and OCR via ``Windows.Media.Ocr`` or
+``pytesseract``. The session tracks the physical (raw pixel) and
+logical (DPI-scaled) screen sizes so coordinates from screenshots and
+from the input backend line up on HiDPI displays.
+"""
+
 import base64
 import importlib
 import io

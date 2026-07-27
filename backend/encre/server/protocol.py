@@ -783,6 +783,19 @@ class ClientExportSession:
 
 
 @dataclass
+class ClientExportSessionsBatch:
+    type: str = "export_sessions_batch"
+    session_ids: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientExportSessionsBatch":
+        return cls(
+            type="export_sessions_batch",
+            session_ids=d.get("session_ids", []),
+        )
+
+
+@dataclass
 class ClientRenameSession:
     type: str = "rename_session"
     session_id: str = ""
@@ -1390,6 +1403,7 @@ ClientMessage = (
     | ClientDeleteMessage
     | ClientDeleteSession
     | ClientExportSession
+    | ClientExportSessionsBatch
     | ClientRenameSession
     | ClientAgentCreate
     | ClientAgentDelete
@@ -1498,6 +1512,7 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "delete_message": ClientDeleteMessage,
         "delete_session": ClientDeleteSession,
         "export_session": ClientExportSession,
+        "export_sessions_batch": ClientExportSessionsBatch,
         "rename_session": ClientRenameSession,
         "agent_create": ClientAgentCreate,
         "agent_delete": ClientAgentDelete,
@@ -1600,6 +1615,7 @@ ServerMessageType = Literal[
     "messages_updated",
     "session_deleted",
     "session_exported",
+    "sessions_exported_zip",
     "session_renamed",
     "memory_list",
     "memory_detail",
@@ -1853,6 +1869,10 @@ def encode_session_deleted(session_id: str) -> str:
 
 def encode_session_exported(session_id: str, markdown: str, filename: str) -> str:
     return encode_server_message("session_exported", session_id=session_id, markdown=markdown, filename=filename)
+
+
+def encode_sessions_exported_zip(zip_base64: str, filename: str) -> str:
+    return encode_server_message("sessions_exported_zip", encrypt=False, zip_base64=zip_base64, filename=filename)
 
 
 def encode_session_renamed(session_id: str, new_name: str) -> str:

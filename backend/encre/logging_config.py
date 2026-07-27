@@ -23,19 +23,30 @@
 
 from __future__ import annotations
 
-"""Structured logging configuration for encre.
+"""Structured logging configuration for Encre.
 
-Uses loguru when available, with a transparent fallback to the stdlib ``logging``
-module so the library does not force a particular logging dependency on
-downstream consumers.
+This module is the single entry point for configuring how Encre emits logs. It
+prefers `loguru <https://github.com/Delgan/loguru>`_ when that package is
+installed, but transparently falls back to the standard-library :mod:`logging`
+module so that downstream consumers are never forced to depend on loguru.
 
-Usage::
+The public API is intentionally tiny and stable:
 
-    from encre.logging_config import setup_logging, get_logger  # noqa: E402
+* :func:`setup_logging` -- install handlers (stderr and, optionally, a rotating
+  file) and, when loguru is present, optionally intercept stdlib logging.
+* :func:`get_logger` -- obtain a logger that exposes a loguru-like surface
+  regardless of which backend is active.
+* :func:`get_log_file` / :func:`get_log_dir` / :func:`get_recent_logs` --
+  helpers for locating and tailing the on-disk log file.
 
-    setup_logging(level="DEBUG", json_format=False)
-    logger = get_logger(__name__)
-    logger.info("agent started", extra={"turn": 1})
+When loguru is unavailable the :class:`_StdlibLogger` adapter wraps a stdlib
+logger so that callers can still call ``logger.success(...)``,
+``logger.trace(...)`` and pass ``extra=`` without branching on the backend.
+
+Note on file layout: the live log file used by ``encre.server.service`` at
+runtime is ``<data_dir>/yimd.log`` (returned by :func:`get_log_file`), whereas
+:func:`setup_logging` writes its own rotating file to
+``<data_dir>/logs/encre.log`` unless an explicit path is given.
 """
 
 import logging
@@ -51,44 +62,109 @@ except ImportError:
 
 
 class _StdlibLogger:
-    """Thin wrapper that exposes a loguru-like API backed by stdlib ``logging``."""
+    """Thin wrapper that exposes a loguru-like API backed by stdlib ``logging``.
+
+    The wrapper lets the rest of Encre call log methods that loguru provides but
+    stdlib lacks (notably ``trace`` and ``success``) and to pass structured
+    ``extra`` data uniformly. Each level method simply maps to the closest
+    stdlib numeric level and delegates to :meth:`_log`.
+
+    Attributes
+    ----------
+    _logger:
+        The underlying :class:`logging.Logger` obtained from
+        ``logging.getLogger(name)``.
+    """
 
     def __init__(self, name: str = "encre") -> None:
+        """Create the wrapper around a named stdlib logger.
+
+        Args:
+            name: Logger name passed to :func:`logging.getLogger`. Defaults to
+                ``"encre"`` so the root Encre logger is used when no name is
+                given.
+
+        Returns:
+            None.
+        """
         self._logger = logging.getLogger(name)
 
     def _log(self, level: int, message: str, *args: Any, **kwargs: Any) -> None:
+        """Emit a record at an explicit numeric level.
+
+        Pops any ``extra`` mapping from the keyword arguments; if present, it is
+        appended to the message text as a repr so the structured data is still
+        visible through the stdlib formatter.
+
+        Args:
+            level: Numeric stdlib level (e.g. ``logging.INFO``).
+            message: The log message, possibly with ``%``-style positional
+                placeholders consumed by ``*args``.
+            *args: Positional values for message formatting.
+            **kwargs: Stdlib logging keyword arguments; ``extra`` is specially
+                handled and inlined into the message.
+
+        Returns:
+            None.
+        """
         extra: dict[str, Any] = kwargs.pop("extra", {}) or {}
         if extra:
             message = f"{message} | {extra!r}"
         self._logger.log(level, message, *args, **kwargs)
 
     def trace(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log at the finest ``trace`` level (below ``DEBUG``)."""
         self._log(logging.DEBUG - 5, message, *args, **kwargs)
 
     def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log a ``DEBUG``-level message."""
         self._log(logging.DEBUG, message, *args, **kwargs)
 
     def info(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log an ``INFO``-level message."""
         self._log(logging.INFO, message, *args, **kwargs)
 
     def success(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log a ``SUCCESS``-level message (between ``INFO`` and ``WARNING``)."""
         self._log(logging.INFO + 5, message, *args, **kwargs)
 
     def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log a ``WARNING``-level message."""
         self._log(logging.WARNING, message, *args, **kwargs)
 
     def error(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log an ``ERROR``-level message."""
         self._log(logging.ERROR, message, *args, **kwargs)
 
     def exception(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log an ``ERROR`` message and attach the current exception traceback.
+
+        Delegates directly to the stdlib ``Logger.exception`` so the active
+        ``sys.exc_info()`` is captured automatically.
+        """
         self._logger.exception(message, *args, **kwargs)
 
     def critical(self, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log a ``CRITICAL``-level message."""
         self._log(logging.CRITICAL, message, *args, **kwargs)
 
 
 def _get_loguru_serializer(json_format: bool = False):
-    """Return a serialiser callable for loguru, or None for default formatting."""
+    """Return a loguru serialiser callable, or ``None`` for default formatting.
+
+    When ``json_format`` is false the caller should use loguru's default text
+    sink, so ``None`` is returned. When true, an inner serialiser is built that
+    emits one JSON object per log line containing a fixed subset of fields plus
+    any ``extra`` and ``exception`` data. The JSON import is attempted lazily so
+    the function degrades gracefully if ``json`` were somehow unavailable.
+
+    Args:
+        json_format: Whether JSON line output is requested.
+
+    Returns:
+        A ``record -> str`` callable when JSON is requested (and ``json``
+        imports), otherwise ``None``.
+    """
     if not json_format:
         return None
 
@@ -98,7 +174,20 @@ def _get_loguru_serializer(json_format: bool = False):
         return None
 
     def _serialize(record: Any) -> str:
-        """Format a loguru record as a single JSON line."""
+        """Format a loguru record as a single JSON line.
+
+        Builds a flat dictionary of the most useful fields, appends ``extra``
+        and ``exception`` context when present, then serialises it. Timestamps
+        are rendered in UTC with millisecond precision; ``ensure_ascii=False``
+        keeps non-ASCII text (for example log messages in other languages)
+        readable rather than escaped.
+
+        Args:
+            record: A loguru ``Record`` mapping as passed to the sink.
+
+        Returns:
+            The JSON document for this record plus a trailing newline.
+        """
         subset: dict[str, Any] = {
             "timestamp": record["time"].strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z" if record["time"] else "",
             "level": record["level"].name,
@@ -122,13 +211,24 @@ def get_log_dir():
     The actual log file (``yimd.log``) lives at the root of the data directory
     (``~/.dunimd/encre/yimd.log``), not inside a ``logs/`` subdirectory -- that
     is the path written by ``encre.server.service`` at runtime.
+
+    Returns:
+        A :class:`pathlib.Path` to the Encre data directory.
     """
     from encre.config import get_data_dir
     return get_data_dir()
 
 
 def get_log_file():
-    """Return the full path to the active log file."""
+    """Return the full path to the active log file.
+
+    This is the runtime path ``<data_dir>/yimd.log`` written by the server
+    service, which differs from the rotating file created by
+    :func:`setup_logging`.
+
+    Returns:
+        A :class:`pathlib.Path` to ``yimd.log`` inside the data directory.
+    """
     from encre.config import get_data_dir
     return get_data_dir() / "yimd.log"
 
@@ -136,8 +236,19 @@ def get_log_file():
 def get_recent_logs(n: int = 200) -> list[str]:
     """Return the last *n* lines from the active log file as a list of strings.
 
+    Reads the file tail efficiently by seeking backwards in fixed chunks rather
+    than loading the whole file, because the live log can exceed tens of
+    megabytes on long-running installations. Lines are decoded as UTF-8 with
+    invalid bytes replaced so a corrupt tail never raises.
+
     Returns an empty list when no log file exists (e.g. file logging is
-    disabled).
+    disabled) or when reading it fails for any reason.
+
+    Args:
+        n: Maximum number of trailing lines to return. Defaults to 200.
+
+    Returns:
+        A list of the final ``n`` log lines, in file order (oldest first).
     """
     log_file = get_log_file()
     if not log_file.exists():
@@ -151,12 +262,15 @@ def get_recent_logs(n: int = 200) -> list[str]:
             chunk = 256 * 1024
             data = b""
             lines: list[bytes] = []
+            # Walk backwards in chunks, stopping once we have more than enough
+            # lines or we reach the start of the file.
             while size > 0 and len(lines) <= n + 1:
                 read_size = min(chunk, size)
                 size -= read_size
                 fh.seek(size)
                 data = fh.read(read_size) + data
                 lines = data.splitlines()
+        # Decode only the final n lines; replace undecodable bytes defensively.
         text_lines = [ln.decode("utf-8", errors="replace") for ln in lines[-n:]]
         return text_lines
     except Exception:
@@ -171,7 +285,7 @@ def setup_logging(
     retention: str = "7 days",
     intercept_stdlib: bool = True,
 ) -> None:
-    """Configure encre logging.
+    """Configure Encre logging.
 
     When **loguru** is installed the function removes the default loguru
     handler, installs a new ``sys.stderr`` sink with the requested format, and
@@ -181,6 +295,10 @@ def setup_logging(
     configured on the ``"encre"`` logger.  Downstream code that uses
     :func:`get_logger` will receive a ``_StdlibLogger`` wrapper so the API
     remains consistent.
+
+    In both backends an optional file sink is added (a rotating loguru file or a
+    stdlib :class:`~logging.FileHandler`) when ``log_file`` is provided or when
+    the default data-directory path is used.
 
     Args:
         level: One of ``TRACE``, ``DEBUG``, ``INFO``, ``SUCCESS``,
@@ -192,6 +310,9 @@ def setup_logging(
         retention: How long to keep rotated logs.
         intercept_stdlib: Redirect stdlib ``logging`` to loguru (only
             effective when loguru is available).
+
+    Returns:
+        None.
     """
     level = level.upper()
 
@@ -235,13 +356,18 @@ def setup_logging(
             )
 
         if intercept_stdlib:
-            # Re-route stdlib logging through loguru
+            # Re-route stdlib logging through loguru so third-party libraries
+            # that use logging.Logger also appear in the unified loguru output.
             class _InterceptHandler(logging.Handler):
                 def emit(self, record: logging.LogRecord) -> None:
                     try:
+                        # Map the stdlib level name onto loguru's own level.
                         lvl = _loguru_logger.level(record.levelname).name
                     except ValueError:
+                        # Unknown level name: fall back to the raw numeric level.
                         lvl = record.levelno
+                    # Walk up the call stack past logging internals so loguru
+                    # reports the true caller's file/function/line, not ours.
                     frame = logging.currentframe()
                     depth = 2
                     while frame and frame.f_code.co_filename == logging.__file__:
@@ -287,6 +413,14 @@ def get_logger(name: str = "encre") -> Any:
 
     Returns a **loguru** logger when loguru is installed, otherwise a
     :class:`_StdlibLogger` wrapper that presents a compatible API.
+
+    Args:
+        name: Logger name, bound onto the loguru logger or used as the stdlib
+            logger name.
+
+    Returns:
+        A logger object exposing a loguru-like API (``trace``/``success``/
+        ``info``/... and ``extra=`` support).
     """
     if _LOGURU_AVAILABLE:
         assert _loguru_logger is not None

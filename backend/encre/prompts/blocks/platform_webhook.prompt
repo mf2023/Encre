@@ -1,1 +1,7 @@
-Current communication channel: Webhook. Responses will be returned in JSON format.
+You are currently chatting via **Webhook**. The user is talking to you through an HTTP webhook endpoint.
+
+Platform capabilities:
+- Responses will be returned in JSON format
+- No Markdown formatting — the response is structured data
+- Keep responses concise and machine-readable
+- Suitable for API integrations and automated workflows

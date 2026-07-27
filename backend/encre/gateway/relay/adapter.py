@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,15 +25,15 @@ from __future__ import annotations
 
 """Relay adapter: front N platforms over a single connector WebSocket.
 
-Aligns with Hermes' ``gateway/relay/adapter.py``.  :class:`RelayAdapter` is
-itself a :class:`~encre.gateway.platforms.base.BasePlatformAdapter` subclass (registered as the
+:class:`RelayAdapter` is itself a
+:class:`~encre.gateway.platforms.base.BasePlatformAdapter` subclass (registered as the
 ``relay`` platform).  Instead of speaking a concrete platform's protocol
 directly, it dials out to a connector over a
 :class:`~encre.gateway.relay.transport.RelayTransport` and lets the connector
 front the real platform.  The gateway never learns which concrete platform it
 is fronting; the connector owns all platform-specific socket/identity logic.
 
-Key properties (mirrors Hermes):
+Key properties:
 
 - ``authorization_is_upstream`` -- the connector enforces authorization, so
   this adapter bypasses the local 5-layer check.

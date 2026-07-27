@@ -163,6 +163,19 @@ class EncreServer:
             logger.error("Failed to start gateway runner: %s", e)
             logger.warning("Gateway not available -- QQ, Telegram, etc. will not connect")
 
+        # Auto-start the test adapter for development (no config needed)
+        try:
+            from encre.gateway.platform_registry import platform_registry
+            test_entry = platform_registry.get("test_adapter")
+            if test_entry is not None:
+                logger.info("[gateway] Auto-starting test adapter for development...")
+                _t = asyncio.ensure_future(
+                    self._adapter_manager.start_adapter("test_adapter", {"enabled": True})
+                )
+                self._background_tasks.add(_t)
+        except Exception as e:
+            logger.warning("Failed to auto-start test adapter: %s", e)
+
         # Sync adapter configs (from saved settings) into EncreConfig so the frontend
         # sees adapter_* keys in config_data immediately -- not "not configured".
         # Only the actual adapter connection (HTTP/WS) is deferred to background.

@@ -117,7 +117,7 @@ function _shouldRejectSessionScopedEvent(event: ServerEvent): boolean {
   if (event.type === "session_ready") return false;
   // Session lifecycle notifications must always be handled so the sidebar
   // stays in sync even when no session is currently active.
-  if (event.type === "session_deleted" || event.type === "session_exported" || event.type === "session_renamed") return false;
+  if (event.type === "session_deleted" || event.type === "session_exported" || event.type === "sessions_exported_zip" || event.type === "session_renamed") return false;
   const activeSid = state.getState().sessionId;
   // Normalise: JSON null → undefined so falsy checks work correctly
   const eventSid = ((event as any).session_id as string | undefined) || undefined;
@@ -714,7 +714,7 @@ export function handleEvent(event: ServerEvent): void {
         if (event.reason === "error" || event.error) {
           lastMsg.errorMessage = event.error || "";
           lastMsg.errorCode = (event as any).error_code || (event.reason === "error" ? "execution_error" : "unknown");
-          lastMsg.errorCategory = (event as any).error_category || "";
+          (lastMsg as any).errorCategory = (event as any).error_category || "";
         } else if (event.reason === "interrupted" || event.reason === "cancelled") {
           if (event.reason === "cancelled") {
             lastMsg.cancelledText = t("chat.abnormalInterruption");
@@ -785,7 +785,7 @@ export function handleEvent(event: ServerEvent): void {
         lastMsg.hasError = true;
         lastMsg.errorMessage = event.message;
         lastMsg.errorCode = event.code;
-        lastMsg.errorCategory = (event as any).category || "";
+        (lastMsg as any).errorCategory = (event as any).category || "";
       }
       state.addNotification({
         id: crypto.randomUUID(),
@@ -1368,6 +1368,20 @@ export function handleEvent(event: ServerEvent): void {
 
     case "session_exported":
       downloadMarkdownFile(event.markdown, event.filename || event.session_id);
+      break;
+
+    case "sessions_exported_zip":
+      {
+        // Use native save dialog so the user picks where to save
+        const api = window.electronAPI;
+        if (api?.exportBinary) {
+          api.exportBinary({
+            base64: event.zip_base64,
+            defaultName: event.filename || "export.zip",
+            filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+          });
+        }
+      }
       break;
 
     case "session_renamed":

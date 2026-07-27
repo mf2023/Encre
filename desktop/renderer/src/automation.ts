@@ -32,7 +32,7 @@
 import { t, getLocale, onLocaleChange } from "./i18n.js";
 import { send } from "./ws.js";
 import { Dialog } from "./dialog.js";
-import { getState, subscribe, restoreMessages } from "./state.js";
+import { getState, subscribe, restoreMessages, setAutomationHistory } from "./state.js";
 import { showSessionContextMenu, showRenameDialog } from "./session.js";
 import { showContextMenu } from "./context-menu.js";
 import {
@@ -108,7 +108,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateAiNewsDesc",
     defaultNameKey: "defaultNameAiNews",
     defaultPrompt:
-      "搜索今日 AI 行业的热点新闻，覆盖以下方面：\n1. 重要产品发布或功能更新（如 OpenAI、Google、Anthropic 等公司动态）\n2. 融资事件与行业并购\n3. 技术突破或重要论文发布\n4. 行业标准与规范动态（如 AI 安全框架、数据治理标准的进展）\n输出要求：\n- 按重要性排序，列出 5-8 条新闻",
+      "You are an AI industry analyst. Search and summarize today's important AI developments across these dimensions:\n\n1. 🚀 Product Launches & Feature Updates\n   - Updates from OpenAI, Google, Anthropic, Meta, and other major labs\n   - New model releases, API updates, product iterations\n\n2. 💰 Funding & Business\n   - Key funding rounds (amount, stage, investors)\n   - M&A and strategic partnerships\n\n3. 🔬 Research Breakthroughs\n   - Notable papers and technical reports\n   - Open-source project updates\n\n4. 📋 Governance & Standards\n   - AI safety framework changes\n   - Regulatory developments\n\nOutput format:\n- Rank by importance, 5-8 items\n- Each item: title, 1-2 sentence summary, source link",
     defaultCron: "0 9 * * 1-5",
   },
   {
@@ -118,7 +118,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateBrandMonitorDesc",
     defaultNameKey: "defaultNameBrandMonitor",
     defaultPrompt:
-      "监控品牌在社交媒体和社区中的提及与评价，生成舆情摘要。\n覆盖平台：微博、知乎、Twitter、Reddit\n输出要求：\n- 正面/负面/中性情绪占比\n- 重点提及汇总\n- 风险提示",
+      "You are a brand reputation analyst. Monitor the latest mentions and sentiment about the specified brand across social media and communities.\n\nPlatforms: Weibo, Zhihu, Twitter, Reddit\n\nOutput format:\n\n1. 📊 Sentiment Breakdown\n   - Positive / Negative / Neutral percentages\n   - Overall trend\n\n2. 📌 Key Mentions Summary\n   - High-traffic discussions (platform, summary, engagement metrics)\n   - Influencer/key opinion comments\n\n3. ⚠️ Risk Alerts\n   - Potential PR incidents\n   - Rising negative sentiment trends\n\n4. Recommendations\n   - Suggested response strategies based on current sentiment",
     defaultCron: "0 9 * * 1",
   },
   {
@@ -128,7 +128,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateCompetitorDesc",
     defaultNameKey: "defaultNameCompetitorTrack",
     defaultPrompt:
-      "追踪指定竞品的产品更新、社区反馈和重要新闻。\n输出要求：\n- 产品更新列表\n- 用户反馈摘要\n- 市场动态",
+      "You are a competitive intelligence analyst. Track the latest developments of specified competitors and produce a monitoring report.\n\nOutput format:\n\n1. 🆕 Product Changes\n   - New features (version, release date)\n   - UI/UX changes\n   - Pricing adjustments\n\n2. 💬 Community & User Feedback\n   - User sentiment trends across platforms\n   - Common complaints and feature requests\n   - Rating changes\n\n3. 📈 Market Dynamics\n   - Market share shifts\n   - Media coverage highlights\n   - Hiring and strategic moves\n\n4. ⚡ Impact Assessment\n   - Potential impact on our product/brand\n   - Recommended countermeasures",
     defaultCron: "0 10 * * 1",
   },
   {
@@ -138,7 +138,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateStockDesc",
     defaultNameKey: "defaultNameStockMonitor",
     defaultPrompt:
-      "监控关注股票的价格变动，异常波动时生成预警报告。\n输出要求：\n- 价格变动摘要\n- 异常波动分析\n- 相关新闻关联",
+      "You are a financial risk analyst. Monitor the latest price movements and anomalies in the watchlist and produce an alert report.\n\nOutput format:\n\n1. 📊 Price Movement Summary\n   - Top 5 gainers / losers\n   - Volume anomalies\n\n2. ⚠️ Anomaly Analysis\n   - Stocks exceeding daily volatility thresholds\n   - Unusual trading patterns\n   - Possible triggers (earnings, news, macro factors)\n\n3. 📰 Related News\n   - Key news affecting stock prices\n   - Policy or regulatory changes\n\n4. 💡 Risk Assessment\n   - Current portfolio risk score\n   - Items requiring attention",
     defaultCron: "0 */1 * * 1-5",
   },
   {
@@ -148,7 +148,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateSecurityDesc",
     defaultNameKey: "defaultNameSecurityScan",
     defaultPrompt:
-      "扫描代码仓库，发现经过验证的中高危安全漏洞。\n输出要求：\n- 漏洞列表（按严重程度排序）\n- 修复建议\n- 参考链接",
+      "You are a senior security engineer. Scan the code repository for verified high and medium severity security vulnerabilities.\n\nOutput format:\n\n1. 🔴 High Severity Vulnerabilities (descending by severity)\n   - Vulnerability type (SQL injection, XSS, RCE, privilege escalation, etc.)\n   - Affected files and line numbers\n   - Risk level (CVSS score)\n\n2. 🟡 Medium Severity Vulnerabilities\n   - Same format as above\n\n3. 🔧 Fix Recommendations\n   - Concrete fix for each vulnerability\n   - Code change examples\n\n4. 🔗 References\n   - CVE IDs (if applicable)\n   - Related security advisories\n   - Best practice documentation",
     defaultCron: "0 */3 * * *",
   },
   {
@@ -158,7 +158,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateBugScanDesc",
     defaultNameKey: "defaultNameBugScan",
     defaultPrompt:
-      "分析最近的代码提交，发现可能导致严重后果的高危 Bug。\n输出要求：\n- Bug 描述\n- 影响范围\n- 修复建议",
+      "You are a senior code review engineer. Analyze recent commits and identify high-risk changes that could introduce critical bugs.\n\nOutput format:\n\n1. 🐛 Bug Description\n   - Risk type (null pointer, resource leak, concurrency, logic error, etc.)\n   - Related commits (hash + author)\n   - Affected files and functions\n\n2. 📐 Impact Scope\n   - Trigger conditions\n   - Potentially affected users/modules\n   - Severity assessment\n\n3. 🛠️ Fix Recommendations\n   - Specific fix code examples\n   - Verification steps\n   - Whether hotfix is needed",
     defaultCron: "0 */2 * * *",
   },
   {
@@ -168,7 +168,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateTestCoverageDesc",
     defaultNameKey: "defaultNameTestCoverage",
     defaultPrompt:
-      "识别最近变更中缺少测试的高风险代码，自动补充测试。\n输出要求：\n- 未覆盖代码片段\n- 建议测试用例\n- 测试框架适配代码",
+      "You are a QA engineer. Identify high-risk areas in recent code changes that lack test coverage and generate suggested test cases.\n\nOutput format:\n\n1. 🎯 Uncovered Code Analysis\n   - Functions/methods missing tests\n   - Cyclomatic complexity assessment\n   - Risk level\n\n2. ✅ Suggested Test Cases\n   - Test scenarios for each high-risk area\n   - Boundary conditions and error paths\n   - Mock/stub recommendations\n\n3. 🔧 Test Implementation\n   - Ready-to-use test code snippets\n   - Required fixtures\n   - How to run",
     defaultCron: "0 9 * * 1",
   },
   {
@@ -178,7 +178,7 @@ const TEMPLATES: TaskTemplate[] = [
     descKey: "automation.templateDailySummaryDesc",
     defaultNameKey: "defaultNameDailySummary",
     defaultPrompt:
-      "汇总代码仓库的变更情况，生成团队可读的工程日报。\n输出要求：\n- 提交统计\n- 重点变更说明\n- 风险提醒",
+      "You are an engineering team assistant. Summarize today's code repository changes into a readable engineering daily report.\n\nOutput format:\n\n1. 📊 Commit Statistics\n   - Total commits\n   - Files changed\n   - Contributors\n\n2. 🔄 Key Changes\n   - Grouped by module/feature\n   - Each entry: author, commit message, scope\n   - Highlight breaking changes\n\n3. ⚠️ Risk Notices\n   - High-risk changes\n   - PRs pending review\n   - Rollback suggestions if needed\n\n4. 🏗️ Build & Deploy Status\n   - CI/CD pipeline status\n   - Build failures summary (if any)",
     defaultCron: "0 20 * * 1-5",
   },
 ];
@@ -550,9 +550,12 @@ private createDropdown: HTMLElement;
               </div>
             </div>
           </div>
-          <div class="model-form-row" style="display:flex;align-items:center;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-            <label class="model-form-label" style="margin:0">${t("automation.enablePush")}</label>
-            <label class="toggle-switch" style="margin-left:12px">
+          <div class="model-form-thinking-card" style="margin-bottom:12px;margin-top:8px">
+            <div class="model-form-thinking-info">
+              <div class="model-form-thinking-title">${t("automation.enablePush")}</div>
+              <div class="model-form-thinking-desc">${t("automation.enablePushHint")}</div>
+            </div>
+            <label class="toggle-switch">
               <input type="checkbox" id="auto-dlg-push-toggle" ${editJob?.push_gateways?.length ? "checked" : ""} />
               <span class="toggle-slider"></span>
             </label>
@@ -564,10 +567,7 @@ private createDropdown: HTMLElement;
           <div class="model-form-row" style="flex-direction:column;align-items:stretch">
             <label class="model-form-label">${t("automation.whatToDo")}</label>
             <div class="input-wrapper input-wrapper--dialog">
-              <div class="input-row">
-                <div id="auto-dlg-prompt" class="prompt-input" contenteditable="true" role="textbox" aria-multiline="true" style="min-height:56px;max-height:300px">${escapeHtml(editJob?.prompt || template.defaultPrompt)}</div>
-                <div class="prompt-placeholder" style="left:14px;top:10px">${t("automation.whatToDo")}</div>
-              </div>
+              <textarea id="auto-dlg-prompt" class="setting-rich-text" placeholder="${t("automation.whatToDo")}" style="min-height:80px">${escapeHtml(editJob?.prompt || template.defaultPrompt)}</textarea>
             </div>
           </div>
         </div>
@@ -582,19 +582,16 @@ private createDropdown: HTMLElement;
       (window as any).lucide.createIcons({ root: overlay });
     }
 
-    // Auto-resize contenteditable prompt inputs
-    overlay.querySelectorAll(".prompt-input[contenteditable]").forEach((el) => {
-      const ph = el.parentElement?.querySelector(".prompt-placeholder") as HTMLElement;
-      const update = () => {
-        (el as HTMLElement).style.height = "auto";
-        (el as HTMLElement).style.height = Math.min((el as HTMLElement).scrollHeight, 300) + "px";
-        if (ph) {
-          ph.classList.toggle("hidden", (el.textContent || "").trim().length > 0);
-        }
+    // Auto-resize prompt textarea (same pattern as settings rule editor)
+    const promptTa = overlay.querySelector("#auto-dlg-prompt") as HTMLTextAreaElement;
+    if (promptTa) {
+      const resize = () => {
+        promptTa.style.height = "auto";
+        promptTa.style.height = Math.min(promptTa.scrollHeight, 300) + "px";
       };
-      el.addEventListener("input", update);
-      update();
-    });
+      promptTa.addEventListener("input", resize);
+      setTimeout(resize, 0);
+    }
 
     let scheduleValue = parsed.scheduleType;
     let timeValue = parsed.time;
@@ -779,7 +776,7 @@ private createDropdown: HTMLElement;
       const name = (document.getElementById("auto-dlg-name") as HTMLInputElement)?.value.trim();
       if (!name) return;
 
-      const prompt = (document.getElementById("auto-dlg-prompt") as HTMLElement)?.textContent?.trim() || template.defaultPrompt;
+      const prompt = (document.getElementById("auto-dlg-prompt") as HTMLTextAreaElement)?.value?.trim() || template.defaultPrompt;
 
       const time = timeValue || "09:00";
       const [h, m] = time.split(":").map(s => s.padStart(2, "0"));
@@ -904,10 +901,10 @@ private createDropdown: HTMLElement;
     const wrap = this.configuredListEl;
 
     if (this.jobs.length === 0) {
-      wrap.innerHTML = `<div class="configured-empty">
+      wrap.innerHTML = `<div class="si-panel-empty">
         <i data-lucide="calendar" class="lucide"></i>
-        <div class="empty-title">${t("automation.noTasks")}</div>
-        <div class="empty-sub">${t("automation.noTasksHint")}</div>
+        <div class="si-panel-empty-title">${t("automation.noTasks")}</div>
+        <div class="si-panel-empty-sub">${t("automation.noTasksHint")}</div>
       </div>`;
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: wrap });
@@ -939,7 +936,7 @@ private createDropdown: HTMLElement;
             <button class="btn-icon" data-action="edit" data-tooltip="${t("general.edit")}">
               <i data-lucide="pencil" class="lucide"></i>
             </button>
-            <button class="btn-icon" data-action="delete" data-tooltip="${t("general.delete")}">
+            <button class="btn-icon btn-icon--danger" data-action="delete" data-tooltip="${t("general.delete")}">
               <i data-lucide="trash-2" class="lucide"></i>
             </button>
             <label class="toggle-switch toggle-sm">
@@ -1015,16 +1012,18 @@ private createDropdown: HTMLElement;
     // ── Task dropdown ──
     const renderTaskOptions = () => {
       const opts: { id: string; label: string }[] = [{ id: "", label: t("automation.filterAllTasks") }];
-      const seen = new Set<string>();
+      const seenNames = new Set<string>();
       for (const h of getState().automationHistory) {
-        if (seen.has(h.job_id)) continue;
-        seen.add(h.job_id);
-        opts.push({ id: h.job_id, label: h.name });
+        const name = h.name || h.job_id || "";
+        if (!name || seenNames.has(name)) continue;
+        seenNames.add(name);
+        opts.push({ id: h.job_id || "", label: name });
       }
       for (const j of this.jobs) {
-        if (seen.has(j.id)) continue;
-        seen.add(j.id);
-        opts.push({ id: j.id, label: j.name });
+        const name = j.name || j.id || "";
+        if (!name || seenNames.has(name)) continue;
+        seenNames.add(name);
+        opts.push({ id: j.id, label: name });
       }
       return opts;
     };
@@ -1038,46 +1037,126 @@ private createDropdown: HTMLElement;
     // re-render task list when history/jobs change
     this.onHistoryFiltersRebind = rebindTask;
 
-    // ── Date range ──
-    const dateFrom = document.getElementById("history-date-from") as HTMLInputElement | null;
-    const dateTo = document.getElementById("history-date-to") as HTMLInputElement | null;
-    const applyDateLocale = () => {
-      const lang = getLocale() === "en" ? "en" : "zh-CN";
-      if (dateFrom) dateFrom.setAttribute("lang", lang);
-      if (dateTo) dateTo.setAttribute("lang", lang);
-    };
-    applyDateLocale();
-    onLocaleChange(() => applyDateLocale());
-    if (dateFrom) {
-      dateFrom.addEventListener("change", () => {
-        this.historyDateFrom = dateFrom.value || "";
-        this.renderHistory();
+    // ── Date range (custom calendar dropdown) ──
+    const dateFromHidden = document.getElementById("history-date-from") as HTMLInputElement | null;
+    const dateToHidden = document.getElementById("history-date-to") as HTMLInputElement | null;
+    const dateFromBtn = document.getElementById("history-date-from-btn");
+    const dateToBtn = document.getElementById("history-date-to-btn");
+    const dateFromDD = document.getElementById("history-date-from-dd");
+    const dateToDD = document.getElementById("history-date-to-dd");
+    const dateFromText = document.getElementById("history-date-from-text");
+    const dateToText = document.getElementById("history-date-to-text");
+
+    const MONTHS_SHORT = getLocale() === "en"
+      ? ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+      : ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+
+    const WEEKDAYS_SHORT = getLocale() === "en"
+      ? ["Mo","Tu","We","Th","Fr","Sa","Su"]
+      : ["一","二","三","四","五","六","日"];
+
+    function renderCalendar(container: HTMLElement, currentDate: { year: number; month: number }, onSelect: (dateStr: string) => void): void {
+      const { year, month } = currentDate;
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const daysInPrev = new Date(year, month, 0).getDate();
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+      const prevMonth = () => {
+        if (--currentDate.month < 0) { currentDate.month = 11; currentDate.year--; }
+        renderCalendar(container, currentDate, onSelect);
+      };
+      const nextMonth = () => {
+        if (++currentDate.month > 11) { currentDate.month = 0; currentDate.year++; }
+        renderCalendar(container, currentDate, onSelect);
+      };
+
+      let html = `<div class="cal-header">
+        <button type="button" class="cal-header-btn" id="cal-prev"><svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <span class="cal-title">${year} ${MONTHS_SHORT[month]}</span>
+        <button type="button" class="cal-header-btn" id="cal-next"><svg class="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+      <div class="cal-weekdays">${WEEKDAYS_SHORT.map(d => `<span class="cal-weekday">${d}</span>`).join("")}</div>
+      <div class="cal-grid">`;
+
+      const startOffset = (firstDay === 0 ? 6 : firstDay - 1);
+      for (let i = 0; i < startOffset; i++) {
+        const d = daysInPrev - startOffset + i + 1;
+        html += `<span class="cal-day other-month">${d}</span>`;
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const isToday = dateStr === todayStr;
+        const cls = `cal-day${isToday ? " today" : ""}`;
+        html += `<span class="${cls}" data-date="${dateStr}">${d}</span>`;
+      }
+      const remaining = (7 - (startOffset + daysInMonth) % 7) % 7;
+      for (let d = 1; d <= remaining; d++) {
+        html += `<span class="cal-day other-month">${d}</span>`;
+      }
+      html += `</div>`;
+      container.innerHTML = html;
+
+      if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: container });
+
+      container.querySelector("#cal-prev")?.addEventListener("click", (e) => { e.stopPropagation(); prevMonth(); });
+      container.querySelector("#cal-next")?.addEventListener("click", (e) => { e.stopPropagation(); nextMonth(); });
+      container.querySelectorAll(".cal-day[data-date]").forEach(el => {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onSelect((el as HTMLElement).getAttribute("data-date") || "");
+          container.classList.remove("open");
+        });
       });
     }
-    if (dateTo) {
-      dateTo.addEventListener("change", () => {
-        this.historyDateTo = dateTo.value || "";
-        this.renderHistory();
+
+    function bindDateField(
+      btn: HTMLElement | null,
+      dd: HTMLElement | null,
+      textEl: HTMLElement | null,
+      hidden: HTMLInputElement | null,
+      setter: (val: string) => void,
+    ): void {
+      if (!btn || !dd || !textEl) return;
+      const cur = { year: new Date().getFullYear(), month: new Date().getMonth() };
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = dd.classList.contains("open");
+        document.querySelectorAll(".history-calendar-dropdown.open").forEach(el => el.classList.remove("open"));
+        if (!isOpen) {
+          renderCalendar(dd, cur, (dateStr) => {
+            if (hidden) hidden.value = dateStr;
+            textEl.textContent = dateStr;
+            setter(dateStr);
+          });
+          dd.classList.add("open");
+        }
       });
     }
+
+    bindDateField(dateFromBtn, dateFromDD, dateFromText, dateFromHidden, (v) => { this.historyDateFrom = v; this.renderHistory(); });
+    bindDateField(dateToBtn, dateToDD, dateToText, dateToHidden, (v) => { this.historyDateTo = v; this.renderHistory(); });
+
+    // Close calendar dropdowns when clicking outside
+    document.addEventListener("click", () => {
+      document.querySelectorAll(".history-calendar-dropdown.open").forEach(el => el.classList.remove("open"));
+    });
+
     const dateClear = document.getElementById("history-date-clear");
     if (dateClear) {
       dateClear.setAttribute("title", t("automation.clearDate"));
       dateClear.addEventListener("click", () => {
         this.historyDateFrom = "";
         this.historyDateTo = "";
-        if (dateFrom) dateFrom.value = "";
-        if (dateTo) dateTo.value = "";
+        if (dateFromHidden) dateFromHidden.value = "";
+        if (dateToHidden) dateToHidden.value = "";
+        if (dateFromText) dateFromText.textContent = getLocale() === "en" ? "Start Date" : "开始日期";
+        if (dateToText) dateToText.textContent = getLocale() === "en" ? "End Date" : "结束日期";
         this.renderHistory();
       });
     }
 
-    // Export button
-    const exportBtn = document.getElementById("history-export-btn");
-    if (exportBtn) {
-      exportBtn.setAttribute("title", t("automation.exportHistory"));
-      exportBtn.addEventListener("click", () => this.exportHistory());
-    }
   }
 
   private exportHistory(): void {
@@ -1250,10 +1329,10 @@ private createDropdown: HTMLElement;
 
     if (displayHistory.length === 0 && getState().automationHistory.length === 0) {
       filtersEl.style.display = "none";
-      this.historyTimelineEl.innerHTML = `<div class="history-empty">
+      this.historyTimelineEl.innerHTML = `<div class="si-panel-empty">
         <i data-lucide="history" class="lucide"></i>
-        <div class="empty-title">${t("automation.noHistory")}</div>
-        <div class="empty-sub">${t("automation.noHistoryHint")}</div>
+        <div class="si-panel-empty-title">${t("automation.noHistory")}</div>
+        <div class="si-panel-empty-sub">${t("automation.noHistoryHint")}</div>
       </div>`;
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: this.historyTimelineEl });
@@ -1263,9 +1342,9 @@ private createDropdown: HTMLElement;
     filtersEl.style.display = "";
 
     if (displayHistory.length === 0) {
-      this.historyTimelineEl.innerHTML = `<div class="history-empty">
+      this.historyTimelineEl.innerHTML = `<div class="si-panel-empty">
         <i data-lucide="search-x" class="lucide"></i>
-        <div class="empty-title">${t("automation.noMatchingHistory")}</div>
+        <div class="si-panel-empty-title">${t("automation.noMatchingHistory")}</div>
       </div>`;
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: this.historyTimelineEl });
@@ -1354,6 +1433,10 @@ private createDropdown: HTMLElement;
           if (entryId) {
             Dialog.confirm(t("automation.confirmDeleteRecord") || "Delete this record?", "").then((confirmed) => {
               if (confirmed) {
+                // Optimistically remove the entry from local state so the UI
+                // updates instantly, matching the session delete pattern.
+                const history = getState().automationHistory.filter((h: any) => h.id !== entryId);
+                setAutomationHistory(history);
                 send({ type: "automation_delete_execution", entry_id: entryId });
               }
             });

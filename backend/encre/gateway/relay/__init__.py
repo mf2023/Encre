@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -25,8 +25,7 @@ from __future__ import annotations
 
 """Relay subsystem: connector-backed platform fronting (EXPERIMENTAL).
 
-Aligns with Hermes' ``gateway/relay/__init__.py``.  The relay is an
-**indirect** platform path: instead of a direct platform adapter
+The relay is an **indirect** platform path: instead of a direct platform adapter
 (:mod:`encre.gateway.platforms.*`), the gateway dials out to a connector over a
 WebSocket and lets the connector front the real platform.  This lets a hosted
 gateway (no public inbound IP) still serve platform traffic.
@@ -176,7 +175,7 @@ async def register_relay_adapter(manager: Any) -> bool:
         # is not in the platform_registry, so start_adapter cannot construct it).
         manager._instances["relay"] = adapter
         # Wire up the message handler so inbound messages route through the runner.
-        adapter.set_message_handler(getattr(manager, "_on_message", None))
+        adapter.set_message_handler(getattr(manager, "_handle_message", None))
         ok = await adapter.connect()
         if ok:
             logger.info("[relay] registered relay platform (fronting %d identity/ies)", len(identities) or 1)
@@ -205,7 +204,7 @@ def relay_relevance_policy() -> dict[str, Any] | None:
     """Project the gateway's relevance knobs into a platform-agnostic policy.
 
     Returns None when the policy is all-default (the connector's absent-row
-    default already matches, so the gateway sends nothing).  Mirrors Hermes'
+    default already matches, so the gateway sends nothing).  Mirrors Encre's
     ``relay_relevance_policy()``.
     """
     require_address = bool(_settings().get("gateway_require_mention"))

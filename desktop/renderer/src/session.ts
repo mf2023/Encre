@@ -142,8 +142,10 @@ export class Session {
   private async batchExport(): Promise<void> {
     const ids = Array.from(this.selectedIds);
     if (ids.length === 0) return;
-    for (const sid of ids) {
-      send({ type: "export_session", session_id: sid });
+    if (ids.length === 1) {
+      send({ type: "export_session", session_id: ids[0] });
+    } else {
+      send({ type: "export_sessions_batch", session_ids: ids });
     }
     this.exitBatchMode();
   }
@@ -220,8 +222,11 @@ export class Session {
       qqbot: "QQ", telegram: "Telegram", webhook: "Webhook", discord: "Discord",
       slack: "Slack", feishu: "Feishu", dingtalk: "DingTalk", wecom: "WeCom",
       weixin: "WeChat", whatsapp: "WhatsApp", signal: "Signal", matrix: "Matrix",
-      email: "Email", sms: "SMS", msgraph: "MS Graph", yuanbao: "Yuanbao",
+      email: "Email", sms: "SMS", yuanbao: "Yuanbao",
       bluebubbles: "iMessage", homeassistant: "HomeAssistant",
+      google_chat: "GoogleChat", irc: "IRC", line: "LINE",
+      mattermost: "Mattermost", ntfy: "ntfy", photon: "Photon",
+      raft: "Raft", simplex: "SimpleX", teams: "Teams",
     };
     const chatTypeLabels: Record<string, string> = {
       dm: "DM", group: "Group", channel: "Channel", thread: "Thread", forum: "Forum",
@@ -311,7 +316,7 @@ export class Session {
         <span>${this.esc(t("session.rename"))}</span>
       </div>
       <div class="context-menu-item" id="ctx-export">
-        <i data-lucide="download" class="lucide lucide-sm"></i>
+        <i data-lucide="arrow-up-right" class="lucide lucide-sm"></i>
         <span>${this.esc(t("session.exportMd"))}</span>
       </div>
       <div class="context-menu-divider"></div>
@@ -493,7 +498,7 @@ export function showSessionContextMenu(
   if (!noExport) {
     items += `
     <div class="context-menu-item" id="ctx-export-ws">
-      <i data-lucide="download" class="lucide lucide-sm"></i>
+      <i data-lucide="arrow-up-right" class="lucide lucide-sm"></i>
       <span>${escHtml(t("session.exportMd"))}</span>
     </div>`;
   }

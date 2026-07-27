@@ -7,7 +7,7 @@
 # The Encre project belongs to the Dunimd Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
+# You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
@@ -28,15 +28,13 @@ from __future__ import annotations
 Defines the platform enumeration, per-platform configuration dataclass, and
 the top-level gateway configuration container.  Supports loading from the
 encrypted settings store and environment variable overrides.
-
-Aligns with Hermes ``gateway/config.py``.
 """
 
 import enum
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger("encre.gateway.config")
 
@@ -65,7 +63,18 @@ class Platform(enum.Enum):
     WEBHOOK = "webhook"
     BLUEBUBBLES = "bluebubbles"
     YUANBAO = "yuanbao"
+    API_SERVER = "api_server"
+    GOOGLE_CHAT = "google_chat"
+    IRC = "irc"
+    LINE = "line"
+    MATTERMOST = "mattermost"
+    NTFY = "ntfy"
+    PHOTON = "photon"
+    RAFT = "raft"
+    SIMPLEX = "simplex"
+    TEAMS = "teams"
     RELAY = "relay"
+    TEST = "test"
 
 
 # ── Per-platform configuration ────────────────────────────────────────────────
@@ -85,6 +94,7 @@ class PlatformConfig:
     enabled: bool = False
     token: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+    home_channel: Optional["HomeChannel"] = None
 
 
 @dataclass
@@ -201,8 +211,8 @@ def load_gateway_config() -> GatewayConfig:
 def _apply_env_overrides(config: GatewayConfig) -> None:
     """Apply environment variable overrides for platform tokens.
 
-    Mirrors Hermes' _apply_env_overrides pattern: if a platform's token env var
-    is set, auto-enable and configure that platform.
+    If a platform's token env var is set, auto-enable and configure that
+    platform.
     """
     _ENV_TOKEN_MAP: dict[Platform, str] = {
         Platform.TELEGRAM: "TELEGRAM_BOT_TOKEN",

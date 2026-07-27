@@ -2667,6 +2667,40 @@ body {
   display: none;
 }
 
+/* ── Chat Scroll-to-Bottom Button ──────────────────────────── */
+.chat-scroll-bottom-btn {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  transition: opacity 0.2s, transform 0.2s, background 0.15s;
+  opacity: 0.85;
+}
+.chat-scroll-bottom-btn:hover {
+  background: var(--bg-secondary);
+  opacity: 1;
+  transform: translateX(-50%) scale(1.05);
+}
+.chat-scroll-bottom-btn:active {
+  transform: translateX(-50%) scale(0.95);
+}
+.chat-scroll-bottom-btn.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ── Chat Scroll Indicator (right-side progress ruler) ───────────── */
 .chat-scroll-indicator {
   position: absolute;
@@ -4362,16 +4396,51 @@ body {
   content: "";
 }
 
+/* ── Setting rich text (based on prompt-input UI + 外边框) ─────────── */
+.setting-rich-text {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14.5px;
+  outline: none;
+  padding: 10px 12px;
+  min-height: 80px;
+  max-height: 320px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+  resize: none;
+  box-sizing: border-box;
+  transition: border-color var(--transition-base);
+}
+
 /* ── Dialog input containers (prompt-input style) ────────────── */
 .input-wrapper--dialog {
   max-width: none;
   margin: 0;
   padding: 10px 14px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
 }
 .input-wrapper--dialog .prompt-input {
   font-size: 13px;
   min-height: 40px;
   padding: 0;
+}
+.input-wrapper .setting-rich-text {
+  border: none;
+  border-radius: 0;
+  padding: 4px 0;
+  min-height: 80px;
+  max-height: 200px;
+}
+.input-wrapper--dialog .setting-rich-text {
+  font-size: 13px;
+  padding: 2px 0;
 }
 .input-wrapper--dialog .prompt-placeholder {
   left: 14px;
@@ -5496,6 +5565,11 @@ body.child-mode #header-bar {
   position: relative;
 }
 
+.settings-dropdown-wrap.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .child-doc-toolbar .settings-dropdown-trigger {
   min-width: 140px;
 }
@@ -6244,7 +6318,7 @@ body.child-mode #header-bar {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  padding: 0 24px 18px;
+  padding: 14px 24px 18px;
 }
 
 .toast-dialog.dialog-wide .model-form-row {
@@ -6440,6 +6514,7 @@ body.child-mode #header-bar {
   top: calc(100% + 4px);
   right: 0;
   min-width: 100%;
+  width: max-content;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -7020,14 +7095,23 @@ body.child-mode #header-bar {
   display: flex;
   flex-direction: column;
   padding: 24px 32px;
+  min-height: 0;
 }
 
 .automation-tabs {
   display: flex;
-  gap: 24px;
-  padding: 0 32px;
+  align-items: center;
+  padding: 8px 32px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0;
+}
+.automation-tab + .automation-tab {
+  margin-left: 24px;
+}
+
+.automation-create-wrap {
+  margin-left: auto;
+  position: relative;
 }
 
 .automation-tab {
@@ -7066,7 +7150,7 @@ body.child-mode #header-bar {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  min-height: 0;
 }
 
 .automation-panel {
@@ -7151,7 +7235,13 @@ body.child-mode #header-bar {
   overflow-x: hidden;
 }
 
-/* Automation empty states (matching .si-panel-empty pattern) */
+/* Automation empty states — fill container for vertical centering */
+.configured-list > .si-panel-empty,
+.history-timeline > .si-panel-empty {
+  height: 100%;
+  min-height: 100%;
+}
+
 .configured-empty,
 .history-empty {
   flex: 1;
@@ -7183,10 +7273,6 @@ body.child-mode #header-bar {
 }
 
 /* ── Automation Create Button & Dropdown ──────────────────────────── */
-.automation-create-wrap {
-  position: relative;
-  margin-left: auto;
-}
 
 .automation-create-wrap:has(.settings-dropdown.open) .btn-add-model-top .lucide:last-child {
   transform: rotate(180deg);
@@ -7251,39 +7337,46 @@ body.child-mode #header-bar {
   color: var(--text-tertiary);
 }
 
-/* History: date range picker (matches history-filter-btn) */
+/* History: date range — custom calendar dropdown */
 .history-date-range {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: var(--bg-primary);
+  padding: 4px 8px;
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 12.5px;
-  line-height: 1;
-  height: 32px;
-  box-sizing: border-box;
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition-base);
+}
+.history-date-range:focus-within {
+  border-color: var(--accent);
 }
 
-.history-date-input {
+.history-date-field {
+  position: relative;
+}
+
+.history-date-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: 13px;
   font-family: inherit;
-  outline: none;
-  padding: 0;
-  color-scheme: dark;
-  width: 120px;
-  line-height: 1;
-}
-
-.history-date-input::-webkit-calendar-picker-indicator {
-  filter: invert(0.7);
   cursor: pointer;
-  opacity: 0.7;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-base);
+}
+.history-date-btn:hover {
+  background: var(--bg-hover);
+}
+.history-date-btn .lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
 }
 
 .history-date-sep {
@@ -7296,29 +7389,126 @@ body.child-mode #header-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2px;
-  margin-left: 2px;
-  background: transparent;
+  width: 22px;
+  height: 22px;
   border: none;
-  color: var(--text-tertiary);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  border-radius: 3px;
-  transition: all var(--transition-base);
+  padding: 0;
+  flex-shrink: 0;
+  transition: background var(--transition-base), color var(--transition-base);
 }
-
 .history-date-clear:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-
 .history-date-clear .lucide {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
 }
 
-.history-export-btn {
-  margin-left: auto;
-  flex-shrink: 0;
+/* Custom calendar dropdown */
+.history-calendar-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 260px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  display: none;
+}
+.history-calendar-dropdown.open {
+  display: block;
+  animation: dropdownIn var(--duration-fast) ease-out;
+}
+
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.cal-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-base);
+}
+.cal-header-btn:hover {
+  background: var(--bg-hover);
+}
+.cal-header-btn .lucide {
+  width: 16px;
+  height: 16px;
+}
+.cal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.cal-weekday {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  user-select: none;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.cal-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-base);
+  user-select: none;
+}
+.cal-day:hover {
+  background: var(--bg-hover);
+}
+.cal-day.selected {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.cal-day.other-month {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+.cal-day.today {
+  font-weight: 700;
+  color: var(--accent);
+}
+.cal-day.selected.today {
+  color: #fff;
 }
 
 .history-date-group {
@@ -8328,6 +8518,112 @@ body.child-mode #header-bar {
   margin-bottom: 0;
 }
 
+/* ── Thinking-card (multimodal / push toggle style) ─────────── */
+.model-form-thinking-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.model-form-thinking-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-form-thinking-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.model-form-thinking-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* ── Helper / info button (? icon) ──────────────────────────── */
+.model-form-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 0;
+  vertical-align: middle;
+  transition: color var(--transition-base), background var(--transition-base);
+}
+.model-form-help-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.model-form-help-btn svg {
+  display: block;
+}
+
+/* ── Inline label variant (Base URL + ? on same line) ───────── */
+.model-form-label--inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Number input with custom spinners ──────────────────────── */
+.model-form-input-wrap {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.model-form-spinners {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+.model-form-input-wrap:hover .model-form-spinners {
+  opacity: 1;
+}
+
+.model-form-spinner-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 2px;
+  transition: color var(--transition-base), background var(--transition-base);
+}
+.model-form-spinner-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.model-form-spinner-btn:first-child {
+  margin-bottom: 1px;
+}
+.model-form-spinner-btn svg {
+  display: block;
+}
+
 .model-form-dropdown-row {
   width: 100%;
 }
@@ -8418,11 +8714,17 @@ body.child-mode #header-bar {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  padding: 9px 12px;
+  padding: 9px 28px 9px 12px;
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: border-color var(--transition-base);
+  -moz-appearance: textfield;
+}
+.model-form-input::-webkit-outer-spin-button,
+.model-form-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .model-form-input:focus,
@@ -12287,6 +12589,4 @@ body.child-mode #header-bar {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
-}
-
 }

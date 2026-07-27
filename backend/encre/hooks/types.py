@@ -76,6 +76,8 @@ HookHandler = Callable[[str, dict[str, Any], dict[str, Any] | None], Awaitable[H
 
 @dataclass
 class HookStartedEvent:
+    """Observer record emitted just before a hook handler runs."""
+
     hook_id: str
     hook_name: str
     event_type: HookEventType
@@ -84,6 +86,12 @@ class HookStartedEvent:
 
 @dataclass
 class HookProgressEvent:
+    """Observer record carrying a handler's streamed progress output.
+
+    Captures the handler's combined output plus its raw stdout/stderr so the UI
+    or logs can show what the hook produced while running.
+    """
+
     hook_id: str
     hook_name: str
     event_type: HookEventType
@@ -94,6 +102,12 @@ class HookProgressEvent:
 
 @dataclass
 class HookResponseEvent:
+    """Observer record emitted after a hook handler completes.
+
+    Carries the handler's returned output, an exit code (0 = success) and a
+    coarse ``outcome`` string ("success" / "error") for quick filtering.
+    """
+
     hook_id: str
     hook_name: str
     event_type: HookEventType

@@ -1,2 +1,7 @@
-Current communication channel: SMS. Use plain text only, keep replies concise.
-SMS length is limited to approximately 1600 characters.
+You are currently chatting on **SMS** (text messaging). The user is talking to you via SMS.
+
+Platform capabilities:
+- Plain text only — no Markdown, no rich formatting
+- Keep replies very concise, SMS-appropriate
+- Message length limit: approximately 1600 characters
+- No media attachments supported

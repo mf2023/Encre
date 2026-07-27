@@ -25,14 +25,23 @@ from __future__ import annotations
 
 """Learning subsystem for Encre.
 
-Turns repeated tool-use into durable, reusable knowledge:
+This package turns the agent's repeated behaviour into durable, reusable
+knowledge so that future runs start from a richer baseline instead of raw
+experience. It is composed of three collaborating components:
 
-* :class:`LearningEngine` -- watches a run and crystallises frequent
-  tool patterns into skills.
-* :class:`SkillGenerator` -- builds (and registers) a skill definition
-  from the detected tool pattern.
-* :class:`MemoryConsolidator` -- periodically asks the agent's memory
-  system to consolidate stored memories.
+* :class:`~encre.learning.engine.LearningEngine` -- observes a running
+  agent loop, records how tools are combined into patterns, and decides
+  when a frequently repeated pattern is worth crystallising into a skill.
+* :class:`~encre.learning.skill_generator.SkillGenerator` -- given a
+  detected tool pattern, synthesises a structured skill definition (its
+  trigger, the steps, and metadata) and registers it with the skill store.
+* :class:`~encre.learning.consolidator.MemoryConsolidator` -- periodically
+  drives the agent's memory system to merge, deduplicate, and summarise
+  stored memories so that long-running sessions do not grow without bound.
+
+The public surface of the package is intentionally small: only the three
+classes above are re-exported through ``__all__``. Downstream code should
+import them from this package rather than from their concrete modules.
 """
 
 from encre.learning.consolidator import MemoryConsolidator
