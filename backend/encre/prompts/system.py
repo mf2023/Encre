@@ -176,13 +176,13 @@ def _iwork_block(workspace_root: str, workspace_name: str, project_summary: str 
 def _plan_mode_block() -> PromptBlock:
     """Plan-mode block: instruct the model to plan, not execute."""
     content = _loader.load("plan_mode", category="modes")
-    return PromptBlock(priority=50, name="plan_mode", condition=None, content=content)
+    return PromptBlock(priority=195, name="plan_mode", condition=None, content=content)
 
 
 def _spec_mode_block() -> PromptBlock:
     """Spec-mode block: instruct the model to specify, not implement."""
     content = _loader.load("spec_mode", category="modes")
-    return PromptBlock(priority=50, name="spec_mode", condition=None, content=content)
+    return PromptBlock(priority=195, name="spec_mode", condition=None, content=content)
 
 
 def _command_instructions_block(name: str, body: str) -> PromptBlock:

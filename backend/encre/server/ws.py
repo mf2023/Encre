@@ -303,11 +303,15 @@ class EncreWSHandler:
             self._cancel_current_task()
 
     async def _send_session_mode(self, ws, session) -> None:
-        """Send mode_changed for the session's persisted mode (if any)."""
+        """Send mode_changed for the session's persisted mode (if any).
+
+        ALWAYS send, even when the mode is empty — otherwise the frontend
+        keeps the previous session's mode chip visible (stale state) when
+        switching to a session that has no mode active.
+        """
         try:
             mode = (session.metadata.get("slash_command_mode") if hasattr(session, 'metadata') else None) or ""
-            if mode:
-                await self._send(ws, "mode_changed", mode=mode, session_id=session.session_id)
+            await self._send(ws, "mode_changed", mode=mode, session_id=session.session_id)
         except Exception:
             pass
 
@@ -1912,6 +1916,16 @@ class EncreWSHandler:
                         continue
                     try:
                         await self._delete_message(session, msg.message_index)
+                        # If the session is now empty after deleting the last
+                        # message, remove it entirely so it does not reappear
+                        # as a ghost entry in the sidebar after restart.
+                        if not session.agent.session.messages:
+                            sid = session.session_id
+                            self._manager.delete_session_from_disk(sid)
+                            self._current_session_id = None
+                            self._info = None
+                            await self._send(ws, "session_deleted", session_id=sid)
+                            continue
                         msgs = [m for m in session.agent.session.messages if m.get("role") != "system"]
                         head = session.agent.loop.rollback.head(session.agent.session.id) or ""
                         await self._send(ws, "messages_updated", messages=msgs,
@@ -2638,6 +2652,8 @@ class EncreWSHandler:
                     shells = []
                     if is_windows:
                         shells.append({"name": "PowerShell", "path": "powershell.exe", "args": []})
+                        if os.path.isfile("C:/Program Files/PowerShell/7/pwsh.exe"):
+                            shells.append({"name": "pwsh", "path": "pwsh.exe", "args": []})
                         shells.append({"name": "cmd", "path": "cmd.exe", "args": []})
                         if os.path.isfile("C:/Windows/System32/wsl.exe"):
                             shells.append({"name": "WSL", "path": "wsl.exe", "args": []})
@@ -2645,6 +2661,11 @@ class EncreWSHandler:
                         for sp in ["/bin/bash", "/bin/zsh", "/bin/sh"]:
                             if os.path.isfile(sp):
                                 shells.append({"name": os.path.basename(sp), "path": sp, "args": []})
+                        import shutil as _shutil
+                        for exe in ["pwsh", "irb", "julia", "lua", "php", "R"]:
+                            resolved = _shutil.which(exe)
+                            if resolved:
+                                shells.append({"name": exe, "path": resolved, "args": []})
                     await self._send(ws, "terminal_shells", shells=shells)
 
                 elif isinstance(msg, ClientTerminalSpawn):
@@ -2908,6 +2929,13 @@ class EncreWSHandler:
                             )
                         )
                     ]
+                    # If the session is now empty after rollback, delete it
+                    # entirely so it does not reappear as a ghost entry in the
+                    # sidebar after restart.
+                    if not sess.messages:
+                        self._manager.delete_session_from_disk(sid)
+                        await self._send(ws, "session_deleted", session_id=sid)
+                        continue
                     try:
                         _t = asyncio.ensure_future(self._manager._save_session_async(info))
                         self._tasks.add(_t)
@@ -3406,10 +3434,13 @@ class EncreWSHandler:
         return "Empty session"
 
     def _do_search(self, query: str) -> list[dict[str, Any]]:
-        """Search sessions (by message content) and the workspace (by file name / content).
+        """Search sessions by message content.
 
-        Returns at most ~60 results tagged ``conversation`` or ``file`` so
-        the desktop search box can jump to a past turn or a source file.
+        Returns at most ~60 results tagged ``conversation`` so the desktop
+        search box can jump to a past turn. Workspace *file* search is handled
+        entirely on the client side against **registered** workspaces only —
+        the backend never walks ``os.getcwd()`` so it can't surface files from
+        unregistered directories.
         """
         results: list[dict[str, Any]] = []
         q = query.strip().lower()
@@ -3440,44 +3471,6 @@ class EncreWSHandler:
                         break
         except Exception:
             pass
-
-        workspace = os.getcwd()
-        if os.path.isdir(workspace):
-            excluded = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "target", ".encre", ".pytest_cache", ".mypy_cache", "__pypackages__"}
-            for root, dirs, files in os.walk(workspace):
-                dirs[:] = [d for d in dirs if d not in excluded and not d.startswith(".")]
-                if len(results) >= 100:
-                    break
-                for fname in files:
-                    if len(results) >= 100:
-                        break
-                    if fname.startswith("."):
-                        continue
-                    fpath = os.path.join(root, fname)
-                    rel = os.path.relpath(fpath, workspace).replace("\\", "/")
-                    name_match = q in fname.lower()
-                    if name_match:
-                        results.append({"kind": "file", "path": rel, "snippet": rel})
-                        continue
-                    try:
-                        size = os.path.getsize(fpath)
-                        if size > 300_000 or size == 0:
-                            continue
-                        ext = os.path.splitext(fname)[1].lower()
-                        if ext in (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".zip", ".tar", ".gz", ".7z", ".exe", ".dll", ".so", ".dylib", ".wasm", ".bin", ".pyc", ".pyo"):
-                            continue
-                        with open(fpath, encoding="utf-8", errors="replace") as f:
-                            for li, line in enumerate(f):
-                                if q in line.lower():
-                                    results.append({
-                                        "kind": "file",
-                                        "path": rel,
-                                        "line": li + 1,
-                                        "snippet": line.strip()[:120],
-                                    })
-                                    break
-                    except Exception:
-                        continue
 
         results.sort(key=lambda r: 0 if r["kind"] == "conversation" else 1)
         return results[:60]

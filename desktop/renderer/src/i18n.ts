@@ -54,6 +54,7 @@ export function setLocale(locale: Locale): void {
   currentLocale = locale;
   localStorage.setItem("encre-locale", locale);
   document.documentElement.setAttribute("data-locale", locale);
+  document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
   clearLocaleCache();
   localeChangeCallbacks.forEach((cb) => cb(locale));
 }
@@ -69,24 +70,27 @@ export function getLocale(): Locale {
   return currentLocale;
 }
 
-/** Initializes the locale from storage/settings, falling back to `"zh"`. */
+/** Initializes the locale from storage/settings, falling back to browser language then `"zh"`. */
 export function initLocale(): void {
   const stored = localStorage.getItem("encre-locale") as Locale | null;
   if (stored === "en" || stored === "zh") {
     setLocale(stored);
-    // Keep settings.language in sync so the settings UI shows the correct selection
     try {
       setSettings({ ...getState().settings, language: stored });
     } catch {}
     return;
   }
   try {
-    const state = getState();
-    const settingsLang = (state.settings.language as Locale) || "zh";
-    setLocale(settingsLang === "en" || settingsLang === "zh" ? settingsLang : "zh");
-  } catch {
-    setLocale("zh");
-  }
+    const st = getState();
+    const settingsLang = st.settings.language as Locale | undefined;
+    if (settingsLang === "en" || settingsLang === "zh") {
+      setLocale(settingsLang);
+      return;
+    }
+  } catch {}
+  // Fall back to browser language
+  const browserLang = navigator.language?.startsWith("zh") ? "zh" : "en";
+  setLocale(browserLang);
 }
 
 type StringGetter = () => string;

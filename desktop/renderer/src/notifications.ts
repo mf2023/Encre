@@ -339,9 +339,7 @@ export class Notifications {
             <span>${t("notifications.back")}</span>
           </button>
         </div>
-        ${n.media
-          ? `<div class="notification-detail-media" id="notif-detail-media"></div>`
-          : `<div class="notification-detail-media notification-detail-media--empty"></div>`}
+        ${n.media ? `<div class="notification-detail-media" id="notif-detail-media"></div>` : ""}
         <div class="notification-detail-body">
           <div class="notification-detail-title">${this.esc(n.title)}</div>
           ${n.message ? `<div class="notification-detail-msg">${this.esc(n.message)}</div>` : ""}

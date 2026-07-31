@@ -477,10 +477,20 @@ class SessionManager:
         except Exception:
             _log.exception("Failed to save session %s", info.session_id)
 
-    def create_session(self, config: EncreConfig | None = None) -> SessionInfo:
-        """Create a brand-new in-memory session with a cloned tool registry."""
+    def create_session(self, config: EncreConfig | None = None, session_id: str | None = None) -> SessionInfo:
+        """Create a brand-new in-memory session with a cloned tool registry.
+
+        Args:
+            config: Optional config override.
+            session_id: Optional explicit session ID. When None (default),
+                a new UUID is generated. This lets callers like
+                ``load_or_create_session`` reuse a known adapter session_id
+                instead of generating a new one on every fallback, avoiding
+                "one-time session" behavior for gateway adapters.
+        """
         config = replace(config) if config is not None else EncreConfig()
-        session_id = str(uuid.uuid4())
+        if session_id is None:
+            session_id = str(uuid.uuid4())
         tool_registry = _clone_tool_registry()
         agent = EncreAgent(config=config, tool_registry=tool_registry)
         agent.telemetry.session_id = session_id
@@ -605,9 +615,9 @@ class SessionManager:
                 self._register_user_message_persist_hook(info)
                 return info
             except Exception:
-                return self.create_session(config=config)
+                return self.create_session(config=config, session_id=session_id)
 
-        return self.create_session(config=config)
+        return self.create_session(config=config, session_id=session_id)
 
     async def remove_session(self, session_id: str) -> None:
         info = self._sessions.pop(session_id, None)

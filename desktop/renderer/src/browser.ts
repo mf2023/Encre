@@ -23,6 +23,7 @@
 import { EALoader } from "./ealoader.js";
 import { getState } from "./state.js";
 import { sendSetCdpUrl } from "./ws.js";
+import { t, onLocaleChange, applyI18n } from "./i18n.js";
 
 interface BookmarkEntry {
   date_added: string;
@@ -133,6 +134,7 @@ export class BrowserView {
   private _mainLoaded = false;
   private _bookmarks: BookmarksData | null = null;
   private _starBtn: HTMLButtonElement;
+  private _unsubLocale: (() => void) | null = null;
 
   constructor(container: HTMLElement, options: BrowserViewOptions = {}) {
     this.container = container;
@@ -147,6 +149,7 @@ export class BrowserView {
     const partition = options.partition || "persist:encre-browser";
     const compact = options.compact ? " browser-compact" : "";
 
+    const localePlaceholder = t("browserNav.searchOrEnter");
     container.innerHTML = `
       <div class="browser-nav-bar${compact}">
         <button class="browser-nav-btn" data-nav="back" data-i18n-title="browserNav.back">
@@ -158,7 +161,7 @@ export class BrowserView {
         <button class="browser-nav-btn" data-nav="reload" data-i18n-title="browserNav.reload">
           <svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
         </button>
-        <input type="text" class="browser-url-input" value="${startUrl}" placeholder="搜索或输入 web 地址 / Search or enter web address" spellcheck="false" />
+        <input type="text" class="browser-url-input" value="${startUrl}" placeholder="${localePlaceholder}" data-i18n-placeholder="browserNav.searchOrEnter" spellcheck="false" />
         <button class="browser-star-btn" data-i18n-title="browserNav.bookmark">☆</button>
         <button class="browser-settings-btn" data-i18n-title="browserNav.settings">
           <svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/></svg>
@@ -177,9 +180,9 @@ export class BrowserView {
                   <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
               </div>
-              <div class="browser-overlay-title">Failed to load</div>
-              <div class="browser-overlay-desc">The page could not be loaded. Please check your connection and try again.</div>
-              <button class="browser-overlay-retry" type="button">Retry</button>
+              <div class="browser-overlay-title" data-i18n="browserNav.failedToLoad">Failed to load</div>
+              <div class="browser-overlay-desc" data-i18n="browserNav.checkConnection">The page could not be loaded. Please check your connection and try again.</div>
+              <button class="browser-overlay-retry" type="button" data-i18n="browserNav.retry">Retry</button>
             </div>
           </div>
         </div>
@@ -196,9 +199,11 @@ export class BrowserView {
 
     this._starBtn = container.querySelector(".browser-star-btn") as HTMLButtonElement;
 
+    applyI18n();
     this._bindSettings();
     this._bindStarButton();
     this.loadBookmarks();
+    this._unsubLocale = onLocaleChange(() => applyI18n());
 
     const wv = container.querySelector("webview") as any;
     this.webview = wv;
@@ -320,6 +325,10 @@ export class BrowserView {
   destroy(): void {
     this._destroyed = true;
     this.clearLoadTimer();
+    if (this._unsubLocale) {
+      this._unsubLocale();
+      this._unsubLocale = null;
+    }
     if (this.loader) {
       this.loader.destroy();
       this.loader = null;
@@ -453,7 +462,7 @@ export class BrowserView {
       }
       this.clearLoadTimer();
       this.loadTimer = window.setTimeout(() => {
-        this.showError("Load timed out", "The page took too long to load. Please check your connection and try again.");
+        this.showError(t("browserNav.loadTimedOut"), t("browserNav.timeoutDesc"));
       }, LOAD_TIMEOUT_MS);
     });
 
@@ -468,7 +477,7 @@ export class BrowserView {
       // Only show error overlay for real chrome-error pages, not for
       // the initial about:blank state that happens before CDP navigation
       if (url && url.startsWith("chrome-error://")) {
-        this.showError("Failed to load", "The page could not be loaded.");
+        this.showError(t("browserNav.failedToLoad"), t("browserNav.checkConnection"));
       } else {
         this.hideStatus();
       }
@@ -478,16 +487,19 @@ export class BrowserView {
 
     wv.addEventListener("did-fail-load", (e: any) => {
       if (e && e.isMainFrame === false) return;
+      // ERR_ABORTED (-3) fires on redirects and cancelled navigations —
+      // the page will retry or the final navigation will fire did-finish-load.
+      if (e && e.errorCode === -3) return;
       this.clearLoadTimer();
-      const desc = (e && (e.errorDescription || e.message)) || "The page could not be loaded.";
-      this.showError("Failed to load", String(desc));
+      const desc = (e && (e.errorDescription || e.message)) || t("browserNav.checkConnection");
+      this.showError(t("browserNav.failedToLoad"), String(desc));
     });
 
     wv.addEventListener("did-navigate", (e: any) => {
       try {
         const url = e.url || wv.getURL() || "";
         if (url.startsWith("chrome-error://")) {
-          this.showError("Failed to load", "The page could not be loaded.");
+          this.showError(t("browserNav.failedToLoad"), t("browserNav.checkConnection"));
         }
         this._onUrlChange?.(url);
         this._addHistoryEntry();

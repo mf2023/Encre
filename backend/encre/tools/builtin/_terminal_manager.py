@@ -70,10 +70,16 @@ SHELL_LAUNCH: dict[str, list[str]] = {
     "auto": (["cmd.exe", "/Q"] if sys.platform == "win32" else ["/bin/bash", "--noediting"]),
     "cmd": ["cmd.exe", "/Q"],
     "powershell": ["powershell", "-NoProfile", "-Command", "-"],
+    "pwsh": ["pwsh", "-NoProfile", "-Command", "-"],
     "bash": (["C:\\Program Files\\Git\\bin\\bash.exe", "--noediting"]
              if sys.platform == "win32" else ["/bin/bash", "--noediting"]),
     "python": [sys.executable or "python", "-u", "-i"],
     "node": ["node", "-i"],
+    "irb": ["irb", "-f", "--noreadline"],
+    "julia": ["julia", "--startup-file=no"],
+    "lua": ["lua", "-i"],
+    "php": ["php", "-a"],
+    "R": ["R", "--no-save", "--no-restore", "-q"],
 }
 
 # ── How to write a unique "done" marker per shell type ──────────────
@@ -82,9 +88,15 @@ _SHELL_MARKER_CMDS: dict[str, str] = {
     "auto": 'echo {}',
     "cmd": 'echo {}',
     "powershell": 'Write-Output "{}"',
+    "pwsh": 'Write-Output "{}"',
     "bash": 'echo {}',
     "python": 'print("{}")',
     "node": 'console.log("{}")',
+    "irb": 'puts("{}")',
+    "julia": 'println("{}")',
+    "lua": 'print("{}")',
+    "php": 'echo "{}";',
+    "R": 'cat("{}")',
 }
 
 

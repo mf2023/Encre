@@ -25,6 +25,7 @@ import { send } from "./ws.js";
 import { waitForModelValidation, onAdapterTestResult, onWechatScanResult } from "./stream.js";
 import { setModelConfigs, setMcpServers, setSkillsList, setSubAgents } from "./state.js";
 import type { ModelConfigMeta, MCPServerConfig, SkillInfo, ModelCatalog, McpCatalog, McpProviderEntry, ProviderEntry, ProfileData, CustomCommand, UsageStatsSessionEntry } from "./types.js";
+import { defaultSearchFilter } from "./types.js";
 import { Dialog } from "./dialog.js";
 import { t, initLocale, setLocale, getLocale, clearLocaleCache, onLocaleChange, type Locale } from "./i18n.js";
 import { applyServerCommands } from "./slash_commands.js";
@@ -35,6 +36,8 @@ import { Chart, registerables } from "chart.js";
 Chart.register(...registerables);
 import { showTooltipAt, hideTooltip } from "./tooltip.js";
 import { SEARCH_ENGINES, getDefaultSearchEngine } from "./browser.js";
+import { searchSettingsNavItems, SEARCH_FILTER_META, SETTINGS_NAV_ITEMS } from "./search.js";
+import { setSearchFilter } from "./state.js";
 
 /** Wraps an async operation with a loading spinner on the button. */
 export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T>): Promise<T> {
@@ -59,7 +62,7 @@ initLocale();
 
 const APP_VERSION = "0.2.0-pre.1";
 
-export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "browser" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory";
+export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "browser" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory" | "search";
 
 const DEV_MODE_STORAGE_KEY = "encre-dev-mode";
 const DEV_TAP_THRESHOLD = 7;
@@ -113,10 +116,10 @@ const ADAPTER_DEFS: AdapterDef[] = [
     { key: "client_secret", labelKey: "fieldClientSecret", type: "password" },
   ], docs: "https://bot.q.qq.com/wiki/" },
   { id: "telegram", name: "Telegram", desc: "连接 Telegram Bot API，自动处理频道与私信中的指令和对话", fields: [
-    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+    { key: "token", labelKey: "fieldBotToken", type: "password" },
   ], docs: "https://core.telegram.org/bots#how-do-i-create-a-bot" },
   { id: "discord", name: "Discord", desc: "集成 Discord 机器人，管理服务器频道消息与交互", fields: [
-    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+    { key: "token", labelKey: "fieldBotToken", type: "password" },
   ], docs: "https://discord.com/developers/applications" },
   { id: "weixin", name: "微信", desc: "通过 iLink Bot 扫码绑定微信个人号，自动收发消息", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
   { id: "wecom", name: "企业微信", desc: "对接企业微信自建应用回调，接收成员消息并自动回复", fields: [
@@ -124,17 +127,16 @@ const ADAPTER_DEFS: AdapterDef[] = [
     { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
     { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" },
   ], docs: "https://developer.work.weixin.qq.com/document/" },
-  { id: "feishu", name: "飞书", desc: "连接飞书开放平台机器人，接收机器人事件并回复消息", fields: [
-    { key: "app_id", labelKey: "fieldAppId", type: "text" },
-    { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-    { key: "verify_token", labelKey: "fieldVerifyToken", type: "password" },
-  ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
+{ id: "feishu", name: "飞书", desc: "连接飞书开放平台机器人，接收机器人事件并回复消息", fields: [
+     { key: "app_id", labelKey: "fieldAppId", type: "text" },
+     { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
+   ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
   { id: "dingtalk", name: "钉钉", desc: "接入钉钉开放平台机器人，通过 WebSocket 接收事件并通过 OpenAPI 回复消息", fields: [
     { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
     { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" },
   ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
   { id: "slack", name: "Slack", desc: "集成 Slack 工作空间，通过 Bot Token 监听和发送频道消息", fields: [
-    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+    { key: "token", labelKey: "fieldBotToken", type: "password" },
     { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" },
   ], docs: "https://api.slack.com/apps" },
   { id: "whatsapp", name: "WhatsApp", desc: "连接 WhatsApp Business API，处理客户消息与对话", fields: [
@@ -194,7 +196,7 @@ const ADAPTER_DEFS: AdapterDef[] = [
   ], docs: "https://developers.line.biz/en/services/messaging-api/" },
   { id: "mattermost", name: "Mattermost", desc: "集成 Mattermost 团队协作平台，监听和发送频道消息", fields: [
     { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-    { key: "bot_token", labelKey: "fieldBotToken", type: "password" },
+    { key: "token", labelKey: "fieldBotToken", type: "password" },
   ], docs: "https://developers.mattermost.com/" },
   { id: "ntfy", name: "ntfy", desc: "通过 ntfy 推送服务发送通知消息", fields: [
     { key: "topic", labelKey: "fieldTopic", type: "text" },
@@ -254,6 +256,7 @@ export class Settings {
       about: document.getElementById("panel-about")!,
       developer: document.getElementById("panel-developer")!,
       memory: document.getElementById("panel-memory")!,
+      search: document.getElementById("panel-search")!,
     };
 
     this.searchInput = document.querySelector(".sidebar-settings-search-input") as HTMLInputElement;
@@ -1073,26 +1076,22 @@ setModelConfigs(currentModels, activeIdx);
   }
 
   private filterNavItems(q: string): void {
-    const items = this.nav.querySelectorAll<HTMLElement>(".settings-nav-item");
+    const matchedPanels = new Set(
+      q ? searchSettingsNavItems(q).map((n) => n.panel) : SETTINGS_NAV_ITEMS.map((n) => n.panel),
+    );
     const lower = q.toLowerCase();
     let firstMatch: HTMLElement | null = null;
     let firstPanelId: string | null = null;
 
-    items.forEach((item) => {
+    this.nav.querySelectorAll<HTMLElement>(".settings-nav-item").forEach((item) => {
       const panel = item.getAttribute("data-panel") as string;
-      const span = item.querySelector("span");
-      const label = span?.textContent?.toLowerCase() || "";
-
-      let panelText = "";
-      if (panel && this.panels[panel as PanelId]) {
-        panelText = this.panels[panel as PanelId].textContent?.toLowerCase() || "";
-      }
-
-      const matches = !lower || label.includes(lower) || panelText.includes(lower);
-      (item as HTMLElement).style.display = matches ? "" : "none";
+      let matches = matchedPanels.has(panel);
+      // Never reveal the developer nav item unless dev mode is on.
+      if (panel === "developer" && !isDevModeEnabled()) matches = false;
+      item.style.display = matches ? "" : "none";
 
       if (matches && !firstMatch) {
-        firstMatch = item as HTMLElement;
+        firstMatch = item;
         firstPanelId = panel;
       }
     });
@@ -1254,6 +1253,9 @@ setModelConfigs(currentModels, activeIdx);
     } else if (id === "developer") {
       this.panels.developer.classList.add("active");
       this.renderDeveloper();
+    } else if (id === "search") {
+      this.panels.search.classList.add("active");
+      this.renderSearchFilter();
     } else {
       this.panels[id].classList.add("active");
     }
@@ -1311,7 +1313,59 @@ setModelConfigs(currentModels, activeIdx);
     this.renderMcp();
     this.renderAgent();
     this.renderAbout();
+    this.renderSearchFilter();
     if (isDevModeEnabled()) this.renderDeveloper();
+  }
+
+  /** Renders the shared search-filter checkboxes (used by both searches). */
+  private renderSearchFilter(): void {
+    const el = this.panels.search;
+    if (!el) return;
+    const filter = getState().searchFilter;
+    const locale = getLocale();
+    const lang = locale === "zh" ? "zh" : "en";
+
+    const rows = SEARCH_FILTER_META.map((m) => {
+      const key = m.key;
+      const checked = filter[key] ? "checked" : "";
+      const label = lang === "zh" ? m.zh : m.en;
+      return `
+        <label class="search-filter-row">
+          <input type="checkbox" class="search-filter-checkbox" data-key="${key}" ${checked} />
+          <span class="search-filter-label">${this.esc(label)}</span>
+        </label>`;
+    }).join("");
+
+    el.innerHTML = `
+      <div class="settings-panel-header">
+        <h2>${this.esc(t("search.filterTitle"))}</h2>
+        <p class="settings-panel-desc">${this.esc(t("search.filterDesc"))}</p>
+      </div>
+      <div class="settings-row" style="gap:8px;margin-bottom:12px">
+        <button class="btn btn-sm" id="search-filter-all">${this.esc(t("search.filterAll"))}</button>
+        <button class="btn btn-sm" id="search-filter-reset">${this.esc(t("search.filterReset"))}</button>
+      </div>
+      <div class="search-filter-grid">${rows}</div>
+    `;
+
+    el.querySelectorAll<HTMLInputElement>(".search-filter-checkbox").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const key = cb.getAttribute("data-key") as keyof typeof filter;
+        const next = { ...getState().searchFilter, [key]: cb.checked };
+        setSearchFilter(next);
+      });
+    });
+
+    el.querySelector("#search-filter-all")?.addEventListener("click", () => {
+      const all = {} as typeof filter;
+      for (const m of SEARCH_FILTER_META) (all as Record<string, boolean>)[m.key] = true;
+      setSearchFilter(all);
+      this.renderSearchFilter();
+    });
+    el.querySelector("#search-filter-reset")?.addEventListener("click", () => {
+      setSearchFilter(defaultSearchFilter());
+      this.renderSearchFilter();
+    });
   }
 
   private renderDropdown(id: string, options: DropdownOption[], currentId: string, onChange: (val: string) => void): string {
@@ -3543,40 +3597,61 @@ private _bindModelSelect(): void {
       { id: "ask", label: t("permissions.settings.ask") },
     ];
 
-    const knownTools = [
-      "bash", "bash_output", "bash_kill", "bash_list",
-      "ssh",
-      "file_write", "file_edit", "apply_patch", "archive",
-      "docker", "deploy", "database", "browser",
-      "desktop", "computer_use", "vlm_computer_use",
-      "email", "notify",
-      "env_manager", "cloud_storage",
-      "git", "github",
-      "manage", "swarm", "workflow",
-      "lint_format",
-      "rest_client",
-      "file_api", "batch_api", "fine_tuning_api",
-    ];
-
-    const ensureEntries = (keys: string[], existing: Record<string, import("./types.js").PermissionPolicy>) => {
-      const entries: Array<[string, import("./types.js").PermissionPolicy]> = [];
-      for (const key of keys) {
-        entries.push([key, existing[key] || { value: "allow", source: "default" }]);
-      }
-      for (const [key, policy] of Object.entries(existing)) {
-        if (!keys.includes(key)) entries.push([key, policy]);
-      }
-      return entries;
+    // Tool key → Display name mapping. Only listed tools appear in the panel.
+    const dangerousTools: Record<string, string> = {
+      "apply_patch": "Apply Patch",
+      "archive": "Archive",
+      "bash": "Bash",
+      "bash_kill": "Bash Kill",
+      "batch_api": "Batch API",
+      "browser": "Browser",
+      "cloud_storage": "Cloud Storage",
+      "computer_use": "Computer Use",
+      "create_embeddings": "Create Embeddings",
+      "create_moderation": "Create Moderation",
+      "cron_create": "Cron Create",
+      "cron_delete": "Cron Delete",
+      "database": "Database",
+      "deploy": "Deploy",
+      "desktop": "Desktop",
+      "docker": "Docker",
+      "edit_image": "Edit Image",
+      "email": "Email",
+      "env_manager": "Env Manager",
+      "file_api": "File API",
+      "file_edit": "File Edit",
+      "file_write": "File Write",
+      "fine_tuning_api": "Fine Tuning API",
+      "generate_image": "Generate Image",
+      "git": "Git",
+      "github": "GitHub",
+      "image_variation": "Image Variation",
+      "lint_format": "Lint Format",
+      "manage": "Manage",
+      "notify": "Notify",
+      "rest_client": "REST Client",
+      "ssh": "SSH",
+      "task_create": "Task Create",
+      "task_stop": "Task Stop",
+      "transcribe_audio": "Transcribe Audio",
+      "translate_audio": "Translate Audio",
+      "vlm_computer_use": "VLM Computer Use",
     };
 
-    const toolEntries = ensureEntries(knownTools, policies.tools);
+    const toolKeys = Object.keys(dangerousTools);
+
+    const ensureEntries = (keys: string[], existing: Record<string, import("./types.js").PermissionPolicy>) => {
+      return keys.map((key) => [key, existing[key] || { value: "allow", source: "default" }] as [string, import("./types.js").PermissionPolicy]);
+    };
+
+    const toolEntries = ensureEntries(toolKeys, policies.tools);
 
     const renderRows = (entries: Array<[string, import("./types.js").PermissionPolicy]>) => {
       if (entries.length === 0) {
         return `<div class="empty-state">${t("permissions.settings.noItems")}</div>`;
       }
-      return entries.map(([name, policy], idx) => {
-        const divider = idx < entries.length - 1 ? '<div class="settings-item-divider"></div>' : "";
+      return entries.map(([name, policy]) => {
+        const displayName = dangerousTools[name] || name;
         const descKey = `permissions.settings.desc.${name}`;
         const desc = t(descKey as any) === descKey ? "" : t(descKey as any);
         const currentVal = policy.value === "default" ? "allow" : policy.value;
@@ -3584,7 +3659,7 @@ private _bindModelSelect(): void {
           <div class="settings-item-row" data-perm-group="tools" data-perm-name="${this.esc(name)}">
             <div class="settings-item-info">
               <div class="settings-item-title">
-                ${this.esc(name)}
+                ${this.esc(displayName)}
               </div>
               ${desc ? `<div class="settings-item-desc">${this.esc(desc)}</div>` : ""}
             </div>
@@ -3592,7 +3667,6 @@ private _bindModelSelect(): void {
               ${this.renderDropdown(`perm-dd-tools-${name}`, options, currentVal, () => {})}
             </div>
           </div>
-          ${divider}
         `;
       }).join("");
     };
@@ -3600,7 +3674,7 @@ private _bindModelSelect(): void {
     const toolsHtml = renderRows(toolEntries);
 
     this.panels.permissions.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="wrench" class="lucide section-title-icon"></i> ${t("permissions.settings.tools")}</div>
+      <div class="settings-section-title"><i data-lucide="shield" class="lucide section-title-icon"></i> ${t("permissions.settings.title")}</div>
       <div class="settings-card">${toolsHtml}</div>
     `;
 
@@ -4596,7 +4670,7 @@ private _bindModelSelect(): void {
     });
 
     document.getElementById("dev-reset-state")?.addEventListener("click", async () => {
-      const confirmed = await Dialog.confirm(t("settings.devRestartAppTitle"), t("settings.devRestartAppDesc"));
+      const confirmed = await Dialog.confirm(t("settings.devRestartAppTitle"), t("settings.devRestartAppDesc"), "high");
       if (!confirmed) return;
       localStorage.clear();
       location.reload();
@@ -4605,10 +4679,10 @@ private _bindModelSelect(): void {
     document.getElementById("dev-restart-server")?.addEventListener("click", async () => {
       const running = getState().running;
       if (running) {
-        const ok = await Dialog.confirm(t("settings.devRestartRunningTitle"), t("settings.devRestartRunningDesc"));
+        const ok = await Dialog.confirm(t("settings.devRestartRunningTitle"), t("settings.devRestartRunningDesc"), "high");
         if (!ok) return;
       }
-      const confirmed = await Dialog.confirm(t("settings.devRestartTitle"), t("settings.devRestartServerDesc"));
+      const confirmed = await Dialog.confirm(t("settings.devRestartTitle"), t("settings.devRestartServerDesc"), "high");
       if (!confirmed) return;
       const prog = Dialog.progress(t("settings.devRestartProgressTitle"), "");
       const cleanup = (window as any).electronAPI?.onRestartProgress?.((data: { progress: number }) => {
@@ -4683,7 +4757,7 @@ private _bindModelSelect(): void {
 
     // Clear sessions
     document.getElementById("storage-clear-sessions")?.addEventListener("click", async () => {
-      const ok = await Dialog.confirm(t("common.confirmClearSessionsTitle"), t("common.confirmClearSessions"));
+      const ok = await Dialog.confirm(t("common.confirmClearSessionsTitle"), t("common.confirmClearSessions"), "high");
       if (ok) {
         send({ type: "clear_all_sessions" } as any);
       }
@@ -4691,7 +4765,7 @@ private _bindModelSelect(): void {
 
     // Clear browser data
     document.getElementById("storage-clear-browser")?.addEventListener("click", async () => {
-      const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));
+      const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"), "high");
       if (ok) {
         window.electronAPI?.browserClearData?.();
       }
@@ -4783,7 +4857,7 @@ private _bindModelSelect(): void {
     });
 
     document.getElementById("browser-clear-data")?.addEventListener("click", async () => {
-      const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"));
+      const ok = await Dialog.confirm(t("settings.confirmClearBrowserDataTitle"), t("settings.confirmClearBrowserData"), "high");
       if (ok) {
         window.electronAPI?.browserClearData?.();
         this.renderBrowser();
@@ -4791,7 +4865,7 @@ private _bindModelSelect(): void {
     });
 
     document.getElementById("browser-clear-history")?.addEventListener("click", async () => {
-      const ok = await Dialog.confirm(t("settings.confirmClearHistoryTitle"), t("settings.confirmClearHistory"));
+      const ok = await Dialog.confirm(t("settings.confirmClearHistoryTitle"), t("settings.confirmClearHistory"), "high");
       if (ok) {
         window.electronAPI?.clearHistory?.();
         this.renderBrowser();

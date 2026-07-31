@@ -59,7 +59,7 @@ async def _desktop_execute(**kwargs: Any) -> str:
     try:
         if action == "screenshot":
             state = session.screenshot_with_cursor()
-            return json.dumps({
+            payload: dict[str, Any] = {
                 "width": state.width,
                 "height": state.height,
                 "logical_width": state.logical_width,
@@ -70,7 +70,14 @@ async def _desktop_execute(**kwargs: Any) -> str:
                 "cursor_y": state.cursor_y,
                 "platform": state.platform,
                 "screenshot_base64": state.screenshot_b64,
-            }, ensure_ascii=False)
+            }
+            if state.active_window_b64:
+                payload["active_window_b64"] = state.active_window_b64
+                payload["active_window_left"] = state.active_window_left
+                payload["active_window_top"] = state.active_window_top
+                payload["active_window_width"] = state.active_window_width
+                payload["active_window_height"] = state.active_window_height
+            return json.dumps(payload, ensure_ascii=False)
 
         elif action == "get_screen_size":
             size = session.get_screen_size()

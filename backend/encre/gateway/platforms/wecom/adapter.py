@@ -1293,11 +1293,11 @@ class WeComAdapter(BasePlatformAdapter):
         response = await self._send_reply_request(
             reply_req_id,
             {
-                "msgtype": "markdown",
-                "markdown": {"content": content[:self.MAX_MESSAGE_LENGTH]},
+                "msgtype": "text",
+                "text": {"content": content[:self.MAX_MESSAGE_LENGTH]},
             },
         )
-        self._raise_for_wecom_error(response, "send reply markdown")
+        self._raise_for_wecom_error(response, "send reply text")
         return response
 
     async def _send_reply_media_message(
@@ -1419,7 +1419,12 @@ class WeComAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send markdown to a WeCom chat via proactive ``aibot_send_msg``."""
+        """Send plain text to a WeCom chat via proactive ``aibot_send_msg``.
+
+        Text is sent with ``msgtype: "text"`` (not markdown) to avoid
+        platform-specific rich-content rendering issues. Markdown formatting
+        syntax is preserved in the text body for downstream display.
+        """
         del metadata
 
         if not chat_id:
@@ -1438,8 +1443,8 @@ class WeComAdapter(BasePlatformAdapter):
                     APP_CMD_SEND,
                     {
                         "chatid": chat_id,
-                        "msgtype": "markdown",
-                        "markdown": {"content": content[:self.MAX_MESSAGE_LENGTH]},
+                        "msgtype": "text",
+                        "text": {"content": content[:self.MAX_MESSAGE_LENGTH]},
                     },
                 )
         except asyncio.TimeoutError:

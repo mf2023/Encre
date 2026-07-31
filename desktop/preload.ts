@@ -134,6 +134,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   trayLocaleUpdate: (locale: string): void => {
     ipcRenderer.send("tray-locale", locale);
   },
+  // In-app browser Accept-Language
+  browserLanguageUpdate: (locale: string): void => {
+    ipcRenderer.send("browser-language", locale);
+  },
   trayThemeUpdate: (themePreference: string): void => {
     ipcRenderer.send("tray-theme", themePreference);
   },
@@ -243,6 +247,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   openSettings: (panel: string): Promise<void> =>
     ipcRenderer.invoke("open-settings", panel),
+
+  openInfoHtml: (html: string): Promise<string | null> =>
+    ipcRenderer.invoke("openInfoHtml", html),
 
   onNewWindow: (callback: (url: string, wcId: number) => void): (() => void) => {
     const handler = (_event: any, url: string, wcId: number) => callback(url, wcId);

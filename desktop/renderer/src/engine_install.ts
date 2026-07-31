@@ -128,6 +128,7 @@ async function _askOne(
       secondary: t("engineInstall.cancel"),
       hint,
     },
+    "high",
   );
   if (!ok) return "cancelled";
   return opt.id;

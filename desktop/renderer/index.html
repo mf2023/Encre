@@ -109,6 +109,7 @@
           </button>
         </div>
 <div class="sidebar-settings-items">
+          <!-- 通用 -->
           <button class="settings-nav-item active" data-panel="general">
             <i data-lucide="settings" class="lucide"></i>
             <span data-i18n="sidebar.general">General</span>
@@ -118,6 +119,7 @@
             <span data-i18n="sidebar.usage">Usage</span>
           </button>
           <div class="settings-nav-divider"></div>
+          <!-- 模型与能力 -->
           <button class="settings-nav-item" data-panel="model">
             <i data-lucide="cpu" class="lucide"></i>
             <span data-i18n="sidebar.models">Models</span>
@@ -130,6 +132,12 @@
             <i data-lucide="server" class="lucide"></i>
             <span data-i18n="sidebar.mcp">MCP Server</span>
           </button>
+          <button class="settings-nav-item" data-panel="skills">
+            <i data-lucide="wand-2" class="lucide"></i>
+            <span data-i18n="sidebar.skills">Skills &amp; Commands</span>
+          </button>
+          <div class="settings-nav-divider"></div>
+          <!-- 集成 -->
           <button class="settings-nav-item" data-panel="gateway">
             <i data-lucide="network" class="lucide"></i>
             <span data-i18n="sidebar.gateway">Gateway</span>
@@ -139,6 +147,7 @@
             <span data-i18n="sidebar.browser">Browser</span>
           </button>
           <div class="settings-nav-divider"></div>
+          <!-- 知识与治理 -->
           <button class="settings-nav-item" data-panel="index">
              <i data-lucide="file-text" class="lucide"></i>
             <span data-i18n="sidebar.index">Index &amp; Document</span>
@@ -147,19 +156,18 @@
             <i data-lucide="brain" class="lucide"></i>
             <span data-i18n="sidebar.memory">Memory</span>
           </button>
-          <button class="settings-nav-item" data-panel="skills">
-            <i data-lucide="wand-2" class="lucide"></i>
-            <span data-i18n="sidebar.skills">Skills &amp; Commands</span>
-          </button>
           <button class="settings-nav-item" data-panel="rules">
             <i data-lucide="file-check" class="lucide"></i>
             <span data-i18n="sidebar.rules">Rules</span>
           </button>
+          <div class="settings-nav-divider"></div>
+          <!-- 安全与权限 -->
           <button class="settings-nav-item" data-panel="permissions">
             <i data-lucide="shield" class="lucide"></i>
             <span data-i18n="sidebar.permissions">Permissions</span>
           </button>
           <div class="settings-nav-divider"></div>
+          <!-- 个性化 -->
           <button class="settings-nav-item" data-panel="shortcuts">
             <i data-lucide="keyboard" class="lucide"></i>
             <span data-i18n="sidebar.shortcuts">Shortcuts</span>
@@ -168,7 +176,12 @@
             <i data-lucide="hard-drive" class="lucide"></i>
             <span data-i18n="sidebar.storage">Storage</span>
           </button>
+          <button class="settings-nav-item" data-panel="search">
+            <i data-lucide="filter" class="lucide"></i>
+            <span data-i18n="sidebar.searchFilter">Search Filter</span>
+          </button>
           <div class="settings-nav-divider"></div>
+          <!-- 系统 -->
           <button class="settings-nav-item" data-panel="about">
             <i data-lucide="info" class="lucide"></i>
             <span data-i18n="sidebar.about">About</span>
@@ -249,6 +262,7 @@
               <div class="settings-panel" id="panel-developer"></div>
               <div class="settings-panel" id="panel-permissions"></div>
               <div class="settings-panel" id="panel-memory"></div>
+              <div class="settings-panel" id="panel-search"></div>
               <div class="settings-panel" id="panel-memory-detail"></div>
             </div>
           </div>

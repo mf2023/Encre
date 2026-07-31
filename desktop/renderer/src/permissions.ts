@@ -76,16 +76,16 @@ export class Permissions {
     setPendingPermission({ tool: toolName, reason });
 
     const title = t("permissions.title", { name: toolName });
-    const body = t("permissions.body", {
-      name: toolName,
-      reason: reason || t("permissions.noReason"),
-    });
+    const descKey = `permissions.settings.desc.${toolName}`;
+    const translatedDesc = t(descKey as any);
+    const description = translatedDesc === descKey ? reason : translatedDesc;
+    const body = t("permissions.body", { name: toolName, description });
     const allow = t("permissions.allow");
     const deny = t("permissions.deny");
 
     // Reuse the same modal as the "Delete" / engine-install confirm:
     // same overlay, same card, same primary/secondary buttons.
-    Dialog.confirmInstall(title, body, { primary: allow, secondary: deny })
+    Dialog.confirmInstall(title, body, { primary: allow, secondary: deny }, "critical")
       .then((allowed) => {
         this.active = false;
         setPendingPermission(null);

@@ -23,7 +23,7 @@ extraResources:
 win:
   target:
     - target: nsis
-      arch: [x64]
+      arch: [x64, arm64]
   signAndEditExecutable: false
 
 nsis:
@@ -39,7 +39,7 @@ mac:
 linux:
   target:
     - target: deb
-      arch: [x64]
+      arch: [x64, arm64]
     - target: rpm
-      arch: [x64]
+      arch: [x64, arm64]
   category: Utility

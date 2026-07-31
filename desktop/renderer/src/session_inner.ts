@@ -31,18 +31,20 @@
 
 import { getState, subscribe, addAttachments, showToast } from "./state.js";
 import type { ArtifactItem, AttachmentMeta, ReferenceItem } from "./types.js";
-import { getFileIcon, getCodeIcon } from "./files.js";
+import { getFileIcon } from "./files.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { send } from "./ws.js";
 import { getMonaco, monacoLang, registerEditor, unregisterEditor } from "./monaco.js";
+
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { renderDiffHtml } from "./diff_render.js";
+import { renderDiffHtml, setupSplitViewScrollSync } from "./diff_render.js";
 import { showContextMenu } from "./context-menu.js";
 import { BrowserView } from "./browser.js";
 import { getDefaultHomepage } from "./browser.js";
 import { MarkdownPreviewView } from "./markdown_preview.js";
+import { MediaViewer } from "./media-viewer.js";
 
 /** Definition of a sidebar tab. */
 export interface TabDef {
@@ -91,17 +93,31 @@ function tabLabel(id: string): string {
     case "review": return t("sessionInner.tabReview");
     case "browser": return t("sessionInner.tabBrowser");
     case "markdown": return t("sessionInner.tabMarkdown");
+    case "code": return t("sessionInner.tabCode");
+    case "media": return t("sessionInner.tabMedia");
     default: return id;
   }
 }
 
-function tabIcon(type: string): string {
+function termIcon(shellPath?: string): string {
+  if (!shellPath) return "terminal";
+  const name = shellPath.split(/[/\\]/).pop()?.toLowerCase().replace(/\.(exe|cmd|bat)$/, "") || "";
+  if (name.includes("powershell") || name === "pwsh") return "terminal";
+  if (name === "cmd") return "monitor";
+  if (name.includes("wsl")) return "linux";
+  if (name === "bash" || name === "zsh" || name === "sh") return "terminal";
+  return "terminal";
+}
+
+function tabIcon(type: string, shellPath?: string): string {
+  if (type === "terminal") return termIcon(shellPath);
   switch (type) {
-    case "terminal": return "terminal";
     case "editor": return "code-2";
     case "review": return "eye";
     case "browser": return "globe";
     case "markdown": return "file-text";
+    case "code": return "file-text";
+    case "media": return "image";
     default: return "square";
   }
 }
@@ -140,7 +156,7 @@ export class SessionInner {
   private _sessionTermActiveIdx = new Map<string, Map<string, number>>();
   private _sessionSidebarVisible = new Map<string, boolean>();
   private _sessionBrowsers = new Map<string, Map<string, BrowserView>>();
-  private _sessionEditors = new Map<string, { el: HTMLElement; view: EditorView | null; tabs: Array<{path: string; name: string}>; activeTab: string }>();
+
   private _sessionReviewState = new Map<string, { filter: string; mode: "git" | "artifact"; artifact: ArtifactItem | null; filePending: string | undefined }>();
   /** Key used for storing sidebar tabs: "session:<sid>" or "workspace:<path>". */
   private _tabKey = "";
@@ -189,16 +205,7 @@ export class SessionInner {
         browserCopy.set(k, bv);
       }
       this._sessionBrowsers.set(this._tabKey, browserCopy);
-      const panelId = this._editorPanelId;
-      const editorWrap = panelId ? this.tabBody.querySelector(`[data-panel="${panelId}"] > .si-editor-wrap`) as HTMLElement | null : null;
-      if (editorWrap) editorWrap.remove();
-      this._sessionEditors.set(this._tabKey, {
-        el: editorWrap as HTMLElement,
-        view: this._editorView,
-        tabs: [...this._editorTabs],
-        activeTab: this._activeEditorTab,
-      });
-      this._editorView = null;
+
       this._sessionReviewState.set(this._tabKey, {
         filter: this._reviewFilter,
         mode: this._reviewMode,
@@ -215,16 +222,7 @@ export class SessionInner {
     this.panelActiveTermIdx = restoredActiveIdx ?? new Map();
     const restoredBrowsers = this._sessionBrowsers.get(newKey);
     this.panelBrowsers = restoredBrowsers ?? new Map();
-    const savedEditor = this._sessionEditors.get(newKey);
-    if (savedEditor) {
-      this._editorView = savedEditor.view;
-      this._editorTabs = savedEditor.tabs || [];
-      this._activeEditorTab = savedEditor.activeTab || "";
-    } else {
-      this._editorView = null;
-      this._editorTabs = [];
-      this._activeEditorTab = "";
-    }
+
     const savedReview = this._sessionReviewState.get(newKey);
     if (savedReview) {
       this._reviewFilter = savedReview.filter;
@@ -276,9 +274,13 @@ export class SessionInner {
   private panelShellArgs = new Map<string, string[]>();
   private panelBrowsers = new Map<string, BrowserView>();
   private panelMarkdownPreviews = new Map<string, MarkdownPreviewView>();
+  private panelCodeEditors = new Map<string, any>();
+  private panelMediaViewers = new Map<string, MediaViewer>();
   private _terminalCounter = 0;
   private _browserCounter = 0;
   private _markdownCounter = 0;
+  private _codeCounter = 0;
+  private _mediaCounter = 0;
   private _editorCounter = 0;
   private _availableShells: Array<{ name: string; path: string; args?: string[] }> = [];
   private _shellsLoaded = false;
@@ -326,6 +328,29 @@ export class SessionInner {
         this.createTab("browser");
       }
     });
+
+    window.addEventListener("info-html-open", ((e: CustomEvent) => {
+      const { url } = e.detail;
+      if (!url) return;
+      // Ensure sidebar is visible
+      const panel = document.getElementById("session-inner-sidebar");
+      const mainBody = document.getElementById("main-body");
+      if (panel && mainBody && panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        mainBody.classList.remove("sidebar-hidden");
+        document.getElementById("app")?.classList.add("sidebar-collapsed");
+        this.saveSidebarVisibility();
+      }
+      // Reuse existing browser tab or create one
+      const existing = this.tabs.find(t => t.type === "browser");
+      if (existing) {
+        this.activateTab(existing.id);
+        const bv = this.panelBrowsers.get(existing.id);
+        if (bv) bv.navigate(url);
+      } else {
+        this.createTab("browser", { startUrl: url });
+      }
+    }) as EventListener);
   }
 
   /** Re-renders the active tab's content (reactive to state/locale). */
@@ -367,8 +392,10 @@ export class SessionInner {
       let iconHtml: string;
       if (tab.type === "browser" && tab.favicon) {
         iconHtml = `<img class="tab-favicon" src="${this.esc(tab.favicon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''"/><i data-lucide="globe" class="lucide lucide-xs" style="margin-right:4px;flex-shrink:0;display:none"></i>`;
+      } else if (tab.type === "code" || tab.type === "markdown") {
+        iconHtml = `<img src="${getFileIcon(tab.label)}" class="icon" style="width:14px;height:14px;margin-right:4px;flex-shrink:0">`;
       } else {
-        iconHtml = `<i data-lucide="${tabIcon(tab.type)}" class="lucide lucide-xs" style="margin-right:4px;flex-shrink:0"></i>`;
+        iconHtml = `<i data-lucide="${tabIcon(tab.type, tab.shellPath)}" class="lucide lucide-xs" style="margin-right:4px;flex-shrink:0"></i>`;
       }
       return `<button class="tab${activeCls}" data-tab="${tab.id}" draggable="true">
         ${iconHtml}
@@ -615,6 +642,14 @@ export class SessionInner {
       id = `editor-${this._editorCounter}`;
       const fileName = opts?.filePath ? opts.filePath.split(/[/\\]/).pop() || opts.filePath : "Editor";
       label = fileName;
+    } else if (type === "code") {
+      this._codeCounter++;
+      id = `code-${this._codeCounter}`;
+      label = opts?.title || t("sessionInner.tabCode");
+    } else if (type === "media") {
+      this._mediaCounter++;
+      id = `media-${this._mediaCounter}`;
+      label = opts?.title || t("sessionInner.tabMedia");
     } else {
       id = type;
       label = tabLabel(type);
@@ -648,13 +683,19 @@ export class SessionInner {
       if (t.type === "terminal") {
         await this.setupTerminalPanel(panel, t.id, t.shellPath, t.shellArgs);
       } else if (t.type === "editor") {
-        this.setupEditorPanel(panel, t.filePath);
+        this.setupEditorPanel(panel);
       } else if (t.type === "review") {
         this.setupReviewPanel(panel);
       } else if (t.type === "browser") {
         this.setupBrowserPanel(panel, t.id, t.startUrl);
       } else if (t.type === "markdown") {
         this.setupMarkdownPanel(panel, t.id, t.content, t.title, t.filePath);
+      } else if (t.type === "binary") {
+        this.setupBinaryPanel(panel, t.filePath!);
+      } else if (t.type === "code") {
+        await this.setupCodePanel(panel, t.id, t.content || "", t.filePath || "");
+      } else if (t.type === "media") {
+        this.setupMediaPanel(panel, t.id, t.filePath || "");
       }
 
       this.tabBody.appendChild(panel);
@@ -695,10 +736,19 @@ export class SessionInner {
             this.panelMarkdownPreviews.delete(pid);
           }
         }
-        if (ptype === "editor") {
-          if (this._editorView) {
-            this._editorView.dispose();
-            this._editorView = null;
+        if (ptype === "code") {
+          const editor = this.panelCodeEditors.get(pid);
+          if (editor) {
+            unregisterEditor(editor);
+            editor.dispose();
+            this.panelCodeEditors.delete(pid);
+          }
+        }
+        if (ptype === "media") {
+          const mv = this.panelMediaViewers.get(pid);
+          if (mv) {
+            mv.destroy();
+            this.panelMediaViewers.delete(pid);
           }
         }
         p.remove();
@@ -1106,6 +1156,7 @@ export class SessionInner {
       if (entries.length === 0) return `<div class="si-panel-empty">
         <i data-lucide="check-circle-2" class="lucide"></i>
         <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
+        <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>
       </div>`;
       const groups = new Map<string, StatusEntry[]>();
       for (const e of entries) {
@@ -1131,7 +1182,7 @@ export class SessionInner {
           const statusLabel = isUntracked ? "U" : isStaged ? "S" : "M";
           const active = item.path === activePath ? " si-review-tree-file--active" : "";
           html += `<div class="si-review-tree-file${active}" data-path="${this.esc(item.path)}">
-            <i data-lucide="${getFileIcon(item.path)}" class="lucide lucide-xs"></i>
+            <img src="${getFileIcon(item.path)}" class="icon" style="width:14px;height:14px">
             <span class="si-review-tree-name">${this.esc(item.path.split("/").pop() || item.path)}</span>
             <span class="si-review-tree-status ${statusClass}">${statusLabel}</span>
           </div>`;
@@ -1185,9 +1236,7 @@ export class SessionInner {
         wrapEl.style.display = "none";
         emptyEl.style.display = "flex";
         emptyEl.innerHTML = html;
-        // Clear the toolbar stats so the "Loading..." placeholder set before
-        // the async git call doesn't linger next to the mode selector when the
-        // panel resolves to an empty state.
+        toolbar.style.borderBottom = "none";
         statsEl.innerHTML = "";
         if (typeof (window as any).lucide !== "undefined") {
           (window as any).lucide.createIcons({ root: panel });
@@ -1213,8 +1262,9 @@ export class SessionInner {
       if (this._reviewFilter === "lastRound") {
         const arts = getState().artifacts;
         if (arts.length === 0) {
-          showEmptyState(`<i data-lucide="clock" class="lucide"></i>
-            <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`);
+          showEmptyState(`<i data-lucide="check-circle-2" class="lucide"></i>
+            <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
+            <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>`);
           return;
         }
         // Without a workspace the panel reviews every artifact the current
@@ -1236,11 +1286,12 @@ export class SessionInner {
         if (requestSeq !== this._reviewRequestSeq) return;
         wrapEl.style.display = "flex";
         emptyEl.style.display = "none";
+        toolbar.style.borderBottom = "";
         const targetPath = filePath || roundArts[0]?.path || "";
         const currentArtifact = roundArts.find((a: ArtifactItem) => a.path === targetPath) || null;
         diffEl.innerHTML = currentArtifact
           ? this.parseArtifactDiff(currentArtifact, targetPath)
-          : `<div class="si-empty">${this.esc(t("sessionInner.reviewNoChanges"))}</div>`;
+          : `<div class="si-panel-empty"><i data-lucide="check-circle-2" class="lucide"></i><div class="si-panel-empty-title">${this.esc(t("sessionInner.reviewNoChanges"))}</div></div>`;
         treeEl.innerHTML = this.buildArtifactTree(roundArts, targetPath);
         const adds = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^\+/gm) || []).length : 0;
         const dels = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^-/gm) || []).length : 0;
@@ -1274,6 +1325,7 @@ export class SessionInner {
 
       // Show loading state before potentially slow git operations
       wrapEl.style.display = "flex";
+      toolbar.style.borderBottom = "";
       emptyEl.style.display = "none";
       diffEl.innerHTML = `<div class="si-review-diff-loading">${t("sessionInner.reviewLoading")}</div>`;
       if (!cachedEntries || forceRefresh) {
@@ -1319,7 +1371,8 @@ export class SessionInner {
         wrapEl.style.display = "none";
         emptyEl.style.display = "flex";
         emptyEl.innerHTML = `<i data-lucide="check-circle-2" class="lucide"></i>
-          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`;
+          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
+          <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>`;
         statsEl.innerHTML = "";
         if (typeof (window as any).lucide !== "undefined") {
           (window as any).lucide.createIcons({ root: panel });
@@ -1344,12 +1397,13 @@ export class SessionInner {
           diffEl.innerHTML = `<div class="si-empty">${this.esc(diffRes.error)}</div>`;
         } else {
           diffEl.innerHTML = parseDiffFn(`${ws}:${filePath}`, diffRes.output, String(this._reviewSplitView));
+          setupSplitViewScrollSync(diffEl);
           ({ adds, dels } = computeStats(filteredEntries, diffRes.output));
         }
       } else {
         currentReviewPath = undefined;
         ({ adds, dels, label: statsLabel } = computeStats(filteredEntries));
-        diffEl.innerHTML = `<div class="si-empty">${this.esc(t("sessionInner.reviewNoChanges"))}<br><span style="color:var(--text-muted)">${this.esc(t("sessionInner.reviewRefresh"))}</span></div>`;
+        diffEl.innerHTML = `<div class="si-panel-empty"><i data-lucide="check-circle-2" class="lucide"></i><div class="si-panel-empty-title">${this.esc(t("sessionInner.reviewNoChanges"))}</div></div>`;
       }
 
       if (requestSeq !== this._reviewRequestSeq) return;
@@ -1477,6 +1531,7 @@ export class SessionInner {
         rResizing = true;
         rStartX = e.clientX;
         rStartW = reviewTree.offsetWidth;
+        reviewDivider.classList.add("resizing");
         document.body.style.cursor = "col-resize";
         document.body.style.userSelect = "none";
         e.preventDefault();
@@ -1489,9 +1544,22 @@ export class SessionInner {
       document.addEventListener("mouseup", () => {
         if (!rResizing) return;
         rResizing = false;
+        reviewDivider.classList.remove("resizing");
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+        // Persist tree width
+        const w = reviewTree.offsetWidth;
+        try { localStorage.setItem("review-tree-width", String(w)); } catch {}
       });
+
+      // Restore saved width
+      try {
+        const saved = localStorage.getItem("review-tree-width");
+        if (saved) {
+          const w = parseInt(saved, 10);
+          if (w >= 120 && w <= 480) reviewTree.style.flex = "0 0 " + w + "px";
+        }
+      } catch {}
     }
 
     // Apply CSS-class-driven toggles to the diff container.
@@ -1876,7 +1944,7 @@ export class SessionInner {
     container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;height:100%;";
     panel.appendChild(container);
     const mp = new MarkdownPreviewView(container, title || "", {
-      onOpenLink: (href) => this._handleMarkdownLink(href, basePath),
+      onOpenLink: (href) => this._handleMarkdownLink(href, tabId),
     });
     if (content) mp.setContent(content, basePath || undefined);
     this.panelMarkdownPreviews.set(tabId, mp);
@@ -1890,6 +1958,7 @@ export class SessionInner {
       this.activeTab = existing.id;
       existing.content = content;
       if (title) existing.title = title;
+      existing.filePath = filePath || existing.filePath;
       const mp = this.panelMarkdownPreviews.get(existing.id);
       const basePath = filePath ? filePath.replace(/[/\\][^/\\]+$/, "") : "";
       if (mp) mp.setContent(content, basePath || undefined);
@@ -1899,16 +1968,22 @@ export class SessionInner {
     await this.createTab("markdown", { content, title, filePath });
   }
 
-  private _handleMarkdownLink(href: string, basePath?: string): void {
+  private _handleMarkdownLink(href: string, tabId: string): void {
     if (/^https?:\/\//i.test(href)) {
       const api = (window as any).electronAPI;
       if (api?.openExternal) api.openExternal(href);
       return;
     }
+    // Resolve relative paths against the markdown file's directory
+    const tab = this.tabs.find(t => t.id === tabId);
+    const filePath = tab?.filePath;
+    if (!filePath) return;
+    const basePath = filePath.replace(/[/\\][^/\\]+$/, "");
+
     let fullPath: string;
     if (href.startsWith("/")) {
       fullPath = href;
-    } else if (basePath) {
+    } else {
       const dir = basePath.replace(/\\/g, "/").replace(/\/?$/, "/");
       const parts = dir.split("/").filter(Boolean);
       for (const seg of href.replace(/\\/g, "/").split("/")) {
@@ -1916,8 +1991,6 @@ export class SessionInner {
         else if (seg !== "." && seg) parts.push(seg);
       }
       fullPath = parts.join("/");
-    } else {
-      return;
     }
     if (/\.md$/i.test(fullPath)) {
       this._openMdInPreview(fullPath);
@@ -2130,7 +2203,24 @@ export class SessionInner {
   }
 
   private parseDiff(output: string): string {
-    if (!output.trim()) return `<div class="si-empty">${t("sessionInner.reviewNoChanges")}</div>`;
+    if (!output.trim()) return `<div class="si-panel-empty"><i data-lucide="check-circle-2" class="lucide"></i><div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div></div>`;
+
+    // Check if this is a binary/media file — use same extension sets as editor
+    const fnMatch = output.match(/diff --git a\/\S+ b\/(.+?)(?:\n|$)/) || output.match(/^--- (?:[ab]\/)?(.+)$/m);
+    const diffFileName = fnMatch ? fnMatch[1] : "";
+    const ext = diffFileName.split(".").pop()?.toLowerCase() || "";
+    const isBinary = !!ext && (
+      SessionInner._mediaExts.has(ext) || SessionInner._binaryExts.has(ext)
+    );
+    if (isBinary || /Binary files |GIT binary patch/.test(output)) {
+      const name = diffFileName || t("sessionInner.reviewUnknownFile");
+      return `<div class="si-panel-empty">
+        <i data-lucide="file-x-2" class="lucide"></i>
+        <span class="si-panel-empty-title">${this.esc(name)}</span>
+        <span class="si-panel-empty-sub">${t("sessionInner.binaryFileNotShown")}</span>
+      </div>`;
+    }
+
     return renderDiffHtml(output, {
       fileNameFallback: t("sessionInner.reviewUnknownFile"),
       maxLines: this._reviewFullFile ? 4000 : 1000,
@@ -2196,6 +2286,7 @@ export class SessionInner {
     if (artifacts.length === 0) return `<div class="si-panel-empty">
       <i data-lucide="check-circle-2" class="lucide"></i>
       <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
+      <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>
     </div>`;
     // Group by top-level directory (same as git buildTree style)
     const groups = new Map<string, ArtifactItem[]>();
@@ -2216,7 +2307,7 @@ export class SessionInner {
         const toolLabel = a.tool === "file_write" || a.tool === "write_file" || a.tool === "writeFile"
           ? "created" : "modified";
         html += `<div class="si-review-tree-file${active}" data-path="${this.esc(a.path)}">
-          <i data-lucide="${getFileIcon(a.name)}" class="lucide lucide-xs"></i>
+          <img src="${getFileIcon(a.name)}" class="icon" style="width:14px;height:14px">
           <span class="si-review-tree-name">${this.esc(a.name)}</span>
           <span class="si-review-tree-status si-review-${toolLabel === "created" ? "untracked" : "unstaged"}">${toolLabel === "created" ? "U" : "M"}</span>
         </div>`;
@@ -2226,208 +2317,11 @@ export class SessionInner {
     return html;
   }
 
-  private _editorView: any = null;
-  private _editorCtxMenu: HTMLDivElement | null = null;
-  private _editorCtxTarget: string | null = null;
-  private _editorCtxSelection: string | null = null;
-  private _editorTabs: Array<{path: string; name: string}> = [];
-  private _activeEditorTab = "";
 
-  private _renderEditorTabs(tabBar: HTMLElement): void {
-    tabBar.innerHTML = this._editorTabs.map((t) => {
-      const active = t.path === this._activeEditorTab ? " active" : "";
-      return `<div class="tab${active}" style="flex:0 1 auto;max-width:160px;min-width:60px;border-bottom:none${active ? ';background:var(--editor-sidebar-bg);color:var(--editor-sidebar-text)' : ''}" data-path="${this.esc(t.path)}">
-        <span class="tab-label">${this.esc(t.name)}</span>
-        <button class="tab-close" data-path="${this.esc(t.path)}"><i data-lucide="x" class="lucide lucide-sm"></i></button>
-      </div>`;
-    }).join("");
-    tabBar.querySelectorAll(".tab").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        if ((e.target as HTMLElement).closest(".tab-close")) return;
-        if ((this as any)._editorDragMoved) { (this as any)._editorDragMoved = false; return; }
-        const path = (el as HTMLElement).dataset.path!;
-        this._switchEditorTab(path);
-      });
-      el.addEventListener("auxclick", (e) => {
-        const ev = e as MouseEvent;
-        if (ev.button === 1) {
-          ev.preventDefault();
-          const path = (el as HTMLElement).dataset.path!;
-          this._closeEditorTab(path);
-        }
-      });
-      el.addEventListener("mousedown", (e) => {
-        const ev = e as MouseEvent;
-        if (ev.button !== 0) return;
-        if ((ev.target as HTMLElement).closest(".tab-close")) return;
-        const dragEl = el as HTMLElement;
-        const startX = ev.clientX;
-        let moved = false;
-        const onMove = (evMove: MouseEvent) => {
-          if (!moved && Math.abs(evMove.clientX - startX) < 5) return;
-          if (!moved) { moved = true; dragEl.classList.add("dragging"); (this as any)._editorDragMoved = true; }
-          const rect = tabBar.getBoundingClientRect();
-          const over = Array.from(tabBar.querySelectorAll(".tab")).find((t) => {
-            const r = (t as HTMLElement).getBoundingClientRect();
-            return ev.clientX >= r.left && ev.clientX <= r.right;
-          }) as HTMLElement | undefined;
-          tabBar.querySelectorAll(".tab.drop-target").forEach((t) => t.classList.remove("drop-target"));
-          if (over && over !== dragEl) over.classList.add("drop-target");
-          void rect;
-        };
-        const onUp = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          dragEl.classList.remove("dragging");
-          const target = tabBar.querySelector(".tab.drop-target") as HTMLElement | null;
-          if (target) {
-            const fromIdx = this._editorTabs.findIndex((t) => t.path === (dragEl as HTMLElement).dataset.path);
-            const toIdx = this._editorTabs.findIndex((t) => t.path === target.dataset.path);
-            if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
-              const [m] = this._editorTabs.splice(fromIdx, 1);
-              this._editorTabs.splice(toIdx, 0, m);
-              this._renderEditorTabs(tabBar);
-            }
-          }
-          tabBar.querySelectorAll(".tab.drop-target").forEach((t) => t.classList.remove("drop-target"));
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
-        e.preventDefault();
-      });
-    });
-    tabBar.querySelectorAll(".tab-close").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const path = (el as HTMLElement).dataset.path!;
-        this._closeEditorTab(path);
-      });
-    });
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: tabBar });
-    }
-  }
 
-  private async _switchEditorTab(filePath: string): Promise<void> {
-    if (filePath === this._activeEditorTab) return;
-    this._activeEditorTab = filePath;
-    const editorTab = this.tabs.find((t) => t.type === "editor");
-    if (!editorTab) return;
-    const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
-    if (!panel) return;
-    const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
-    if (tabBar) this._renderEditorTabs(tabBar);
-    await this._loadEditorFile(filePath);
-  }
 
-  private async _closeEditorTab(filePath: string): Promise<void> {
-    const idx = this._editorTabs.findIndex((t) => t.path === filePath);
-    if (idx < 0) return;
-    this._editorTabs.splice(idx, 1);
-    const editorTab = this.tabs.find((t) => t.type === "editor");
-    if (!editorTab) return;
-    if (this._editorTabs.length === 0) {
-      this._activeEditorTab = "";
-      const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
-      if (panel) {
-        const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
-        const container = panel.querySelector(".si-code-container") as HTMLElement;
-        const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
-        if (tabBar) tabBar.style.display = "none";
-        if (container) { container.style.display = "none"; container.innerHTML = ""; }
-        if (emptyEl) emptyEl.style.display = "flex";
-        if (this._editorView) { this._editorView.dispose(); this._editorView = null; }
-      }
-      return;
-    }
-    if (filePath === this._activeEditorTab) {
-      const next = this._editorTabs[Math.min(idx, this._editorTabs.length - 1)];
-      this._activeEditorTab = next.path;
-      await this._loadEditorFile(next.path);
-    }
-    const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
-    if (panel) {
-      const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
-      if (tabBar) this._renderEditorTabs(tabBar);
-    }
-  }
 
-  private get _editorPanelId(): string | null {
-    const t = this.tabs.find((t) => t.type === "editor");
-    return t ? t.id : null;
-  }
-
-  private async _loadEditorFile(filePath: string): Promise<void> {
-    const api = (window as any).electronAPI;
-    if (!api) return;
-    const result = await api.readFile(filePath);
-    if (!result) return;
-    const panelId = this._editorPanelId;
-    if (!panelId) return;
-    const panel = this.tabBody.querySelector(`[data-panel="${panelId}"]`) as HTMLElement;
-    if (!panel) return;
-    const container = panel.querySelector(".si-code-container") as HTMLElement;
-    if (!container) return;
-    container.innerHTML = "";
-    container.style.display = "flex";
-
-    if (this._editorView) { unregisterEditor(this._editorView); this._editorView.dispose(); this._editorView = null; }
-
-    const editor = await getMonaco();
-    const ext = filePath.split(".").pop()?.toLowerCase() || "";
-    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
-
-    this._editorView = editor.create(container, {
-      value: result.content,
-      language: monacoLang(ext),
-      theme: isDark ? "vs-dark" : "vs",
-      readOnly: true,
-      minimap: { enabled: false },
-      automaticLayout: true,
-      scrollBeyondLastLine: false,
-      fontSize: 13,
-      lineNumbers: "on",
-      renderLineHighlight: "line",
-      contextmenu: false,
-      bracketPairColorization: { enabled: true },
-      padding: { top: 8 },
-    });
-
-    registerEditor(this._editorView);
-
-    container.oncontextmenu = (ev: MouseEvent) => {
-      ev.preventDefault();
-      if (!this._editorCtxMenu) return;
-      this._editorCtxTarget = filePath.split(/[/\\]/).pop() || filePath;
-      const view = this._editorView;
-      if (view) {
-        const sel = view.getSelection();
-        const model = view.getModel();
-        this._editorCtxSelection = model && !sel.isEmpty() ? model.getValueInRange(sel) : null;
-      } else {
-        this._editorCtxSelection = null;
-      }
-      showContextMenu(this._editorCtxMenu, ev.clientX, ev.clientY);
-    };
-
-    this._editorView.focus();
-  }
-
-  private async setupEditorPanel(panel: HTMLElement, filePath?: string): Promise<void> {
-    const savedEditor = this._sessionEditors.get(this._tabKey);
-    if (savedEditor?.el) {
-      panel.style.overflow = "hidden";
-      panel.appendChild(savedEditor.el);
-      this._sessionEditors.delete(this._tabKey);
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: panel });
-      }
-      if (this._editorView) {
-        this._editorView.layout();
-      }
-      return;
-    }
-
+  private async setupEditorPanel(panel: HTMLElement): Promise<void> {
     const api = (window as any).electronAPI;
 
     if (!getState().activeWorkspace) {
@@ -2442,26 +2336,13 @@ export class SessionInner {
       return;
     }
 
-panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
-      <div class="si-editor-code" style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-secondary)">
-        <div class="tab-bar" style="display:none;padding:0 4px;border-bottom:none;background:var(--bg-secondary)"></div>
-        <div class="si-editor-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:4px;padding:20px;color:var(--editor-empty,#888);font-size:13px;text-align:center">
-          <i data-lucide="file-code-2" class="lucide" style="width:24px;height:24px;opacity:0.35"></i>
-          <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
-          <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
-        </div>
-        <div class="si-code-container" style="display:none;flex:1;overflow:hidden"></div>
-      </div>
-      <div class="si-editor-divider"></div>
-      <div class="si-editor-tree">
+    panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
+      <div class="si-editor-tree" style="flex:1;overflow:auto;max-width:none;width:100%">
         <div class="si-editor-tree-body"></div>
       </div>
     </div>`;
 
     const treeBody = panel.querySelector(".si-editor-tree-body")! as HTMLElement;
-    const divider = panel.querySelector(".si-editor-divider")! as HTMLElement;
-    const container = panel.querySelector(".si-code-container")! as HTMLElement;
-    const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
 
     /* context menu for tree */
     const treeCtxMenu = document.createElement("div");
@@ -2519,54 +2400,12 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         }
       }
       treeCtxMenu.classList.add("hidden");
-      });
-      document.addEventListener("click", (e) => {
+    });
+    document.addEventListener("click", (e) => {
       if (!treeCtxMenu.contains(e.target as Node)) {
         treeCtxMenu.classList.add("hidden");
       }
     });
-    if (!this._editorCtxMenu) {
-      this._editorCtxMenu = document.createElement("div");
-      this._editorCtxMenu.className = "context-menu hidden";
-      this._editorCtxMenu.innerHTML = `
-        <div class="context-menu-item" data-action="copy">${t("sessionInner.termCopy")}</div>
-        <div class="context-menu-divider"></div>
-        <div class="context-menu-item" data-action="send">${t("sessionInner.termSendToChat")}</div>`;
-      document.body.appendChild(this._editorCtxMenu);
-      this._editorCtxMenu.querySelectorAll(".context-menu-item").forEach((item) => {
-        item.addEventListener("click", () => {
-          const action = (item as HTMLElement).dataset.action;
-          if (action === "copy") {
-            if (this._editorCtxSelection) {
-              navigator.clipboard.writeText(this._editorCtxSelection).catch(() => {});
-            }
-          } else if (action === "send") {
-            const content = this._editorCtxSelection || "";
-            if (!content) return;
-            const name = this._editorCtxTarget || "editor";
-            const att: AttachmentMeta = {
-              name,
-              path: `editor:${Date.now()}`,
-              content,
-              mime_type: "text/x-code",
-              size: content.split("\n").length,
-              is_binary: false,
-            };
-            addAttachments([att]);
-          }
-          this._editorCtxMenu!.classList.add("hidden");
-          this._editorCtxTarget = null;
-          this._editorCtxSelection = null;
-        });
-      });
-      document.addEventListener("click", (e) => {
-        if (this._editorCtxMenu && !this._editorCtxMenu.contains(e.target as Node)) {
-          this._editorCtxMenu.classList.add("hidden");
-          this._editorCtxTarget = null;
-          this._editorCtxSelection = null;
-        }
-      });
-    }
 
     let rootPath = "";
     const expandedDirs = new Set<string>();
@@ -2614,7 +2453,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         } else {
           out.push(`<div class="si-tree-entry" data-path="${this.esc(fullPath)}" data-file="true" style="padding-left:${indent}px">
             <span class="si-tree-chevron" style="visibility:hidden"><i data-lucide="chevron-right" class="lucide lucide-xs"></i></span>
-            <span class="si-tree-icon"><i class="codicon codicon-${getCodeIcon(entry.name)}"></i></span>
+            <span class="si-tree-icon"><img src="${getFileIcon(entry.name)}" class="icon" style="width:14px;height:14px"></span>
             <span class="si-tree-name">${this.esc(entry.name)}</span>
           </div>`);
         }
@@ -2661,43 +2500,6 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       }
     };
 
-    /* divider resizer */
-    let resizing = false;
-    let startX = 0;
-    let startW = 0;
-    divider.addEventListener("mousedown", (e) => {
-      resizing = true;
-      startX = e.clientX;
-      const treeWrap = panel.querySelector(".si-editor-tree") as HTMLElement;
-      startW = treeWrap.offsetWidth;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      e.preventDefault();
-    });
-    document.addEventListener("mousemove", (e) => {
-      if (!resizing) return;
-      const newW = Math.max(120, Math.min(400, startW - (e.clientX - startX)));
-      const treeWrap = panel.querySelector(".si-editor-tree") as HTMLElement;
-      treeWrap.style.width = newW + "px";
-    });
-    document.addEventListener("mouseup", () => {
-      if (!resizing) return;
-      resizing = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    });
-
-    // Auto-collapse the file tree when the panel gets narrow, mirroring the
-    // review panel. Re-expands once it widens again.
-    const editorWrap = panel.querySelector(".si-editor-wrap") as HTMLElement;
-    const measureEditorTree = () => {
-      if (!editorWrap) return;
-      editorWrap.classList.toggle("tree-collapsed", panel.clientWidth < 340);
-    };
-    const editorTreeRo = new ResizeObserver(() => measureEditorTree());
-    editorTreeRo.observe(panel);
-    measureEditorTree();
-
     /* workspace root */
     const home = api
       ? (await api.getAppPath()).replace(/[/\\][^/\\]+$/, "")
@@ -2711,56 +2513,156 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
     }
   }
 
-  private async openFileInEditor(filePath: string, preview = false): Promise<void> {
+  private static _imgExts = new Set(["png","jpg","jpeg","gif","webp","ico","bmp","svg"]);
+  private static _videoExts = new Set(["mp4","avi","mov","wmv","flv","mkv","webm"]);
+  private static _mediaExts = new Set([...SessionInner._imgExts, ...SessionInner._videoExts]);
+
+  private static _binaryExts = new Set([
+    "exe","dll","so","dylib","bin","dat","iso","img","dmg",
+    "zip","rar","7z","gz","tar","bz2","xz","zst",
+    "pdf","doc","docx","xls","xlsx","ppt","pptx",
+    "mp3","wav","flac","ogg",
+    "ttf","otf","woff","woff2","eot",
+    "pyc","class","o","obj","lib","a","lo",
+  ]);
+
+  private _isBinaryContent(content: string): boolean {
+    return /\0/.test(content);
+  }
+
+  private async openFileInEditor(filePath: string): Promise<void> {
+    const api = (window as any).electronAPI;
+    if (!api) return;
     const name = filePath.split(/[/\\]/).pop() || filePath;
+    const ext = filePath.split(".").pop()?.toLowerCase() || "";
 
-    // Ensure editor main tab exists
-    let editorTab = this.tabs.find((t) => t.type === "editor");
-    if (!editorTab) {
-      await this.createTab("editor", {});
-      editorTab = this.tabs.find((t) => t.type === "editor");
-      if (!editorTab) return;
-    }
-    if (this.activeTab !== editorTab.id) {
-      this.activeTab = editorTab.id;
-      await this.renderTabs();
+    if (SessionInner._mediaExts.has(ext)) {
+      await this._openMediaPreview(name, filePath);
+      return;
     }
 
-    const existing = this._editorTabs.find((t) => t.path === filePath);
+    const result = await api.readFile(filePath);
+    if (!result) return;
+
+    if (result.is_binary || SessionInner._binaryExts.has(ext) || this._isBinaryContent(result.content)) {
+      await this._openBinaryPreview(name, filePath);
+      return;
+    }
+
+    // Re-use existing code tab for this file, or create a new one
+    const existing = this.tabs.find(t => t.type === "code" && t.filePath === filePath);
     if (existing) {
-      this._activeEditorTab = filePath;
-      const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
-      if (panel) {
-        const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
-        if (tabBar) this._renderEditorTabs(tabBar);
+      this.activeTab = existing.id;
+      await this.renderTabs();
+      return;
+    }
+    await this.createTab("code", { content: result.content, title: name, filePath });
+  }
+
+  private async _openBinaryPreview(name: string, filePath: string): Promise<void> {
+    const existing = this.tabs.find(t => t.type === "binary" && t.filePath === filePath);
+    if (existing) {
+      this.activeTab = existing.id;
+      await this.renderTabs();
+      return;
+    }
+    const tabId = `binary-${Date.now()}`;
+    this.tabs.push({
+      id: tabId,
+      type: "binary",
+      label: name,
+      closable: true,
+      filePath,
+    });
+    this.activeTab = tabId;
+    await this.renderTabs();
+  }
+
+  private async _openMediaPreview(name: string, filePath: string): Promise<void> {
+    const existing = this.tabs.find(t => t.type === "media" && t.filePath === filePath);
+    if (existing) {
+      this.activeTab = existing.id;
+      await this.renderTabs();
+      return;
+    }
+    await this.createTab("media", { title: name, filePath });
+  }
+
+  private setupMediaPanel(panel: HTMLElement, tabId: string, filePath: string): void {
+    panel.style.overflow = "hidden";
+    panel.style.background = "var(--bg-primary)";
+
+    const existing = this.panelMediaViewers.get(tabId);
+    if (existing) {
+      if (existing.el.parentElement !== panel) {
+        panel.appendChild(existing.el);
       }
-      await this._loadEditorFile(filePath);
       return;
     }
 
-    this._editorTabs.push({ path: filePath, name });
-    this._activeEditorTab = filePath;
+    const container = document.createElement("div");
+    container.style.cssText = "width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg-primary);overflow:hidden;";
+    panel.appendChild(container);
 
-    const panel = this.tabBody.querySelector(`[data-panel="${editorTab.id}"]`) as HTMLElement;
-    if (panel) {
-      const tabBar = panel.querySelector(".tab-bar") as HTMLElement;
-      const container = panel.querySelector(".si-code-container") as HTMLElement;
-      const emptyEl = panel.querySelector(".si-editor-empty") as HTMLElement;
-      if (tabBar) { tabBar.style.display = ""; this._renderEditorTabs(tabBar); }
-      if (emptyEl) emptyEl.style.display = "none";
-      if (container) container.style.display = "";
+    const ext = filePath.split(".").pop()?.toLowerCase() || "";
+    const isVideo = SessionInner._videoExts.has(ext);
+
+    const mv = new MediaViewer(container, { type: isVideo ? "video" : "image", src: filePath });
+    this.panelMediaViewers.set(tabId, mv);
+  }
+
+  private setupBinaryPanel(panel: HTMLElement, filePath: string): void {
+    const name = filePath.split(/[/\\]/).pop() || filePath;
+    panel.innerHTML = `<div class="si-panel-empty">
+      <i data-lucide="file-x-2" class="lucide"></i>
+      <span class="si-panel-empty-title">${this.esc(name)}</span>
+      <span class="si-panel-empty-sub">${t("sessionInner.binaryFileNotShown")}</span>
+    </div>`;
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: panel });
     }
+  }
 
-    if (preview) {
-      const api = (window as any).electronAPI;
-      if (!api) return;
-      const result = await api.readFile(filePath);
-      if (!result) return;
-      await this.openMarkdownPreview(result.content, name);
+  private async setupCodePanel(panel: HTMLElement, tabId: string, content: string, filePath: string): Promise<void> {
+    panel.style.overflow = "hidden";
+    panel.style.background = "var(--bg-primary)";
+
+    const existing = this.panelCodeEditors.get(tabId);
+    if (existing) {
+      const container = existing._codeContainer;
+      if (container && container.parentElement !== panel) {
+        panel.appendChild(container);
+      }
       return;
     }
 
-    await this._loadEditorFile(filePath);
+    const container = document.createElement("div");
+    container.style.cssText = "width:100%;height:100%;background:var(--bg-primary);";
+    panel.appendChild(container);
+
+    const ext = filePath.split(".").pop()?.toLowerCase() || "";
+    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+
+    const editor = await getMonaco();
+    const view = editor.create(container, {
+      value: content,
+      language: monacoLang(ext),
+      theme: isDark ? "vs-dark" : "vs",
+      readOnly: true,
+      minimap: { enabled: false },
+      automaticLayout: true,
+      scrollBeyondLastLine: false,
+      fontSize: 13,
+      lineNumbers: "on",
+      renderLineHighlight: "line",
+      contextmenu: false,
+      bracketPairColorization: { enabled: true },
+      padding: { top: 8 },
+    });
+
+    (view as any)._codeContainer = container;
+    registerEditor(view);
+    this.panelCodeEditors.set(tabId, view);
   }
 
   private _reviewLoad: ((filePath?: string) => Promise<void>) | null = null;
@@ -2950,17 +2852,10 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
     });
     if (id === "info") this.renderContent();
     if (id === "review" && getState().activeWorkspace && this._reviewFilter !== "all") {
-      // Re-entering the review tab always shows "all changes", never a stale
-      // "last round" left over from a prior artifact view.
       this._reviewFilter = "all";
       this._reviewMode = "git";
       this._reviewArtifact = null;
       if (this._reviewLoad) this._reviewLoad(undefined);
-    }
-    // Editor tab: load the file associated with this tab
-    const editorTab = this.tabs.find(t => t.id === id && t.type === "editor");
-    if (editorTab && editorTab.filePath) {
-      this._loadEditorFile(editorTab.filePath);
     }
   }
 
@@ -2998,18 +2893,20 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
         this.panelMarkdownPreviews.delete(id);
       }
     }
-    if (tab.type === "editor") {
-      if (this._editorView) {
-        this._editorView.dispose();
-        this._editorView = null;
+    if (tab.type === "code") {
+      const editor = this.panelCodeEditors.get(id);
+      if (editor) {
+        unregisterEditor(editor);
+        editor.dispose();
+        this.panelCodeEditors.delete(id);
       }
-      const container = this.tabBody.querySelector(`[data-panel="${id}"] .si-code-container`) as HTMLElement | null;
-      const emptyEl = this.tabBody.querySelector(`[data-panel="${id}"] .si-editor-empty`) as HTMLElement | null;
-      if (container) { container.style.display = "none"; container.innerHTML = ""; }
-      if (emptyEl) emptyEl.style.display = "flex";
-      this._sessionEditors.delete(this._tabKey);
-      this._editorTabs = [];
-      this._activeEditorTab = "";
+    }
+    if (tab.type === "media") {
+      const mv = this.panelMediaViewers.get(id);
+      if (mv) {
+        mv.destroy();
+        this.panelMediaViewers.delete(id);
+      }
     }
     this.tabs.splice(idx, 1);
     _saveTabs(this.tabs);
@@ -3030,6 +2927,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
 
     handle.addEventListener("mousedown", (e) => {
       this.resizing = true;
+      handle.classList.add("resizing");
       this.resizeStartX = e.clientX;
       this.resizeStartW = this.el.offsetWidth;
       document.body.style.cursor = "col-resize";
@@ -3049,6 +2947,8 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
     document.addEventListener("mouseup", () => {
       if (!this.resizing) return;
       this.resizing = false;
+      const handle = this.el.querySelector(".si-resize-handle") as HTMLElement;
+      if (handle) handle.classList.remove("resizing");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       this.el.style.transition = "";
@@ -3284,7 +3184,7 @@ panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       <div class="si-diff-list">${artifacts.map((a) => {
         const extIcon = getFileIcon(a.name);
         return `<div class="si-diff-file" data-path="${this.esc(a.path)}">
-          <i data-lucide="${extIcon}" class="lucide lucide-sm si-diff-icon"></i>
+          <img src="${extIcon}" class="si-diff-icon icon" style="width:14px;height:14px">
           <span class="si-diff-name">${this.esc(a.name)}</span>
           <span class="si-diff-stats">
             <span class="si-diff-add">+${a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : (a.size > 0 ? Math.min(a.size, 9999) : 0)}</span>

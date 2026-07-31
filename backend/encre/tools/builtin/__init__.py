@@ -106,6 +106,20 @@ from encre.tools.builtin.web_fetch import EncreWebFetchTool
 from encre.tools.builtin.web_search import EncreWebSearchTool
 from encre.tools.builtin.workflow import EncreWorkflowTool
 from encre.tools.builtin.swarm_tool import EncreSwarmTool
+from encre.tools.builtin.archive import EncreArchiveTool
+from encre.tools.builtin.chart import EncreChartTool
+from encre.tools.builtin.cloud_storage import EncreCloudStorageTool
+from encre.tools.builtin.diagram import EncreDiagramTool
+from encre.tools.builtin.diff_compare import EncreDiffTool
+from encre.tools.builtin.email import EncreEmailTool
+from encre.tools.builtin.env_manager import EncreEnvManagerTool
+from encre.tools.builtin.github import EncreGitHubTool
+from encre.tools.builtin.hash_crypto import EncreHashCryptoTool
+from encre.tools.builtin.json_tool import EncreJsonTool
+from encre.tools.builtin.notify import EncreNotifyTool
+from encre.tools.builtin.qr_code import EncreQRCodeTool
+from encre.tools.builtin.ssh import EncreSSHTool
+from encre.tools.builtin.translation import EncreTranslationTool
 
 __all__ = [
     "EncreAgentTool",
@@ -175,4 +189,18 @@ __all__ = [
     "EncreWebSearchTool",
     "EncreWorkflowTool",
     "EncreSwarmTool",
+    "EncreArchiveTool",
+    "EncreChartTool",
+    "EncreCloudStorageTool",
+    "EncreDiagramTool",
+    "EncreDiffTool",
+    "EncreEmailTool",
+    "EncreEnvManagerTool",
+    "EncreGitHubTool",
+    "EncreHashCryptoTool",
+    "EncreJsonTool",
+    "EncreNotifyTool",
+    "EncreQRCodeTool",
+    "EncreSSHTool",
+    "EncreTranslationTool",
 ]

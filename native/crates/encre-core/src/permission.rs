@@ -353,7 +353,8 @@ impl DangerousTable {
     /// Returns the first matching pattern string for use as a `rule` identifier.
     fn match_command(&self, command: &str, platform: &str) -> Option<String> {
         for (tag, re) in &self.patterns {
-            if tag != platform {
+            // macOS is Unix-based: check both `macos` and `linux` tagged patterns.
+            if tag != platform && !(platform == "macos" && tag == "linux") {
                 continue;
             }
             if re.is_match(command) {
@@ -482,11 +483,10 @@ pub fn permission_record_decision(tool_name: &str, policy: &str) {
 // ---------------------------------------------------------------------------
 
 const ALWAYS_ALLOW: &[&str] = &[
-    "web_fetch", "web_search", "agent",
-    "cron_create", "cron_delete", "cron_list",
-    "task_create", "task_get", "task_list", "task_update", "task_stop", "task_output",
-    "memory_create", "memory_read", "memory_update", "memory_delete",
-    "memory_search", "memory_profile",
+    "web_fetch", "web_search",
+    "cron_list",
+    "task_get", "task_list", "task_update", "task_output",
+    "memory_read", "memory_search", "memory_profile",
     "todo", "question",
 ];
 

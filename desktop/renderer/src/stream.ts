@@ -37,7 +37,7 @@ import { Chat } from "./chat.js";
 import { Tools } from "./tools.js";
 import { Permissions } from "./permissions.js";
 import { Settings } from "./settings.js";
-import { t } from "./i18n.js";
+import { setLocale, t } from "./i18n.js";
 import { handleEngineInstallRequest, handleEngineInstallProgress } from "./engine_install.js";
 import type { AdapterTestResultEvent, WechatScanResultEvent } from "./types.js";
 
@@ -801,9 +801,15 @@ export function handleEvent(event: ServerEvent): void {
     case "configured":
       console.log("[stream] configured event, config keys:", Object.keys(event.config ?? {}));
       state.setSettings({ ...state.getState().settings, ...event.config });
-      if (event.config && typeof event.config === "object" && "permission_settings" in event.config) {
-        const raw = (event.config as Record<string, unknown>).permission_settings;
-        state.setPermissionPolicies(normalizePermissionPolicies(raw));
+      if (event.config && typeof event.config === "object") {
+        if ("permission_settings" in event.config) {
+          const raw = (event.config as Record<string, unknown>).permission_settings;
+          state.setPermissionPolicies(normalizePermissionPolicies(raw));
+        }
+        const lang = (event.config as Record<string, unknown>).language;
+        if (lang === "zh" || lang === "en") {
+          setLocale(lang);
+        }
       }
       break;
 
@@ -862,6 +868,12 @@ export function handleEvent(event: ServerEvent): void {
       const app = (window as any).__app;
       if (app) {
         app._persistentMode = event.mode;
+        // Remove any stale chip left over from a previous session or
+        // turn so updateChipState() can insert the correct one.
+        if (app.input && app.hasModeChip()) {
+          app.removeModeChip();
+          app._currentChipMode = "";
+        }
         app.updateChipState();
         app.updatePlaceholder();
       }
@@ -997,6 +1009,7 @@ export function handleEvent(event: ServerEvent): void {
         "auto_expand", "sub_agent_auto_open_view", "automation_auto_open_view",
         "startup_session_mode", "startup_session_behavior",
         "default_search_engine", "default_search_engine_url",
+        "language", "language_preference",
       ] as const;
       for (const key of _generalKeys) {
         const val = cfg[key];
@@ -1006,6 +1019,11 @@ export function handleEvent(event: ServerEvent): void {
       }
       if (Object.keys(_settingsUpdate).length > 0) {
         state.setSettings({ ...state.getState().settings, ..._settingsUpdate });
+      }
+      // Sync UI locale when language is received from backend config
+      const cfgLang = _settingsUpdate.language as string | undefined;
+      if (cfgLang === "zh" || cfgLang === "en") {
+        setLocale(cfgLang);
       }
       // Sync keybinds from backend config
       const cfgAny = cfg as any;

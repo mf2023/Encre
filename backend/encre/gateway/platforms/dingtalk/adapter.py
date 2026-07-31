@@ -925,12 +925,13 @@ class DingTalkAdapter(BasePlatformAdapter):
             logger.warning("[%s] AI Card send failed, falling back to webhook", self.name)
 
         logger.debug("[%s] Sending via webhook", self.name)
-        # Normalize markdown for DingTalk
+        # Normalize markdown for plain-text delivery (keep markdown syntax
+        # in the text body — no platform-specific markdown wrapper).
         normalized = self._normalize_markdown(content[: self.MAX_MESSAGE_LENGTH])
 
         payload = {
-            "msgtype": "markdown",
-            "markdown": {"title": "Encre", "text": normalized},
+            "msgtype": "text",
+            "text": {"content": normalized},
         }
 
         try:

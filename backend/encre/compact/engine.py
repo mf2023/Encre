@@ -882,7 +882,16 @@ def _build_compacted(
             result.append(dict(msg))
 
     # Last 4 turns -- increased from 2 to provide more recent context
-    user_idxs = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    # Exclude synthetic (compaction-generated) user messages so that
+    # accumulated compression passes don't push keep_from past real turns.
+    user_idxs = [
+        i for i, m in enumerate(messages)
+        if m.get("role") == "user"
+        and not m.get("is_compact_summary")
+        and not m.get("is_compact_active_archive")
+        and not m.get("is_compact_archive_hint")
+        and not m.get("is_compact_context")
+    ]
     keep_from = user_idxs[-4] if len(user_idxs) >= 4 else user_idxs[-2] if len(user_idxs) >= 2 else 0
     keep_from = max(keep_from, messages.index(first_user) if first_user else 0)
 

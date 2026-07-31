@@ -30,7 +30,7 @@ English | [简体中文](README.zh.md)
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"/>
 </a>
 
-**Encre** — A powerful AI Agent platform that supports 31 mainstream LLM providers, 36 built-in tools, and 18 chat platform integrations. Whether it's coding, desktop automation, cross-platform messaging, or multi-agent collaboration, Encre gets the job done.
+**Encre** — A powerful AI Agent platform that supports 31 mainstream LLM providers, 84+ built-in tools, and 26+ chat platform integrations. Whether it's coding, desktop automation, cross-platform messaging, or multi-agent collaboration, Encre gets the job done.
 
 </div>
 
@@ -47,8 +47,8 @@ Encre is an AI Agent platform — tell it what you want to do, and it will autom
 | Capability | Description |
 |:------|:------|
 | 🧠 **31 AI Models** | Supports OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Qwen, GLM, local models, and more — switch freely |
-| 🛠️ **36 Built-in Tools** | File operations, shell execution, browser automation, code editing, web search, databases, scheduling — ready to use |
-| 💬 **18 Chat Platforms** | Integrate with Telegram, Discord, Slack, Feishu, DingTalk, WeChat, WhatsApp, email — chat with Agent wherever you are |
+| 🛠️ **84+ Built-in Tools** | File operations, shell execution, browser automation (CDP engine), code editing, web search, databases, scheduling, Docker, Git, image gen, email — ready to use |
+| 💬 **26+ Chat Platforms** | Integrate with Telegram, Discord, Slack, Feishu, DingTalk, WeChat, WhatsApp, email, QQ Bot, Matrix, and more — chat with Agent wherever you are |
 | 🖥️ **Desktop Automation** | Control desktop apps, operate browsers, read screenshots — simulates human operations |
 | 🤝 **Multi-Agent Collaboration** | Multiple Agents work simultaneously, dividing tasks and cooperating on complex projects |
 | 💾 **Persistent Memory** | Agent remembers your preferences, habits, and project info — gets smarter with use |
@@ -58,12 +58,13 @@ Encre is an AI Agent platform — tell it what you want to do, and it will autom
 
 ### Use Cases
 
-- **Code Development Assistant** — Automatically reads code, fixes bugs, refactors, generates docs, runs tests
+- **Code Development Assistant** — You find a bug → tell Encre → it reads the code, runs LSP diagnostics, applies a patch, runs tests, and reports the fix
+- **Cross-Platform Research** — Give Encre one prompt like "research the best AI coding tools for me" → it opens a browser, searches Google, clicks articles, reads content, and hands you a comparison table
 - **Desktop Automation** — Batch file processing, auto-form filling, screenshot archiving
-- **Cross-Platform Chat Bot** — Connect AI to Telegram, Slack, Feishu, and other platforms
-- **Research & Analysis** — Web search, data organization, PDF/Excel analysis
-- **Long-term Task Scheduling** — Scheduled jobs, system monitoring, periodic reports
-- **Multi-Agent Collaboration** — Deploy different Agents as programmer, researcher, reviewer to work together
+- **Cross-Platform Chat Bot** — Connect Encre to WeChat, Telegram, Slack, or DingTalk all at once, talk to it from any platform
+- **Data Analysis** — "Read this PDF/Excel, summarize it, and tell me the key numbers"
+- **Long-term Task Scheduling** — "Check my server every hour and alert me on WeChat if CPU > 80%"
+- **Multi-Agent Collaboration** — Tell an architect Agent to plan a feature, a coder Agent to implement, and a critic Agent to review — they share a blackboard and work together
 
 <h2 align="center">⭐ Key Features</h2>
 
@@ -86,20 +87,20 @@ Encre comes with specialized roles, each with dedicated prompts and capabilities
 - **Plan/Spec Mode**: `spec-writer`
 - **Automation Mode**: `monitor`, `executor`, `scheduler`
 
-#### 🛠️ 36 Ready-to-use Tools
+#### 🛠️ 84+ Ready-to-use Tools
 
 | Category | Tools |
 |:------|:------|
 | **Files** | Read, write, edit, patch, search, PDF/Excel processing |
 | **Terminal** | Shell commands, background tasks, Docker, deployment |
-| **Web** | Page fetching, web search (MCP-powered), browser automation (Playwright) |
+| **Web** | Page fetching, web search (MCP-powered), browser automation (CDP — Chrome DevTools Protocol) |
 | **Dev Aid** | LSP diagnostics, IPython notebook, database queries |
 | **Tasks** | Create/get/list/update/stop tasks with bash/agent/workflow executors |
 | **Schedule & Memory** | Cron jobs, todo list, memory management |
-| **Desktop** | Desktop control (pyautogui), image recognition (OCR), browser automation |
+| **Desktop** | Desktop control (pyautogui), image recognition (OCR), browser automation (CDP) |
 | **Integration** | Git, REST API, MCP external protocols |
 
-#### 💬 18 Chat Platform Integrations
+#### 💬 26+ Chat Platform Integrations
 
 Connect Encre Agent to your favorite messaging platforms:
 
@@ -263,15 +264,15 @@ Configuration sources (lowest to highest priority):
 
 **Q: Which AI models does Encre support?**
 
-A: **31 providers** including OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Qwen, Tencent, Xiaomi, Moonshot Kimi, Zhipu GLM, MiniMax, Ollama, LM Studio, AWS Bedrock, and more. See the full list in the backends directory.
+A: **31 providers** including OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Qwen, Tencent Hunyuan, Xiaomi MiMo, Moonshot Kimi, Zhipu GLM, MiniMax, Ollama, LM Studio, HuggingFace, AWS Bedrock, OpenRouter, and more. Encre is built from scratch — not a fork of Codex or any other project.
 
 **Q: What can Encre Agent do?**
 
-A: Everything a skilled assistant can do — read/write/edit code, run shell commands, browse the web, automate your desktop, manage files, schedule tasks, collaborate with other Agents, and much more. It has **36 built-in tools** to handle almost any task.
+A: Everything a skilled assistant can do — read/write/edit code, run shell commands, open a browser to do research, automate your desktop, manage files, schedule tasks, collaborate with other Agents, and much more. It has **84+ built-in tools** and **275+ skills** to handle almost any task.
 
 **Q: Can I use Encre with my favorite chat platform?**
 
-A: Yes! Encre supports **18 chat platforms** including Telegram, Discord, Slack, Feishu, DingTalk, WeCom, WeChat, WhatsApp, Email, and more. Each platform has a dedicated adapter.
+A: Yes! Encre supports **26+ chat platforms** including Telegram, Discord, Slack, Feishu, DingTalk, WeCom, WeChat, WhatsApp, QQ Bot, Email, Matrix, and more. Each platform has a dedicated adapter.
 
 **Q: Is Encre safe to use?**
 
@@ -328,7 +329,7 @@ The dependency license list below reflects the packages used by the **Python fra
 | tomli-w | MIT | pyyaml | MIT |
 | cryptography | Apache-2.0 / BSD | zero-api-key-web-search | Apache-2.0 |
 | pathspec | MPL-2.0 | websockets | BSD-3-Clause |
-| Pillow | Historical | playwright | Apache-2.0 |
+| Pillow | Historical | (built-in) | CDP-based browser engine |
 | tiktoken | MIT | numpy | BSD-3-Clause |
 | loguru | MIT | openai | Apache-2.0 |
 | anthropic | MIT | google-generativeai | Apache-2.0 |
@@ -357,7 +358,7 @@ The dependency license list below reflects the packages used by the **Python fra
 | @xterm/xterm | MIT | @xterm/addon-fit | MIT |
 | @xterm/addon-webgl | MIT | node-pty | MIT |
 | markdown-it | MIT | highlight.js | BSD-3-Clause |
-| fuse.js | Apache-2.0 | monaco-editor | MIT |
+| minisearch | MIT | monaco-editor | MIT |
 | react | MIT | react-dom | MIT |
 | simple-icons | CC0-1.0 | | |
 

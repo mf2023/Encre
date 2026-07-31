@@ -283,8 +283,20 @@ function loadBrowserLocalStorage(): string | null {
  *  - Flushes the cache synchronously on `before-quit`.
  *  - Restricts which permissions the in-app browser may request.
  */
+// Current Accept-Language value for the in-app browser session.
+// Updated via the "browser-language" IPC channel; used by onBeforeSendHeaders
+// so multi-language websites serve content in the user's preferred language.
+let _browserAcceptLanguage = "en-US,en;q=0.9";
+
 function setupBrowserSession(): void {
   const bs = session.fromPartition(BROWSER_PARTITION);
+
+  // Override Accept-Language on every request so multi-language websites
+  // respect the app-level language setting.
+  bs.webRequest.onBeforeSendHeaders((details, callback) => {
+    details.requestHeaders["Accept-Language"] = _browserAcceptLanguage;
+    callback({ requestHeaders: details.requestHeaders });
+  });
 
   // In-memory cache of the latest cookie JSON …used for synchronous save on quit
   let cookieCache: string | null = null;
@@ -1923,6 +1935,14 @@ ipcMain.on("tray-locale", (_event, locale: string) => {
   sendTrayDataToPopup();
 });
 
+// Updates the in-app browser Accept-Language header so multi-language
+// websites serve content in the user's preferred language.
+ipcMain.on("browser-language", (_event, locale: string) => {
+  _browserAcceptLanguage = locale === "zh"
+    ? "zh-CN,zh;q=0.9,en;q=0.5"
+    : "en-US,en;q=0.9";
+});
+
 // Updates the tray theme (and popup background) from the renderer.
 ipcMain.on("tray-theme", (_event, themePreference: string) => {
   currentTrayTheme = resolveTrayTheme(themePreference);
@@ -2379,6 +2399,21 @@ ipcMain.handle("open-external", async (_event, url: string) => {
     return true;
   } catch {
     return false;
+  }
+});
+
+// Writes HTML to a temp file and returns the file:// URL (renderer opens in internal browser).
+ipcMain.handle("openInfoHtml", async (_event, html: string) => {
+  try {
+    const tmpDir = path.join(os.tmpdir(), "encre-info");
+    const fileName = `info-${Date.now()}.html`;
+    const filePath = path.join(tmpDir, fileName);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(filePath, html, "utf-8");
+    // Convert to file:// URL (Windows: file:///C:/...)
+    return "file://" + (process.platform === "win32" ? "/" + filePath.replace(/\\/g, "/") : filePath);
+  } catch {
+    return null;
   }
 });
 

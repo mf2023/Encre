@@ -31,14 +31,28 @@
  * snapshots and notify listeners on a microtask.
  */
 
-import { AppState, createEmptyState, createEmptySessionSnapshot, Message, ToolCallState, TelemetryData, UsageStatsData, TokenUsage, PlanItem, PlanProposal, NotificationItem, AttachmentMeta, TimelineSegment, BranchMeta, SessionSnapshot } from "./types.js";
+import { AppState, createEmptyState, createEmptySessionSnapshot, Message, ToolCallState, TelemetryData, UsageStatsData, TokenUsage, PlanItem, PlanProposal, NotificationItem, AttachmentMeta, TimelineSegment, BranchMeta, SessionSnapshot, SearchFilter, defaultSearchFilter } from "./types.js";
 import { t } from "./i18n.js";
 import { findSlashCommand } from "./slash_commands.js";
 import { buildTraySessionData, dedupeSessions } from "./session-projection.js";
 
 type Listener = () => void;
 
+function loadSearchFilter(): SearchFilter {
+  try {
+    const raw = localStorage.getItem("encre-search-filter");
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<SearchFilter>;
+      return { ...defaultSearchFilter(), ...parsed };
+    }
+  } catch {
+    /* ignore corrupt value */
+  }
+  return defaultSearchFilter();
+}
+
 let state = createEmptyState();
+state.searchFilter = loadSearchFilter();
 const listeners = new Set<Listener>();
 let pendingRollbackEdit: { serverId?: string; userIdx: number; content: string } | null = null;
 
@@ -945,6 +959,17 @@ export function setSettings(settings: Record<string, unknown>): void {
   update({ settings });
 }
 
+const SEARCH_FILTER_KEY = "encre-search-filter";
+/** Persists the search-filter toggle set and notifies subscribers. */
+export function setSearchFilter(f: SearchFilter): void {
+  try {
+    localStorage.setItem(SEARCH_FILTER_KEY, JSON.stringify(f));
+  } catch {
+    /* storage may be unavailable; in-memory value still updates */
+  }
+  update({ searchFilter: f });
+}
+
 /**
  * Normalizes a persisted on/off setting to a boolean.
  *
@@ -1208,17 +1233,19 @@ export function showToast(
   title: string,
   message: string,
   type: NotificationItem["type"] = "info",
-  source?: string
+  source?: string,
+  media?: NotificationItem["media"]
 ): void {
   const displayMessage = message ? `${title}: ${message}` : title;
   addNotification({
     id: crypto.randomUUID(),
     type,
     title: displayMessage,
-    message: "",
+    message,
     source: source || t("general.sourceYim"),
     timestamp: Date.now(),
     read: false,
+    media,
   });
 }
 
@@ -1463,6 +1490,14 @@ export function clearQueuedPrompts(): void {
 /** Removes a queued prompt at the given index. */
 export function removeQueuedPromptAt(index: number): void {
   state.queuedPrompts.splice(index, 1);
+  emit();
+}
+
+/** Moves a queued prompt from one index to another (for reordering). */
+export function moveQueuedPrompt(fromIndex: number, toIndex: number): void {
+  if (fromIndex === toIndex) return;
+  const [moved] = state.queuedPrompts.splice(fromIndex, 1);
+  state.queuedPrompts.splice(toIndex, 0, moved);
   emit();
 }
 

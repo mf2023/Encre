@@ -107,6 +107,7 @@ class MessageType(enum.Enum):
     VOICE = "voice"
     PHOTO = "photo"
     DOCUMENT = "document"
+    COMMAND = "command"
 
 
 # -- MessageEvent --------------------------------------------------------------
@@ -1162,6 +1163,8 @@ class BasePlatformAdapter(ABC):
         thread_id: str | None = None,
         scope_id: str | None = None,
         user_id_alt: str | None = None,
+        is_bot: bool = False,
+        **kwargs,
     ) -> SessionSource:
         """Convenience method to construct a SessionSource for this adapter."""
         return SessionSource(
@@ -1174,6 +1177,7 @@ class BasePlatformAdapter(ABC):
             thread_id=thread_id,
             scope_id=scope_id,
             user_id_alt=user_id_alt,
+            is_bot=is_bot,
         )
 
     # -- Internal state management --

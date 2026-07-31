@@ -343,11 +343,17 @@ EncreBashTool = build_tool(
         "\n"
         "**terminal** — choose which shell to run in (required):\n"
         "- **auto** — platform default (cmd on Windows, bash on Unix; one-shot)\n"
-        "- **powershell** — persistent PowerShell session\n"
+        "- **powershell** — persistent PowerShell (Windows) session\n"
+        "- **pwsh** — persistent PowerShell Core (cross-platform) session\n"
         "- **cmd** — persistent cmd.exe session (Windows)\n"
         "- **bash** — persistent Bash session (Git Bash on Windows)\n"
         "- **python** — persistent Python interactive REPL\n"
         "- **node** — persistent Node.js REPL\n"
+        "- **irb** — persistent Ruby (irb) REPL\n"
+        "- **julia** — persistent Julia REPL\n"
+        "- **lua** — persistent Lua REPL\n"
+        "- **php** — persistent PHP interactive shell\n"
+        "- **R** — persistent R REPL\n"
         "\n"
         "Persistent terminals keep state (cwd, env) across calls until the "
         "turn ends. Use run_in_background=true for dev servers / watchers. "
@@ -364,8 +370,9 @@ EncreBashTool = build_tool(
             "terminal": {
                 "type": "string",
                 "description": (
-                    "Which terminal to run in: auto, powershell, cmd, bash, "
-                    "python, node. 'auto' uses Rust sandbox (one-shot). "
+                    "Which terminal to run in: auto, powershell, pwsh, cmd, "
+                    "bash, python, node, irb, julia, lua, php, R. "
+                    "'auto' uses Rust sandbox (one-shot). "
                     "Specific terminals create persistent sessions that "
                     "preserve state across calls."
                 ),

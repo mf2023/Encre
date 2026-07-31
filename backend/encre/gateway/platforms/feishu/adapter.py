@@ -166,9 +166,10 @@ from encre.gateway.platforms.base import (
 )
 import threading
 _global_lock = threading.Lock()
-def acquire_scoped_lock(name, timeout=10):
-    return _global_lock.acquire(timeout=timeout)
-def release_scoped_lock(name):
+def acquire_scoped_lock(name, *args, timeout=10, **kwargs):
+    acquired = _global_lock.acquire(timeout=timeout)
+    return acquired, None
+def release_scoped_lock(name, *args):
     _global_lock.release()
     return True
 from encre.config import get_data_dir
@@ -2371,9 +2372,7 @@ class FeishuAdapter(BasePlatformAdapter):
             return await super().send_image(
                 chat_id=chat_id,
                 image_url=image_url,
-                caption=caption,
-                reply_to=reply_to,
-                metadata=metadata,
+                caption=caption or "",
             )
         return await self.send_image_file(
             chat_id=chat_id,
@@ -2400,13 +2399,8 @@ class FeishuAdapter(BasePlatformAdapter):
             )
         except Exception as exc:
             logger.error("[Feishu] Failed to download animation %s: %s", animation_url, exc, exc_info=True)
-            return await super().send_animation(
-                chat_id=chat_id,
-                animation_url=animation_url,
-                caption=caption,
-                reply_to=reply_to,
-                metadata=metadata,
-            )
+            logger.warning("[Feishu] send_animation fallback: base class has no send_animation method")
+            return SendResult(success=False, error="send_animation not supported by base class")
         degraded_caption = f"[GIF downgraded to file]\n{caption}" if caption else "[GIF downgraded to file]"
         return await self.send_document(
             chat_id=chat_id,
@@ -4578,7 +4572,7 @@ class FeishuAdapter(BasePlatformAdapter):
             recent = self._seen_message_order[-self._dedup_cache_size:]
             # Save as {msg_id: timestamp} so TTL filtering works across restarts.
             payload = {"message_ids": {k: self._seen_message_ids[k] for k in recent if k in self._seen_message_ids}}
-            atomic_json_write(self._dedup_state_path, payload, indent=None)
+            atomic_json_write(self._dedup_state_path, payload)
         except OSError:
             logger.warning("[Feishu] Failed to persist dedup state to %s", self._dedup_state_path, exc_info=True)
 
@@ -4757,10 +4751,10 @@ class FeishuAdapter(BasePlatformAdapter):
         override_error: Optional[str] = None,
     ) -> SendResult:
         if override_error:
-            return SendResult(success=False, error=override_error, raw_response=response)
+            return SendResult(success=False, error=override_error, raw=response)
         code = getattr(response, "code", "unknown")
         msg = getattr(response, "msg", default_message)
-        return SendResult(success=False, error=f"[{code}] {msg}", raw_response=response)
+        return SendResult(success=False, error=f"[{code}] {msg}", raw=response)
 
     def _finalize_send_result(self, response: Any, default_message: str) -> SendResult:
         if not self._response_succeeded(response):
@@ -4768,7 +4762,7 @@ class FeishuAdapter(BasePlatformAdapter):
         return SendResult(
             success=True,
             message_id=self._extract_response_field(response, "message_id"),
-            raw_response=response,
+            raw=response,
         )
 
     # =========================================================================

@@ -56,7 +56,11 @@
 
 # Permission / ownership changes
 \bchmod\s+.*777\b
-\bchmod\s+[0-7]*[456][0-7]{2}\b
+\bchmod\s+.*666\b
+\bchmod\s+.*000\b
+\bchmod\s+-R\s+[0-7]{3}\s+/\b
+\bchmod\s+a\+rw[Xx]\b
+\bchmod\s+ugo\+rwx\b
 \bchown\s+.*root
 \bchattr\s
 \bsetfacl\s+.*-m\b
@@ -151,6 +155,50 @@
 \bIFS\s*=
 \bexport\s+PATH=
 
+# sed -i on system files
+\bsed\s+-i\b.*\s+/(?:etc|boot|sys|proc|dev)/
+
+# tee writes to system paths
+\bsudo\s+tee\s+/(?:etc|boot|sys|proc|dev)/
+\btee\s+/etc/(?:passwd|shadow|sudoers|hosts)
+
+# SSH key injection
+\bssh-copy-id\b
+\bcurl\s+\S+\s+-o\s+.*\.ssh/authorized_keys\b
+
+# systemctl enable (could enable malicious service)
+\bsystemctl\s+enable\s+\S+\s*(?:--now)?\b
+
+# Cross-platform pwsh (PowerShell Core) on Linux / macOS
+\bpwsh\s+.*-EncodedCommand\b
+\bpwsh\s+.*-enc\b
+\bpwsh\s+.*-e\s+\S{20,}
+\bpwsh\s+.*[Ww]indow[Ss]tyle\s+[Hh]idden\b
+\bpwsh\s+.*-NoProfile\s+.*-NonInteractive\b
+
+# pwsh download-exec chains
+\bInvoke-Expression\b
+\bInvoke-WebRequest\s+.*\|.*Invoke-Expression\b
+\bInvoke-RestMethod\s+.*\|.*Invoke-Expression\b
+\biwr\s+.*\|.*iex\b
+\birm\s+.*\|.*iex\b
+\bNew-Object\s+Net\.WebClient.*\.DownloadString\b
+\(New-Object\s+Net\.WebClient\).*\.DownloadFile\b
+\bStart-Process\s+.*\{.*\}.*-ArgumentList\b
+
+# Flatpak destructive (Linux)
+\bflatpak\s+(?:uninstall|remove)\s+--delete-data\b
+
+# Snap destructive (Linux)
+\bsnap\s+(?:remove|purge)\s+\S+\s+--purge\b
+
+# Nix destructive (Linux)
+\bnix-collect-garbage\s+-d\b
+\bnix\s+store\s+--delete\b
+
+# Redirects to hosts file (Linux)
+>>?\s+/etc/hosts\b
+
 # ── WINDOWS (cmd.exe / PowerShell) ────────────────────────────────────────────
 [windows]
 
@@ -200,14 +248,14 @@
 \bRestart-Computer\s+.*-Force\b
 \bStop-Computer\s+.*-Force\b
 
-# PowerShell encoded / obfuscated commands
-\bpowershell\s+.*-EncodedCommand\b
-\bpowershell\s+.*-enc\b
-\bpowershell\s+.*-e\s+\S{20,}
-\bpowershell\s+.*[Ww]indow[Ss]tyle\s+[Hh]idden\b
-\bpowershell\s+.*-NoProfile\s+.*-NonInteractive\b
+# PowerShell / pwsh encoded / obfuscated commands
+\b(?:powershell|pwsh)\s+.*-EncodedCommand\b
+\b(?:powershell|pwsh)\s+.*-enc\b
+\b(?:powershell|pwsh)\s+.*-e\s+\S{20,}
+\b(?:powershell|pwsh)\s+.*[Ww]indow[Ss]tyle\s+[Hh]idden\b
+\b(?:powershell|pwsh)\s+.*-NoProfile\s+.*-NonInteractive\b
 
-# PowerShell invocation & download-exec chains
+# PowerShell / pwsh invocation & download-exec chains
 \bInvoke-Expression\b
 \biex\s
 \bInvoke-WebRequest\s+.*\|.*Invoke-Expression\b

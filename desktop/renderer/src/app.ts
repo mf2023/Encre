@@ -45,6 +45,7 @@ import {
   pushQueuedPrompt,
   setPendingQueueCount,
   removeQueuedPromptAt,
+  moveQueuedPrompt,
   clearQueuedPrompts,
   removeLastMessage,
   setTempChat,
@@ -310,6 +311,7 @@ class App {
         lastTrayLocale = locale;
         if (window.electronAPI) {
           window.electronAPI.trayLocaleUpdate(locale);
+          window.electronAPI.browserLanguageUpdate(locale);
         }
       }
     });
@@ -655,7 +657,7 @@ class App {
     if (index === this._activeTabIndex) return;
     this._activeTabIndex = index;
     this.renderTabBar();
-    if (this._tabs[index].view.startsWith("http") || this._tabs[index].view.startsWith("about:")) {
+    if (this._tabs[index].view.startsWith("http") || this._tabs[index].view.startsWith("file:") || this._tabs[index].view.startsWith("about:")) {
       // Webview tabs keep their state – just show/hide the childView wrapper
       // so the webview is never recreated.
       this._switchWebviewTab(index);
@@ -682,7 +684,7 @@ class App {
   private _showTabContent(tab: ChildTab): void {
     for (const t of this._tabs) {
       if (t._contentEl) {
-        const isBrowser = t.view.startsWith("http://") || t.view.startsWith("https://") || t.view === "about:blank";
+        const isBrowser = t.view.startsWith("http://") || t.view.startsWith("https://") || t.view.startsWith("file:") || t.view === "about:blank";
         if (isBrowser) {
           t._contentEl.style.visibility = t === tab ? "visible" : "hidden";
           t._contentEl.style.zIndex = t === tab ? "0" : "-1";
@@ -836,7 +838,7 @@ class App {
     tab._contentEl = container;
     childViewEl.appendChild(container);
 
-if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.view === "about:blank") {
+if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.view.startsWith("file:") || tab.view === "about:blank") {
       const startUrl = tab.view === "about:blank" ? "" : tab.view;
       const bv = new BrowserView(container, {
         startUrl,
@@ -1272,8 +1274,14 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     card.classList.remove("hidden");
     if (statusBar) statusBar.style.maxWidth = "calc(var(--input-max-w) - 100px)";
     body.innerHTML = s.queuedPrompts.map((p, i) =>
-      `<div class="queue-item">
+      `<div class="queue-item" draggable="true" data-queue-index="${i}">
+        <span class="queue-item-drag-handle" data-queue-index="${i}">
+          <i data-lucide="grip-vertical" class="lucide"></i>
+        </span>
         <span class="queue-item-text">${this.esc(p.text)}</span>
+        <button class="queue-item-send" data-queue-index="${i}" title="直接发送">
+          <i data-lucide="send" class="lucide"></i>
+        </button>
         <button class="queue-item-remove" data-queue-index="${i}">
           <i data-lucide="x" class="lucide"></i>
         </button>
@@ -1282,11 +1290,87 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     if ((window as any).lucide) {
       (window as any).lucide.createIcons(body);
     }
+
+    // Drag-and-drop reorder
+    let dragSrcIdx: number | null = null;
+    const items = body.querySelectorAll<HTMLElement>(".queue-item");
+    items.forEach(item => {
+      const idx = parseInt(item.getAttribute("data-queue-index") || "0", 10);
+
+      item.addEventListener("dragstart", (e) => {
+        dragSrcIdx = idx;
+        (e as DragEvent).dataTransfer?.setData("text/plain", String(idx));
+        item.classList.add("dragging");
+      });
+
+      item.addEventListener("dragend", () => {
+        item.classList.remove("dragging");
+        dragSrcIdx = null;
+        items.forEach(el => el.classList.remove("drop-target"));
+      });
+
+      item.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        if (dragSrcIdx !== null && dragSrcIdx !== idx) {
+          items.forEach(el => el.classList.remove("drop-target"));
+          item.classList.add("drop-target");
+        }
+      });
+
+      item.addEventListener("dragleave", () => {
+        item.classList.remove("drop-target");
+      });
+
+      item.addEventListener("drop", (e) => {
+        e.preventDefault();
+        item.classList.remove("drop-target");
+        if (dragSrcIdx !== null && dragSrcIdx !== idx) {
+          moveQueuedPrompt(dragSrcIdx, idx);
+          this._renderQueueCard();
+        }
+        dragSrcIdx = null;
+      });
+    });
+
+    // Remove buttons
     body.querySelectorAll(".queue-item-remove").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const idx = parseInt((btn as HTMLElement).dataset.queueIndex || "0", 10);
         removeQueuedPromptAt(idx);
+      });
+    });
+
+    // Send-directly buttons: cancel current task & move this item to front
+    body.querySelectorAll(".queue-item-send").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = parseInt((btn as HTMLElement).dataset.queueIndex || "0", 10);
+        const st = getState();
+        // Move this item to front of queue
+        if (idx > 0) {
+          moveQueuedPrompt(idx, 0);
+        }
+        // Cancel current running task so queue drain picks it up
+        if (st.running) {
+          this.btnStop.classList.add("cancelling");
+          this.btnStop.style.pointerEvents = "none";
+          send({ type: "cancel", session_id: st.sessionId });
+        } else {
+          // Nothing running: send directly from queue
+          const qp = getState().queuedPrompts[0];
+          if (qp) {
+            removeQueuedPromptAt(0);
+            addUserMessage(qp.text, qp.mode);
+            startAssistantMessage();
+            setRunning(true);
+            this.updateUIState(true);
+            const text = typeof qp.text === "string" ? qp.text : "";
+            if (text) {
+              send({ type: "run", prompt: text, session_id: st.sessionId || undefined } as any);
+            }
+          }
+        }
       });
     });
   }
@@ -1609,6 +1693,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     };
     commandActions["keyboard-shortcuts"] = () => {
     };
+    commandActions["automation"] = () => { this.automationPanel.show(); };
+    commandActions["workflow"] = () => { this.automationPanel.show(); };
   }
 
   private bindGlobalLinkInterceptor(): void {
@@ -1915,7 +2001,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       const adds = a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : 0;
       const dels = a.diff_text ? (a.diff_text.match(/^-/gm) || []).length : 0;
       return `<div class="sp-artifact-item">
-        <i data-lucide="${iconSrc}" class="lucide lucide-sm sp-artifact-icon"></i>
+        <img src="${iconSrc}" class="sp-artifact-icon icon" style="width:14px;height:14px">
         <span class="sp-artifact-name">${this.esc(a.name)}</span>
         <span class="sp-artifact-stats">
           <span class="si-diff-add">+${adds}</span>
@@ -2536,21 +2622,26 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
   public updateChipState(): void {
     const el = document.getElementById("input-area");
     if (!el) return;
-    // Input border and toolbar chip reflect the EFFECTIVE mode (chip OR
-    // backend-confirmed persistent mode), not _persistentMode alone.
-    // Previously this read _persistentMode only, so on first /spec entry --
-    // before the backend broadcast mode_changed and set _persistentMode --
-    // every keystroke wiped the border via removeAttribute, even though a
-    // chip was present.  That made "border absent == mode ignored".
-    // When no mode is active but a command chip IS, set data-input-mode to
-    // "command" so the border gets a distinct visual (teal accent).
     const mode = this.effectiveMode();
     if (mode) {
       el.setAttribute("data-input-mode", mode);
+      // Ensure the mode chip is visible inside the prompt input.
+      // Without this, session switches / mode_changed events update the
+      // toolbar chip + border but leave the input itself bare — the user
+      // can't tell the mode is still active.
+      if (this.input && !this.hasModeChip()) {
+        this.insertModeChip(mode);
+        this._currentChipMode = mode;
+      }
     } else if (this.hasCommandChip()) {
       el.setAttribute("data-input-mode", "command");
     } else {
       el.removeAttribute("data-input-mode");
+      // No mode active — remove any stale chip from the input
+      if (this.input && this.hasModeChip()) {
+        this.removeModeChip();
+        this._currentChipMode = "";
+      }
     }
     this.updateToolbarModeChip(mode);
     this.updateToolbarCommandChip();
@@ -2804,24 +2895,21 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       this.input.style.height = "56px";
     }
     this._currentChipMode = "";
+    this._persistentMode = "";  // Clear — the new session's mode_changed will set the correct value
     setInputMode("");
     clearAttachments();
     clearQueuedPrompts();
     setPendingQueueCount(0);
 
-    // ── 8. Mode-chip CSS hook + restore input area visibility ─────
-    const inputArea = document.getElementById("input-area");
-    if (inputArea) {
-      inputArea.removeAttribute("data-input-mode");
-      // Always restore input-area visibility — sub-agent view hides it via
-      // updateSessionBarName(); we want to undo that on cleanup.
-      inputArea.style.display = "";
-    }
-    const tbChip = document.getElementById("toolbar-mode-chip");
-    if (tbChip) {
-      tbChip.classList.add("hidden");
-      tbChip.setAttribute("data-mode", "");
-    }
+    // ── 8. Restore mode chip + border via the single updateChipState() path ──
+    // updateChipState() checks effectiveMode() (chip OR _persistentMode)
+    // and ensures: border colour, toolbar chip, AND prompt-input chip are
+    // all in sync.  The new session's mode_changed will arrive shortly and
+    // trigger updateChipState() again with the correct mode.
+    // mode_changed for the new session — the chip reappears automatically.
+    this.updateChipState();
+    const inputAreaEl = document.getElementById("input-area");
+    if (inputAreaEl) inputAreaEl.style.display = "";
     const cmdChip = document.getElementById("toolbar-command-chip");
     if (cmdChip) {
       cmdChip.classList.add("hidden");
@@ -3323,6 +3411,12 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       const _cmd = SLASH_COMMANDS.find(c => c.id === sendMode);
       if (_cmd?.kind === "mode") {
         this._persistentMode = sendMode;
+        // Re-insert the mode chip into the prompt input so it persists
+        // across turns.  Without this, the chip disappears after submit
+        // and only the toolbar chip + border survive — the input itself
+        // looks like normal mode to the user.
+        this._currentChipMode = sendMode;
+        this.insertModeChip(sendMode);
       }
     }
     // Command chips are one-shot: clear the in-memory slot.
@@ -3353,15 +3447,6 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       this.btnStop.classList.add("cancelling");
       this.btnStop.style.pointerEvents = "none";
       send({ type: "cancel", session_id: s.sessionId });
-    }
-    // Clear pending queue and remove orphan user message if queue was partially consumed
-    if (s.queuedPrompts.length > 0) {
-      const msgs = getState().messages;
-      clearQueuedPrompts();
-      const lastMsg = msgs[msgs.length - 1];
-      if (lastMsg && lastMsg.role === "user" && !lastMsg.isStreaming && !msgs.some(m => m.parentId === lastMsg.id || m.serverId === lastMsg.serverId)) {
-        removeLastMessage();
-      }
     }
 
     // Always remove mode chip regardless of running state
@@ -3627,7 +3712,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     a["toggle_theme"] = () => {
       const current = getState().themePreference || "system";
       const next = current === "dark" ? "light" : current === "light" ? "system" : "dark";
-      Dialog.confirm(t("theme.switchTitle"), t("theme.switchConfirm", { label: t(`theme.${next}`) })).then(ok => {
+      Dialog.confirm(t("theme.switchTitle"), t("theme.switchConfirm", { label: t(`theme.${next}`) }), "low").then(ok => {
         if (!ok) return;
         setThemePreference(next);
         if (next === "system") {
@@ -3642,7 +3727,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     a["toggle_language"] = () => {
       const current = (getState().settings.language as string) || "zh";
       const next = current === "zh" ? "en" : "zh";
-      Dialog.confirm(t("language.switchTitle"), t("language.switchConfirm", { label: t(`language.${next}`) })).then(ok => {
+      Dialog.confirm(t("language.switchTitle"), t("language.switchConfirm", { label: t(`language.${next}`) }), "low").then(ok => {
         if (!ok) return;
         const settings = { ...getState().settings, language: next };
         setSettings(settings);
@@ -3779,7 +3864,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
 
     scroll.appendChild(grid);
-    Dialog.showHtmlDialog("Keyboard Shortcuts", scroll);
+    Dialog.showHtmlDialog("Keyboard Shortcuts", scroll, "low");
   }
 
   private bindKeyboardShortcuts(): void {

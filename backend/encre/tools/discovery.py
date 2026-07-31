@@ -28,13 +28,15 @@ from __future__ import annotations
 Architecture
 ============
 
-Default tool set exposed to the model (``BASE_TOOLS``): the file/shell/search
-primitives (file_read, file_write, file_edit, bash, grep, glob, todo), the
-one-shot delivery chain (web_search, web_fetch, skill, info), the sub-agent
-and user-interaction tools (agent, question), and the memory tools. Plus
-``find_tool`` (the dispatcher). These are always present every turn so the
-model can act immediately -- search the web, fetch a page, activate a domain
-skill, render a card -- without first having to discover the primitive.
+Default tool set exposed to the model: the file/shell/search primitives
+(file_read, file_write, file_edit, bash, grep, glob), the web chain
+(web_search, web_fetch), communication tools (skill, agent, question),
+memory tools, and ``find_tool``.  These are always present every turn.
+
+The set of always-on tools is now managed by the ``ToolSet`` system in
+``encre.tools.toolset``.  The old hardcoded ``BASE_TOOLS`` constant is
+kept for backward compatibility but new code should use ``resolve_toolset()``
+instead.
 
 Everything else (browser, docker, deploy, database, lsp, notebook, pdf,
 spreadsheet, image, desktop, rest_client, git, apply_patch, bash_output/kill/
@@ -268,6 +270,116 @@ _TOOL_HINTS: dict[str, dict[str, Any]] = {
             "run test", "test suite", "unit test", "coverage",
         ],
     },
+    # Archive / compression
+    "archive": {
+        "category": "filesystem",
+        "triggers": ["archive", "compress", "zip", "tar", "extract archive", "unzip"],
+    },
+    # Chart / visualization
+    "chart": {
+        "category": "data",
+        "triggers": ["chart", "graph", "plot", "visualization", "bar chart", "pie chart", "line chart"],
+    },
+    # Diagram / flowchart
+    "diagram": {
+        "category": "data",
+        "triggers": ["diagram", "flowchart", "sequence diagram", "uml", "mermaid"],
+    },
+    # Diff / compare
+    "diff": {
+        "category": "code_intel",
+        "triggers": ["diff", "compare files", "file comparison", "side by side"],
+    },
+    # Email
+    "email": {
+        "category": "communication",
+        "triggers": ["email", "send mail", "outlook", "gmail", "compose email"],
+    },
+    # Notifications
+    "notify": {
+        "category": "communication",
+        "triggers": ["notification", "notify", "alert", "push", "desktop notification"],
+    },
+    # Environment variables
+    "env_manager": {
+        "category": "infra",
+        "triggers": ["environment variable", "env", ".env", "set env", "get env"],
+    },
+    # Cloud storage
+    "cloud_storage": {
+        "category": "infra",
+        "triggers": ["cloud storage", "s3", "oss", "upload file", "download file", "object storage"],
+    },
+    # GitHub
+    "github": {
+        "category": "code_intel",
+        "triggers": ["github", "pr", "pull request", "issue", "repository", "repo", "github api"],
+    },
+    # SSH
+    "ssh": {
+        "category": "infra",
+        "triggers": ["ssh", "remote", "server", "connect ssh", "remote shell"],
+    },
+    # Image generation / editing
+    "generate_image": {
+        "category": "media",
+        "triggers": ["generate image", "create image", "draw", "dalle", "image generation", "text to image"],
+    },
+    "edit_image": {
+        "category": "media",
+        "triggers": ["edit image", "modify image", "inpaint", "image edit"],
+    },
+    "image_variation": {
+        "category": "media",
+        "triggers": ["image variation", "similar image", "variant"],
+    },
+    # Audio / media API
+    "transcribe_audio": {
+        "category": "media",
+        "triggers": ["transcribe", "speech to text", "whisper", "audio transcription"],
+    },
+    "translate_audio": {
+        "category": "media",
+        "triggers": ["translate audio", "audio translation", "speech translate"],
+    },
+    "create_embeddings": {
+        "category": "data",
+        "triggers": ["embedding", "vectorize", "text embedding", "semantic search setup"],
+    },
+    "create_moderation": {
+        "category": "data",
+        "triggers": ["moderate", "content moderation", "toxicity", "safety check"],
+    },
+    # Platform API
+    "file_api": {
+        "category": "meta",
+        "triggers": ["platform file", "file api", "upload file api", "platform storage"],
+    },
+    "batch_api": {
+        "category": "meta",
+        "triggers": ["batch api", "batch processing", "bulk api"],
+    },
+    "fine_tuning_api": {
+        "category": "meta",
+        "triggers": ["fine tune", "fine tuning", "model training", "custom model"],
+    },
+    # Utility tools
+    "hash_crypto": {
+        "category": "data",
+        "triggers": ["hash", "md5", "sha", "encrypt", "decrypt", "crypto"],
+    },
+    "json_tool": {
+        "category": "data",
+        "triggers": ["json", "json query", "json path", "json schema", "transform json"],
+    },
+    "qr_code": {
+        "category": "media",
+        "triggers": ["qr code", "qrcode", "scan qr", "generate qr"],
+    },
+    "translation": {
+        "category": "communication",
+        "triggers": ["translate", "translation", "language", "i18n", "localization"],
+    },
     # Workflow / multi-step orchestration
     "workflow": {
         "category": "delegation",
@@ -359,6 +471,10 @@ class ToolDiscovery:
         self._signature: int = -1  # changes when registry changes; triggers rebuild
         self._sessions: dict[str, _SessionUnlockState] = {}
         self._payload_cache: dict[tuple[int, str, str], list[dict[str, Any]]] = {}
+        # Active ToolSet name.  When set, replaces the hardcoded BASE_TOOLS
+        # in get_active_tool_names().  Default "default" matches the old
+        # BASE_TOOLS behaviour.
+        self._tool_set_name: str = "default"
 
     # ─── Index lifecycle ─────────────────────────────────────────────
 
@@ -548,11 +664,24 @@ class ToolDiscovery:
             if key[1] != session_id
         }
 
+    # ── ToolSet name ────────────────────────────────────────────────
+
+    @property
+    def tool_set_name(self) -> str:
+        """Active ToolSet name.  Replaces hardcoded BASE_TOOLS when set."""
+        return self._tool_set_name
+
+    @tool_set_name.setter
+    def tool_set_name(self, value: str) -> None:
+        if value != self._tool_set_name:
+            self._tool_set_name = value
+            self._payload_cache.clear()
+
     def get_active_tool_names(self, session_id: str) -> list[str]:
         """Tool names the model should see this turn.
 
         Exposes:
-        - always-on base tools
+        - tools from the active ToolSet (resolved via ``resolve_toolset()``)
         - `find_tool`
         - tools unlocked in this session
         - MCP-discovered tools (always visible once connected)
@@ -560,7 +689,9 @@ class ToolDiscovery:
         self._ensure_built()
         present_names = set(self.registry.list_tools().keys())
         names: set[str] = {"find_tool"}
-        names.update(name for name in BASE_TOOLS if name in present_names)
+        from encre.tools.toolset import resolve_toolset as _resolve_ts
+        toolset_tools = _resolve_ts(self._tool_set_name)
+        names.update(name for name in toolset_tools if name in present_names)
         names.update(name for name in self.get_unlocked(session_id) if name in present_names)
         for n in present_names:
             if n.startswith("mcp__"):

@@ -39,8 +39,8 @@ import { t, onLocaleChange, getLocale } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { findSlashCommand } from "./slash_commands.js";
 import { EALoader } from "./ealoader.js";
-import { renderFlightWidget, renderTrainWidget, renderShipWidget } from "./info-widgets.js";
 import { renderDiffHtml } from "./diff_render.js";
+import { MediaViewer } from "./media-viewer.js";
 
 const md = new MarkdownIt({
   html: true,
@@ -216,14 +216,19 @@ function firstParam(tc: ToolCallState, keys: string[]): string {
 
 function getToolIcon(name: string, terminal?: string): string {
   if (isTerminalTool(name)) {
-    // Map terminal type to Lucide icon name
     const terminalIcons: Record<string, string> = {
-      powershell: "terminal",
-      cmd: "command",
+      auto: "command",
       bash: "terminal",
+      cmd: "monitor",
+      powershell: "terminal",
+      pwsh: "terminal",
       python: "code-2",
       node: "code",
-      auto: "command",
+      irb: "gem",
+      julia: "sigma",
+      lua: "code",
+      php: "file-type",
+      R: "sigma",
     };
     return terminal ? (terminalIcons[terminal] || "command") : "command";
   }
@@ -298,10 +303,24 @@ function getToolIcon(name: string, terminal?: string): string {
   return "wrench";
 }
 
+const TERMINAL_LABELS: Record<string, string> = {
+  auto: "Shell",
+  bash: "Bash",
+  cmd: "CMD",
+  powershell: "PowerShell",
+  pwsh: "pwsh",
+  python: "Python",
+  node: "Node.js",
+  irb: "Ruby",
+  julia: "Julia",
+  lua: "Lua",
+  php: "PHP",
+  R: "R",
+};
+
 function formatToolName(name: string, terminal?: string): string {
-  // Append terminal type for bash tools
   if (terminal && (name === "bash" || name === "shell" || name === "chat.terminal" || name === "run_command")) {
-    return terminal.charAt(0).toUpperCase() + terminal.slice(1);
+    return TERMINAL_LABELS[terminal] || terminal.charAt(0).toUpperCase() + terminal.slice(1);
   }
   const labels: Record<string, string> = {
     "chat.terminal": "Bash",
@@ -465,9 +484,7 @@ export function buildSubAgentTimeline(msgs: Message[], isRunning?: boolean): Tim
   const subRunning = isRunning ?? !!(subView && (subView.status === "running" || subView.status === "pending"));
   if (subRunning) {
     for (const item of timeline) {
-      if (item.kind === "assistant_text") {
-        (item as any).showActions = false;
-      }
+      (item as any).showActions = false;
     }
   }
   // Sub-agent views render a single focused turn inline. The ai_header
@@ -688,6 +705,35 @@ function createLucideIcons(root?: HTMLElement): void {
   }
 }
 
+const _openedHtmlCards = new Set<string>();
+
+function saveVideoPlayback(): Array<{id: string; t: number; p: boolean}> {
+  const states: Array<{id: string; t: number; p: boolean}> = [];
+  document.querySelectorAll<HTMLVideoElement>(".info-card--media video").forEach(v => {
+    const card = v.closest<HTMLElement>(".info-card--media");
+    if (card?.id) states.push({ id: card.id, t: v.currentTime, p: v.paused });
+  });
+  return states;
+}
+
+function restoreVideoPlayback(states: Array<{id: string; t: number; p: boolean}>): void {
+  if (states.length === 0) return;
+  requestAnimationFrame(() => {
+    states.forEach(s => {
+      const card = document.getElementById(s.id);
+      if (!card) return;
+      const video = card.querySelector<HTMLVideoElement>("video");
+      if (!video) return;
+      video.currentTime = s.t;
+      if (!s.p) {
+        const play = () => video.play().catch(() => {});
+        if (video.readyState >= 2) play();
+        else video.addEventListener("canplay", play, { once: true });
+      }
+    });
+  });
+}
+
 /** Flash the copy icon to a checkmark with a fade transition, then revert after 2s. */
 function flashCopyButton(btn: HTMLElement): void {
   const origIcon = btn.getAttribute('data-original-icon');
@@ -723,21 +769,43 @@ export type TimelineItem =
   | { kind: "user"; id: string; content: string; index: number; showBranchSwitcher?: boolean; mode?: string; fileRefs?: { name: string; size: number; icon: string }[] }
   | { kind: "ai_header"; id: string; time: string }
   | { kind: "thinking"; id: string; text: string; elapsed?: number; messageId?: string }
-  | { kind: "tool"; id: string; tc: ToolCallState; messageId?: string }
+  | { kind: "tool"; id: string; tc: ToolCallState; messageId?: string; showActions?: boolean; showBranchSwitcher?: boolean }
   | { kind: "assistant_text"; id: string; content: string; isStreaming: boolean; hasError?: boolean; messageId?: string; showActions?: boolean; showBranchSwitcher?: boolean }
-| { kind: "error_card"; id: string; messageId: string; errorMessage: string; errorCode: string; errorCategory?: string }
-| { kind: "warning_card"; id: string; messageId: string; interruptedReason: string }
-  | { kind: "inline_success"; id: string; messageId: string; turnStatusText: string }
-  | { kind: "inline_cancelled"; id: string; messageId: string; text: string }
+  | { kind: "error_card"; id: string; messageId: string; errorMessage: string; errorCode: string; errorCategory?: string; showActions?: boolean; showBranchSwitcher?: boolean }
+  | { kind: "warning_card"; id: string; messageId: string; interruptedReason: string; showActions?: boolean; showBranchSwitcher?: boolean }
+  | { kind: "inline_success"; id: string; messageId: string; turnStatusText: string; showActions?: boolean; showBranchSwitcher?: boolean }
+  | { kind: "inline_cancelled"; id: string; messageId: string; text: string; showActions?: boolean; showBranchSwitcher?: boolean }
   | { kind: "compact"; id: string }
   | { kind: "system_message"; id: string; content: string; kindTag: string }
   | { kind: "spec_card"; id: string; spec: import("./types.js").SpecData }
   | { kind: "plan_card"; id: string; review: import("./types.js").PlanReviewData }
   | { kind: "workflow"; id: string };
 
+function buildStatusCards(msg: Message): TimelineItem[] {
+  const cards: TimelineItem[] = [];
+  if (msg.errorMessage) {
+    cards.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "", errorCategory: (msg as any).errorCategory || "" });
+  } else if (msg.interruptedReason) {
+    cards.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
+  }
+  if (msg.turnStatusText) {
+    cards.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
+  }
+  if (msg.cancelledText) {
+    cards.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
+  }
+  return cards;
+}
+
 function buildTimeline(msgs: Message[]): TimelineItem[] {
   const items: TimelineItem[] = [];
   let userIndex = 0;
+  // Status cards from consecutive assistant messages are deferred and
+  // flushed at the end of the group so the error/success banner always
+  // sits below every text block, thinking strip, and tool card in the
+  // visible turn — even when the backend split the turn into multiple
+  // assistant messages.
+  let pendingStatusCards: TimelineItem[] = [];
 
   const st = getState();
   if (st.branches.length > 1) {
@@ -752,15 +820,9 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
     items.push({ kind: "system_message", id: `sysmsg-${si}`, content: sm.content, kindTag: sm.kind });
   }
 
-  // Insert spec card when spec data is available
-  if (st.spec) {
-    items.push({ kind: "spec_card", id: "spec-card", spec: st.spec });
-  }
-
-  // Insert plan review card when plan review data is available
-  if (st.planReview) {
-    items.push({ kind: "plan_card", id: "plan-card", review: st.planReview });
-  }
+  // The spec/plan review cards are pushed at the bottom of the message
+  // loop (see below) so they land right after the assistant that triggered
+  // the review, instead of at the top of the timeline.
 
   // Insert workflow progress card when active
   if (st.workflowState && st.workflowState.active) {
@@ -832,6 +894,10 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
       // Use segments ordering to preserve thinking/text/tool interleaving
       // as the model outputs them. Each kind is rendered at its segment
       // position in the exact order they were streamed.
+      // Status cards (error/warning/success/cancelled) are intentionally
+      // pushed AFTER all segments so they always sit at the bottom of the
+      // turn, below any tool calls that arrived later in the stream.
+      const assistantStartIdx = items.length;
       if (msg.segments && msg.segments.length > 0) {
         let lastTextSegIndex = -1;
         {
@@ -871,26 +937,7 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
                 isStreaming: msg.isStreaming,
                 hasError: msg.hasError,
                 messageId: msg.id,
-                showActions: !msg.isStreaming && isLast && !st.running,
-                showBranchSwitcher: i === firstAssistantAfterForkIdx && isLast,
               });
-            }
-            // Insert status cards after the last text segment of each
-            // assistant message.  Must be outside the isErrorOnly check
-            // so the error card still renders when the text content is
-            // purely the error message (avoiding double display).
-            if (isLast) {
-              if (msg.errorMessage) {
-                items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "", errorCategory: (msg as any).errorCategory || "" });
-              } else if (msg.interruptedReason) {
-                items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
-              }
-              if (msg.turnStatusText) {
-                items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
-              }
-              if (msg.cancelledText) {
-                items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
-              }
             }
             textSegIndex++;
           } else if (seg.kind === "tool") {
@@ -920,19 +967,68 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
         if (msg.content.trim().length > 0 || msg.isStreaming) {
           items.push({ kind: "assistant_text", id: `a-${msg.id}`, content: msg.content, isStreaming: msg.isStreaming, hasError: msg.hasError, messageId: msg.id });
         }
-        // Insert status cards for legacy messages
-        if (msg.errorMessage) {
-          items.push({ kind: "error_card", id: `ec-${msg.id}`, messageId: msg.id, errorMessage: msg.errorMessage, errorCode: msg.errorCode || "", errorCategory: (msg as any).errorCategory || "" });
-        } else if (msg.interruptedReason) {
-          items.push({ kind: "warning_card", id: `wc-${msg.id}`, messageId: msg.id, interruptedReason: msg.interruptedReason });
+      }
+      // Status cards for this assistant message. If more assistant messages
+      // follow consecutively, defer the cards so they all render at the end
+      // of the combined turn.
+      const statusCards = buildStatusCards(msg);
+      const isLastAssistantInGroup = i === msgs.length - 1 || msgs[i + 1].role !== "assistant";
+      if (isLastAssistantInGroup) {
+        if (pendingStatusCards.length > 0) {
+          items.push(...pendingStatusCards);
+          pendingStatusCards = [];
         }
-        if (msg.turnStatusText) {
-          items.push({ kind: "inline_success", id: `is-${msg.id}`, messageId: msg.id, turnStatusText: msg.turnStatusText });
-        }
-        if (msg.cancelledText) {
-          items.push({ kind: "inline_cancelled", id: `ic-${msg.id}`, messageId: msg.id, text: msg.cancelledText });
+        items.push(...statusCards);
+      } else {
+        pendingStatusCards.push(...statusCards);
+      }
+      // Place copy/retry/branch-switcher actions on the very last rendered
+      // item of the *last* assistant message in the current group. That
+      // guarantees the action bar sits below every text block, thinking
+      // strip, tool card, and status card in the visible turn.
+      if (isLastAssistantInGroup && assistantStartIdx < items.length) {
+        const lastItem = items[items.length - 1];
+        if (!msg.isStreaming && !st.running) {
+          (lastItem as any).showActions = true;
         }
       }
+      // Branch switcher belongs to the first assistant after a fork; it is
+      // rendered at the end of the turn, so attach the flag to this message's
+      // last rendered item.
+      if (i === firstAssistantAfterForkIdx && assistantStartIdx < items.length) {
+        const lastItem = items[items.length - 1];
+        (lastItem as any).showBranchSwitcher = true;
+      }
+      // After the LAST assistant message in the timeline, push the spec/plan
+      // review card (if any) so it sits at the natural review position —
+      // right after the assistant that triggered it, before the next user
+      // message.
+      if (i === msgs.length - 1 || (i + 1 < msgs.length && msgs[i + 1].role !== "assistant")) {
+        if (st.planReview) {
+          items.push({ kind: "plan_card", id: `plan-card-${st.planReview.review_id}`, review: st.planReview });
+        }
+        if (st.spec) {
+          items.push({ kind: "spec_card", id: `spec-card-${getState().sessionId}`, spec: st.spec });
+        }
+      }
+    }
+  }
+
+  // Safety flush: any deferred status cards that weren't flushed inside the
+  // loop (should only happen in edge cases) are appended at the very end.
+  if (pendingStatusCards.length > 0) {
+    items.push(...pendingStatusCards);
+    pendingStatusCards = [];
+  }
+
+  // Fallback: if there are no assistant messages but a review/spec is
+  // available (e.g. session just loaded), still surface the card at the end.
+  if (items.every(it => it.kind !== "assistant_text" && it.kind !== "ai_header" && it.kind !== "thinking" && it.kind !== "tool")) {
+    if (st.planReview) {
+      items.push({ kind: "plan_card", id: `plan-card-${st.planReview.review_id}`, review: st.planReview });
+    }
+    if (st.spec) {
+      items.push({ kind: "spec_card", id: `spec-card-${getState().sessionId}`, spec: st.spec });
     }
   }
 
@@ -979,7 +1075,7 @@ function buildRenderKey(timeline: TimelineItem[]): string {
             status: message.taskStatus || "",
           }))
         : [];
-      return { k: "tc", id: i.id, n: i.tc.name, r: i.tc.result ? 1 : 0, d: taskDividers };
+      return { k: "tc", id: i.id, n: i.tc.name, r: i.tc.result ? 1 : 0, d: taskDividers, sa: i.showActions ? 1 : 0, sb: i.showBranchSwitcher ? 1 : 0 };
     }
     if (i.kind === "compact") return { k: "cp" };
     if (i.kind === "workflow") {
@@ -992,9 +1088,10 @@ function buildRenderKey(timeline: TimelineItem[]): string {
       // streaming class toggles). Content stays incremental.
       return { k: "a", id: i.id, st: i.isStreaming ? 1 : 0, sa: i.showActions ? 1 : 0, sb: i.showBranchSwitcher ? 1 : 0 };
     }
-    if (i.kind === "error_card") return { k: "ec", id: i.id };
-    if (i.kind === "warning_card") return { k: "wc", id: i.id };
-    if (i.kind === "inline_success") return { k: "is", id: i.id };
+    if (i.kind === "error_card") return { k: "ec", id: i.id, sa: i.showActions ? 1 : 0, sb: i.showBranchSwitcher ? 1 : 0 };
+    if (i.kind === "warning_card") return { k: "wc", id: i.id, sa: i.showActions ? 1 : 0, sb: i.showBranchSwitcher ? 1 : 0 };
+    if (i.kind === "inline_success") return { k: "is", id: i.id, sa: i.showActions ? 1 : 0, sb: i.showBranchSwitcher ? 1 : 0 };
+    if (i.kind === "inline_cancelled") return { k: "ic", id: i.id, sa: i.showActions ? 1 : 0, sb: i.showBranchSwitcher ? 1 : 0 };
     // All TimelineItem kinds handled above — this fallback keeps TS happy.
     return { k: "" };
   }));
@@ -1314,6 +1411,42 @@ export class Chat {
       }
     };
 
+    w.__initInfoCardMedia = (cardId: string) => {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      card.querySelectorAll(":scope > [data-type]").forEach((el) => {
+        const type = el.getAttribute("data-type") as "image" | "video" || "image";
+        const src = el.getAttribute("data-src") || "";
+        if (src) new MediaViewer(el as HTMLElement, { type, src, controls: type === "video" });
+      });
+    };
+    w.__initMediaCards = () => {
+      document.querySelectorAll(".info-card--media").forEach((card) => {
+        const id = card.id;
+        if (id) w.__initInfoCardMedia(id);
+      });
+    };
+    w.__openInfoHtmlCard = async (cardId: string) => {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      const src = card.getAttribute("data-source");
+      if (!src) return;
+      const fileUrl = await window.electronAPI?.openInfoHtml(src).catch(() => null);
+      if (fileUrl) {
+        window.dispatchEvent(new CustomEvent("info-html-open", { detail: { url: fileUrl } }));
+      }
+    };
+    w.__openInfoHtmlCards = () => {
+      document.querySelectorAll<HTMLElement>(".strip-item[data-source]").forEach((card) => {
+        const id = card.id;
+        if (!id || _openedHtmlCards.has(id)) return;
+        _openedHtmlCards.add(id);
+        w.__openInfoHtmlCard(id);
+      });
+    };
+    window.__initMediaCards = w.__initMediaCards;
+    window.__initInfoCardMedia = w.__initInfoCardMedia;
+    window.__openInfoHtmlCards = w.__openInfoHtmlCards;
     this.container.addEventListener("scroll", () => {
       const { scrollTop, scrollHeight, clientHeight } = this.container;
       this.userScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
@@ -1542,6 +1675,10 @@ export class Chat {
       this.incrementalTextUpdate(timeline);
     }
     this._updateStatusBar(state.running);
+    // Auto-open HTML info cards only when the model just finished
+    if (wasRunning && !state.running) {
+      window.__openInfoHtmlCards?.();
+    }
 
   }
 
@@ -1564,9 +1701,12 @@ export class Chat {
     // blocks. Pass treatAsSubAgent=true so buildTimelineHTML matches what
     // chat.render() produces when state.subAgentView is set.
     const html = this.buildTimelineHTML(timeline, messages, true);
+const _vs = saveVideoPlayback();
+    window.__stopAllMedia?.();
     container.innerHTML = html;
     createLucideIcons();
-    // Bind click delegation for expand/collapse if not already bound
+    window.__initMediaCards();
+    restoreVideoPlayback(_vs);
     if (!container.dataset.subAgentClickBound) {
       container.addEventListener("click", (e) => this.handleDelegateClick(e));
       container.dataset.subAgentClickBound = "true";
@@ -1690,27 +1830,23 @@ export class Chat {
         closeTurn.call(_this);
         turnMid += this.renderItemHTML(item);
       } else {
-        // thinking / assistant_text / tool - belongs to current turn
-        if (item.kind === "assistant_text") {
-          if ((item as any).showBranchSwitcher) turnBranchSwitcher = true;
-          const _sa = (item as any).showActions;
-          const _shouldShowActions = _sa !== undefined ? _sa : !item.isStreaming;
-          if (_shouldShowActions) {
-            // Every completed turn gets a copy button
-            turnActions = true;
-            // No retry button in sub-agent view
-            if (!inSubAgent) {
-              // Only show retry on the very last assistant message in the conversation
-              if (allMsgs) {
-                for (let mi = allMsgs.length - 1; mi >= 0; mi--) {
-                  if (allMsgs[mi].role === "assistant") {
-                    if (item.messageId === allMsgs[mi].id) turnRetry = true;
-                    break;
-                  }
+        // thinking / assistant_text / tool / status cards all belong to the current turn
+        if ((item as any).showBranchSwitcher) turnBranchSwitcher = true;
+        if ((item as any).showActions) {
+          // Every completed turn gets a copy button
+          turnActions = true;
+          // No retry button in sub-agent view
+          if (!inSubAgent) {
+            // Only show retry on the very last assistant message in the conversation
+            if (allMsgs) {
+              for (let mi = allMsgs.length - 1; mi >= 0; mi--) {
+                if (allMsgs[mi].role === "assistant") {
+                  if ((item as any).messageId === allMsgs[mi].id) turnRetry = true;
+                  break;
                 }
-              } else {
-                turnRetry = true;
               }
+            } else {
+              turnRetry = true;
             }
           }
         }
@@ -1799,6 +1935,8 @@ export class Chat {
 
     this.ml.classList.add("parallel-active");
     const existing = this.ml.querySelector(":scope > .parallel-sub-agent") as HTMLElement | null;
+    const _vs = saveVideoPlayback();
+    window.__stopAllMedia?.();
     if (existing && existing.dataset.count === String(count)) {
       // Diff update: only swap tile bodies whose content changed. This keeps
       // scroll position, cursor selection, and expansion state intact for the
@@ -1811,8 +1949,12 @@ export class Chat {
         }
         idx++;
       }
+      window.__initMediaCards();
+      restoreVideoPlayback(_vs);
     } else {
       this.ml.innerHTML = html;
+      window.__initMediaCards();
+      restoreVideoPlayback(_vs);
     }
   }
 
@@ -1871,27 +2013,23 @@ export class Chat {
         closeTurn.call(_this);
         turnMid += this.renderItemHTML(item);
       } else {
-        // thinking / assistant_text / tool — belongs to current turn
-        if (item.kind === "assistant_text") {
-          if ((item as any).showBranchSwitcher) turnBranchSwitcher = true;
-          const _sa = (item as any).showActions;
-          const _shouldShowActions = _sa !== undefined ? _sa : !item.isStreaming;
-          if (_shouldShowActions) {
-            // Every completed turn gets a copy button
-            turnActions = true;
-            // No retry button in sub-agent view
-            if (!getState().subAgentView) {
-              // Only show retry on the very last assistant message in the conversation
-              if (allMsgs) {
-                for (let mi = allMsgs.length - 1; mi >= 0; mi--) {
-                  if (allMsgs[mi].role === "assistant") {
-                    if (item.messageId === allMsgs[mi].id) turnRetry = true;
-                    break;
-                  }
+        // thinking / assistant_text / tool / status cards all belong to the current turn
+        if ((item as any).showBranchSwitcher) turnBranchSwitcher = true;
+        if ((item as any).showActions) {
+          // Every completed turn gets a copy button
+          turnActions = true;
+          // No retry button in sub-agent view
+          if (!getState().subAgentView) {
+            // Only show retry on the very last assistant message in the conversation
+            if (allMsgs) {
+              for (let mi = allMsgs.length - 1; mi >= 0; mi--) {
+                if (allMsgs[mi].role === "assistant") {
+                  if ((item as any).messageId === allMsgs[mi].id) turnRetry = true;
+                  break;
                 }
-              } else {
-                turnRetry = true;
               }
+            } else {
+              turnRetry = true;
             }
           }
         }
@@ -1908,8 +2046,12 @@ export class Chat {
     const wasScrolledUp = this.userScrolledUp;
     const prevScrollTop = container.scrollTop;
     const prevScrollHeight = container.scrollHeight;
+    const _vs = saveVideoPlayback();
+    window.__stopAllMedia?.();
     this.ml.innerHTML = html;
     createLucideIcons();
+    window.__initMediaCards();
+    restoreVideoPlayback(_vs);
     if (wasScrolledUp) {
       // Preserve the user's visual position: when new content is appended
       // below, the previous bottom offset should still point at the same
@@ -2172,7 +2314,10 @@ export class Chat {
   }
 
   private renderModeCard(icon: string, label: string, summary?: string): string {
-    return `<span class="mode-chip mode-card"><i data-lucide="${icon}" class="lucide mode-card-icon"></i><span class="mode-card-label">${escapeHtml(label)}</span>${summary ? `<span class="mode-card-summary">· ${escapeHtml(summary)}</span>` : ""}</span>`;
+    const iconHtml = icon.startsWith("data:")
+      ? `<img src="${icon}" class="mode-card-icon" style="width:16px;height:16px">`
+      : `<i data-lucide="${icon}" class="lucide mode-card-icon"></i>`;
+    return `<span class="mode-chip mode-card">${iconHtml}<span class="mode-card-label">${escapeHtml(label)}</span>${summary ? `<span class="mode-card-summary">· ${escapeHtml(summary)}</span>` : ""}</span>`;
   }
 
   private renderUserItem(item: Extract<TimelineItem, { kind: "user" }>): string {
@@ -2356,8 +2501,8 @@ export class Chat {
 
   private renderInfoCard(tc: ToolCallState, itemId: string): string {
     // Parse the info tool result. The backend returns a JSON payload with
-    // display/type/title/content; fall back to treating the raw result as HTML.
-    let payload: { display?: string; title?: string; content?: string; type?: string; widget?: string; is_complete_html?: boolean } = {};
+    // display/title/content/media; fall back to treating the raw result as HTML.
+    let payload: { display?: string; title?: string; content?: string; is_complete_html?: boolean; media?: Array<{type: string; src: string}> } = {};
     if (tc.result) {
       try {
         const parsed = JSON.parse(tc.result);
@@ -2370,41 +2515,15 @@ export class Chat {
     const display = payload.display || (tc.params.display as string) || "base";
     const title = payload.title || (tc.params.title as string) || "";
     const content = payload.content || (tc.params.content as string) || "";
-    const widget = (payload.widget as string) || (tc.params.widget as string) || "";
-    const cardType = (payload.type as string) || (tc.params.type as string) || "html";
+    const media = payload.media || [];
     const cardId = `tc-${tc.id}`;
 
-    // Structured travel widgets are rendered directly as cards in the chat
-    // DOM. They do NOT live inside the sandboxed HTML iframe used by base.
-    if (cardType === "widget" && ["flight", "train", "ship"].includes(widget)) {
-      let widgetHtml = "";
-      try {
-        const data = JSON.parse(content || "{}");
-        widgetHtml = widget === "flight"
-          ? renderFlightWidget(data)
-          : widget === "train"
-          ? renderTrainWidget(data)
-          : renderShipWidget(data);
-      } catch {
-        widgetHtml = `<div class="encre-widget-card encre-widget-error">
-          <div class="encre-widget-title">Invalid ${widget} data</div>
-          <div class="encre-widget-subtitle">The model must provide a JSON object with the required fields.</div>
-        </div>`;
-      }
-      return `<div class="info-card info-card--widget" id="${cardId}" data-info-type="widget" data-widget="${escapeHtml(widget)}" data-source="${escapeHtml(content)}">
-        <div class="info-card-header">
-          <div class="info-card-title-wrap">
-            <i data-lucide="layout-dashboard" class="info-card-icon"></i>
-            <span class="info-card-title">${escapeHtml(title || t("chat.toolInfo"))}</span>
-          </div>
-          <div class="info-card-actions">
-            <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" data-tooltip="${t("chat.infoCopy")}">
-              <i data-lucide="copy" class="info-btn-icon"></i>
-            </button>
-          </div>
-        </div>
-        <div class="info-card-body info-card-body--widget">${widgetHtml}</div>
-      </div>`;
+    // Media card: render images/videos natively using MediaViewer.
+    if (media.length > 0) {
+      const itemsHtml = media.map((m, i) =>
+        `<div data-type="${escapeHtml(m.type)}" data-src="${escapeHtml(m.src)}"></div>`
+      ).join("");
+      return `<div class="info-card info-card--media" id="${cardId}">${itemsHtml}</div>`;
     }
 
     if (!content) {
@@ -2417,37 +2536,15 @@ export class Chat {
       </div>`;
     }
 
-    // display='base' (default): sandbox the model's HTML/CSS/JS in an iframe.
-    const trimmed = content.trim().toLowerCase();
-    const isFullDoc = trimmed.startsWith("<!doctype") || trimmed.startsWith("<html");
-    const doc = isFullDoc
-      ? content
-      : `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><style>html,body{margin:0;padding:0;overflow:auto !important;}</style></head><body>${content}<script>(function(){function s(){var h=Math.max(document.body.scrollHeight,document.documentElement.scrollHeight);if(window.parent!==window){window.parent.postMessage({__encreInfoHeight:h,__encreInfoId:"${cardId}"},'*');}}if(document.readyState==='complete')s();else window.onload=s;})();</script></body></html>`;
-    const srcdoc = escapeHtml(doc);
-    const isCode = display === "code";
-    const escapedSource = escapeHtml(content);
-    const isCompleteHtml = payload.is_complete_html ?? isFullDoc;
-    const fragmentBadge = isCompleteHtml ? "" : `<span class="info-card-fragment-badge">fragment</span>`;
-
-    return `<div class="info-card" id="${cardId}" data-info-type="html" data-source="${escapeHtml(content)}">
-      <div class="info-card-header">
-        <div class="info-card-title-wrap">
-          <i data-lucide="layout-dashboard" class="info-card-icon"></i>
-          <span class="info-card-title">${escapeHtml(title || t("chat.toolInfo"))}</span>
-          ${fragmentBadge}
-        </div>
-        <div class="info-card-actions">
-          <button class="info-btn" data-action="toggle-view" data-mode="${isCode ? "render" : "code"}" onclick="window.__toggleInfoView('${cardId}')" data-tooltip="${isCode ? t("chat.infoRender") : t("chat.infoCode")}">
-            <i data-lucide="${isCode ? "eye" : "code"}" class="info-btn-icon"></i>
-          </button>
-          <button class="info-btn" onclick="window.__copyInfoSource('${cardId}')" data-tooltip="${t("chat.infoCopy")}">
-            <i data-lucide="copy" class="info-btn-icon"></i>
-          </button>
-        </div>
-      </div>
-      <div class="info-card-body">
-        <iframe class="info-card-frame${isCode ? " hidden" : ""}" sandbox="allow-scripts" srcdoc="${srcdoc}" loading="lazy" onload="window.__resizeInfoFrame(this)"></iframe>
-        <pre class="info-card-code${isCode ? "" : " hidden"}"><code>${escapedSource}</code></pre>
+    // display='base' (default): strip card opens in child-window browser.
+    const label = escapeHtml(title || t("chat.toolInfo"));
+    return `<div class="strip-item" id="${cardId}" data-source="${escapeHtml(content)}">
+      <div class="strip" onclick="window.__openInfoHtmlCard('${cardId}')" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
+        <span class="icon-wrap">
+          <i data-lucide="layout-dashboard" class="semantic"></i>
+          <i data-lucide="chevron-right" class="arrow"></i>
+        </span>
+        <span class="strip-name">${label}</span>
       </div>
     </div>`;
   }
@@ -2623,23 +2720,23 @@ export class Chat {
       extraClass = " status-error-auth";
     } else if (cat === "rate_limit") {
       iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-      label = "Rate Limited";
+      label = t("chat.errorRateLimited");
       extraClass = " status-error-rate";
     } else if (cat === "context") {
       iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
-      label = "Context Limit";
+      label = t("chat.errorContext");
       extraClass = " status-error-context";
     } else if (cat === "network") {
       iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>`;
-      label = "Network Error";
+      label = t("chat.errorNetwork");
       extraClass = " status-error-network";
     } else if (cat === "server") {
       iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
-      label = "Server Error";
+      label = t("chat.errorServer");
       extraClass = " status-error-server";
     } else if (cat === "tool") {
       iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
-      label = "Tool Error";
+      label = t("chat.errorTool");
       extraClass = " status-error-tool";
     } else {
       iconSvg = `<svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
@@ -2649,7 +2746,6 @@ export class Chat {
       <div class="status-header" onclick="window.__toggleStatusCard('${id}')">
         ${iconSvg}
         <span class="status-label">${label}</span>
-        ${item.errorCode ? `<span class="status-code-tag">${escapeHtml(item.errorCode)}</span>` : ""}
         <svg class="status-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="status-body">
@@ -2728,10 +2824,9 @@ export class Chat {
     const isRejected = status === "rejected";
     const isReview = status === "review" || status === "draft";
     const sessionId = getState().sessionId;
+    const cardId = `spec-card-${sessionId}`;
 
-    // Section list rendered as reviewable file rows (icon box + section
-    // title). Clicking a row toggles its content open -- mirrors the demo's
-    // file-list pattern but each section is independently expandable.
+    // Section list as expandable file rows
     const sectionsHtml = spec.sections.map((s, i) => {
       const sid = `spec-sec-${i}`;
       const open = this.expandedItems.has(sid);
@@ -2747,28 +2842,51 @@ export class Chat {
 
     const feedbackHtml = spec.feedback ? `<div class="review-feedback"><strong>Feedback:</strong> ${escapeHtml(spec.feedback)}</div>` : "";
 
-    let footerHtml: string;
+    let bodyHtml: string;
     if (isReview) {
-      footerHtml = `<div class="review-footer">
-        <button class="review-btn review-btn-cancel" data-spec-reject="${sessionId}">${t("chat.reviewCancel") || "Cancel"}</button>
-        <button class="review-btn review-btn-execute" data-spec-approve="${sessionId}">${t("chat.reviewExecute") || "Execute"}</button>
+      bodyHtml = `<div class="question-card-body">
+        <div class="q-step">${escapeHtml(t("chat.reviewSpecSub") || "If it does not match your intent, review and edit the files, or enter guidance in the input box.")}</div>
+        <div class="q-field">
+          <div class="q-field-label">${t("chat.reviewArtifact") || "Files"}</div>
+          <div class="q-field-text">${sectionsHtml}</div>
+        </div>
+        ${feedbackHtml}
+        <div class="q-actions" style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+          <button class="q-action-btn" data-spec-reject="${sessionId}" style="background:var(--bg-tertiary);color:var(--tool-text);border:1px solid var(--border)">${t("chat.reviewCancel") || "Cancel"}</button>
+          <button class="q-action-btn" data-spec-approve="${sessionId}" style="background:var(--accent);color:#fff;border:1px solid var(--accent)">${t("chat.reviewExecute") || "Execute"}</button>
+        </div>
       </div>`;
     } else if (isApproved) {
-      footerHtml = `<div class="review-footer"><span class="review-status review-status-ok"><i data-lucide="check-circle"></i> ${t("chat.reviewExecuted") || "Executed"}</span></div>`;
+      bodyHtml = `<div class="question-card-body">
+        <div class="q-step">${escapeHtml(t("chat.reviewSpecMain") || "The specification has been generated.")}</div>
+        <div class="q-field">
+          <div class="q-field-label">规格文档</div>
+          <div class="q-field-text">${sectionsHtml}</div>
+        </div>
+        ${feedbackHtml}
+        <div class="q-step" style="color:var(--success-color);margin-top:8px"><i data-lucide="check-circle"></i> ${t("chat.reviewExecuted") || "Executed"}</div>
+      </div>`;
     } else if (isRejected) {
-      footerHtml = `<div class="review-footer"><span class="review-status review-status-no"><i data-lucide="x-circle"></i> ${t("chat.reviewCancelled") || "Cancelled"}</span></div>`;
+      bodyHtml = `<div class="question-card-body">
+        <div class="q-step">${escapeHtml(t("chat.reviewSpecMain") || "The specification has been generated.")}</div>
+        <div class="q-field">
+          <div class="q-field-label">规格文档</div>
+          <div class="q-field-text">${sectionsHtml}</div>
+        </div>
+        ${feedbackHtml}
+        <div class="q-step" style="color:var(--danger-color);margin-top:8px"><i data-lucide="x-circle"></i> ${t("chat.reviewCancelled") || "Cancelled"}</div>
+      </div>`;
     } else {
-      footerHtml = "";
+      bodyHtml = `<div class="question-card-body">${sectionsHtml}</div>`;
     }
 
-    return `<div class="review-modal review-spec">
-      <div class="review-body">
-        <p class="review-main">${escapeHtml(t("chat.reviewSpecMain") || "The specification has been generated. Proceed with implementation based on this document?")}</p>
-        <p class="review-sub">${escapeHtml(t("chat.reviewSpecSub") || "If it does not match your intent, review and edit the files, or enter guidance in the input box.")}</p>
-        <div class="review-filelist">${sectionsHtml}</div>
-        ${feedbackHtml}
+    return `<div class="question-card" id="${cardId}">
+      <div class="question-card-header">
+        <i data-lucide="file-text" class="question-card-icon"></i>
+        <span class="question-card-title">${escapeHtml(t("chat.reviewSpecMain") || "Specification Review")}</span>
+        <span class="question-card-badge">${isReview ? (t("chat.waitingForAnswer") || "Pending") : (isApproved ? (t("chat.reviewExecuted") || "Executed") : (t("chat.reviewCancelled") || "Cancelled"))}</span>
       </div>
-      ${footerHtml}
+      ${bodyHtml}
     </div>`;
   }
 
@@ -2779,6 +2897,7 @@ export class Chat {
     const isRejected = status === "rejected";
     const isReview = status === "review" || status === "draft";
     const sessionId = getState().sessionId;
+    const cardId = `plan-card-${review.review_id}`;
 
     // Parse sections from the full content using ## Plan/## Steps/## Checklist headers
     const sections = this.parsePlanSections(review.content);
@@ -2801,27 +2920,48 @@ export class Chat {
       </div>`;
     }).join("");
 
-    let footerHtml: string;
+    let bodyHtml: string;
     if (isReview) {
-      footerHtml = `<div class="review-footer">
-        <button class="review-btn review-btn-cancel" data-plan-reject="${sessionId}">${t("chat.reviewCancel") || "Cancel"}</button>
-        <button class="review-btn review-btn-execute" data-plan-approve="${sessionId}">${t("chat.reviewExecute") || "Execute"}</button>
+      bodyHtml = `<div class="question-card-body">
+        <div class="q-step">${escapeHtml(t("chat.reviewPlanSub") || "If it does not match your intent, review and edit the files, or enter guidance in the input box.")}</div>
+        <div class="q-field">
+          <div class="q-field-label">${t("chat.reviewArtifact") || "Files"}</div>
+          <div class="q-field-text">${fileRowsHtml}</div>
+        </div>
+        <div class="q-actions" style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+          <button class="q-action-btn" data-plan-reject="${sessionId}" style="background:var(--bg-tertiary);color:var(--tool-text);border:1px solid var(--border)">${t("chat.reviewCancel") || "Cancel"}</button>
+          <button class="q-action-btn" data-plan-approve="${sessionId}" style="background:var(--accent);color:#fff;border:1px solid var(--accent)">${t("chat.reviewExecute") || "Execute"}</button>
+        </div>
       </div>`;
     } else if (isApproved) {
-      footerHtml = `<div class="review-footer"><span class="review-status review-status-ok"><i data-lucide="check-circle"></i> ${t("chat.reviewExecuted") || "Executed"}</span></div>`;
+      bodyHtml = `<div class="question-card-body">
+        <div class="q-step">${escapeHtml(t("chat.reviewPlanMain") || "The plan has been generated.")}</div>
+        <div class="q-field">
+          <div class="q-field-label">计划内容</div>
+          <div class="q-field-text">${fileRowsHtml}</div>
+        </div>
+        <div class="q-step" style="color:var(--success-color);margin-top:8px"><i data-lucide="check-circle"></i> ${t("chat.reviewExecuted") || "Executed"}</div>
+      </div>`;
     } else if (isRejected) {
-      footerHtml = `<div class="review-footer"><span class="review-status review-status-no"><i data-lucide="x-circle"></i> ${t("chat.reviewCancelled") || "Cancelled"}</span></div>`;
+      bodyHtml = `<div class="question-card-body">
+        <div class="q-step">${escapeHtml(t("chat.reviewPlanMain") || "The plan has been generated.")}</div>
+        <div class="q-field">
+          <div class="q-field-label">计划内容</div>
+          <div class="q-field-text">${fileRowsHtml}</div>
+        </div>
+        <div class="q-step" style="color:var(--danger-color);margin-top:8px"><i data-lucide="x-circle"></i> ${t("chat.reviewCancelled") || "Cancelled"}</div>
+      </div>`;
     } else {
-      footerHtml = "";
+      bodyHtml = `<div class="question-card-body">${fileRowsHtml}</div>`;
     }
 
-    return `<div class="review-modal review-plan">
-      <div class="review-body">
-        <p class="review-main">${escapeHtml(t("chat.reviewPlanMain") || "The plan has been generated. Proceed with execution based on this document?")}</p>
-        <p class="review-sub">${escapeHtml(t("chat.reviewPlanSub") || "If it does not match your intent, review and edit the files, or enter guidance in the input box.")}</p>
-        <div class="review-filelist">${fileRowsHtml}</div>
+    return `<div class="question-card" id="${cardId}">
+      <div class="question-card-header">
+        <i data-lucide="list-checks" class="question-card-icon"></i>
+        <span class="question-card-title">${escapeHtml(t("chat.reviewPlanMain") || "Plan Review")}</span>
+        <span class="question-card-badge">${isReview ? (t("chat.waitingForAnswer") || "Pending") : (isApproved ? (t("chat.reviewExecuted") || "Executed") : (t("chat.reviewCancelled") || "Cancelled"))}</span>
       </div>
-      ${footerHtml}
+      ${bodyHtml}
     </div>`;
   }
 

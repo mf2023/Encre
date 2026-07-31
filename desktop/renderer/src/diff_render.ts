@@ -36,17 +36,24 @@
  * header). The hunk activates on the first content line, so diffs without a
  * `@@` header still render instead of collapsing to `+0 -0`.
  *
+ * Renders in GitHub-style inline or split view. Hunk headers (@@ lines)
+ * are skipped. No +/- prefix characters — color alone indicates add/del.
+ *
  * Optional rendering modes (passed via DiffRenderOptions):
  *   - maxLines:       truncate huge diffs after N content lines
  *   - richText:       summary-card view instead of per-line diff
  *   - wordDiff:       inline <del>/<ins> word-level highlighting
  *   - hideWhitespace: dim whitespace-only change lines
+ *   - splitView:      two-column synchronized-scroll layout
  */
 
 import { getFileIcon } from "./files.js";
 import { t } from "./i18n.js";
 
 const MAX_RENDER_LINES = 4000;
+
+// Counter for generating unique split-view scroll container IDs
+let splitIdCounter = 0;
 
 function escapeHtml(s: string): string {
   return s
@@ -117,7 +124,8 @@ function parseDiff(diffText: string): {
       const m = line.match(/@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?/);
       newLn = m ? parseInt(m[2], 10) - 1 : 0;
       oldLn = m ? parseInt(m[1], 10) - 1 : 0;
-      out.push({ kind: "hunk", text: line, ln: 0, oldLn: 0 });
+      // Hunk headers are now skipped during rendering — we still parse
+      // to correctly track line numbers but do not push a hunk line object.
     } else if (line.startsWith("+")) {
       inHunk = true;
       newLn++;
@@ -147,7 +155,6 @@ function wordDiff(oldText: string, newText: string): Array<{ op: "eq" | "del" | 
   const b = tokenize(newText);
   const n = a.length;
   const m = b.length;
-  // dp[i][j] = LCS length of a[i..] and b[j..]
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
@@ -247,11 +254,12 @@ export function renderDiffHtml(
     return renderSplitView(fileLabel, lines, adds, dels, opts);
   }
 
-  // Truncate content lines (add/del/ctx) beyond maxLines; hunk headers always kept.
+  // Inline view (default)
   let contentCount = 0;
   let truncated = 0;
   const bodyRows: string[] = [];
   for (const dl of lines) {
+    if (dl.kind === "hunk") continue; // skip hunk headers
     if (dl.kind === "add" || dl.kind === "del" || dl.kind === "ctx") {
       if (contentCount >= maxLines) {
         truncated++;
@@ -270,7 +278,7 @@ export function renderDiffHtml(
 
   return `<div class="diff-container">
       <div class="diff-header">
-        <span class="diff-file-icon"><i data-lucide="${getFileIcon(fileLabel)}" class="lucide lucide-xs" style="width:14px;height:14px"></i></span>
+        <span class="diff-file-icon"><img src="${getFileIcon(fileLabel)}" class="icon" style="width:14px;height:14px"></span>
         <span class="diff-file-name">${escapeHtml(fileLabel)}</span>
         <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
       </div>
@@ -278,22 +286,15 @@ export function renderDiffHtml(
     </div>`;
 }
 
-/** Render one logical diff line as an HTML row. */
+/** Render one logical diff line as an HTML row (inline view). */
 function renderRow(dl: DiffLine, opts: DiffRenderOptions): string {
-  if (dl.kind === "hunk") {
-    return `<div class="diff-row"><span class="diff-ln">&nbsp;</span><span class="diff-content"><span style="color:var(--text-tertiary)">${escapeHtml(dl.text)}</span></span></div>`;
-  }
+  if (dl.kind === "hunk") return ""; // skipped
   const wsOnly = opts.hideWhitespace && isWhitespaceOnly(dl.text);
   const wsClass = wsOnly ? " diff-row-ws-only" : "";
   if (dl.kind === "add") {
-    let content: string;
-    if (opts.wordDiff) {
-      // Pair with the nearest preceding del line happens at block level;
-      // for a standalone add, just highlight the whole line as added.
-      content = `<ins>${escapeHtml(dl.text)}</ins>`;
-    } else {
-      content = escapeHtml(dl.text) || " ";
-    }
+    const content = opts.wordDiff
+      ? `<ins>${escapeHtml(dl.text)}</ins>`
+      : (escapeHtml(dl.text) || " ");
     return `<div class="diff-row diff-row-add${wsClass}"><span class="diff-ln">${dl.ln}</span><span class="diff-content">${content}</span></div>`;
   }
   if (dl.kind === "del") {
@@ -325,7 +326,6 @@ function renderRichText(
   adds: number,
   dels: number,
 ): string {
-  // Collect a short preview: first 3 added and first 3 deleted lines.
   const addedPreview = lines.filter((l) => l.kind === "add").slice(0, 3);
   const delPreview = lines.filter((l) => l.kind === "del").slice(0, 3);
 
@@ -337,7 +337,7 @@ function renderRichText(
 
   return `<div class="diff-container diff-rich-text">
       <div class="diff-header">
-        <span class="diff-file-icon"><i data-lucide="${getFileIcon(fileLabel)}" class="lucide lucide-xs" style="width:14px;height:14px"></i></span>
+        <span class="diff-file-icon"><img src="${getFileIcon(fileLabel)}" class="icon" style="width:14px;height:14px"></span>
         <span class="diff-file-name">${escapeHtml(fileLabel)}</span>
         <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
       </div>
@@ -355,9 +355,8 @@ function renderRichText(
 
 /**
  * Split (two-column) view: old file on the left, new file on the right.
- * Within each hunk, deleted lines fill the left column, added lines the
- * right, and context lines appear in both. Removed/added lines leave the
- * opposite column blank so the two sides stay aligned row-for-row.
+ * Each side has its own scroll container; scrolling one syncs the other.
+ * Hunk headers are skipped entirely. No +/- prefix characters.
  */
 function renderSplitView(
   fileLabel: string,
@@ -366,50 +365,58 @@ function renderSplitView(
   dels: number,
   opts: DiffRenderOptions,
 ): string {
-  type Cell = { ln: number; text: string; cls: string } | null;
   const maxLines = opts.maxLines ?? MAX_RENDER_LINES;
   let contentCount = 0;
   let truncated = 0;
 
-  const rows: string[] = [];
-  // Buffer pending dels/adds so a run of deletes followed by a run of adds
-  // pair up top-to-bottom (del-side left, add-side right) instead of stacking.
+  // Buffer pending dels/adds so they pair up top-to-bottom.
   let delQueue: DiffLine[] = [];
   let addQueue: DiffLine[] = [];
 
-  const flushPair = () => {
+  // Build left (old) and right (new) side arrays
+  const leftRows: string[] = [];
+  const rightRows: string[] = [];
+
+  function addRow(isDel: boolean, oldLn: number, newLn: number, text: string): void {
+    if (contentCount >= maxLines) { truncated++; return; }
+    contentCount++;
+    const ln = oldLn || newLn;
+    const cls = isDel ? "diff-row-del" : "diff-row-add";
+    const side = isDel ? "left" : "right";
+    const lineNum = isDel ? oldLn : newLn;
+    if (side === "left") {
+      leftRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content">${escapeHtml(text) || " "}</span></div>`);
+      rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
+    } else {
+      leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
+      rightRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content">${escapeHtml(text) || " "}</span></div>`);
+    }
+  }
+
+  function flushQueues(): void {
     const n = Math.max(delQueue.length, addQueue.length);
     for (let i = 0; i < n; i++) {
-      if (contentCount >= maxLines) { truncated++; continue; }
-      contentCount++;
       const d = delQueue[i];
       const a = addQueue[i];
-      const left: Cell = d
-        ? { ln: d.oldLn, text: d.text, cls: "diff-row-del" }
-        : null;
-      const right: Cell = a
-        ? { ln: a.ln, text: a.text, cls: "diff-row-add" }
-        : null;
-      rows.push(splitRowHtml(left, right));
+      if (d) {
+        leftRows.push(`<div class="diff-row diff-row-del"><span class="diff-ln">${d.oldLn || "&nbsp;"}</span><span class="diff-content">${escapeHtml(d.text) || " "}</span></div>`);
+      } else {
+        leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
+      }
+      if (a) {
+        rightRows.push(`<div class="diff-row diff-row-add"><span class="diff-ln">${a.ln || "&nbsp;"}</span><span class="diff-content">${escapeHtml(a.text) || " "}</span></div>`);
+      } else {
+        rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
+      }
     }
     delQueue = [];
     addQueue = [];
-  };
-
-  const cellHtml = (c: Cell): string => {
-    if (!c) return `<span class="diff-ln">&nbsp;</span><span class="diff-content diff-cell-empty">&nbsp;</span>`;
-    return `<span class="diff-ln">${c.ln || "&nbsp;"}</span><span class="diff-content ${c.cls}">${escapeHtml(c.text) || " "}</span>`;
-  };
-
-  function splitRowHtml(left: Cell, right: Cell): string {
-    return `<div class="diff-row diff-row-split"><div class="diff-split-side">${cellHtml(left)}</div><div class="diff-split-side">${cellHtml(right)}</div></div>`;
   }
 
   for (const dl of lines) {
     if (dl.kind === "hunk") {
-      flushPair();
-      rows.push(`<div class="diff-row diff-row-split diff-row-hunk"><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content"><span style="color:var(--text-tertiary)">${escapeHtml(dl.text)}</span></span></div><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div></div>`);
-      continue;
+      flushQueues();
+      continue; // skip hunk headers entirely
     }
     if (contentCount >= maxLines) {
       if (dl.kind !== "ctx") { truncated++; }
@@ -421,27 +428,74 @@ function renderSplitView(
       addQueue.push(dl);
     } else {
       // ctx: flush pending changes, then render a paired context row.
-      flushPair();
+      flushQueues();
       contentCount++;
-      const cell: Cell = { ln: dl.ln, text: dl.text, cls: "" };
-      rows.push(splitRowHtml(cell, cell));
+      const ctxRow = `<div class="diff-row"><span class="diff-ln">${dl.oldLn}</span><span class="diff-content">${escapeHtml(dl.text) || " "}</span></div>`;
+      leftRows.push(ctxRow);
+      rightRows.push(ctxRow);
     }
   }
-  flushPair();
+  flushQueues();
 
   if (truncated > 0) {
     const notice = opts.truncatedNotice
       ? opts.truncatedNotice(truncated)
       : `... [diff truncated, ${truncated} more lines]`;
-    rows.push(`<div class="diff-row diff-row-split diff-row-truncated"><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content">${escapeHtml(notice)}</span></div><div class="diff-split-side"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div></div>`);
+    const tr = `<div class="diff-row diff-row-truncated"><span class="diff-ln">&nbsp;</span><span class="diff-content">${escapeHtml(notice)}</span></div>`;
+    leftRows.push(tr);
+    rightRows.push(tr);
   }
 
-  return `<div class="diff-container diff-split">
+  const splitId = `spsc-${++splitIdCounter}`;
+
+  const iconHtml = `<img src="${getFileIcon(fileLabel)}" class="icon" style="width:14px;height:14px">`;
+
+  return `<div class="diff-container diff-split" data-split-id="${splitId}">
       <div class="diff-header">
-        <span class="diff-file-icon"><i data-lucide="${getFileIcon(fileLabel)}" class="lucide lucide-xs" style="width:14px;height:14px"></i></span>
+        <span class="diff-file-icon">${iconHtml}</span>
         <span class="diff-file-name">${escapeHtml(fileLabel)}</span>
         <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
       </div>
-      <div class="diff-body">${rows.join("")}</div>
+      <div class="diff-split-scroll-wrap">
+        <div class="diff-split-scroll-side" data-side="left" data-split-group="${splitId}">
+          ${leftRows.join("")}
+        </div>
+        <div class="diff-split-scroll-side" data-side="right" data-split-group="${splitId}">
+          ${rightRows.join("")}
+        </div>
+      </div>
     </div>`;
+}
+
+/**
+ * Set up synchronized scrolling for split-view diff containers.
+ * Call this after inserting split-view HTML into the DOM.
+ * Both sides scroll in sync vertically.
+ */
+export function setupSplitViewScrollSync(container: HTMLElement): void {
+  const pairs = new Map<string, { left?: HTMLElement; right?: HTMLElement }>();
+  container.querySelectorAll<HTMLElement>(".diff-split-scroll-side").forEach((el) => {
+    const group = el.getAttribute("data-split-group");
+    if (!group) return;
+    if (!pairs.has(group)) pairs.set(group, {});
+    const pair = pairs.get(group)!;
+    const side = el.getAttribute("data-side");
+    if (side === "left") pair.left = el;
+    else if (side === "right") pair.right = el;
+  });
+
+  function syncSide(src: HTMLElement, target: HTMLElement): void {
+    if ((target as any).__syncing) return;
+    (target as any).__syncing = true;
+    target.scrollTop = src.scrollTop;
+    target.scrollLeft = src.scrollLeft;
+    requestAnimationFrame(() => { (target as any).__syncing = false; });
+  }
+
+  for (const pair of pairs.values()) {
+    if (pair.left && pair.right) {
+      pair.left.addEventListener("scroll", () => syncSide(pair.left!, pair.right!));
+      pair.right.addEventListener("scroll", () => syncSide(pair.right!, pair.left!));
+    }
+  }
 }

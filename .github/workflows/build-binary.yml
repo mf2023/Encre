@@ -2,7 +2,7 @@ name: Build encre Binary
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   release:
     types: [published]
   workflow_dispatch:
@@ -21,7 +21,10 @@ jobs:
           - os: windows-latest
             target: windows-x64
             arch: x64
-          - os: macos-latest
+          - os: windows-11-arm
+            target: windows-arm64
+            arch: arm64
+          - os: macos-13
             target: macos-x64
             arch: x64
           - os: macos-latest
@@ -54,6 +57,8 @@ jobs:
 
       - name: Build
         run: python build.py
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
 
       - name: Upload
         uses: actions/upload-artifact@v4

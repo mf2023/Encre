@@ -38,7 +38,6 @@ Configuration (via settings / env):
         QQ_CLIENT_SECRET   — QQ Bot client secret
 
     Optional extra config:
-        markdown_support: true   — enable QQ markdown (msg_type 2)
         dm_policy: "pairing"     — open | allowlist | disabled | pairing
         allow_from: ["openid_1"]
         group_policy: "pairing"  — open | allowlist | disabled | pairing
@@ -118,7 +117,6 @@ from encre.gateway.platforms.qqbot.constants import (
     DEDUP_MAX_SIZE,
     DEDUP_CONTENT_WINDOW_SECONDS,
     MSG_TYPE_TEXT,
-    MSG_TYPE_MARKDOWN,
     MSG_TYPE_MEDIA,
     MSG_TYPE_INPUT_NOTIFY,
     MEDIA_TYPE_IMAGE,
@@ -150,17 +148,6 @@ from encre.gateway.platforms.qqbot.keyboards import (
 def _coerce_list(value: Any) -> List[str]:
     """Coerce config values into a trimmed string list."""
     return _coerce_list_impl(value)
-
-
-def _strip_markdown(text: str) -> str:
-    """Remove markdown formatting from text."""
-    import re
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
-    text = re.sub(r'~~(.+?)~~', r'\1', text)
-    text = re.sub(r'`(.+?)`', r'\1', text)
-    text = re.sub(r'```[\s\S]*?```', '', text)
-    return text
 
 
 def _cache_image_from_bytes(data: bytes, ext: str) -> str:
@@ -231,7 +218,7 @@ class QQAdapter(BasePlatformAdapter):
 
     - Inbound: C2C messages, group @-messages, guild/channel messages,
       guild DM messages, inline-keyboard interactions.
-    - Outbound: text (plain / markdown), images, voice, video, documents,
+    - Outbound: text (plain with markdown syntax), images, voice, video, documents,
       with native media upload (chunked for large files).
     - Typing indicator: input_notify sent before each response.
     - Approval flows: 3-button keyboard (allow-once / allow-always / deny).
@@ -323,8 +310,6 @@ class QQAdapter(BasePlatformAdapter):
         self._client_secret = str(
             extra.get("client_secret") or os.getenv("QQ_CLIENT_SECRET", "")
         ).strip()
-        # Whether to use QQ markdown format for outbound messages.
-        self._markdown_support = bool(extra.get("markdown_support", True))
 
         # --- Auth/ACL policies ---
         # DM access control: "disabled" | "allowlist" | "pairing" | "open"
@@ -2737,7 +2722,7 @@ class QQAdapter(BasePlatformAdapter):
 
         Processing pipeline:
             1. Check connection status — wait up to 15s for reconnection.
-            2. Format content via ``format_message()`` (markdown or plain).
+            2. Format content via ``format_message()`` (plain text with markdown syntax).
             3. Truncate to ``MAX_MESSAGE_LENGTH`` and split into chunks.
             4. Send each chunk sequentially via ``_send_chunk()`` with retry.
             5. Only the first chunk uses ``reply_to``; subsequent chunks are standalone.
@@ -3057,26 +3042,22 @@ class QQAdapter(BasePlatformAdapter):
     def _build_text_body(
             self, content: str, reply_to: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Build the message body for C2C/group text sending."""
+        """Build the message body for C2C/group text sending.
+
+        Always sends as plain text (MSG_TYPE_TEXT) to avoid platform
+        rendering issues — content carries markdown formatting in the
+        plain-text body for downstream display (e.g. watch rendering).
+        """
         msg_seq = self._next_msg_seq(reply_to or "default")
 
-        if self._markdown_support:
-            body: Dict[str, Any] = {
-                "markdown": {"content": content[: self.MAX_MESSAGE_LENGTH]},
-                "msg_type": MSG_TYPE_MARKDOWN,
-                "msg_seq": msg_seq,
-            }
-        else:
-            body = {
-                "content": content[: self.MAX_MESSAGE_LENGTH],
-                "msg_type": MSG_TYPE_TEXT,
-                "msg_seq": msg_seq,
-            }
+        body: Dict[str, Any] = {
+            "content": content[: self.MAX_MESSAGE_LENGTH],
+            "msg_type": MSG_TYPE_TEXT,
+            "msg_seq": msg_seq,
+        }
 
         if reply_to:
-            # For non-markdown mode, add message_reference
-            if not self._markdown_support:
-                body["message_reference"] = {"message_id": reply_to}
+            body["message_reference"] = {"message_id": reply_to}
 
         return body
 
@@ -3513,12 +3494,12 @@ class QQAdapter(BasePlatformAdapter):
     def format_message(self, content: str) -> str:
         """Format message for QQ.
 
-        When markdown_support is enabled, content is sent as-is (QQ renders it).
-        When disabled, strip markdown via shared helper (same as BlueBubbles/SMS).
+        Always returns content as-is with markdown formatting preserved
+        in the text body. The message is sent as plain text (MSG_TYPE_TEXT),
+        not QQ's rich markdown (MSG_TYPE_MARKDOWN), to avoid platform
+        rendering issues on watches or when QQ Bot markdown is broken.
         """
-        if self._markdown_support:
-            return content
-        return _strip_markdown(content)
+        return content
 
     # ------------------------------------------------------------------
     # Chat info

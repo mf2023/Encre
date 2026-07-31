@@ -33,6 +33,7 @@ _SETTINGS_PATH = Path("~/.dunimd/encre/settings.json").expanduser()
 _GENERAL_SETTINGS_KEYS = frozenset({
     "shortcut_send_mode",
     "language",
+    "language_preference",
     "default_link_behavior",
     "auto_expand",
     "sub_agent_auto_open_view",

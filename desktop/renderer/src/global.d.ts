@@ -80,6 +80,7 @@ interface ElectronAPI {
   getAutoStart(): Promise<boolean>;
   setAutoStart(enabled: boolean): Promise<{ success: boolean; error?: string }>;
   trayLocaleUpdate(locale: string): void;
+  browserLanguageUpdate(locale: string): void;
   trayThemeUpdate(themePreference: string): void;
   trayPopupAction(action: string | null, sessionId: string | null): void;
   traySessionsUpdate(sessions: any[]): void;
@@ -116,6 +117,7 @@ interface ElectronAPI {
   getLicenseContent(): Promise<string>;
   getDocumentContent(docId: string, region?: string): Promise<string>;
   openChildWindow(view: string, label: string): Promise<void>;
+  openInfoHtml(html: string): Promise<string | null>;
   onChildAddTab(callback: (view: string, label: string) => void): () => void;
   forwardToChild(channel: string, ...args: any[]): void;
   onChildEvent(channel: string, callback: (data: any) => void): () => void;
@@ -166,7 +168,7 @@ interface Window {
 declare var monaco: any;
 declare class EditorView {}
 
-/** Ambient module shim so `import Fuse from "fuse.js"` type-checks without types. */
+/** Ambient module shim so `import markdown-it` type-checks without bundled types. */
 declare module "markdown-it" {
   const MarkdownIt: any;
   export default MarkdownIt;

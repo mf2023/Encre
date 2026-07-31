@@ -76,6 +76,8 @@ def build():
     if sys.version_info >= (3, 14):
         env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
+    target_arch = os.environ.get("TARGET_ARCH", "x64")
+
     # 1. Rust 原生模块
     # Compile the Rust native extension in release mode for the encre-py crate.
     run(f"cd native && cargo build --release -p encre-py", env=env)
@@ -94,11 +96,15 @@ def build():
     # Stamp the prebuilt node-pty binary so Electron's source rebuild is skipped.
     meta = DESKTOP / "node_modules" / "node-pty" / "build" / "Release" / ".forge-meta"
     meta.parent.mkdir(parents=True, exist_ok=True)
-    meta.write_text("x64--146")
+    meta.write_text(f"{target_arch}--146")
 
     # 5. 打包安装程序
     # Package the desktop app into an installer (no publishing).
-    run("cd desktop && npx electron-builder --publish never")
+    # Pass target arch so only the runner's native arch is built.
+    cmd = "cd desktop && npx electron-builder --publish never"
+    if target_arch in ("arm64", "x64"):
+        cmd += f" --{target_arch}"
+    run(cmd)
 
     # 6. 复制安装包到根目录
     # Copy the produced installer(s) up to the repository root for easy access.

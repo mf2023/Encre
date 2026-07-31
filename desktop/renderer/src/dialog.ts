@@ -21,35 +21,60 @@
  */
 
 /**
- * Modal dialog system.
+ * Modal dialog system with priority queue.
  *
- * A small, dependency-free modal framework used across the renderer for
- * confirm/prompt/alert prompts, engine-install confirmation, progress dialogs
- * and arbitrary HTML content. All dialogs share a single overlay/card visual
- * language and resolve via Promises; at most one overlay exists at a time.
+ * All modal dialogs (confirm/prompt/alert/install/html) share a single
+ * internal priority queue.  Only one modal dialog is visible at a time;
+ * when it is dismissed the next-highest-priority dialog from the queue
+ * is shown automatically.  This prevents dialogs from being silently
+ * destroyed by later triggers (e.g. a delete confirm destroyed by a
+ * theme-switch shortcut).
+ *
+ * Progress dialogs live in a separate overlay layer and do not
+ * participate in the modal queue — they can be shown alongside other
+ * dialogs without conflict.
  */
 
 import { t } from "./i18n.js";
 
 type Resolve<T> = (value: T) => void;
 
+/** Priority level for modal dialogs. */
+export type DialogPriority = "low" | "normal" | "high" | "critical";
+
+const PRIORITY_RANK: Record<DialogPriority, number> = {
+  low: 0,
+  normal: 1,
+  high: 2,
+  critical: 3,
+};
+
+// ── Internal queue ──────────────────────────────────────────────────────
+
+interface ModalEntry {
+  priority: DialogPriority;
+  build: () => HTMLElement;
+  resolve: Resolve<any>;
+  reject: (reason?: any) => void;
+}
+
 /**
  * Static collection of modal dialog builders.
  *
  * Every method returns a Promise that resolves when the user dismisses the
- * dialog. A single shared overlay element backs all instances.
+ * dialog.  Modal dialogs are queued by priority and displayed one at a time.
  */
 export class Dialog {
-  private static overlay: HTMLElement | null = null;
+  private static currentOverlay: HTMLElement | null = null;
+  private static currentResolve: Resolve<any> | null = null;
+  private static queue: ModalEntry[] = [];
+  private static progressOverlay: HTMLElement | null = null;
 
-  private static createOverlay(): HTMLElement {
-    if (this.overlay) {
-      this.overlay.remove();
-    }
+  // ── DOM helpers ─────────────────────────────────────────────────────
+
+  private static makeOverlay(): HTMLElement {
     const overlay = document.createElement("div");
     overlay.className = "encre-dialog-overlay";
-    document.body.appendChild(overlay);
-    this.overlay = overlay;
     return overlay;
   }
 
@@ -99,10 +124,73 @@ export class Dialog {
     return { primaryBtn: pri, secondaryBtn: sec, footer };
   }
 
+  // ── Queue management ────────────────────────────────────────────────
+
+  /**
+   * Show the highest-priority entry from the queue, if any and if no
+   * modal dialog is currently visible.
+   */
+  private static processQueue(): void {
+    if (this.currentOverlay) return;
+    if (this.queue.length === 0) return;
+
+    let bestIdx = 0;
+    let bestRank = PRIORITY_RANK[this.queue[0].priority];
+    for (let i = 1; i < this.queue.length; i++) {
+      const r = PRIORITY_RANK[this.queue[i].priority];
+      if (r > bestRank) {
+        bestRank = r;
+        bestIdx = i;
+      }
+    }
+
+    const entry = this.queue.splice(bestIdx, 1)[0];
+    this.currentOverlay = entry.build();
+    this.currentResolve = entry.resolve;
+    document.body.appendChild(this.currentOverlay);
+  }
+
+  /**
+   * Dismiss the currently visible modal dialog (remove overlay, resolve
+   * its promise, and show the next queued dialog).
+   */
+  private static dismissCurrent(value: any): void {
+    if (!this.currentOverlay) return;
+    this.currentOverlay.remove();
+    this.currentOverlay = null;
+    const resolve = this.currentResolve;
+    this.currentResolve = null;
+    if (resolve) resolve(value);
+    this.processQueue();
+  }
+
+  /**
+   * Enqueue a modal dialog.  When it reaches the front of the queue,
+   * `build` is called to create the overlay element; it must be
+   * appended to `document.body` by the caller.  The overlay is
+   * automatically removed when the dialog is dismissed.
+   */
+  private static enqueue<T>(
+    priority: DialogPriority,
+    build: (resolve: Resolve<T>) => HTMLElement,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push({
+        priority,
+        build: () => build(resolve),
+        resolve,
+        reject,
+      });
+      this.processQueue();
+    });
+  }
+
+  // ── Public API ─────────────────────────────────────────────────────
+
   /** Shows a confirm dialog; resolves `true` for the primary button, `false` otherwise. */
-  static confirm(title: string, message: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const overlay = this.createOverlay();
+  static confirm(title: string, message: string, priority: DialogPriority = "normal"): Promise<boolean> {
+    return this.enqueue<boolean>(priority, (resolve) => {
+      const overlay = this.makeOverlay();
       const card = this.card(overlay);
       this.titleEl(card, title);
       this.bodyEl(card, message);
@@ -110,8 +198,10 @@ export class Dialog {
 
       const done = (val: boolean) => {
         overlay.remove();
-        this.overlay = null;
+        this.currentOverlay = null;
+        this.currentResolve = null;
         resolve(val);
+        this.processQueue();
       };
 
       primaryBtn.addEventListener("click", () => done(true));
@@ -121,13 +211,15 @@ export class Dialog {
       overlay.addEventListener("keydown", (e) => {
         if (e.key === "Escape") done(false);
       });
+
+      return overlay;
     });
   }
 
   /** Shows a text-input prompt; resolves the entered value, or `null` on cancel. */
-  static prompt(title: string, message: string, defaultValue = ""): Promise<string | null> {
-    return new Promise((resolve) => {
-      const overlay = this.createOverlay();
+  static prompt(title: string, message: string, defaultValue = "", priority: DialogPriority = "normal"): Promise<string | null> {
+    return this.enqueue<string | null>(priority, (resolve) => {
+      const overlay = this.makeOverlay();
       const card = this.card(overlay);
       this.titleEl(card, title);
       this.bodyEl(card, message);
@@ -142,8 +234,10 @@ export class Dialog {
 
       const done = (val: string | null) => {
         overlay.remove();
-        this.overlay = null;
+        this.currentOverlay = null;
+        this.currentResolve = null;
         resolve(val);
+        this.processQueue();
       };
 
       primaryBtn.addEventListener("click", () => done(input.value));
@@ -156,13 +250,15 @@ export class Dialog {
         input.focus();
         input.setSelectionRange(0, input.value.length);
       }, 100);
+
+      return overlay;
     });
   }
 
   /** Shows an informational alert with a single OK button. */
-  static alert(title: string, message: string): Promise<void> {
-    return new Promise((resolve) => {
-      const overlay = this.createOverlay();
+  static alert(title: string, message: string, priority: DialogPriority = "normal"): Promise<void> {
+    return this.enqueue<void>(priority, (resolve) => {
+      const overlay = this.makeOverlay();
       const card = this.card(overlay);
       this.titleEl(card, title);
       this.bodyEl(card, message);
@@ -170,8 +266,10 @@ export class Dialog {
 
       const done = () => {
         overlay.remove();
-        this.overlay = null;
+        this.currentOverlay = null;
+        this.currentResolve = null;
         resolve();
+        this.processQueue();
       };
 
       primaryBtn.addEventListener("click", done);
@@ -179,18 +277,12 @@ export class Dialog {
       overlay.addEventListener("keydown", (e) => {
         if (e.key === "Escape" || e.key === "Enter") done();
       });
+
+      return overlay;
     });
   }
 
-  // ------------------------------------------------------------------
-  // Engine / driver install prompt
-  // ------------------------------------------------------------------
-  // Reuses the same visual shell as confirm() so the user sees a
-  // dialog they already know (same as the right-click → "Delete"
-  // prompt in the session sidebar).  Only the primary / secondary
-  // button labels are customised so the ask is unambiguous
-  // ("下载引擎" / "暂不下载"), and an optional third line can be
-  // added via ``hint`` to show download size / current state.
+  // ── Engine / driver install prompt ──────────────────────────────────
 
   /**
    * Confirm dialog variant used for engine/driver install prompts.
@@ -204,9 +296,10 @@ export class Dialog {
     title: string,
     body: string,
     options?: { primary?: string; secondary?: string; hint?: string },
+    priority: DialogPriority = "normal",
   ): Promise<boolean> {
-    return new Promise((resolve) => {
-      const overlay = this.createOverlay();
+    return this.enqueue<boolean>(priority, (resolve) => {
+      const overlay = this.makeOverlay();
       const card = this.card(overlay);
       this.titleEl(card, title);
       this.bodyEl(card, body);
@@ -224,8 +317,10 @@ export class Dialog {
 
       const done = (val: boolean) => {
         overlay.remove();
-        this.overlay = null;
+        this.currentOverlay = null;
+        this.currentResolve = null;
         resolve(val);
+        this.processQueue();
       };
 
       primaryBtn.addEventListener("click", () => done(true));
@@ -235,18 +330,18 @@ export class Dialog {
       overlay.addEventListener("keydown", (e) => {
         if (e.key === "Escape") done(false);
       });
+
+      return overlay;
     });
   }
 
-  // ------------------------------------------------------------------
-  // Progress dialog
-  // ------------------------------------------------------------------
-  // Shows a progress bar with status text.  The caller drives it via
-  // the returned handle.  Reuses .encre-dialog-overlay and card so
-  // the modal looks the same as every other dialog.
+  // ── Progress dialog (separate layer) ────────────────────────────────
 
   /**
    * Shows a progress dialog and returns a handle to drive it.
+   *
+   * Progress uses a dedicated overlay layer so it never conflicts with
+   * modal dialogs (confirm/prompt/alert/etc.).
    *
    * @param title           - Dialog title.
    * @param initialMessage  - Initial status text.
@@ -265,7 +360,15 @@ export class Dialog {
     fail(message: string): void;
     cancel(): void;
   } {
-    const overlay = this.createOverlay();
+    // Remove any existing progress overlay
+    if (this.progressOverlay) {
+      this.progressOverlay.remove();
+      this.progressOverlay = null;
+    }
+
+    const overlay = document.createElement("div");
+    overlay.className = "encre-dialog-overlay";
+    this.progressOverlay = overlay;
     overlay.onclick = (e) => {
       if (e.target !== overlay) return;
       if (options?.cancellable === false) return;
@@ -318,7 +421,7 @@ export class Dialog {
       overlay.classList.add("encre-dialog-dismissing");
       setTimeout(() => {
         overlay.remove();
-        if (this.overlay === overlay) this.overlay = null;
+        if (this.progressOverlay === overlay) this.progressOverlay = null;
       }, 150);
     };
 
@@ -405,13 +508,15 @@ export class Dialog {
       }
     });
 
+    document.body.appendChild(overlay);
+
     return handle;
   }
 
   /** Shows a dialog whose body is an arbitrary HTML element; resolves on close. */
-  static showHtmlDialog(title: string, contentEl: HTMLElement): Promise<void> {
-    return new Promise((resolve) => {
-      const overlay = this.createOverlay();
+  static showHtmlDialog(title: string, contentEl: HTMLElement, priority: DialogPriority = "normal"): Promise<void> {
+    return this.enqueue<void>(priority, (resolve) => {
+      const overlay = this.makeOverlay();
       const card = this.card(overlay);
       this.titleEl(card, title);
       card.appendChild(contentEl);
@@ -426,8 +531,10 @@ export class Dialog {
 
       const done = () => {
         overlay.remove();
-        this.overlay = null;
+        this.currentOverlay = null;
+        this.currentResolve = null;
         resolve();
+        this.processQueue();
       };
 
       closeBtn.addEventListener("click", done);
@@ -435,6 +542,8 @@ export class Dialog {
         if (e.key === "Escape") done();
       });
       closeBtn.focus();
+
+      return overlay;
     });
   }
 }

@@ -30,7 +30,7 @@
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"/>
 </a>
 
-**Encre** — 强大的 AI Agent 平台，支持 31 个主流 LLM 提供商、36 个内置工具以及 18 个聊天平台集成。无论是编程开发、桌面自动化、跨平台消息，还是多智能体协作，Encre 都能胜任。
+**Encre** — 强大的 AI Agent 平台，支持 31 个主流 LLM 提供商、84+ 个内置工具以及 26+ 个聊天平台集成。无论是编程开发、桌面自动化、跨平台消息，还是多智能体协作，Encre 都能胜任。
 
 </div>
 
@@ -47,8 +47,8 @@ Encre 是一个 AI Agent 平台 —— 告诉它你想做什么，它会自动�
 | 能力 | 说明 |
 |:------|:------|
 | 🧠 **31 个 AI 模型** | 支持 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、Qwen、GLM 以及本地模型等，自由切换 |
-| 🛠️ **36 个内置工具** | 文件操作、Shell 执行、浏览器自动化、代码编辑、网页搜索、数据库、调度，开箱即用 |
-| 💬 **18 个聊天平台** | 接入 Telegram、Discord、Slack、飞书、钉钉、微信、WhatsApp、邮件，随时随地与 Agent 对话 |
+| 🛠️ **84+ 个内置工具** | 文件操作、Shell 执行、浏览器自动化（CDP 引擎）、代码编辑、网页搜索、数据库、调度、Docker、Git、图片生成、邮件，开箱即用 |
+| 💬 **26+ 个聊天平台** | 接入 Telegram、Discord、Slack、飞书、钉钉、微信、WhatsApp、QQ Bot、Matrix、邮件，随时随地与 Agent 对话 |
 | 🖥️ **桌面自动化** | 控制桌面应用、操作浏览器、读取屏幕截图，模拟人工操作 |
 | 🤝 **多智能体协作** | 多个 Agent 同时运行，分工协作完成复杂项目 |
 | 💾 **持久化记忆** | Agent 会记住你的偏好、习惯与项目信息，越用越聪明 |
@@ -58,12 +58,13 @@ Encre 是一个 AI Agent 平台 —— 告诉它你想做什么，它会自动�
 
 ### 应用场景
 
-- **代码开发助手** — 自动读取代码、修复 Bug、重构、生成文档、运行测试
+- **代码开发助手** — 拿到一段代码，发现一个 bug → 告诉 Encre → 它自动读代码、跑 LSP 诊断、打补丁、跑测试，告诉你怎么修好的
+- **浏览器调研** — 给它一句提示词 "调研一下现在最好的 AI 编程工具" → 它自己打开浏览器、搜 Google、翻结果、点链接、读文章、最后给你一张对比表
 - **桌面自动化** — 批量文件处理、自动填表、截图归档
-- **跨平台聊天机器人** — 将 AI 接入 Telegram、Slack、飞书等平台
-- **研究与分析** — 网页搜索、数据整理、PDF / Excel 分析
-- **长期任务调度** — 定时任务、系统监控、周期报表
-- **多智能体协作** — 部署不同 Agent 担任程序员、研究员、审阅者协同工作
+- **跨平台聊天机器人** — 同时接入微信、Telegram、钉钉、Slack，从一个平台跟 Agent 对话
+- **数据分析** — "读一下这份 PDF / Excel，帮我总结关键数据"
+- **长期任务调度** — "每小时检查一次服务器，CPU 超过 80% 就在微信上通知我"
+- **多智能体协作** — 架构师 Agent 规划、程序员 Agent 写代码、评审 Agent 审查，共享黑板一起干活
 
 <h2 align="center">⭐ 核心特性</h2>
 
@@ -86,20 +87,20 @@ Encre 内置了专用角色，每个角色都配有专属的提示词与能力�
 - **计划 / 规范模式**：`spec-writer`
 - **自动化模式**：`monitor`、`executor`、`scheduler`
 
-#### 🛠️ 36 个开箱即用的工具
+#### 🛠️ 84+ 个开箱即用的工具
 
 | 类别 | 工具 |
 |:------|:------|
 | **文件** | 读取、写入、编辑、补丁、搜索、PDF / Excel 处理 |
 | **终端** | Shell 命令、后台任务、Docker、部署 |
-| **网络** | 网页抓取、网页搜索（基于 MCP）、浏览器自动化（Playwright） |
+| **网络** | 网页抓取、网页搜索（基于 MCP）、浏览器自动化（CDP） |
 | **开发辅助** | LSP 诊断、IPython Notebook、数据库查询 |
 | **任务** | 创建 / 获取 / 列出 / 更新 / 停止任务，含 bash / agent / workflow 执行器 |
 | **调度与记忆** | 定时任务、待办清单、记忆管理 |
 | **桌面** | 桌面控制（pyautogui）、图像识别（OCR）、浏览器自动化 |
 | **集成** | Git、REST API、MCP 外部协议 |
 
-#### 💬 18 个聊天平台集成
+#### 💬 26+ 个聊天平台集成
 
 将 Encre Agent 接入你常用的消息平台：
 
@@ -265,15 +266,15 @@ tools:
 
 **问：Encre 支持哪些 AI 模型？**
 
-答：**31 个提供商**，包括 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里 Qwen、腾讯、小米、月之暗面 Kimi、智谱 GLM、MiniMax、Ollama、LM Studio、AWS Bedrock 等。完整列表见 backends 目录。
+答：**31 个提供商**，包括 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里 Qwen、腾讯混元、小米 MiMo、月之暗面 Kimi、智谱 GLM、MiniMax、Ollama、LM Studio、HuggingFace、AWS Bedrock、OpenRouter 等。Encre 是完全原生开发的，不是任何项目的套壳（如 Codex）。
 
 **问：Encre Agent 能做什么？**
 
-答：熟练助手能做的一切 —— 读写编辑代码、运行 shell 命令、浏览网页、自动化桌面、管理文件、调度任务、与其他 Agent 协作，等等。它内置 **36 个工具**，几乎可以处理任何任务。
+答：熟练助手能做的一切 —— 读写编辑代码、运行 shell 命令、打开浏览器做调研、自动化桌面、管理文件、调度任务、与其他 Agent 协作，等等。它内置 **84+ 个工具**和 **275+ 个内置技能**，几乎可以处理任何任务。
 
 **问：能否在喜欢的聊天平台上使用 Encre？**
 
-答：可以！Encre 支持 **18 个聊天平台**，包括 Telegram、Discord、Slack、飞书、钉钉、企业微信、微信、WhatsApp、邮件等。每个平台都有专属的适配器。
+答：可以！Encre 支持 **26+ 个聊天平台**，包括 Telegram、Discord、Slack、飞书、钉钉、企业微信、微信、WhatsApp、QQ Bot、邮件、Matrix 等。每个平台都有专属的适配器。
 
 **问：Encre 使用起来安全吗？**
 
@@ -330,7 +331,7 @@ tools:
 | tomli-w | MIT | pyyaml | MIT |
 | cryptography | Apache-2.0 / BSD | zero-api-key-web-search | Apache-2.0 |
 | pathspec | MPL-2.0 | websockets | BSD-3-Clause |
-| Pillow | Historical | playwright | Apache-2.0 |
+| Pillow | Historical | (built-in) | CDP 浏览器引擎 |
 | tiktoken | MIT | numpy | BSD-3-Clause |
 | loguru | MIT | openai | Apache-2.0 |
 | anthropic | MIT | google-generativeai | Apache-2.0 |
@@ -359,7 +360,7 @@ tools:
 | @xterm/xterm | MIT | @xterm/addon-fit | MIT |
 | @xterm/addon-webgl | MIT | node-pty | MIT |
 | markdown-it | MIT | highlight.js | BSD-3-Clause |
-| fuse.js | Apache-2.0 | monaco-editor | MIT |
+| minisearch | MIT | monaco-editor | MIT |
 | react | MIT | react-dom | MIT |
 | simple-icons | CC0-1.0 | | |
 

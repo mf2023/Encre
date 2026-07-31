@@ -394,6 +394,9 @@ class EncreLoop:
         self._recent_tool_names: list[tuple[str, ...]] = []  # tool_name:args_sig signatures
         self._error_tool_names: set[str] = set()
         self._sanitized_branches: set[str] = set()
+        # Active tool set name.  Default is "default"; changes when the mode
+        # switches (e.g. plan mode → "plan") or when the user explicitly sets it.
+        self._tool_set_name: str = self._resolve_tool_set_for_mode()
         self._ctx_bldr = ContextBuilder(
             self.config, self.session,
             cache_fresh=self._cache_fresh,
@@ -920,6 +923,31 @@ class EncreLoop:
         """Report whether the loop is currently in plan mode (read accessor)."""
         return self._plan_mode.plan_mode_active
 
+    # ── Tool set name ─────────────────────────────────────────────────
+
+    @property
+    def tool_set_name(self) -> str:
+        """Active tool set name (e.g. ``"default"``, ``"coding"``, ``"plan"``).
+
+        Changing this value resets the tool payload cache so the next
+        API call uses the new tool set.
+        """
+        return self._tool_set_name
+
+    @tool_set_name.setter
+    def tool_set_name(self, value: str) -> None:
+        self._tool_set_name = value
+
+    def _resolve_tool_set_for_mode(self) -> str:
+        """Map the current ``config.slash_command_mode`` to a tool set name."""
+        mode = self.config.slash_command_mode or ""
+        _MODE_TO_TOOLSET = {
+            "": "default",
+            "plan": "default",  # plan mode uses a restricted set
+            "spec": "default",
+        }
+        return _MODE_TO_TOOLSET.get(mode, "default")
+
     def set_mode(self, mode: str) -> None:
         """Transition the loop to a new command mode atomically.
 
@@ -930,6 +958,8 @@ class EncreLoop:
             None.
         """
         self._plan_mode.set_mode(mode)
+        # Sync tool set when mode changes
+        self._tool_set_name = self._resolve_tool_set_for_mode()
 
     def enter_plan_mode(self, reason: str = "") -> PlanModeChanged:
         """Enter plan mode, returning a ``PlanModeChanged`` event.
@@ -1623,6 +1653,8 @@ class EncreLoop:
         _t0 = time.time()
         tools = None
         if self.backend.supports_tool_calling():
+            # Discovery handles ToolSet resolution + find_tool + MCP merging
+            self.discovery.tool_set_name = self._tool_set_name
             tools = self.discovery.get_active_tools_payload(self.session.id, fmt="openai")
         ws_root, ws_name, ws_summary = self._ctx_bldr.workspace_info()
 
@@ -1859,6 +1891,57 @@ class EncreLoop:
             system_prompt = system_prompt + "\n\n" + ctx_annotation
         self._ctx_renderer.finalize_turn()
 
+        # ── Safety cap on total system prompt ─────────────────────────
+        # Prevent pathologically large system prompts from breaking the
+        # API call.  The hard cap is 100K chars (~66K tokens); if exceeded,
+        # we warn loudly and force-truncate.  A lower warning threshold
+        # (50K) triggers diagnostic logging to identify the bloat source.
+        _sys_len = len(system_prompt)
+        if _sys_len > 100000:
+            logger.error(
+                "[sys_prompt] OVERFLOW: total=%d chars, forcing truncation to 100K "
+                "(help: check Reference Documents, Rules, Memory, Profile, Soul, "
+                "Codebase context sizes above)",
+                _sys_len,
+            )
+            system_prompt = system_prompt[:100000]
+        elif _sys_len > 50000:
+            # ── Diagnostic: log system prompt size breakdown ──────────
+            logger.warning(
+                "[sys_prompt] LARGE: total=%d chars (%.1fK)",
+                _sys_len, _sys_len / 1024,
+            )
+            _parts: list[tuple[str, str]] = []
+            for _varname in (
+                "codebase_ctx", "skill_prompt", "tool_skills_prompt",
+                "doc_skills_prompt", "memory_prompt", "profile_prompt",
+                "soul_prompt", "doc_prompt", "stage_prompt",
+                "working_set_prompt", "turn_summary_prompt", "stuck_prompt",
+                "rules_prompt", "ctx_annotation",
+            ):
+                _val = locals().get(_varname, "") or ""
+                if len(str(_val)) > 1000:
+                    _parts.append((_varname, str(_val)))
+            # Common enrichment sections that always exist
+            _req = _req_summary if not _skip_enrichment else ""
+            if len(_req or "") > 500:
+                _parts.append(("req_summary", _req or ""))
+            if custom_instructions:
+                _parts.append(("custom_instructions", custom_instructions))
+            # Log each contributor
+            for _name, _val in sorted(_parts, key=lambda x: -len(x[1])):
+                _n = len(_val)
+                logger.warning(
+                    "[sys_prompt]   %-24s %d chars (%.1fK)", _name, _n, _n / 1024,
+                )
+            # Base blocks estimate
+            _enrich_total = sum(len(v) for _, v in _parts)
+            _base_est = _sys_len - _enrich_total
+            logger.warning(
+                "[sys_prompt]   %-24s ~%d chars (base blocks + fixed blocks)",
+                "base_blocks (est)", max(0, _base_est),
+            )
+
         # Update system message on every run so prompt blocks match current intents
         has_system = any(
             m.get("role") == "system" and m.get("branch_id", self.session.active_branch_id) == self.session.active_branch_id
@@ -2009,6 +2092,12 @@ class EncreLoop:
                                 closure default), used for the pre-compact hook.
                         """
                         try:
+                            # Record the highest seq_in_branch at snapshot time
+                            # so we can detect messages added while compact ran.
+                            snap_max_seq = max(
+                                (m.get("seq_in_branch", -1) for m in context_msgs),
+                                default=-1,
+                            )
                             self.session.set_compact_archive(context_msgs)
                             await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
                             compacted = await self.compact_engine.compact(
@@ -2019,6 +2108,31 @@ class EncreLoop:
                                 session_id=self.session.id or "",
                             )
                             if compacted is not None:
+                                # ── Race guard ─────────────────────────────────────
+                                # If new messages (assistant reply, tool results, etc.)
+                                # were added to this branch while compact was running,
+                                # preserve them by appending after the compacted result.
+                                # Without this guard the compacted result would
+                                # silently overwrite the latest conversation turn.
+                                current_max_seq = self.session._branch_last_seq.get(
+                                    self.session.active_branch_id, -1,
+                                )
+                                if current_max_seq > snap_max_seq:
+                                    new_msgs = sorted(
+                                        [m for m in self.session.messages
+                                         if m.get("branch_id") == self.session.active_branch_id
+                                         and isinstance(m.get("seq_in_branch"), int)
+                                         and m["seq_in_branch"] > snap_max_seq],
+                                        key=lambda m: m["seq_in_branch"],
+                                    )
+                                    if new_msgs:
+                                        compacted = compacted + new_msgs
+                                        logger.info(
+                                            "[compact] race guard: appended %d msgs "
+                                            "(seq %d..%d) added after snapshot",
+                                            len(new_msgs), snap_max_seq + 1,
+                                            current_max_seq,
+                                        )
                                 self.session.replace_branch_messages(self.session.active_branch_id, compacted)
                                 self._compacted_this_turn = True
                                 self._update_user_requirements(compacted)
@@ -2056,6 +2170,7 @@ class EncreLoop:
 
             tools = None
             if self.backend.supports_tool_calling():
+                self.discovery.tool_set_name = self._tool_set_name
                 tools = self.discovery.get_active_tools_payload(self.session.id, fmt="openai")
 
             text_parts: list[str] = []
@@ -2858,7 +2973,33 @@ class EncreLoop:
                 logger.debug("Agent finished (text-only response, %s chars)", len(full_text))
 
                 # ── Save spec/plan output files + emit review events ──
-                for _e in self._save_review_output(full_text, slash_command_mode, prompt):
+                _review_text = full_text
+                if not _review_text.strip() and slash_command_mode in ("plan", "spec"):
+                    # Model wrote files directly via file_write instead of
+                    # outputting text.  Rebuild full_text from the written
+                    # files so _save_review_output can create the review card.
+                    _file_names = {
+                        "plan": ("PLAN.md", "STEPS.md", "CHECKLIST.md"),
+                        "spec": ("SPEC.md", "STEPS.md", "CHECKLIST.md"),
+                    }
+                    _names = _file_names.get(slash_command_mode, ())
+                    _parts = []
+                    for fn in _names:
+                        try:
+                            with open(fn, encoding="utf-8") as _f:
+                                _parts.append(_f.read())
+                        except (OSError, IOError):
+                            _parts.append("")
+                    if any(_parts):
+                        _header_names = {
+                            "plan": ("## Plan", "## Steps", "## Checklist"),
+                            "spec": ("## Plan", "## Steps", "## Checklist"),
+                        }
+                        _hdrs = _header_names.get(slash_command_mode, ())
+                        _review_text = "\n\n".join(
+                            f"{h}\n{p}" for h, p in zip(_hdrs, _parts) if p.strip()
+                        )
+                for _e in self._save_review_output(_review_text, slash_command_mode, prompt):
                     yield _e
 
                 # ── Auto-continue: when budget remains, nudge the model to

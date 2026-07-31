@@ -23,6 +23,7 @@
 export interface MediaData {
   type: "image" | "video";
   src: string;
+  controls?: boolean;
 }
 
 function esc(s: string): string {
@@ -33,56 +34,77 @@ function esc(s: string): string {
 
 function resolveUrl(src: string): string {
   const normalized = src.replace(/\\/g, "/");
-  if (normalized.startsWith("local://") || normalized.startsWith("http") || normalized.startsWith("data:")) {
+  if (normalized.startsWith("local://") || normalized.startsWith("file://") || normalized.startsWith("http") || normalized.startsWith("data:")) {
     return normalized;
   }
   return "local:///" + normalized;
 }
 
+function dataUrlFromBase64(data: string, mimeType: string): string {
+  const binaryStr = atob(data);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mimeType });
+  return URL.createObjectURL(blob);
+}
+
+const _allViewers: MediaViewer[] = [];
+
+export function stopAllMedia(): void {
+  _allViewers.forEach(v => v.destroy());
+  _allViewers.length = 0;
+}
+
 export class MediaViewer {
   readonly el: HTMLElement;
   private media: MediaData;
+  private imgEl: HTMLImageElement | null = null;
   private videoEl: HTMLVideoElement | null = null;
   private blobUrl: string | null = null;
 
   constructor(el: HTMLElement, media: MediaData) {
     this.el = el;
     this.media = media;
+    _allViewers.push(this);
     this.init();
   }
 
   private init(): void {
     if (this.media.type === "image") {
-      this.renderImage();
+      this.el.innerHTML = `<img class="media-viewer-img" alt="" />`;
+      this.imgEl = this.el.querySelector(".media-viewer-img");
+      this.loadMedia();
     } else if (this.media.type === "video") {
-      this.el.innerHTML = `<video class="media-viewer-video" autoplay loop muted playsinline webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"></video>`;
+      const videoAttrs = this.media.controls
+        ? `controls loop muted playsinline webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"`
+        : `autoplay loop muted playsinline webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"`;
+      this.el.innerHTML = `<video class="media-viewer-video" ${videoAttrs}></video>`;
       this.videoEl = this.el.querySelector(".media-viewer-video");
-      this.loadVideo();
+      this.loadMedia();
     }
   }
 
-  private renderImage(): void {
-    this.el.innerHTML = `<img class="media-viewer-img" src="${esc(resolveUrl(this.media.src))}" />`;
-  }
-
-  private async loadVideo(): Promise<void> {
+  private async loadMedia(): Promise<void> {
     try {
-      const result = await window.electronAPI?.readFileBase64(this.media.src);
-      if (!result) return;
-
-      const binaryStr = atob(result.data);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-      const blob = new Blob([bytes], { type: result.mime_type });
-      this.blobUrl = URL.createObjectURL(blob);
-
-      if (!this.videoEl) return;
-      this.videoEl.src = this.blobUrl;
-      this.videoEl.volume = 1;
-      this.videoEl.muted = false;
+      const filePath = this.media.src.replace(/^local:\/\/\//, "").replace(/^local:\/\//, "").replace(/^file:\/\/\//, "").replace(/^file:\/\//, "");
+      const result = await window.electronAPI?.readFileBase64(filePath);
+      if (result) {
+        this.blobUrl = dataUrlFromBase64(result.data, result.mime_type);
+        if (this.imgEl) this.imgEl.src = this.blobUrl;
+        if (this.videoEl) {
+          this.videoEl.src = this.blobUrl;
+          this.videoEl.volume = 1;
+          this.videoEl.muted = false;
+        }
+        return;
+      }
     } catch {
-      // IPC unavailable or read failed
+      // IPC unavailable — fall through to direct src
     }
+    // Fallback: use resolved URL directly (browser / demo context)
+    const url = resolveUrl(this.media.src);
+    if (this.imgEl) this.imgEl.src = url;
+    if (this.videoEl) this.videoEl.src = url;
   }
 
   destroy(): void {
@@ -91,6 +113,7 @@ export class MediaViewer {
       this.videoEl.removeAttribute("src");
       this.videoEl.load();
     }
+    if (this.imgEl) this.imgEl.removeAttribute("src");
     if (this.blobUrl) {
       URL.revokeObjectURL(this.blobUrl);
       this.blobUrl = null;
@@ -98,3 +121,5 @@ export class MediaViewer {
     this.el.innerHTML = "";
   }
 }
+
+(window as any).__stopAllMedia = stopAllMedia;

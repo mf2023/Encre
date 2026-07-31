@@ -631,6 +631,24 @@ def _summarize_for_model(
     else:
         envelope.setdefault("screenshot_captured", False)
 
+    # 1b. Strip / summarise the active-window PrintWindow payload.
+    aw_b64 = envelope.pop("active_window_b64", None)
+    if aw_b64:
+        envelope["active_window_captured"] = True
+        envelope["active_window_png_bytes"] = len(aw_b64)
+        if not include_b64:
+            envelope["active_window_b64"] = (
+                f"<omitted: {len(aw_b64)} bytes of base64 PNG; "
+                "the active-window screenshot is held in the session "
+                "trajectory and fed to the VLM, not the LLM>"
+            )
+        # Pass through the window position fields so the model can
+        # reason about the spatial layout.
+        for k in ("active_window_left", "active_window_top",
+                  "active_window_width", "active_window_height"):
+            if k in envelope:
+                envelope.setdefault(k, envelope[k])
+
     # 2. Truncate bulky text in the ``result`` sub-payload.
     if "result" in envelope and not include_full:
         cleaned, stats = _scrub_payload(envelope["result"], limit=max_chars)

@@ -107,6 +107,7 @@ class SessionSource:
     chat_id_alt: str | None = None  # alternate chat id (Signal group internal id)
     scope_id: str | None = None  # platform-neutral scope (Discord guild / Slack workspace)
     is_bot: bool = False  # gateway-side only; NOT serialized on the wire
+    profile: str | None = None  # key-namespace for multiplexed gateways
 
     def canonicalize(self) -> "SessionSource":
         """Hook for platform-specific id canonicalization.
@@ -163,6 +164,7 @@ class SessionSource:
             user_id_alt=d.get("user_id_alt"),
             chat_id_alt=d.get("chat_id_alt"),
             scope_id=d.get("scope_id"),
+            profile=d.get("profile"),
         )
 
 

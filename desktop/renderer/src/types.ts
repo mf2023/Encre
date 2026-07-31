@@ -175,6 +175,58 @@ export interface SearchResultEntry {
   line?: number;
   name?: string;
   icon?: string;
+  workspace_id?: string;
+}
+
+/** Keys for the user-configurable search filter (Settings → Search Filter). */
+export type SearchFilterKey =
+  | "session"
+  | "conversation"
+  | "memory"
+  | "global_rule"
+  | "project_rule"
+  | "skill"
+  | "workspace"
+  | "workspace_file"
+  | "model"
+  | "mcp_server"
+  | "sub_agent"
+  | "document"
+  | "notification"
+  | "settings"
+  | "action"
+  | "slash_command"
+  | "custom_command"
+  | "tool"
+  | "automation"
+  | "workflow";
+
+export type SearchFilter = Record<SearchFilterKey, boolean>;
+
+/** All search-filter keys enabled by default. */
+export function defaultSearchFilter(): SearchFilter {
+  return {
+    session: true,
+    conversation: true,
+    memory: true,
+    global_rule: true,
+    project_rule: true,
+    skill: true,
+    workspace: true,
+    workspace_file: true,
+    model: true,
+    mcp_server: true,
+    sub_agent: true,
+    document: true,
+    notification: true,
+    settings: true,
+    action: true,
+    slash_command: true,
+    custom_command: true,
+    tool: true,
+    automation: true,
+    workflow: true,
+  };
 }
 
 export interface SearchResults {
@@ -1620,6 +1672,7 @@ export interface AppState {
   queuedPrompts: QueuedPrompt[];
   runQueuePosition: number | null;
   workflowState: WorkflowState | null;
+  searchFilter: SearchFilter;
   contextTokens: number;
   contextWindow: number;
   agentState: AgentStateSnapshot | null;
@@ -2047,6 +2100,7 @@ export function createEmptyState(): AppState {
     queuedPrompts: [],
     runQueuePosition: null,
     workflowState: null,
+    searchFilter: defaultSearchFilter(),
     contextTokens: 0,
     contextWindow: 0,
     agentState: null,

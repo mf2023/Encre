@@ -85,6 +85,11 @@ class DesktopScreenState:
 
     Tracks both physical (raw pixel) and logical (DPI-scaled) sizes so
     coordinates from screenshots and from the input backend line up.
+
+    On Windows, when the foreground window can be captured via
+    ``PrintWindow``, the ``active_window_*`` fields carry the
+    window-specific bitmap so callers see the real pixels even for
+    DirectX / Direct2D rendered content (Chromium, Electron, WPF, etc.).
     """
     width: int = 0
     height: int = 0
@@ -96,6 +101,14 @@ class DesktopScreenState:
     dpi_scale_y: float = 1.0
     logical_width: int = 0
     logical_height: int = 0
+
+    # Active-window PrintWindow capture (Windows only).
+    # These are empty / zero when no foreground window was captured.
+    active_window_b64: str = ""
+    active_window_left: int = 0
+    active_window_top: int = 0
+    active_window_width: int = 0
+    active_window_height: int = 0
 
 
 @dataclass
@@ -149,30 +162,76 @@ class EncreDesktopSession:
         return importlib.util.find_spec("PIL") is not None
 
     def screenshot(self) -> DesktopScreenState:
-        """Capture the primary monitor and update/return cached screen state."""
-        if not self._check_mss():
-            raise RuntimeError(
-                "mss not installed. Run: pip install mss pillow"
-            )
-        if not self._check_pillow():
-                raise RuntimeError(
-                    "Pillow not installed. Run: pip install pillow"
-                ) from None
-        import mss
+        """Capture the primary monitor and update/return cached screen state.
 
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]
-            img = sct.grab(monitor)
+        Backends by platform
+        --------------------
+        * **Windows / macOS / Linux X11** -- ``mss`` (fast, cross-platform
+          via OS compositor / X11 shm).
+        * **Linux Wayland** -- ``grim`` (``wlr-screencopy`` protocol,
+          requires a compositor that supports it, e.g. Sway, Hyprland).
+        * **Active window** -- platform-specific (Windows PrintWindow,
+          macOS screencapture, Linux hyprctl/swaymsg/xdotool).
+        """
+        physical_w = physical_h = 0
+        pil_img = None
+        b64 = ""
+        _mss_ok = False
+
+        # ---- Try mss first (Windows, macOS, Linux X11) ----
+        if self._check_mss() and self._check_pillow():
+            try:
+                import mss
+                with mss.mss() as sct:
+                    monitor = sct.monitors[1]
+                    img = sct.grab(monitor)
+                self._ensure_pillow()
+                from PIL import Image
+                pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
+                physical_w = monitor["width"]
+                physical_h = monitor["height"]
+                _mss_ok = True
+            except Exception:
+                _mss_ok = False
+
+        # ---- Fallback: grim on Linux Wayland ----
+        if not _mss_ok and _PLATFORM.startswith("linux"):
+            try:
+                import subprocess
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                    tmp_path = f.name
+                r = subprocess.run(
+                    ["grim", tmp_path],
+                    capture_output=True, timeout=10,
+                )
+                if r.returncode == 0:
+                    with open(tmp_path, "rb") as f:
+                        grim_bytes = f.read()
+                    with suppress(OSError):
+                        os.unlink(tmp_path)
+                    if grim_bytes:
+                        from PIL import Image
+                        pil_img = Image.open(io.BytesIO(grim_bytes))
+                        physical_w, physical_h = pil_img.size
+                        _mss_ok = True
+                else:
+                    with suppress(OSError):
+                        os.unlink(tmp_path)
+            except Exception:
+                pass
+
+        if not _mss_ok:
+            raise RuntimeError(
+                "No screenshot backend available. "
+                "On X11 install mss (pip install mss). "
+                "On Wayland install grim (system package)."
+            )
 
         buf = io.BytesIO()
-        self._ensure_pillow()
-        from PIL import Image
-        pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
         pil_img.save(buf, format="PNG")
         b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-        physical_w = monitor["width"]
-        physical_h = monitor["height"]
         logical_w, logical_h = self._logical_size_fallback(physical_w, physical_h)
         scale_x, scale_y = self._compute_scale(physical_w, physical_h, logical_w, logical_h)
 
@@ -183,6 +242,20 @@ class EncreDesktopSession:
         self._state.dpi_scale_x = scale_x
         self._state.dpi_scale_y = scale_y
         self._state.screenshot_b64 = b64
+
+        # On Windows, try to capture the foreground window via
+        # PrintWindow -- this catches DirectX / Direct2D rendered
+        # content that mss (which uses the OS compositor) may miss.
+        aw = self._capture_active_window_png()
+        if aw is not None:
+            self._state.active_window_b64 = (
+                base64.b64encode(aw.png_bytes).decode("utf-8")
+            )
+            self._state.active_window_left = aw.left
+            self._state.active_window_top = aw.top
+            self._state.active_window_width = aw.width
+            self._state.active_window_height = aw.height
+
         self._last_used = time.time()
         return self._state
 
@@ -256,15 +329,98 @@ class EncreDesktopSession:
         self._last_used = time.time()
         return {"x": x, "y": y}
 
+    # ------------------------------------------------------------------
+    # Linux Wayland input backend (via wdotool CLI)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_wayland() -> bool:
+        """Return True if the session is running under Wayland."""
+        import os
+        return (
+            _PLATFORM.startswith("linux")
+            and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+        )
+
+    @staticmethod
+    def _wayland_call(*args: str, timeout: int = 5) -> bool:
+        """Run ``wdotool`` with the given args. Returns True on success."""
+        import subprocess
+        try:
+            r = subprocess.run(
+                ["wdotool", *args],
+                capture_output=True, timeout=timeout,
+            )
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _wayland_mouse_move(x: int, y: int) -> None:
+        """Absolute mouse move via ``wdotool mousemove``."""
+        EncreDesktopSession._wayland_call("mousemove", str(x), str(y))
+
+    @staticmethod
+    def _wayland_click(button: str = "left") -> None:
+        """Mouse click via ``wdotool click``."""
+        btn_map = {"left": "1", "middle": "2", "right": "3"}
+        wbtn = btn_map.get(button, "1")
+        EncreDesktopSession._wayland_call("click", wbtn)
+
+    @staticmethod
+    def _wayland_type(text: str) -> None:
+        """Type text via ``wdotool type``."""
+        # Escape single quotes for shell safety.
+        safe = text.replace("'", "'\\''")
+        import subprocess
+        try:
+            subprocess.run(
+                ["wdotool", "type", safe],
+                capture_output=True, timeout=30,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _wayland_key(key: str) -> None:
+        """Press and release a key via ``wdotool key``."""
+        EncreDesktopSession._wayland_call("key", key)
+
+    @staticmethod
+    def _wayland_hotkey(keys: list[str]) -> None:
+        """Press key combo via ``wdotool key`` with ``+`` separator."""
+        EncreDesktopSession._wayland_call("key", "+".join(keys))
+
+    @staticmethod
+    def _wayland_scroll(clicks: int) -> None:
+        """Scroll via ``wdotool scroll`` (positive=down, negative=up)."""
+        EncreDesktopSession._wayland_call("scroll", "0", str(clicks))
+
+    @staticmethod
+    def _wayland_drag(x1: int, y1: int, x2: int, y2: int) -> None:
+        """Drag: press mouse, move, release via ``wdotool`` subcommands."""
+        # wdotool doesn't have a drag primitive, so we sequence:
+        # mousedown 1 → mousemove x2 y2 → mouseup 1
+        EncreDesktopSession._wayland_call("mousedown", "1")
+        EncreDesktopSession._wayland_call("mousemove", str(x2), str(y2))
+        EncreDesktopSession._wayland_call("mouseup", "1")
+
+    # ------------------------------------------------------------------
+    # Input methods (cross-platform dispatch)
+    # ------------------------------------------------------------------
+
     def move_mouse(self, x: int, y: int, coord_space: str = "auto") -> dict[str, int]:
         """Move the mouse to (x, y), converting from the given coord space."""
-        if not self._check_pyautogui():
-            raise RuntimeError(
-                "pyautogui not installed. Run: pip install pyautogui"
-            )
-        import pyautogui
         lx, ly = self._to_logical(int(x), int(y), coord_space)
-        pyautogui.moveTo(lx, ly)
+        if self._is_wayland():
+            self._wayland_mouse_move(lx, ly)
+        else:
+            if not self._check_pyautogui():
+                raise RuntimeError(
+                    "pyautogui not installed. Run: pip install pyautogui"
+                )
+            import pyautogui
+            pyautogui.moveTo(lx, ly)
         self._state.cursor_x = lx
         self._state.cursor_y = ly
         self._last_used = time.time()
@@ -275,6 +431,16 @@ class EncreDesktopSession:
         coord_space: str = "auto",
     ) -> dict[str, Any]:
         """Click at (x, y) with the given button, or at the current position."""
+        if self._is_wayland():
+            if x is not None and y is not None:
+                lx, ly = self._to_logical(int(x), int(y), coord_space)
+                self._wayland_mouse_move(lx, ly)
+            self._wayland_click(button)
+            pos_x, pos_y = lx if x is not None else 0, ly if y is not None else 0
+            self._state.cursor_x = pos_x
+            self._state.cursor_y = pos_y
+            self._last_used = time.time()
+            return {"action": "click", "button": button, "x": pos_x, "y": pos_y}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -286,14 +452,23 @@ class EncreDesktopSession:
         else:
             pyautogui.click(button=button)
         pos = pyautogui.position()
-        self._state.cursor_x = pos[0]
-        self._state.cursor_y = pos[1]
+        self._state.cursor_x = int(pos[0])
+        self._state.cursor_y = int(pos[1])
         self._last_used = time.time()
-        return {"action": "click", "button": button, "x": pos[0], "y": pos[1]}
+        return {"action": "click", "button": button, "x": int(pos[0]), "y": int(pos[1])}
 
     def double_click(self, x: int | None = None, y: int | None = None,
                      coord_space: str = "auto") -> dict[str, Any]:
         """Double-click at (x, y), or at the current cursor position."""
+        if self._is_wayland():
+            if x is not None and y is not None:
+                lx, ly = self._to_logical(int(x), int(y), coord_space)
+                self._wayland_mouse_move(lx, ly)
+            self._wayland_click("left")
+            self._wayland_click("left")
+            self._last_used = time.time()
+            return {"action": "double_click", "x": lx if x is not None else 0,
+                    "y": ly if y is not None else 0}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -305,14 +480,23 @@ class EncreDesktopSession:
         else:
             pyautogui.doubleClick()
         pos = pyautogui.position()
-        self._state.cursor_x = pos[0]
-        self._state.cursor_y = pos[1]
+        self._state.cursor_x = int(pos[0])
+        self._state.cursor_y = int(pos[1])
         self._last_used = time.time()
-        return {"action": "double_click", "x": pos[0], "y": pos[1]}
+        return {"action": "double_click", "x": int(pos[0]), "y": int(pos[1])}
 
     def right_click(self, x: int | None = None, y: int | None = None,
                     coord_space: str = "auto") -> dict[str, Any]:
         """Right-click at (x, y), or at the current cursor position."""
+        if self._is_wayland():
+            if x is not None and y is not None:
+                lx, ly = self._to_logical(int(x), int(y), coord_space)
+                self._wayland_mouse_move(lx, ly)
+            self._wayland_click("right")
+            self._last_used = time.time()
+            return {"action": "right_click",
+                    "x": lx if x is not None else 0,
+                    "y": ly if y is not None else 0}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -324,31 +508,39 @@ class EncreDesktopSession:
         else:
             pyautogui.rightClick()
         pos = pyautogui.position()
-        self._state.cursor_x = pos[0]
-        self._state.cursor_y = pos[1]
+        self._state.cursor_x = int(pos[0])
+        self._state.cursor_y = int(pos[1])
         self._last_used = time.time()
-        return {"action": "right_click", "x": pos[0], "y": pos[1]}
+        return {"action": "right_click", "x": int(pos[0]), "y": int(pos[1])}
 
     def drag(self, x1: int, y1: int, x2: int, y2: int, duration: float = 0.5,
              coord_space: str = "auto") -> dict[str, Any]:
         """Press at (x1, y1) and drag to (x2, y2) over ``duration`` seconds."""
+        lx1, ly1 = self._to_logical(int(x1), int(y1), coord_space)
+        lx2, ly2 = self._to_logical(int(x2), int(y2), coord_space)
+        if self._is_wayland():
+            self._wayland_drag(lx1, ly1, lx2, ly2)
+            self._last_used = time.time()
+            return {"action": "drag", "from": {"x": lx1, "y": ly1}, "to": {"x": lx2, "y": ly2}}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
             )
         import pyautogui
-        lx1, ly1 = self._to_logical(int(x1), int(y1), coord_space)
-        lx2, ly2 = self._to_logical(int(x2), int(y2), coord_space)
         pyautogui.moveTo(lx1, ly1)
         pyautogui.drag(lx2 - lx1, ly2 - ly1, duration=duration)
         pos = pyautogui.position()
-        self._state.cursor_x = pos[0]
-        self._state.cursor_y = pos[1]
+        self._state.cursor_x = int(pos[0])
+        self._state.cursor_y = int(pos[1])
         self._last_used = time.time()
         return {"action": "drag", "from": {"x": lx1, "y": ly1}, "to": {"x": lx2, "y": ly2}}
 
     def type_text(self, text: str, interval: float = 0.02) -> dict[str, Any]:
         """Type ``text`` character by character with an inter-key ``interval``."""
+        if self._is_wayland():
+            self._wayland_type(text)
+            self._last_used = time.time()
+            return {"action": "type", "text": text[:200]}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -360,6 +552,10 @@ class EncreDesktopSession:
 
     def press_key(self, key: str) -> dict[str, Any]:
         """Press and release a single named key (e.g. "enter", "tab")."""
+        if self._is_wayland():
+            self._wayland_key(key)
+            self._last_used = time.time()
+            return {"action": "press_key", "key": key}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -371,6 +567,10 @@ class EncreDesktopSession:
 
     def hotkey(self, keys: list[str]) -> dict[str, Any]:
         """Press a key combination (e.g. ``["ctrl", "c"]``) simultaneously."""
+        if self._is_wayland():
+            self._wayland_hotkey(keys)
+            self._last_used = time.time()
+            return {"action": "hotkey", "keys": "+".join(keys)}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -382,6 +582,10 @@ class EncreDesktopSession:
 
     def scroll(self, clicks: int, x: int | None = None, y: int | None = None) -> dict[str, Any]:
         """Scroll ``clicks`` notches (positive=up), optionally at (x, y)."""
+        if self._is_wayland():
+            self._wayland_scroll(clicks)
+            self._last_used = time.time()
+            return {"action": "scroll", "clicks": clicks}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -449,7 +653,36 @@ class EncreDesktopSession:
         return state
 
     def _capture_active_window_png(self) -> ActiveWindowCapture | None:
-        """Capture the foreground window via Win32 ``PrintWindow`` API.
+        """Capture the foreground window's pixels as a PNG.
+
+        Platform backends
+        -----------------
+        * **Windows** -- Win32 ``PrintWindow`` API (handles DirectX /
+          Direct2D surfaces such as Chromium, Electron, WPF, games).
+        * **macOS** -- ``screencapture`` CLI with ``osascript`` window
+          bounds (built-in, handles Retina displays automatically).
+        * **Linux** -- ``xdotool`` + ``import`` (ImageMagick) on X11;
+          falls back to ``None`` on Wayland (no universal window-level
+          capture protocol outside wlr-screencopy).
+
+        Returns an :class:`ActiveWindowCapture` on success, or
+        ``None`` on any failure (caller should fall back to the
+        regular ``screenshot`` path).
+        """
+        if _PLATFORM == "win32":
+            return self._win32_printwindow_capture()
+        if _PLATFORM == "darwin":
+            return self._macos_window_capture()
+        if _PLATFORM.startswith("linux"):
+            return self._linux_window_capture()
+        return None
+
+    # ------------------------------------------------------------------
+    # Platform-specific active-window capture
+    # ------------------------------------------------------------------
+
+    def _win32_printwindow_capture(self) -> ActiveWindowCapture | None:
+        """Windows: foreground window via Win32 ``PrintWindow`` + ``PW_RENDERFULLCONTENT``.
 
         ``mss.grab`` composites the screen from the OS compositor, which
         loses content for windows whose pixels are rendered through
@@ -460,13 +693,7 @@ class EncreDesktopSession:
         the ``PW_RENDERFULLCONTENT`` flag (``0x00000002``) so that
         DirectX / Direct2D windows are also rendered; without it,
         Chromium-based apps come back as a blank bitmap.
-
-        Returns an :class:`ActiveWindowCapture` on success, or
-        ``None`` on any failure (caller should fall back to the
-        regular ``screenshot`` path).
         """
-        if _PLATFORM != "win32":
-            return None
         try:
             import ctypes
             from typing import ClassVar
@@ -565,6 +792,249 @@ class EncreDesktopSession:
             logger.debug("PrintWindow capture failed: %s", exc)
             return None
 
+    # ------------------------------------------------------------------
+    # macOS: active-window capture via screencapture CLI
+    # ------------------------------------------------------------------
+
+    def _macos_window_capture(self) -> ActiveWindowCapture | None:
+        """macOS: foreground window via ``screencapture -l`` CLI.
+
+        Uses ``osascript`` to read the frontmost window's bounding rect,
+        then captures the **region** at those coordinates with
+        ``screencapture -R``.  This avoids the pyobjc / CoreGraphics
+        dependency while still giving us the exact window pixels
+        (Retina-aware by default).
+
+        Returns an :class:`ActiveWindowCapture` on success, or
+        ``None`` on any failure (caller should fall back to full
+        desktop screenshot).
+        """
+        try:
+            import subprocess
+            import tempfile
+
+            # 1. Get the frontmost window's bounding rect via osascript.
+            script = (
+                'tell application "System Events"\n'
+                '  set fp to first process whose frontmost is true\n'
+                '  if (count of windows of fp) = 0 then return ""\n'
+                '  set win to window 1 of fp\n'
+                '  set pos to position of win\n'
+                '  set sz to size of win\n'
+                '  set x to item 1 of pos\n'
+                '  set y to item 2 of pos\n'
+                '  set w to item 1 of sz\n'
+                '  set h to item 2 of sz\n'
+                '  return (x as text) & " " & (y as text) & " "'
+                '    & (w as text) & " " & (h as text)\n'
+                'end tell'
+            )
+            r = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode != 0 or not r.stdout.strip():
+                return None
+            parts = r.stdout.strip().split()
+            if len(parts) != 4:
+                return None
+            left, top, width, height = map(int, parts)
+            if width <= 0 or height <= 0:
+                return None
+
+            # 2. Capture the region with screencapture.
+            #    -R x,y,w,h  captures a rectangle in screen coordinates.
+            #    -r          native resolution (respects Retina).
+            #    -x          no sound effect.
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                tmp_path = f.name
+            screencap = subprocess.run(
+                ["screencapture", "-R", f"{left},{top},{width},{height}",
+                 "-r", "-x", tmp_path],
+                capture_output=True, timeout=10,
+            )
+            if screencap.returncode != 0:
+                with suppress(OSError):
+                    os.unlink(tmp_path)
+                return None
+            with open(tmp_path, "rb") as f:
+                png_bytes = f.read()
+            with suppress(OSError):
+                os.unlink(tmp_path)
+
+            if not png_bytes:
+                return None
+
+            return ActiveWindowCapture(
+                png_bytes=png_bytes,
+                left=left, top=top,
+                width=width, height=height,
+            )
+        except Exception as exc:
+            logger.debug("macOS window capture failed: %s", exc)
+            return None
+
+    # ------------------------------------------------------------------
+    # Linux: active-window capture via xdotool + ImageMagick (X11)
+    # ------------------------------------------------------------------
+
+    def _linux_window_capture(self) -> ActiveWindowCapture | None:
+        """Linux: foreground window capture, compositor-aware.
+
+        Strategies tried in order
+        ------------------------
+        1. **Hyprland** -- ``hyprctl -j activewindow`` → JSON with
+           ``at`` (position) and ``size`` fields, then ``grim -g``
+           captures the window rectangle.
+        2. **Sway** -- ``swaymsg -t get_tree`` → JSON tree; walk to
+           find the focused node, read its ``rect``, then ``grim -g``.
+        3. **X11** -- ``xdotool getactivewindow`` + ``import -window
+           <id>`` (ImageMagick).
+        4. **Fallback** -- return ``None``; caller falls back to full
+           desktop screenshot.
+
+        Returns :class:`ActiveWindowCapture` on success, or ``None``.
+        """
+        try:
+            import json as _json
+            import os as _os
+            import subprocess
+            import tempfile
+
+            compositor = _os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+            session = _os.environ.get("XDG_SESSION_TYPE", "").lower()
+
+            left = top = width = height = 0
+            png_bytes = b""
+
+            # ----------------------------------------------------------
+            # 1. Hyprland
+            # ----------------------------------------------------------
+            if compositor == "hyprland":
+                r = subprocess.run(
+                    ["hyprctl", "-j", "activewindow"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    data = _json.loads(r.stdout)
+                    at = data.get("at") or data.get("at_workspace") or [0, 0]
+                    size = data.get("size") or [0, 0]
+                    left, top = int(at[0]), int(at[1])
+                    width, height = int(size[0]), int(size[1])
+                    if width > 0 and height > 0:
+                        with tempfile.NamedTemporaryFile(
+                            suffix=".png", delete=False,
+                        ) as f:
+                            tmp_path = f.name
+                        r_img = subprocess.run(
+                            ["grim", "-g", f"{left},{top}x{width}x{height}",
+                             tmp_path],
+                            capture_output=True, timeout=10,
+                        )
+                        if r_img.returncode == 0:
+                            with open(tmp_path, "rb") as f:
+                                png_bytes = f.read()
+                        with suppress(OSError):
+                            _os.unlink(tmp_path)
+
+            # ----------------------------------------------------------
+            # 2. Sway
+            # ----------------------------------------------------------
+            if not png_bytes and compositor == "sway":
+                r = subprocess.run(
+                    ["swaymsg", "-t", "get_tree"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    tree = _json.loads(r.stdout)
+
+                    def _find_focused(node):
+                        if node.get("focused", False):
+                            return node
+                        for child in node.get("nodes", []):
+                            found = _find_focused(child)
+                            if found:
+                                return found
+                        for child in node.get("floating_nodes", []):
+                            found = _find_focused(child)
+                            if found:
+                                return found
+                        return None
+
+                    focused = _find_focused(tree)
+                    if focused:
+                        rect = focused.get("rect", {})
+                        left = int(rect.get("x", 0))
+                        top = int(rect.get("y", 0))
+                        width = int(rect.get("width", 0))
+                        height = int(rect.get("height", 0))
+                        if width > 0 and height > 0:
+                            with tempfile.NamedTemporaryFile(
+                                suffix=".png", delete=False,
+                            ) as f:
+                                tmp_path = f.name
+                            r_img = subprocess.run(
+                                ["grim", "-g",
+                                 f"{left},{top}x{width}x{height}", tmp_path],
+                                capture_output=True, timeout=10,
+                            )
+                            if r_img.returncode == 0:
+                                with open(tmp_path, "rb") as f:
+                                    png_bytes = f.read()
+                            with suppress(OSError):
+                                _os.unlink(tmp_path)
+
+            # ----------------------------------------------------------
+            # 3. X11 (via xdotool + ImageMagick)
+            # ----------------------------------------------------------
+            if not png_bytes:
+                r_id = subprocess.run(
+                    ["xdotool", "getactivewindow"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if r_id.returncode == 0 and r_id.stdout.strip():
+                    win_id = r_id.stdout.strip()
+                    r_geo = subprocess.run(
+                        ["xdotool", "getwindowgeometry", "--shell", win_id],
+                        capture_output=True, text=True, timeout=3,
+                    )
+                    if r_geo.returncode == 0:
+                        geo: dict[str, int] = {}
+                        for line in r_geo.stdout.strip().splitlines():
+                            if "=" in line:
+                                k, v = line.split("=", 1)
+                                geo[k.strip()] = int(v.strip())
+                        left = geo.get("X", 0)
+                        top = geo.get("Y", 0)
+                        width = geo.get("WIDTH", 0)
+                        height = geo.get("HEIGHT", 0)
+                        if width > 0 and height > 0:
+                            with tempfile.NamedTemporaryFile(
+                                suffix=".png", delete=False,
+                            ) as f:
+                                tmp_path = f.name
+                            r_img = subprocess.run(
+                                ["import", "-window", win_id, tmp_path],
+                                capture_output=True, timeout=10,
+                            )
+                            if r_img.returncode == 0:
+                                with open(tmp_path, "rb") as f:
+                                    png_bytes = f.read()
+                            with suppress(OSError):
+                                _os.unlink(tmp_path)
+
+            if not png_bytes or width <= 0 or height <= 0:
+                return None
+
+            return ActiveWindowCapture(
+                png_bytes=png_bytes,
+                left=left, top=top,
+                width=width, height=height,
+            )
+        except Exception as exc:
+            logger.debug("Linux window capture failed: %s", exc)
+            return None
+
     def take_screenshot_png(self) -> bytes:
         """Capture the primary monitor as raw PNG bytes.
 
@@ -599,9 +1069,20 @@ class EncreDesktopSession:
                      coord_space: str = "auto") -> dict[str, Any]:
         """Triple-click to select a line/paragraph (text fields, URLs).
 
-        Implemented as three quick ``pyautogui.click()`` invocations
-        because pyautogui has no native triple-click primitive.
+        On Wayland, implemented as three sequential single clicks via
+        ``wdotool``.  On other platforms uses ``pyautogui.click()``
+        with ``clicks=3``.
         """
+        if self._is_wayland():
+            if x is not None and y is not None:
+                lx, ly = self._to_logical(int(x), int(y), coord_space)
+                self._wayland_mouse_move(lx, ly)
+            for _ in range(3):
+                self._wayland_click("left")
+            self._last_used = time.time()
+            return {"action": "triple_click",
+                    "x": lx if x is not None else 0,
+                    "y": ly if y is not None else 0}
         if not self._check_pyautogui():
             raise RuntimeError(
                 "pyautogui not installed. Run: pip install pyautogui"
@@ -614,7 +1095,7 @@ class EncreDesktopSession:
             lx, ly = pyautogui.position()
         pyautogui.click(lx, ly, clicks=3, interval=0.05)
         self._last_used = time.time()
-        return {"action": "triple_click", "x": lx, "y": ly}
+        return {"action": "triple_click", "x": int(lx), "y": int(ly)}
 
     def wait(self, ms: int) -> dict[str, Any]:
         """Block for ``ms`` milliseconds.
@@ -900,20 +1381,40 @@ class EncreDesktopSession:
                            max_nodes: int = 500) -> list[dict[str, Any]]:
         """Walk the active window's UI automation tree.
 
+        Platform backends
+        -----------------
+        * **Windows** -- UIAutomation via ``uiautomation`` package.
+        * **macOS** -- Accessibility API via ``pyobjc-framework-ApplicationServices``.
+        * **Linux** -- AT-SPI2 via ``pyatspi`` (requires ``at-spi2-core``).
+
         Returns a flat list of nodes, each with ``name``, ``control_type``,
         ``automation_id``, ``class_name``, ``rect`` (physical pixel screen
-        coordinates), ``depth``, and ``focusable`` keys. Returns an empty
-        list (and surfaces a single error item) on unsupported platforms.
+        coordinates), ``depth``, and ``focusable`` keys. Returns an error
+        item on unsupported platforms.
         """
-        if _PLATFORM != "win32":
-            return [{"error": f"accessibility_tree only supported on Windows (got {_PLATFORM})"}]
+        if _PLATFORM == "win32":
+            return self._windows_accessibility_tree(max_depth, max_nodes)
+        if _PLATFORM == "darwin":
+            return self._macos_accessibility_tree(max_depth, max_nodes)
+        if _PLATFORM.startswith("linux"):
+            return self._linux_accessibility_tree(max_depth, max_nodes)
+        return [{"error": f"accessibility_tree not supported on {_PLATFORM}"}]
+
+    # ------------------------------------------------------------------
+    # Windows: UIAutomation
+    # ------------------------------------------------------------------
+
+    def _windows_accessibility_tree(
+        self, max_depth: int = 6, max_nodes: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Windows UIAutomation accessibility tree."""
         try:
             import uiautomation as uia  # type: ignore
         except ImportError:
             return [{
                 "error": (
-                    "uiautomation package required. "
-                    "Install with: pip install uiautomation"
+                    "UIAutomation package required. "
+                    "Install with: pip install encre[windows]"
                 )
             }]
 
@@ -988,6 +1489,265 @@ class EncreDesktopSession:
                 "rect": r,
             }
         return {"found": False, "queried": name}
+
+    # ------------------------------------------------------------------
+    # macOS: Accessibility API via ApplicationServices / AX
+    # ------------------------------------------------------------------
+
+    def _macos_accessibility_tree(
+        self, max_depth: int = 6, max_nodes: int = 500,
+    ) -> list[dict[str, Any]]:
+        """macOS Accessibility API (AX) tree via pyobjc."""
+        if max_depth < 1:
+            return []
+        try:
+            import ApplicationServices as AS  # type: ignore
+            from AppKit import NSWorkspace  # type: ignore
+        except ImportError:
+            return [{
+                "error": (
+                    "macOS AX requires pyobjc. "
+                    "Install: pip install encre[macos]"
+                )
+            }]
+
+        try:
+            front_app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            pid = front_app.processIdentifier()
+            app_element = AS.AXUIElementCreateApplication(pid)
+        except Exception as exc:
+            return [{"error": f"Failed to acquire foreground app AX element: {exc}"}]
+
+        if app_element is None:
+            return [{"error": "No foreground application detected"}]
+
+        nodes: list[dict[str, Any]] = []
+        self._walk_macos_ax(
+            app_element, 0, max_depth, max_nodes, nodes, AS,
+        )
+        return nodes
+
+    @staticmethod
+    def _ax_value_to_str(value) -> str:
+        """Safely convert an AX value to a string."""
+        if value is None:
+            return ""
+        try:
+            return str(value)
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _ax_rect_to_dict(value, default_left=0, default_top=0) -> dict[str, int]:
+        """Convert an AX value to a rect dict, falling back to defaults."""
+        if value is None:
+            return {"left": default_left, "top": default_top,
+                    "right": default_left, "bottom": default_top}
+        try:
+            # AXValue is an Objective-C struct; pyobjc maps it to a tuple
+            # (x, y, w, h) when the type is kAXValueCGSizeType or
+            # (x, y) for kAXValueCGPointType.
+            # Try CGRect (x, y, w, h) first.
+            if hasattr(value, "origin") and hasattr(value, "size"):
+                x = int(getattr(value.origin, "x", 0))
+                y = int(getattr(value.origin, "y", 0))
+                w = int(getattr(value.size, "width", 0))
+                h = int(getattr(value.size, "height", 0))
+                return {
+                    "left": x, "top": y,
+                    "right": x + w, "bottom": y + h,
+                }
+            # Fallback: treat as a tuple/sequence of 4 numbers.
+            if isinstance(value, (tuple, list)) and len(value) >= 4:
+                x, y, w, h = int(value[0]), int(value[1]), int(value[2]), int(value[3])
+                return {
+                    "left": x, "top": y,
+                    "right": x + w, "bottom": y + h,
+                }
+        except Exception:
+            pass
+        return {"left": default_left, "top": default_top,
+                "right": default_left, "bottom": default_top}
+
+    def _walk_macos_ax(self, element, depth: int, max_depth: int,
+                       max_nodes: int, out: list[dict[str, Any]], AS) -> None:
+        """Recursively flatten a macOS AX subtree into ``out`` (bounded)."""
+        if len(out) >= max_nodes or element is None or depth > max_depth:
+            return
+        try:
+            role = self._ax_value_to_str(
+                AS.AXUIElementCopyAttributeValue(element, "AXRole", None)[1]
+            )
+            name = self._ax_value_to_str(
+                AS.AXUIElementCopyAttributeValue(element, "AXDescription", None)[1]
+            )
+            if not name:
+                name = self._ax_value_to_str(
+                    AS.AXUIElementCopyAttributeValue(element, "AXTitle", None)[1]
+                )
+            if not name:
+                name = self._ax_value_to_str(
+                    AS.AXUIElementCopyAttributeValue(element, "AXLabel", None)[1]
+                )
+            position = AS.AXUIElementCopyAttributeValue(
+                element, "AXPosition", None,
+            )[1]
+            size = AS.AXUIElementCopyAttributeValue(
+                element, "AXSize", None,
+            )[1]
+            focused = AS.AXUIElementCopyAttributeValue(
+                element, "AXFocused", None,
+            )[1]
+            enabled = AS.AXUIElementCopyAttributeValue(
+                element, "AXEnabled", None,
+            )[1]
+            subrole = self._ax_value_to_str(
+                AS.AXUIElementCopyAttributeValue(element, "AXSubrole", None)[1]
+            )
+
+            rect = self._ax_rect_to_dict(None)
+            px, py, pw, ph = 0, 0, 0, 0
+            if position is not None and hasattr(position, "x"):
+                px = int(getattr(position, "x", 0))
+                py = int(getattr(position, "y", 0))
+            if size is not None and hasattr(size, "width"):
+                pw = int(getattr(size, "width", 0))
+                ph = int(getattr(size, "height", 0))
+            if pw > 0 and ph > 0:
+                rect = {"left": px, "top": py,
+                        "right": px + pw, "bottom": py + ph}
+
+            entry = {
+                "name": name or "",
+                "control_type": role or "",
+                "automation_id": subrole or "",
+                "class_name": "",
+                "rect": rect,
+                "depth": depth,
+                "focusable": bool(focused) if focused is not None else False,
+            }
+            out.append(entry)
+        except Exception:
+            return
+
+        # Walk children.
+        try:
+            children = AS.AXUIElementCopyAttributeValue(
+                element, "AXChildren", None,
+            )[1]
+        except Exception:
+            return
+        if not isinstance(children, (tuple, list)):
+            return
+        for child in children:
+            if len(out) >= max_nodes:
+                return
+            self._walk_macos_ax(
+                child, depth + 1, max_depth, max_nodes, out, AS,
+            )
+
+    # ------------------------------------------------------------------
+    # Linux: AT-SPI2 accessibility tree via pyatspi / dbus
+    # ------------------------------------------------------------------
+
+    def _linux_accessibility_tree(
+        self, max_depth: int = 6, max_nodes: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Linux AT-SPI2 accessibility tree via pyatspi.
+
+        Requires ``pyatspi`` (usually ``pip install pyatspi``) and
+        ``at-spi2-core`` runtime (``apt install at-spi2-core`` on Debian,
+        ``dnf install at-spi2-core`` on Fedora).
+        """
+        if max_depth < 1:
+            return []
+        try:
+            import pyatspi  # type: ignore
+        except ImportError:
+            return [{
+                "error": (
+                    "Linux AT-SPI2 accessibility requires pyatspi. "
+                    "Install: pip install pyatspi "
+                    "(also needs at-spi2-core runtime)"
+                )
+            }]
+
+        try:
+            desktop = pyatspi.Registry.getDesktop(0)
+        except Exception as exc:
+            return [{"error": f"Failed to get AT-SPI2 desktop: {exc}"}]
+        if desktop is None:
+            return [{"error": "No AT-SPI2 desktop available"}]
+
+        nodes: list[dict[str, Any]] = []
+        self._walk_atspi(
+            desktop, 0, max_depth, max_nodes, nodes,
+        )
+        return nodes
+
+    @staticmethod
+    def _atspi_rect_to_dict(acc) -> dict[str, int]:
+        """Extract ``(x, y, w, h)`` from an accessible component."""
+        try:
+            if acc is None:
+                return {"left": 0, "top": 0, "right": 0, "bottom": 0}
+            # Try the Component interface for position + size.
+            try:
+                # pyatspi exposes ``acc.queryComponent()`` which returns
+                # a Component interface with ``getPosition`` and ``getSize``.
+                comp = acc.queryComponent()
+                pos = comp.getPosition(pyatspi.DESKTOP_COORDS)
+                sz = comp.getSize()
+                x, y = int(pos.x), int(pos.y)
+                w, h = int(sz.width), int(sz.height)
+                return {"left": x, "top": y,
+                        "right": x + w, "bottom": y + h}
+            except (LookupError, AttributeError):
+                pass
+            # Fallback: try ``acc.getExtents`` (some atspi versions).
+            try:
+                ext = acc.getExtents(pyatspi.DESKTOP_COORDS)
+                if ext:
+                    return {"left": int(ext.x), "top": int(ext.y),
+                            "right": int(ext.x + ext.width),
+                            "bottom": int(ext.y + ext.height)}
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return {"left": 0, "top": 0, "right": 0, "bottom": 0}
+
+    def _walk_atspi(self, acc, depth: int, max_depth: int, max_nodes: int,
+                    out: list[dict[str, Any]]) -> None:
+        """Recursively flatten an AT-SPI2 accessible subtree."""
+        if len(out) >= max_nodes or acc is None or depth > max_depth:
+            return
+        try:
+            name = acc.name or ""
+            role_name = acc.getRoleName() or ""
+            entry = {
+                "name": name,
+                "control_type": role_name,
+                "automation_id": "",
+                "class_name": "",
+                "rect": self._atspi_rect_to_dict(acc),
+                "depth": depth,
+                "focusable": bool(acc.getState().contains(pyatspi.STATE_FOCUSABLE)),
+            }
+            out.append(entry)
+        except Exception:
+            pass
+
+        try:
+            children = [acc[i] for i in range(acc.childCount)]
+        except Exception:
+            return
+        for child in children:
+            if len(out) >= max_nodes:
+                return
+            self._walk_atspi(
+                child, depth + 1, max_depth, max_nodes, out,
+            )
 
     @staticmethod
     def _ensure_pillow() -> None:

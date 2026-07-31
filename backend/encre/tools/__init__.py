@@ -29,8 +29,18 @@ Init implementation for the Encre tool system.
 """
 from encre.tools.base import EncreTool
 from encre.tools.registry import ToolRegistry
+from encre.tools.toolset import (
+    TOOLSETS,
+    ToolSet,
+    list_available_sets,
+    resolve_toolset,
+)
 
 __all__ = [
     "EncreTool",
     "ToolRegistry",
+    "ToolSet",
+    "TOOLSETS",
+    "resolve_toolset",
+    "list_available_sets",
 ]

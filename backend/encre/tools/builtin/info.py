@@ -50,79 +50,68 @@ async def _info_execute(**kwargs: Any) -> str:
         return "Error: 'content' must be a string containing HTML/CSS/JS."
 
     title = kwargs.get("title", "")
-    card_type = kwargs.get("type", "html")
-    if card_type not in {"html", "widget"}:
-        card_type = "html"
+
+    # Validate optional media array (image/video items)
+    media = kwargs.get("media", [])
+    if not isinstance(media, list):
+        media = []
+    for item in media:
+        if not isinstance(item, dict) or "type" not in item or "src" not in item:
+            return "Error: Each media item must be an object with 'type' and 'src' fields."
+        if item["type"] not in {"image", "video"}:
+            return "Error: media.type must be 'image' or 'video'."
 
     # Detect whether the HTML payload looks like a complete document. Fragments
     # and bare <style> blocks are still rendered, but the model is encouraged to
     # provide a full <html>/<body> document for best results.
     is_complete_html = False
-    if card_type == "html":
-        lowered = content.lower().strip()
-        is_complete_html = (
-            lowered.startswith("<!doctype")
-            or lowered.startswith("<html")
-            or "<body" in lowered
-        )
+    lowered = content.lower().strip()
+    is_complete_html = (
+        lowered.startswith("<!doctype")
+        or lowered.startswith("<html")
+        or "<body" in lowered
+    )
 
     display = kwargs.get("display", "base")
     if display not in {"base", "code", "split"}:
         display = "base"
 
-    # Structured widget types that the model must provide data for manually.
-    widget = kwargs.get("widget", "")
-    if widget not in {"", "flight", "train", "ship"}:
-        widget = ""
-
     payload = {
-        "type": card_type,
         "display": display,
-        "widget": widget,
         "title": title if isinstance(title, str) else "",
         "content": content,
         "is_complete_html": is_complete_html,
     }
+    if media:
+        payload["media"] = media
     return json.dumps(payload, ensure_ascii=False)
 
 
 EncreInfoTool = build_tool(
     name="info",
     description=(
-        "Optional rich-card visualization tool. Do NOT use this for ordinary "
-        "text answers; reply with normal markdown text instead. Only invoke this "
-        "tool when the user explicitly asks for a card, widget, or visual layout, "
-        "or when the information naturally fits a compact real-time card such as "
-        "a flight, train, or ship itinerary. "
+        "Rich-card visualization tool. Renders a self-contained HTML/CSS/JS "
+        "document inside a sandboxed iframe in the chat timeline, or a native "
+        "media gallery for image/video display. "
+        "Use this when the user asks for a card, dashboard, chart, or any "
+        "rich visual layout that goes beyond plain markdown. "
         "Always specify the 'display' parameter. "
-        "Use display='base' together with type='html' to render a self-contained "
-        "HTML/CSS/JS document. A complete document including <html>, <body> and all "
-        "required CSS is strongly preferred; fragments or a bare <style> block will "
-        "still be rendered but may look broken. "
-        "Use display='code' to show the raw source instead of rendering it. "
-        "The model may also set type='widget' with widget='flight', widget='train', "
-        "or widget='ship' to request that the model itself fills in the travel "
-        "data (no external travel API is connected yet); widgets are rendered by "
-        "fixed frontend templates, not by the HTML sandbox. "
+        "Use display='base' (default) to render the HTML document. "
+        "A complete document including <html>, <head>, <body> and all "
+        "required CSS is strongly preferred; fragments or a bare <style> block "
+        "will still be rendered but may look broken. "
+        "Use display='code' to show the raw source without rendering. "
+        "To display images or videos natively, pass a 'media' array "
+        "with {type, src} objects. "
         "Keep content self-contained; external resources are loaded at the user's risk."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "type": {
-                "type": "string",
-                "enum": ["html", "widget"],
-                "description": "Card rendering mode: html for free-form rendering, widget for structured templates.",
-            },
             "display": {
                 "type": "string",
                 "enum": ["base", "code", "split"],
                 "description": "Display mode. 'base' renders the HTML/CSS/JS card (default); 'code' shows the source; 'split' is reserved for future use.",
-            },
-            "widget": {
-                "type": "string",
-                "enum": ["", "flight", "train", "ship"],
-                "description": "Structured widget type. 'flight', 'train' and 'ship' mean the model must provide the travel data itself (no live API yet); leave empty for free-form html cards.",
             },
             "title": {
                 "type": "string",
@@ -131,17 +120,23 @@ EncreInfoTool = build_tool(
             "content": {
                 "type": "string",
                 "description": (
-                    "For type='html' this is a self-contained HTML/CSS/JS payload. "
+                    "Self-contained HTML/CSS/JS payload. "
                     "A complete document including <html>, <head>, <body> is strongly preferred; "
-                    "fragments or a bare <style> block will still be rendered but may look broken. "
-                    "For type='widget' this is a JSON object with the widget data. "
-                    "Flight widget expects: flightNo, airline, departureCode, departureAirport, "
-                    "departureTime, arrivalCode, arrivalAirport, arrivalTime, plus optional gate, seat, status, terminal. "
-                    "Train widget expects: trainNo, type, departureStation, departureTime, arrivalStation, arrivalTime, "
-                    "plus optional platform, seat, status. "
-                    "Ship widget expects: shipName, operator, departurePort, departureTime, arrivalPort, arrivalTime, "
-                    "plus optional dock, cabin, status."
+                    "fragments or a bare <style> block will still be rendered but may look broken."
                 ),
+            },
+            "media": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["image", "video"], "description": "Media type."},
+                        "src": {"type": "string", "description": "File path or URL to the media resource."},
+                        "controls": {"type": "boolean", "description": "For video: show controls (pause/seek/volume). When true, disables autoplay."},
+                    },
+                    "required": ["type", "src"],
+                },
+                "description": "Optional array of media items (images/videos). When present, the card renders a native media gallery inline using the MediaViewer component.",
             },
         },
         "required": ["display", "content"],
@@ -150,11 +145,8 @@ EncreInfoTool = build_tool(
     intents=["general", "communication", "data", "research"],
     category="communication",
     triggers=[
-        "card", "info card", "widget",
-        "flight", "airplane", "plane", "boarding pass", "flight status",
-        "train", "railway", "high speed rail", "bullet train", "CRH",
-        "ship", "cruise", "ferry", "vessel", "sailing",
-        "itinerary", "travel card", "trip card",
+        "card", "info card",
+        "dashboard", "chart", "visualization",
     ],
     semantic_type="read",
     is_concurrency_safe=lambda _: True,
