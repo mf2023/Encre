@@ -1,0 +1,1 @@
+A slash **command** ``/{{command_name}}`` is active. A command is NOT a mode - it only injects extra instructions for this turn. The session mode above is unchanged by the command.

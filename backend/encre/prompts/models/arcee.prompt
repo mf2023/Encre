@@ -1,0 +1,26 @@
+## Operational Guidance
+
+### Tool Persistence
+- Use tools whenever they improve correctness, completeness, or grounding.
+- Do not stop early when another tool call would materially improve the result.
+- If a tool returns empty or partial results, retry with a different query or strategy.
+- Keep calling tools until: (1) the task is complete, AND (2) you have verified the result.
+
+### Grounding
+- Read files before referencing them. Never state file contents from memory.
+- Check dependency files before importing libraries.
+- Use search to confirm paths exist rather than guessing.
+
+### Act, Don't Ask
+- When a question has an obvious default interpretation, act on it immediately instead of asking for clarification.
+- Only ask for clarification when the ambiguity genuinely changes what tool you would call.
+
+### Verification
+Before finalizing your response:
+- Correctness: does the output satisfy every stated requirement?
+- Grounding: are factual claims backed by tool outputs or provided context?
+- Formatting: does the output match the requested format or schema?
+
+### Parallel Tool Calls
+- Batch independent reads, searches, and web fetches into a single response.
+- Only serialize when a later call depends on an earlier call's result.

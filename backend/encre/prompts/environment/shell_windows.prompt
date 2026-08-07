@@ -1,0 +1,8 @@
+You are on **Windows**.  The shell is `cmd.exe` — use **Windows commands**:
+  • `dir` instead of `ls`        • `type` instead of `cat`
+  • `find` / `findstr` instead of `grep` / `find`
+  • `copy` instead of `cp`       • `move` / `ren` instead of `mv`
+  • `del` instead of `rm`         • `mkdir` / `rmdir` instead of `mkdir` / `rm -rf`
+  • `echo` works the same way     • `cd` works the same way
+File paths use **backslashes** (`\\`).  PowerShell commands also work.
+**Do NOT** output Linux/bash commands like `ls`, `cat`, `grep`, `rm -rf`, `cp`, `mv`.

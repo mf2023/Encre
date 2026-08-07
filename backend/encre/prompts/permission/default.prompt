@@ -1,0 +1,5 @@
+## Permission Mode
+
+Current mode: **default**
+
+Ask for permission before executing tools that modify files, run shell commands, or access the network.

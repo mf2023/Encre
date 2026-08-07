@@ -1,0 +1,5 @@
+## Permission Mode
+
+Current mode: **dont_ask**
+
+Execute tasks directly without asking for confirmation. Only pause if an operation appears destructive and irreversible.
