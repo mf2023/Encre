@@ -302,15 +302,15 @@ def analyze_benchmark_results(results: list[dict[str, Any]], top_n: int = 5) -> 
     )[:top_n]
 
     bucket_advice = {
-        "tool_selection_gap": "优先补工具选择策略与工具发现提示，减少该用工具时纯文本作答。",
-        "error_recovery_gap": "加强 tool error retry、fallback 和错误后自修复提示。",
-        "workflow_control_gap": "补阶段控制与子任务推进，避免卡在 discover/plan 而进不了 execute/report。",
-        "long_horizon_drift": "优先压缩无效 turn，补 stuck recovery 和记忆摘要，控制长程漂移。",
-        "tool_overuse": "加入工具预算与 stopping criteria，避免为搜而搜、为读而读。",
-        "runtime_or_budget_failure": "先看首 token、模型总耗时和预算耗尽点，处理 provider/MCP/上下文膨胀。",
-        "task_understanding_gap": "加强任务解析、成功标准提取与输出结构约束。",
-        "output_incomplete": "补 final answer checklist，确保最终答案覆盖题目要求。",
-        "no_final_answer": "强化结束条件与收尾策略，避免只做过程不交付结果。",
+        "tool_selection_gap": "Prioritize tool-selection strategy and tool-discovery prompts to reduce pure-text answers when a tool should be used.",
+        "error_recovery_gap": "Strengthen tool error retry, fallback, and self-repair prompts after errors.",
+        "workflow_control_gap": "Add stage control and sub-task progression to avoid getting stuck in discover/plan and never reaching execute/report.",
+        "long_horizon_drift": "Prioritize compressing ineffective turns, add stuck recovery and memory summaries to control long-range drift.",
+        "tool_overuse": "Add tool budgets and stopping criteria to avoid searching for the sake of searching or reading for the sake of reading.",
+        "runtime_or_budget_failure": "Check first token, total model time, and budget exhaustion points; handle provider/MCP/context bloat.",
+        "task_understanding_gap": "Strengthen task parsing, success-criteria extraction, and output structure constraints.",
+        "output_incomplete": "Add a final answer checklist to ensure the final answer covers all task requirements.",
+        "no_final_answer": "Strengthen termination conditions and wrap-up strategy to avoid doing process work without delivering results.",
     }
 
     failure_buckets = summary.get("failure_buckets", {})
@@ -321,7 +321,7 @@ def analyze_benchmark_results(results: list[dict[str, Any]], top_n: int = 5) -> 
         prioritized_fixes.append({
             "bucket": bucket,
             "count": count,
-            "recommendation": bucket_advice.get(bucket, "补充该类失败的专项策略与验证用例。"),
+            "recommendation": bucket_advice.get(bucket, "Add targeted strategies and validation cases for this failure category."),
         })
 
     return {

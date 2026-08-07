@@ -79,12 +79,23 @@ async def _create_moderation_execute(**kwargs: Any) -> str:
 
 EncreTranscribeAudioTool = build_tool(
     name="transcribe_audio",
-    description="Transcribe audio to text using Whisper API or compatible",
+    description=(
+        "Transcribe speech in an audio file into text using the active backend's "
+        "transcription model (Whisper-compatible). "
+        "Use this to convert recordings, voice notes, or interviews to text; prefer "
+        "it over generic OCR for spoken content. "
+        "Do NOT use this for in-browser live captioning or for translating audio to "
+        "English (use translate_audio instead). "
+        "Tips: pass an ISO language code to improve accuracy on non-English audio; "
+        "use common formats such as mp3, wav, or m4a. "
+        "Pitfalls: the active backend must implement transcribe_audio, otherwise the "
+        "call returns an unsupported error."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "file": {"type": "string", "description": "Audio file path or base64 data"},
-            "language": {"type": "string", "description": "Optional language code (e.g. en, zh)"},
+            "file": {"type": "string", "description": "Local audio file path or base64-encoded audio data to transcribe."},
+            "language": {"type": "string", "description": "ISO language code (e.g. 'en', 'zh', 'fr') to guide transcription; omit for auto-detection."},
         },
         "required": ["file"],
     },
@@ -97,11 +108,23 @@ EncreTranscribeAudioTool = build_tool(
 
 EncreTranslateAudioTool = build_tool(
     name="translate_audio",
-    description="Translate audio to English text using Whisper API or compatible",
+    description=(
+        "Translate speech in an audio file directly into English text using the "
+        "active backend's translation model (Whisper-compatible). "
+        "Use this when the source audio is non-English and English output is wanted "
+        "in a single step; prefer transcribe_audio when you need the original-"
+        "language text. "
+        "Do NOT use this for same-language transcription or for translating written "
+        "text (use translation). "
+        "Tips: ensure the file format is supported by the backend; output is always "
+        "English regardless of the source language. "
+        "Pitfalls: the active backend must implement translate_audio, otherwise the "
+        "call returns an unsupported error."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "file": {"type": "string", "description": "Audio file path or base64 data"},
+            "file": {"type": "string", "description": "Local audio file path or base64-encoded audio data to translate."},
         },
         "required": ["file"],
     },
@@ -114,13 +137,24 @@ EncreTranslateAudioTool = build_tool(
 
 EncreCreateEmbeddingsTool = build_tool(
     name="create_embeddings",
-    description="Create vector embeddings for text using the model's embeddings API",
+    description=(
+        "Generate vector embeddings for text inputs using the active backend's "
+        "embeddings model. "
+        "Use this to power semantic search, clustering, or similarity comparisons; "
+        "returns a JSON sample of the first few embedding dimensions per input. "
+        "Do NOT use this for chat completions (use the chat backend) or for "
+        "moderation checks (use create_moderation). "
+        "Tips: pass a single string or a JSON array of strings for batch embedding; "
+        "keep inputs under the model's token limit. "
+        "Pitfalls: output is truncated to 5 dimensions per item for display — "
+        "retrieve full vectors from the backend directly if you need them."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "input": {
                 "type": "string",
-                "description": "Text to embed, or a JSON array of strings for batch embedding",
+                "description": "Text to embed, or a JSON-encoded array of strings for batch embedding.",
             },
         },
         "required": ["input"],
@@ -133,11 +167,22 @@ EncreCreateEmbeddingsTool = build_tool(
 
 EncreCreateModerationTool = build_tool(
     name="create_moderation",
-    description="Check text for harmful content using the moderation API",
+    description=(
+        "Classify text against a moderation policy to flag harmful or unsafe "
+        "content, returning per-category results. "
+        "Use this to screen user-generated or model-generated text before display, "
+        "storage, or further processing. "
+        "Do NOT use this for general sentiment analysis, PII detection, or as the "
+        "sole safety gate without human review. "
+        "Tips: submit plain text only; inspect the 'flagged' array and per-result "
+        "category scores in the JSON output. "
+        "Pitfalls: the active backend must implement create_moderation; policies and "
+        "categories vary by provider."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "input": {"type": "string", "description": "Text to classify"},
+            "input": {"type": "string", "description": "Text to classify for harmful or unsafe content."},
         },
         "required": ["input"],
     },

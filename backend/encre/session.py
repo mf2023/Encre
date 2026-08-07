@@ -763,7 +763,7 @@ class EncreSession:
         if branch_id in self.branches:
             self.active_branch_id = branch_id
 
-    def rollback_to(self, branch_id: str, message_id: str) -> tuple[list[str], str]:
+    def rollback_to(self, branch_id: str, message_id: str) -> tuple[list[str], str, bool]:
         """Cross-branch hard rollback.
 
         Finds the target message across ALL branches (not just ``branch_id``),
@@ -771,7 +771,11 @@ class EncreSession:
         branch entirely, restores file snapshots, rebuilds artifacts, filters
         references to the rollback point, and switches to the target branch.
 
-        Returns ``(removed_message_ids, actual_target_branch_id)``.
+        Returns ``(removed_message_ids, actual_target_branch_id, target_found)``.
+        ``target_found`` is True only when the target message actually exists in
+        the session; a missing target is NOT the same as a target that is the
+        last message in its branch (which yields an empty ``removed`` list but
+        is still a valid rollback point).
         """
         target_msg = None
         target_branch_id = None
@@ -784,7 +788,7 @@ class EncreSession:
                 target_seq = m.get("seq_in_branch", 0)
                 break
         if target_msg is None:
-            return [], branch_id
+            return [], branch_id, False
 
         # Collect all descendant branch IDs of the target branch
         descendant_ids: set[str] = {target_branch_id}
@@ -866,7 +870,7 @@ class EncreSession:
         # Recalculate last_message_at from the newest remaining message
         timestamps = [m.get("created_at", 0) for m in self.messages]
         self.last_message_at = max(timestamps) / 1000.0 if timestamps else time.time()
-        return removed, target_branch_id
+        return removed, target_branch_id, True
 
     def checkpoint(self, label: str = "") -> str:
         if self._max_checkpoints <= 0:

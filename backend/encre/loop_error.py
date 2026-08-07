@@ -39,6 +39,7 @@ Priority order (first-match wins):
   7. Terminal            (unrecoverable -- surface to user)
 """
 
+import random
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -212,7 +213,7 @@ class ErrorOrchestrator:
             )
 
         # 2. Model fallback
-        if is_rate_limit and config is not None:
+        if (is_rate_limit or error_category == "model") and config is not None:
             from encre.recovery_loop import can_fallback
             if can_fallback(config):
                 self._recoveries_this_turn += 1
@@ -221,16 +222,17 @@ class ErrorOrchestrator:
                     RecoveryAction.FALLBACK_CONTINUE,
                     error_code=error_code,
                     error_category=error_category,
-                    detail="rate_limit fallback",
+                    detail="model fallback",
                 )
 
         # 3. Network retry
         if error_category == "network" and self._network_retry_count < NETWORK_RETRY_LIMIT:
             self._network_retry_count += 1
             self._recoveries_this_turn += 1
+            delay = min(0.5 * (2 ** (self._network_retry_count - 1)), 10.0) + random.uniform(0, 0.25)
             return RecoveryDecision(
                 RecoveryAction.RETRY,
-                delay=1.0,
+                delay=delay,
                 error_code=error_code,
                 error_category=error_category,
                 detail=f"network retry {self._network_retry_count}/{NETWORK_RETRY_LIMIT}",

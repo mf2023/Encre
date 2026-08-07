@@ -188,69 +188,67 @@ async def _chart_execute(**kwargs: Any) -> str:
 
 EncreChartTool = build_tool(
     name="chart",
-    description="""Generate data visualizations and charts using matplotlib.
-
-Supports: line, bar, scatter, pie, histogram, area, and heatmap charts.
-Returns the chart as a PNG base64-encoded image or saves to a file.
-
-Data format:
-- data.x: list of x-axis labels/values
-- data.y: dict of {name: [values]} for single series
-- data.series: list of {name, values, color, marker, style, alpha, bins} for multi-series
-- data.matrix: 2D list for heatmap
-- data.y_labels: y-axis labels for heatmap
-
-Example:
-  chart_type="line", title="Sales Trend",
-  x_label="Month", data={x: ["Jan","Feb","Mar"], series: [{name: "Sales", values: [100,150,130]}]}""",
+    description=(
+        "Generate data visualizations with matplotlib — line, bar, scatter, pie, "
+        "histogram, area, or heatmap — and return a PNG (base64) or save to disk. "
+        "Use this to render charts from in-memory tabular or list data when you need "
+        "a static image for reports, slides, or quick inspection. "
+        "Do NOT use this for interactive dashboards (use plotly/dash), network/graph "
+        "diagrams (use diagram), or live data feeds. "
+        "Tips: pass `data.x` for axis labels, `data.series` for multi-series plots "
+        "(each item can carry name/values/color/marker/style/alpha/bins), and "
+        "`data.matrix` with optional `data.y_labels` for heatmaps. "
+        "Pitfalls: pie charts require matching label/value counts; very large "
+        "datasets inflate the base64 payload — prefer `output_path` then."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "chart_type": {
                 "type": "string",
                 "enum": ["line", "bar", "scatter", "pie", "histogram", "area", "heatmap"],
-                "description": "Type of chart to generate",
+                "description": "Visualization type to render.",
             },
             "title": {
                 "type": "string",
-                "description": "Chart title",
+                "description": "Title displayed at the top of the chart.",
             },
             "x_label": {
                 "type": "string",
-                "description": "X-axis label",
+                "description": "Label for the x-axis.",
             },
             "y_label": {
                 "type": "string",
-                "description": "Y-axis label",
+                "description": "Label for the y-axis.",
             },
             "data": {
                 "type": "object",
-                "description": "Chart data: {x: [...], series: [{name, values, color?, marker?, style?}]}",
+                "description": "Chart data payload. Supports data.x (list of x labels/values), data.series (list of {name, values, color?, marker?, style?, alpha?, bins?}) for multi-series charts, data.matrix (2D list) and data.y_labels for heatmaps.",
             },
             "output_path": {
                 "type": "string",
-                "description": "File path to save the chart (e.g. chart.png). If empty, returns base64.",
+                "description": "File path to save the rendered chart (e.g. 'chart.png'); when omitted, the chart is returned as a base64-encoded PNG.",
             },
             "width": {
                 "type": "number",
-                "description": "Figure width in inches (default: 10)",
+                "description": "Figure width in inches; defaults to 10.",
             },
             "height": {
                 "type": "number",
-                "description": "Figure height in inches (default: 6)",
+                "description": "Figure height in inches; defaults to 6.",
             },
             "format": {
                 "type": "string",
                 "enum": ["png", "svg", "pdf"],
-                "description": "Output format (default: png)",
+                "description": "Output format when saving to output_path; defaults to png.",
             },
             "dpi": {
                 "type": "integer",
-                "description": "Image DPI (default: 100)",
+                "description": "Resolution in dots per inch; defaults to 100.",
             },
             "bins": {
                 "type": "integer",
-                "description": "Number of bins for histogram (default: 20)",
+                "description": "Number of bins for histogram charts; defaults to 20.",
             },
         },
         "required": ["chart_type", "data"],

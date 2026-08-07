@@ -73,6 +73,7 @@ class EncreResearchPrompt(EncrePromptTemplate):
         slash_commands: list[dict[str, Any]] | None = None,
         skill_summary: str = "",
         active_command: dict[str, Any] | None = None,
+        model: str = "",
     ) -> str:
         """Build the research system prompt from session context.
 
@@ -96,4 +97,5 @@ class EncreResearchPrompt(EncrePromptTemplate):
             slash_commands=slash_commands,
             skill_summary=skill_summary,
             active_command=active_command,
+            model=model,
         )

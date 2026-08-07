@@ -473,28 +473,34 @@ async def _apply_patch_execute(**kwargs: Any) -> str:
 EncreApplyPatchTool = build_tool(
     name="apply_patch",
     description=(
-        "Apply a unified diff (git-style) to the working tree. Supports "
-        "multi-file patches, new file creation, file deletion, renames, "
-        "and fuzzy hunk placement when line numbers drift by up to 200 "
-        "lines. Returns a JSON report listing each file outcome."
+        "Apply a unified git-style diff to the working tree across multiple "
+        "files at once. Use this instead of repeated file_edit calls when you "
+        "have a single multi-file patch to apply atomically. Supports new file "
+        "creation, file deletion, renames, and fuzzy hunk placement when line "
+        "numbers drift by up to 200 lines. Returns a JSON report listing each "
+        "file outcome. "
+        "TIP: Run with dry_run=true first to verify all hunks apply cleanly "
+        "before committing changes to disk. "
+        "AVOID: Generating patches from stale file content -- re-read source "
+        "files before constructing the diff to avoid context-mismatch failures."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "patch": {
                 "type": "string",
-                "description": "The unified diff text to apply.",
+                "description": "Unified diff text to apply (required). Must include --- / +++ markers and @@ hunk headers.",
             },
             "root": {
                 "type": "string",
                 "description": (
                     "Root directory the patch paths are relative to "
-                    "(default: current working directory)."
+                    "(optional, default: current working directory)."
                 ),
             },
             "dry_run": {
                 "type": "boolean",
-                "description": "Parse and check the patch without writing any files.",
+                "description": "Parse and check the patch without writing any files (optional, default false).",
             },
         },
         "required": ["patch"],

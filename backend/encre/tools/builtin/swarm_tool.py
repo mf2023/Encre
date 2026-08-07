@@ -201,14 +201,29 @@ async def _swarm_execute(**kwargs: Any) -> Any:
 EncreSwarmTool = build_tool(
     name="swarm",
     description=(
-        "Orchestrate a complex goal as a multi-agent swarm with role specialisation. "
-        "Decomposes the goal into a DAG of tasks, assigns each a specialised role "
-        "(architect/coder/reviewer/tester/researcher/debugger), executes with "
-        "dependency-aware concurrency, runs a reviewer gate on coder output, shares "
-        "context through a blackboard, and performs a consensus vote when multiple "
-        "agents produce results. Use this for large goals that benefit from role "
-        "specialisation and cross-agent verification. For simpler multi-step goals "
-        "without role specialisation, prefer the 'workflow' tool."
+        "Orchestrate a complex goal as a role-specialised multi-agent swarm "
+        "with built-in review and consensus.\n\n"
+        "WHAT: decomposes the goal into a DAG of tasks, assigns each a "
+        "specialised role (architect / coder / reviewer / tester / researcher "
+        "/ debugger), runs tasks with dependency-aware concurrency, gates "
+        "coder output through a reviewer, shares context via a blackboard, "
+        "and runs a proposal-vote consensus step when two or more agents "
+        "produce results.\n"
+        "WHEN to use: large goals that benefit from role specialisation and "
+        "cross-agent verification (e.g. ship a feature end-to-end with design "
+        "+ impl + review + test).\n"
+        "WHEN NOT to use: for simpler multi-step goals without role "
+        "specialisation prefer the 'workflow' tool; for independent parallel "
+        "sub-tasks with no review gate use the 'agent' tool.\n"
+        "TIPS: state the desired end result and acceptance criteria "
+        "explicitly; the planner infers roles from the goal, so a precise "
+        "goal yields a cleaner task decomposition.\n"
+        "PITFALLS: swarms cannot be spawned from inside a sub-agent (one "
+        "level of delegation only); swarms are heavier than workflows -- "
+        "don't use one for a 2-step task.\n"
+        "IMPORTANT: The goal MUST be written in English -- all swarm "
+        "participants think, reason, and respond in English for reliable "
+        "state matching and output parsing."
     ),
     input_schema={
         "type": "object",
@@ -217,7 +232,10 @@ EncreSwarmTool = build_tool(
                 "type": "string",
                 "description": (
                     "The complete goal to accomplish with a multi-agent swarm. "
-                    "Be specific about the desired end result."
+                    "MUST be written in English -- swarm participants think and "
+                    "respond in English for reliable parsing. Be specific about "
+                    "the desired end result, scope, and any acceptance criteria "
+                    "so the planner can assign the right roles."
                 ),
             },
         },

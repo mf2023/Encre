@@ -165,6 +165,7 @@ from encre.server.protocol import (
 )
 from encre.server.session_manager import SessionManager
 from encre.spec import EncreSpecEngine
+from encre.tools.builtin._encoding import decode_bytes
 from encre.tools.builtin.browser import set_cdp_url, set_search_engine_url, set_session_id
 from encre.utils.tokens import count_message_tokens
 
@@ -487,6 +488,42 @@ class EncreWSHandler:
             # so its ``command_instructions`` block is re-injected next run.
             self._restore_persisted_command(self._info)
         return self._info
+
+    def _build_automation_agent_config(self, mc: ModelConfig) -> dict[str, Any]:
+        """Build the per-job agent snapshot for an automation model."""
+        agent_config = {
+            "backend_type": mc.backend_type,
+            "api_key": mc.api_key,
+            "base_url": mc.base_url,
+            "model_id": mc.model_id,
+            "max_tokens": mc.max_tokens,
+        }
+        # Store current workspace path so the automation
+        # agent runs in the correct workspace context.
+        if self._workspace_path:
+            agent_config["workspace"] = self._workspace_path
+        return agent_config
+
+    def _resolve_automation_model(self, model_index: int) -> tuple[int, dict[str, Any] | None]:
+        """Resolve an automation job's model to an *enabled* model.
+
+        Returns ``(effective_index, agent_config)``. If the requested index is
+        disabled or out of range, the first enabled model is used so a job never
+        snapshots a disabled model. If no model is enabled at all, returns
+        ``(model_index, None)`` and execution falls back to the active model.
+        """
+        models = getattr(self._default_config, "models", None)
+        if models:
+            if 0 <= model_index < len(models) and getattr(models[model_index], "enabled", True):
+                return model_index, self._build_automation_agent_config(models[model_index])
+            for i, mc in enumerate(models):
+                if getattr(mc, "enabled", True):
+                    logger.info(
+                        "[automation] requested model_index=%d disabled/unavailable, "
+                        "falling back to enabled model index=%d", model_index, i,
+                    )
+                    return i, self._build_automation_agent_config(mc)
+        return model_index, None
 
     async def handle(self, ws) -> None:
         """Main per-connection message loop.
@@ -2700,7 +2737,7 @@ class EncreWSHandler:
                                     break
                                 term_info["buf"] += data
                                 try:
-                                    decoded = data.decode("utf-8", errors="replace")
+                                    decoded = decode_bytes(data)
                                 except Exception:
                                     decoded = data.decode("latin-1", errors="replace")
                                 await self._send(ws, "terminal_data", id=tid, data=decoded)
@@ -2906,8 +2943,8 @@ class EncreWSHandler:
                     self._info = info
                     self._current_session_id = sid
                     sess = info.agent.session
-                    removed, target_branch_id = sess.rollback_to(msg.branch_id, msg.message_id)
-                    if not removed and target_branch_id == msg.branch_id:
+                    removed, target_branch_id, target_found = sess.rollback_to(msg.branch_id, msg.message_id)
+                    if not target_found:
                         await self._send(ws, "error", message="Message not found", code="rollback_error",
                                          session_id=sid)
                         continue
@@ -2967,7 +3004,7 @@ class EncreWSHandler:
                         job_list.append({
                             "id": j.id,
                             "name": j.name,
-                            "prompt": j.prompt[:200],
+                            "prompt": j.prompt,
                             "cron": j.cron.to_expression() if j.cron else "",
                             "schedule_type": j.schedule_type.name,
                             "state": j.state.name,
@@ -2990,27 +3027,14 @@ class EncreWSHandler:
                         await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
                         continue
                     try:
-                        agent_config = None
-                        if self._default_config and 0 <= msg.model_index < len(self._default_config.models):
-                            mc = self._default_config.models[msg.model_index]
-                            agent_config = {
-                                "backend_type": mc.backend_type,
-                                "api_key": mc.api_key,
-                                "base_url": mc.base_url,
-                                "model_id": mc.model_id,
-                                "max_tokens": mc.max_tokens,
-                            }
-                        # Store current workspace path so the automation
-                        # agent runs in the correct workspace context.
-                        if agent_config is not None and self._workspace_path:
-                            agent_config["workspace"] = self._workspace_path
+                        effective_index, agent_config = self._resolve_automation_model(msg.model_index)
                         job_id = self._scheduler.schedule(
                             name=msg.name,
                             prompt=msg.prompt,
                             cron=msg.cron if msg.cron else "",
                             metadata={"tag": msg.tag} if msg.tag else {},
                             agent_config=agent_config,
-                            model_index=msg.model_index,
+                            model_index=effective_index,
                             push_gateways=list(msg.push_gateways),
                         )
                         await self._send(ws, "automation_job_created",
@@ -3051,25 +3075,14 @@ class EncreWSHandler:
                     if self._scheduler is None:
                         await self._send(ws, "error", message="Scheduler not available", code="no_scheduler")
                         continue
-                    agent_config = None
-                    if self._default_config and 0 <= msg.model_index < len(self._default_config.models):
-                        mc = self._default_config.models[msg.model_index]
-                        agent_config = {
-                            "backend_type": mc.backend_type,
-                            "api_key": mc.api_key,
-                            "base_url": mc.base_url,
-                            "model_id": mc.model_id,
-                            "max_tokens": mc.max_tokens,
-                        }
-                    if agent_config is not None and self._workspace_path:
-                        agent_config["workspace"] = self._workspace_path
+                    effective_index, agent_config = self._resolve_automation_model(msg.model_index)
                     ok = self._scheduler.update_job(
                         msg.job_id,
                         name=msg.name,
                         prompt=msg.prompt,
                         cron=msg.cron,
                         tag=msg.tag,
-                        model_index=msg.model_index,
+                        model_index=effective_index,
                         agent_config=agent_config,
                         push_gateways=list(msg.push_gateways),
                     )
@@ -3688,6 +3701,7 @@ class EncreWSHandler:
                 "id": f"{execution.job_id}_{execution.time}",
                 "job_id": execution.job_id,
                 "name": execution.name or (job.name if job else "Deleted automation"),
+                "prompt": job.prompt if job else "",
                 "tag": job.metadata.get("tag", "") if job else "",
                 "time": execution.time,
                 "state": execution.state,

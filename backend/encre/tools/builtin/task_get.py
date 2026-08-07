@@ -62,13 +62,24 @@ async def _task_get_execute(**kwargs: Any) -> str:
 
 EncreTaskGetTool = build_tool(
     name="task_get",
-    description="Get details of a specific task by ID",
+    description=(
+        "Get the details (name, type, status, description, result, error, "
+        "parent) of a single task by its ID.\n\n"
+        "WHEN to use: you have a task ID from task_create or task_list and "
+        "want a one-shot snapshot of its current state and any stored "
+        "result/error.\n"
+        "WHEN NOT to use: to wait for a running task to finish, use "
+        "task_output (it can block until completion); to enumerate many tasks, "
+        "use task_list.\n"
+        "TIP: the returned 'result' field is truncated to 500 chars in this "
+        "view -- use task_output for the full (up to 5000 char) payload."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "task_id": {
                 "type": "string",
-                "description": "The task ID to retrieve",
+                "description": "The unique ID of the task to retrieve (returned by task_create or shown in task_list).",
             },
         },
         "required": ["task_id"],

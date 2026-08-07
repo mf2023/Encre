@@ -81,11 +81,21 @@ pub fn sandbox_execute(
     #[cfg(target_os = "windows")]
     {
         cmd = std::process::Command::new("cmd.exe");
-        cmd.arg("/U");
         cmd.arg("/C");
         cmd.arg(command);
         use std::os::windows::process::CommandExt as _;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        // Do NOT pass /U (UTF-16 output): it only affects cmd built-ins,
+        // while external programs keep writing in the system ANSI code page
+        // (GBK on zh-CN), producing a mixed undecodable stream.  Instead we
+        // ask the common UTF-8-aware tools (python, git, node, …) to emit
+        // UTF-8 via environment hints and decode the rest with an ANSI
+        // code-page fallback chain.
+        cmd.env("PYTHONUTF8", "1");
+        cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("LANG", "C.UTF-8");
+        cmd.env("LC_ALL", "C.UTF-8");
+        cmd.env("GIT_OPTIONAL_LOCKS", "0");
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -343,26 +353,105 @@ fn _attach_windows_job(
 
 /// Decode subprocess output bytes into a String.
 ///
-/// On Windows ``cmd.exe /U`` produces UTF-16LE; detect that.
-/// Everywhere else assume UTF-8 with lossy fallback.
+/// Attempt order:
+/// 1. UTF-16LE probe — legacy ``cmd /U`` output; rejected when the decoded
+///    text contains NUL characters (a false positive on ANSI data).
+/// 2. Strict UTF-8 — tools told to emit UTF-8 via ``PYTHONUTF8`` / ``LANG``,
+///    and all POSIX platforms.
+/// 3. The Windows ANSI code page via ``GetACP()`` — what locale-driven
+///    programs actually write (936 zh-CN, 932 ja-JP, 949 ko-KR, 1251 ru-RU,
+///    1252 Western Europe, 65001 UTF-8, …).
+/// 4. A set of common legacy code pages as a safety net for children that
+///    hard-code a different code page than the system one.
+/// 5. Lossy UTF-8 fallback so the caller always receives a string.
 fn decode_output(raw: &[u8]) -> String {
-    if cfg!(target_os = "windows") {
-        let looks_utf16 = raw.len() >= 2
-            && raw.len() % 2 == 0
-            && {
-                let probe = raw.len().min(80);
-                (0..probe).step_by(2).all(|i| raw[i + 1] == 0)
-            };
+    if raw.is_empty() {
+        return String::new();
+    }
+
+    // ── 1. UTF-16LE probe ──────────────────────────────────────────
+    if raw.len() >= 2 && raw.len() % 2 == 0 {
+        let probe = (raw.len() / 2).min(80); // sample up to 80 code units
+        let looks_utf16 = (0..probe).all(|i| raw[i * 2 + 1] == 0);
         if looks_utf16 {
             let u16_words: Vec<u16> = raw
                 .windows(2)
                 .step_by(2)
                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                 .collect();
-            return String::from_utf16_lossy(&u16_words);
+            let s = String::from_utf16_lossy(&u16_words);
+            if !s.contains('\0') {
+                return s;
+            }
         }
     }
+
+    // ── 2. Strict UTF-8 ────────────────────────────────────────────
+    if let Ok(s) = std::str::from_utf8(raw) {
+        return s.to_owned();
+    }
+
+    // ── 3 + 4. Windows ANSI code page, then legacy code pages ─────
+    #[cfg(target_os = "windows")]
+    {
+        let mut cps = vec![get_acp()];
+        cps.extend([936u32, 54936u32, 932u32, 949u32, 950u32, 1251u32, 1252u32]);
+        for cp in cps {
+            if let Some(s) = decode_ansi_cp(raw, cp) {
+                return s;
+            }
+        }
+    }
+
+    // ── 5. Lossy fallback ──────────────────────────────────────────
     String::from_utf8_lossy(raw).into_owned()
+}
+
+/// Return the system ANSI code page (e.g. 936 on zh-CN, 932 on ja-JP).
+#[cfg(target_os = "windows")]
+fn get_acp() -> u32 {
+    unsafe { windows_sys::Win32::Globalization::GetACP() }
+}
+
+/// Decode bytes using a Windows ANSI code page via MultiByteToWideChar.
+///
+/// Returns ``None`` when the byte sequence is not valid in that code page,
+/// so the caller can try the next one.
+#[cfg(target_os = "windows")]
+fn decode_ansi_cp(raw: &[u8], codepage: u32) -> Option<String> {
+    use windows_sys::Win32::Globalization::MultiByteToWideChar;
+
+    // MB_ERR_INVALID_CHARS (0x00000008) makes the API reject invalid
+    // sequences instead of silently substituting '?'.
+    const MB_ERR_INVALID_CHARS: u32 = 0x0000_0008;
+
+    unsafe {
+        let needed = MultiByteToWideChar(
+            codepage,
+            MB_ERR_INVALID_CHARS,
+            raw.as_ptr(),
+            raw.len() as i32,
+            std::ptr::null_mut(),
+            0,
+        );
+        if needed <= 0 {
+            return None;
+        }
+        let mut buf = vec![0u16; needed as usize];
+        let written = MultiByteToWideChar(
+            codepage,
+            MB_ERR_INVALID_CHARS,
+            raw.as_ptr(),
+            raw.len() as i32,
+            buf.as_mut_ptr(),
+            needed,
+        );
+        if written <= 0 {
+            return None;
+        }
+        buf.truncate(written as usize);
+        Some(String::from_utf16_lossy(&buf))
+    }
 }
 
 /// Read a file inside the sandbox (path-bounded).

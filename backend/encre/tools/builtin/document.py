@@ -340,51 +340,50 @@ def _doc_convert(source: str, target: str) -> str:
 
 EncreDocumentTool = build_tool(
     name="document",
-    description="""Read, create, and edit Word (.docx) documents.
-
-Actions:
-- read: Read document content with formatting
-- extract_text: Extract plain text from document
-- info: Get document metadata (author, title, dates, stats)
-- create: Create a new document with markdown-style content
-- add_text: Append text/headings to an existing document
-- add_table: Add a table to the document
-- list_tables: List all tables in the document
-- convert: Convert .docx to .txt or .md
-
-Requires: pip install python-docx""",
+    description=(
+        "Read, create, edit, and convert Microsoft Word (.docx) documents via "
+        "python-docx, including paragraphs, headings, and tables. "
+        "Use this for actions such as `read` (formatted dump), `extract_text` (plain "
+        "text), `info` (metadata), `create`/`add_text`/`add_table` (write), "
+        "`list_tables`, or `convert` to .txt/.md. "
+        "Do NOT use this for PDFs (use the pdf tool), spreadsheets (use spreadsheet), "
+        "or presentations (use presentation); and avoid it for raw .odt editing. "
+        "Tips: in `create`/`add_text`, use markdown-style prefixes (#, ##, ###, - or *) "
+        "to trigger headings and bullet lists; pass `data` as a 2D array for tables. "
+        "Pitfalls: requires python-docx installed; `convert` only supports .txt and .md."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["read", "extract_text", "info", "create", "add_text", "add_table", "list_tables", "convert"],
-                "description": "Operation to perform",
+                "description": "Document operation: read (formatted), extract_text (plain), info (metadata), create (new file), add_text (append), add_table (append table), list_tables (preview tables), convert (docx->txt/md).",
             },
             "file_path": {
                 "type": "string",
-                "description": "Path to the .docx file",
+                "description": "Path to the .docx file to read or modify; required for all actions except convert.",
             },
             "content": {
                 "type": "string",
-                "description": "Document content (markdown-style: # heading, - list)",
+                "description": "Body for the create action; supports markdown-style headings (#, ##, ###) and bullet lists (- or *).",
             },
             "text": {
                 "type": "string",
-                "description": "Text content to add (supports # ## ### for headings)",
+                "description": "Text to append via add_text; lines starting with #, ##, ### become headings.",
             },
             "data": {
                 "type": "array",
                 "items": {"type": "array"},
-                "description": "Table data as 2D array: [[header1, header2], [row1col1, row1col2]]",
+                "description": "Table rows for add_table; first row is treated as headers when present (e.g. [[\"Name\",\"Age\"],[\"Ada\",36]]).",
             },
             "source": {
                 "type": "string",
-                "description": "Source file path for convert action",
+                "description": "Source .docx path for the convert action.",
             },
             "target": {
                 "type": "string",
-                "description": "Target file path for convert action (.txt or .md)",
+                "description": "Destination path for convert; extension must be .txt or .md.",
             },
         },
         "required": ["action"],

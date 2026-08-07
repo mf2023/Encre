@@ -175,10 +175,10 @@ async def _file_edit_execute(**kwargs: Any) -> str:
     """Apply search-and-replace edits to an existing file. Supports single and multi-hunk edits."""
     file_path = kwargs.get("file_path", "")
     if not file_path:
-        return "Error: 缺少 file_path 参数 (file_path is required)"
+        return "Error: file_path is required"
     file_path = remap_tool_path(file_path)
     if not file_path:
-        return "Error: 路径被沙箱拒绝 (Path rejected by sandbox)"
+        return "Error: Path rejected by sandbox"
 
     dry_run = bool(kwargs.get("dry_run", False))
     tool_call_id = str(kwargs.get("tool_call_id", ""))
@@ -186,11 +186,11 @@ async def _file_edit_execute(**kwargs: Any) -> str:
     edits_param = kwargs.get("edits")
     if edits_param:
         if not isinstance(edits_param, list):
-            return "Error: 'edits' 必须是数组 ('edits' must be an array)"
+            return "Error: 'edits' must be an array"
         edits = []
         for i, e in enumerate(edits_param):
             if not isinstance(e, dict) or "old_str" not in e or "new_str" not in e:
-                return f"Error: edits[{i}] 必须包含 'old_str' 和 'new_str' (must have 'old_str' and 'new_str')"
+                return f"Error: edits[{i}] must contain 'old_str' and 'new_str'"
             edits.append(
                 (
                     str(e["old_str"]),
@@ -202,17 +202,17 @@ async def _file_edit_execute(**kwargs: Any) -> str:
         old_str = kwargs.get("old_str")
         new_str = kwargs.get("new_str")
         if old_str is None or new_str is None:
-            return "Error: 请提供 'edits' 或同时提供 'old_str' 和 'new_str' (provide either 'edits' or both 'old_str' and 'new_str')"
+            return "Error: provide either 'edits' or both 'old_str' and 'new_str'"
         edits = [(str(old_str), str(new_str), bool(kwargs.get("replace_all", False)))]
 
     try:
         original = _native_read(file_path, 0, 0)
     except FileNotFoundError:
-        return f"Error: 文件未找到 (File not found): {file_path}"
+        return f"Error: File not found: {file_path}"
     except PermissionError:
-        return f"Error: 权限不足，无法读取 (Permission denied): {file_path}"
+        return f"Error: Permission denied reading file: {file_path}"
     except Exception as e:
-        return f"Error: 读取文件出错 (Error reading file): {e}"
+        return f"Error reading file: {e}"
 
     content = original
     report: list[str] = []
@@ -220,7 +220,7 @@ async def _file_edit_execute(**kwargs: Any) -> str:
         try:
             content, count, note = _apply_one_edit(content, old_str, new_str, replace_all)
         except ValueError as exc:
-            return f"Error: 编辑 #{i + 1} 失败 (Edit #{i + 1} failed): {exc}"
+            return f"Error: Edit #{i + 1} failed: {exc}"
         report.append(f"edit #{i + 1}: {count} replacement(s) ({note})")
 
     if content == original:
@@ -265,9 +265,9 @@ async def _file_edit_execute(**kwargs: Any) -> str:
     try:
         _native_write(file_path, content)
     except PermissionError:
-        return f"Error: 权限不足，无法写入 (Permission denied): {file_path}"
+        return f"Error: Permission denied writing file: {file_path}"
     except Exception as e:
-        return f"Error: 写入文件出错 (Error writing file): {e}"
+        return f"Error writing file: {e}"
 
     out = (
         f"Applied {len(edits)} edit(s) to {file_path}.\n"
@@ -284,41 +284,44 @@ async def _file_edit_execute(**kwargs: Any) -> str:
 EncreFileEditTool = build_tool(
     name="file_edit",
     description=(
-        "Apply search-and-replace edits to an existing file. "
-        "The file must already exist — use file_write to create new files.\n\n"
-        "**IMPORTANT**: You must read the file first via file_read before editing it. "
-        "If you haven't read it yet, call file_read first. If you already read it, "
-        "the content is in context — do not re-read.\n\n"
-        "Supports: unique single-match (default), replace_all for multiple matches, "
+        "Apply search-and-replace edits to an existing file. The file must "
+        "already exist -- use file_write to create new files. Prefer this over "
+        "sed/awk in bash for targeted text changes -- it is safer (requires "
+        "read-before-edit), returns a diff, and supports dry_run previews. "
+        "Supports unique single-match (default), replace_all for multiple matches, "
         "multi-hunk via the 'edits' array, and whitespace-tolerant fallback. "
-        "Edits apply sequentially in the order given."
+        "Edits apply sequentially in the order given. "
+        "IMPORTANT: Read the file via file_read first. If you already read it, "
+        "the content is in context -- do not re-read. "
+        "TIP: Include enough surrounding context in old_str to make the match unique. "
+        "AVOID: Passing old_str that matches multiple locations without replace_all=true."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Path to the file to edit (filename, relative path, or absolute path within the workspace)",
+                "description": "Path to the file to edit: filename, relative path, or absolute path within the workspace (required).",
             },
             "old_str": {
                 "type": "string",
                 "description": (
-                    "The exact text to search for. Required for single-edit "
-                    "mode. Ignored if 'edits' is provided."
+                    "Exact text to search for. Required for single-edit mode. "
+                    "Ignored when 'edits' is provided."
                 ),
             },
             "new_str": {
                 "type": "string",
                 "description": (
-                    "The replacement text. Required for single-edit mode. "
-                    "Ignored if 'edits' is provided."
+                    "Replacement text. Required for single-edit mode. "
+                    "Ignored when 'edits' is provided."
                 ),
             },
             "replace_all": {
                 "type": "boolean",
                 "description": (
-                    "When true, replace every occurrence of old_str. When "
-                    "false (default), the match must be unique."
+                    "When true, replace every occurrence of old_str. "
+                    "When false (default), the match must be unique or the edit fails."
                 ),
             },
             "edits": {
@@ -326,8 +329,8 @@ EncreFileEditTool = build_tool(
                 "description": (
                     "List of edit hunks to apply sequentially. Each item is "
                     "an object with 'old_str', 'new_str', and optional "
-                    "'replace_all'. When provided, 'old_str'/'new_str' at "
-                    "the top level are ignored."
+                    "'replace_all'. When provided, top-level 'old_str'/'new_str' "
+                    "are ignored."
                 ),
                 "items": {
                     "type": "object",
@@ -343,21 +346,18 @@ EncreFileEditTool = build_tool(
                 "type": "boolean",
                 "default": False,
                 "description": (
-                    "When true, compute the diff but do NOT write the "
-                    "file.  The tool returns a JSON-encoded EditProposal "
-                    "that the desktop UI renders as an inline diff with "
-                    "Accept / Reject buttons.  This is what gives Codex-"
-                    "class review-before-apply editing."
+                    "When true, compute the diff but do NOT write the file. "
+                    "Returns a JSON-encoded EditProposal that the desktop UI "
+                    "renders as an inline diff with Accept/Reject buttons."
                 ),
             },
             "tool_call_id": {
                 "type": "string",
                 "description": (
-                    "Optional originating tool-call id.  When provided "
-                    "together with dry_run=true, the returned proposal "
-                    "carries this id so the UI can route the user's "
-                    "accept/reject decision back to the right pending "
-                    "request."
+                    "Optional originating tool-call id. When provided with "
+                    "dry_run=true, the returned proposal carries this id so "
+                    "the UI can route the accept/reject decision back to the "
+                    "right pending request."
                 ),
             },
         },

@@ -23,14 +23,14 @@
 
 from __future__ import annotations
 
-"""Native acceleration bridge 鈥?all model-facing operations are Rust-only.
+"""Native acceleration bridge -- all model-facing operations are Rust-only.
 
 All functions are re-exported directly from the compiled ``encre._native``
 Rust extension.  If the extension is not installed, Python's normal
-``ModuleNotFoundError`` applies 鈥?build it with::
+``ModuleNotFoundError`` applies -- build it with::
 
     cd native && cargo build --release
-    # copy target/release/_native.{dll,so} 鈫?backend/encre/_native.pyd
+    # copy target/release/_native.{dll,so} -> backend/encre/_native.pyd
 """
 
 import encre._native as _native

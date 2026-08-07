@@ -346,14 +346,28 @@ async def _desktop_execute(**kwargs: Any) -> str:
 EncreDesktopTool = build_tool(
     name="desktop",
     description=(
-        "Cross-platform desktop automation: screenshot (with DPI scale info), "
-        "click, type, scroll, drag, hotkey, locate image on screen, and on "
-        "Windows walk the UI Automation accessibility tree. Mouse events "
-        "auto-translate between physical and logical coordinate systems on "
-        "HiDPI displays -- pass coord_space='physical' (default 'auto') to "
-        "click directly with coordinates read off a screenshot. "
-        "Use 'get_elements' to extract visible text + bounding boxes via "
-        "OCR so the model can see what is on screen without requiring vision."
+        "WHAT: Cross-platform desktop automation -- screenshots (with DPI "
+        "scale info), click, type, scroll, drag, hotkey, locate image on "
+        "screen, and on Windows walk the UI Automation accessibility tree. "
+        "WHEN: Use for OS-level UI automation of native applications, "
+        "taking screenshots to inspect what is on screen, clicking UI that "
+        "has no CSS selectors, or reading visible text via OCR. "
+        "WHEN NOT: Use `computer_use` for a unified API across browser and "
+        "desktop, `browser` for in-page web actions, or `vlm_computer_use` "
+        "when the model should delegate pixel-level decisions to a vision "
+        "model. "
+        "TIPS: Use `get_elements` to OCR visible text + bounding boxes so "
+        "the model can see what is on screen without vision; pass "
+        "coord_space='physical' (default 'auto') to click directly with "
+        "coordinates read off a screenshot; call `accessibility_tree` on "
+        "Windows for structured element data instead of OCR. "
+        "PITFALLS: HiDPI displays require the right coord_space -- clicking "
+        "with logical coords while in physical space (or vice versa) lands "
+        "in the wrong spot. Coordinates are screen-relative, so if a window "
+        "moves between screenshot and click the click lands in the wrong "
+        "place. `accessibility_tree` and `find_element_by_name` are "
+        "Windows-only and return empty on other platforms; OCR may miss "
+        "stylised fonts or low-contrast text."
     ),
     input_schema={
         "type": "object",
@@ -386,105 +400,175 @@ EncreDesktopTool = build_tool(
                     "get_elements",
                     "take_screenshot_png",
                 ],
-                "description": "Desktop action to perform",
+                "description": (
+                    "Required. Desktop action to perform. Read-only "
+                    "actions (screenshot, get_screen_size, "
+                    "get_cursor_position, accessibility_tree, "
+                    "find_element_by_name, get_elements, find_text, "
+                    "locate_on_screen, take_screenshot_png, "
+                    "clipboard_get, wait) are concurrency-safe; "
+                    "mutating actions are not."
+                ),
             },
             "x": {
                 "type": "integer",
-                "description": "X coordinate (for click, move, drag start, scroll)",
+                "description": (
+                    "X coordinate for click, double_click, right_click, "
+                    "triple_click, move_mouse, drag start, scroll anchor, "
+                    "file_drop target. Coordinate space is governed by "
+                    "coord_space."
+                ),
             },
             "y": {
                 "type": "integer",
-                "description": "Y coordinate (for click, move, drag start, scroll)",
+                "description": (
+                    "Y coordinate, same coordinate space as `x`. Required "
+                    "alongside `x` for the actions that take `x`."
+                ),
             },
             "x2": {
                 "type": "integer",
-                "description": "Target X coordinate (for drag end)",
+                "description": (
+                    "End X coordinate for drag (drop target). Required "
+                    "for `drag` alongside `y2`."
+                ),
             },
             "y2": {
                 "type": "integer",
-                "description": "Target Y coordinate (for drag end)",
+                "description": (
+                    "End Y coordinate for drag (drop target). Required "
+                    "for `drag` alongside `x2`."
+                ),
             },
             "coord_space": {
                 "type": "string",
                 "enum": ["auto", "physical", "logical"],
                 "description": (
-                    "Coordinate system of (x, y). 'physical' = pixels of the "
-                    "screenshot, 'logical' = pyautogui's scaled coords, "
-                    "'auto' (default) detects from value magnitude."
+                    "Coordinate system of (x, y). 'physical' = pixels of "
+                    "the screenshot, 'logical' = pyautogui's scaled "
+                    "coords, 'auto' (default) detects from value "
+                    "magnitude."
                 ),
             },
             "text": {
                 "type": "string",
-                "description": "Text to type (for type_text action)",
+                "description": (
+                    "Text to type for type_text, or clipboard content for "
+                    "clipboard_set."
+                ),
             },
             "key": {
                 "type": "string",
-                "description": "Key name to press (enter, tab, escape, f1, etc.)",
+                "description": (
+                    "Single key name for press_key (e.g. 'enter', 'tab', "
+                    "'escape', 'f1'). Use `keys` for combinations."
+                ),
             },
             "keys": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Key combination (e.g. [\"ctrl\", \"c\"] for copy)",
+                "description": (
+                    "Ordered key list for hotkey, pressed sequentially "
+                    "then released in reverse (e.g. [\"ctrl\", \"c\"] "
+                    "for copy)."
+                ),
             },
             "clicks": {
                 "type": "integer",
-                "description": "Scroll amount -- positive=up, negative=down",
+                "description": (
+                    "Scroll amount for scroll. Positive scrolls up, "
+                    "negative scrolls down (note: opposite sign of "
+                    "computer_use's scroll_amount)."
+                ),
             },
             "template": {
                 "type": "string",
-                "description": "Base64-encoded PNG image to locate on screen",
+                "description": (
+                    "Base64-encoded PNG image to locate on screen via "
+                    "template matching. Required for locate_on_screen."
+                ),
             },
             "confidence": {
                 "type": "number",
-                "description": "Confidence threshold for locate_on_screen (0.0-1.0, default 0.9)",
+                "description": (
+                    "locate_on_screen: minimum match confidence in "
+                    "[0.0, 1.0]. Matches below this threshold are "
+                    "discarded. Default 0.9."
+                ),
             },
             "max_depth": {
                 "type": "integer",
-                "description": "accessibility_tree: max recursion depth (default 6)",
+                "description": (
+                    "accessibility_tree: maximum recursion depth from "
+                    "the desktop root. Default 6."
+                ),
             },
             "max_nodes": {
                 "type": "integer",
-                "description": "accessibility_tree: max nodes returned (default 500)",
+                "description": (
+                    "accessibility_tree: cap on number of nodes "
+                    "returned. Default 500."
+                ),
             },
             "name": {
                 "type": "string",
-                "description": "find_element_by_name: substring match against accessible name",
+                "description": (
+                    "find_element_by_name: substring match against the "
+                    "accessible name. Case-insensitive."
+                ),
             },
             "control_type": {
                 "type": "string",
-                "description": "find_element_by_name: filter by UIA control type (e.g. ButtonControl)",
+                "description": (
+                    "find_element_by_name: filter by UIA control type "
+                    "(e.g. ButtonControl, EditControl). Optional."
+                ),
             },
             "min_text_length": {
                 "type": "integer",
-                "description": "get_elements: ignore text shorter than this (default 2, filter noise)",
+                "description": (
+                    "get_elements: ignore OCR text fragments shorter "
+                    "than this to filter noise. Default 2."
+                ),
             },
             "ms": {
                 "type": "integer",
-                "description": "wait: milliseconds to sleep before returning",
+                "description": (
+                    "wait: milliseconds to sleep before returning. Use "
+                    "short values for animation settle, longer for "
+                    "loading states."
+                ),
             },
             "paths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "file_drop: list of absolute file paths to drop on (x, y)",
+                "description": (
+                    "file_drop: list of absolute file paths to drop on "
+                    "(x, y). Required for file_drop."
+                ),
             },
             "button": {
                 "type": "string",
                 "enum": ["left", "middle", "right"],
-                "description": "Mouse button (for click / click_text)",
+                "description": (
+                    "Mouse button for click / click_text. Default 'left'."
+                ),
             },
             "fuzzy": {
                 "type": "boolean",
                 "description": (
-                    "click_text / find_text: when true, treat the query as a "
-                    "sequence of whitespace-separated tokens that must all "
-                    "appear in order inside the matched text"
+                    "click_text / find_text: when true, treat the query "
+                    "as a sequence of whitespace-separated tokens that "
+                    "must all appear in order inside the matched text. "
+                    "Default false."
                 ),
             },
             "occurrence": {
                 "type": "integer",
                 "description": (
-                    "click_text / find_text: 1-based index of the match to "
-                    "click when the same text appears multiple times"
+                    "click_text / find_text: 1-based index of the match "
+                    "to use when the same text appears multiple times. "
+                    "Default 1."
                 ),
             },
         },

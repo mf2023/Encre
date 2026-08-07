@@ -96,22 +96,32 @@ async def _image_execute(**kwargs: Any) -> str:
 
 EncreImageTool = build_tool(
     name="image",
-    description="Read and analyze image files (format, dimensions, EXIF, OCR text)",
+    description=(
+        "Inspect, OCR, or convert image files using Pillow (and pytesseract for OCR). "
+        "Use this for `info` (format/dimensions/EXIF as JSON), `ocr` (extract printed "
+        "text from an image), or `convert` (re-encode to a different format). "
+        "Do NOT use this to generate images from prompts (use generate_image), edit "
+        "pixels/apply filters, or handle PDF pages (use pdf). "
+        "Tips: for `convert`, set `options.format` (e.g. 'PNG', 'JPEG') and optionally "
+        "`options.output` for a custom output path. "
+        "Pitfalls: OCR requires the pytesseract Python package plus a system-installed "
+        "Tesseract binary; otherwise it returns an install hint."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["info", "ocr", "convert"],
-                "description": "Action to perform on the image",
+                "description": "Image operation: info (format/size/EXIF JSON), ocr (text extraction via pytesseract), or convert (re-encode the image).",
             },
             "file_path": {
                 "type": "string",
-                "description": "Path to the image file",
+                "description": "Path to the source image file (e.g. PNG, JPEG, WEBP).",
             },
             "options": {
                 "type": "object",
-                "description": "Additional options (e.g. convert format target)",
+                "description": "Options for the convert action. Keys: 'format' (target format string, e.g. 'PNG'; defaults to 'PNG'), 'output' (output path; defaults to '<base>_converted.<ext>').",
             },
         },
         "required": ["action", "file_path"],

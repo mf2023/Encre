@@ -147,6 +147,7 @@ from encre.gateway.platforms.base import (
 )
 
 from encre.gateway.platforms.helpers import strip_markdown
+from encre.tools.builtin._encoding import decode_bytes
 
 
 
@@ -2090,7 +2091,7 @@ from encre._subprocess_compat import windows_hide_flags
 
                     break
 
-                logger.info("[photon-sidecar] %s", line.decode("utf-8", "replace").rstrip())
+                logger.info("[photon-sidecar] %s", decode_bytes(line).rstrip())
 
         except Exception as e:  # pragma: no cover - defensive
 

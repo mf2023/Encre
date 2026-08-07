@@ -240,18 +240,39 @@ async def _workflow_execute(**kwargs: Any) -> Any:
 EncreWorkflowTool = build_tool(
     name="workflow",
     description=(
-        "Execute a complex, multi-step goal by orchestrating sub-agent tasks in a DAG. "
-        "Use this when the goal requires multiple independent or sequential steps, "
-        "like building a full app, researching a topic with multiple angles, or "
-        "refactoring a codebase. Each step runs as a fully-capable sub-agent."
+        "Execute a complex, multi-step goal by auto-decomposing it into a DAG "
+        "of sub-tasks and running each as a fully-capable sub-agent in "
+        "dependency order.\n\n"
+        "WHEN to use: the goal has multiple sequential or parallel steps "
+        "without needing role specialisation -- e.g. build a full app, "
+        "research a topic from several angles, or refactor a codebase across "
+        "files. Tasks with satisfied dependencies run concurrently.\n"
+        "WHEN NOT to use: for a single step, just do it inline; for "
+        "independent parallel sub-tasks you can describe yourself, use the "
+        "'agent' tool with a `tasks` array; for role-specialised review and "
+        "consensus use the 'swarm' tool.\n"
+        "TIPS: state the end result and any ordering constraints explicitly "
+        "-- the planner builds the DAG from the goal text; each sub-agent "
+        "only sees its own task prompt, so include enough context in the "
+        "goal for the planner to scope each step.\n"
+        "PITFALLS: a failed dependency skips its dependents; the planner "
+        "cannot read your mind -- vague goals yield vague task splits.\n"
+        "IMPORTANT: The goal MUST be written in English -- all sub-agents "
+        "think, reason, and respond in English for reliable state matching "
+        "and output parsing."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "goal": {
                 "type": "string",
-                "description": "The complete goal to accomplish. Be specific about what "
-                               "the end result should look like.",
+                "description": (
+                    "The complete goal to accomplish. MUST be written in "
+                    "English -- sub-agents think and respond in English for "
+                    "reliable parsing. Be specific about what the end result "
+                    "should look like and any ordering constraints between "
+                    "steps; the planner decomposes this into the task DAG."
+                ),
             },
         },
         "required": ["goal"],

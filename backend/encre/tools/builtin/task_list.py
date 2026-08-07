@@ -62,14 +62,24 @@ async def _task_list_execute(**kwargs: Any) -> str:
 
 EncreTaskListTool = build_tool(
     name="task_list",
-    description="List all tasks with optional status filter",
+    description=(
+        "List all tasks (or those matching a status filter), each shown with "
+        "an ID, name, and status icon.\n\n"
+        "WHEN to use: discover what tasks exist, find the ID of a task you "
+        "forgot, or check the spread of pending/running/completed work.\n"
+        "WHEN NOT to use: for the full details of one known task use task_get; "
+        "to wait for a specific running task use task_output.\n"
+        "TIPS: pass a status filter (e.g. 'running') to focus on actionable "
+        "work; the IDs returned here are inputs to task_get/task_output/"
+        "task_stop."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "status": {
                 "type": "string",
                 "enum": ["pending", "running", "completed", "failed", "killed"],
-                "description": "Filter by status",
+                "description": "Optional status filter. Omit to list tasks in every state. Common values: 'running' to find in-flight work, 'failed' to find tasks needing attention.",
             },
         },
     },

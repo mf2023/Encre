@@ -31,6 +31,7 @@ import asyncio
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 
 async def _docker_execute(**kwargs: Any) -> str:
@@ -69,9 +70,9 @@ async def _docker_execute(**kwargs: Any) -> str:
             proc.kill()
             await proc.wait()
             return "Error: Docker command timed out after 300 seconds"
-        output = stdout.decode("utf-8", errors="replace") if stdout else ""
+        output = decode_bytes(stdout) if stdout else ""
         if stderr:
-            err_text = stderr.decode("utf-8", errors="replace")
+            err_text = decode_bytes(stderr)
             if err_text:
                 output += "\n" + err_text
         if proc.returncode and proc.returncode != 0:
@@ -86,8 +87,16 @@ async def _docker_execute(**kwargs: Any) -> str:
 EncreDockerTool = build_tool(
     name="docker",
     description=(
-        "Manage Docker containers, images, and compose stacks. "
-        "Note: this tool has direct container access and should be used carefully."
+        "Run Docker CLI commands to build, run, inspect, or tear down containers and "
+        "images, including compose orchestration. "
+        "Use this for local container workflows such as `ps`, `logs`, `run`, `build`, "
+        "`pull`, `push`, `stop`, `rm`, `rmi`, or `compose` invocations. "
+        "Do NOT use this for Kubernetes orchestration, remote registry browsing, or "
+        "long-running service logs — prefer a dedicated k8s/SSH tool. "
+        "Tips: pass flags verbatim through `options` (e.g. \"-d -p 8080:80\"); combine "
+        "with `image_or_container` to target the named image or container. "
+        "Pitfalls: the command runs with a 300s timeout so heavy builds/pulls may be "
+        "killed; destructive ops (rm, rmi, stop, compose down) are flagged destructive."
     ),
     input_schema={
         "type": "object",
@@ -95,15 +104,15 @@ EncreDockerTool = build_tool(
             "command": {
                 "type": "string",
                 "enum": ["ps", "run", "stop", "logs", "build", "pull", "push", "rm", "rmi", "compose"],
-                "description": "Docker command to execute",
+                "description": "The Docker subcommand to execute (e.g. \"ps\" to list containers, \"build\" to build an image, \"compose\" to drive a compose project).",
             },
             "image_or_container": {
                 "type": "string",
-                "description": "Image or container name (for run/stop/logs/rm)",
+                "description": "Name or ID of the target image (for run/build/pull/push/rmi) or container (for stop/logs/rm).",
             },
             "options": {
                 "type": "string",
-                "description": "Additional CLI options and flags",
+                "description": "Whitespace-separated CLI flags appended to the subcommand (e.g. \"-d --restart unless-stopped -p 8080:80\").",
             },
         },
         "required": ["command"],

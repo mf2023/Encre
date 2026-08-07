@@ -51,6 +51,7 @@ from encre.loop import (
     _is_reference_tool,
     _permission_reason,
     _tool_retry_allowed,
+    build_verify_instruction,
 )
 from encre.recovery import RetryableExecutor
 from encre.sandbox.types import SandboxResult
@@ -572,7 +573,11 @@ class ToolPipeline:
                     proposal_emitted = True
                     yield event
                 if proposal_emitted and not loop._plan_decision:
-                    plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
+                    if loop._plan_decision_timed_out:
+                        plan_err = ("Plan approval timed out with no decision. "
+                                    "Proceed carefully, or present a smaller, clearer proposal.")
+                    else:
+                        plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
                     yield create_tool_result(id=p["client_id"], content=plan_err, is_error=True)
                     loop.session.add_tool_result(p["id"], plan_err, is_error=True, client_id=p["client_id"])
                     loop.telemetry.record_tool_call(tool_name=p["name"], latency_ms=0, success=False, error_message=plan_err)
@@ -786,7 +791,7 @@ class ToolPipeline:
         if not p["is_error"] and p["name"] in _WRITE_TOOL_NAMES:
             fp = _extract_file_path(p["name"], p["result"])
             if fp:
-                p["result"] += f"\n\n[VERIFY] Please verify the changes to `{fp}` are correct by reading the file."
+                p["result"] += "\n\n" + build_verify_instruction(fp)
 
         if p["is_error"]:
             hint = loop._get_recovery_hint(p["name"], p["result"])

@@ -30,9 +30,16 @@ RetryRecord, record_tool_call, record_turn, record_retry, get_summary, flush,
 reset, and disabled telemetry. This file adds edge case and comprehensive tests.
 """
 
+import os
+import tempfile
 import time
 
 from encre.telemetry import EncreTelemetry, RetryRecord, ToolCallRecord, TurnRecord
+
+# Redirect telemetry data to a temp directory so tests never pollute
+# the real production telemetry directory (~/.dunimd/encre/telemetry/).
+_test_telemetry_dir = tempfile.mkdtemp(prefix="encre_test_telemetry_")
+os.environ["ENCRE_DATA_DIR"] = _test_telemetry_dir
 
 # ── Edge Cases: Empty Telemetry ──────────────────────────────────────────
 

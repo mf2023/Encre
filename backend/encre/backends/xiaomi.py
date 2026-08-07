@@ -56,11 +56,10 @@ class XiaomiBackend(OpenAISSEBackend):
 
     Xiaomi's MiMo models use the standard DeepSeek-style thinking
     envelope: ``{"thinking": {"type": "enabled"}}`` to enable thinking
-    and ``{"thinking": {"type": "disabled"}}`` to disable it.  The
-    default :meth:`_thinking_request_param` from
-    :class:`OpenAISSEBackend` therefore already matches what the API
-    expects.  ``mimo-v2.5-pro``, ``mimo-v2.5``, ``mimo-v2-pro`` and
-    ``mimo-v2-omni`` think by default; ``mimo-v2-flash`` has thinking
+    and ``{"thinking": {"type": "disabled"}}`` to disable it, optionally
+    combined with a ``reasoning_effort`` (low/medium/high) to control
+    reasoning depth.  ``mimo-v2.5-pro``, ``mimo-v2.5``, ``mimo-v2-pro``
+    and ``mimo-v2-omni`` think by default; ``mimo-v2-flash`` has thinking
     off by default but can be toggled with the same parameter.
 
     For locally-served MiMo models (SGLang deployment) the parameter
@@ -81,6 +80,24 @@ class XiaomiBackend(OpenAISSEBackend):
             # Fall back to Xiaomi MiMo's OpenAI-compatible endpoint default when no URL is supplied.
             base_url = self.DEFAULT_BASE_URL
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
+
+    def _thinking_request_param(self) -> dict[str, Any] | None:
+        """Return the provider-specific parameter that enables thinking.
+
+        MiMo accepts the DeepSeek-style thinking envelope together with an
+        optional ``reasoning_effort`` (low/medium/high).  We keep the
+        envelope so thinking can be toggled, and add ``reasoning_effort``
+        only when the user selected a level other than the default.
+        """
+        param: dict[str, Any] = {
+            "thinking": {
+                "type": "enabled" if self.thinking_enabled else "disabled",
+            }
+        }
+        effort = getattr(self, "reasoning_effort", "") or ""
+        if self.thinking_enabled and effort:
+            param["reasoning_effort"] = effort
+        return param
 
     def context_window_size(self) -> int:
         # MiMo V2.x models expose a 256K (262144) context window.

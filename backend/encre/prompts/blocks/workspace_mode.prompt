@@ -1,3 +1,10 @@
+---
+name: iwork
+version: 1
+priority: 2
+condition: ~
+---
+
 ## Workspace Mode - `{{workspace_name}}`
 Root: `{{workspace_root}}`
 

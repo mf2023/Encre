@@ -57,19 +57,32 @@ async def _task_create_execute(**kwargs: Any) -> str:
 
 EncreTaskCreateTool = build_tool(
     name="task_create",
-    description="Create a new sub-task",
+    description=(
+        "Create a new background sub-task (bash command, delegated agent, or "
+        "workflow) that runs independently and can be polled later.\n\n"
+        "WHEN to use: long-running work that would block the main conversation "
+        "(builds, test suites, research delegations); parallelizable "
+        "sub-problems you want to fan out to sub-agents.\n"
+        "WHEN NOT to use: for short synchronous actions just use the relevant "
+        "tool directly; for the model's own task tracking use the todo tool.\n"
+        "TIPS: give the task a descriptive name and prompt so a sub-agent "
+        "knows exactly what to do; set parent_id when spawning from another "
+        "task to keep the hierarchy navigable.\n"
+        "PITFALLS: returns immediately with a task ID -- you must poll with "
+        "task_output or task_get to retrieve the result."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "name": {"type": "string", "description": "Task name"},
-            "description": {"type": "string", "description": "Task description"},
+            "name": {"type": "string", "description": "Short human-readable name for the task (shown in task listings)."},
+            "description": {"type": "string", "description": "Longer description of what the task should accomplish."},
             "task_type": {
                 "type": "string",
                 "enum": ["bash", "agent", "workflow"],
-                "description": "Type of task",
+                "description": "Execution backend: 'bash' runs a shell command, 'agent' delegates to a sub-agent LLM, 'workflow' runs a defined multi-step workflow.",
             },
-            "prompt": {"type": "string", "description": "Task prompt/instructions"},
-            "parent_id": {"type": "string", "description": "Parent task ID"},
+            "prompt": {"type": "string", "description": "The instructions/command for the task: shell command for bash, the natural-language brief for agent, or the workflow spec for workflow."},
+            "parent_id": {"type": "string", "description": "Optional ID of a parent task to nest this one under, building a task hierarchy."},
         },
         "required": ["name", "task_type", "prompt"],
     },

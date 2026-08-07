@@ -72,6 +72,8 @@ import logging
 import threading
 from typing import TYPE_CHECKING, List, Optional
 
+from encre.tools.builtin._encoding import decode_bytes
+
 if TYPE_CHECKING:  # numpy is an optional ("voice" extra) dep — never import at runtime top-level
     import numpy as np
 
@@ -445,7 +447,7 @@ def decode_to_pcm(path: str, *, timeout: float = 30.0) -> Optional[bytes]:
     if proc.returncode != 0:
         logger.warning(
             "ffmpeg decode failed for %s (rc=%d): %s",
-            path, proc.returncode, (proc.stderr or b"").decode("utf-8", "replace")[:200],
+            path, proc.returncode, decode_bytes(proc.stderr or b"")[:200],
         )
         return None
     return proc.stdout or None

@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 
 async def _diagram_execute(**kwargs: Any) -> str:
@@ -118,7 +119,7 @@ async def _handle_mermaid(source: str, output_path: str, theme: str, width: int)
         if proc.returncode == 0:
             return f"Mermaid diagram rendered to {diagram_path}"
         else:
-            fallback = f"mmdc CLI not available or failed. Source saved to {mmd_path}.\nSTDERR: {stderr.decode()[:1000]}"
+            fallback = f"mmdc CLI not available or failed. Source saved to {mmd_path}.\nSTDERR: {decode_bytes(stderr)[:1000]}"
             return fallback
 
     except FileNotFoundError:
@@ -161,7 +162,7 @@ async def _handle_graphviz(source: str, output_path: str, output_format: str) ->
 
         if proc.returncode == 0:
             return f"Graphviz diagram rendered to {output_path}"
-        return f"Graphviz rendering failed: {stderr.decode()[:1000]}"
+        return f"Graphviz rendering failed: {decode_bytes(stderr)[:1000]}"
     except FileNotFoundError:
         return "Graphviz (dot) not found. Install graphviz (apt install graphviz or brew install graphviz)."
     except subprocess.TimeoutExpired:
@@ -193,7 +194,7 @@ async def _handle_plantuml(source: str, output_path: str) -> str:
 
         if Path(output_path).exists():
             return f"PlantUML diagram rendered to {output_path}"
-        return f"PlantUML rendering failed: {stderr.decode()[:1000]}"
+        return f"PlantUML rendering failed: {decode_bytes(stderr)[:1000]}"
     except FileNotFoundError:
         return "PlantUML not found. Install from https://plantuml.com or use 'save_source' action."
     except subprocess.TimeoutExpired:
@@ -207,27 +208,39 @@ async def _handle_plantuml(source: str, output_path: str) -> str:
 
 EncreDiagramTool = build_tool(
     name="diagram",
-    description="Generate diagrams from text. Supports Mermaid, Graphviz (DOT), PlantUML. Render to PNG/SVG via CLI tools or save source.",
+    description=(
+        "Render text-based diagrams (Mermaid, Graphviz/DOT, or PlantUML) into PNG/SVG "
+        "images, or save the DSL source for later rendering. "
+        "Use this to visualize flowcharts, sequence diagrams, architecture, or UML "
+        "from DSL text; pick `diagram_type` to match the source syntax. "
+        "Do NOT use this for quantitative data charts (use chart), mind maps drawn "
+        "freehand, or live diagram editing in a GUI. "
+        "Tips: each renderer needs its CLI installed (mmdc for Mermaid, dot for "
+        "Graphviz, plantuml for PlantUML); use `save_source` when a CLI is missing. "
+        "Pitfalls: rendering has a 30-60s timeout and falls back to saving source on "
+        "failure — verify the returned message to confirm whether an image was "
+        "actually produced."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["generate", "save_source"],
-                "description": "Action to perform",
+                "description": "Diagram operation: generate (render source to an image via the matching CLI) or save_source (write the DSL text to output_path without rendering).",
             },
             "diagram_type": {
                 "type": "string",
                 "enum": ["mermaid", "graphviz", "plantuml"],
-                "description": "Diagram language/type",
+                "description": "Diagram language matching the source syntax; drives which renderer CLI is invoked. Defaults to mermaid.",
             },
-            "source": {"type": "string", "description": "Diagram source code (Mermaid, DOT, or PlantUML syntax)"},
-            "output_path": {"type": "string", "description": "Output file path for rendered image or source file"},
-            "width": {"type": "integer", "description": "Output image width in pixels (Mermaid only)"},
+            "source": {"type": "string", "description": "Diagram source code in the chosen DSL (Mermaid, DOT, or PlantUML syntax); required for both generate and save_source."},
+            "output_path": {"type": "string", "description": "Output file path for the rendered image (generate) or saved source (save_source); defaults to a temp file or working-directory file when omitted."},
+            "width": {"type": "integer", "description": "Output image width in pixels; Mermaid only. Defaults to 0 (auto)."},
             "theme": {
                 "type": "string",
                 "enum": ["default", "dark", "neutral", "forest", "base"],
-                "description": "Mermaid theme (default: default)",
+                "description": "Mermaid color theme; Mermaid only. Defaults to 'default'.",
             },
         },
         "required": ["action"],

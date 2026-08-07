@@ -330,6 +330,10 @@ class EncreScheduler:
         self._history_path = self._durable_path.with_name("automation_history.json")
         self._executions: list[JobExecution] = []
         self._poll_interval = poll_interval_seconds
+        # Wall-clock moment this scheduler session began. Recurring jobs only
+        # fire for occurrences that fall within this session; occurrences that
+        # passed while the process was offline are skipped (never fired late).
+        self._started_at: float = time.time()
         self._running = False
         self._task: asyncio.Task[Any] | None = None
         # Background tasks for in-flight automation jobs. Automations are
@@ -606,6 +610,7 @@ class EncreScheduler:
                           Called for each job execution with the job's stored agent_config.
         """
         self._agent_factory = agent_factory
+        self._started_at = time.time()
         self._running = True
         self._task = asyncio.create_task(self._loop())
 
@@ -655,7 +660,26 @@ class EncreScheduler:
                         else:
                             next_fire = job.cron.next_fire(job.last_fired)
                         if next_fire and now >= next_fire:
-                            due_jobs.append(job)
+                            if next_fire >= self._started_at:
+                                # The scheduled occurrence fell within this
+                                # scheduler session, so the process was alive
+                                # at that time -- fire it (normal catch-up
+                                # within the same session, e.g. a poll tick
+                                # a few seconds late).
+                                due_jobs.append(job)
+                            else:
+                                # The occurrence already passed while the
+                                # process was offline (e.g. the app was
+                                # started after the scheduled time). Never
+                                # fire a missed occurrence on startup: advance
+                                # last_fired past it so the job is armed for
+                                # the next future occurrence instead.
+                                logger.info(
+                                    "[scheduler] recurring job {} (name={}) skipped a missed occurrence at {} (scheduler was offline); will wait for the next scheduled time",
+                                    job.id, job.name,
+                                    time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_fire)),
+                                )
+                                job.last_fired = next_fire
                         else:
                             logger.debug("[scheduler] recurring job {} not due yet: next_fire={} now={} last_fired={}",
                                           job.id, next_fire, now, job.last_fired)
@@ -1145,6 +1169,15 @@ class EncreScheduler:
                                 break
                         else:
                             self._executions.append(exec_entry)
+            # Reconcile executions left in RUNNING state by a crash or
+            # unclean shutdown. A live scheduler always transitions an
+            # execution to COMPLETED or FAILED, so any RUNNING record at
+            # load time was interrupted and never finished -- marking it
+            # FAILED keeps the history timeline from showing an eternal
+            # spinner for a run that can no longer complete.
+            for exec_entry in self._executions:
+                if exec_entry.state == "RUNNING":
+                    exec_entry.state = "FAILED"
             # Persist the migrated history so the legacy executions are not
             # lost even if the old job file is overwritten.
             if self._durable_path and self._executions:

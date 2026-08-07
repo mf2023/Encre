@@ -54,6 +54,7 @@ from typing import Any
 from encre.config import SubAgentConfig
 from encre.skills.registry import EncreSkillRegistry
 from encre.skills.types import BundledSkillDefinition, SkillSource
+from encre.tools.builtin._encoding import decode_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ def _read_text_file(path: str | Path, max_bytes: int | None = None) -> str:
         return ""
     if max_bytes is not None and len(raw) > max_bytes:
         raw = raw[:max_bytes]
-    return raw.decode("utf-8", errors="replace").strip()
+    return decode_bytes(raw).strip()
 
 
 @dataclass

@@ -448,6 +448,7 @@
           hoursAgo: "{n} \u5C0F\u65F6\u524D",
           daysAgo: "{n} \u5929\u524D",
           back: "\u8FD4\u56DE",
+          copy: "\u590D\u5236",
           demoTitle: "\u65B0\u529F\u80FD\uFF1A\u6D3B\u52A8\u901A\u77E5",
           demoMessage: "\u60A8\u73B0\u5728\u53EF\u4EE5\u67E5\u770B AI \u52A9\u624B\u7684\u5386\u53F2\u6D3B\u52A8\u8BB0\u5F55\uFF0C\u5305\u62EC\u4EE3\u7801\u66F4\u6539\u3001\u6587\u4EF6\u64CD\u4F5C\u7B49\u3002\u70B9\u51FB\u5C55\u5F00\u67E5\u770B\u5B8C\u6574\u8BE6\u60C5\u3002",
           demoSource: "\u7CFB\u7EDF\u66F4\u65B0"
@@ -947,7 +948,7 @@
           dailyUsageByChannel: "\u6BCF\u65E5\u7528\u91CF\uFF08\u6309\u6A21\u5F0F\u5806\u53E0\uFF09",
           usageGroupByModel: "\u6309\u6A21\u578B",
           usageGroupByMode: "\u6309\u6A21\u5F0F",
-          modeNormal: "\u901A\u7528",
+          modeNormal: "\u666E\u901A",
           modeAutomation: "\u81EA\u52A8\u5316",
           activityHeatmap: "\u6D3B\u8DC3\u5EA6\u70ED\u529B\u56FE",
           deletedModel: "\u5DF2\u5220\u9664",
@@ -1000,6 +1001,9 @@
           fieldWeixinApiUrl: "iLink Bot \u670D\u52A1\u7AEF\u5730\u5740",
           fieldBotToken: "\u673A\u5668\u4EBA\u4EE4\u724C",
           fieldWebhookUrl: "Webhook \u5730\u5740",
+          adapterTargetModel: "\u76EE\u6807\u6A21\u578B",
+          adapterTargetModelHint: "\u9009\u62E9\u6B64\u7F51\u5173\u5141\u8BB8\u4F7F\u7528\u7684\u6A21\u578B\uFF0C\u7559\u7A7A\u5219\u65E0\u9650\u5236",
+          noModelConfigured: "\u8BF7\u5148\u5728\u6A21\u578B\u8BBE\u7F6E\u4E2D\u6DFB\u52A0\u5E76\u542F\u7528\u6A21\u578B",
           fieldWebhookSecret: "Webhook \u5BC6\u94A5",
           fieldSigningSecret: "\u7B7E\u540D\u5BC6\u94A5",
           fieldPhoneNumberId: "\u7535\u8BDD\u53F7\u7801 ID",
@@ -1191,6 +1195,7 @@
           yimAgent: "Encre Agent",
           edit: "\u7F16\u8F91",
           copy: "\u590D\u5236",
+          copyMarkdown: "\u590D\u5236 Markdown",
           retry: "\u91CD\u8BD5",
           retryNormal: "\u91CD\u65B0\u751F\u6210",
           retryDetailed: "\u66F4\u8BE6\u7EC6",
@@ -1286,7 +1291,8 @@
           queueTitle: "\u6392\u961F\u4E2D",
           queuedSingle: "1 \u4E2A\u63D0\u793A\u7B49\u5F85\u4E2D",
           queuedMultiple: "{count} \u4E2A\u63D0\u793A\u7B49\u5F85\u4E2D",
-          waitingToSend: "\u7B49\u5F85\u53D1\u9001..."
+          waitingToSend: "\u7B49\u5F85\u53D1\u9001...",
+          sendDirectly: "\u76F4\u63A5\u53D1\u9001"
         },
         files: {
           attachedFiles: "\u6211\u5DF2\u9644\u52A0\u4EE5\u4E0B\u6587\u4EF6\uFF1A",
@@ -1624,6 +1630,7 @@
           editTask: "\u7F16\u8F91\u81EA\u52A8\u5316\u4EFB\u52A1",
           save: "\u4FDD\u5B58",
           taskName: "\u4EFB\u52A1\u540D\u79F0",
+          taskNamePlaceholder: "\u4F60\u60F3\u8D77\u4E2A\u4EC0\u4E48\u4EFB\u52A1\u540D\u79F0\u5462\uFF1F",
           triggerTime: "\u89E6\u53D1\u65F6\u95F4",
           everyDay: "\u6BCF\u5929",
           everyWeek: "\u6BCF\u5468",
@@ -1640,6 +1647,8 @@
           noTasksHint: "\u4ECE\u4EFB\u52A1\u6A21\u677F\u521B\u5EFA\u4F60\u7684\u7B2C\u4E00\u4E2A\u81EA\u52A8\u5316\u4EFB\u52A1",
           noHistory: "\u6682\u65E0\u6267\u884C\u5386\u53F2",
           noHistoryHint: "\u4EFB\u52A1\u6267\u884C\u540E\u5C06\u5728\u8FD9\u91CC\u663E\u793A\u6267\u884C\u8BB0\u5F55",
+          noMessages: "\u6682\u65E0\u6D88\u606F",
+          taskContent: "\u4EFB\u52A1\u5185\u5BB9",
           failedCount: "\u5931\u8D25",
           stateRunning: "\u8FD0\u884C\u4E2D",
           statePaused: "\u5DF2\u6682\u505C",
@@ -1659,6 +1668,8 @@
           enablePush: "\u542F\u7528\u63A8\u9001",
           enablePushHint: "\u4EFB\u52A1\u6267\u884C\u5B8C\u6210\u540E\u63A8\u9001\u901A\u77E5\u5230\u5DF2\u8FDE\u63A5\u7684\u7F51\u5173",
           pushGateways: "\u76EE\u6807\u7F51\u5173",
+          pushCardTitle: "\u63A8\u9001\u7F51\u5173",
+          pushGatewaysEmpty: "\u6682\u65E0\u5DF2\u8FDE\u63A5\u7684\u7F51\u5173",
           confirmDeleteRecord: "\u786E\u5B9A\u8981\u5220\u9664\u8FD9\u6761\u6267\u884C\u8BB0\u5F55\uFF1F",
           templateAiNewsTitle: "\u6BCF\u65E5 AI \u65B0\u95FB\u7B80\u62A5",
           templateAiNewsDesc: "\u6BCF\u5929\u65E9\u4E0A\u63A8\u9001 AI \u884C\u4E1A\u70ED\u70B9\u65B0\u95FB\u6458\u8981\u4E0E\u8D8B\u52BF\u5206\u6790",
@@ -1950,6 +1961,7 @@
           hoursAgo: "{n} hours ago",
           daysAgo: "{n} days ago",
           back: "Back",
+          copy: "Copy",
           demoTitle: "New Feature: Activity Feed",
           demoMessage: "You can now view the activity history of your AI assistant, including code changes, file operations, and more. Click to expand and see the full details.",
           demoSource: "System Update"
@@ -2452,7 +2464,7 @@
           dailyUsageByChannel: "Daily usage (stacked by mode)",
           usageGroupByModel: "By model",
           usageGroupByMode: "By mode",
-          modeNormal: "General",
+          modeNormal: "Normal",
           modeAutomation: "Automation",
           activityHeatmap: "Activity heatmap",
           deletedModel: "deleted",
@@ -2504,6 +2516,9 @@
           fieldWeixinApiUrl: "iLink Bot Server URL",
           fieldClientSecret: "Client Secret",
           fieldBotToken: "Bot Token",
+          adapterTargetModel: "Target Model",
+          adapterTargetModelHint: "Select models allowed for this gateway. Leave empty for no restriction",
+          noModelConfigured: "Please add and enable models in the Model settings first",
           fieldWebhookUrl: "Webhook URL",
           fieldWebhookSecret: "Webhook Secret",
           fieldSigningSecret: "Signing Secret",
@@ -2703,6 +2718,7 @@
           yimAgent: "Encre Agent",
           edit: "Edit",
           copy: "Copy",
+          copyMarkdown: "Copy Markdown",
           retry: "Retry",
           retryNormal: "Regenerate",
           retryDetailed: "More Detailed",
@@ -2799,7 +2815,8 @@
           queueTitle: "Queued",
           queuedSingle: "1 prompt waiting",
           queuedMultiple: "{count} prompts waiting",
-          waitingToSend: "Waiting to send..."
+          waitingToSend: "Waiting to send...",
+          sendDirectly: "Send directly"
         },
         files: {
           attachedFiles: "I've attached the following files:",
@@ -3137,6 +3154,7 @@
           editTask: "Edit Automation Task",
           save: "Save",
           taskName: "Task Name",
+          taskNamePlaceholder: "What would you like to name this task?",
           triggerTime: "Trigger Time",
           everyDay: "Daily",
           everyWeek: "Weekly",
@@ -3153,6 +3171,8 @@
           noTasksHint: "Create your first automation task from a template",
           noHistory: "No execution history",
           noHistoryHint: "Execution records will appear here once tasks have run",
+          noMessages: "No messages",
+          taskContent: "Task",
           failedCount: "Failed",
           stateRunning: "Running",
           statePaused: "Paused",
@@ -3173,6 +3193,8 @@
           enablePush: "Push Notification",
           enablePushHint: "Send notifications to connected gateways after the task completes",
           pushGateways: "Target Gateways",
+          pushCardTitle: "Push Gateway",
+          pushGatewaysEmpty: "No connected gateways",
           confirmDeleteRecord: "Delete this execution record?",
           templateAiNewsTitle: "Daily AI News Brief",
           templateAiNewsDesc: "Morning push of AI industry hot news summaries and trend analysis",
@@ -3966,7 +3988,9 @@
         errorCode: raw.errorCode,
         interruptedReason: raw.interruptedReason,
         turnStatusText: raw.turnStatusText,
-        cancelledText: raw.cancelledText
+        cancelledText: raw.cancelledText,
+        hasError: !!raw.hasError,
+        errorCategory: raw.errorCategory
       };
       messages.push(message);
       if (message.role === "assistant" && toolCalls.length > 0) {
@@ -4017,6 +4041,52 @@
             backendId: oldToolCall.backendId,
             assistantId: oldMessage.serverId
           });
+        }
+      }
+    }
+    const oldStreamingAssistants = snapshot.messages.filter((m) => m.role === "assistant" && m.isStreaming);
+    if (oldStreamingAssistants.length > 0) {
+      for (const old of oldStreamingAssistants) {
+        const oldIdx = snapshot.messages.indexOf(old);
+        let prevUser;
+        for (let i8 = oldIdx - 1; i8 >= 0; i8--) {
+          if (snapshot.messages[i8].role === "user") {
+            prevUser = snapshot.messages[i8];
+            break;
+          }
+        }
+        const anchorId = prevUser ? prevUser.serverId ? `m:${prevUser.serverId}` : prevUser.id : void 0;
+        const anchorIdx = anchorId ? messages.findIndex((m) => m.role === "user" && m.id === anchorId) : -1;
+        const followUp = anchorIdx >= 0 ? messages.slice(anchorIdx + 1) : [];
+        const committed = [...followUp].reverse().find((m) => m.role === "assistant");
+        if (committed) {
+          if (old.thinking && !committed.thinking) {
+            committed.thinking = old.thinking;
+            committed.segments.unshift({ kind: "thinking", text: old.thinking });
+          }
+          if (old.content && old.content !== committed.content && old.content.length > committed.content.length && old.content.startsWith(committed.content)) {
+            const delta = old.content.slice(committed.content.length);
+            committed.content = old.content;
+            const lastTextSeg = [...committed.segments].reverse().find((s16) => s16.kind === "text");
+            if (lastTextSeg) lastTextSeg.text = (lastTextSeg.text ?? "") + delta;
+            else committed.segments.push({ kind: "text", text: delta });
+          }
+          for (const oldTc of old.toolCalls) {
+            const exists = committed.toolCalls.some(
+              (t3) => toolCallMatchesId(t3, oldTc.id) || (oldTc.backendId ? t3.id === oldTc.backendId : false) || t3.id === oldTc.id
+            );
+            if (!exists && oldTc.result === void 0) {
+              committed.toolCalls.push({ ...oldTc });
+              committed.segments.push({ kind: "tool", toolId: oldTc.id });
+            }
+          }
+          if (snapshot.running) committed.isStreaming = true;
+        } else if (snapshot.running) {
+          if (anchorIdx >= 0) {
+            messages.splice(anchorIdx + 1, 0, old);
+          } else if (messages.length > 0 && messages[messages.length - 1].role === "user") {
+            messages.push(old);
+          }
         }
       }
     }
@@ -5976,23 +6046,23 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           }
         }
         const sid = _eventSessionId(event);
-        const lastMsg2 = getLastAssistantMessage(sid);
-        if (lastMsg2) {
+        const lastMsg = getLastAssistantMessage(sid);
+        if (lastMsg) {
           if (event.assistant_message_id) {
-            lastMsg2.serverId = event.assistant_message_id;
+            lastMsg.serverId = event.assistant_message_id;
           }
           if (event.reason === "error" || event.error) {
-            lastMsg2.errorMessage = event.error || "";
-            lastMsg2.errorCode = event.error_code || (event.reason === "error" ? "execution_error" : "unknown");
-            lastMsg2.errorCategory = event.error_category || "";
+            lastMsg.errorMessage = event.error || "";
+            lastMsg.errorCode = event.error_code || (event.reason === "error" ? "execution_error" : "unknown");
+            lastMsg.errorCategory = event.error_category || "";
           } else if (event.reason === "interrupted" || event.reason === "cancelled") {
             if (event.reason === "cancelled") {
-              lastMsg2.cancelledText = t("chat.abnormalInterruption");
+              lastMsg.cancelledText = t("chat.abnormalInterruption");
             } else {
-              lastMsg2.interruptedReason = event.error || event.reason;
+              lastMsg.interruptedReason = event.error || event.reason;
             }
           } else if (event.reason === "complete" || event.reason === "ok" || event.reason === "stop") {
-            lastMsg2.turnStatusText = t("chat.taskComplete");
+            lastMsg.turnStatusText = t("chat.taskComplete");
           }
         }
         if (event.usage) {
@@ -6041,12 +6111,18 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
         setRunning(false, _eventSessionId(event));
         clearPendingQueueCount();
-        const lastMsg = getLastAssistantMessage(_eventSessionId(event));
-        if (lastMsg) {
-          lastMsg.hasError = true;
-          lastMsg.errorMessage = event.message;
-          lastMsg.errorCode = event.code;
-          lastMsg.errorCategory = event.category || "";
+        const _errCode = event.code || "";
+        const _turnScopedError = _errCode === "execution_error" || _errCode === "run_error" || _errCode === "tool_error" || _errCode === "context" || _errCode === "network" || _errCode === "server" || _errCode === "rate_limit" || _errCode === "auth" || _errCode === "capacity" || !_errCode && !!event.category;
+        if (_turnScopedError) {
+          const msgs = getState().messages;
+          const lastStreaming = msgs.some((m) => m.role === "assistant" && m.isStreaming);
+          const lastMsg = getLastAssistantMessage(_eventSessionId(event));
+          if (lastMsg && (lastStreaming || msgs.filter((m) => m.role === "assistant").length === 1)) {
+            lastMsg.hasError = true;
+            lastMsg.errorMessage = event.message;
+            lastMsg.errorCode = event.code;
+            lastMsg.errorCategory = event.category || "";
+          }
         }
         addNotification({
           id: crypto.randomUUID(),
@@ -6057,6 +6133,12 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           timestamp: Date.now(),
           read: false
         });
+        if (_errCode === "rollback_error" || _errCode === "branch_not_found" || _errCode === "retry_error") {
+          const _rs = getState().sessionId;
+          const _rid = crypto.randomUUID();
+          setRequestedSessionId(_rs, _rid);
+          send({ type: "resume", session_id: _rs, request_id: _rid });
+        }
         break;
       case "configured":
         console.log("[stream] configured event, config keys:", Object.keys(event.config ?? {}));
@@ -6065,10 +6147,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           if ("permission_settings" in event.config) {
             const raw = event.config.permission_settings;
             setPermissionPolicies(normalizePermissionPolicies(raw));
-          }
-          const lang = event.config.language;
-          if (lang === "zh" || lang === "en") {
-            setLocale(lang);
           }
         }
         break;
@@ -6241,9 +6319,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           "startup_session_mode",
           "startup_session_behavior",
           "default_search_engine",
-          "default_search_engine_url",
-          "language",
-          "language_preference"
+          "default_search_engine_url"
         ];
         for (const key of _generalKeys) {
           const val = cfg[key];
@@ -6253,10 +6329,6 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
         if (Object.keys(_settingsUpdate).length > 0) {
           setSettings({ ...getState().settings, ..._settingsUpdate });
-        }
-        const cfgLang = _settingsUpdate.language;
-        if (cfgLang === "zh" || cfgLang === "en") {
-          setLocale(cfgLang);
         }
         const cfgAny = cfg;
         if (cfgAny.keybinds && typeof cfgAny.keybinds === "object" && Array.isArray(cfgAny.keybinds.keybinds)) {
@@ -64659,10 +64731,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
      * @param parent - Element to append the loader to.
      * @param opts   - Optional `maxWidth` (CSS value, capped by `--ea-loader-max-w`)
      *                 and `staticSrc` (when provided, render a static image, no observer).
+     *                 When `staticSrc` is paired with `staticDarkSrc`, the loader
+     *                 swaps between the two on theme change (static mode still observes).
      */
     constructor(parent, opts = {}) {
       this.observer = null;
       this._staticMode = !!opts.staticSrc;
+      this._staticLightSrc = opts.staticSrc;
+      this._staticDarkSrc = opts.staticDarkSrc;
       this.isDark = _EALoader.readDark();
       this.el = document.createElement("div");
       this.el.className = "ea-loader";
@@ -64673,11 +64749,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.img.alt = "";
       this.img.draggable = false;
       this.img.decoding = "async";
-      this.img.src = opts.staticSrc || _EALoader.srcFor(this.isDark);
+      this.img.src = this._staticMode ? this.isDark && this._staticDarkSrc ? this._staticDarkSrc : this._staticLightSrc : _EALoader.srcFor(this.isDark);
       if (opts.staticSrc) this.el.classList.add("ea-loader--static");
       this.el.appendChild(this.img);
       parent.appendChild(this.el);
-      if (!opts.staticSrc && typeof MutationObserver !== "undefined") {
+      if (typeof MutationObserver !== "undefined") {
         this.observer = new MutationObserver(() => this.refresh());
         this.observer.observe(document.documentElement, {
           attributes: true,
@@ -64687,11 +64763,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     /** Re-read the current theme and swap the source if it flipped. */
     refresh() {
-      if (this._staticMode) return;
       const nowDark = _EALoader.readDark();
       if (nowDark !== this.isDark) {
         this.isDark = nowDark;
-        this.img.src = _EALoader.srcFor(this.isDark);
+        this.img.src = this._staticMode ? nowDark && this._staticDarkSrc ? this._staticDarkSrc : this._staticLightSrc : _EALoader.srcFor(this.isDark);
       }
     }
     /** Detach listeners and remove the loader from the DOM. */
@@ -67147,6 +67222,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     const origIcon = btn.getAttribute("data-original-icon");
     const original = origIcon || "copy";
     if (!origIcon) btn.setAttribute("data-original-icon", original);
+    btn.classList.add("copying");
     btn.style.transition = "opacity 0.12s ease";
     btn.style.opacity = "0";
     setTimeout(() => {
@@ -67164,6 +67240,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         btn.style.opacity = "1";
         setTimeout(() => {
           btn.style.transition = "";
+          btn.classList.remove("copying");
         }, 120);
       }, 120);
     }, 2e3);
@@ -67440,6 +67517,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this._inRenderForce = false;
       this.rafPending = false;
       this.liveLoader = null;
+      this._actionMenu = null;
+      this._actionMenuBtn = null;
+      this._actionMenuClose = null;
+      this._actionMenuTurnLeave = null;
+      this._actionMenuEnter = null;
+      this._actionMenuLeave = null;
+      this._actionMenuCloseTimer = null;
       /** Map of file keys to markdown content for plan file rows (avoids attribute length limits). */
       this._planFileLookup = /* @__PURE__ */ new Map();
       /** Callback invoked when the user clicks "View Changes" on an artifact file. */
@@ -67576,11 +67660,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         event.stopPropagation();
         const card = document.getElementById(cardId);
         if (!card) return;
-        const selected = card.querySelector(".q-option-card.selected");
-        let answer = selected ? selected.getAttribute("data-value") || "" : "";
+        const input = card.querySelector(".q-input");
+        let answer = input ? input.value.trim() : "";
         if (!answer) {
-          const input = card.querySelector(".q-input");
-          if (input) answer = input.value.trim();
+          const selected = card.querySelector(".q-option-card.selected");
+          if (selected) answer = selected.getAttribute("data-value") || "";
         }
         if (answer) {
           send({ type: "respond_question", tool_call_id: cardId.replace("tc-", ""), answers: answer });
@@ -67688,14 +67772,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       window.__initMediaCards = w.__initMediaCards;
       window.__initInfoCardMedia = w.__initInfoCardMedia;
       window.__openInfoHtmlCards = w.__openInfoHtmlCards;
-      this.container.addEventListener("scroll", () => {
-        const { scrollTop, scrollHeight, clientHeight } = this.container;
-        this.userScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
-        const btn = document.getElementById("chat-scroll-bottom-btn");
-        if (btn) {
-          btn.classList.toggle("hidden", !this.userScrolledUp);
-        }
-      });
+      this.container.addEventListener("scroll", () => this.syncScrollButton());
+      const ro2 = new ResizeObserver(() => this.syncScrollButton());
+      ro2.observe(this.container);
       this.ml.addEventListener("click", (e2) => this.handleDelegateClick(e2));
       let _lastSid = getState().sessionId;
       let _lastMsgLen = getState().messages.length;
@@ -67736,6 +67815,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             clearSubAgentBreadcrumb();
           }
           this.ml.innerHTML = "";
+          this.syncScrollButton();
           return;
         }
         if (msgs.length > 0 && _lastMsgLen === 0) {
@@ -67769,9 +67849,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       try {
         const st3 = getState();
         const subTc = st3.subAgentView;
-        const dividerCount = subTc?.subAgentMessages ? subTc.subAgentMessages.filter((m) => m.mode === "task_divider").length : 0;
-        const isParallelRunning = subTc && (subTc.status === "running" || subTc.status === "pending") && dividerCount >= 2;
-        if (!isParallelRunning) {
+        const isSubAgentStreaming = !!subTc && (subTc.status === "running" || subTc.status === "pending");
+        if (!isSubAgentStreaming) {
           this.render();
           return;
         }
@@ -67851,6 +67930,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (msgs.length === 0) {
         this.ml.innerHTML = "";
         this.renderedKey = "";
+        this.syncScrollButton();
         return;
       }
       const timeline = buildTimeline(msgs);
@@ -67978,11 +68058,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (turnActions) {
           html += `<div class="assistant-actions turn-actions">`;
           html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
-          <i data-lucide="copy" class="lucide lucide-sm"></i>
+          <span class="icon-wrap">
+            <i data-lucide="copy" class="semantic"></i>
+            <i data-lucide="chevron-down" class="arrow"></i>
+          </span>
         </button>`;
           if (turnRetry) {
             html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
-            <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+            <span class="icon-wrap">
+              <i data-lucide="refresh-cw" class="semantic"></i>
+              <i data-lucide="chevron-down" class="arrow"></i>
+            </span>
           </button>`;
           }
           if (turnBranchSwitcher) {
@@ -68124,11 +68210,17 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (turnActions) {
           html += `<div class="assistant-actions turn-actions">`;
           html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
-          <i data-lucide="copy" class="lucide lucide-sm"></i>
+          <span class="icon-wrap">
+            <i data-lucide="copy" class="semantic"></i>
+            <i data-lucide="chevron-down" class="arrow"></i>
+          </span>
         </button>`;
           if (turnRetry) {
             html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
-            <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+            <span class="icon-wrap">
+              <i data-lucide="refresh-cw" class="semantic"></i>
+              <i data-lucide="chevron-down" class="arrow"></i>
+            </span>
           </button>`;
           }
           if (turnBranchSwitcher) {
@@ -68188,10 +68280,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         const dist = newScrollHeight - container.scrollTop - container.clientHeight;
         this.userScrolledUp = dist > 8;
       } else {
-        this.scrollToBottom();
+        this.scrollToBottomAfterMedia();
       }
-      const turnCount = getState().messages.filter((m) => m.role === "user").length;
-      this.scrollIndicator.update(turnCount);
+      const userMsgs = getState().messages.filter((m) => m.role === "user");
+      this.scrollIndicator.update(userMsgs.length, userMsgs.map((m) => m.content));
+      this.syncScrollButton();
     }
     incrementalTextUpdate(timeline) {
       let lastAssistantIndex = -1;
@@ -68344,8 +68437,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         }
       }
       this.autoScroll();
-      const turnCount = getState().messages.filter((m) => m.role === "user").length;
-      this.scrollIndicator.update(turnCount);
+      const userMsgs = getState().messages.filter((m) => m.role === "user");
+      this.scrollIndicator.update(userMsgs.length, userMsgs.map((m) => m.content));
+      this.syncScrollButton();
     }
     renderItemHTML(item) {
       switch (item.kind) {
@@ -68546,7 +68640,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         </div>
         ${optsHtml}
         <div class="q-input-row">
-          <input class="q-input" type="text" placeholder="${options.length ? t("chat.inputOtherRequirements") : t("chat.typeAnswer")}" />
+          <input class="q-input" type="text" placeholder="${options.length ? t("chat.inputOtherRequirements") : t("chat.typeAnswer")}" onkeydown="if(event.key==='Enter'){event.preventDefault();window.__answerQuestion(event,this,'${id}')}" />
           <button class="q-submit" onclick="event.stopPropagation();window.__answerQuestion(event,this,'${id}')">${t("chat.submit")}</button>
         </div>
       </div>
@@ -69163,9 +69257,25 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         if (!msgId) return;
         const st3 = getState();
         const msg = st3.messages.find((m) => m.id === msgId);
-        if (msg) {
-          navigator.clipboard.writeText(msg.content).then(() => flashCopyButton(assistantCopyBtn)).catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
-        }
+        const btn = assistantCopyBtn;
+        this.openActionMenu(btn, [
+          {
+            icon: "copy",
+            label: t("chat.copy"),
+            onClick: () => {
+              const text2 = assistantItem?.innerText ?? msg?.content ?? "";
+              navigator.clipboard.writeText(text2).then(() => flashCopyButton(btn)).catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
+            }
+          },
+          {
+            icon: "code",
+            label: t("chat.copyMarkdown"),
+            onClick: () => {
+              if (!msg) return;
+              navigator.clipboard.writeText(msg.content).then(() => flashCopyButton(btn)).catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
+            }
+          }
+        ]);
         return;
       }
       const assistantRetryBtn = target.closest(".assistant-retry-btn");
@@ -69173,70 +69283,14 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         e2.stopPropagation();
         const turn = assistantRetryBtn.closest(".turn");
         const assistantItem = turn?.querySelector(".assistant-text");
-        if (!assistantItem) return;
-        const existingPopup = assistantItem.querySelector(".retry-popup");
-        if (existingPopup) {
-          existingPopup.remove();
-          return;
-        }
-        const msgId = assistantItem.dataset.messageId;
-        if (!msgId) return;
-        const rect = assistantRetryBtn.getBoundingClientRect();
-        const popup = document.createElement("div");
-        popup.className = "retry-popup";
-        popup.style.position = "fixed";
-        popup.style.top = `${rect.bottom + 2}px`;
-        popup.style.left = `${rect.left}px`;
-        popup.innerHTML = `
-        <div class="retry-popup-item" data-mode="normal">${t("chat.retryNormal")}</div>
-        <div class="retry-popup-item" data-mode="detailed">${t("chat.retryDetailed")}</div>
-        <div class="retry-popup-item" data-mode="concise">${t("chat.retryConcise")}</div>
-      `;
-        assistantItem.appendChild(popup);
-        const closePopup = (ev) => {
-          if (!popup.contains(ev.target)) {
-            popup.remove();
-            document.removeEventListener("click", closePopup);
-          }
-        };
-        setTimeout(() => document.addEventListener("click", closePopup), 0);
-        return;
-      }
-      const retryPopupItem = target.closest(".retry-popup-item");
-      if (retryPopupItem) {
-        e2.stopPropagation();
-        const popup = retryPopupItem.closest(".retry-popup");
-        const assistantItem = popup?.closest(".assistant-text");
         const msgId = assistantItem?.dataset.messageId;
         if (!msgId) return;
-        const mode = retryPopupItem.dataset.mode || "normal";
-        const st3 = getState();
-        const assistantIdx = st3.messages.findIndex((m) => m.id === msgId);
-        if (assistantIdx < 0) return;
-        let userContent = "";
-        for (let i8 = assistantIdx - 1; i8 >= 0; i8--) {
-          if (st3.messages[i8].role === "user") {
-            userContent = st3.messages[i8].content;
-            break;
-          }
-        }
-        if (!userContent) return;
-        let userMsgIdx = -1;
-        for (let i8 = 0; i8 < assistantIdx; i8++) {
-          if (st3.messages[i8].role === "user") userMsgIdx++;
-        }
-        const removedIds = /* @__PURE__ */ new Set();
-        for (let i8 = assistantIdx; i8 < st3.messages.length; i8++) {
-          removedIds.add(st3.messages[i8].id);
-        }
-        removeBranchMessages(removedIds);
-        startAssistantMessage();
-        setRunning(true);
-        popup?.remove();
-        const branchId = st3.activeBranchId;
-        if (typeof window.sendRetry === "function") {
-          window.sendRetry(branchId, userMsgIdx, mode);
-        }
+        const btn = assistantRetryBtn;
+        this.openActionMenu(btn, [
+          { icon: "refresh-cw", label: t("chat.retryNormal"), onClick: () => this.performRetry(msgId, "normal") },
+          { icon: "stretch-horizontal", label: t("chat.retryDetailed"), onClick: () => this.performRetry(msgId, "detailed") },
+          { icon: "minimize-2", label: t("chat.retryConcise"), onClick: () => this.performRetry(msgId, "concise") }
+        ]);
         return;
       }
       const branchPrev = target.closest(".branch-prev");
@@ -69323,6 +69377,146 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         this.userExpandedItems.add(id);
       }
     }
+    /** Opens a unified dropdown menu anchored to the given action button.
+     *  Reuses the same visual language as the model selector / @-command
+     *  menus (`.mention-dropdown` / `.mention-dropdown-item`). */
+    openActionMenu(btn, items) {
+      if (btn.classList.contains("action-menu-open")) {
+        this.closeActionMenu();
+        return;
+      }
+      this.closeActionMenu();
+      const rect = btn.getBoundingClientRect();
+      const menu = document.createElement("div");
+      menu.className = "mention-dropdown action-menu";
+      menu.style.position = "fixed";
+      menu.style.top = `${rect.bottom + 4}px`;
+      menu.style.left = `${rect.left}px`;
+      menu.style.marginBottom = "0";
+      menu.style.bottom = "auto";
+      menu.style.minWidth = "160px";
+      for (const item of items) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "mention-dropdown-item";
+        row.innerHTML = `<i data-lucide="${item.icon}" class="lucide"></i><span>${item.label}</span>`;
+        row.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          this.closeActionMenu();
+          item.onClick();
+        });
+        menu.appendChild(row);
+      }
+      document.body.appendChild(menu);
+      createLucideIcons(menu);
+      btn.classList.add("action-menu-open");
+      this._actionMenu = menu;
+      this._actionMenuBtn = btn;
+      const closeOnOutside = (ev) => {
+        if (this._actionMenu && !this._actionMenu.contains(ev.target)) {
+          this.closeActionMenu();
+        }
+      };
+      this._actionMenuClose = closeOnOutside;
+      setTimeout(() => document.addEventListener("click", closeOnOutside), 0);
+      const turn = btn.closest(".turn");
+      const scheduleClose = () => {
+        if (this._actionMenuCloseTimer !== null) return;
+        this._actionMenuCloseTimer = window.setTimeout(() => {
+          this._actionMenuCloseTimer = null;
+          this.closeActionMenu();
+        }, 180);
+      };
+      const cancelClose = () => {
+        if (this._actionMenuCloseTimer !== null) {
+          window.clearTimeout(this._actionMenuCloseTimer);
+          this._actionMenuCloseTimer = null;
+        }
+      };
+      if (turn) {
+        const onTurnLeave = (ev) => {
+          if (!this._actionMenu) return;
+          const rel = ev.relatedTarget;
+          if (rel && this._actionMenu.contains(rel)) return;
+          scheduleClose();
+        };
+        turn.addEventListener("mouseleave", onTurnLeave);
+        this._actionMenuTurnLeave = { el: turn, fn: onTurnLeave };
+      }
+      menu.addEventListener("mouseenter", cancelClose);
+      menu.addEventListener("mouseleave", scheduleClose);
+      this._actionMenuEnter = { el: menu, fn: cancelClose };
+      this._actionMenuLeave = { el: menu, fn: scheduleClose };
+    }
+    closeActionMenu() {
+      if (this._actionMenu) {
+        this._actionMenu.remove();
+        this._actionMenu = null;
+      }
+      if (this._actionMenuBtn) {
+        this._actionMenuBtn.classList.remove("action-menu-open");
+        this._actionMenuBtn = null;
+      }
+      if (this._actionMenuClose) {
+        document.removeEventListener("click", this._actionMenuClose);
+        this._actionMenuClose = null;
+      }
+      if (this._actionMenuTurnLeave) {
+        this._actionMenuTurnLeave.el.removeEventListener(
+          "mouseleave",
+          this._actionMenuTurnLeave.fn
+        );
+        this._actionMenuTurnLeave = null;
+      }
+      if (this._actionMenuEnter) {
+        this._actionMenuEnter.el.removeEventListener(
+          "mouseenter",
+          this._actionMenuEnter.fn
+        );
+        this._actionMenuEnter = null;
+      }
+      if (this._actionMenuLeave) {
+        this._actionMenuLeave.el.removeEventListener(
+          "mouseleave",
+          this._actionMenuLeave.fn
+        );
+        this._actionMenuLeave = null;
+      }
+      if (this._actionMenuCloseTimer !== null) {
+        window.clearTimeout(this._actionMenuCloseTimer);
+        this._actionMenuCloseTimer = null;
+      }
+    }
+    /** Re-generates the assistant reply starting from the preceding user
+     *  message, forking the branch with the given retry mode. */
+    performRetry(msgId, mode) {
+      const st3 = getState();
+      const assistantIdx = st3.messages.findIndex((m) => m.id === msgId);
+      if (assistantIdx < 0) return;
+      let userContent = "";
+      for (let i8 = assistantIdx - 1; i8 >= 0; i8--) {
+        if (st3.messages[i8].role === "user") {
+          userContent = st3.messages[i8].content;
+          break;
+        }
+      }
+      if (!userContent) return;
+      let userMsgIdx = -1;
+      for (let i8 = 0; i8 < assistantIdx; i8++) {
+        if (st3.messages[i8].role === "user") userMsgIdx++;
+      }
+      const removedIds = /* @__PURE__ */ new Set();
+      for (let i8 = assistantIdx; i8 < st3.messages.length; i8++) {
+        removedIds.add(st3.messages[i8].id);
+      }
+      removeBranchMessages(removedIds);
+      startAssistantMessage();
+      setRunning(true);
+      const branchId = st3.activeBranchId;
+      if (typeof window.sendRetry === "function") {
+        window.sendRetry(branchId, userMsgIdx, mode);
+      }
+    }
     autoScroll() {
       const st3 = getState();
       if (st3.messages.length === 0) return;
@@ -69347,6 +69541,65 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const c2 = document.getElementById("chat-container");
       if (c2) c2.scrollTop = c2.scrollHeight;
     }
+    /** Scrolls to the bottom and keeps re-pinning until any async media
+     *  (images / videos inside the message list) has finished loading.
+     *  A plain scrollToBottom() on session entry runs before images resolve,
+     *  so the container grows afterwards and leaves unread content below the
+     *  fold.  This variant waits for those elements to settle. */
+    scrollToBottomAfterMedia() {
+      const c2 = document.getElementById("chat-container");
+      if (!c2) return;
+      const pin = () => {
+        if (this.userScrolledUp) return;
+        c2.scrollTop = c2.scrollHeight;
+      };
+      pin();
+      requestAnimationFrame(pin);
+      const media = Array.from(this.ml.querySelectorAll("img, video")).filter(
+        (el2) => el2 instanceof HTMLImageElement && !el2.complete || el2 instanceof HTMLVideoElement && el2.readyState < 2
+      );
+      if (media.length === 0) return;
+      const done = () => {
+        pin();
+        media.forEach((el2) => {
+          el2.removeEventListener("load", done);
+          el2.removeEventListener("loadeddata", done);
+          el2.removeEventListener("error", done);
+        });
+      };
+      media.forEach((el2) => {
+        el2.addEventListener("load", done, { once: true });
+        el2.addEventListener("loadeddata", done, { once: true });
+        el2.addEventListener("error", done, { once: true });
+      });
+      window.setTimeout(() => {
+        media.forEach((el2) => {
+          el2.removeEventListener("load", done);
+          el2.removeEventListener("loadeddata", done);
+          el2.removeEventListener("error", done);
+        });
+        pin();
+      }, 800);
+    }
+    /** Keeps the floating scroll-to-bottom button in sync with the real state
+     *  of the chat container. The button may only appear when the content
+     *  actually overflows the viewport AND the user has scrolled away from
+     *  the bottom; when a session is cleared or switched this re-evaluates
+     *  the metrics instead of trusting a stale scroll event. */
+    syncScrollButton() {
+      const btn = document.getElementById("chat-scroll-bottom-btn");
+      if (!btn) return;
+      const { scrollTop, scrollHeight, clientHeight } = this.container;
+      const scrollable = scrollHeight - clientHeight > 8;
+      this.userScrolledUp = scrollable && scrollHeight - scrollTop - clientHeight > 100;
+      btn.classList.toggle("hidden", !this.userScrolledUp);
+    }
+    /** Public reset so the view-switch cleanup can hide the button eagerly. */
+    resetScrollButton() {
+      this.userScrolledUp = false;
+      const btn = document.getElementById("chat-scroll-bottom-btn");
+      if (btn) btn.classList.add("hidden");
+    }
     _updateStatusBar(running) {
       if (running) {
         if (!this._currentQuote) {
@@ -69361,10 +69614,13 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       }
     }
   };
-  var ChatScrollIndicator = class {
+  var ChatScrollIndicator = class _ChatScrollIndicator {
     constructor(container) {
       this.ticks = [];
       this.tickCount = 0;
+      this.lastKey = "";
+      this.spacing = 0;
+      this.lastCurrent = -1;
       this.dragging = false;
       this.rafScheduled = false;
       this.container = container;
@@ -69372,6 +69628,9 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       this.track = document.getElementById("chat-scroll-track");
       this.thumb = document.getElementById("chat-scroll-thumb");
       this.bind();
+    }
+    static {
+      this.MAX_VISIBLE = 5;
     }
     bind() {
       this.container.addEventListener("scroll", () => this.schedule(), { passive: true });
@@ -69391,22 +69650,28 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         this.update();
       });
     }
-    rebuildTicks(count) {
+    rebuildTicks(count, texts) {
       this.tickCount = count;
+      this.spacing = 0;
+      this.lastCurrent = -1;
       this.track.innerHTML = "";
       this.ticks = [];
       for (let i8 = 0; i8 < count; i8++) {
         const tick = document.createElement("div");
         tick.className = "chat-scroll-tick";
+        const text2 = (texts[i8] || "").trim().slice(0, 200);
+        if (text2) tick.setAttribute("data-tooltip", text2);
         this.track.appendChild(tick);
         this.ticks.push(tick);
       }
     }
-    update(turns) {
-      if (turns !== void 0 && turns !== this.tickCount) {
-        this.rebuildTicks(Math.min(turns, 5));
+    update(turns, userTexts) {
+      const key = `${turns}|${(userTexts || []).join("\0")}`;
+      if (turns !== void 0 && key !== this.lastKey) {
+        this.rebuildTicks(turns, userTexts || []);
+        this.lastKey = key;
       }
-      if (this.tickCount < 2) {
+      if (this.tickCount < 1) {
         this.root.classList.add("hidden");
         return;
       }
@@ -69418,31 +69683,33 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
         return;
       }
       const ratio = Math.min(1, Math.max(0, scrollTop / scrollable));
-      const trackRect = this.track.getBoundingClientRect();
-      const rootRect = this.root.getBoundingClientRect();
-      const thumbMax = trackRect.height;
-      this.thumb.style.top = `${trackRect.top - rootRect.top + ratio * thumbMax}px`;
-      const n2 = this.ticks.length;
-      const exactPos = ratio * (n2 - 1);
-      let closestIdx = 0;
-      let minDist = Math.abs(0 - exactPos);
-      for (let i8 = 1; i8 < n2; i8++) {
-        const d = Math.abs(i8 - exactPos);
-        if (d < minDist) {
-          minDist = d;
-          closestIdx = i8;
+      const windowH = this.root.offsetHeight || 70;
+      const spacing = windowH / _ChatScrollIndicator.MAX_VISIBLE;
+      if (spacing !== this.spacing) {
+        this.spacing = spacing;
+        for (let i8 = 0; i8 < this.tickCount; i8++) {
+          this.ticks[i8].style.top = `${i8 * spacing}px`;
+          this.ticks[i8].style.height = `${spacing}px`;
         }
       }
-      for (let i8 = 0; i8 < n2; i8++) {
-        const dist = Math.abs(i8 - exactPos) / (n2 - 1);
-        if (i8 === closestIdx) {
-          this.ticks[i8].style.background = "var(--accent-color, #1e6cff)";
-        } else {
-          const gray = Math.round(155 + dist * 70);
-          this.ticks[i8].style.background = `rgb(${gray}, ${gray}, ${gray})`;
-        }
-        this.ticks[i8].style.opacity = "1";
+      const trackH = this.tickCount * spacing;
+      let offset;
+      if (trackH <= windowH) {
+        offset = (windowH - trackH) / 2;
+      } else {
+        offset = -ratio * (trackH - windowH);
       }
+      this.track.style.top = `${offset}px`;
+      this.track.style.height = `${trackH}px`;
+      const current = Math.round(ratio * (this.tickCount - 1));
+      if (current !== this.lastCurrent) {
+        if (this.lastCurrent >= 0 && this.lastCurrent < this.tickCount) {
+          this.ticks[this.lastCurrent].classList.remove("current");
+        }
+        this.ticks[current].classList.add("current");
+        this.lastCurrent = current;
+      }
+      this.thumb.style.top = `${current * spacing + offset + spacing / 2}px`;
     }
     onPointerDown(e2) {
       e2.preventDefault();
@@ -69461,12 +69728,36 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
     jumpTo(clientY) {
       const rect = this.root.getBoundingClientRect();
-      if (rect.height <= 0) return;
-      const y = Math.min(rect.bottom, Math.max(rect.top, clientY));
-      const ratio = (y - rect.top) / rect.height;
-      const { scrollHeight, clientHeight } = this.container;
-      const max = Math.max(0, scrollHeight - clientHeight);
-      this.container.scrollTop = ratio * max;
+      if (rect.height <= 0 || this.tickCount < 1) return;
+      const windowH = rect.height;
+      const spacing = windowH / _ChatScrollIndicator.MAX_VISIBLE;
+      if (spacing !== this.spacing) this.spacing = spacing;
+      const trackH = this.tickCount * spacing;
+      const { scrollTop, scrollHeight, clientHeight } = this.container;
+      const scrollable = scrollHeight - clientHeight;
+      const ratio = scrollable > 0 ? Math.min(1, Math.max(0, scrollTop / scrollable)) : 0;
+      let offset;
+      if (trackH <= windowH) {
+        offset = (windowH - trackH) / 2;
+      } else {
+        offset = -ratio * (trackH - windowH);
+      }
+      const y = Math.min(rect.bottom, Math.max(rect.top, clientY)) - rect.top;
+      const idx = Math.round((y - offset) / spacing);
+      const clamped = Math.max(0, Math.min(this.tickCount - 1, idx));
+      this.scrollToTurn(clamped);
+    }
+    scrollToTurn(idx) {
+      const el2 = this.container.querySelector(`[data-user-idx="${idx}"]`);
+      if (el2) {
+        const cRect = this.container.getBoundingClientRect();
+        const eRect = el2.getBoundingClientRect();
+        this.container.scrollTop += eRect.top - cRect.top;
+      } else {
+        const { scrollHeight, clientHeight } = this.container;
+        const max = Math.max(0, scrollHeight - clientHeight);
+        this.container.scrollTop = idx / Math.max(1, this.tickCount - 1) * max;
+      }
     }
   };
 
@@ -69712,7 +70003,8 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       if (!this.loader) {
         this.loader = new EALoader(el2, {
           maxWidth: "140px",
-          staticSrc: "assets/Encre.svg"
+          staticSrc: "assets/Encre.svg",
+          staticDarkSrc: "assets/Encre-dm.svg"
         });
       }
       this.createErrorArea(el2);
@@ -87592,7 +87884,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
     }
   }
   initLocale();
-  var APP_VERSION = "0.2.0-pre.1";
+  var APP_VERSION = "0.3.0";
   var DEV_MODE_STORAGE_KEY = "encre-dev-mode";
   var DEV_TAP_THRESHOLD = 7;
   var DEV_TAP_RESET_MS = 2500;
@@ -89418,13 +89710,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           </div>
           <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
             <label class="model-form-label"><span class="model-form-required">*</span>${tFn("settings.fieldToken")}</label>
-            <div class="model-form-input-wrap" style="position:relative;width:100%">
-              <input type="password" id="dlg-weixin-token-input" class="model-form-input" value="${this.esc(token)}" readonly style="user-select:none;-webkit-user-select:none;padding-right:30px" />
-              <div class="model-form-spinners" style="right:2px;display:flex;align-items:center">
-                <button class="model-form-spinner-btn" id="dlg-weixin-eye-btn" type="button" title="\u663E\u793A" style="width:24px;height:24px;border:none;background:transparent;cursor:pointer;padding:0;color:var(--text-muted)">
-                  <i data-lucide="eye" style="width:14px;height:14px"></i>
-                </button>
-              </div>
+            <div class="model-form-input-wrap" style="width:100%">
+              <input type="password" id="dlg-weixin-token-input" class="model-form-input model-form-input--reveal" value="${this.esc(token)}" readonly style="user-select:none;-webkit-user-select:none" />
+              <button class="model-form-eye-btn" id="dlg-weixin-eye-btn" type="button" data-eye-target="dlg-weixin-token-input" title="\u663E\u793A">
+                <i data-lucide="eye"></i>
+              </button>
             </div>
           </div>
           <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
@@ -89458,6 +89748,15 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
                     <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
                     <textarea id="dlg-${defId}-${f.key}" class="model-form-input" style="resize:vertical;min-height:80px" spellcheck="false">${this.esc(val)}</textarea>
                 </div>`;
+          } else if (f.type === "password") {
+            bodyHtml += `
+                <div class="model-form-row">
+                    <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
+                    <div class="model-form-input-wrap">
+                        <input type="password" id="dlg-${defId}-${f.key}" class="model-form-input model-form-input--reveal" value="${this.esc(val)}" spellcheck="false" autocomplete="off" />
+                        <button class="model-form-eye-btn" type="button" data-eye-target="dlg-${defId}-${f.key}" title="\u663E\u793A"><i data-lucide="eye"></i></button>
+                    </div>
+                </div>`;
           } else {
             bodyHtml += `
                 <div class="model-form-row">
@@ -89467,10 +89766,53 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           }
         }
       }
+      const models = getState().modelConfigs || [];
+      const enabledModels = models.filter((m) => m.enabled !== false);
+      const rawSelected = s16[`adapter_${defId}_models`] || "";
+      let selectedModels;
+      try {
+        selectedModels = JSON.parse(rawSelected);
+      } catch {
+        selectedModels = [];
+      }
+      if (!Array.isArray(selectedModels)) selectedModels = [];
+      bodyHtml += `
+      <div class="settings-card" style="margin-top:12px;margin-bottom:0;overflow:hidden">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">
+              <span>${tFn("settings.adapterTargetModel")}</span>
+            </div>
+            <div class="settings-item-desc">${tFn("settings.adapterTargetModelHint")}</div>
+          </div>
+          <div class="settings-item-control">
+            <label class="toggle-switch" title="${tFn("settings.adapterTargetModel")}">
+              <input type="checkbox" id="adapter-model-toggle-${defId}" ${selectedModels.length ? "checked" : ""} />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div id="adapter-models-row-${defId}" style="${selectedModels.length ? "" : "display:none"}">
+          <div class="auto-push-gateways">
+            <div class="auto-push-gateways-label">${tFn("settings.adapterTargetModel")}</div>
+            <div id="dlg-models-${defId}">` + (enabledModels.length === 0 ? `<span style="color:var(--text-muted);font-size:13px">${t("settings.noModelConfigured")}</span>` : enabledModels.map((m) => {
+        const isSel = selectedModels.includes(m.model_id);
+        return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-model-id="${this.esc(m.model_id)}">
+              <span class="auto-push-gw-name">${this.esc(m.name || m.model_id)}</span>
+              <span class="auto-push-gw-dot" title="${this.esc(m.model_id)}"></span>
+              <input type="checkbox" class="auto-push-gw-check" ${isSel ? "checked" : ""} />
+            </div>`;
+      }).join("")) + `
+            </div>
+          </div>
+        </div>
+      </div>`;
       const titleKey = `settings.adapterName${defId.charAt(0).toUpperCase() + defId.slice(1)}`;
       const title = tFn(titleKey);
       const { overlay, close } = this._showFormDialog(title, bodyHtml, false);
       const okBtn = overlay.querySelector("#dialog-form-ok");
+      this._bindEyeToggles(overlay);
+      this._bindAdapterModelSelect(overlay, defId);
       if (def.docs) {
         const titleBar = overlay.querySelector(".toast-title");
         if (titleBar) {
@@ -89527,20 +89869,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             });
           };
           okBtn.addEventListener("click", unbindFn);
-          const eyeBtn = overlay.querySelector("#dlg-weixin-eye-btn");
-          const tokenInput = overlay.querySelector("#dlg-weixin-token-input");
-          if (eyeBtn && tokenInput) {
-            let visible = false;
-            eyeBtn.addEventListener("click", () => {
-              visible = !visible;
-              tokenInput.type = visible ? "text" : "password";
-              const iconEl = eyeBtn.querySelector("i");
-              if (iconEl) iconEl.setAttribute("data-lucide", visible ? "eye-off" : "eye");
-              if (typeof window.lucide !== "undefined") {
-                window.lucide.createIcons({ root: eyeBtn });
-              }
-            });
-          }
+          this._bindEyeToggles(overlay);
         } else {
           okBtn.style.display = "none";
           send({ type: "wechat_scan", adapter_id: "weixin" });
@@ -89584,6 +89913,11 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           if (enableInput) {
             config2[`adapter_${defId}_enabled`] = enableInput.checked;
           }
+          const modelContainer = document.getElementById(`dlg-models-${defId}`);
+          const selectedModels2 = modelContainer ? Array.from(modelContainer.querySelectorAll(".auto-push-gw-item.selected")).map((item) => item.getAttribute("data-model-id")).filter(Boolean) : [];
+          const modelsJson = JSON.stringify(selectedModels2);
+          current[`adapter_${defId}_models`] = modelsJson;
+          config2[`adapter_${defId}_models`] = modelsJson;
           setSettings(current);
           send({ type: "configure", config: config2 });
           delete this._adapterTestResults[defId];
@@ -89720,7 +90054,10 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
           <span class="model-form-required">*</span>${t("settings.apiKey")}
           ${provider && provider.docs ? `<a href="${this.esc(provider.docs)}" class="model-get-apikey-link">${t("settings.getApiKey")}</a>` : ""}
         </label>
-        <input type="password" id="new-model-apikey" class="model-form-input" placeholder="${t("settings.enterApiKey")}" value="${existing ? this.esc(existing.api_key) : ""}" />
+        <div class="model-form-input-wrap">
+          <input type="password" id="new-model-apikey" class="model-form-input model-form-input--reveal" placeholder="${t("settings.enterApiKey")}" value="${existing ? this.esc(existing.api_key) : ""}" autocomplete="off" />
+          <button class="model-form-eye-btn" type="button" data-eye-target="new-model-apikey" title="\u663E\u793A"><i data-lucide="eye"></i></button>
+        </div>
       </div>
       <div class="model-form-row">
         <label class="model-form-label model-form-label--inline" for="new-model-url">
@@ -89776,6 +90113,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
       const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
       const okBtn = overlay.querySelector("#dialog-form-ok");
       okBtn.textContent = btnLabel;
+      this._bindEyeToggles(overlay);
       const _wireApiKeyLink = () => {
         const apiKeyLink = document.querySelector(".model-get-apikey-link");
         if (!apiKeyLink) return;
@@ -89962,7 +90300,7 @@ ${t("engineInstall.fallbackHint", { remaining })}` : resolved.body;
             <button class="btn-add-model-top" id="doc-add-trigger" type="button">
               <i data-lucide="plus" class="lucide" style="width:14px;height:14px"></i>
               <span>${tFn("settings.addDocument")}</span>
-              <i data-lucide="chevron-down" class="lucide" style="width:12px;height:12px;margin-left:2px"></i>
+              <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron" style="width:12px;height:12px;margin-left:2px"></i>
             </button>
             <div class="settings-dropdown" id="doc-add-dropdown">
               <div class="settings-dropdown-item" data-action="local">
@@ -91047,7 +91385,8 @@ ${content}`;
       const groupBy = this._usageGroupBy;
       const daySet = /* @__PURE__ */ new Set();
       for (const s16 of sessions) {
-        const dk = this._formatDayKey(s16.first_active);
+        const ts2 = s16.last_active || s16.first_active;
+        const dk = this._formatDayKey(ts2);
         if (dk) daySet.add(dk);
       }
       const allDays = Array.from(daySet).sort();
@@ -91068,7 +91407,8 @@ ${content}`;
       });
       const cellMap = {};
       for (const s16 of sessions) {
-        const dk = this._formatDayKey(s16.first_active);
+        const ts2 = s16.last_active || s16.first_active;
+        const dk = this._formatDayKey(ts2);
         if (!dk) continue;
         const g = groupBy === "model" ? s16.model || "(unknown model)" : this._channelDisplayName(s16.channel || "normal");
         if (!cellMap[dk]) cellMap[dk] = {};
@@ -91210,9 +91550,127 @@ ${content}`;
         normal: t("settings.modeNormal"),
         iwork: "iWork",
         iclaw: "iClaw",
-        sub_agent: t("settings.modeAutomation")
+        sub_agent: t("settings.modeAutomation"),
+        qqbot: "QQ Bot",
+        feishu: "\u98DE\u4E66",
+        telegram: "Telegram",
+        discord: "Discord",
+        dingtalk: "\u9489\u9489",
+        weixin: "\u5FAE\u4FE1",
+        wecom: "\u4F01\u4E1A\u5FAE\u4FE1",
+        slack: "Slack",
+        signal: "Signal",
+        matrix: "Matrix",
+        whatsapp: "WhatsApp",
+        email: "Email",
+        homeassistant: "Home Assistant",
+        sms: "SMS",
+        webhook: "Webhook",
+        bluebubbles: "BlueBubbles",
+        yuanbao: "\u5143\u5B9D",
+        api_server: "API Server",
+        google_chat: "Google Chat",
+        irc: "IRC",
+        line: "Line",
+        msgraph: "MS Graph",
+        raft: "Raft",
+        simplex: "Simplex",
+        teams: "Teams",
+        ntfy: "Ntfy",
+        photon: "Photon"
       };
-      return labels[channel] || channel;
+      return labels[channel.toLowerCase()] || channel;
+    }
+    /** Bind reveal-eye toggles for every password field inside *root*.
+     *  Each button with `data-eye-target="some-input-id"` toggles the
+     *  referred input between `password` / `text` type on click.
+     *  For the WeChat token field, revealing the token also activates a
+     *  secure anti-copy mode that blocks all keyboard shortcuts and
+     *  clipboard operations until the dialog is dismissed. */
+    _bindEyeToggles(root) {
+      root.querySelectorAll(".model-form-eye-btn").forEach((btn) => {
+        const targetId = btn.getAttribute("data-eye-target");
+        if (!targetId) return;
+        const input = root.querySelector(`#${CSS.escape(targetId)}`);
+        if (!input) return;
+        const isWeixinToken = input.id === "dlg-weixin-token-input";
+        let visible = false;
+        let secureCleanup = null;
+        btn.addEventListener("click", () => {
+          visible = !visible;
+          input.type = visible ? "text" : "password";
+          const iconEl = btn.querySelector("i");
+          if (iconEl) iconEl.setAttribute("data-lucide", visible ? "eye-off" : "eye");
+          if (typeof window.lucide !== "undefined") {
+            window.lucide.createIcons({ root: btn });
+          }
+          if (visible && isWeixinToken && !secureCleanup) {
+            secureCleanup = this._enableSecureMode();
+            const observer2 = new MutationObserver(() => {
+              if (!root.isConnected) {
+                if (secureCleanup) secureCleanup();
+                secureCleanup = null;
+                observer2.disconnect();
+              }
+            });
+            observer2.observe(document.body, { childList: true, subtree: true });
+          }
+        });
+      });
+    }
+    /** Activate anti-copy / anti-shortcut lockdown for the entire document.
+     *  Blocks every keyboard event and clipboard operation.
+     *  Returns a cleanup function to restore normal behaviour. */
+    _enableSecureMode() {
+      const onKey = (e2) => {
+        e2.preventDefault();
+        e2.stopPropagation();
+      };
+      const onClip = (e2) => {
+        e2.preventDefault();
+      };
+      const onCtx = (e2) => {
+        e2.preventDefault();
+      };
+      const onSelect = (e2) => {
+        e2.preventDefault();
+      };
+      document.addEventListener("keydown", onKey, true);
+      document.addEventListener("copy", onClip, true);
+      document.addEventListener("cut", onClip, true);
+      document.addEventListener("contextmenu", onCtx, true);
+      document.addEventListener("selectstart", onSelect, true);
+      return () => {
+        document.removeEventListener("keydown", onKey, true);
+        document.removeEventListener("copy", onClip, true);
+        document.removeEventListener("cut", onClip, true);
+        document.removeEventListener("contextmenu", onCtx, true);
+        document.removeEventListener("selectstart", onSelect, true);
+      };
+    }
+    /** Bind click events on the model selection checkbox items inside a dialog. */
+    _bindAdapterModelSelect(root, defId) {
+      const container = root.querySelector(`#dlg-models-${defId}`);
+      const row = root.querySelector(`#adapter-models-row-${defId}`);
+      const toggle = root.querySelector(`#adapter-model-toggle-${defId}`);
+      if (toggle && row) {
+        toggle.addEventListener("change", () => {
+          row.style.display = toggle.checked ? "" : "none";
+        });
+      }
+      if (!container) return;
+      container.querySelectorAll(".auto-push-gw-check").forEach((cb) => {
+        cb.addEventListener("click", (e2) => e2.preventDefault());
+      });
+      container.querySelectorAll(".auto-push-gw-item").forEach((item) => {
+        item.addEventListener("click", (e2) => {
+          e2.stopPropagation();
+          const wasSel = item.classList.contains("selected");
+          const cb = item.querySelector(".auto-push-gw-check");
+          if (cb) cb.checked = !wasSel;
+          item.classList.toggle("selected", !wasSel);
+        });
+      });
     }
     /** YYYY-MM-DD key for grouping sessions by calendar day (local time). */
     _formatDayKey(timestamp) {
@@ -91246,7 +91704,7 @@ ${content}`;
       }));
       const labels = days.map((d) => this._shortDay(d));
       this._usageBarChartData = { labels, datasets };
-      const legendItems = groupOrder.map((g) => {
+      const legendItems = groupOrder.filter((g) => (groupTotals[g]?.tokens || 0) > 0).map((g) => {
         const color2 = groupColor[g];
         const total = groupTotals[g]?.tokens || 0;
         const status = groupTotals[g]?.status;
@@ -91313,18 +91771,20 @@ ${content}`;
       const BLOCKS = Math.floor(24 / BLOCK_HOURS);
       const cellTokens = {};
       for (const s16 of sessions) {
-        if (!s16.first_active) continue;
-        const d = new Date(s16.first_active * 1e3);
+        const ts2 = s16.last_active || s16.first_active;
+        if (!ts2) continue;
+        const d = new Date(ts2 * 1e3);
         if (isNaN(d.getTime())) continue;
-        const dayKey = this._formatDayKey(s16.first_active);
+        const dayKey = this._formatDayKey(ts2);
         if (!dayKey) continue;
         const block2 = Math.floor(d.getHours() / BLOCK_HOURS);
         cellTokens[`${dayKey}|${block2}`] = (cellTokens[`${dayKey}|${block2}`] || 0) + (s16.total_tokens || 0);
       }
       const MIN_DAYS = 30;
       const MAX_DAYS = 92;
-      const latestMs = Math.max(...sessions.filter((s16) => s16.first_active).map((s16) => s16.first_active * 1e3));
-      const earliestMs = Math.min(...sessions.filter((s16) => s16.first_active).map((s16) => s16.first_active * 1e3));
+      const activeTs = sessions.map((s16) => (s16.last_active || s16.first_active) * 1e3).filter((t3) => t3);
+      const latestMs = Math.max(...activeTs);
+      const earliestMs = Math.min(...activeTs);
       const latestDate = new Date(latestMs);
       const earliestDate = new Date(earliestMs);
       let startDate = new Date(earliestDate);
@@ -91351,7 +91811,7 @@ ${content}`;
       if (maxCell <= 0) {
         maxCell = 1;
       }
-      const cellW = 11, cellH = 11, cellGap = 3;
+      const cellW = 11, cellH = 11, cellGap = 5;
       const cellRadius = 1;
       const PL = 6, PR = 6, PT = 18, PB = 18;
       const MIN_DAY_STRIDE = 9;
@@ -91426,8 +91886,9 @@ No activity`;
       ).join("");
       const daySet = /* @__PURE__ */ new Set();
       for (const s16 of sessions) {
-        if (!s16.first_active) continue;
-        const k2 = this._formatDayKey(s16.first_active);
+        const ts2 = s16.last_active || s16.first_active;
+        if (!ts2) continue;
+        const k2 = this._formatDayKey(ts2);
         if (k2) daySet.add(k2);
       }
       const activeDays = daySet.size;
@@ -92339,6 +92800,32 @@ No activity`;
         return "info";
     }
   }
+  function flashCopy(btn) {
+    const orig = btn.getAttribute("data-original-icon");
+    const original = orig || "copy";
+    if (!orig) btn.setAttribute("data-original-icon", original);
+    btn.style.transition = "opacity 0.12s ease";
+    btn.style.opacity = "0";
+    setTimeout(() => {
+      const i8 = btn.querySelector("[data-lucide]");
+      if (i8) i8.setAttribute("data-lucide", "check");
+      if (typeof window.lucide !== "undefined") {
+        window.lucide.createIcons({ root: btn });
+      }
+      btn.style.opacity = "1";
+    }, 120);
+    setTimeout(() => {
+      btn.style.opacity = "0";
+      setTimeout(() => {
+        const i8 = btn.querySelector("[data-lucide]");
+        if (i8) i8.setAttribute("data-lucide", original);
+        if (typeof window.lucide !== "undefined") {
+          window.lucide.createIcons({ root: btn });
+        }
+        btn.style.opacity = "1";
+      }, 120);
+    }, 2e3);
+  }
   var Notifications = class {
     /**
      * Constructor: wires the bell button, outside-click dismissal and state subscription.
@@ -92371,6 +92858,12 @@ No activity`;
     /** Snapshots the current notification ids as "already seen". */
     syncSeenIds() {
       this.lastNotificationIds = new Set(getState().notifications.map((n2) => n2.id));
+    }
+    /** Copies a notification's original text to the clipboard with visual feedback. */
+    copyNotification(item, btn) {
+      const text2 = [item.title, item.message, item.source && `${t("notifications.source")}: ${item.source}`].filter(Boolean).join("\n");
+      navigator.clipboard.writeText(text2).then(() => flashCopy(btn)).catch(() => {
+      });
     }
     /** Re-renders the badge/panel and pops toasts for any new notifications. */
     render() {
@@ -92418,10 +92911,20 @@ No activity`;
       toast.innerHTML = `
       <div class="notification-toast-message">${this.esc(item.message || item.title)}</div>
       ${sourceHtml}
-      <button class="notification-toast-collapse" data-tooltip="${t("notifications.dismiss")}">
-        <i data-lucide="chevron-down" class="lucide lucide-sm"></i>
-      </button>
+      <div class="notification-toast-actions">
+        <button class="notification-toast-copy" data-tooltip="${t("notifications.copy")}">
+          <i data-lucide="copy" class="lucide lucide-sm"></i>
+        </button>
+        <button class="notification-toast-collapse" data-tooltip="${t("notifications.dismiss")}">
+          <i data-lucide="chevron-down" class="lucide lucide-sm"></i>
+        </button>
+      </div>
     `;
+      const copyBtn = toast.querySelector(".notification-toast-copy");
+      copyBtn?.addEventListener("click", (e2) => {
+        e2.stopPropagation();
+        this.copyNotification(item, copyBtn);
+      });
       const collapseBtn = toast.querySelector(".notification-toast-collapse");
       collapseBtn?.addEventListener("click", (e2) => {
         e2.stopPropagation();
@@ -92549,6 +93052,9 @@ No activity`;
             <i data-lucide="arrow-left" class="lucide lucide-sm"></i>
             <span>${t("notifications.back")}</span>
           </button>
+          <button class="notification-detail-copy" data-tooltip="${t("notifications.copy")}">
+            <i data-lucide="copy" class="lucide lucide-sm"></i>
+          </button>
         </div>
         ${n2.media ? `<div class="notification-detail-media" id="notif-detail-media"></div>` : ""}
         <div class="notification-detail-body">
@@ -92577,6 +93083,11 @@ No activity`;
         e2.stopPropagation();
         this._detailId = null;
         this.renderPanel();
+      });
+      this.panel.querySelector(".notification-detail-copy")?.addEventListener("click", (e2) => {
+        e2.stopPropagation();
+        const btn = this.panel.querySelector(".notification-detail-copy");
+        this.copyNotification(n2, btn);
       });
       if (typeof window.lucide !== "undefined") {
         window.lucide.createIcons({ root: this.panel });
@@ -93654,6 +94165,11 @@ No activity`;
   init_session();
   init_context_menu();
   init_stream();
+  function gatewayDisplayName(id) {
+    const key = "settings.adapterName" + id.charAt(0).toUpperCase() + id.slice(1);
+    const name = t(key);
+    return name === key ? id : name;
+  }
   var TEMPLATES = [
     {
       id: "ai-news",
@@ -93790,6 +94306,11 @@ No activity`;
       // YYYY-MM-DD or ""
       this.historyFiltersBound = false;
       this._lastHistoryRef = null;
+      // Rebind closures + date label elements so labels can be refreshed on locale change
+      this._rebindStatus = null;
+      this._rebindTask = null;
+      this._dateFromText = null;
+      this._dateToText = null;
       // Cached filtered history for export (set by renderHistory)
       this.currentFilteredHistory = [];
       this.el = document.getElementById("automation-view");
@@ -93808,6 +94329,7 @@ No activity`;
       this.bindCallbacks();
       this.bindCreateButton();
       this.bindHistoryFilters();
+      onLocaleChange(() => this.updateHistoryFilterLabels());
       document.addEventListener("click", (e2) => {
         const target = e2.target;
         const filtersEl = document.getElementById("history-filters");
@@ -93876,6 +94398,8 @@ No activity`;
         if (typeof window.lucide !== "undefined") window.lucide.createIcons({ root: this.detailContentEl });
       } else if (data.messages && data.messages.length > 0) {
         this.renderSubAgentTimeline(data.messages);
+      } else if (data.prompt) {
+        this.renderTaskCard(data.prompt, data.state || "");
       } else if (data.state === "RUNNING" || data.state === "PENDING") {
         this.detailContentEl.innerHTML = `<div class="automation-detail-loader"><i data-lucide="loader-circle" class="lucide" style="animation:historySpin 1s linear infinite;"></i></div>`;
         if (typeof window.lucide !== "undefined") window.lucide.createIcons({ root: this.detailContentEl });
@@ -93927,6 +94451,28 @@ No activity`;
         const isRunning = this.activeExecution?.state === "RUNNING" || this.activeExecution?.state === "PENDING";
         this.chatRenderer.renderSubAgentInto(this.detailContentEl, restoreMessages(messages), !!isRunning);
       }
+    }
+    /**
+     * Fallback detail body when an execution has no sub-agent messages yet:
+     * always show the task the user originally defined (job prompt) together
+     * with a consistent status line, instead of a bare infinite spinner.
+     */
+    renderTaskCard(prompt2, state2) {
+      const pending = state2 === "RUNNING" || state2 === "PENDING";
+      const icon = state2 === "COMPLETED" ? "circle-check" : state2 === "FAILED" ? "circle-x" : "loader-circle";
+      const iconCls = state2 === "COMPLETED" ? "color:var(--success)" : state2 === "FAILED" ? "color:var(--danger)" : "color:var(--warning)";
+      const label = state2 === "COMPLETED" ? t("automation.stateSuccess") : state2 === "FAILED" ? t("automation.stateFailed") : state2 === "RUNNING" ? t("automation.stateRunning") : t("automation.statePending");
+      const spin = pending ? "animation:historySpin 1s linear infinite;" : "";
+      this.detailContentEl.innerHTML = `
+      <div class="automation-detail-card">
+        <div class="automation-detail-status">
+          <i data-lucide="${icon}" class="lucide" style="width:16px;height:16px;${iconCls};${spin}"></i>
+          <span>${this.escapeHtml(label)}</span>
+        </div>
+        <div class="automation-detail-task-label">${this.escapeHtml(t("automation.taskContent") || "Task")}</div>
+        <div class="automation-detail-task-text">${this.escapeHtml(prompt2)}</div>
+      </div>`;
+      if (typeof window.lucide !== "undefined") window.lucide.createIcons({ root: this.detailContentEl });
     }
     // ── Rendering ───────────────────────────────────────────────────
     /** Refreshes the panel by requesting the jobs list and run history. */
@@ -93985,67 +94531,88 @@ No activity`;
       const parsed = parseCronForUI(defaultCron);
       const title = isEdit ? t("automation.editTask") : t("automation.createTaskTitle");
       const btnLabel = isEdit ? t("automation.save") : t("automation.create");
+      const _dlgModels = getState().modelConfigs || [];
+      const initModelIndex = (() => {
+        const idx = editJob?.model_index ?? getState().activeModelIndex;
+        if (_dlgModels[idx] && _dlgModels[idx].enabled !== false) return idx;
+        const first = _dlgModels.findIndex((m) => m.enabled !== false);
+        return first >= 0 ? first : idx;
+      })();
       const overlay = document.createElement("div");
       overlay.className = "toast-overlay";
       overlay.innerHTML = `
       <div class="toast-dialog dialog-wide">
         <div class="toast-title">${title}</div>
         <div class="dialog-body">
-          <div class="model-form-row">
-            <label class="model-form-label">${t("automation.taskName")}</label>
-            <input type="text" id="auto-dlg-name" class="model-form-input" value="${escapeHtml4(editJob?.name || (template.defaultNameKey ? t(`automation.${template.defaultNameKey}`) : ""))}" />
-          </div>
-          <div class="model-form-row">
-            <label class="model-form-label">${t("automation.triggerTime")}</label>
-            <div class="model-form-dropdown-row">
-              <div class="settings-dropdown-wrap" id="auto-dlg-schedule-wrap">
-                <button class="settings-dropdown-trigger" id="auto-dlg-schedule-trigger" type="button">
-                  <span>${parsed.scheduleType === "daily" ? t("automation.everyDay") : parsed.scheduleType === "weekly" ? t("automation.everyWeek") : t("automation.everyHour")}</span>
-                  <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
-                </button>
-                <div class="settings-dropdown" id="auto-dlg-schedule-dropdown">
-                  <div class="settings-dropdown-item" data-value="daily"><i data-lucide="calendar" class="lucide" style="width:16px;height:16px;margin-right:6px"></i><span>${t("automation.everyDay")}</span></div>
-                  <div class="settings-dropdown-item" data-value="weekly"><i data-lucide="calendar" class="lucide" style="width:16px;height:16px;margin-right:6px"></i><span>${t("automation.everyWeek")}</span></div>
-                  <div class="settings-dropdown-item" data-value="hourly"><i data-lucide="clock" class="lucide" style="width:16px;height:16px;margin-right:6px"></i><span>${t("automation.everyHour")}</span></div>
+            <div class="model-form-row">
+              <label class="model-form-label">${t("automation.taskName")}</label>
+              <input type="text" id="auto-dlg-name" class="model-form-input" placeholder="${t("automation.taskNamePlaceholder")}" value="${escapeHtml4(editJob?.name || (template.defaultNameKey ? t(`automation.${template.defaultNameKey}`) : ""))}" />
+            </div>
+            <div class="model-form-row">
+              <label class="model-form-label">${t("automation.triggerTime")}</label>
+              <div class="model-form-dropdown-row">
+                <div class="settings-dropdown-wrap" id="auto-dlg-schedule-wrap">
+                  <button class="settings-dropdown-trigger" id="auto-dlg-schedule-trigger" type="button">
+                    <i data-lucide="${parsed.scheduleType === "hourly" ? "clock" : "calendar"}" class="lucide auto-trigger-icon"></i>
+                    <span>${parsed.scheduleType === "daily" ? t("automation.everyDay") : parsed.scheduleType === "weekly" ? t("automation.everyWeek") : t("automation.everyHour")}</span>
+                    <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+                  </button>
+                  <div class="settings-dropdown" id="auto-dlg-schedule-dropdown">
+                    <div class="settings-dropdown-item" data-value="daily"><span>${t("automation.everyDay")}</span></div>
+                    <div class="settings-dropdown-item" data-value="weekly"><span>${t("automation.everyWeek")}</span></div>
+                    <div class="settings-dropdown-item" data-value="hourly"><span>${t("automation.everyHour")}</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="model-form-dropdown-row" id="auto-dlg-time-row" style="margin-top:8px">
+                <div class="settings-dropdown-wrap" id="auto-dlg-time-wrap">
+                  <button class="settings-dropdown-trigger" id="auto-dlg-time-trigger" type="button">
+                    <i data-lucide="clock" class="lucide auto-trigger-icon"></i>
+                    <span>${escapeHtml4(parsed.time)}</span>
+                    <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+                  </button>
+                  <div class="settings-dropdown time-picker-dropdown" id="auto-dlg-time-dropdown">
+                    <div class="time-picker-grid">
+                      <div class="time-picker-col" id="auto-dlg-time-hours"></div>
+                      <div class="time-picker-col" id="auto-dlg-time-mins"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="model-form-dropdown-row" id="auto-dlg-time-row" style="margin-top:8px">
-              <div class="settings-dropdown-wrap" id="auto-dlg-time-wrap">
-                <button class="settings-dropdown-trigger" id="auto-dlg-time-trigger" type="button">
-                  <i data-lucide="clock" class="lucide" style="width:16px;height:16px;margin-right:6px;opacity:0.5;flex-shrink:0"></i>
-                  <span>${escapeHtml4(parsed.time)}</span>
-                  <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
-                </button>
-                <div class="settings-dropdown" id="auto-dlg-time-dropdown"></div>
-              </div>
-            </div>
-          </div>
           <div class="model-form-row">
             <label class="model-form-label">${t("automation.modelLabel")}</label>
             <div class="model-form-dropdown-row">
               <div class="settings-dropdown-wrap" id="auto-dlg-model-wrap">
                 <button class="settings-dropdown-trigger" id="auto-dlg-model-trigger" type="button">
-                  <span>${getState().modelConfigs[editJob?.model_index ?? getState().activeModelIndex]?.name || "\u2014"}</span>
+                  <span>${_dlgModels[initModelIndex]?.name || "\u2014"}</span>
                   <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
                 </button>
                 <div class="settings-dropdown" id="auto-dlg-model-dropdown"></div>
               </div>
             </div>
           </div>
-          <div class="model-form-thinking-card" style="margin-bottom:12px;margin-top:8px">
-            <div class="model-form-thinking-info">
-              <div class="model-form-thinking-title">${t("automation.enablePush")}</div>
-              <div class="model-form-thinking-desc">${t("automation.enablePushHint")}</div>
+          <div class="settings-card" style="margin-bottom:12px;margin-top:8px;overflow:hidden">
+            <div class="settings-item-row">
+              <div class="settings-item-info">
+                <div class="settings-item-title">
+                  <span>${t("automation.pushCardTitle")}</span>
+                </div>
+                <div class="settings-item-desc">${t("automation.enablePushHint")}</div>
+              </div>
+              <div class="settings-item-control">
+                <label class="toggle-switch" title="${t("automation.enablePush")}">
+                  <input type="checkbox" id="auto-dlg-push-toggle" ${editJob?.push_gateways?.length ? "checked" : ""} />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
             </div>
-            <label class="toggle-switch">
-              <input type="checkbox" id="auto-dlg-push-toggle" ${editJob?.push_gateways?.length ? "checked" : ""} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div class="model-form-row" id="auto-dlg-push-gateways-row" style="${editJob?.push_gateways?.length ? "" : "display:none"}">
-            <label class="model-form-label">${t("automation.pushGateways")}</label>
-            <div id="auto-dlg-push-gateways" style="margin-top:4px"></div>
+            <div id="auto-dlg-push-gateways-row" style="${editJob?.push_gateways?.length ? "" : "display:none"}">
+              <div class="auto-push-gateways">
+                <div class="auto-push-gateways-label">${t("automation.pushGateways")}</div>
+                <div id="auto-dlg-push-gateways"></div>
+              </div>
+            </div>
           </div>
           <div class="model-form-row" style="flex-direction:column;align-items:stretch">
             <label class="model-form-label">${t("automation.whatToDo")}</label>
@@ -94079,28 +94646,40 @@ No activity`;
       const timeDropdown = overlay.querySelector("#auto-dlg-time-dropdown");
       const scheduleTrigger = overlay.querySelector("#auto-dlg-schedule-trigger");
       const scheduleDropdown = overlay.querySelector("#auto-dlg-schedule-dropdown");
+      const pad2 = (n2) => n2.toString().padStart(2, "0");
       const buildTimeOptions = () => {
-        const times = [];
-        for (let h3 = 0; h3 < 24; h3++) {
-          for (let m = 0; m < 60; m++) {
-            times.push(`${h3.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`);
-          }
-        }
-        timeDropdown.innerHTML = times.map(
-          (t3) => `<div class="settings-dropdown-item${t3 === timeValue ? " selected" : ""}" data-value="${t3}">
-          <i data-lucide="clock" class="lucide" style="width:16px;height:16px;margin-right:6px;opacity:0.5"></i>
-          <span>${t3}</span>
-        </div>`
-        ).join("");
-        if (typeof window.lucide !== "undefined") {
-          window.lucide.createIcons({ root: timeDropdown });
-        }
-        timeDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
-          item.addEventListener("click", (e2) => {
-            e2.stopPropagation();
-            timeValue = item.getAttribute("data-value") || "09:00";
-            timeTrigger.querySelector("span").textContent = timeValue;
-            timeDropdown.classList.remove("open");
+        const hoursCol = overlay.querySelector("#auto-dlg-time-hours");
+        const minsCol = overlay.querySelector("#auto-dlg-time-mins");
+        const [curH, curM] = (() => {
+          const parts = (timeValue || "09:00").split(":").map(Number);
+          return [parts[0] ?? 9, parts[1] ?? 0];
+        })();
+        const renderCol = (col, count, selected, onPick) => {
+          col.innerHTML = Array.from(
+            { length: count },
+            (_2, i8) => `<div class="settings-dropdown-item time-picker-cell${i8 === selected ? " selected" : ""}" data-value="${i8}">${pad2(i8)}</div>`
+          ).join("");
+          col.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+            item.addEventListener("click", (e2) => {
+              e2.stopPropagation();
+              onPick(parseInt(item.getAttribute("data-value") || "0", 10));
+            });
+          });
+        };
+        renderCol(hoursCol, 24, curH, (h3) => {
+          const m = parseInt((timeValue || "09:00").split(":")[1] ?? "0", 10);
+          timeValue = `${pad2(h3)}:${pad2(m)}`;
+          timeTrigger.querySelector("span").textContent = timeValue;
+          hoursCol.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+            item.classList.toggle("selected", parseInt(item.getAttribute("data-value") || "0", 10) === h3);
+          });
+        });
+        renderCol(minsCol, 60, curM, (m) => {
+          const h3 = parseInt((timeValue || "09:00").split(":")[0] ?? "9", 10);
+          timeValue = `${pad2(h3)}:${pad2(m)}`;
+          timeTrigger.querySelector("span").textContent = timeValue;
+          minsCol.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+            item.classList.toggle("selected", parseInt(item.getAttribute("data-value") || "0", 10) === m);
           });
         });
       };
@@ -94123,11 +94702,24 @@ No activity`;
           const val = item.getAttribute("data-value") || "daily";
           const label = item.querySelector("span").textContent || "";
           scheduleTrigger.querySelector("span").textContent = label;
+          const schedIcon = scheduleTrigger.querySelector("i[data-lucide]");
+          if (schedIcon) {
+            schedIcon.setAttribute("data-lucide", val === "hourly" ? "clock" : "calendar");
+            if (typeof window.lucide !== "undefined") {
+              window.lucide.createIcons({ root: scheduleTrigger });
+            }
+          }
           scheduleDropdown.classList.remove("open");
           scheduleValue = val;
           showTimePicker(val !== "hourly");
         });
       });
+      const closeTimeOutside = (ev) => {
+        const target = ev.target;
+        if (timeDropdown.classList.contains("open") && !timeDropdown.contains(target) && !timeTrigger.contains(target)) {
+          timeDropdown.classList.remove("open");
+        }
+      };
       timeTrigger.addEventListener("click", (e2) => {
         e2.stopPropagation();
         const isOpen = timeDropdown.classList.contains("open");
@@ -94139,12 +94731,8 @@ No activity`;
         buildTimeOptions();
         timeDropdown.classList.add("open");
       });
-      let selectedModelIndex = editJob?.model_index ?? getState().activeModelIndex;
-      const _allModelsInit = getState().modelConfigs;
-      if (_allModelsInit && _allModelsInit[selectedModelIndex]?.enabled === false) {
-        const _firstEnabled = _allModelsInit.findIndex((m) => m.enabled !== false);
-        if (_firstEnabled >= 0) selectedModelIndex = _firstEnabled;
-      }
+      document.addEventListener("click", closeTimeOutside);
+      let selectedModelIndex = initModelIndex;
       const modelTrigger = overlay.querySelector("#auto-dlg-model-trigger");
       const modelDropdown = overlay.querySelector("#auto-dlg-model-dropdown");
       const buildModelOptions = () => {
@@ -94193,38 +94781,38 @@ No activity`;
         const adapters2 = gs3?.adapters || [];
         const available = adapters2.filter((a) => a.connected);
         if (available.length === 0) {
-          pushGatewaysContainer.innerHTML = `<span style="color:var(--text-muted);font-size:13px">\u2014</span>`;
+          pushGatewaysContainer.innerHTML = `<span style="color:var(--text-muted);font-size:13px">${t("automation.pushGatewaysEmpty")}</span>`;
           return;
         }
         const selected = new Set(editJob?.push_gateways || []);
         pushGatewaysContainer.innerHTML = available.map((a) => {
           const isSel = selected.has(a.name);
-          return `<div class="settings-dropdown-item${isSel ? " selected" : ""}" data-gateway-id="${a.name}" style="display:flex;align-items:center;gap:8px">
-          <i data-lucide="${isSel ? "check-circle" : "circle"}" class="lucide" style="width:16px;height:16px;flex-shrink:0;${isSel ? "color:var(--accent)" : "opacity:0.3"}"></i>
-          <span>${a.name}</span>
+          const iconData = PLATFORM_ICONS[a.name];
+          const iconHtml = iconData ? `<svg viewBox="${iconData.viewBox || "0 0 24 24"}" width="18" height="18" style="flex-shrink:0">${iconData.inner}</svg>` : `<div style="width:18px;height:18px;border-radius:4px;background:#888;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${escapeHtml4(gatewayDisplayName(a.name).substring(0, 2))}</div>`;
+          return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-gateway-id="${a.name}">
+          ${iconHtml}
+          <span class="auto-push-gw-name">${escapeHtml4(gatewayDisplayName(a.name))}</span>
+          <span class="auto-push-gw-dot" title="${escapeHtml4(a.name)}"></span>
+          <input type="checkbox" class="auto-push-gw-check" ${isSel ? "checked" : ""} />
         </div>`;
         }).join("");
-        if (typeof window.lucide !== "undefined") {
-          window.lucide.createIcons({ root: pushGatewaysContainer });
-        }
-        pushGatewaysContainer.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+        pushGatewaysContainer.querySelectorAll(".auto-push-gw-check").forEach((cb) => {
+          cb.addEventListener("click", (e2) => e2.preventDefault());
+        });
+        pushGatewaysContainer.querySelectorAll(".auto-push-gw-item").forEach((item) => {
           item.addEventListener("click", (e2) => {
             e2.stopPropagation();
             const gwId = item.getAttribute("data-gateway-id");
             if (!gwId) return;
             const wasSel = selected.has(gwId);
-            const icon = item.querySelector(".lucide");
+            const cb = item.querySelector(".auto-push-gw-check");
+            if (cb) cb.checked = !wasSel;
             if (wasSel) {
               selected.delete(gwId);
               item.classList.remove("selected");
-              if (icon) icon.setAttribute("data-lucide", "circle");
             } else {
               selected.add(gwId);
               item.classList.add("selected");
-              if (icon) icon.setAttribute("data-lucide", "check-circle");
-            }
-            if (typeof window.lucide !== "undefined") {
-              window.lucide.createIcons({ root: pushGatewaysContainer });
             }
           });
         });
@@ -94265,7 +94853,7 @@ No activity`;
         if (pushToggleEl?.checked) {
           const container = document.getElementById("auto-dlg-push-gateways");
           if (container) {
-            selectedPushGateways = Array.from(container.querySelectorAll(".settings-dropdown-item.selected")).map((item) => item.getAttribute("data-gateway-id")).filter(Boolean);
+            selectedPushGateways = Array.from(container.querySelectorAll(".auto-push-gw-item.selected")).map((item) => item.getAttribute("data-gateway-id")).filter(Boolean);
           }
         }
         overlay.remove();
@@ -94374,6 +94962,10 @@ No activity`;
         switch (state2) {
           case "RUNNING":
             return `<span class="model-active-tag" style="color:var(--success);background:rgba(34,197,94,0.12)">${t("automation.stateRunning")}</span>`;
+          case "COMPLETED":
+            return `<span class="model-active-tag" style="color:var(--success);background:rgba(34,197,94,0.12)">${t("automation.stateSuccess")}</span>`;
+          case "FAILED":
+            return `<span class="model-active-tag" style="color:var(--danger);background:rgba(239,68,68,0.12)">${t("automation.stateFailed")}</span>`;
           case "PENDING":
             return `<span class="model-active-tag" style="color:var(--warning);background:rgba(234,179,8,0.12)">${t("automation.statePending")}</span>`;
           default:
@@ -94389,7 +94981,9 @@ No activity`;
             <span class="model-name-text">${escapeHtml4(job.name)}</span>
             ${job.tag && job.tag !== job.name ? `<span class="model-active-tag">${escapeHtml4(job.tag)}</span>` : ""}
           </div>
-          <div class="model-table-cell model-cell-provider">${formatSchedule(job.cron)}</div>
+          <div class="model-table-cell model-cell-provider">
+            <div>${formatSchedule(job.cron)}</div>
+          </div>
           <div class="model-table-cell model-cell-actions">
             ${stateTag(job.state, job.suspended)}
             <button class="btn-icon" data-action="edit" data-tooltip="${t("general.edit")}">
@@ -94446,17 +95040,21 @@ No activity`;
       const root = document.getElementById("history-filters");
       if (!root) return;
       this.historyFiltersBound = true;
-      const statusOptions = [
-        { id: "", label: t("automation.filterAll") },
-        { id: "SUCCESS", label: t("automation.filterSuccess") },
-        { id: "FAILED", label: t("automation.filterFailed") },
-        { id: "RUNNING", label: t("automation.stateRunning") },
-        { id: "PENDING", label: t("automation.statePending") }
-      ];
-      this.renderHistoryDropdown("history-filter-status", statusOptions, this.historyStatus, (val) => {
-        this.historyStatus = val;
-        this.renderHistory();
-      });
+      const rebindStatus = () => {
+        const statusOptions = [
+          { id: "", label: t("automation.filterAll") },
+          { id: "COMPLETED", label: t("automation.filterSuccess") },
+          { id: "FAILED", label: t("automation.filterFailed") },
+          { id: "RUNNING", label: t("automation.stateRunning") },
+          { id: "PENDING", label: t("automation.statePending") }
+        ];
+        this.renderHistoryDropdown("history-filter-status", statusOptions, this.historyStatus, (val) => {
+          this.historyStatus = val;
+          this.renderHistory();
+        });
+      };
+      rebindStatus();
+      this._rebindStatus = rebindStatus;
       const renderTaskOptions = () => {
         const opts = [{ id: "", label: t("automation.filterAllTasks") }];
         const seenNames = /* @__PURE__ */ new Set();
@@ -94481,6 +95079,7 @@ No activity`;
         });
       };
       rebindTask();
+      this._rebindTask = rebindTask;
       this.onHistoryFiltersRebind = rebindTask;
       const dateFromHidden = document.getElementById("history-date-from");
       const dateToHidden = document.getElementById("history-date-to");
@@ -94490,6 +95089,10 @@ No activity`;
       const dateToDD = document.getElementById("history-date-to-dd");
       const dateFromText = document.getElementById("history-date-from-text");
       const dateToText = document.getElementById("history-date-to-text");
+      this._dateFromText = dateFromText;
+      this._dateToText = dateToText;
+      if (dateFromText) dateFromText.textContent = getLocale() === "en" ? "Start Date" : "\u5F00\u59CB\u65E5\u671F";
+      if (dateToText) dateToText.textContent = getLocale() === "en" ? "End Date" : "\u7ED3\u675F\u65E5\u671F";
       const MONTHS_SHORT = getLocale() === "en" ? ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] : ["1\u6708", "2\u6708", "3\u6708", "4\u6708", "5\u6708", "6\u6708", "7\u6708", "8\u6708", "9\u6708", "10\u6708", "11\u6708", "12\u6708"];
       const WEEKDAYS_SHORT = getLocale() === "en" ? ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] : ["\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D", "\u65E5"];
       function renderCalendar(container, currentDate, onSelect) {
@@ -94596,6 +95199,17 @@ No activity`;
         });
       }
     }
+    /** Refresh history filter labels/dropdowns for the current locale. */
+    updateHistoryFilterLabels() {
+      this._rebindStatus?.();
+      this._rebindTask?.();
+      if (this._dateFromText && !this.historyDateFrom) {
+        this._dateFromText.textContent = getLocale() === "en" ? "Start Date" : "\u5F00\u59CB\u65E5\u671F";
+      }
+      if (this._dateToText && !this.historyDateTo) {
+        this._dateToText.textContent = getLocale() === "en" ? "End Date" : "\u7ED3\u675F\u65E5\u671F";
+      }
+    }
     exportHistory() {
       if (this.currentFilteredHistory.length === 0) {
         return;
@@ -94621,7 +95235,7 @@ No activity`;
         for (const e2 of sorted) {
           const ts2 = formatDateTime(e2.time);
           const stateLabel = this.getStateLabel(e2.state);
-          const stateBadge = e2.state === "SUCCESS" ? "\u2705" : e2.state === "FAILED" ? "\u274C" : e2.state === "RUNNING" ? "\u{1F504}" : "\u23F3";
+          const stateBadge = e2.state === "SUCCESS" || e2.state === "COMPLETED" ? "\u2705" : e2.state === "FAILED" ? "\u274C" : e2.state === "RUNNING" ? "\u{1F504}" : "\u23F3";
           lines.push(`### ${stateBadge} ${ts2} \u2014 ${stateLabel}`);
           if (e2.tag && e2.tag !== e2.name) {
             lines.push("");
@@ -94674,6 +95288,7 @@ No activity`;
     getStateLabel(state2) {
       switch (state2) {
         case "SUCCESS":
+        case "COMPLETED":
           return t("automation.stateSuccess");
         case "FAILED":
           return t("automation.stateFailed");
@@ -94805,7 +95420,7 @@ No activity`;
           const data = {
             id: entry.id,
             name: entry.name,
-            prompt: job?.prompt || entry.name,
+            prompt: entry.prompt || job?.prompt || entry.name,
             result: entry.last_result || "",
             tag: entry.tag,
             messages: entry.messages || [],
@@ -108651,7 +109266,7 @@ void main() {
         api.terminalWrite(ptyId, data);
       });
       const dataCleanup = api.onTerminalData((d) => {
-        if (d.id === ptyId) term.write(d.text);
+        if (d.id === ptyId) term.write(d.data);
       });
       const exitCleanup = api.onTerminalExit((d) => {
         if (d.id === ptyId) {
@@ -110672,7 +111287,7 @@ void main() {
     }
     /* ── Progress Panel (Todo / Plan Items) ─────────────────────────── */
     renderProgressPanel(st3) {
-      const items = st3.planItems;
+      const items = st3.planItems || [];
       let bodyHTML = "";
       if (items.length === 0) {
         bodyHTML = `<div class="si-panel-empty">${t("sessionInner.noProgress")}</div>`;
@@ -110787,7 +111402,7 @@ void main() {
       const contextLimit = active ? active.context_window || active.max_tokens || 0 : 0;
       const telemetry = st3.telemetry;
       const tu = st3.tokenUsage;
-      const lastCompact = st3.compactEvents.length > 0 ? st3.compactEvents[st3.compactEvents.length - 1] : null;
+      const lastCompact = (st3.compactEvents || []).length > 0 ? st3.compactEvents[st3.compactEvents.length - 1] : null;
       const totalUsed = st3.contextTokens || lastCompact?.new_tokens || 0;
       const usagePct = contextLimit > 0 ? (totalUsed / contextLimit * 100).toFixed(1) : null;
       const usageWarn = usagePct !== null && parseFloat(usagePct) > 80;
@@ -112747,7 +113362,7 @@ void main() {
       for (const g of groups) {
         if (g.refs.length === 0) continue;
         const allHtml = g.refs.map(renderItem).join("");
-        parts.push(`<div>
+        parts.push(`<div class="collapsed">
         <div class="sp-ref-header" onclick="this.parentElement.classList.toggle('collapsed')">
           <i data-lucide="${g.icon}" class="lucide lucide-sm sp-ref-header-icon"></i>
           <span class="sp-ref-header-label">${g.label}</span>
@@ -113525,6 +114140,7 @@ void main() {
       }
       const scrollIndicator = document.getElementById("chat-scroll-indicator");
       if (scrollIndicator) scrollIndicator.classList.add("hidden");
+      this.chat.resetScrollButton();
       const tempBtn = document.getElementById("btn-temp-chat");
       if (tempBtn) tempBtn.classList.remove("active");
       const btnNewTask = document.querySelector('.nav-item[data-view="chat"]');

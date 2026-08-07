@@ -45,6 +45,12 @@ from encre.tools.builtin.cron_create import EncreCronCreateTool
 from encre.tools.builtin.cron_delete import EncreCronDeleteTool
 from encre.tools.builtin.cron_list import EncreCronListTool
 from encre.tools.builtin.database import EncreDatabaseTool
+from encre.tools.builtin.device_battery import EncreDeviceBatteryTool
+from encre.tools.builtin.device_display import EncreDeviceDisplayTool
+from encre.tools.builtin.device_info import EncreDeviceInfoTool
+from encre.tools.builtin.device_location import EncreDeviceLocationTool
+from encre.tools.builtin.device_network import EncreDeviceNetworkTool
+from encre.tools.builtin.device_sensor import EncreDeviceSensorTool
 from encre.tools.builtin.deploy import EncreDeployTool
 from encre.tools.builtin.desktop import EncreDesktopTool
 from encre.tools.builtin.docker import EncreDockerTool
@@ -141,6 +147,12 @@ __all__ = [
     "EncreDatabaseTool",
     "EncreDeployTool",
     "EncreDesktopTool",
+    "EncreDeviceBatteryTool",
+    "EncreDeviceDisplayTool",
+    "EncreDeviceInfoTool",
+    "EncreDeviceLocationTool",
+    "EncreDeviceNetworkTool",
+    "EncreDeviceSensorTool",
     "EncreDockerTool",
     "EncreDocumentTool",
     "EncreEditImageTool",

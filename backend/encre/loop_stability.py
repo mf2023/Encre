@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # ── Limits ────────────────────────────────────────────────────────────
 MAX_EMPTY_RESPONSE_RETRIES = 2
 MAX_TRUNCATED_TOOL_CALL_RETRIES = 2
+MAX_STUB_RESPONSE_RETRIES = 2
 MAX_MESSAGE_REPAIR_DEPTH = 50
 PRE_API_COMPACT_THRESHOLD_RATIO = 0.85
 POST_TOOL_COMPACT_THRESHOLD_RATIO = 0.80
@@ -180,6 +181,129 @@ def build_empty_retry_message(retry_count: int) -> str:
     return (
         "Your response was empty again. You must respond with text or a tool call. "
         "Do not return an empty response."
+    )
+
+
+# ── 2b. Stub Response Detection ──────────────────────────────────────
+# A stub is a response that has *some* text (so is_empty_response is False)
+# but is too brief to be a real deliverable — e.g. "I'll help you with that."
+# or "Done!" — without any tool calls to back it up.
+#
+# This catches the #1 task-delivery failure mode: the model acknowledges the
+# request but never actually starts working, and the auto-continue mechanism
+# doesn't fire because token_budget is 0 or exhausted.
+
+_STUB_PATTERNS: tuple[str, ...] = (
+    "i'll help", "i will help", "let me help", "i can help",
+    "i'll do", "i will do", "let me do",
+    "i'll start", "i will start", "let me start",
+    "i'll begin", "i will begin", "let me begin",
+    "i'll look", "i will look", "let me look",
+    "i'll check", "i will check", "let me check",
+    "i'll try", "i will try", "let me try",
+    "i'll see", "i will see", "let me see",
+    "i'll work", "i will work", "let me work",
+    "i'll get", "i will get", "let me get",
+    "sure!", "of course!", "absolutely!", "no problem!",
+    "i'll take", "i will take", "let me take",
+    "i'll handle", "i will handle", "let me handle",
+)
+
+_STUB_COMPLETED_PATTERNS: tuple[str, ...] = (
+    "done!", "finished!", "complete!", "all done", "all set",
+    "that's it", "thats it", "here you go", "there you go",
+)
+
+# Responses with these markers are NOT stubs — they contain real deliverable
+# content (code, file paths, structured output).
+_REAL_CONTENT_MARKERS: tuple[str, ...] = (
+    "```",  # code block
+    "file:///",  # file reference
+    ".py", ".js", ".ts", ".rs", ".go", ".java",  # file extensions
+    "def ", "class ", "function ", "import ",  # code keywords
+    "http://", "https://",  # URLs
+)
+
+
+def is_stub_response(
+    text_parts: list[str],
+    tool_call_buffers: dict[int, dict[str, Any]],
+    thinking_parts: list[str],
+    prompt: str = "",
+) -> bool:
+    """Return True if the model returned a suspiciously brief text-only response.
+
+    A stub has:
+    - Some text (not empty — empty is handled by :func:`is_empty_response`)
+    - NO tool calls (a response with tools is never a stub)
+    - Brief text (< 300 chars) that looks like an acknowledgment without action
+
+    This catches the failure mode where the model says "I'll help you with
+    that." or "Done!" without actually doing any work.  The auto-continue
+    mechanism only fires when ``token_budget > 0``, so without this check a
+    stub slips through to ``finish("stop")`` and the user gets nothing.
+
+    Conservative by design — false negatives (missing a stub) are harmless,
+    false positives (flagging a real response) waste one retry turn.
+    """
+    if tool_call_buffers:
+        return False  # Has tool calls — not a stub
+    text = "".join(text_parts).strip()
+    if not text:
+        return False  # Empty — handled by is_empty_response
+    if len(text) > 300:
+        return False  # Substantial text — probably a real response
+
+    # If the model produced substantial thinking content, it may be
+    # reasoning before acting — don't flag as stub.
+    thinking = "".join(thinking_parts).strip()
+    if len(thinking) > 200:
+        return False
+
+    # If the response contains real content markers, it's not a stub
+    # even if it's short (e.g. a short code snippet).
+    lowered = text.lower()
+    for marker in _REAL_CONTENT_MARKERS:
+        if marker in lowered:
+            return False
+
+    # Check for acknowledgment-only patterns ("I'll help", "Let me check", etc.)
+    for pattern in _STUB_PATTERNS:
+        if pattern in lowered:
+            return True
+
+    # "Done!" / "Finished!" without any tool calls this turn is suspicious.
+    # Only flag if the user's prompt was substantial (a real task, not small
+    # talk).  A 5-char "Done!" in response to "thanks" is fine.
+    if prompt and len(prompt.strip()) > 50:
+        for pattern in _STUB_COMPLETED_PATTERNS:
+            if pattern in lowered and len(text) < 100:
+                return True
+
+    # Very short text (< 60 chars) in response to a substantial prompt
+    # is suspicious even without a known stub pattern.
+    return len(text) < 60 and bool(prompt) and len(prompt.strip()) > 100
+
+
+def build_stub_retry_message(retry_count: int) -> str:
+    """Build a nudge that tells the model to actually do the work.
+
+    Unlike :func:`build_empty_retry_message` (for truly empty responses),
+    this targets stubs where the model wrote a brief acknowledgment but
+    never started working.  The message is forceful: *act now, don't narrate*.
+    """
+    if retry_count == 1:
+        return (
+            "[Your previous response was too brief to be a real deliverable. "
+            "Do not just acknowledge the request — actually DO the work now. "
+            "Use the appropriate tools to gather context, execute the task, "
+            "and verify the result. A short text acknowledgment is NOT a "
+            "deliverable. Act.]"
+        )
+    return (
+        "[Your response is still too brief. You MUST take action NOW: "
+        "call the appropriate tools, execute the task, and deliver a "
+        "complete result. Do not stop with just text — act.]"
     )
 
 

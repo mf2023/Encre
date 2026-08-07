@@ -192,10 +192,14 @@ async def _file_read_execute(**kwargs: Any) -> str:
 EncreFileReadTool = build_tool(
     name="file_read",
     description=(
-        "Text files → paginated lines (offset/limit, 1-indexed). "
-        "Images (png/jpg/gif/webp/bmp) → base64 + mime envelope. "
-        "PDFs → extracted text (cap with max_pages).\n\n"
-        "If the file content is already in the conversation context, do not re-read it.\n"
+        "Read a file from the local filesystem. Text files return numbered lines; "
+        "images (png/jpg/gif/webp/bmp) return a base64 + mime envelope; PDFs return "
+        "extracted text. Use this instead of `cat`, `head`, or `tail` in bash -- "
+        "it respects sandbox rules, returns structured output, and auto-detects "
+        "binary/image/PDF content. "
+        "TIP: Omit offset/limit for full context; use them only for files >2000 lines. "
+        "TIP: For images/PDFs, set max_pages to cap large documents. "
+        "AVOID: Re-reading a file you already have in context -- it wastes tokens. "
         "For persistent memory or user profile content, use memory_read or memory_profile instead."
     ),
     input_schema={
@@ -203,26 +207,26 @@ EncreFileReadTool = build_tool(
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "The absolute path to the file to read",
+                "description": "Absolute path to the file to read (required).",
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum number of lines to read (text mode)",
+                "description": "Maximum number of lines to read in text mode (optional). Omit to read the whole file.",
             },
             "offset": {
                 "type": "integer",
-                "description": "Line number to start reading from, 1-indexed (text mode)",
+                "description": "1-indexed line number to start reading from in text mode (optional, default 1).",
             },
             "as_image": {
                 "type": "boolean",
                 "description": (
-                    "Force the file to be returned as a base64 image envelope. "
-                    "Auto-detected for known image extensions/magic numbers."
+                    "Force the file to be returned as a base64 image envelope (optional). "
+                    "Auto-detected for known image extensions/magic numbers, so usually omit."
                 ),
             },
             "max_pages": {
                 "type": "integer",
-                "description": "Maximum number of PDF pages to extract (default: all)",
+                "description": "Maximum number of PDF pages to extract (optional, default: all pages).",
             },
         },
         "required": ["file_path"],

@@ -87,6 +87,7 @@ from pathlib import Path
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -114,8 +115,8 @@ async def _exec(cmd: list[str], cwd: str, timeout: float) -> tuple[int, str, str
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
         return 124, "", f"timeout after {timeout}s"
-    out = stdout_b.decode("utf-8", errors="replace")
-    err = stderr_b.decode("utf-8", errors="replace")
+    out = decode_bytes(stdout_b)
+    err = decode_bytes(stderr_b)
     return proc.returncode or 0, out, err
 
 
@@ -512,18 +513,20 @@ async def _lint_format_execute(**kwargs: Any) -> str:
 EncreLintFormatTool = build_tool(
     name="lint_format",
     description=(
-        "Run a linter and / or formatter on the workspace and return a "
-        "structured JSON report.  Supports ``ruff`` (Python), "
-        "``eslint`` + ``prettier`` (JavaScript / TypeScript) and "
-        "``cargo fmt`` + ``cargo clippy`` (Rust).  Mode ``check`` "
-        "reports diagnostics without modifying files; ``fix`` runs "
-        "linter auto-fixers (ruff check --fix, eslint --fix, cargo "
-        "clippy --fix, cargo fmt); ``format`` runs the formatter "
-        "(ruff format / prettier --write / cargo fmt).  Returns "
-        "per-diagnostic file / line / column / code / severity / "
-        "message and a list of files that were modified.  Use the "
-        "``paths`` argument to scope to specific files or "
-        "directories."
+        "Run a linter and/or formatter on the workspace and return a "
+        "structured JSON report. Supports ruff (Python), eslint + prettier "
+        "(JavaScript/TypeScript), and cargo fmt + cargo clippy (Rust). Use "
+        "this instead of invoking ruff/eslint/cargo directly via bash -- it "
+        "auto-detects the toolchain from project files, parses diagnostics "
+        "into structured per-file/line/column entries, and handles window-"
+        "hiding for desktop sessions. Mode 'check' reports diagnostics "
+        "without writing to disk; 'fix' runs linter auto-fixers (ruff check "
+        "--fix, eslint --fix, cargo clippy --fix, cargo fmt); 'format' runs "
+        "the formatter (ruff format / prettier --write / cargo fmt). "
+        "TIP: Run mode='check' first to see diagnostics before applying "
+        "fixes; scope with 'paths' to keep it fast. "
+        "AVOID: Running mode='fix' or 'format' across the whole workspace "
+        "blindly -- review the check report first."
     ),
     input_schema={
         "type": "object",
@@ -531,41 +534,42 @@ EncreLintFormatTool = build_tool(
             "workspace": {
                 "type": "string",
                 "description": (
-                    "Absolute path to the project root.  Defaults to the "
-                    "agent's configured workspace when omitted."
+                    "Absolute path to the project root (required). Must be "
+                    "an existing directory."
                 ),
             },
             "linter": {
                 "type": "string",
                 "enum": ["ruff", "eslint", "cargo"],
                 "description": (
-                    "Force a specific toolchain.  When omitted the tool "
-                    "auto-detects from project files."
+                    "Force a specific toolchain (optional). When omitted the "
+                    "tool auto-detects from project files (Cargo.toml, "
+                    "package.json, pyproject.toml, etc.)."
                 ),
             },
             "mode": {
                 "type": "string",
                 "enum": ["check", "fix", "format"],
                 "description": (
-                    "Operation mode.  ``check`` reports diagnostics "
-                    "without writing to disk; ``fix`` applies "
-                    "linter auto-fixes; ``format`` runs the formatter."
+                    "Operation mode (optional, default 'check'). 'check' "
+                    "reports diagnostics without writing to disk; 'fix' "
+                    "applies linter auto-fixes; 'format' runs the formatter."
                 ),
             },
             "paths": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Optional list of file or directory paths to "
-                    "operate on (relative to the workspace).  When "
-                    "omitted the entire workspace is processed."
+                    "List of file or directory paths to operate on, "
+                    "relative to the workspace (optional). When omitted the "
+                    "entire workspace is processed."
                 ),
             },
             "max_duration": {
                 "type": "number",
                 "description": (
-                    "Maximum wall-clock duration in seconds.  Defaults "
-                    "to 120.  The subprocess is killed if it overruns."
+                    "Maximum wall-clock duration in seconds (optional, "
+                    "default 120). The subprocess is killed if it overruns."
                 ),
             },
         },

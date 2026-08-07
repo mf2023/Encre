@@ -96,23 +96,30 @@ async def _skill_execute(**kwargs: Any) -> str:
 EncreSkillTool = build_tool(
     name="skill",
     description=(
-        "Activate a domain skill by name when the user's request matches a skill's "
-        "purpose (e.g. travel-flights for flight search, pdf for PDF processing, "
-        "data-viz for charting). The skill's detailed guidance is injected into the "
-        "next turn. Consult the Skills catalogue in the system prompt for available "
-        "names and their purpose; pick the skill whose purpose matches the request. "
-        "Aliases listed in the catalogue also work."
+        "Activate a domain skill by name so its detailed guidance is injected into "
+        "the next turn's system prompt. "
+        "Use this when the user's request matches a skill's purpose (e.g. "
+        "travel-flights for flight search, pdf for PDF processing, data-viz for "
+        "charting) and you want the skill's instructions to take effect. "
+        "Do NOT use this for built-in tools that are already available (just call "
+        "them directly), or to list skills (consult the Skills catalogue in the "
+        "system prompt instead). "
+        "Tips: consult the catalogue for exact names and aliases; pick the skill "
+        "whose purpose best matches the request and pass relevant context via "
+        "`args`. "
+        "Pitfalls: an unknown name returns an error — verify the spelling against "
+        "the catalogue before invoking."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "name": {
                 "type": "string",
-                "description": "Skill name (e.g. travel-flights, pdf, data-viz) or an alias from the catalogue.",
+                "description": "Skill name (e.g. 'travel-flights', 'pdf', 'data-viz') or an alias listed in the Skills catalogue.",
             },
             "args": {
                 "type": "string",
-                "description": "Optional argument string forwarded to the skill (e.g. the user's request context).",
+                "description": "Optional argument string forwarded to the skill (e.g. the user's request context or parameters).",
             },
         },
         "required": ["name"],

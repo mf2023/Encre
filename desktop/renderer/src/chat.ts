@@ -740,6 +740,9 @@ function flashCopyButton(btn: HTMLElement): void {
   const original = origIcon || 'copy';
   if (!origIcon) btn.setAttribute('data-original-icon', original);
 
+  // Keep the actions visible while the checkmark animation plays
+  btn.classList.add('copying');
+
   // Use the button's opacity so the transition survives lucide DOM swaps
   btn.style.transition = 'opacity 0.12s ease';
   btn.style.opacity = '0';
@@ -760,6 +763,7 @@ function flashCopyButton(btn: HTMLElement): void {
       btn.style.opacity = '1';
       setTimeout(() => {
         btn.style.transition = '';
+        btn.classList.remove('copying');
       }, 120);
     }, 120);
   }, 2000);
@@ -1145,6 +1149,13 @@ export class Chat {
   private rafPending = false;
   private liveLoader: EALoader | null = null;
   private scrollIndicator: ChatScrollIndicator;
+  private _actionMenu: HTMLElement | null = null;
+  private _actionMenuBtn: HTMLElement | null = null;
+  private _actionMenuClose: ((ev: MouseEvent) => void) | null = null;
+  private _actionMenuTurnLeave: { el: HTMLElement; fn: (ev: MouseEvent) => void } | null = null;
+  private _actionMenuEnter: { el: HTMLElement; fn: () => void } | null = null;
+  private _actionMenuLeave: { el: HTMLElement; fn: () => void } | null = null;
+  private _actionMenuCloseTimer: number | null = null;
   /** Map of file keys to markdown content for plan file rows (avoids attribute length limits). */
   private _planFileLookup = new Map<string, string>();
   /** Callback invoked when the user clicks "View Changes" on an artifact file. */
@@ -1325,11 +1336,14 @@ export class Chat {
       event.stopPropagation();
       const card = document.getElementById(cardId);
       if (!card) return;
-      const selected = card.querySelector(".q-option-card.selected");
-      let answer = selected ? selected.getAttribute("data-value") || "" : "";
+      // Manual input wins over a previously selected option: clicking an
+      // option fills its value into the input box, so reading the input box
+      // covers both paths and never discards what the user typed by hand.
+      const input = card.querySelector(".q-input") as HTMLInputElement;
+      let answer = input ? input.value.trim() : "";
       if (!answer) {
-        const input = card.querySelector(".q-input") as HTMLInputElement;
-        if (input) answer = input.value.trim();
+        const selected = card.querySelector(".q-option-card.selected");
+        if (selected) answer = selected.getAttribute("data-value") || "";
       }
       if (answer) {
         send({ type: "respond_question", tool_call_id: cardId.replace("tc-", ""), answers: answer });
@@ -1447,14 +1461,11 @@ export class Chat {
     window.__initMediaCards = w.__initMediaCards;
     window.__initInfoCardMedia = w.__initInfoCardMedia;
     window.__openInfoHtmlCards = w.__openInfoHtmlCards;
-    this.container.addEventListener("scroll", () => {
-      const { scrollTop, scrollHeight, clientHeight } = this.container;
-      this.userScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
-      const btn = document.getElementById("chat-scroll-bottom-btn");
-      if (btn) {
-        btn.classList.toggle("hidden", !this.userScrolledUp);
-      }
-    });
+    this.container.addEventListener("scroll", () => this.syncScrollButton());
+
+    // Hide the button whenever the chat is re-rendered (new/cleared session).
+    const ro = new ResizeObserver(() => this.syncScrollButton());
+    ro.observe(this.container);
 
     this.ml.addEventListener("click", (e) => this.handleDelegateClick(e));
     // Track session changes to prevent stale content bleeding
@@ -1501,6 +1512,7 @@ export class Chat {
           clearSubAgentBreadcrumb();
         }
         this.ml.innerHTML = "";
+        this.syncScrollButton();
         return;
       }
       if (msgs.length > 0 && _lastMsgLen === 0) {
@@ -1541,18 +1553,16 @@ export class Chat {
     try {
       const st = getState();
       const subTc = st.subAgentView;
-      const dividerCount = subTc?.subAgentMessages
-        ? subTc.subAgentMessages.filter((m) => m.mode === "task_divider").length
-        : 0;
-      const isParallelRunning = subTc &&
-        (subTc.status === "running" || subTc.status === "pending") &&
-        dividerCount >= 2;
-      if (!isParallelRunning) {
+      const isSubAgentStreaming = !!subTc &&
+        (subTc.status === "running" || subTc.status === "pending");
+      if (!isSubAgentStreaming) {
         this.render();
         return;
       }
-      // Throttle parallel sub-agent streaming renders so the main thread
-      // stays responsive enough for scrolling and window dragging.
+      // Throttle sub-agent streaming renders (single AND parallel) so the
+      // main thread stays responsive enough for scrolling and window
+      // dragging.  Without this, every tool_progress frame triggers a full
+      // transcript re-render, which freezes the UI while a sub-agent runs.
       this._pendingParallelRender = true;
       if (this._parallelRenderTimer === null) {
         this.render();
@@ -1658,6 +1668,7 @@ export class Chat {
     if (msgs.length === 0) {
       this.ml.innerHTML = "";
       this.renderedKey = "";
+      this.syncScrollButton();
       return;
     }
     const timeline = buildTimeline(msgs);
@@ -1800,11 +1811,17 @@ const _vs = saveVideoPlayback();
       if (turnActions) {
         html += `<div class="assistant-actions turn-actions">`;
         html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
-          <i data-lucide="copy" class="lucide lucide-sm"></i>
+          <span class="icon-wrap">
+            <i data-lucide="copy" class="semantic"></i>
+            <i data-lucide="chevron-down" class="arrow"></i>
+          </span>
         </button>`;
         if (turnRetry) {
           html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
-            <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+            <span class="icon-wrap">
+              <i data-lucide="refresh-cw" class="semantic"></i>
+              <i data-lucide="chevron-down" class="arrow"></i>
+            </span>
           </button>`;
         }
         if (turnBranchSwitcher) {
@@ -1984,11 +2001,17 @@ const _vs = saveVideoPlayback();
       if (turnActions) {
         html += `<div class="assistant-actions turn-actions">`;
         html += `<button class="btn-icon btn-icon--msg assistant-copy-btn" data-tooltip="${t("chat.copy")}">
-          <i data-lucide="copy" class="lucide lucide-sm"></i>
+          <span class="icon-wrap">
+            <i data-lucide="copy" class="semantic"></i>
+            <i data-lucide="chevron-down" class="arrow"></i>
+          </span>
         </button>`;
         if (turnRetry) {
           html += `<button class="btn-icon btn-icon--msg assistant-retry-btn" data-tooltip="${t("chat.retry")}">
-            <i data-lucide="refresh-cw" class="lucide lucide-sm"></i>
+            <span class="icon-wrap">
+              <i data-lucide="refresh-cw" class="semantic"></i>
+              <i data-lucide="chevron-down" class="arrow"></i>
+            </span>
           </button>`;
         }
         if (turnBranchSwitcher) {
@@ -2068,10 +2091,11 @@ const _vs = saveVideoPlayback();
       // visible. This covers both streaming and static sessions -- when
       // the user opens a session, we want to land on the last turn,
       // not the middle of the history.
-      this.scrollToBottom();
+      this.scrollToBottomAfterMedia();
     }
-    const turnCount = getState().messages.filter(m => m.role === "user").length;
-    this.scrollIndicator.update(turnCount);
+    const userMsgs = getState().messages.filter(m => m.role === "user");
+    this.scrollIndicator.update(userMsgs.length, userMsgs.map(m => m.content));
+    this.syncScrollButton();
   }
 
   private incrementalTextUpdate(timeline: TimelineItem[]): void {
@@ -2284,8 +2308,9 @@ const _vs = saveVideoPlayback();
     }
 
     this.autoScroll();
-    const turnCount = getState().messages.filter(m => m.role === "user").length;
-    this.scrollIndicator.update(turnCount);
+    const userMsgs = getState().messages.filter(m => m.role === "user");
+    this.scrollIndicator.update(userMsgs.length, userMsgs.map(m => m.content));
+    this.syncScrollButton();
   }
 
   private renderItemHTML(item: TimelineItem): string {
@@ -2492,7 +2517,7 @@ const _vs = saveVideoPlayback();
         </div>
         ${optsHtml}
         <div class="q-input-row">
-          <input class="q-input" type="text" placeholder="${options.length ? t("chat.inputOtherRequirements") : t("chat.typeAnswer")}" />
+          <input class="q-input" type="text" placeholder="${options.length ? t("chat.inputOtherRequirements") : t("chat.typeAnswer")}" onkeydown="if(event.key==='Enter'){event.preventDefault();window.__answerQuestion(event,this,'${id}')}" />
           <button class="q-submit" onclick="event.stopPropagation();window.__answerQuestion(event,this,'${id}')">${t("chat.submit")}</button>
         </div>
       </div>
@@ -3183,11 +3208,29 @@ const _vs = saveVideoPlayback();
       if (!msgId) return;
       const st = getState();
       const msg = st.messages.find(m => m.id === msgId);
-      if (msg) {
-        navigator.clipboard.writeText(msg.content)
-          .then(() => flashCopyButton(assistantCopyBtn as HTMLElement))
-          .catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
-      }
+      const btn = assistantCopyBtn as HTMLElement;
+      this.openActionMenu(btn, [
+        {
+          icon: "copy",
+          label: t("chat.copy"),
+          onClick: () => {
+            const text = assistantItem?.innerText ?? msg?.content ?? "";
+            navigator.clipboard.writeText(text)
+              .then(() => flashCopyButton(btn))
+              .catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
+          },
+        },
+        {
+          icon: "code",
+          label: t("chat.copyMarkdown"),
+          onClick: () => {
+            if (!msg) return;
+            navigator.clipboard.writeText(msg.content)
+              .then(() => flashCopyButton(btn))
+              .catch(() => showToast(t("chat.copyFailed"), "", "error", "Chat"));
+          },
+        },
+      ]);
       return;
     }
 
@@ -3196,80 +3239,14 @@ const _vs = saveVideoPlayback();
       e.stopPropagation();
       const turn = assistantRetryBtn.closest(".turn") as HTMLElement | null;
       const assistantItem = turn?.querySelector(".assistant-text") as HTMLElement | null;
-      if (!assistantItem) return;
-      const existingPopup = assistantItem.querySelector(".retry-popup");
-      if (existingPopup) {
-        existingPopup.remove();
-        return;
-      }
-      const msgId = assistantItem.dataset.messageId;
-      if (!msgId) return;
-      const rect = (assistantRetryBtn as HTMLElement).getBoundingClientRect();
-      const popup = document.createElement("div");
-      popup.className = "retry-popup";
-      popup.style.position = "fixed";
-      popup.style.top = `${rect.bottom + 2}px`;
-      popup.style.left = `${rect.left}px`;
-      popup.innerHTML = `
-        <div class="retry-popup-item" data-mode="normal">${t("chat.retryNormal")}</div>
-        <div class="retry-popup-item" data-mode="detailed">${t("chat.retryDetailed")}</div>
-        <div class="retry-popup-item" data-mode="concise">${t("chat.retryConcise")}</div>
-      `;
-      assistantItem.appendChild(popup);
-      const closePopup = (ev: MouseEvent) => {
-        if (!popup.contains(ev.target as Node)) {
-          popup.remove();
-          document.removeEventListener("click", closePopup);
-        }
-      };
-      setTimeout(() => document.addEventListener("click", closePopup), 0);
-      return;
-    }
-
-    const retryPopupItem = target.closest(".retry-popup-item");
-    if (retryPopupItem) {
-      e.stopPropagation();
-      const popup = retryPopupItem.closest(".retry-popup") as HTMLElement | null;
-      const assistantItem = popup?.closest(".assistant-text") as HTMLElement | null;
       const msgId = assistantItem?.dataset.messageId;
       if (!msgId) return;
-      const mode = (retryPopupItem as HTMLElement).dataset.mode || "normal";
-
-      // Find the preceding user message and prepare the UI for retry
-      const st = getState();
-      const assistantIdx = st.messages.findIndex(m => m.id === msgId);
-      if (assistantIdx < 0) return;
-      let userContent = "";
-      for (let i = assistantIdx - 1; i >= 0; i--) {
-        if (st.messages[i].role === "user") {
-          userContent = st.messages[i].content;
-          break;
-        }
-      }
-      if (!userContent) return;
-
-      // Compute user message index (0-based among all user messages in the session)
-      let userMsgIdx = -1;
-      for (let i = 0; i < assistantIdx; i++) {
-        if (st.messages[i].role === "user") userMsgIdx++;
-      }
-
-      // Remove old assistant messages after the fork point; the preceding
-      // user message stays in place (no duplicate needed).
-      const removedIds = new Set<string>();
-      for (let i = assistantIdx; i < st.messages.length; i++) {
-        removedIds.add(st.messages[i].id);
-      }
-      removeBranchMessages(removedIds);
-      // Create assistant placeholder for new streaming output
-      startAssistantMessage();
-      setRunning(true);
-
-      popup?.remove();
-      const branchId = st.activeBranchId;
-      if (typeof (window as any).sendRetry === "function") {
-        (window as any).sendRetry(branchId, userMsgIdx, mode);
-      }
+      const btn = assistantRetryBtn as HTMLElement;
+      this.openActionMenu(btn, [
+        { icon: "refresh-cw", label: t("chat.retryNormal"), onClick: () => this.performRetry(msgId, "normal") },
+        { icon: "stretch-horizontal", label: t("chat.retryDetailed"), onClick: () => this.performRetry(msgId, "detailed") },
+        { icon: "minimize-2", label: t("chat.retryConcise"), onClick: () => this.performRetry(msgId, "concise") },
+      ]);
       return;
     }
 
@@ -3366,6 +3343,171 @@ const _vs = saveVideoPlayback();
     }
   }
 
+  /** Opens a unified dropdown menu anchored to the given action button.
+   *  Reuses the same visual language as the model selector / @-command
+   *  menus (`.mention-dropdown` / `.mention-dropdown-item`). */
+  private openActionMenu(
+    btn: HTMLElement,
+    items: Array<{ icon: string; label: string; onClick: () => void }>,
+  ): void {
+    // If the same menu is already open on this button, just close it.
+    if (btn.classList.contains("action-menu-open")) {
+      this.closeActionMenu();
+      return;
+    }
+    // Close any other action menu first.
+    this.closeActionMenu();
+
+    const rect = btn.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.className = "mention-dropdown action-menu";
+    menu.style.position = "fixed";
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.left = `${rect.left}px`;
+    menu.style.marginBottom = "0";
+    menu.style.bottom = "auto";
+    menu.style.minWidth = "160px";
+
+    for (const item of items) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "mention-dropdown-item";
+      row.innerHTML = `<i data-lucide="${item.icon}" class="lucide"></i><span>${item.label}</span>`;
+      row.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.closeActionMenu();
+        item.onClick();
+      });
+      menu.appendChild(row);
+    }
+
+    document.body.appendChild(menu);
+    createLucideIcons(menu);
+    btn.classList.add("action-menu-open");
+    this._actionMenu = menu;
+    this._actionMenuBtn = btn;
+
+    const closeOnOutside = (ev: MouseEvent) => {
+      if (this._actionMenu && !this._actionMenu.contains(ev.target as Node)) {
+        this.closeActionMenu();
+      }
+    };
+    this._actionMenuClose = closeOnOutside;
+    setTimeout(() => document.addEventListener("click", closeOnOutside), 0);
+
+    // The action buttons are only visible while the turn is hovered. When
+    // the mouse leaves the turn the buttons disappear, so the menu must
+    // follow suit — but with a short grace period so the pointer has time
+    // to travel from the button to the menu (which lives in document.body,
+    // outside the turn). Entering the menu cancels the pending close.
+    const turn = btn.closest(".turn") as HTMLElement | null;
+    const scheduleClose = () => {
+      if (this._actionMenuCloseTimer !== null) return;
+      this._actionMenuCloseTimer = window.setTimeout(() => {
+        this._actionMenuCloseTimer = null;
+        this.closeActionMenu();
+      }, 180);
+    };
+    const cancelClose = () => {
+      if (this._actionMenuCloseTimer !== null) {
+        window.clearTimeout(this._actionMenuCloseTimer);
+        this._actionMenuCloseTimer = null;
+      }
+    };
+    if (turn) {
+      const onTurnLeave = (ev: MouseEvent) => {
+        if (!this._actionMenu) return;
+        const rel = ev.relatedTarget as Node | null;
+        if (rel && this._actionMenu.contains(rel)) return;
+        scheduleClose();
+      };
+      turn.addEventListener("mouseleave", onTurnLeave);
+      this._actionMenuTurnLeave = { el: turn, fn: onTurnLeave };
+    }
+    menu.addEventListener("mouseenter", cancelClose);
+    menu.addEventListener("mouseleave", scheduleClose);
+    this._actionMenuEnter = { el: menu, fn: cancelClose };
+    this._actionMenuLeave = { el: menu, fn: scheduleClose };
+  }
+
+  private closeActionMenu(): void {
+    if (this._actionMenu) {
+      this._actionMenu.remove();
+      this._actionMenu = null;
+    }
+    if (this._actionMenuBtn) {
+      this._actionMenuBtn.classList.remove("action-menu-open");
+      this._actionMenuBtn = null;
+    }
+    if (this._actionMenuClose) {
+      document.removeEventListener("click", this._actionMenuClose);
+      this._actionMenuClose = null;
+    }
+    if (this._actionMenuTurnLeave) {
+      this._actionMenuTurnLeave.el.removeEventListener(
+        "mouseleave",
+        this._actionMenuTurnLeave.fn,
+      );
+      this._actionMenuTurnLeave = null;
+    }
+    if (this._actionMenuEnter) {
+      this._actionMenuEnter.el.removeEventListener(
+        "mouseenter",
+        this._actionMenuEnter.fn,
+      );
+      this._actionMenuEnter = null;
+    }
+    if (this._actionMenuLeave) {
+      this._actionMenuLeave.el.removeEventListener(
+        "mouseleave",
+        this._actionMenuLeave.fn,
+      );
+      this._actionMenuLeave = null;
+    }
+    if (this._actionMenuCloseTimer !== null) {
+      window.clearTimeout(this._actionMenuCloseTimer);
+      this._actionMenuCloseTimer = null;
+    }
+  }
+
+  /** Re-generates the assistant reply starting from the preceding user
+   *  message, forking the branch with the given retry mode. */
+  private performRetry(msgId: string, mode: string): void {
+    const st = getState();
+    const assistantIdx = st.messages.findIndex(m => m.id === msgId);
+    if (assistantIdx < 0) return;
+    let userContent = "";
+    for (let i = assistantIdx - 1; i >= 0; i--) {
+      if (st.messages[i].role === "user") {
+        userContent = st.messages[i].content;
+        break;
+      }
+    }
+    if (!userContent) return;
+
+    // Compute user message index (0-based among all user messages in the session)
+    let userMsgIdx = -1;
+    for (let i = 0; i < assistantIdx; i++) {
+      if (st.messages[i].role === "user") userMsgIdx++;
+    }
+
+    // Remove old assistant messages after the fork point; the preceding
+    // user message stays in place (no duplicate needed).
+    const removedIds = new Set<string>();
+    for (let i = assistantIdx; i < st.messages.length; i++) {
+      removedIds.add(st.messages[i].id);
+    }
+    removeBranchMessages(removedIds);
+    // Create assistant placeholder for new streaming output
+    startAssistantMessage();
+    setRunning(true);
+
+    const branchId = st.activeBranchId;
+    if (typeof (window as any).sendRetry === "function") {
+      (window as any).sendRetry(branchId, userMsgIdx, mode);
+    }
+  }
+
   private autoScroll(): void {
     const st = getState();
     if (st.messages.length === 0) return;
@@ -3383,6 +3525,71 @@ const _vs = saveVideoPlayback();
   scrollToBottom(): void {
     const c = document.getElementById("chat-container");
     if (c) c.scrollTop = c.scrollHeight;
+  }
+
+  /** Scrolls to the bottom and keeps re-pinning until any async media
+   *  (images / videos inside the message list) has finished loading.
+   *  A plain scrollToBottom() on session entry runs before images resolve,
+   *  so the container grows afterwards and leaves unread content below the
+   *  fold.  This variant waits for those elements to settle. */
+  private scrollToBottomAfterMedia(): void {
+    const c = document.getElementById("chat-container");
+    if (!c) return;
+    const pin = () => {
+      if (this.userScrolledUp) return;
+      c.scrollTop = c.scrollHeight;
+    };
+    pin();
+    // Re-pin on the next frame so layout shifts from the same tick apply.
+    requestAnimationFrame(pin);
+    const media = Array.from(this.ml.querySelectorAll("img, video")).filter(
+      (el) => el instanceof HTMLImageElement && !el.complete
+        || el instanceof HTMLVideoElement && el.readyState < 2,
+    );
+    if (media.length === 0) return;
+    const done = () => {
+      pin();
+      media.forEach((el) => {
+        el.removeEventListener("load", done);
+        el.removeEventListener("loadeddata", done);
+        el.removeEventListener("error", done);
+      });
+    };
+    media.forEach((el) => {
+      el.addEventListener("load", done, { once: true });
+      el.addEventListener("loadeddata", done, { once: true });
+      el.addEventListener("error", done, { once: true });
+    });
+    // Safety net: never wait longer than this for slow media.
+    window.setTimeout(() => {
+      media.forEach((el) => {
+        el.removeEventListener("load", done);
+        el.removeEventListener("loadeddata", done);
+        el.removeEventListener("error", done);
+      });
+      pin();
+    }, 800);
+  }
+
+  /** Keeps the floating scroll-to-bottom button in sync with the real state
+   *  of the chat container. The button may only appear when the content
+   *  actually overflows the viewport AND the user has scrolled away from
+   *  the bottom; when a session is cleared or switched this re-evaluates
+   *  the metrics instead of trusting a stale scroll event. */
+  private syncScrollButton(): void {
+    const btn = document.getElementById("chat-scroll-bottom-btn");
+    if (!btn) return;
+    const { scrollTop, scrollHeight, clientHeight } = this.container;
+    const scrollable = scrollHeight - clientHeight > 8;
+    this.userScrolledUp = scrollable && scrollHeight - scrollTop - clientHeight > 100;
+    btn.classList.toggle("hidden", !this.userScrolledUp);
+  }
+
+  /** Public reset so the view-switch cleanup can hide the button eagerly. */
+  resetScrollButton(): void {
+    this.userScrolledUp = false;
+    const btn = document.getElementById("chat-scroll-bottom-btn");
+    if (btn) btn.classList.add("hidden");
   }
 
   private _currentQuote: StatusQuote | null = null;
@@ -3403,12 +3610,17 @@ const _vs = saveVideoPlayback();
 }
 
 class ChatScrollIndicator {
+  private static readonly MAX_VISIBLE = 5;
+
   private container: HTMLElement;
   private root: HTMLElement;
   private track: HTMLElement;
   private thumb: HTMLElement;
   private ticks: HTMLElement[] = [];
   private tickCount = 0;
+  private lastKey = "";
+  private spacing = 0;
+  private lastCurrent = -1;
   private dragging = false;
   private rafScheduled = false;
 
@@ -3440,23 +3652,29 @@ class ChatScrollIndicator {
     });
   }
 
-  private rebuildTicks(count: number): void {
+  private rebuildTicks(count: number, texts: string[]): void {
     this.tickCount = count;
+    this.spacing = 0;
+    this.lastCurrent = -1;
     this.track.innerHTML = "";
     this.ticks = [];
     for (let i = 0; i < count; i++) {
       const tick = document.createElement("div");
       tick.className = "chat-scroll-tick";
+      const text = (texts[i] || "").trim().slice(0, 200);
+      if (text) tick.setAttribute("data-tooltip", text);
       this.track.appendChild(tick);
       this.ticks.push(tick);
     }
   }
 
-  update(turns?: number): void {
-    if (turns !== undefined && turns !== this.tickCount) {
-      this.rebuildTicks(Math.min(turns, 5));
+  update(turns?: number, userTexts?: string[]): void {
+    const key = `${turns}|${(userTexts || []).join("\u0000")}`;
+    if (turns !== undefined && key !== this.lastKey) {
+      this.rebuildTicks(turns, userTexts || []);
+      this.lastKey = key;
     }
-    if (this.tickCount < 2) {
+    if (this.tickCount < 1) {
       this.root.classList.add("hidden");
       return;
     }
@@ -3468,28 +3686,40 @@ class ChatScrollIndicator {
       return;
     }
     const ratio = Math.min(1, Math.max(0, scrollTop / scrollable));
-    const trackRect = this.track.getBoundingClientRect();
-    const rootRect = this.root.getBoundingClientRect();
-    const thumbMax = trackRect.height;
-    this.thumb.style.top = `${trackRect.top - rootRect.top + ratio * thumbMax}px`;
-    const n = this.ticks.length;
-    const exactPos = ratio * (n - 1);
-    let closestIdx = 0;
-    let minDist = Math.abs(0 - exactPos);
-    for (let i = 1; i < n; i++) {
-      const d = Math.abs(i - exactPos);
-      if (d < minDist) { minDist = d; closestIdx = i; }
-    }
-    for (let i = 0; i < n; i++) {
-      const dist = Math.abs(i - exactPos) / (n - 1);
-      if (i === closestIdx) {
-        this.ticks[i].style.background = "var(--accent-color, #1e6cff)";
-      } else {
-        const gray = Math.round(155 + dist * 70);
-        this.ticks[i].style.background = `rgb(${gray}, ${gray}, ${gray})`;
+    // Use offsetHeight (cheap, non-layout-triggering) instead of
+    // getBoundingClientRect so fast scrolling never forces a reflow.
+    const windowH = this.root.offsetHeight || 70;
+    const spacing = windowH / ChatScrollIndicator.MAX_VISIBLE;
+    // Only re-position the ticks when the spacing actually changes;
+    // otherwise their style.top/height stay fixed and we just slide
+    // the track and toggle the current tick.
+    if (spacing !== this.spacing) {
+      this.spacing = spacing;
+      for (let i = 0; i < this.tickCount; i++) {
+        this.ticks[i].style.top = `${i * spacing}px`;
+        this.ticks[i].style.height = `${spacing}px`;
       }
-      this.ticks[i].style.opacity = "1";
     }
+    const trackH = this.tickCount * spacing;
+    // Internal scroll of the track (gear metaphor): when there are more ticks
+    // than fit in the window, the track slides so the current turn stays visible.
+    let offset: number;
+    if (trackH <= windowH) {
+      offset = (windowH - trackH) / 2;
+    } else {
+      offset = -ratio * (trackH - windowH);
+    }
+    this.track.style.top = `${offset}px`;
+    this.track.style.height = `${trackH}px`;
+    const current = Math.round(ratio * (this.tickCount - 1));
+    if (current !== this.lastCurrent) {
+      if (this.lastCurrent >= 0 && this.lastCurrent < this.tickCount) {
+        this.ticks[this.lastCurrent].classList.remove("current");
+      }
+      this.ticks[current].classList.add("current");
+      this.lastCurrent = current;
+    }
+    this.thumb.style.top = `${current * spacing + offset + spacing / 2}px`;
   }
 
   private onPointerDown(e: MouseEvent): void {
@@ -3512,12 +3742,37 @@ class ChatScrollIndicator {
 
   private jumpTo(clientY: number): void {
     const rect = this.root.getBoundingClientRect();
-    if (rect.height <= 0) return;
-    const y = Math.min(rect.bottom, Math.max(rect.top, clientY));
-    const ratio = (y - rect.top) / rect.height;
-    const { scrollHeight, clientHeight } = this.container;
-    const max = Math.max(0, scrollHeight - clientHeight);
-    this.container.scrollTop = ratio * max;
+    if (rect.height <= 0 || this.tickCount < 1) return;
+    const windowH = rect.height;
+    const spacing = windowH / ChatScrollIndicator.MAX_VISIBLE;
+    if (spacing !== this.spacing) this.spacing = spacing;
+    const trackH = this.tickCount * spacing;
+    const { scrollTop, scrollHeight, clientHeight } = this.container;
+    const scrollable = scrollHeight - clientHeight;
+    const ratio = scrollable > 0 ? Math.min(1, Math.max(0, scrollTop / scrollable)) : 0;
+    let offset: number;
+    if (trackH <= windowH) {
+      offset = (windowH - trackH) / 2;
+    } else {
+      offset = -ratio * (trackH - windowH);
+    }
+    const y = Math.min(rect.bottom, Math.max(rect.top, clientY)) - rect.top;
+    const idx = Math.round((y - offset) / spacing);
+    const clamped = Math.max(0, Math.min(this.tickCount - 1, idx));
+    this.scrollToTurn(clamped);
+  }
+
+  private scrollToTurn(idx: number): void {
+    const el = this.container.querySelector<HTMLElement>(`[data-user-idx="${idx}"]`);
+    if (el) {
+      const cRect = this.container.getBoundingClientRect();
+      const eRect = el.getBoundingClientRect();
+      this.container.scrollTop += eRect.top - cRect.top;
+    } else {
+      const { scrollHeight, clientHeight } = this.container;
+      const max = Math.max(0, scrollHeight - clientHeight);
+      this.container.scrollTop = (idx / Math.max(1, this.tickCount - 1)) * max;
+    }
   }
 }
 

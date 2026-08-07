@@ -155,20 +155,26 @@ async def _codebase_context_execute(**kwargs: Any) -> str:
 EncreCodebaseSearchTool = build_tool(
     name="codebase_search",
     description=(
-        "Search the active workspace codebase. Uses the prepared workspace "
-        "index when available and falls back to the Rust native code search "
-        "engine. Prefer this over grep when the goal is relevant-code lookup."
+        "Semantic search of the active workspace codebase by meaning rather "
+        "than exact text. Uses the prepared workspace index when available "
+        "and falls back to the Rust native code search engine. Prefer this "
+        "over grep when you want to find relevant code by intent (e.g. "
+        "\"where are passwords hashed\") instead of by literal string. "
+        "TIP: Phrase the query as a natural-language question or capability, "
+        "not a regex. "
+        "AVOID: Using codebase_search for exact symbol/string matches -- "
+        "grep is faster and exact for those."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Natural language or keyword query to search for",
+                "description": "Natural-language or keyword query describing the code you want to find (required).",
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum number of results to return",
+                "description": "Maximum number of results to return (optional, default 10, range 1-50).",
                 "default": 10,
                 "minimum": 1,
                 "maximum": 50,
@@ -189,15 +195,21 @@ EncreCodebaseSearchTool = build_tool(
 EncreCodebaseContextTool = build_tool(
     name="codebase_context",
     description=(
-        "Return indexed context for a workspace file, including full source, "
-        "imports, dependents, and exports."
+        "Return indexed context for a workspace file: full source, imports, "
+        "dependents, and exports. Use this to understand how a file fits into "
+        "the codebase before editing it, instead of opening each related file "
+        "individually. Requires the workspace code index to be ready. "
+        "TIP: Call this once before a multi-file refactor to see upstream "
+        "callers and downstream dependencies in one shot. "
+        "AVOID: Calling this on files outside the indexed workspace -- it "
+        "returns an error if the index is not ready."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Workspace-relative or absolute file path",
+                "description": "Workspace-relative or absolute file path (required).",
             },
         },
         "required": ["file_path"],

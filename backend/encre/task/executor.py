@@ -87,6 +87,7 @@ class EncreTaskExecutor:
         import asyncio
         import subprocess
 
+        from encre.tools.builtin._encoding import decode_bytes
         from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
         kwargs = dict(
             stdout=subprocess.PIPE,
@@ -99,9 +100,9 @@ class EncreTaskExecutor:
             **kwargs,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-        output = stdout.decode("utf-8", errors="replace")
+        output = decode_bytes(stdout)
         if stderr:
-            output += "\n" + stderr.decode("utf-8", errors="replace")
+            output += "\n" + decode_bytes(stderr)
         return output
 
     async def _execute_agent(self, task: EncreTask) -> str:

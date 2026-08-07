@@ -98,6 +98,12 @@ class TurnTransition(Enum):
     """Model returned no text and no tool calls: inject a "please respond"
     message and retry."""
 
+    STUB_RESPONSE = "stub_response"
+    """Model returned a brief text-only acknowledgment (e.g. "I'll help you
+    with that.") without any tool calls or prior tool work.  Inject a
+    forceful "act now" nudge and retry.  Catches the #1 task-delivery
+    failure mode where the model acknowledges but never starts working."""
+
     TRUNCATED_TOOL_CALL = "truncated_tool_call"
     """Tool call arguments are truncated or invalid JSON: clear the broken
     buffers and inject a repair message."""

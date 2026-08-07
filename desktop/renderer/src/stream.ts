@@ -37,7 +37,7 @@ import { Chat } from "./chat.js";
 import { Tools } from "./tools.js";
 import { Permissions } from "./permissions.js";
 import { Settings } from "./settings.js";
-import { setLocale, t } from "./i18n.js";
+import { t } from "./i18n.js";
 import { handleEngineInstallRequest, handleEngineInstallProgress } from "./engine_install.js";
 import type { AdapterTestResultEvent, WechatScanResultEvent } from "./types.js";
 
@@ -779,13 +779,36 @@ export function handleEvent(event: ServerEvent): void {
       }
       state.setRunning(false, _eventSessionId(event));
       state.clearPendingQueueCount();
-      // Mark last assistant message as errored and capture error data
-      const lastMsg = state.getLastAssistantMessage(_eventSessionId(event));
-      if (lastMsg) {
-        lastMsg.hasError = true;
-        lastMsg.errorMessage = event.message;
-        lastMsg.errorCode = event.code;
-        (lastMsg as any).errorCategory = (event as any).category || "";
+      // Session/operation-level errors (rollback, branch, retry, capacity,
+      // job/execution lookup, parse, etc.) are NOT tied to any single turn —
+      // stamping them onto the last assistant message would show an error box
+      // under the WRONG (previous, correct) turn. Only attach turn-scoped
+      // errors, and only to the current turn's last assistant message.
+      const _errCode = event.code || "";
+      const _turnScopedError = (
+        _errCode === "execution_error"
+        || _errCode === "run_error"
+        || _errCode === "tool_error"
+        || _errCode === "context"
+        || _errCode === "network"
+        || _errCode === "server"
+        || _errCode === "rate_limit"
+        || _errCode === "auth"
+        || _errCode === "capacity"
+        || (!_errCode && !!(event as any).category)
+      );
+      if (_turnScopedError) {
+        const msgs = state.getState().messages;
+        const lastStreaming = msgs.some(m => m.role === "assistant" && m.isStreaming);
+        const lastMsg = state.getLastAssistantMessage(_eventSessionId(event));
+        // Only stamp when the session is mid-stream (the error belongs to the
+        // current in-flight turn), or when there is no assistant at all yet.
+        if (lastMsg && (lastStreaming || msgs.filter(m => m.role === "assistant").length === 1)) {
+          lastMsg.hasError = true;
+          lastMsg.errorMessage = event.message;
+          lastMsg.errorCode = event.code;
+          (lastMsg as any).errorCategory = (event as any).category || "";
+        }
       }
       state.addNotification({
         id: crypto.randomUUID(),
@@ -796,6 +819,17 @@ export function handleEvent(event: ServerEvent): void {
         timestamp: Date.now(),
         read: false,
       });
+      // Rollback/branch operations are optimistically truncated in the UI before
+      // the server confirms. When the server rejects them ("message not found", 
+      // "branch not found", retry of a missing user message), re-request the
+      // authoritative session state so the frontend stops rendering the ghost
+      // user message and matches the real backend conversation.
+      if (_errCode === "rollback_error" || _errCode === "branch_not_found" || _errCode === "retry_error") {
+        const _rs = state.getState().sessionId;
+        const _rid = crypto.randomUUID();
+        setRequestedSessionId(_rs, _rid);
+        send({ type: "resume", session_id: _rs, request_id: _rid } as any);
+      }
       break;
 
     case "configured":
@@ -806,10 +840,10 @@ export function handleEvent(event: ServerEvent): void {
           const raw = (event.config as Record<string, unknown>).permission_settings;
           state.setPermissionPolicies(normalizePermissionPolicies(raw));
         }
-        const lang = (event.config as Record<string, unknown>).language;
-        if (lang === "zh" || lang === "en") {
-          setLocale(lang);
-        }
+        // Note: locale is a frontend preference stored in localStorage.
+        // The backend's language field is only synced for settings display;
+        // do NOT call setLocale() here or it would override the user's choice
+        // when the backend (default zh) pushes config asynchronously.
       }
       break;
 
@@ -1009,7 +1043,6 @@ export function handleEvent(event: ServerEvent): void {
         "auto_expand", "sub_agent_auto_open_view", "automation_auto_open_view",
         "startup_session_mode", "startup_session_behavior",
         "default_search_engine", "default_search_engine_url",
-        "language", "language_preference",
       ] as const;
       for (const key of _generalKeys) {
         const val = cfg[key];
@@ -1020,11 +1053,10 @@ export function handleEvent(event: ServerEvent): void {
       if (Object.keys(_settingsUpdate).length > 0) {
         state.setSettings({ ...state.getState().settings, ..._settingsUpdate });
       }
-      // Sync UI locale when language is received from backend config
-      const cfgLang = _settingsUpdate.language as string | undefined;
-      if (cfgLang === "zh" || cfgLang === "en") {
-        setLocale(cfgLang);
-      }
+      // Note: locale is a frontend preference stored in localStorage.
+      // The backend's language field is only synced for settings display;
+      // do NOT call setLocale() here or it would override the user's choice
+      // when the backend (default zh) pushes config asynchronously.
       // Sync keybinds from backend config
       const cfgAny = cfg as any;
       if (cfgAny.keybinds && typeof cfgAny.keybinds === "object" && Array.isArray(cfgAny.keybinds.keybinds)) {

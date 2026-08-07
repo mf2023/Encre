@@ -192,30 +192,41 @@ async def _qr_execute(**kwargs: Any) -> str:
 
 EncreQRCodeTool = build_tool(
     name="qr_code",
-    description="Generate QR codes (PNG/SVG) and read/decode QR codes and barcodes from images.",
+    description=(
+        "Generate QR codes as PNG/SVG images, or decode QR codes and barcodes from "
+        "an existing image. "
+        "Use `generate` for raster PNG/JPG/BMP output, `generate_svg` for scalable "
+        "vector output, and `read` to extract a payload from a scanned code. "
+        "Do NOT use this for general image conversion (use image), for generating "
+        "data charts (use chart), or for AI image synthesis (use generate_image). "
+        "Tips: raise `error_correction` (L<M<Q<H) to keep codes scannable when "
+        "printed small or partially obscured; pick colors with strong contrast. "
+        "Pitfalls: decoding requires pyzbar plus the system zbar library — if "
+        "missing, `read` returns an install hint rather than a payload."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["generate", "read", "generate_svg"],
-                "description": "Action to perform",
+                "description": "QR operation: generate (raster image), generate_svg (vector SVG), or read (decode codes from an image).",
             },
-            "data": {"type": "string", "description": "Data to encode in QR code"},
-            "file_path": {"type": "string", "description": "Path to save (generate) or read (read) QR code image"},
+            "data": {"type": "string", "description": "Text or URL payload to encode; required for generate and generate_svg, ignored for read."},
+            "file_path": {"type": "string", "description": "Output path when generating, or input image path when reading; defaults to 'qrcode.<ext>' for generate and is required for read."},
             "format": {
                 "type": "string",
                 "enum": ["png", "jpg", "bmp"],
-                "description": "Image format (default png)",
+                "description": "Raster image format for generate; defaults to png.",
             },
-            "size": {"type": "integer", "description": "Box size in pixels (default 10)"},
-            "border": {"type": "integer", "description": "Border modules (default 4)"},
-            "fill_color": {"type": "string", "description": "QR code color (default black)"},
-            "back_color": {"type": "string", "description": "Background color (default white)"},
+            "size": {"type": "integer", "description": "Box (module) size in pixels; defaults to 10."},
+            "border": {"type": "integer", "description": "Quiet-zone border width in modules; defaults to 4."},
+            "fill_color": {"type": "string", "description": "Foreground (module) color; defaults to 'black'."},
+            "back_color": {"type": "string", "description": "Background color; defaults to 'white'."},
             "error_correction": {
                 "type": "string",
                 "enum": ["L", "M", "Q", "H"],
-                "description": "Error correction level: L(7%), M(15%), Q(25%), H(30%) (default M)",
+                "description": "Error correction level: L(7%), M(15%), Q(25%), H(30%). Higher levels tolerate more damage; defaults to 'M'.",
             },
         },
         "required": ["action"],

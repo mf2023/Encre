@@ -435,121 +435,122 @@ def _error(resp: httpx.Response) -> str:
 
 EncreGitHubTool = build_tool(
     name="github",
-    description="""Interact with GitHub (and GitLab) APIs for issues, PRs, repositories, releases, gists, and Actions.
-
-Actions:
-- issues_list / issues_create / issues_update / issues_get / issues_search
-- prs_list / prs_create / prs_get / prs_merge / prs_review / prs_files / prs_commits
-- repo_search / repo_get / repo_create / repo_list
-- releases_list
-- gists_list / gists_create
-- actions_list_workflows / actions_dispatch / actions_list_runs
-- user_info / rate_limit
-
-Set GITHUB_TOKEN (or GITLAB_TOKEN) environment variable for authentication.""",
+    description=(
+        "Interact with the GitHub and GitLab REST APIs to manage issues, pull/merge "
+        "requests, repositories, releases, gists, and CI Actions runs. "
+        "Use this for any provider-level operation such as listing/creating/searching "
+        "issues, opening or merging PRs, reviewing code, dispatching workflows, or "
+        "browsing repo metadata. "
+        "Do NOT use this for local git commands (commit, push, branch) — use the git "
+        "tool instead; and avoid it for in-depth file diffs already covered by git. "
+        "Tips: prefer GITHUB_TOKEN/GITLAB_TOKEN env vars over passing `token`; cap "
+        "`per_page` (max 100) to keep responses small. "
+        "Pitfalls: most repo-scoped actions require `repo` as owner/repo; the request "
+        "times out after 60s and provider rate limits apply."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "description": "Operation to perform (e.g. issues_list, prs_create, repo_search)",
+                "description": "The provider operation to execute. One of: issues_list, issues_create, issues_update, issues_get, issues_search; prs_list, prs_create, prs_get, prs_merge, prs_review, prs_files, prs_commits; repo_search, repo_get, repo_create, repo_list; releases_list; gists_list, gists_create; actions_list_workflows, actions_dispatch, actions_list_runs; user_info; rate_limit.",
             },
             "platform": {
                 "type": "string",
                 "enum": ["github", "gitlab"],
-                "description": "Platform to use (default: github)",
+                "description": "Target platform; selects the matching API base URL and token env var. Defaults to github.",
             },
             "repo": {
                 "type": "string",
-                "description": "Repository in format 'owner/repo' (e.g. 'user/my-repo')",
+                "description": "Repository identifier in owner/repo form (e.g. 'octocat/Hello-World'); required for most repo-scoped actions.",
             },
             "token": {
                 "type": "string",
-                "description": "API token (overrides env var GITHUB_TOKEN or GITLAB_TOKEN)",
+                "description": "Personal access token used for Authorization; if omitted, falls back to GITHUB_TOKEN/GH_TOKEN or GITLAB_TOKEN/GITLAB_PRIVATE_TOKEN env vars.",
             },
             "issue_number": {
                 "type": "integer",
-                "description": "Issue/PR number for specific operations",
+                "description": "Numeric issue identifier; required by issues_get and issues_update.",
             },
             "pr_number": {
                 "type": "integer",
-                "description": "PR number for PR-specific operations",
+                "description": "Numeric pull/merge request identifier; required by prs_get, prs_merge, prs_review, prs_files, prs_commits.",
             },
             "title": {
                 "type": "string",
-                "description": "Title for creating issues/PRs",
+                "description": "Title text used when creating an issue or pull request.",
             },
             "body": {
                 "type": "string",
-                "description": "Body/content for issues, PRs, or reviews",
+                "description": "Markdown body content for issues, PRs, reviews, or gists.",
             },
             "head": {
                 "type": "string",
-                "description": "Head branch name for creating PRs",
+                "description": "Source branch (head) to merge from when creating a pull request.",
             },
             "base": {
                 "type": "string",
-                "description": "Base branch name for PRs (default: main)",
+                "description": "Target branch (base) to merge into; defaults to 'main' when omitted.",
             },
             "state": {
                 "type": "string",
                 "enum": ["open", "closed", "all"],
-                "description": "Filter by state",
+                "description": "Lifecycle filter for listing issues or PRs.",
             },
             "labels": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Labels for issues/PRs",
+                "description": "List of label names to attach when creating/updating issues.",
             },
             "query": {
                 "type": "string",
-                "description": "Search query for issues_search or repo_search",
+                "description": "Search query string for issues_search or repo_search (supports GitHub search syntax).",
             },
             "name": {
                 "type": "string",
-                "description": "Repository name for repo_create",
+                "description": "New repository name (without owner) for repo_create.",
             },
             "description": {
                 "type": "string",
-                "description": "Description for repo_create or gists_create",
+                "description": "Human-readable description for a new repo or gist.",
             },
             "private": {
                 "type": "boolean",
-                "description": "Whether the repo is private",
+                "description": "If true, create the repository as private.",
             },
             "files": {
                 "type": "object",
-                "description": "Files dict for gists_create: {filename: content}",
+                "description": "Mapping of {filename: file_content} for gists_create; at least one entry is required.",
             },
             "public": {
                 "type": "boolean",
-                "description": "Whether gist is public",
+                "description": "If true, create the gist as publicly discoverable.",
             },
             "workflow_id": {
                 "type": "string",
-                "description": "Workflow ID or filename for actions_dispatch",
+                "description": "Workflow ID or filename (e.g. 'deploy.yml') for actions_dispatch.",
             },
             "ref": {
                 "type": "string",
-                "description": "Git ref for workflow dispatch (default: main)",
+                "description": "Git ref (branch or tag) on which to dispatch the workflow; defaults to 'main'.",
             },
             "inputs": {
                 "type": "object",
-                "description": "Workflow dispatch inputs as key-value pairs",
+                "description": "Key-value inputs passed to the dispatched workflow (must match workflow input declarations).",
             },
             "merge_method": {
                 "type": "string",
                 "enum": ["merge", "squash", "rebase"],
-                "description": "Merge method for PR merge",
+                "description": "Strategy used when merging a pull request.",
             },
             "event": {
                 "type": "string",
                 "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"],
-                "description": "Review event type (GitHub only)",
+                "description": "Type of review to submit (GitHub only).",
             },
             "per_page": {
                 "type": "integer",
-                "description": "Results per page (max 100)",
+                "description": "Page size for list endpoints; clamped to a maximum of 100.",
             },
         },
         "required": ["action"],

@@ -233,20 +233,36 @@ def _json_query(obj: Any, query: str) -> Any:
 
 EncreJsonTool = build_tool(
     name="json_tool",
-    description="JSON utility: validate, format, minify, transform, infer schema, query nested structures with dot notation.",
+    description=(
+        "Validate, format, minify, transform, infer a schema from, or query "
+        "JSON documents. Accepts input either as an inline 'data' string or "
+        "via 'file_path'. Use this instead of piping through jq/python in "
+        "bash -- it returns structured output and supports a dot-notation "
+        "query language (e.g. 'data.items[0].name') and JSON-Schema-style "
+        "type inference. Actions: 'validate' checks well-formedness; 'format' "
+        "pretty-prints (and rewrites the file when given file_path); 'minify' "
+        "removes whitespace (and rewrites the file); 'transform' renders a "
+        "dict as key:value lines or a list as newline-delimited JSON; "
+        "'schema' infers a JSON-Schema-style type tree; 'query' resolves a "
+        "dot-notation path. "
+        "TIP: For format/minify on a file, the file is rewritten in place; "
+        "pass 'data' instead to get the result without touching the file. "
+        "AVOID: Querying huge JSON with deep paths -- extract the slice you "
+        "need first."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["validate", "format", "minify", "transform", "schema", "query"],
-                "description": "Action to perform",
+                "description": "JSON action (required). 'validate' checks well-formedness; 'format' pretty-prints; 'minify' strips whitespace; 'transform' renders a flat view; 'schema' infers types; 'query' resolves a dot-notation path.",
             },
-            "data": {"type": "string", "description": "JSON string to process"},
-            "file_path": {"type": "string", "description": "Path to JSON file"},
-            "query": {"type": "string", "description": "Dot-notation query: data.items[0].name"},
-            "indent": {"type": "integer", "description": "Indentation spaces (default 2)"},
-            "sort_keys": {"type": "boolean", "description": "Sort object keys (default false)"},
+            "data": {"type": "string", "description": "JSON string to process (optional). Required when file_path is not given."},
+            "file_path": {"type": "string", "description": "Path to a JSON file (optional). Required when data is not given. For 'format'/'minify', the file is rewritten in place."},
+            "query": {"type": "string", "description": "Dot-notation query for action='query' (required for query). Example: 'data.items[0].name'."},
+            "indent": {"type": "integer", "description": "Indentation spaces for format output (optional, default 2)."},
+            "sort_keys": {"type": "boolean", "description": "Sort object keys in the output (optional, default false)."},
         },
         "required": ["action"],
     },

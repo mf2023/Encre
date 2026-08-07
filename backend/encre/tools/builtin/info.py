@@ -92,18 +92,20 @@ EncreInfoTool = build_tool(
     description=(
         "Rich-card visualization tool. Renders a self-contained HTML/CSS/JS "
         "document inside a sandboxed iframe in the chat timeline, or a native "
-        "media gallery for image/video display. "
-        "Use this when the user asks for a card, dashboard, chart, or any "
-        "rich visual layout that goes beyond plain markdown. "
-        "Always specify the 'display' parameter. "
-        "Use display='base' (default) to render the HTML document. "
-        "A complete document including <html>, <head>, <body> and all "
-        "required CSS is strongly preferred; fragments or a bare <style> block "
-        "will still be rendered but may look broken. "
-        "Use display='code' to show the raw source without rendering. "
-        "To display images or videos natively, pass a 'media' array "
-        "with {type, src} objects. "
-        "Keep content self-contained; external resources are loaded at the user's risk."
+        "media gallery for image/video display. Use this when the user asks "
+        "for a card, dashboard, chart, or any rich visual layout that goes "
+        "beyond plain markdown. "
+        "Always specify the 'display' parameter. Use display='base' (default) "
+        "to render the HTML document; display='code' to show the raw source "
+        "without rendering. A complete document including <html>, <head>, "
+        "<body> and all required CSS is strongly preferred -- fragments or a "
+        "bare <style> block will still be rendered but may look broken. "
+        "To display images or videos natively, pass a 'media' array with "
+        "{type, src} objects. "
+        "TIP: Keep content self-contained (inline CSS/JS, no external "
+        "fetches) so the card renders correctly inside the sandboxed iframe. "
+        "AVOID: Loading external scripts that require network access -- they "
+        "may be blocked by the sandbox."
     ),
     input_schema={
         "type": "object",
@@ -111,7 +113,7 @@ EncreInfoTool = build_tool(
             "display": {
                 "type": "string",
                 "enum": ["base", "code", "split"],
-                "description": "Display mode. 'base' renders the HTML/CSS/JS card (default); 'code' shows the source; 'split' is reserved for future use.",
+                "description": "Display mode (required). 'base' renders the HTML/CSS/JS card (default); 'code' shows the source; 'split' is reserved for future use.",
             },
             "title": {
                 "type": "string",
@@ -120,9 +122,10 @@ EncreInfoTool = build_tool(
             "content": {
                 "type": "string",
                 "description": (
-                    "Self-contained HTML/CSS/JS payload. "
-                    "A complete document including <html>, <head>, <body> is strongly preferred; "
-                    "fragments or a bare <style> block will still be rendered but may look broken."
+                    "Self-contained HTML/CSS/JS payload (required). A complete "
+                    "document including <html>, <head>, <body> is strongly "
+                    "preferred; fragments or a bare <style> block will still "
+                    "render but may look broken."
                 ),
             },
             "media": {
@@ -130,9 +133,9 @@ EncreInfoTool = build_tool(
                 "items": {
                     "type": "object",
                     "properties": {
-                        "type": {"type": "string", "enum": ["image", "video"], "description": "Media type."},
-                        "src": {"type": "string", "description": "File path or URL to the media resource."},
-                        "controls": {"type": "boolean", "description": "For video: show controls (pause/seek/volume). When true, disables autoplay."},
+                        "type": {"type": "string", "enum": ["image", "video"], "description": "Media type (required)."},
+                        "src": {"type": "string", "description": "File path or URL to the media resource (required)."},
+                        "controls": {"type": "boolean", "description": "For video: show controls (pause/seek/volume). When true, disables autoplay (optional)."},
                     },
                     "required": ["type", "src"],
                 },

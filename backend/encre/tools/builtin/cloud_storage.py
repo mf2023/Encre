@@ -377,76 +377,76 @@ async def _azure_action(action: str, container: str, blob_name: str, local_path:
 
 EncreCloudStorageTool = build_tool(
     name="cloud_storage",
-    description="""Cloud storage operations for AWS S3, Google Cloud Storage (GCS), and Azure Blob Storage.
-
-Actions (varies by provider):
-- list: List objects in a bucket/container (optionally filtered by prefix)
-- upload: Upload a local file to cloud storage
-- download: Download a file from cloud storage
-- delete: Delete an object
-- info: Get object metadata
-- list_buckets: List all buckets/containers (S3, GCS)
-- sync_up: Sync a local directory to S3 (S3 only)
-
-Authentication:
-- S3: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY env vars (or access_key/secret_key params)
-- GCS: GOOGLE_APPLICATION_CREDENTIALS env var (or credentials_path param)
-- Azure: AZURE_STORAGE_CONNECTION_STRING env var (or connection_string param)""",
+    description=(
+        "Cloud object-storage operations for AWS S3, Google Cloud Storage "
+        "(GCS), and Azure Blob Storage behind one interface. Actions vary by "
+        "provider: list (list objects, optionally prefix-filtered), upload "
+        "(upload a local file), download (download an object to a local "
+        "path), delete (delete an object), info (object metadata), "
+        "list_buckets (list all buckets/containers, S3/GCS only), sync_up "
+        "(sync a local directory to S3, S3 only). Use this instead of "
+        "shelling out to aws/gsutil/az CLIs -- it parses responses into "
+        "structured output and resolves credentials from the environment. "
+        "TIP: Use 'prefix' with action='list' to scope large buckets and "
+        "avoid huge responses. "
+        "AVOID: Passing access_key/secret_key/connection_string inline in "
+        "shared sessions -- prefer environment variables for credentials."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "provider": {
                 "type": "string",
                 "enum": ["s3", "gcs", "azure"],
-                "description": "Cloud storage provider (default: s3)",
+                "description": "Cloud storage provider (optional, default 's3').",
             },
             "action": {
                 "type": "string",
-                "description": "Operation: list, upload, download, delete, info, list_buckets, sync_up",
+                "description": "Operation (required): list, upload, download, delete, info, list_buckets, sync_up. Availability varies by provider.",
             },
             "bucket": {
                 "type": "string",
-                "description": "S3 bucket / GCS bucket / Azure container name",
+                "description": "S3 bucket, GCS bucket, or Azure container name (required).",
             },
             "key": {
                 "type": "string",
-                "description": "Object key/path in cloud storage",
+                "description": "Object key/path in cloud storage (required for download/delete/info; optional for upload, defaults to the local filename).",
             },
             "local_path": {
                 "type": "string",
-                "description": "Local file path for upload/download",
+                "description": "Local file path for upload/download (required for upload and sync_up; optional for download, defaults to the object key basename).",
             },
             "prefix": {
                 "type": "string",
-                "description": "Prefix filter for listing objects",
+                "description": "Prefix filter for listing objects (optional, used with action='list').",
             },
             "region": {
                 "type": "string",
-                "description": "AWS region (default: us-east-1, or AWS_REGION env var)",
+                "description": "AWS region (optional, default 'us-east-1' or the AWS_REGION/AWS_DEFAULT_REGION env var).",
             },
             "access_key": {
                 "type": "string",
-                "description": "AWS access key ID (overrides AWS_ACCESS_KEY_ID env var)",
+                "description": "AWS access key ID (optional, overrides the AWS_ACCESS_KEY_ID env var).",
             },
             "secret_key": {
                 "type": "string",
-                "description": "AWS secret access key (overrides AWS_SECRET_ACCESS_KEY env var)",
+                "description": "AWS secret access key (optional, overrides the AWS_SECRET_ACCESS_KEY env var).",
             },
             "credentials_path": {
                 "type": "string",
-                "description": "Path to GCS service account JSON key (overrides GOOGLE_APPLICATION_CREDENTIALS)",
+                "description": "Path to a GCS service account JSON key (optional, overrides the GOOGLE_APPLICATION_CREDENTIALS env var).",
             },
             "connection_string": {
                 "type": "string",
-                "description": "Azure Storage connection string (overrides AZURE_STORAGE_CONNECTION_STRING)",
+                "description": "Azure Storage connection string (optional, overrides the AZURE_STORAGE_CONNECTION_STRING env var).",
             },
             "public": {
                 "type": "boolean",
-                "description": "Make uploaded object publicly readable",
+                "description": "Make the uploaded object publicly readable (optional, used with action='upload').",
             },
             "max_keys": {
                 "type": "integer",
-                "description": "Max results to return (default: 100, max: 1000)",
+                "description": "Max results to return for action='list' (optional, default 100, max 1000).",
             },
         },
         "required": ["action", "bucket"],

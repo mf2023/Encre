@@ -922,8 +922,8 @@ export class SessionInner {
       api.terminalWrite(ptyId, data);
     });
 
-    const dataCleanup = api.onTerminalData((d: { id: number; text: string }) => {
-      if (d.id === ptyId) term.write(d.text);
+    const dataCleanup = api.onTerminalData((d: { id: number; data: string }) => {
+      if (d.id === ptyId) term.write(d.data);
     });
     const exitCleanup = api.onTerminalExit((d: { id: number }) => {
       if (d.id === ptyId) {
@@ -3143,7 +3143,7 @@ export class SessionInner {
   /* ── Progress Panel (Todo / Plan Items) ─────────────────────────── */
 
   private renderProgressPanel(st: ReturnType<typeof getState>): string {
-    const items = st.planItems;
+    const items = st.planItems || [];
     let bodyHTML = "";
 
     if (items.length === 0) {
@@ -3276,7 +3276,7 @@ export class SessionInner {
     // Context usage: use server-sent context_tokens (actual message count),
     // NOT output/usage tokens (which are minuscule vs context window).
     // Falls back to last compact event's new_tokens if not yet available.
-    const lastCompact = st.compactEvents.length > 0 ? st.compactEvents[st.compactEvents.length - 1] : null;
+    const lastCompact = (st.compactEvents || []).length > 0 ? st.compactEvents[st.compactEvents.length - 1] : null;
     const totalUsed = st.contextTokens || lastCompact?.new_tokens || 0;
     const usagePct = contextLimit > 0 ? ((totalUsed / contextLimit) * 100).toFixed(1) : null;
     const usageWarn = usagePct !== null && parseFloat(usagePct) > 80;

@@ -60,7 +60,7 @@ export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T
 
 initLocale();
 
-const APP_VERSION = "0.2.0-pre.1";
+const APP_VERSION = "0.3.0";
 
 export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "browser" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory" | "search";
 
@@ -2081,10 +2081,10 @@ this.renderShortcuts();
             if (api?.openExternal) { api.openExternal(url); return; }
           }
           window.open(url, "_blank");
-        });
-      }
-    }
+});
+  }
 
+}
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: this.panels.gateway });
     }
@@ -2117,13 +2117,11 @@ this.renderShortcuts();
           </div>
           <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
             <label class="model-form-label"><span class="model-form-required">*</span>${tFn("settings.fieldToken")}</label>
-            <div class="model-form-input-wrap" style="position:relative;width:100%">
-              <input type="password" id="dlg-weixin-token-input" class="model-form-input" value="${this.esc(token)}" readonly style="user-select:none;-webkit-user-select:none;padding-right:30px" />
-              <div class="model-form-spinners" style="right:2px;display:flex;align-items:center">
-                <button class="model-form-spinner-btn" id="dlg-weixin-eye-btn" type="button" title="显示" style="width:24px;height:24px;border:none;background:transparent;cursor:pointer;padding:0;color:var(--text-muted)">
-                  <i data-lucide="eye" style="width:14px;height:14px"></i>
-                </button>
-              </div>
+            <div class="model-form-input-wrap" style="width:100%">
+              <input type="password" id="dlg-weixin-token-input" class="model-form-input model-form-input--reveal" value="${this.esc(token)}" readonly style="user-select:none;-webkit-user-select:none" />
+              <button class="model-form-eye-btn" id="dlg-weixin-eye-btn" type="button" data-eye-target="dlg-weixin-token-input" title="显示">
+                <i data-lucide="eye"></i>
+              </button>
             </div>
           </div>
           <div class="model-form-row" style="user-select:none;-webkit-user-select:none">
@@ -2158,6 +2156,15 @@ this.renderShortcuts();
                     <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
                     <textarea id="dlg-${defId}-${f.key}" class="model-form-input" style="resize:vertical;min-height:80px" spellcheck="false">${this.esc(val)}</textarea>
                 </div>`;
+        } else if (f.type === "password") {
+          bodyHtml += `
+                <div class="model-form-row">
+                    <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
+                    <div class="model-form-input-wrap">
+                        <input type="password" id="dlg-${defId}-${f.key}" class="model-form-input model-form-input--reveal" value="${this.esc(val)}" spellcheck="false" autocomplete="off" />
+                        <button class="model-form-eye-btn" type="button" data-eye-target="dlg-${defId}-${f.key}" title="显示"><i data-lucide="eye"></i></button>
+                    </div>
+                </div>`;
         } else {
           bodyHtml += `
                 <div class="model-form-row">
@@ -2168,10 +2175,58 @@ this.renderShortcuts();
       }
     }
 
+    // ── Model selection section (reuse push-gateway card style) ──
+    const models = getState().modelConfigs || [];
+    const enabledModels = models.filter(m => m.enabled !== false);
+    const rawSelected = (s[`adapter_${defId}_models` as keyof typeof s] as string) || "";
+    let selectedModels: string[];
+    try { selectedModels = JSON.parse(rawSelected); } catch { selectedModels = []; }
+    if (!Array.isArray(selectedModels)) selectedModels = [];
+
+    bodyHtml += `
+      <div class="settings-card" style="margin-top:12px;margin-bottom:0;overflow:hidden">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">
+              <span>${tFn("settings.adapterTargetModel")}</span>
+            </div>
+            <div class="settings-item-desc">${tFn("settings.adapterTargetModelHint")}</div>
+          </div>
+          <div class="settings-item-control">
+            <label class="toggle-switch" title="${tFn("settings.adapterTargetModel")}">
+              <input type="checkbox" id="adapter-model-toggle-${defId}" ${selectedModels.length ? "checked" : ""} />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div id="adapter-models-row-${defId}" style="${selectedModels.length ? "" : "display:none"}">
+          <div class="auto-push-gateways">
+            <div class="auto-push-gateways-label">${tFn("settings.adapterTargetModel")}</div>
+            <div id="dlg-models-${defId}">` +
+      (enabledModels.length === 0
+        ? `<span style="color:var(--text-muted);font-size:13px">${t("settings.noModelConfigured")}</span>`
+        : enabledModels.map(m => {
+            const isSel = selectedModels.includes(m.model_id);
+            return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-model-id="${this.esc(m.model_id)}">
+              <span class="auto-push-gw-name">${this.esc(m.name || m.model_id)}</span>
+              <span class="auto-push-gw-dot" title="${this.esc(m.model_id)}"></span>
+              <input type="checkbox" class="auto-push-gw-check" ${isSel ? "checked" : ""} />
+            </div>`;
+          }).join("")
+      ) + `
+            </div>
+          </div>
+        </div>
+      </div>`;
+
     const titleKey = `settings.adapterName${defId.charAt(0).toUpperCase() + defId.slice(1)}`;
     const title = tFn(titleKey);
     const { overlay, close } = this._showFormDialog(title, bodyHtml, false);
     const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
+    // Bind reveal-eye toggles for every password field in this dialog.
+    this._bindEyeToggles(overlay);
+    // Bind model selection click events
+    this._bindAdapterModelSelect(overlay, defId);
 
     // Inject docs link into title bar
     if (def.docs) {
@@ -2230,20 +2285,7 @@ this.renderShortcuts();
         okBtn.addEventListener("click", unbindFn);
 
         // Eye toggle for token field
-        const eyeBtn = overlay.querySelector("#dlg-weixin-eye-btn") as HTMLButtonElement;
-        const tokenInput = overlay.querySelector("#dlg-weixin-token-input") as HTMLInputElement;
-        if (eyeBtn && tokenInput) {
-          let visible = false;
-          eyeBtn.addEventListener("click", () => {
-            visible = !visible;
-            tokenInput.type = visible ? "text" : "password";
-            const iconEl = eyeBtn.querySelector("i");
-            if (iconEl) iconEl.setAttribute("data-lucide", visible ? "eye-off" : "eye");
-            if (typeof (window as any).lucide !== "undefined") {
-              (window as any).lucide.createIcons({ root: eyeBtn });
-            }
-          });
-        }
+        this._bindEyeToggles(overlay);
       } else {
         // Not connected: QR scan mode — hide OK button
         okBtn.style.display = "none";
@@ -2287,6 +2329,16 @@ this.renderShortcuts();
         if (enableInput) {
           config[`adapter_${defId}_enabled`] = enableInput.checked;
         }
+        // Read model selection
+        const modelContainer = document.getElementById(`dlg-models-${defId}`);
+        const selectedModels = modelContainer
+          ? Array.from(modelContainer.querySelectorAll(".auto-push-gw-item.selected"))
+              .map(item => (item as HTMLElement).getAttribute("data-model-id")!)
+              .filter(Boolean)
+          : [];
+        const modelsJson = JSON.stringify(selectedModels);
+        (current as any)[`adapter_${defId}_models`] = modelsJson;
+        config[`adapter_${defId}_models`] = modelsJson;
         setSettings(current as any);
         send({ type: "configure", config });
         delete this._adapterTestResults[defId];
@@ -2432,7 +2484,10 @@ private _bindModelSelect(): void {
           <span class="model-form-required">*</span>${t("settings.apiKey")}
           ${provider && provider.docs ? `<a href="${this.esc(provider.docs)}" class="model-get-apikey-link">${t("settings.getApiKey")}</a>` : ""}
         </label>
-        <input type="password" id="new-model-apikey" class="model-form-input" placeholder="${t("settings.enterApiKey")}" value="${existing ? this.esc(existing.api_key) : ""}" />
+        <div class="model-form-input-wrap">
+          <input type="password" id="new-model-apikey" class="model-form-input model-form-input--reveal" placeholder="${t("settings.enterApiKey")}" value="${existing ? this.esc(existing.api_key) : ""}" autocomplete="off" />
+          <button class="model-form-eye-btn" type="button" data-eye-target="new-model-apikey" title="显示"><i data-lucide="eye"></i></button>
+        </div>
       </div>
       <div class="model-form-row">
         <label class="model-form-label model-form-label--inline" for="new-model-url">
@@ -2489,6 +2544,7 @@ private _bindModelSelect(): void {
     const { overlay, close } = this._showFormDialog(title, bodyHtml, true);
     const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
     okBtn.textContent = btnLabel;
+    this._bindEyeToggles(overlay);
 
     const _wireApiKeyLink = () => {
       const apiKeyLink = document.querySelector(".model-get-apikey-link") as HTMLAnchorElement;
@@ -2688,7 +2744,7 @@ private _bindModelSelect(): void {
             <button class="btn-add-model-top" id="doc-add-trigger" type="button">
               <i data-lucide="plus" class="lucide" style="width:14px;height:14px"></i>
               <span>${tFn("settings.addDocument")}</span>
-              <i data-lucide="chevron-down" class="lucide" style="width:12px;height:12px;margin-left:2px"></i>
+              <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron" style="width:12px;height:12px;margin-left:2px"></i>
             </button>
             <div class="settings-dropdown" id="doc-add-dropdown">
               <div class="settings-dropdown-item" data-action="local">
@@ -3920,7 +3976,8 @@ private _bindModelSelect(): void {
     // Collect every day that has any session, sorted ascending.
     const daySet = new Set<string>();
     for (const s of sessions) {
-      const dk = this._formatDayKey(s.first_active);
+      const ts = s.last_active || s.first_active;
+      const dk = this._formatDayKey(ts);
       if (dk) daySet.add(dk);
     }
     const allDays = Array.from(daySet).sort();
@@ -3948,7 +4005,8 @@ private _bindModelSelect(): void {
     // Build (day, group) → { tokens, count, turns, tools } matrix.
     const cellMap: Record<string, Record<string, { tokens: number; count: number; turns: number; tools: number }>> = {};
     for (const s of sessions) {
-      const dk = this._formatDayKey(s.first_active);
+      const ts = s.last_active || s.first_active;
+      const dk = this._formatDayKey(ts);
       if (!dk) continue;
       const g = groupBy === "model" ? (s.model || "(unknown model)") : this._channelDisplayName(s.channel || "normal");
       if (!cellMap[dk]) cellMap[dk] = {};
@@ -4103,8 +4161,132 @@ private _bindModelSelect(): void {
       iwork: "iWork",
       iclaw: "iClaw",
       sub_agent: t("settings.modeAutomation"),
+      qqbot: "QQ Bot",
+      feishu: "飞书",
+      telegram: "Telegram",
+      discord: "Discord",
+      dingtalk: "钉钉",
+      weixin: "微信",
+      wecom: "企业微信",
+      slack: "Slack",
+      signal: "Signal",
+      matrix: "Matrix",
+      whatsapp: "WhatsApp",
+      email: "Email",
+      homeassistant: "Home Assistant",
+      sms: "SMS",
+      webhook: "Webhook",
+      bluebubbles: "BlueBubbles",
+      yuanbao: "元宝",
+      api_server: "API Server",
+      google_chat: "Google Chat",
+      irc: "IRC",
+      line: "Line",
+      msgraph: "MS Graph",
+      raft: "Raft",
+      simplex: "Simplex",
+      teams: "Teams",
+      ntfy: "Ntfy",
+      photon: "Photon",
     };
-    return labels[channel] || channel;
+    // Normalise to lowercase so "QQBot" and "qqbot" resolve to the same label.
+    return labels[channel.toLowerCase()] || channel;
+  }
+
+  /** Bind reveal-eye toggles for every password field inside *root*.
+   *  Each button with `data-eye-target="some-input-id"` toggles the
+   *  referred input between `password` / `text` type on click.
+   *  For the WeChat token field, revealing the token also activates a
+   *  secure anti-copy mode that blocks all keyboard shortcuts and
+   *  clipboard operations until the dialog is dismissed. */
+  private _bindEyeToggles(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>(".model-form-eye-btn").forEach((btn) => {
+      const targetId = btn.getAttribute("data-eye-target");
+      if (!targetId) return;
+      const input = root.querySelector<HTMLInputElement>(`#${CSS.escape(targetId)}`);
+      if (!input) return;
+      const isWeixinToken = input.id === "dlg-weixin-token-input";
+      let visible = false;
+      let secureCleanup: (() => void) | null = null;
+      btn.addEventListener("click", () => {
+        visible = !visible;
+        input.type = visible ? "text" : "password";
+        const iconEl = btn.querySelector("i");
+        if (iconEl) iconEl.setAttribute("data-lucide", visible ? "eye-off" : "eye");
+        if (typeof (window as any).lucide !== "undefined") {
+          (window as any).lucide.createIcons({ root: btn });
+        }
+        // WeChat token reveal → lock down clipboard & shortcuts
+        if (visible && isWeixinToken && !secureCleanup) {
+          secureCleanup = this._enableSecureMode();
+          // Auto-release when the dialog is removed from the DOM.
+          const observer = new MutationObserver(() => {
+            if (!root.isConnected) {
+              if (secureCleanup) secureCleanup();
+              secureCleanup = null;
+              observer.disconnect();
+            }
+          });
+          observer.observe(document.body, { childList: true, subtree: true });
+        }
+      });
+    });
+  }
+
+  /** Activate anti-copy / anti-shortcut lockdown for the entire document.
+   *  Blocks every keyboard event and clipboard operation.
+   *  Returns a cleanup function to restore normal behaviour. */
+  private _enableSecureMode(): () => void {
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const onClip = (e: ClipboardEvent) => {
+      e.preventDefault();
+    };
+    const onCtx = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    const onSelect = (e: Event) => {
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("copy", onClip, true);
+    document.addEventListener("cut", onClip, true);
+    document.addEventListener("contextmenu", onCtx, true);
+    document.addEventListener("selectstart", onSelect, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("copy", onClip, true);
+      document.removeEventListener("cut", onClip, true);
+      document.removeEventListener("contextmenu", onCtx, true);
+      document.removeEventListener("selectstart", onSelect, true);
+    };
+  }
+
+  /** Bind click events on the model selection checkbox items inside a dialog. */
+  private _bindAdapterModelSelect(root: HTMLElement, defId: string): void {
+    const container = root.querySelector<HTMLElement>(`#dlg-models-${defId}`);
+    const row = root.querySelector<HTMLElement>(`#adapter-models-row-${defId}`);
+    const toggle = root.querySelector<HTMLInputElement>(`#adapter-model-toggle-${defId}`);
+    if (toggle && row) {
+      toggle.addEventListener("change", () => {
+        row.style.display = toggle.checked ? "" : "none";
+      });
+    }
+    if (!container) return;
+    container.querySelectorAll(".auto-push-gw-check").forEach((cb) => {
+      cb.addEventListener("click", (e) => e.preventDefault());
+    });
+    container.querySelectorAll(".auto-push-gw-item").forEach(item => {
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const wasSel = item.classList.contains("selected");
+        const cb = item.querySelector(".auto-push-gw-check") as HTMLInputElement;
+        if (cb) cb.checked = !wasSel;
+        item.classList.toggle("selected", !wasSel);
+      });
+    });
   }
 
   /** YYYY-MM-DD key for grouping sessions by calendar day (local time). */
@@ -4154,7 +4336,8 @@ private _bindModelSelect(): void {
     this._usageBarChartData = { labels, datasets };
 
     // Legend: every group gets a swatch + name + total.
-    const legendItems = groupOrder.map((g) => {
+    // Skip groups with 0 tokens (e.g. tool-only automation sessions with no model).
+    const legendItems = groupOrder.filter(g => (groupTotals[g]?.tokens || 0) > 0).map((g) => {
       const color = groupColor[g];
       const total = groupTotals[g]?.tokens || 0;
       const status = groupTotals[g]?.status;
@@ -4231,10 +4414,11 @@ private _bindModelSelect(): void {
     const BLOCKS = Math.floor(24 / BLOCK_HOURS); // 6 rows
     const cellTokens: Record<string, number> = {};
     for (const s of sessions) {
-      if (!s.first_active) continue;
-      const d = new Date(s.first_active * 1000);
+      const ts = s.last_active || s.first_active;
+      if (!ts) continue;
+      const d = new Date(ts * 1000);
       if (isNaN(d.getTime())) continue;
-      const dayKey = this._formatDayKey(s.first_active);
+      const dayKey = this._formatDayKey(ts);
       if (!dayKey) continue;
       const block = Math.floor(d.getHours() / BLOCK_HOURS);
       cellTokens[`${dayKey}|${block}`] = (cellTokens[`${dayKey}|${block}`] || 0) + (s.total_tokens || 0);
@@ -4244,8 +4428,9 @@ private _bindModelSelect(): void {
     // calendar so a user with one session doesn't see a single bar.
     const MIN_DAYS = 30;    // minimum visible days (~1 month)
     const MAX_DAYS = 92;    // cap at the recent 3 months (this month + previous 2)
-    const latestMs = Math.max(...sessions.filter(s => s.first_active).map(s => s.first_active * 1000));
-    const earliestMs = Math.min(...sessions.filter(s => s.first_active).map(s => s.first_active * 1000));
+    const activeTs = sessions.map(s => (s.last_active || s.first_active) * 1000).filter(t => t);
+    const latestMs = Math.max(...activeTs);
+    const earliestMs = Math.min(...activeTs);
     const latestDate = new Date(latestMs);
     const earliestDate = new Date(earliestMs);
     let startDate = new Date(earliestDate);
@@ -4283,7 +4468,7 @@ private _bindModelSelect(): void {
     // The chart is capped at the recent 3 months (this month + the
     // previous two) and scales to fit the panel (no horizontal scroll),
     // so the cells spread out to fill the available width.
-    const cellW = 11, cellH = 11, cellGap = 3;
+    const cellW = 11, cellH = 11, cellGap = 5;
     const cellRadius = 1;
     const PL = 6, PR = 6, PT = 18, PB = 18;
     // Stretch the day columns to fill the panel: a wider per-day stride
@@ -4404,8 +4589,9 @@ private _bindModelSelect(): void {
     // Aggregate stats for the caption row.
     const daySet = new Set<string>();
     for (const s of sessions) {
-      if (!s.first_active) continue;
-      const k = this._formatDayKey(s.first_active);
+      const ts = s.last_active || s.first_active;
+      if (!ts) continue;
+      const k = this._formatDayKey(ts);
       if (k) daySet.add(k);
     }
     const activeDays = daySet.size;
@@ -5232,6 +5418,6 @@ private _bindModelSelect(): void {
         }
       });
     });
+  }
 
-    }
 }

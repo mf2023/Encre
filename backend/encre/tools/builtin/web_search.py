@@ -104,35 +104,43 @@ async def _web_search_execute(**kwargs: Any) -> str:
 EncreWebSearchTool = build_tool(
     name="web_search",
     description=(
-        "Search the web for up-to-date information. Returns each result with "
-        "title, URL, and -- by default -- the page content inline, so you "
-        "usually do NOT need a follow-up web_fetch (which anti-crawling sites "
-        "often block). Use for: current events, recent data, documentation, "
+        "Search the web for up-to-date information and return each result with "
+        "its title, URL, and -- by default -- the full page content inline.\n\n"
+        "WHEN to use: current events, recent data, library documentation, "
         "flight/train/hotel lookups, or any question needing information beyond "
-        "the training cutoff."
+        "the training cutoff.\n"
+        "WHEN NOT to use: for a single known URL the user pasted, call "
+        "web_fetch instead; for login-gated or JS-heavy single-page apps that "
+        "block crawlers, use the browser tool.\n"
+        "TIPS: keep queries specific (\"Python asyncio gather exception "
+        "handling\" beats \"asyncio\"); set content=false when you only need "
+        "URLs; lower num when content=true to keep the payload small.\n"
+        "PITFALLS: anti-crawling sites (ctrip/fliggy/...) often return empty "
+        "content even when the URL is found -- follow up with web_fetch or the "
+        "browser tool for those."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The search query",
+                "description": "The search query. Be specific and use natural-language phrases rather than bare keywords for better relevance.",
             },
             "num": {
                 "type": "integer",
-                "description": "Maximum number of results (default: 10, max: 10). Lower this when content=true to keep the payload small.",
+                "description": "Maximum number of results to return (default: 10, max: 10). Lower this to 3-5 when content=true to keep the payload readable.",
             },
             "language": {
                 "type": "string",
-                "description": "Search language code, e.g. zh-CN, en-US (default: all)",
+                "description": "BCP-47 language code to bias results, e.g. zh-CN, en-US, ja-JP. Leave empty for language-agnostic results (default: all).",
             },
             "categories": {
                 "type": "string",
-                "description": "Search category (used with external SearXNG): general, news",
+                "description": "Search category used with the external SearXNG backend: 'general' (default) for broad web results, or 'news' for time-sensitive articles.",
             },
             "content": {
                 "type": "boolean",
-                "description": "Whether to return page content inline (default: true). Set false for link-only results when you just need URLs.",
+                "description": "Whether to fetch and inline each page's content (default: true). Set to false for link-only results when you just need URLs to inspect later.",
             },
         },
         "required": ["query"],

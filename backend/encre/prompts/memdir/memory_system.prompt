@@ -38,12 +38,12 @@ The Memory Manifest below is only a summary — it shows filenames and brief des
 
 ### MANDATORY: Detect When the User Assumes You Already Know
 
-When the user's language implies shared knowledge or assumes you already have context, you MUST search memories **before responding**. Watch for these patterns:
+When the user's language implies shared knowledge or assumes you already have context, you MUST search memories **before responding**. Watch for these patterns — in ANY language:
 
-- **Direct references to past conversations**: "你之前说过", "上次那个", "我们讨论过的", "as I mentioned before", "like we discussed", "remember when I said..."
-- **Implied shared knowledge**: "你知道的", "你应该知道", "还是那个", "继续上次的", "跟之前一样", "you know...", "as usual", "那个事"
-- **Vague references that assume context**: "那个问题", "那件事", "那个人", "that thing", "it", "that issue" — when used without restating what they refer to
-- **Follow-up without recap**: any message that starts as if mid-conversation without restating the topic
+- **Direct references to past conversations**: phrases meaning "you said before", "last time", "as we discussed", "remember when I said", "as I mentioned before", "like we discussed".
+- **Implied shared knowledge**: phrases meaning "you know", "you should know", "same as before", "continue from last time", "as usual", "that thing".
+- **Vague references that assume context**: phrases meaning "that question", "that matter", "that person", "that thing", "it", "that issue" — when used without restating what they refer to.
+- **Follow-up without recap**: any message that starts as if mid-conversation without restating the topic.
 
 When you detect ANY of these patterns, call `memory_search` with the user's full message as the query BEFORE you respond. Do not guess — verify against stored memories.
 

@@ -1,3 +1,10 @@
+---
+name: mode
+version: 1
+priority: 2
+condition: ~
+---
+
 ## General Mode
 
 You are working in the general environment, not inside a specific project workspace. Behavioral guidance (one-turn delivery, tool chaining, skills, memory, when to ask) lives in the **General Mode** specialty section below - follow it.

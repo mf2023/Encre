@@ -43,6 +43,7 @@ import {
   downloadMarkdownFile,
 } from "./stream.js";
 import { renderMarkdown, Chat } from "./chat.js";
+import { PLATFORM_ICONS } from "./icons.js";
 import type { Message } from "./types.js";
 
 interface TaskTemplate {
@@ -77,6 +78,7 @@ interface HistoryEntry {
   id: string;
   job_id: string;
   name: string;
+  prompt?: string;
   tag: string;
   time: number;
   state: string;
@@ -98,6 +100,13 @@ interface AutomationViewResult {
   session_id?: string;
   messages: any[];
   error_code?: string;
+}
+
+/** Localized gateway name matching the label used in Settings → Gateway. */
+function gatewayDisplayName(id: string): string {
+  const key = "settings.adapterName" + id.charAt(0).toUpperCase() + id.slice(1);
+  const name = t(key);
+  return name === key ? id : name;
 }
 
 const TEMPLATES: TaskTemplate[] = [
@@ -266,6 +275,11 @@ private createDropdown: HTMLElement;
   private historyDateTo: string = "";   // YYYY-MM-DD or ""
   private historyFiltersBound: boolean = false;
   private _lastHistoryRef: any = null;
+  // Rebind closures + date label elements so labels can be refreshed on locale change
+  private _rebindStatus: (() => void) | null = null;
+  private _rebindTask: (() => void) | null = null;
+  private _dateFromText: HTMLElement | null = null;
+  private _dateToText: HTMLElement | null = null;
   // Cached filtered history for export (set by renderHistory)
   private currentFilteredHistory: HistoryEntry[] = [];
 
@@ -290,6 +304,10 @@ private createDropdown: HTMLElement;
     this.bindCallbacks();
     this.bindCreateButton();
     this.bindHistoryFilters();
+
+    // Re-render history filter labels/dropdowns when the locale changes so
+    // they track the current language instead of the one active at bind time.
+    onLocaleChange(() => this.updateHistoryFilterLabels());
 
     // Close any open history dropdowns when clicking outside
     document.addEventListener("click", (e) => {
@@ -356,13 +374,15 @@ private createDropdown: HTMLElement;
     if (this.isDetailVisible()) this.showDetail(this.activeExecution);
   }
 
-  private showDetail(data: { name: string; messages?: any[]; state?: string; result?: string; error_code?: string }): void {
+  private showDetail(data: { name: string; prompt?: string; messages?: any[]; state?: string; result?: string; error_code?: string }): void {
     if (data.state === "FAILED") {
       const errorCode = data.error_code || "AUTOMATION_EXECUTION_FAILED";
       this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;"><i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i><div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div><div class="si-panel-empty-sub">${this.escapeHtml(errorCode)}</div></div>`;
       if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
     } else if (data.messages && data.messages.length > 0) {
       this.renderSubAgentTimeline(data.messages);
+    } else if (data.prompt) {
+      this.renderTaskCard(data.prompt, data.state || "");
     } else if (data.state === "RUNNING" || data.state === "PENDING") {
       this.detailContentEl.innerHTML = `<div class="automation-detail-loader"><i data-lucide="loader-circle" class="lucide" style="animation:historySpin 1s linear infinite;"></i></div>`;
       if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
@@ -435,6 +455,32 @@ private createDropdown: HTMLElement;
     }
   }
 
+  /**
+   * Fallback detail body when an execution has no sub-agent messages yet:
+   * always show the task the user originally defined (job prompt) together
+   * with a consistent status line, instead of a bare infinite spinner.
+   */
+  private renderTaskCard(prompt: string, state: string): void {
+    const pending = state === "RUNNING" || state === "PENDING";
+    const icon = state === "COMPLETED" ? "circle-check" : state === "FAILED" ? "circle-x" : "loader-circle";
+    const iconCls = state === "COMPLETED" ? "color:var(--success)" : state === "FAILED" ? "color:var(--danger)" : "color:var(--warning)";
+    const label = state === "COMPLETED" ? t("automation.stateSuccess")
+      : state === "FAILED" ? t("automation.stateFailed")
+      : state === "RUNNING" ? t("automation.stateRunning")
+      : t("automation.statePending");
+    const spin = pending ? "animation:historySpin 1s linear infinite;" : "";
+    this.detailContentEl.innerHTML = `
+      <div class="automation-detail-card">
+        <div class="automation-detail-status">
+          <i data-lucide="${icon}" class="lucide" style="width:16px;height:16px;${iconCls};${spin}"></i>
+          <span>${this.escapeHtml(label)}</span>
+        </div>
+        <div class="automation-detail-task-label">${this.escapeHtml(t("automation.taskContent") || "Task")}</div>
+        <div class="automation-detail-task-text">${this.escapeHtml(prompt)}</div>
+      </div>`;
+    if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
+  }
+
   // ── Rendering ───────────────────────────────────────────────────
 
   /** Refreshes the panel by requesting the jobs list and run history. */
@@ -502,67 +548,91 @@ private createDropdown: HTMLElement;
     const title = isEdit ? t("automation.editTask") : t("automation.createTaskTitle");
     const btnLabel = isEdit ? t("automation.save") : t("automation.create");
 
+    // Resolve the initially selected model to an *enabled* one. Disabled or
+    // deleted models must never be offered / pre-selected in the dialog.
+    const _dlgModels = getState().modelConfigs || [];
+    const initModelIndex = (() => {
+      const idx = editJob?.model_index ?? getState().activeModelIndex;
+      if (_dlgModels[idx] && _dlgModels[idx].enabled !== false) return idx;
+      const first = _dlgModels.findIndex((m) => m.enabled !== false);
+      return first >= 0 ? first : idx;
+    })();
+
     const overlay = document.createElement("div");
     overlay.className = "toast-overlay";
     overlay.innerHTML = `
       <div class="toast-dialog dialog-wide">
         <div class="toast-title">${title}</div>
         <div class="dialog-body">
-          <div class="model-form-row">
-            <label class="model-form-label">${t("automation.taskName")}</label>
-            <input type="text" id="auto-dlg-name" class="model-form-input" value="${escapeHtml(editJob?.name || (template.defaultNameKey ? t(`automation.${template.defaultNameKey}`) : ""))}" />
-          </div>
-          <div class="model-form-row">
-            <label class="model-form-label">${t("automation.triggerTime")}</label>
-            <div class="model-form-dropdown-row">
-              <div class="settings-dropdown-wrap" id="auto-dlg-schedule-wrap">
-                <button class="settings-dropdown-trigger" id="auto-dlg-schedule-trigger" type="button">
-                  <span>${parsed.scheduleType === "daily" ? t("automation.everyDay") : parsed.scheduleType === "weekly" ? t("automation.everyWeek") : t("automation.everyHour")}</span>
-                  <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
-                </button>
-                <div class="settings-dropdown" id="auto-dlg-schedule-dropdown">
-                  <div class="settings-dropdown-item" data-value="daily"><i data-lucide="calendar" class="lucide" style="width:16px;height:16px;margin-right:6px"></i><span>${t("automation.everyDay")}</span></div>
-                  <div class="settings-dropdown-item" data-value="weekly"><i data-lucide="calendar" class="lucide" style="width:16px;height:16px;margin-right:6px"></i><span>${t("automation.everyWeek")}</span></div>
-                  <div class="settings-dropdown-item" data-value="hourly"><i data-lucide="clock" class="lucide" style="width:16px;height:16px;margin-right:6px"></i><span>${t("automation.everyHour")}</span></div>
+            <div class="model-form-row">
+              <label class="model-form-label">${t("automation.taskName")}</label>
+              <input type="text" id="auto-dlg-name" class="model-form-input" placeholder="${t("automation.taskNamePlaceholder")}" value="${escapeHtml(editJob?.name || (template.defaultNameKey ? t(`automation.${template.defaultNameKey}`) : ""))}" />
+            </div>
+            <div class="model-form-row">
+              <label class="model-form-label">${t("automation.triggerTime")}</label>
+              <div class="model-form-dropdown-row">
+                <div class="settings-dropdown-wrap" id="auto-dlg-schedule-wrap">
+                  <button class="settings-dropdown-trigger" id="auto-dlg-schedule-trigger" type="button">
+                    <i data-lucide="${parsed.scheduleType === "hourly" ? "clock" : "calendar"}" class="lucide auto-trigger-icon"></i>
+                    <span>${parsed.scheduleType === "daily" ? t("automation.everyDay") : parsed.scheduleType === "weekly" ? t("automation.everyWeek") : t("automation.everyHour")}</span>
+                    <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+                  </button>
+                  <div class="settings-dropdown" id="auto-dlg-schedule-dropdown">
+                    <div class="settings-dropdown-item" data-value="daily"><span>${t("automation.everyDay")}</span></div>
+                    <div class="settings-dropdown-item" data-value="weekly"><span>${t("automation.everyWeek")}</span></div>
+                    <div class="settings-dropdown-item" data-value="hourly"><span>${t("automation.everyHour")}</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="model-form-dropdown-row" id="auto-dlg-time-row" style="margin-top:8px">
+                <div class="settings-dropdown-wrap" id="auto-dlg-time-wrap">
+                  <button class="settings-dropdown-trigger" id="auto-dlg-time-trigger" type="button">
+                    <i data-lucide="clock" class="lucide auto-trigger-icon"></i>
+                    <span>${escapeHtml(parsed.time)}</span>
+                    <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+                  </button>
+                  <div class="settings-dropdown time-picker-dropdown" id="auto-dlg-time-dropdown">
+                    <div class="time-picker-grid">
+                      <div class="time-picker-col" id="auto-dlg-time-hours"></div>
+                      <div class="time-picker-col" id="auto-dlg-time-mins"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="model-form-dropdown-row" id="auto-dlg-time-row" style="margin-top:8px">
-              <div class="settings-dropdown-wrap" id="auto-dlg-time-wrap">
-                <button class="settings-dropdown-trigger" id="auto-dlg-time-trigger" type="button">
-                  <i data-lucide="clock" class="lucide" style="width:16px;height:16px;margin-right:6px;opacity:0.5;flex-shrink:0"></i>
-                  <span>${escapeHtml(parsed.time)}</span>
-                  <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
-                </button>
-                <div class="settings-dropdown" id="auto-dlg-time-dropdown"></div>
-              </div>
-            </div>
-          </div>
           <div class="model-form-row">
             <label class="model-form-label">${t("automation.modelLabel")}</label>
             <div class="model-form-dropdown-row">
               <div class="settings-dropdown-wrap" id="auto-dlg-model-wrap">
                 <button class="settings-dropdown-trigger" id="auto-dlg-model-trigger" type="button">
-                  <span>${(getState().modelConfigs[editJob?.model_index ?? getState().activeModelIndex]?.name) || "—"}</span>
+                  <span>${(_dlgModels[initModelIndex]?.name) || "—"}</span>
                   <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
                 </button>
                 <div class="settings-dropdown" id="auto-dlg-model-dropdown"></div>
               </div>
             </div>
           </div>
-          <div class="model-form-thinking-card" style="margin-bottom:12px;margin-top:8px">
-            <div class="model-form-thinking-info">
-              <div class="model-form-thinking-title">${t("automation.enablePush")}</div>
-              <div class="model-form-thinking-desc">${t("automation.enablePushHint")}</div>
+          <div class="settings-card" style="margin-bottom:12px;margin-top:8px;overflow:hidden">
+            <div class="settings-item-row">
+              <div class="settings-item-info">
+                <div class="settings-item-title">
+                  <span>${t("automation.pushCardTitle")}</span>
+                </div>
+                <div class="settings-item-desc">${t("automation.enablePushHint")}</div>
+              </div>
+              <div class="settings-item-control">
+                <label class="toggle-switch" title="${t("automation.enablePush")}">
+                  <input type="checkbox" id="auto-dlg-push-toggle" ${editJob?.push_gateways?.length ? "checked" : ""} />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
             </div>
-            <label class="toggle-switch">
-              <input type="checkbox" id="auto-dlg-push-toggle" ${editJob?.push_gateways?.length ? "checked" : ""} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div class="model-form-row" id="auto-dlg-push-gateways-row" style="${editJob?.push_gateways?.length ? "" : "display:none"}">
-            <label class="model-form-label">${t("automation.pushGateways")}</label>
-            <div id="auto-dlg-push-gateways" style="margin-top:4px"></div>
+            <div id="auto-dlg-push-gateways-row" style="${editJob?.push_gateways?.length ? "" : "display:none"}">
+              <div class="auto-push-gateways">
+                <div class="auto-push-gateways-label">${t("automation.pushGateways")}</div>
+                <div id="auto-dlg-push-gateways"></div>
+              </div>
+            </div>
           </div>
           <div class="model-form-row" style="flex-direction:column;align-items:stretch">
             <label class="model-form-label">${t("automation.whatToDo")}</label>
@@ -601,28 +671,39 @@ private createDropdown: HTMLElement;
     const scheduleTrigger = overlay.querySelector("#auto-dlg-schedule-trigger") as HTMLElement;
     const scheduleDropdown = overlay.querySelector("#auto-dlg-schedule-dropdown") as HTMLElement;
 
+    const pad2 = (n: number): string => n.toString().padStart(2, "0");
     const buildTimeOptions = () => {
-      const times: string[] = [];
-      for (let h = 0; h < 24; h++) {
-        for (let m = 0; m < 60; m++) {
-          times.push(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`);
-        }
-      }
-      timeDropdown.innerHTML = times.map(t =>
-        `<div class="settings-dropdown-item${t === timeValue ? " selected" : ""}" data-value="${t}">
-          <i data-lucide="clock" class="lucide" style="width:16px;height:16px;margin-right:6px;opacity:0.5"></i>
-          <span>${t}</span>
-        </div>`
-      ).join("");
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: timeDropdown });
-      }
-      timeDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
-        item.addEventListener("click", (e) => {
-          e.stopPropagation();
-          timeValue = (item as HTMLElement).getAttribute("data-value") || "09:00";
-          timeTrigger.querySelector("span")!.textContent = timeValue;
-          timeDropdown.classList.remove("open");
+      const hoursCol = overlay.querySelector("#auto-dlg-time-hours") as HTMLElement;
+      const minsCol = overlay.querySelector("#auto-dlg-time-mins") as HTMLElement;
+      const [curH, curM] = (() => {
+        const parts = (timeValue || "09:00").split(":").map(Number);
+        return [parts[0] ?? 9, parts[1] ?? 0];
+      })();
+      const renderCol = (col: HTMLElement, count: number, selected: number, onPick: (v: number) => void) => {
+        col.innerHTML = Array.from({ length: count }, (_, i) =>
+          `<div class="settings-dropdown-item time-picker-cell${i === selected ? " selected" : ""}" data-value="${i}">${pad2(i)}</div>`
+        ).join("");
+        col.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+          item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            onPick(parseInt((item as HTMLElement).getAttribute("data-value") || "0", 10));
+          });
+        });
+      };
+      renderCol(hoursCol, 24, curH, (h) => {
+        const m = parseInt((timeValue || "09:00").split(":")[1] ?? "0", 10);
+        timeValue = `${pad2(h)}:${pad2(m)}`;
+        timeTrigger.querySelector("span")!.textContent = timeValue;
+        hoursCol.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+          item.classList.toggle("selected", parseInt(item.getAttribute("data-value") || "0", 10) === h);
+        });
+      });
+      renderCol(minsCol, 60, curM, (m) => {
+        const h = parseInt((timeValue || "09:00").split(":")[0] ?? "9", 10);
+        timeValue = `${pad2(h)}:${pad2(m)}`;
+        timeTrigger.querySelector("span")!.textContent = timeValue;
+        minsCol.querySelectorAll(".settings-dropdown-item").forEach((item) => {
+          item.classList.toggle("selected", parseInt(item.getAttribute("data-value") || "0", 10) === m);
         });
       });
     };
@@ -645,12 +726,25 @@ private createDropdown: HTMLElement;
         const val = (item as HTMLElement).getAttribute("data-value") || "daily";
         const label = (item as HTMLElement).querySelector("span")!.textContent || "";
         scheduleTrigger.querySelector("span")!.textContent = label;
+        const schedIcon = scheduleTrigger.querySelector("i[data-lucide]") as HTMLElement | null;
+        if (schedIcon) {
+          schedIcon.setAttribute("data-lucide", val === "hourly" ? "clock" : "calendar");
+          if (typeof (window as any).lucide !== "undefined") {
+            (window as any).lucide.createIcons({ root: scheduleTrigger });
+          }
+        }
         scheduleDropdown.classList.remove("open");
         scheduleValue = val;
         showTimePicker(val !== "hourly");
       });
     });
 
+    const closeTimeOutside = (ev: MouseEvent) => {
+      const target = ev.target as Node;
+      if (timeDropdown.classList.contains("open") && !timeDropdown.contains(target) && !timeTrigger.contains(target)) {
+        timeDropdown.classList.remove("open");
+      }
+    };
     timeTrigger.addEventListener("click", (e) => {
       e.stopPropagation();
       const isOpen = timeDropdown.classList.contains("open");
@@ -659,14 +753,9 @@ private createDropdown: HTMLElement;
       buildTimeOptions();
       timeDropdown.classList.add("open");
     });
+    document.addEventListener("click", closeTimeOutside);
 
-    let selectedModelIndex = editJob?.model_index ?? getState().activeModelIndex;
-    // If the pre-selected model is disabled, fall back to the first enabled model
-    const _allModelsInit = getState().modelConfigs;
-    if (_allModelsInit && _allModelsInit[selectedModelIndex]?.enabled === false) {
-      const _firstEnabled = _allModelsInit.findIndex(m => m.enabled !== false);
-      if (_firstEnabled >= 0) selectedModelIndex = _firstEnabled;
-    }
+    let selectedModelIndex = initModelIndex;
     const modelTrigger = overlay.querySelector("#auto-dlg-model-trigger") as HTMLElement;
     const modelDropdown = overlay.querySelector("#auto-dlg-model-dropdown") as HTMLElement;
 
@@ -718,38 +807,40 @@ private createDropdown: HTMLElement;
       const adapters = gs?.adapters || [];
       const available = adapters.filter(a => a.connected);
       if (available.length === 0) {
-        pushGatewaysContainer.innerHTML = `<span style="color:var(--text-muted);font-size:13px">—</span>`;
+        pushGatewaysContainer.innerHTML = `<span style="color:var(--text-muted);font-size:13px">${t("automation.pushGatewaysEmpty")}</span>`;
         return;
       }
       const selected = new Set<string>(editJob?.push_gateways || []);
       pushGatewaysContainer.innerHTML = available.map(a => {
         const isSel = selected.has(a.name);
-        return `<div class="settings-dropdown-item${isSel ? " selected" : ""}" data-gateway-id="${a.name}" style="display:flex;align-items:center;gap:8px">
-          <i data-lucide="${isSel ? "check-circle" : "circle"}" class="lucide" style="width:16px;height:16px;flex-shrink:0;${isSel ? "color:var(--accent)" : "opacity:0.3"}"></i>
-          <span>${a.name}</span>
+        const iconData = PLATFORM_ICONS[a.name];
+        const iconHtml = iconData
+          ? `<svg viewBox="${iconData.viewBox || "0 0 24 24"}" width="18" height="18" style="flex-shrink:0">${iconData.inner}</svg>`
+          : `<div style="width:18px;height:18px;border-radius:4px;background:#888;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${escapeHtml(gatewayDisplayName(a.name).substring(0, 2))}</div>`;
+        return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-gateway-id="${a.name}">
+          ${iconHtml}
+          <span class="auto-push-gw-name">${escapeHtml(gatewayDisplayName(a.name))}</span>
+          <span class="auto-push-gw-dot" title="${escapeHtml(a.name)}"></span>
+          <input type="checkbox" class="auto-push-gw-check" ${isSel ? "checked" : ""} />
         </div>`;
       }).join("");
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: pushGatewaysContainer });
-      }
-      pushGatewaysContainer.querySelectorAll(".settings-dropdown-item").forEach(item => {
+      pushGatewaysContainer.querySelectorAll(".auto-push-gw-check").forEach((cb) => {
+        cb.addEventListener("click", (e) => e.preventDefault());
+      });
+      pushGatewaysContainer.querySelectorAll(".auto-push-gw-item").forEach(item => {
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           const gwId = (item as HTMLElement).getAttribute("data-gateway-id");
           if (!gwId) return;
           const wasSel = selected.has(gwId);
-          const icon = item.querySelector(".lucide");
+          const cb = item.querySelector(".auto-push-gw-check") as HTMLInputElement;
+          if (cb) cb.checked = !wasSel;
           if (wasSel) {
             selected.delete(gwId);
             item.classList.remove("selected");
-            if (icon) icon.setAttribute("data-lucide", "circle");
           } else {
             selected.add(gwId);
             item.classList.add("selected");
-            if (icon) icon.setAttribute("data-lucide", "check-circle");
-          }
-          if (typeof (window as any).lucide !== "undefined") {
-            (window as any).lucide.createIcons({ root: pushGatewaysContainer });
           }
         });
       });
@@ -793,7 +884,7 @@ private createDropdown: HTMLElement;
       if (pushToggleEl?.checked) {
         const container = document.getElementById("auto-dlg-push-gateways");
         if (container) {
-          selectedPushGateways = Array.from(container.querySelectorAll(".settings-dropdown-item.selected"))
+          selectedPushGateways = Array.from(container.querySelectorAll(".auto-push-gw-item.selected"))
             .map(item => (item as HTMLElement).getAttribute("data-gateway-id")!)
             .filter(Boolean);
         }
@@ -916,6 +1007,8 @@ private createDropdown: HTMLElement;
       if (suspended) return `<span class="model-active-tag" style="color:var(--text-muted);background:rgba(156,163,175,0.12)">${t("automation.statePaused")}</span>`;
       switch (state) {
         case "RUNNING": return `<span class="model-active-tag" style="color:var(--success);background:rgba(34,197,94,0.12)">${t("automation.stateRunning")}</span>`;
+        case "COMPLETED": return `<span class="model-active-tag" style="color:var(--success);background:rgba(34,197,94,0.12)">${t("automation.stateSuccess")}</span>`;
+        case "FAILED": return `<span class="model-active-tag" style="color:var(--danger);background:rgba(239,68,68,0.12)">${t("automation.stateFailed")}</span>`;
         case "PENDING": return `<span class="model-active-tag" style="color:var(--warning);background:rgba(234,179,8,0.12)">${t("automation.statePending")}</span>`;
         default: return `<span class="model-active-tag" style="color:var(--text-muted);background:rgba(156,163,175,0.12)">${escapeHtml(state)}</span>`;
       }
@@ -930,7 +1023,9 @@ private createDropdown: HTMLElement;
             <span class="model-name-text">${escapeHtml(job.name)}</span>
             ${job.tag && job.tag !== job.name ? `<span class="model-active-tag">${escapeHtml(job.tag)}</span>` : ""}
           </div>
-          <div class="model-table-cell model-cell-provider">${formatSchedule(job.cron)}</div>
+          <div class="model-table-cell model-cell-provider">
+            <div>${formatSchedule(job.cron)}</div>
+          </div>
           <div class="model-table-cell model-cell-actions">
             ${stateTag(job.state, job.suspended)}
             <button class="btn-icon" data-action="edit" data-tooltip="${t("general.edit")}">
@@ -997,17 +1092,21 @@ private createDropdown: HTMLElement;
     this.historyFiltersBound = true;
 
     // ── Status dropdown ──
-    const statusOptions: { id: string; label: string }[] = [
-      { id: "", label: t("automation.filterAll") },
-      { id: "SUCCESS", label: t("automation.filterSuccess") },
-      { id: "FAILED", label: t("automation.filterFailed") },
-      { id: "RUNNING", label: t("automation.stateRunning") },
-      { id: "PENDING", label: t("automation.statePending") },
-    ];
-    this.renderHistoryDropdown("history-filter-status", statusOptions, this.historyStatus, (val) => {
-      this.historyStatus = val;
-      this.renderHistory();
-    });
+    const rebindStatus = () => {
+      const statusOptions: { id: string; label: string }[] = [
+        { id: "", label: t("automation.filterAll") },
+        { id: "COMPLETED", label: t("automation.filterSuccess") },
+        { id: "FAILED", label: t("automation.filterFailed") },
+        { id: "RUNNING", label: t("automation.stateRunning") },
+        { id: "PENDING", label: t("automation.statePending") },
+      ];
+      this.renderHistoryDropdown("history-filter-status", statusOptions, this.historyStatus, (val) => {
+        this.historyStatus = val;
+        this.renderHistory();
+      });
+    };
+    rebindStatus();
+    this._rebindStatus = rebindStatus;
 
     // ── Task dropdown ──
     const renderTaskOptions = () => {
@@ -1034,6 +1133,7 @@ private createDropdown: HTMLElement;
       });
     };
     rebindTask();
+    this._rebindTask = rebindTask;
     // re-render task list when history/jobs change
     this.onHistoryFiltersRebind = rebindTask;
 
@@ -1046,6 +1146,11 @@ private createDropdown: HTMLElement;
     const dateToDD = document.getElementById("history-date-to-dd");
     const dateFromText = document.getElementById("history-date-from-text");
     const dateToText = document.getElementById("history-date-to-text");
+    this._dateFromText = dateFromText;
+    this._dateToText = dateToText;
+    // Set locale-aware placeholder text once at bind time (HTML default is zh).
+    if (dateFromText) dateFromText.textContent = getLocale() === "en" ? "Start Date" : "开始日期";
+    if (dateToText) dateToText.textContent = getLocale() === "en" ? "End Date" : "结束日期";
 
     const MONTHS_SHORT = getLocale() === "en"
       ? ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
@@ -1159,6 +1264,19 @@ private createDropdown: HTMLElement;
 
   }
 
+  /** Refresh history filter labels/dropdowns for the current locale. */
+  private updateHistoryFilterLabels(): void {
+    this._rebindStatus?.();
+    this._rebindTask?.();
+    // Refresh date placeholders only when no explicit date is selected.
+    if (this._dateFromText && !this.historyDateFrom) {
+      this._dateFromText.textContent = getLocale() === "en" ? "Start Date" : "开始日期";
+    }
+    if (this._dateToText && !this.historyDateTo) {
+      this._dateToText.textContent = getLocale() === "en" ? "End Date" : "结束日期";
+    }
+  }
+
   private exportHistory(): void {
     if (this.currentFilteredHistory.length === 0) {
       // No records to export — silent no-op (button is hidden in this case)
@@ -1189,7 +1307,7 @@ private createDropdown: HTMLElement;
       for (const e of sorted) {
         const ts = formatDateTime(e.time);
         const stateLabel = this.getStateLabel(e.state);
-        const stateBadge = e.state === "SUCCESS" ? "✅"
+        const stateBadge = e.state === "SUCCESS" || e.state === "COMPLETED" ? "✅"
           : e.state === "FAILED" ? "❌"
           : e.state === "RUNNING" ? "🔄"
           : "⏳";
@@ -1247,7 +1365,8 @@ private createDropdown: HTMLElement;
 
   private getStateLabel(state: string): string {
     switch (state) {
-      case "SUCCESS": return t("automation.stateSuccess");
+      case "SUCCESS":
+      case "COMPLETED": return t("automation.stateSuccess");
       case "FAILED": return t("automation.stateFailed");
       case "RUNNING": return t("automation.stateRunning");
       case "PENDING": return t("automation.statePending");
@@ -1402,7 +1521,7 @@ private createDropdown: HTMLElement;
         const data: AutomationViewResult = {
           id: entry.id,
           name: entry.name,
-          prompt: job?.prompt || entry.name,
+          prompt: (entry as any).prompt || job?.prompt || entry.name,
           result: entry.last_result || "",
           tag: entry.tag,
           messages: entry.messages || [],

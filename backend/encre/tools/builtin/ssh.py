@@ -37,6 +37,7 @@ import tempfile
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 
 def _ssh_base_args(kwargs: dict[str, Any]) -> list[str]:
@@ -100,9 +101,9 @@ async def _ssh_execute(**kwargs: Any) -> str:
                 proc.kill()
                 await proc.wait()
                 return f"Error: SSH command timed out after {timeout}s"
-            out = stdout.decode("utf-8", errors="replace") if stdout else ""
+            out = decode_bytes(stdout) if stdout else ""
             if stderr:
-                err = stderr.decode("utf-8", errors="replace")
+                err = decode_bytes(stderr)
                 if err:
                     out += f"\n[stderr]\n{err}"
             exit_code = proc.returncode if proc.returncode is not None else -1
@@ -156,7 +157,7 @@ async def _ssh_execute(**kwargs: Any) -> str:
                 await proc.wait()
                 return "Error: SCP upload timed out after 120s"
             if proc.returncode != 0:
-                err = stderr.decode("utf-8", errors="replace") if stderr else ""
+                err = decode_bytes(stderr) if stderr else ""
                 return f"SCP upload failed (exit {proc.returncode}): {err[:500]}"
             return f"File uploaded: {local_path} -> {user}@{host}:{remote_path}"
         except FileNotFoundError:
@@ -206,7 +207,7 @@ async def _ssh_execute(**kwargs: Any) -> str:
                 await proc.wait()
                 return "Error: SCP download timed out after 120s"
             if proc.returncode != 0:
-                err = stderr.decode("utf-8", errors="replace") if stderr else ""
+                err = decode_bytes(stderr) if stderr else ""
                 return f"SCP download failed (exit {proc.returncode}): {err[:500]}"
             local_abs = os.path.abspath(local_path)
             return f"File downloaded: {user}@{host}:{remote_path} -> {local_abs}"
@@ -236,7 +237,7 @@ async def _ssh_execute(**kwargs: Any) -> str:
                 return f"SSH connection to {host} timed out"
             if proc.returncode == 0:
                 return f"SSH connection to {user}@{host}:{port} OK"
-            err = stderr.decode("utf-8", errors="replace") if stderr else ""
+            err = decode_bytes(stderr) if stderr else ""
             return f"SSH connection to {host} failed (exit {proc.returncode}): {err[:300]}"
         except FileNotFoundError:
             return "Error: ssh not found in PATH"
@@ -284,9 +285,9 @@ async def _ssh_execute(**kwargs: Any) -> str:
                 exec_proc.kill()
                 await exec_proc.wait()
                 return f"Error: Remote script timed out after {timeout}s"
-            out = stdout.decode("utf-8", errors="replace") if stdout else ""
+            out = decode_bytes(stdout) if stdout else ""
             if stderr:
-                err = stderr.decode("utf-8", errors="replace")
+                err = decode_bytes(stderr)
                 if err:
                     out += f"\n[stderr]\n{err}"
             return json.dumps({
@@ -304,64 +305,66 @@ async def _ssh_execute(**kwargs: Any) -> str:
 
 EncreSSHTool = build_tool(
     name="ssh",
-    description="""Remote server access via SSH: execute commands, transfer files, and run scripts.
-
-Actions:
-- exec: Run a command on the remote server
-- upload: Upload a local file to the remote server (SCP)
-- download: Download a remote file to the local machine (SCP)
-- ping: Test SSH connectivity
-- script: Upload and execute a multi-line script on the remote server
-
-Requires: ssh and optionally sshpass installed on the host system.
-For password auth, install sshpass. For key auth, provide key_file path.""",
+    description=(
+        "Run commands, transfer files, or execute multi-line scripts on a remote host "
+        "via SSH/SCP using the system ssh and scp clients. "
+        "Use this for remote server operations: `exec` a single command, `upload`/"
+        "`download` files with SCP, `ping` to verify connectivity, or `script` to run "
+        "a multi-line bash script remotely. "
+        "Do NOT use this for interactive shells, port forwarding, or long-running "
+        "daemons; prefer a persistent session or dedicated tool. "
+        "Tips: prefer key-based auth via `key_file` over `password` (which requires "
+        "sshpass); tune `timeout` for slow commands. "
+        "Pitfalls: StrictHostKeyChecking is disabled and ConnectTimeout is 15s; large "
+        "SCP transfers may hit the 120s timeout."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["exec", "upload", "download", "ping", "script"],
-                "description": "Operation to perform",
+                "description": "SSH operation to perform: exec (run a remote command), upload (SCP local->remote), download (SCP remote->local), ping (test connectivity), or script (upload+run a bash script).",
             },
             "host": {
                 "type": "string",
-                "description": "Remote hostname or IP address",
+                "description": "Remote host as hostname, FQDN, or IP address.",
             },
             "port": {
                 "type": "integer",
-                "description": "SSH port (default: 22)",
+                "description": "TCP port for the SSH service; defaults to 22.",
             },
             "user": {
                 "type": "string",
-                "description": "SSH username (default: root)",
+                "description": "SSH login username; defaults to 'root' if omitted.",
             },
             "key_file": {
                 "type": "string",
-                "description": "SSH private key file path",
+                "description": "Path to a private key file passed via ssh -i; preferred over password auth.",
             },
             "password": {
                 "type": "string",
-                "description": "SSH password (requires sshpass)",
+                "description": "SSH password; only used when sshpass is installed on the host system.",
             },
             "command": {
                 "type": "string",
-                "description": "Command to execute on the remote server (for exec action)",
+                "description": "Shell command string to execute on the remote host (required for exec).",
             },
             "local_path": {
                 "type": "string",
-                "description": "Local file path for upload/download",
+                "description": "Local filesystem path of the file to upload or download target.",
             },
             "remote_path": {
                 "type": "string",
-                "description": "Remote file path for upload/download",
+                "description": "Remote filesystem path of the upload destination or download source.",
             },
             "content": {
                 "type": "string",
-                "description": "Script content to execute remotely (for script action)",
+                "description": "Bash script body to upload and execute remotely (required for script).",
             },
             "timeout": {
                 "type": "integer",
-                "description": "Command timeout in seconds (default: 60, 120 for scripts)",
+                "description": "Maximum runtime in seconds before killing the process; defaults to 60 (exec) or 120 (script).",
             },
         },
         "required": ["action", "host"],

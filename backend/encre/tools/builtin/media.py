@@ -35,6 +35,7 @@ import os
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 
 async def _media_execute(**kwargs: Any) -> str:
@@ -112,8 +113,8 @@ async def _run_ffmpeg(args: list[str], timeout: int = 300) -> str:
             proc.kill()
             await proc.wait()
             return f"Error: ffmpeg command timed out after {timeout}s"
-        out = stdout.decode("utf-8", errors="replace") if stdout else ""
-        err = stderr.decode("utf-8", errors="replace") if stderr else ""
+        out = decode_bytes(stdout) if stdout else ""
+        err = decode_bytes(stderr) if stderr else ""
         if proc.returncode != 0:
             return f"ffmpeg error (exit {proc.returncode}): {err[:500]}"
         return out or err or "(completed)"
@@ -162,7 +163,7 @@ async def _media_info(file_path: str) -> str:
         stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         if proc.returncode != 0:
             return f"Error: ffprobe failed (exit {proc.returncode}). Is ffmpeg installed?"
-        data = json.loads(stdout.decode("utf-8", errors="replace"))
+        data = json.loads(decode_bytes(stdout))
     except FileNotFoundError:
         return "Error: ffprobe not found. Install ffmpeg from https://ffmpeg.org/"
     except json.JSONDecodeError:
@@ -369,7 +370,7 @@ async def _media_audio_info(file_path: str) -> str:
         stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         if proc.returncode != 0:
             return "No audio streams found in file."
-        data = json.loads(stdout.decode("utf-8", errors="replace"))
+        data = json.loads(decode_bytes(stdout))
     except FileNotFoundError:
         return "Error: ffprobe not found. Install ffmpeg."
     except Exception as e:
@@ -423,21 +424,20 @@ async def _media_transcribe(file_path: str) -> str:
 
 EncreMediaTool = build_tool(
     name="media",
-    description="""Process audio and video files using ffmpeg.
-
-Actions:
-- info: Get comprehensive media file metadata (codec, resolution, duration, bitrate)
-- convert: Convert media to different format/codec
-- extract_audio: Extract audio track from video (mp3, aac, wav, ogg, flac)
-- extract_frames: Extract video frames as PNG images
-- compress: Compress video with CRF quality control
-- trim: Trim/cut video segment
-- screenshot: Capture a video frame as image
-- audio_info: Get audio-specific metadata
-- transcribe: Transcribe speech to text (requires openai-whisper)
-
-Requires: ffmpeg installed on the system (https://ffmpeg.org/)
-For transcribe: pip install openai-whisper""",
+    description=(
+        "Process audio and video files with ffmpeg, plus optional Whisper-based "
+        "speech transcription. "
+        "Use this for `info`/`audio_info` (metadata), `convert` (re-encode), "
+        "`extract_audio` (rip a track), `extract_frames` (frames to PNG), `compress` "
+        "(CRF quality control), `trim` (clip a segment), `screenshot` (capture a "
+        "frame), or `transcribe` (speech to text). "
+        "Do NOT use this for static image operations (use image), live streaming, or "
+        "real-time capture; and prefer a dedicated ASR service for long-form audio. "
+        "Tips: set `output_path` to control where artifacts land; use `quality` (CRF) "
+        "and `bitrate` to balance size vs. fidelity. "
+        "Pitfalls: requires ffmpeg on PATH; `transcribe` additionally requires the "
+        "openai-whisper package and is much slower than ffmpeg operations."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -445,52 +445,52 @@ For transcribe: pip install openai-whisper""",
                 "type": "string",
                 "enum": ["info", "convert", "extract_audio", "extract_frames",
                          "compress", "trim", "screenshot", "audio_info", "transcribe"],
-                "description": "Operation to perform",
+                "description": "Media operation: info/audio_info (metadata), convert (re-encode), extract_audio (rip audio), extract_frames (frames to PNG), compress (CRF), trim (clip), screenshot (single frame), or transcribe (speech to text).",
             },
             "file_path": {
                 "type": "string",
-                "description": "Path to the media file",
+                "description": "Path to the source audio or video file to process.",
             },
             "output_path": {
                 "type": "string",
-                "description": "Output file path",
+                "description": "Destination path for the produced media artifact (convert, extract_audio, compress, trim, screenshot).",
             },
             "codec": {
                 "type": "string",
-                "description": "Video codec for conversion (e.g. libx264, libx265, libvpx)",
+                "description": "Target video codec for convert (e.g. libx264, libx265, libvpx).",
             },
             "bitrate": {
                 "type": "string",
-                "description": "Target bitrate (e.g. 1M, 500k)",
+                "description": "Target bitrate for convert/compress (e.g. '1M', '500k').",
             },
             "format": {
                 "type": "string",
                 "enum": ["mp3", "aac", "wav", "ogg", "flac"],
-                "description": "Audio format for extract_audio (default: mp3)",
+                "description": "Audio format used by extract_audio; defaults to mp3.",
             },
             "output_dir": {
                 "type": "string",
-                "description": "Output directory for extracted frames",
+                "description": "Directory to write extracted PNG frames from extract_frames.",
             },
             "fps": {
                 "type": "integer",
-                "description": "Frames per second for extract_frames (default: 1)",
+                "description": "Frames per second to extract via extract_frames; defaults to 1.",
             },
             "quality": {
                 "type": "integer",
-                "description": "CRF quality for compress (0-51, lower=better, default: 23)",
+                "description": "CRF value for compress (0-51, lower is higher quality); defaults to 23.",
             },
             "start": {
                 "type": "integer",
-                "description": "Start time in seconds for trim",
+                "description": "Start time in seconds for trim.",
             },
             "duration": {
                 "type": "integer",
-                "description": "Duration in seconds for trim (default: 10)",
+                "description": "Clip length in seconds for trim; defaults to 10.",
             },
             "time": {
                 "type": "string",
-                "description": "Timestamp for screenshot (e.g. 00:01:30, default: 00:00:01)",
+                "description": "Timestamp for screenshot (e.g. '00:01:30'); defaults to '00:00:01'.",
             },
         },
         "required": ["action", "file_path"],

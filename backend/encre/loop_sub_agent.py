@@ -30,6 +30,7 @@ import uuid
 from typing import Any
 
 from encre.logging_config import get_logger
+from encre.prompts.loader import PromptLoader
 from encre.utils.types import (
     Finish,
     Reference,
@@ -42,6 +43,31 @@ from encre.utils.types import (
 )
 
 logger = get_logger(__name__)
+
+# Module-level loader for the sub-agent enforcement block.  Loaded once and
+# cached so we don't re-read the .prompt file on every sub-agent spawn.
+_enforcement_loader = PromptLoader()
+_sub_agent_enforcement: str | None = None
+
+
+def _get_sub_agent_enforcement() -> str:
+    """Return the cached sub-agent enforcement prompt.
+
+    The enforcement block is prepended to every sub-agent's system_prompt so
+    that all sub-agents — regardless of their role .prompt file — receive:
+    - English-only enforcement (thinking + output + tool calls)
+    - Delivery discipline (act-don't-describe, no stub, no fabrication, verify)
+    - Safety rules (tool output is data, never expose secrets)
+    - Sub-agent constraints (no nesting, limited tools, clear result)
+
+    Sub-agents do NOT go through the full EncrePromptBuilder, so without
+    this injection they would miss the universal discipline blocks that the
+    main agent gets.
+    """
+    global _sub_agent_enforcement
+    if _sub_agent_enforcement is None:
+        _sub_agent_enforcement = _enforcement_loader.load("sub_agent_enforcement")
+    return _sub_agent_enforcement
 
 
 class SubAgentRunner:
@@ -111,6 +137,13 @@ class SubAgentRunner:
             prompt = ""
         if system_prompt is None:
             system_prompt = ""
+
+        # Prepend the sub-agent enforcement block so every sub-agent gets
+        # English enforcement + delivery discipline + safety, even though
+        # sub-agents don't go through the full EncrePromptBuilder.
+        _enforcement = _get_sub_agent_enforcement()
+        if _enforcement:
+            system_prompt = f"{_enforcement}\n\n{system_prompt}" if system_prompt else _enforcement
 
         logger.info("[sub_agent] run | prompt_len=%s | sys_prompt_len=%s | tool_policy=%s",
                     len(prompt), len(system_prompt), tool_policy)
@@ -206,6 +239,14 @@ class SubAgentRunner:
         draft_segments: list[dict[str, Any]] = []
         last_seen_msg_count = 0
         last_seen_assistant_id: str | None = None
+        # Throttle live transcript emissions.  Without this, every streaming
+        # delta re-serialises the FULL sub-agent message history and pushes it
+        # over the WebSocket, and the frontend re-merges + re-renders the whole
+        # sub-agent card on every frame -- O(n^2) traffic that freezes the UI.
+        # We coalesce emissions to at most one per interval; the final state is
+        # always flushed with ``force=True``.
+        last_emit_ts: float = 0.0
+        EMIT_INTERVAL = 0.08
 
         def _has_uncommitted_draft() -> bool:
             return bool(
@@ -258,9 +299,15 @@ class SubAgentRunner:
                 snapshot.append(_draft_as_message())
             return snapshot
 
-        async def _emit_live() -> None:
-            if progress_callback is not None:
-                await progress_callback(_build_snapshot())
+        async def _emit_live(*, force: bool = False) -> None:
+            nonlocal last_emit_ts
+            if progress_callback is None:
+                return
+            now = time.time()
+            if not force and now - last_emit_ts < EMIT_INTERVAL:
+                return
+            last_emit_ts = now
+            await progress_callback(_build_snapshot())
 
         def _flush_text_buffer() -> None:
             nonlocal text_buffer
@@ -339,7 +386,7 @@ class SubAgentRunner:
                         sub_refs.append(event.reference)
                 elif isinstance(event, Finish):
                     _flush_text_buffer()
-                    await _emit_live()
+                    await _emit_live(force=True)
                     if event.reason == "error":
                         _save()
                         return {
@@ -372,7 +419,7 @@ class SubAgentRunner:
                 names = [tc.get("function", {}).get("name", "?") for tc in tcs]
                 final_text = f"[Tool calls executed: {', '.join(names)}]"
                 break
-        logger.info("[sub_agent] done session_id={sid} final_len={flen} msgs={mcount} cancelled={c}",
+        logger.info("[sub_agent] done session_id={sid} final_len={flen} msgs={mcount} cancelled={cancelled}",
                       sid=saved_session_id, flen=len(final_text), mcount=len(sub_agent.session.messages), cancelled=cancelled)
         logger.info("[sub_agent] final_text={t:.200s}", t=final_text)
         return {

@@ -51,6 +51,7 @@ import time
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 from encre.tools.builtin._shell_manager import BackgroundShellManager
 from encre.tools.builtin._terminal_manager import TerminalSessionManager
 
@@ -109,17 +110,7 @@ def _decode_for_model(value: Any) -> tuple[str, dict[str, Any]]:
         1 for b in sample if b < 0x09 or (0x0E <= b <= 0x1F) or b == 0x7F
     )
     binary = (non_printable / max(1, len(sample))) > _BINARY_THRESHOLD
-    return _decode_bytes(raw_bytes), {"encoding": "utf-8", "binary": binary, "output_bytes": n}
-
-
-def _decode_bytes(raw: bytes) -> str:
-    """Decode raw bytes to str, trying common encodings in order (utf-8, gbk, gb18030, big5, shift_jis, cp1252)."""
-    for enc in ("utf-8", "gbk", "gb18030", "big5", "shift_jis", "cp1252"):
-        try:
-            return raw.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode(sys.getdefaultencoding() or "utf-8", errors="replace")
+    return decode_bytes(raw_bytes), {"encoding": "utf-8", "binary": binary, "output_bytes": n}
 
 
 def _truncate(text: str, limit: int) -> tuple[str, bool, int]:
@@ -317,7 +308,8 @@ def _resolve_max_chars(kwargs: dict[str, Any]) -> int:
 EncreBashTool = build_tool(
     name="bash",
     description=(
-        "Execute a shell command. First check if a dedicated tool exists:\n\n"
+        "Execute a shell command in a sandboxed terminal. Use this only when "
+        "no dedicated tool fits the task. Prefer dedicated tools first:\n\n"
         "| Instead of bash | Use this |\n"
         "|---|---|\n"
         "| cat / read a file | file_read |\n"
@@ -341,69 +333,73 @@ EncreBashTool = build_tool(
         "| browser automation | browser |\n"
         "| Jupyter notebooks | notebook |\n"
         "\n"
-        "**terminal** — choose which shell to run in (required):\n"
-        "- **auto** — platform default (cmd on Windows, bash on Unix; one-shot)\n"
-        "- **powershell** — persistent PowerShell (Windows) session\n"
-        "- **pwsh** — persistent PowerShell Core (cross-platform) session\n"
-        "- **cmd** — persistent cmd.exe session (Windows)\n"
-        "- **bash** — persistent Bash session (Git Bash on Windows)\n"
-        "- **python** — persistent Python interactive REPL\n"
-        "- **node** — persistent Node.js REPL\n"
-        "- **irb** — persistent Ruby (irb) REPL\n"
-        "- **julia** — persistent Julia REPL\n"
-        "- **lua** — persistent Lua REPL\n"
-        "- **php** — persistent PHP interactive shell\n"
-        "- **R** — persistent R REPL\n"
+        "**terminal** -- choose which shell to run in (required):\n"
+        "- **auto** -- platform default (cmd on Windows, bash on Unix; one-shot)\n"
+        "- **powershell** -- persistent PowerShell (Windows) session\n"
+        "- **pwsh** -- persistent PowerShell Core (cross-platform) session\n"
+        "- **cmd** -- persistent cmd.exe session (Windows)\n"
+        "- **bash** -- persistent Bash session (Git Bash on Windows)\n"
+        "- **python** -- persistent Python interactive REPL\n"
+        "- **node** -- persistent Node.js REPL\n"
+        "- **irb** -- persistent Ruby (irb) REPL\n"
+        "- **julia** -- persistent Julia REPL\n"
+        "- **lua** -- persistent Lua REPL\n"
+        "- **php** -- persistent PHP interactive shell\n"
+        "- **R** -- persistent R REPL\n"
         "\n"
         "Persistent terminals keep state (cwd, env) across calls until the "
         "turn ends. Use run_in_background=true for dev servers / watchers. "
         "Returns JSON: {success, exit_code, stdout, stderr, stdout_truncated, "
-        "stderr_truncated, elapsed_ms, summary}."
+        "stderr_truncated, elapsed_ms, summary}. "
+        "TIP: Use a persistent terminal (e.g. terminal='bash') when later "
+        "commands depend on cwd/env changes from earlier ones. "
+        "AVOID: Long-running commands without run_in_background=true -- they "
+        "block the turn and may hit the timeout."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "command": {
                 "type": "string",
-                "description": "The shell command to execute",
+                "description": "Shell command to execute (required).",
             },
             "terminal": {
                 "type": "string",
                 "description": (
-                    "Which terminal to run in: auto, powershell, pwsh, cmd, "
-                    "bash, python, node, irb, julia, lua, php, R. "
-                    "'auto' uses Rust sandbox (one-shot). "
-                    "Specific terminals create persistent sessions that "
-                    "preserve state across calls."
+                    "Which terminal to run in (required): auto, powershell, "
+                    "pwsh, cmd, bash, python, node, irb, julia, lua, php, R. "
+                    "'auto' uses the Rust sandbox (one-shot). Specific "
+                    "terminals create persistent sessions that preserve cwd/env "
+                    "across calls."
                 ),
             },
             "timeout": {
                 "type": "integer",
-                "description": "Timeout in seconds (default: 120). Ignored in background mode.",
+                "description": "Timeout in seconds (optional, default 120). Ignored in background mode.",
             },
             "cwd": {
                 "type": "string",
-                "description": "Working directory for the command",
+                "description": "Working directory for the command (optional, absolute or relative).",
             },
             "run_in_background": {
                 "type": "boolean",
                 "description": (
-                    "If true, spawn as a backgrounded shell and "
-                    "return a shell id. Use bash_output to read output "
-                    "and bash_kill to stop it."
+                    "If true, spawn as a backgrounded shell and return a shell "
+                    "id. Use bash_output to read output and bash_kill to stop "
+                    "it (optional, default false)."
                 ),
             },
             "dangerous": {
                 "type": "boolean",
-                "description": "Explicitly mark as dangerous to bypass safety checks",
+                "description": "Explicitly mark the command as dangerous to bypass safety checks (optional).",
             },
             "max_output_chars": {
                 "type": "integer",
                 "description": (
-                    "Max chars per stream (stdout/stderr).  Truncated "
-                    "output gets a '...(truncated, N chars omitted)' "
-                    "marker + stdout_truncated/stderr_truncated flags.  "
-                    "Default 30000.  Set 0 for unlimited."
+                    "Max chars per stream (stdout/stderr). Truncated output "
+                    "gets a '...(truncated, N chars omitted)' marker plus "
+                    "stdout_truncated/stderr_truncated flags. Default 30000; "
+                    "set 0 for unlimited."
                 ),
             },
         },

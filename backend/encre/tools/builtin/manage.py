@@ -305,8 +305,23 @@ EncreManageTool = build_tool(
     description=(
         "God tool for dynamically managing the runtime: install new tools, "
         "register sub-agents, install skills, and connect MCP servers. "
-        "All changes take effect immediately.\n\n"
-
+        "All changes take effect immediately and are available on the very "
+        "next turn.\n\n"
+        "WHEN to use: the built-in tools cannot satisfy a request and you "
+        "need to add a capability at runtime (a custom tool, a specialized "
+        "sub-agent, a reusable skill, or an MCP server exposing external "
+        "tools).\n"
+        "WHEN NOT to use: if a built-in tool already covers the task, prefer "
+        "it over installing a new one; do not use this for trivial operations "
+        "that don't require new capabilities.\n"
+        "TIPS: keep new tool code self-contained (the `code` field is exec'd "
+        "in a fresh namespace and must define an `async def execute(**kwargs)`); "
+        "give agents a focused system_prompt and a narrow tool_policy to limit "
+        "blast radius; verify MCP server connectivity with a trivial call "
+        "right after install_mcp.\n"
+        "PITFALLS: install_tool runs arbitrary Python via exec -- only install "
+        "code you trust; install_mcp with stdio spawns a long-lived child "
+        "process, so prefer HTTP transport when available.\n\n"
         "Actions:\n"
         "  install_tool  - Create and register a brand new tool. "
         "Requires: name, description, input_schema (JSON Schema), "
@@ -328,76 +343,76 @@ EncreManageTool = build_tool(
             "action": {
                 "type": "string",
                 "enum": ["install_tool", "install_agent", "install_skill", "install_mcp"],
-                "description": "What to manage.",
+                "description": "What to install/register: a new tool, a sub-agent, a skill, or an MCP server connection.",
             },
             "name": {
                 "type": "string",
-                "description": "Name for the tool, agent, skill, or MCP server.",
+                "description": "Unique identifier for the tool/agent/skill/MCP server being installed. Used to invoke it afterwards.",
             },
             "description": {
                 "type": "string",
-                "description": "Description (for tools, agents, skills).",
+                "description": "Human-readable description (for tools, agents, skills). The model reads this to decide when to use the new capability, so be specific.",
             },
             "input_schema": {
                 "oneOf": [{"type": "object"}, {"type": "string"}],
-                "description": "JSON Schema dict for a new tool's parameters. Required for install_tool.",
+                "description": "JSON Schema describing the new tool's parameters (for install_tool). May be a dict or a JSON string. Required for install_tool.",
             },
             "code": {
                 "type": "string",
-                "description": "Python source defining an `async def execute(**kwargs)` function. Required for install_tool.",
+                "description": "Python source that defines an `async def execute(**kwargs)` function for the new tool (for install_tool). Executed in a fresh namespace; must return a string. Required for install_tool.",
             },
             "category": {
                 "type": "string",
-                "description": "Tool category label (for install_tool).",
+                "description": "Category label for the new tool, e.g. 'web', 'file', 'system' (for install_tool).",
             },
             "intents": {
                 "oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
-                "description": "Intent tags (comma-separated string or array).",
+                "description": "Intent tags controlling when the tool is surfaced (for install_tool). Pass as an array or a comma-separated string.",
             },
             "always_available": {
                 "type": "boolean",
-                "description": "If true, tool is always visible without discovery (default false).",
+                "description": "If true, the installed tool is always visible without discovery (default false, for install_tool).",
             },
             "system_prompt": {
                 "type": "string",
-                "description": "System prompt for the sub-agent (install_agent).",
+                "description": "System prompt defining the sub-agent's persona and instructions (for install_agent).",
             },
             "tool_policy": {
                 "type": "string",
                 "enum": ["all", "readonly", "no_writes"],
-                "description": "Tool access policy for the sub-agent (install_agent).",
+                "description": "Tool access policy for the sub-agent (for install_agent): 'all' (default) grants everything, 'readonly' blocks write tools, 'no_writes' blocks destructive ones.",
             },
             "body": {
                 "type": "string",
-                "description": "Skill prompt body content (for install_skill).",
+                "description": "Skill prompt body -- the instruction text returned when the skill is invoked (for install_skill).",
             },
             "aliases": {
                 "oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
-                "description": "Skill aliases (comma-separated string or array).",
+                "description": "Alternative trigger names for the skill (for install_skill). Array or comma-separated string.",
             },
             "command": {
                 "type": "string",
-                "description": "Executable command for stdio MCP server (install_mcp).",
+                "description": "Executable command to launch a stdio MCP server, e.g. 'npx' or 'python -m' (for install_mcp). Mutually exclusive with 'url'.",
             },
             "url": {
                 "type": "string",
-                "description": "URL for HTTP MCP server (install_mcp).",
+                "description": "HTTP/SSE URL of a remote MCP server (for install_mcp). Mutually exclusive with 'command'.",
             },
             "args": {
                 "oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
-                "description": "Command-line arguments for the MCP server (install_mcp).",
+                "description": "Command-line arguments appended to 'command' for a stdio MCP server (for install_mcp). Array or space-separated string.",
             },
             "env": {
                 "type": "object",
-                "description": "Environment variables for the MCP server (install_mcp).",
+                "description": "Environment variables to set for the MCP server process (for install_mcp). Use for API keys and config.",
             },
             "cwd": {
                 "type": "string",
-                "description": "Working directory for the MCP server (install_mcp).",
+                "description": "Working directory in which to launch the MCP server process (for install_mcp).",
             },
             "timeout": {
                 "type": "number",
-                "description": "Connection timeout in seconds for MCP server (install_mcp, default 60).",
+                "description": "Connection/initialization timeout in seconds for the MCP server (for install_mcp, default 60).",
             },
         },
         "required": ["action"],

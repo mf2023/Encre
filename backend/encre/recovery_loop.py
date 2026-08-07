@@ -115,6 +115,7 @@ async def reactive_compact_with_retry(
                 turn_count=session.turn_count,
                 system_prompt=session.messages[0].get("content", "") if session.messages else "",
                 session_id=session.id or "",
+                force=True,
             )
             if compacted is not None:
                 session.replace_branch_messages(session.active_branch_id, compacted)
@@ -171,10 +172,31 @@ def build_slot_escalation_message() -> str:
 
 
 def can_fallback(config: Any) -> bool:
-    return bool(
+    """Whether a model fallback is possible.
+
+    True when a legacy single ``fallback_model`` is configured, or when the
+    config has at least two enabled models (indicator + at least one other),
+    or when an explicit target model list is set.
+    """
+    legacy = bool(
         getattr(config, "fallback_model", "")
         and getattr(config, "fallback_model", "") != getattr(config, "model", "")
     )
+    if legacy:
+        return True
+    if getattr(config, "target_model_ids", None):
+        return True
+    resolver = getattr(config, "get_enabled_models", None)
+    if callable(resolver):
+        try:
+            return len(resolver()) >= 2
+        except Exception:
+            return False
+    models = getattr(config, "models", None)
+    if models:
+        enabled = [m for m in models if getattr(m, "enabled", True)]
+        return len(enabled) >= 2
+    return False
 
 
 def build_fallback_system_message(original_model: str, fallback_model: str) -> str:

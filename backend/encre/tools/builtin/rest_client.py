@@ -85,30 +85,45 @@ async def _rest_client_execute(**kwargs: Any) -> str:
 
 EncreRESTTool = build_tool(
     name="rest_client",
-    description="Make HTTP requests to REST and GraphQL APIs",
+    description=(
+        "Make an HTTP request to a REST or GraphQL API endpoint and return the "
+        "status code, headers, and parsed body.\n\n"
+        "WHEN to use: call a documented REST/GraphQL API by its URL, integrate "
+        "with a third-party service, or fetch a JSON resource that is not a "
+        "human-readable web page.\n"
+        "WHEN NOT to use: for fetching a web page to read, use web_fetch "
+        "(renders JS, strips boilerplate); for browser interactions (clicks, "
+        "form fills, logins) use the browser tool.\n"
+        "TIPS: pass the body as a JSON string for JSON APIs and set the "
+        "Content-Type header accordingly; JSON responses are auto-parsed and "
+        "returned as a structured {status, headers, body} object.\n"
+        "PITFALLS: response bodies over 50K chars are truncated; non-GET "
+        "methods (POST/PUT/PATCH/DELETE) are flagged as destructive -- make "
+        "sure the user actually wants the side effect."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "method": {
                 "type": "string",
                 "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
-                "description": "HTTP method to use",
+                "description": "HTTP method. GET is safe/read-only; POST/PUT/PATCH/DELETE mutate state and are flagged as destructive.",
             },
             "url": {
                 "type": "string",
-                "description": "The URL to send the request to",
+                "description": "Absolute URL of the API endpoint, including scheme and query string (e.g. https://api.example.com/v1/users?page=1).",
             },
             "headers": {
                 "type": "object",
-                "description": "HTTP headers as key-value pairs",
+                "description": "HTTP request headers as key-value pairs. Always include Content-Type (e.g. application/json) and any Authorization header the API requires.",
             },
             "body": {
                 "type": "string",
-                "description": "Request body (JSON string, form data, etc.)",
+                "description": "Raw request body as a string. For JSON APIs, pass a JSON-serialized string; values are sent verbatim (no automatic encoding).",
             },
             "timeout": {
                 "type": "integer",
-                "description": "Request timeout in seconds (default: 30)",
+                "description": "Request timeout in seconds (default: 30). Increase for slow endpoints, decrease to fail fast on unreachable hosts.",
             },
         },
         "required": ["method", "url"],

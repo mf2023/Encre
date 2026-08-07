@@ -46,7 +46,7 @@ async def _file_write_execute(**kwargs: Any) -> str:
     content = kwargs.get("content", "")
     file_path = remap_tool_path(file_path)
     if not file_path:
-        return "Error: 路径被沙箱拒绝 (Path rejected by sandbox)"
+        return "Error: Path rejected by sandbox"
 
     try:
         try:
@@ -90,22 +90,27 @@ async def _file_write_execute(**kwargs: Any) -> str:
 EncreFileWriteTool = build_tool(
     name="file_write",
     description=(
-        "Create a new file or overwrite an existing one entirely. "
-        "No need to read the file first — this tool accepts the full content.\n\n"
-        "Use this for: new files, complete rewrites, generating output files.\n"
-        "Use file_edit instead for targeted modifications to existing files.\n\n"
-        "Returns a unified diff showing what changed, with insertion/deletion counts."
+        "Create a new file or overwrite an existing one entirely. No need to "
+        "read the file first -- this tool accepts the full content. Use this "
+        "for new files, complete rewrites, or generating output files. Prefer "
+        "file_edit for targeted modifications to existing files -- it is safer "
+        "and produces smaller diffs. Returns a unified diff showing what changed, "
+        "with insertion/deletion counts. "
+        "TIP: Build the full final content in the content argument; partial "
+        "content overwrites the file. "
+        "AVOID: Using file_write for small tweaks to a large file -- file_edit "
+        "produces a far smaller diff and is less error-prone."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Path to the file (filename, relative path, or absolute path within the workspace)",
+                "description": "Path to the file: filename, relative path, or absolute path within the workspace (required).",
             },
             "content": {
                 "type": "string",
-                "description": "The content to write to the file",
+                "description": "Full content to write to the file (required). Overwrites any existing content.",
             },
         },
         "required": ["file_path", "content"],

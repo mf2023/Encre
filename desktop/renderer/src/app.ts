@@ -2063,7 +2063,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     for (const g of groups) {
       if (g.refs.length === 0) continue;
       const allHtml = g.refs.map(renderItem).join("");
-      parts.push(`<div>
+      parts.push(`<div class="collapsed">
         <div class="sp-ref-header" onclick="this.parentElement.classList.toggle('collapsed')">
           <i data-lucide="${g.icon}" class="lucide lucide-sm sp-ref-header-icon"></i>
           <span class="sp-ref-header-label">${g.label}</span>
@@ -3096,6 +3096,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
     const scrollIndicator = document.getElementById("chat-scroll-indicator");
     if (scrollIndicator) scrollIndicator.classList.add("hidden");
+    this.chat.resetScrollButton();
 
     // ── 23. Reset temp-chat button + clear any temp flags ─────────
     const tempBtn = document.getElementById("btn-temp-chat");

@@ -60,13 +60,23 @@ async def _task_stop_execute(**kwargs: Any) -> str:
 
 EncreTaskStopTool = build_tool(
     name="task_stop",
-    description="Stop a running background task by its ID",
+    description=(
+        "Stop a running background task by marking it cancelled.\n\n"
+        "WHEN to use: the user asks to stop/cancel a task, a task is stuck or "
+        "no longer needed, or you started work that became irrelevant.\n"
+        "WHEN NOT to use: to record a normal completion use task_update with "
+        "status='completed'; to peek at progress without stopping use "
+        "task_output with block=false.\n"
+        "TIPS: stopping is idempotent -- already-completed or already-"
+        "cancelled tasks return a friendly 'already ...' message instead of "
+        "an error."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "task_id": {
                 "type": "string",
-                "description": "The ID of the background task to stop",
+                "description": "The unique ID of the background task to stop (from task_create or task_list).",
             },
         },
         "required": ["task_id"],

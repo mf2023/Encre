@@ -87,6 +87,11 @@ class KimiBackend(OpenAISSEBackend):
           ``thinking`` parameter (``type: "disabled"`` is rejected).  We
           therefore return ``None`` to skip it entirely.
 
+        * ``kimi-k3``: always reasons, accepts a top-level
+          ``reasoning_effort`` (``"low"``/``"high"``/``"max"``, default
+          ``"max"``) and also rejects the ``thinking`` envelope.  We send
+          the top-level ``reasoning_effort`` when one was selected.
+
         * ``kimi-k2.6``: general-purpose thinking model; defaults to
           thinking on.  Accepts ``thinking.type`` (``"enabled"`` /
           ``"disabled"``) and ``thinking.keep`` (``"all"`` for Preserved
@@ -106,6 +111,11 @@ class KimiBackend(OpenAISSEBackend):
         # kimi-k2.7-code always thinks; sending the param is rejected.
         if "k2.7-code" in m or "k2-7-code" in m:
             return None
+        # Kimi K3 always reasons; uses a top-level reasoning_effort and
+        # rejects the thinking envelope.
+        if "k3" in m or "-k3" in m or m.startswith("kimi-k3"):
+            effort = getattr(self, "reasoning_effort", "") or "max"
+            return {"reasoning_effort": effort}
         # kimi-k2.5 / k2.6 / k2-thinking all accept the DeepSeek shape.
         if "k2.5" in m or "k2.6" in m or "k2-thinking" in m or "k2.7" in m:
             return {

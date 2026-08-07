@@ -35,6 +35,7 @@ from typing import Any
 
 from encre import native as _native
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 _TYPE_GLOBS: dict[str, list[str]] = {
     "py": ["*.py"],
@@ -155,10 +156,10 @@ async def _run_rg(
         await proc.wait()
         return "Error: grep timed out after 30 seconds"
     if proc.returncode not in (0, 1):  # 1 = no matches in rg
-        err = stderr.decode("utf-8", errors="replace").strip()
+        err = decode_bytes(stderr).strip()
         if err:
             raise RuntimeError(f"ripgrep failed: {err}")
-    text = stdout.decode("utf-8", errors="replace")
+    text = decode_bytes(stdout)
     if head_limit is not None and head_limit > 0:
         lines = text.splitlines()
         if len(lines) > head_limit:
@@ -294,10 +295,18 @@ def _fmt_content(
 EncreGrepTool = build_tool(
     name="grep",
     description=(
-        "Search files for a regex pattern. Wraps ripgrep when available, "
-        "with a Rust-native fallback. Supports context lines (-A/-B/-C), "
-        "line numbers, multiline patterns, file-type filtering, glob filters, "
-        "case-insensitive matching, head_limit, and three output modes.\n\n"
+        "Search files for a regex pattern. Wraps ripgrep when available, with "
+        "a Rust-native fallback covering the same flag set. Use this instead "
+        "of bash `grep`/`rg` -- it returns structured output, supports "
+        "context lines (-A/-B/-C), line numbers, multiline patterns, file-type "
+        "filtering, glob filters, case-insensitive matching, head_limit, and "
+        "three output modes (content / files_with_matches / count). "
+        "TIP: Use output_mode='files_with_matches' to get just the file list "
+        "when you only need to know where matches live. "
+        "TIP: Scope with 'path' and 'type'/'glob' to keep results focused and "
+        "fast. "
+        "AVOID: Very broad regexes across the whole workspace without a type "
+        "filter -- they can produce huge outputs. "
         "For persistent memory search, use memory_search. For web search, use web_search."
     ),
     input_schema={
@@ -305,56 +314,56 @@ EncreGrepTool = build_tool(
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": "The regular expression pattern to search for",
+                "description": "Regular expression pattern to search for (required).",
             },
             "path": {
                 "type": "string",
-                "description": "File or directory to search (default: current dir)",
+                "description": "File or directory to search (optional, default: current directory). Use an absolute path for reproducible results.",
             },
             "glob": {
                 "type": "string",
-                "description": "Glob pattern to filter files (e.g. *.py, **/*.ts)",
+                "description": "Glob pattern to filter files (optional), e.g. \"*.py\", \"**/*.ts\".",
             },
             "type": {
                 "type": "string",
                 "description": (
-                    "File type alias (py, rust, go, js, ts, java, c, cpp, "
-                    "html, css, json, yaml, md, sql, ...). Filters files like "
-                    "ripgrep --type does."
+                    "File type alias (optional): py, python, js, ts, json, md, "
+                    "css, html, yaml, rust, go, java, c, cpp, sql. Filters "
+                    "files like ripgrep --type does."
                 ),
             },
             "-i": {
                 "type": "boolean",
-                "description": "Case insensitive search",
+                "description": "Case-insensitive search (optional, default false).",
             },
             "-n": {
                 "type": "boolean",
-                "description": "Include line numbers (default true for content mode)",
+                "description": "Include line numbers (optional, default true in content mode).",
             },
             "-A": {
                 "type": "integer",
-                "description": "Lines of context to show after each match",
+                "description": "Lines of context to show after each match (optional).",
             },
             "-B": {
                 "type": "integer",
-                "description": "Lines of context to show before each match",
+                "description": "Lines of context to show before each match (optional).",
             },
             "-C": {
                 "type": "integer",
-                "description": "Lines of context to show before and after each match",
+                "description": "Lines of context to show before and after each match (optional). Overrides -A/-B.",
             },
             "multiline": {
                 "type": "boolean",
-                "description": "Enable multiline mode (. matches \\n, patterns can span lines)",
+                "description": "Enable multiline mode: '.' matches newlines and patterns can span lines (optional, default false).",
             },
             "head_limit": {
                 "type": "integer",
-                "description": "Cap the number of output lines (or files / counts)",
+                "description": "Cap the number of output lines, files, or counts (optional).",
             },
             "output_mode": {
                 "type": "string",
                 "enum": ["content", "files_with_matches", "count"],
-                "description": "Output mode (default: files_with_matches)",
+                "description": "Output mode (optional, default: content). 'content' shows matched lines with context; 'files_with_matches' lists only file paths; 'count' shows per-file match counts.",
             },
         },
         "required": ["pattern"],

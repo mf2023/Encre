@@ -218,12 +218,27 @@ def _build_thinking_kwargs(
             result["reasoning_effort"] = level
         return result
 
+    # Kimi accepts the DeepSeek-style envelope, and Kimi K3 additionally
+    # honors a top-level ``reasoning_effort``; forward the level so the
+    # request builder can use it for K3.
+    if backend_type == "kimi":
+        result = {"thinking_enabled": enabled}
+        if level:
+            result["reasoning_effort"] = level
+        return result
+
+    # Xiaomi MiMo accepts the DeepSeek-style thinking envelope together
+    # with a ``reasoning_effort`` (low/medium/high); forward the level.
+    if backend_type == "xiaomi":
+        result = {"thinking_enabled": enabled}
+        if level:
+            result["reasoning_effort"] = level
+        return result
+
     # OpenAI-protocol backends that use the DeepSeek-style thinking envelope.
     if backend_type in (
         "glm",
-        "kimi",
         "tencent",
-        "xiaomi",
         "volcengine-ark",
         "arcee",
         "gmi",

@@ -312,26 +312,37 @@ def _dir_diff(dir1: str, dir2: str) -> str:
 
 EncreDiffTool = build_tool(
     name="diff",
-    description="Compare text/files/directories. Unified/context/JSON/HTML diff. Binary diff (SHA-256), directory diff, statistics.",
+    description=(
+        "Compare text, files, or directories and return a structured diff. "
+        "Supports unified/context/JSON/HTML output formats for text and file "
+        "comparisons, SHA-256 binary diff for non-text files, directory tree "
+        "diff (files only-in-left/right/differing/identical), and statistics "
+        "(added/removed lines, similarity ratio). Use this instead of bash "
+        "`diff` for richer structured output and for binary/directory modes. "
+        "TIP: Use action='statistics' when you only need a similarity ratio "
+        "and change counts, not the full diff. "
+        "AVOID: Comparing huge directories with action='directory' when you "
+        "only care about a few files -- scope the paths first."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["text", "file", "directory", "statistics"],
-                "description": "Action to perform",
+                "description": "Comparison action (required). 'text' diffs two text strings; 'file' diffs two files; 'directory' diffs two directory trees; 'statistics' returns change counts and similarity ratio.",
             },
-            "text1": {"type": "string", "description": "First text content (for text/statistics actions)"},
-            "text2": {"type": "string", "description": "Second text content (for text/statistics actions)"},
-            "file1": {"type": "string", "description": "First file or directory path"},
-            "file2": {"type": "string", "description": "Second file or directory path"},
-            "context_lines": {"type": "integer", "description": "Context lines around changes (default 3)"},
-            "ignore_case": {"type": "boolean", "description": "Case-insensitive comparison (default false)"},
-            "ignore_whitespace": {"type": "boolean", "description": "Ignore whitespace differences (default false)"},
+            "text1": {"type": "string", "description": "First text content (required for action='text' or 'statistics' without file inputs)."},
+            "text2": {"type": "string", "description": "Second text content (required for action='text' or 'statistics' without file inputs)."},
+            "file1": {"type": "string", "description": "Path to the first file or directory (required for action='file'/'directory'; optional for 'statistics')."},
+            "file2": {"type": "string", "description": "Path to the second file or directory (required for action='file'/'directory'; optional for 'statistics')."},
+            "context_lines": {"type": "integer", "description": "Number of context lines to show around each change (optional, default 3)."},
+            "ignore_case": {"type": "boolean", "description": "Case-insensitive comparison (optional, default false)."},
+            "ignore_whitespace": {"type": "boolean", "description": "Ignore whitespace differences when diffing (optional, default false)."},
             "output_format": {
                 "type": "string",
                 "enum": ["unified", "context", "json", "html"],
-                "description": "Output format (default unified)",
+                "description": "Output format for text/file actions (optional, default 'unified').",
             },
         },
         "required": ["action"],

@@ -56,6 +56,7 @@ from urllib.parse import quote, unquote
 import httpx
 
 from encre.gateway.config import Platform, PlatformConfig
+from encre.tools.builtin._encoding import decode_bytes
 from encre.gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -199,7 +200,7 @@ def _remux_aac_to_m4a(aac_data: bytes) -> Optional[Tuple[bytes, str]]:
             if proc.returncode != 0:
                 logger.warning(
                     "Signal: AAC→M4A remux failed (ffmpeg exit %d): %s",
-                    proc.returncode, proc.stderr.decode("utf-8", "replace")[:300],
+                    proc.returncode, decode_bytes(proc.stderr)[:300],
                 )
                 return None
             with open(dst_path, "rb") as f:

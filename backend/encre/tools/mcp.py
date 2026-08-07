@@ -48,6 +48,7 @@ from typing import Any, ClassVar
 import httpx
 
 from encre.tools.base import EncreTool
+from encre.tools.builtin._encoding import decode_bytes
 
 logger = logging.getLogger("encre.tools.mcp")
 
@@ -417,7 +418,7 @@ class StdioTransport(MCPTransport):
                 if self._process.stderr:
                     with contextlib.suppress(Exception):
                         stderr_data = await self._process.stderr.read()
-                stderr_text = stderr_data.decode("utf-8", errors="replace")[:500] if stderr_data else ""
+                stderr_text = decode_bytes(stderr_data)[:500] if stderr_data else ""
                 raise MCPTransportError(
                     f"MCP server exited with code {self._process.returncode}. "
                     f"Stderr: {stderr_text}"

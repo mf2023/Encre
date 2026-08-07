@@ -1,3 +1,10 @@
+---
+name: task_management
+version: 1
+priority: 15
+condition: ['coding', 'data']
+---
+
 ## Task Management
 
 For tasks spanning >3 steps, use structured task management.

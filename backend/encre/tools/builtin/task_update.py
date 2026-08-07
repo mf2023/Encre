@@ -57,18 +57,29 @@ async def _task_update_execute(**kwargs: Any) -> str:
 
 EncreTaskUpdateTool = build_tool(
     name="task_update",
-    description="Update the status or result of a task",
+    description=(
+        "Update the status and/or result/error of an existing task.\n\n"
+        "WHEN to use: a sub-agent or workflow has produced a result to record; "
+        "a task needs to move from 'running' to 'completed' or 'failed'.\n"
+        "WHEN NOT to use: to stop a running task at the user's request use "
+        "task_stop (it sets the cancelled state with a clear reason); to read "
+        "task state use task_get/task_output.\n"
+        "TIPS: set 'result' when transitioning to 'completed'; set 'error' "
+        "when transitioning to 'failed' so callers can diagnose the failure.\n"
+        "PITFALLS: this is a low-level mutation -- prefer task_stop for "
+        "cancellation since it guards against double-stopping."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "task_id": {"type": "string", "description": "The task ID to update"},
+            "task_id": {"type": "string", "description": "The unique ID of the task to update."},
             "status": {
                 "type": "string",
                 "enum": ["pending", "running", "completed", "failed", "killed"],
-                "description": "New status",
+                "description": "New lifecycle status to set on the task.",
             },
-            "result": {"type": "string", "description": "Task result content"},
-            "error": {"type": "string", "description": "Error message if failed"},
+            "result": {"type": "string", "description": "Task output/result to store. Populate this when marking a task 'completed'."},
+            "error": {"type": "string", "description": "Error message describing why the task failed. Populate this when marking a task 'failed'."},
         },
         "required": ["task_id"],
     },

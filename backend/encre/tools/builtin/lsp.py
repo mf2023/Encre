@@ -204,9 +204,17 @@ async def _lsp_execute(**kwargs: Any) -> str:
 EncreLSPTool = build_tool(
     name="lsp",
     description=(
-        "Query LSP language server for code intelligence: "
-        "go to definition, find references, hover info, diagnostics, "
-        "and document symbols."
+        "Query the LSP language server for code intelligence: go to definition, "
+        "find references, hover info, diagnostics, and document symbols. Use "
+        "this instead of grep when you need symbol-accurate results (e.g. jump "
+        "to a definition, list all references of a symbol) rather than raw "
+        "text matches. Requires the LSP server for the file's language to be "
+        "initialized for the workspace. "
+        "TIP: Call operation='initialize' with the workspace path once before "
+        "querying files in that workspace. "
+        "TIP: line/character are 0-based; check the editor's coordinate system. "
+        "AVOID: Using lsp for plain text search -- grep is faster and needs "
+        "no language server."
     ),
     input_schema={
         "type": "object",
@@ -222,23 +230,23 @@ EncreLSPTool = build_tool(
                     "initialize",
                     "shutdown",
                 ],
-                "description": "The LSP operation to perform",
+                "description": "LSP operation to perform (required). 'initialize' and 'shutdown' manage the server lifecycle; the rest query a file at a cursor position.",
             },
             "file_path": {
                 "type": "string",
-                "description": "Absolute path to the file to query",
+                "description": "Absolute path to the file to query (required for all operations except 'initialize'/'shutdown').",
             },
             "line": {
                 "type": "integer",
-                "description": "0-based line number for cursor position",
+                "description": "0-based line number of the cursor position (optional, used by go_to_definition/find_references/hover).",
             },
             "character": {
                 "type": "integer",
-                "description": "0-based character offset for cursor position",
+                "description": "0-based character (column) offset of the cursor position (optional, used by go_to_definition/find_references/hover).",
             },
             "workspace": {
                 "type": "string",
-                "description": "Workspace root directory for initialization",
+                "description": "Absolute path of the workspace root directory (required for 'initialize' only).",
             },
         },
         "required": ["operation"],

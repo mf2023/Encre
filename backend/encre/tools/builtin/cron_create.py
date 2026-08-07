@@ -90,28 +90,36 @@ async def _cron_create_execute(**kwargs: Any) -> str:
 EncreCronCreateTool = build_tool(
     name="cron_create",
     description=(
-        "Schedule a prompt to be executed at a future time or on a recurring schedule. "
-        "Uses standard 5-field cron: minute hour day-of-month month day-of-week. "
-        'Example: "0 9 * * *" for daily at 9am, "*/5 * * * *" for every 5 minutes.'
+        "Schedule a prompt to run automatically on a recurring cron schedule. "
+        "Use this for reminders, periodic reports, polling, or any task that must "
+        "fire unattended at fixed times. "
+        "Do NOT use this for one-shot delayed tasks if a deferred-task tool is "
+        "available, for sub-minute scheduling, or for jobs requiring prior "
+        "conversation context. "
+        "Tips: use a standard 5-field cron expression in local time, e.g. "
+        "'0 9 * * *' (daily 9am) or '*/5 * * * *' (every 5 min). "
+        "Pitfalls: the agent has no prior context at fire time — include all "
+        "needed details in the prompt; if the scheduler is not running, the job "
+        "is validated but not activated."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "cron": {
                 "type": "string",
-                "description": "5-field cron expression in local time",
+                "description": "Standard 5-field cron expression in local time (minute hour day-of-month month day-of-week). Examples: '0 9 * * *' (daily 9am), '*/5 * * * *' (every 5 min), '0 0 * * 1' (weekly Monday).",
             },
             "prompt": {
                 "type": "string",
-                "description": "The prompt to execute at each fire time",
+                "description": "Self-contained prompt text to execute at each fire time; no prior conversation context is available when the job runs.",
             },
             "name": {
                 "type": "string",
-                "description": "Human-readable name for this scheduled job",
+                "description": "Human-readable label for the scheduled job; defaults to 'Unnamed job'.",
             },
             "recurring": {
                 "type": "boolean",
-                "description": "Whether this is a recurring job (default: true)",
+                "description": "If true, the job repeats on schedule; defaults to true.",
                 "default": True,
             },
         },

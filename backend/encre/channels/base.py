@@ -139,6 +139,7 @@ class EventRouter:
         *,
         session_id: str | None = None,
         system_prompt: str | None = None,
+        target_model_ids: list[str] | None = None,
     ) -> str:
         """Submit a prompt and collect the full text response (non-streaming).
 
@@ -149,6 +150,7 @@ class EventRouter:
             channel_name, prompt,
             session_id=session_id,
             system_prompt=system_prompt,
+            target_model_ids=target_model_ids,
         ):
             if isinstance(event, TextDelta) and event.text:
                 parts.append(event.text)
@@ -161,23 +163,40 @@ class EventRouter:
         *,
         session_id: str | None = None,
         system_prompt: str | None = None,
+        target_model_ids: list[str] | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Submit a prompt and stream AgentEvent results.
 
         **Must** be called inside an ``iclaw_context()`` block so the
         SessionManager is switched to the iClaw sessions directory.
+
+        If *target_model_ids* is provided, only those models are eligible for
+        this run (per-adapter gateway model restriction); the agent falls back
+        to the indicator model, then a random enabled model, on failure.
         """
         logger.info("[router] submit_stream channel=%s session_id=%s prompt=%.60s system_prompt=%s",
                      channel_name, session_id or "(new)", prompt,
                      "yes" if system_prompt else "no")
 
         # Acquire or create session
+        cfg = replace(self._default_config)
+        if target_model_ids:
+            cfg.target_model_ids = list(target_model_ids)
+            # Start on the first eligible target model (fallback handled at runtime).
+            candidates = cfg.resolve_model_candidates()
+            if candidates:
+                first = candidates[0]
+                cfg.model = first.model_id
+                cfg.backend_type = first.backend_type
+                cfg.api_key = first.api_key
+                cfg.base_url = first.base_url
+                cfg.max_tokens = first.max_tokens
         if session_id:
             info = self._manager.load_or_create_session(
-                session_id, config=replace(self._default_config)
+                session_id, config=cfg
             )
         else:
-            info = self._manager.create_session(config=replace(self._default_config))
+            info = self._manager.create_session(config=cfg)
             session_id = info.session_id
 
         # Tag session with the originating channel so the session list

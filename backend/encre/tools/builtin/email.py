@@ -247,30 +247,43 @@ async def _email_execute(**kwargs: Any) -> str:
 
 EncreEmailTool = build_tool(
     name="email",
-    description="Send and read emails via SMTP/IMAP. Send, read inbox, search, list folders.",
+    description=(
+        "Send and read emails via SMTP/IMAP -- compose and send messages, read the "
+        "inbox, search by criteria, or list available folders. "
+        "WHEN to use: sending notifications or reports via email, reading inbox "
+        "messages, searching for specific emails by sender/subject/date. "
+        "WHEN NOT to use: for chat/messaging platforms (use the platform gateway "
+        "tools), for file transfer (use ssh upload/download or cloud_storage), or "
+        "for real-time communication (email is asynchronous). "
+        "TIPS: use app-specific passwords (not the account password) for Gmail/"
+        "Outlook; set use_tls=true for port 587 and use_ssl for port 993; keep "
+        "max_emails low (10-20) to avoid large responses. "
+        "PITFALLS: some providers block SMTP from unknown IPs; IMAP search criteria "
+        "syntax varies by server; large attachments may exceed size limits."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["send", "read", "search", "list_folders"],
-                "description": "Action to perform",
+                "description": "Action to perform: 'send' (compose and send via SMTP), 'read' (fetch recent emails from a folder via IMAP), 'search' (search emails by IMAP criteria), 'list_folders' (list available IMAP folders). Required.",
             },
-            "host": {"type": "string", "description": "SMTP/IMAP server hostname"},
-            "port": {"type": "integer", "description": "Server port (587 for SMTP TLS, 993 for IMAP SSL)"},
-            "username": {"type": "string", "description": "Email account username"},
-            "password": {"type": "string", "description": "Email account password or app password"},
-            "use_tls": {"type": "boolean", "description": "Use STARTTLS for SMTP (default true)"},
-            "to": {"type": "string", "description": "Recipient email address (for send)"},
-            "cc": {"type": "string", "description": "CC recipients, comma-separated (for send)"},
-            "bcc": {"type": "string", "description": "BCC recipients, comma-separated (for send)"},
-            "subject": {"type": "string", "description": "Email subject (for send)"},
-            "body": {"type": "string", "description": "Email body text (for send)"},
-            "folder": {"type": "string", "description": "IMAP folder name (default INBOX)"},
-            "max_emails": {"type": "integer", "description": "Max emails to fetch (default 10)"},
-            "mark_seen": {"type": "boolean", "description": "Mark fetched emails as seen (default false)"},
-            "criteria": {"type": "string", "description": "IMAP search criteria e.g. 'FROM user@example.com' (for search)"},
-            "max_results": {"type": "integer", "description": "Max search results (default 10)"},
+            "host": {"type": "string", "description": "SMTP or IMAP server hostname (e.g. 'smtp.gmail.com', 'imap.gmail.com'). Required for send/read/search/list_folders unless configured globally."},
+            "port": {"type": "integer", "description": "Server port. Common: 587 (SMTP STARTTLS), 465 (SMTP SSL), 993 (IMAP SSL), 143 (IMAP plaintext). Optional; defaults are inferred from the action."},
+            "username": {"type": "string", "description": "Email account username (typically the full email address). Required for authentication."},
+            "password": {"type": "string", "description": "Email account password or app-specific password. For Gmail/Outlook with 2FA enabled, use an app password, not the account password."},
+            "use_tls": {"type": "boolean", "description": "Use STARTTLS for SMTP. Default true. Set false only for plaintext SMTP (not recommended)."},
+            "to": {"type": "string", "description": "Recipient email address for 'send'. Multiple recipients: comma-separated. Required for send."},
+            "cc": {"type": "string", "description": "CC recipients, comma-separated. Optional for send."},
+            "bcc": {"type": "string", "description": "BCC recipients, comma-separated. Optional for send."},
+            "subject": {"type": "string", "description": "Email subject line. Required for send."},
+            "body": {"type": "string", "description": "Email body text (plain text). Required for send."},
+            "folder": {"type": "string", "description": "IMAP folder name for 'read' or 'search'. Default 'INBOX'. Use 'list_folders' to discover available folder names."},
+            "max_emails": {"type": "integer", "description": "Maximum number of emails to fetch in 'read'. Default 10. Lower this for faster responses."},
+            "mark_seen": {"type": "boolean", "description": "Mark fetched emails as seen (read) in the IMAP store. Default false -- set true to mark messages as read after fetching."},
+            "criteria": {"type": "string", "description": "IMAP search criteria for 'search', e.g. 'FROM user@example.com', 'SUBJECT \"report\"', 'SINCE 01-Jan-2026'. Consult RFC 3501 for the full syntax."},
+            "max_results": {"type": "integer", "description": "Maximum number of search results to return. Default 10."},
         },
         "required": ["action"],
     },

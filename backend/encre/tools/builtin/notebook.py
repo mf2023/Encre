@@ -106,9 +106,17 @@ async def _notebook_execute(**kwargs: Any) -> str:
 EncreNotebookTool = build_tool(
     name="notebook",
     description=(
-        "Manage an interactive Jupyter-style notebook session. "
-        "Supports creating cells, editing cells, executing code, and inspecting results. "
-        "Use this for iterative data exploration, visualization, or long-running computations."
+        "Manage an interactive Jupyter-style notebook session with a "
+        "persistent kernel. Supports creating/editing cells, executing code "
+        "or markdown, and inspecting outputs and session state. Use this for "
+        "iterative data exploration, visualization, or long-running "
+        "computations where kernel state must persist across cells -- unlike "
+        "one-shot bash python, variables defined in one cell remain "
+        "available in later cells. "
+        "TIP: Call action='get_state' to inspect existing cells and kernel "
+        "status before issuing further actions. "
+        "AVOID: Running very long computations with execute_all without a "
+        "timeout -- a single slow cell can block the whole run."
     ),
     input_schema={
         "type": "object",
@@ -125,28 +133,28 @@ EncreNotebookTool = build_tool(
                     "delete_cell",
                     "reset",
                 ],
-                "description": "The notebook action to perform",
+                "description": "Notebook action to perform (required). 'reset' restarts the kernel and clears all cells.",
             },
             "code": {
                 "type": "string",
-                "description": "Python code for the cell (used with create_cell, edit_cell)",
+                "description": "Source code (or markdown) for the cell (required for create_cell and edit_cell).",
             },
             "cell_id": {
                 "type": "string",
-                "description": "Cell ID (used with edit_cell, execute_cell, get_output, delete_cell)",
+                "description": "Target cell id (required for edit_cell, execute_cell, get_output, delete_cell). Obtainable from create_cell result or get_state.",
             },
             "cell_type": {
                 "type": "string",
                 "enum": ["code", "markdown"],
-                "description": "Type of cell (default: code)",
+                "description": "Cell type for create_cell (optional, default 'code').",
             },
             "timeout": {
                 "type": "integer",
-                "description": "Execution timeout in seconds (default: 60 for single, 300 for all)",
+                "description": "Execution timeout in seconds (optional, default 60 for execute_cell, 300 for execute_all).",
             },
             "kernel_name": {
                 "type": "string",
-                "description": "Kernel name for reset action (default: python3)",
+                "description": "Kernel name for the reset action (optional, default 'python3').",
             },
         },
         "required": ["action"],

@@ -144,6 +144,8 @@ class EncreTelemetry:
         self._session_started_at: float = time.time()
         self._output_dir: str = ""
         self._session_cost_usd: float = 0.0  # restored from JSONL on resume
+        self._current_channel: str = ""
+        self._current_model: str = ""  # set on each turn; inherited by tool calls
 
     def _ensure_output(self) -> None:
         if self._output_dir:
@@ -196,6 +198,8 @@ class EncreTelemetry:
             "success": record.success,
             "tokens_used": record.tokens_used,
             "error": record.error_message or None,
+            "model": self._current_model or None,
+            "channel": self._current_channel or None,
         }
         logger.debug(json.dumps(entry, ensure_ascii=False))
         self._write_jsonl(entry)
@@ -224,6 +228,12 @@ class EncreTelemetry:
             channel=channel,
         )
         self.turns.append(record)
+        # Remember the active model/channel so tool calls that follow this
+        # turn (and any tool-only sessions launched from here) inherit them.
+        if model:
+            self._current_model = model
+        if channel:
+            self._current_channel = channel
         # Cost tracking: price this turn's tokens against the model.
         inp = token_usage.get("input_tokens", token_usage.get("prompt_tokens", 0)) or 0
         out = token_usage.get("output_tokens", token_usage.get("completion_tokens", 0)) or 0
@@ -489,6 +499,7 @@ class EncreTelemetry:
                 session_channel = ""
                 turn_count = 0
                 session_first_active = 0.0
+                session_last_active = 0.0
                 session_cost = 0.0
 
                 for line in lines:
@@ -506,9 +517,12 @@ class EncreTelemetry:
                     evt = data.get("event", "")
                     ts = data.get("timestamp", 0) or 0
 
-                    # Capture the first event timestamp as session start time
-                    if ts and session_first_active == 0:
-                        session_first_active = ts
+                    # Track the first and last event timestamps
+                    if ts:
+                        if session_first_active == 0:
+                            session_first_active = ts
+                        if ts > session_last_active:
+                            session_last_active = ts
 
                     if evt == "turn":
                         tu = data.get("token_usage", {}) or {}
@@ -541,6 +555,16 @@ class EncreTelemetry:
                         tn = data.get("tool_name", "unknown")
                         session_tool_calls += 1
                         session_tool_breakdown[tn] = session_tool_breakdown.get(tn, 0) + 1
+                        # Inherit model from the tool_call payload if the
+                        # session has no turn events (tool-only automation).
+                        if not session_model:
+                            m = data.get("model", "") or ""
+                            if m:
+                                session_model = m
+                        if not session_channel:
+                            ch = data.get("channel", "") or ""
+                            if ch:
+                                session_channel = ch
 
                     elif evt == "session_summary":
                         pass
@@ -552,6 +576,8 @@ class EncreTelemetry:
                             session_first_active = fpath.stat().st_mtime
                         except Exception:
                             session_first_active = 0.0
+                    if session_last_active == 0:
+                        session_last_active = session_first_active
                     session_summaries[session_id] = {
                         "session_id": session_id,
                         "model": session_model,
@@ -563,6 +589,7 @@ class EncreTelemetry:
                         "tool_calls": session_tool_calls,
                         "tool_call_breakdown": session_tool_breakdown,
                         "first_active": session_first_active,
+                        "last_active": session_last_active,
                         "cost_usd": round(session_cost, 6),
                     }
 

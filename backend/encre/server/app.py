@@ -145,8 +145,12 @@ class EncreServer:
             self.host,
             self.port,
             process_request=process_request,
+            # Keepalive must tolerate long model responses: a slow stream burst
+            # (or a briefly saturated renderer) can delay keepalive pong
+            # processing past the old 10s budget, and the server then kills an
+            # otherwise healthy connection with `1011 keepalive ping timeout`.
             ping_interval=30,
-            ping_timeout=10,
+            ping_timeout=60,
             max_size=10 * 1024 * 1024,  # 10MB max message
         )
         # Resolve actual port when port=0 (OS-assigned)
@@ -235,11 +239,30 @@ class EncreServer:
         except Exception as e:
             logger.error("Failed to apply adapter configs: %s", e)
 
+    def _automation_model_enabled(self, job_config: dict[str, Any]) -> bool:
+        """Return True when the job's snapshot model still exists and is enabled.
+
+        Guards against automations pinning a model that the user has since
+        disabled (or deleted) in the model settings panel. Matching on
+        ``model_id`` + ``base_url`` keeps distinct providers apart.
+        """
+        models = getattr(self.config, "models", None)
+        mid = job_config.get("model_id")
+        if not models or not mid:
+            return False
+        burl = (job_config.get("base_url") or "").rstrip("/")
+        for m in models:
+            if getattr(m, "enabled", True) and m.model_id == mid and (m.base_url or "").rstrip("/") == burl:
+                return True
+        return False
+
     def _make_scheduler_agent_factory(self):
         """Create an agent factory for automation jobs.
 
         Same pattern as _run_sub_agent: fresh agent with bypass permissions,
-        builder-generated system prompt, no custom overrides.
+        builder-generated system prompt, no custom overrides. The snapshot
+        model config is only applied when the model is still enabled; a job
+        pinned to a disabled/deleted model runs with the active model instead.
         """
         from encre.agent import EncreAgent
 
@@ -247,11 +270,18 @@ class EncreServer:
             agent = EncreAgent(config=self.config)
             agent.config.permission_mode = "bypass"
             if job_config:
-                agent.config.backend_type = job_config.get("backend_type", agent.config.backend_type)
-                agent.config.api_key = job_config.get("api_key", agent.config.api_key)
-                agent.config.base_url = job_config.get("base_url", agent.config.base_url)
-                agent.config.model = job_config.get("model_id", agent.config.model)
-                agent.config.max_tokens = job_config.get("max_tokens", agent.config.max_tokens)
+                if self._automation_model_enabled(job_config):
+                    agent.config.backend_type = job_config.get("backend_type", agent.config.backend_type)
+                    agent.config.api_key = job_config.get("api_key", agent.config.api_key)
+                    agent.config.base_url = job_config.get("base_url", agent.config.base_url)
+                    agent.config.model = job_config.get("model_id", agent.config.model)
+                    agent.config.max_tokens = job_config.get("max_tokens", agent.config.max_tokens)
+                else:
+                    logger.warning(
+                        "[automation] job model_id=%s disabled/unavailable; "
+                        "running job with the active model instead",
+                        job_config.get("model_id"),
+                    )
                 agent.rebuild_backend()
             return agent
 

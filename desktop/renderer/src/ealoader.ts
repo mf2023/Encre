@@ -51,6 +51,8 @@ export class EALoader {
   private observer: MutationObserver | null = null;
   private isDark: boolean;
   private readonly _staticMode: boolean;
+  private readonly _staticLightSrc: string | undefined;
+  private readonly _staticDarkSrc: string | undefined;
 
   /**
    * Creates the loader inside `parent`.
@@ -58,9 +60,13 @@ export class EALoader {
    * @param parent - Element to append the loader to.
    * @param opts   - Optional `maxWidth` (CSS value, capped by `--ea-loader-max-w`)
    *                 and `staticSrc` (when provided, render a static image, no observer).
+   *                 When `staticSrc` is paired with `staticDarkSrc`, the loader
+   *                 swaps between the two on theme change (static mode still observes).
    */
-  constructor(parent: HTMLElement, opts: { maxWidth?: string; staticSrc?: string } = {}) {
+  constructor(parent: HTMLElement, opts: { maxWidth?: string; staticSrc?: string; staticDarkSrc?: string } = {}) {
     this._staticMode = !!opts.staticSrc;
+    this._staticLightSrc = opts.staticSrc;
+    this._staticDarkSrc = opts.staticDarkSrc;
     this.isDark = EALoader.readDark();
     this.el = document.createElement("div");
     this.el.className = "ea-loader";
@@ -71,12 +77,14 @@ export class EALoader {
     this.img.alt = "";
     this.img.draggable = false;
     this.img.decoding = "async";
-    this.img.src = opts.staticSrc || EALoader.srcFor(this.isDark);
+    this.img.src = this._staticMode
+      ? (this.isDark && this._staticDarkSrc ? this._staticDarkSrc : this._staticLightSrc!)
+      : EALoader.srcFor(this.isDark);
     if (opts.staticSrc) this.el.classList.add("ea-loader--static");
     this.el.appendChild(this.img);
     parent.appendChild(this.el);
 
-    if (!opts.staticSrc && typeof MutationObserver !== "undefined") {
+    if (typeof MutationObserver !== "undefined") {
       this.observer = new MutationObserver(() => this.refresh());
       this.observer.observe(document.documentElement, {
         attributes: true,
@@ -87,11 +95,12 @@ export class EALoader {
 
   /** Re-read the current theme and swap the source if it flipped. */
   refresh(): void {
-    if (this._staticMode) return;
     const nowDark = EALoader.readDark();
     if (nowDark !== this.isDark) {
       this.isDark = nowDark;
-      this.img.src = EALoader.srcFor(this.isDark);
+      this.img.src = this._staticMode
+        ? (nowDark && this._staticDarkSrc ? this._staticDarkSrc : this._staticLightSrc!)
+        : EALoader.srcFor(this.isDark);
     }
   }
 

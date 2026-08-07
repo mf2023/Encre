@@ -1946,6 +1946,8 @@ ipcMain.on("browser-language", (_event, locale: string) => {
 // Updates the tray theme (and popup background) from the renderer.
 ipcMain.on("tray-theme", (_event, themePreference: string) => {
   currentTrayTheme = resolveTrayTheme(themePreference);
+  // Sync native theme so DevTools follows the app's theme
+  nativeTheme.themeSource = themePreference === "system" ? "system" : currentTrayTheme;
   // Update existing popup background color
   if (trayPopup && !trayPopup.isDestroyed()) {
     trayPopup.setBackgroundColor(

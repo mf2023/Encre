@@ -478,6 +478,8 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
       interruptedReason: (raw as any).interruptedReason,
       turnStatusText: (raw as any).turnStatusText,
       cancelledText: (raw as any).cancelledText,
+      hasError: !!(raw as any).hasError,
+      errorCategory: (raw as any).errorCategory,
     };
     messages.push(message);
     if (message.role === "assistant" && toolCalls.length > 0) {
@@ -543,6 +545,69 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
           backendId: oldToolCall.backendId,
           assistantId: oldMessage.serverId,
         });
+      }
+    }
+  }
+
+  // Preserve the in-progress streaming assistant turn across a resume/reload of
+  // a *running* session. The backend only serialises *committed* messages: the
+  // currently-streaming assistant (partial text/thinking and any tool calls that
+  // have not completed yet) is absent from ``rawMessages``, so a wholesale
+  // replacement would wipe everything the user saw before switching sessions or
+  // reconnecting. Re-attach that message to its turn — or fold the still-pending
+  // parts into the last committed assistant — so the resuming stream continues
+  // to render into it and the "Encre Agent" header / partial content survives.
+  const oldStreamingAssistants = snapshot.messages.filter(m => m.role === "assistant" && m.isStreaming);
+  if (oldStreamingAssistants.length > 0) {
+    for (const old of oldStreamingAssistants) {
+      const oldIdx = snapshot.messages.indexOf(old);
+      let prevUser: Message | undefined;
+      for (let i = oldIdx - 1; i >= 0; i--) {
+        if (snapshot.messages[i].role === "user") { prevUser = snapshot.messages[i]; break; }
+      }
+      const anchorId = prevUser ? (prevUser.serverId ? `m:${prevUser.serverId}` : prevUser.id) : undefined;
+      const anchorIdx = anchorId ? messages.findIndex(m => m.role === "user" && m.id === anchorId) : -1;
+      const followUp = anchorIdx >= 0 ? messages.slice(anchorIdx + 1) : [];
+      const committed = [...followUp].reverse().find(m => m.role === "assistant");
+      if (committed) {
+        // The turn's text block was committed server-side. Fold in only what
+        // has not been persisted yet: uncommitted thinking, an uncommitted text
+        // tail, and any tool call that is still running.
+        if (old.thinking && !committed.thinking) {
+          committed.thinking = old.thinking;
+          committed.segments.unshift({ kind: "thinking", text: old.thinking });
+        }
+        if (old.content
+          && old.content !== committed.content
+          && old.content.length > committed.content.length
+          && old.content.startsWith(committed.content)) {
+          const delta = old.content.slice(committed.content.length);
+          committed.content = old.content;
+          const lastTextSeg = [...committed.segments].reverse().find(s => s.kind === "text");
+          if (lastTextSeg) lastTextSeg.text = (lastTextSeg.text ?? "") + delta;
+          else committed.segments.push({ kind: "text", text: delta });
+        }
+        for (const oldTc of old.toolCalls) {
+          const exists = committed.toolCalls.some(t =>
+            toolCallMatchesId(t, oldTc.id)
+            || (oldTc.backendId ? t.id === oldTc.backendId : false)
+            || t.id === oldTc.id,
+          );
+          if (!exists && oldTc.result === undefined) {
+            committed.toolCalls.push({ ...oldTc });
+            committed.segments.push({ kind: "tool", toolId: oldTc.id });
+          }
+        }
+        if (snapshot.running) committed.isStreaming = true;
+      } else if (snapshot.running) {
+        // Turn still uncommitted server-side: re-attach the preserved message
+        // so the resuming deltas continue into it instead of creating a blank
+        // assistant (which loses the ai_header and previously-streamed content).
+        if (anchorIdx >= 0) {
+          messages.splice(anchorIdx + 1, 0, old);
+        } else if (messages.length > 0 && messages[messages.length - 1].role === "user") {
+          messages.push(old);
+        }
       }
     }
   }

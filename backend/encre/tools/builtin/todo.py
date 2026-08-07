@@ -58,7 +58,19 @@ async def _todo_execute(**kwargs: Any) -> str:
 
 EncreTodoTool = build_tool(
     name="todo",
-    description="Create and manage a task list for multi-step work. One in_progress at a time; skip for trivial tasks.",
+    description=(
+        "Create and manage a structured task list for multi-step work, "
+        "rendered as an interactive checklist in the UI.\n\n"
+        "WHEN to use: any task with 3+ distinct steps, multi-file changes, or "
+        "when the user asks for a plan/progress tracking.\n"
+        "WHEN NOT to use: single trivial tasks (< 3 steps) or purely "
+        "conversational requests -- writing a todo list for those adds noise.\n"
+        "TIPS: keep exactly ONE item in_progress at a time; mark items "
+        "completed immediately as you finish them; update the whole list in "
+        "one call rather than many small edits.\n"
+        "PITFALLS: do not add items for work you don't actually intend to do; "
+        "do not leave items perpetually in_progress -- advance them."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -67,17 +79,17 @@ EncreTodoTool = build_tool(
                 "items": {
                     "type": "object",
                     "properties": {
-                        "content": {"type": "string", "description": "Imperative form of the task (e.g. \"Run tests\")"},
-                        "activeForm": {"type": "string", "description": "Present continuous form (e.g. \"Running tests\")"},
+                        "content": {"type": "string", "description": "Short imperative description of the task (e.g. \"Run tests\")."},
+                        "activeForm": {"type": "string", "description": "Present-continuous form shown while the task is in_progress (e.g. \"Running tests\")."},
                         "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
                         "priority": {"type": "string", "enum": ["high", "medium", "low"]},
                     },
                     "required": ["content", "status"],
                 },
-                "description": "Task list",
+                "description": "Full task list -- pass the entire list every call (this tool replaces, not appends). Only one item may be in_progress at a time.",
             },
-            "summary": {"type": "string", "description": "Summary of work accomplished"},
-            "reset": {"type": "boolean", "description": "Reset the todo list"},
+            "summary": {"type": "string", "description": "Optional short summary of work accomplished, shown at the top of the rendered list."},
+            "reset": {"type": "boolean", "description": "When true, clears the existing todo list before rendering the new one (default false)."},
         },
         "required": ["todos"],
     },

@@ -222,31 +222,42 @@ def _fmt_date(dt: tuple[int, ...]) -> str:
 
 EncreArchiveTool = build_tool(
     name="archive",
-    description="Create/extract/list/inspect archives (zip, tar, gz, bz2, xz). Create from files/dirs, extract, list, get metadata.",
+    description=(
+        "Create, extract, list, or inspect archives in zip, tar, gz, bz2, or "
+        "xz format. Use this instead of bash `tar`/`zip`/`unzip` -- it "
+        "provides a single interface across formats, returns structured JSON "
+        "for list/info actions, and handles directory recursion. Create from "
+        "files or directories, extract to a destination, list entries, or get "
+        "archive metadata (size, entry count, format). "
+        "TIP: For 'create', set 'format' explicitly to avoid ambiguity from "
+        "the file extension. "
+        "AVOID: Extracting untrusted archives with action='extract' into "
+        "sensitive directories -- inspect with action='list' first."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["create", "extract", "list", "info"],
-                "description": "Action to perform",
+                "description": "Archive action (required). 'create' builds a new archive; 'extract' unpacks; 'list' returns entry metadata; 'info' returns archive-level metadata.",
             },
-            "archive_path": {"type": "string", "description": "Path to the archive file"},
+            "archive_path": {"type": "string", "description": "Path to the archive file (required). For 'create', parent directories are created automatically."},
             "source_paths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of files/directories to archive (for create)",
+                "description": "List of files or directories to archive (required for action='create'). Directories are added recursively.",
             },
-            "dest_dir": {"type": "string", "description": "Destination directory for extraction (for extract)"},
+            "dest_dir": {"type": "string", "description": "Destination directory for extraction (optional for action='extract'; defaults to the archive's parent directory)."},
             "format": {
                 "type": "string",
                 "enum": ["zip", "tar", "gz", "bz2", "xz"],
-                "description": "Archive format (for create, default zip)",
+                "description": "Archive format for action='create' (optional, default 'zip').",
             },
             "compression": {
                 "type": "string",
                 "enum": ["", "gz", "bz2", "xz"],
-                "description": "Compression type for tar archives",
+                "description": "Compression type for tar archives (optional). Overrides the format-implied compression.",
             },
         },
         "required": ["action", "archive_path"],

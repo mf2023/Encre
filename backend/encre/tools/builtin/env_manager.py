@@ -236,28 +236,42 @@ async def _modify_env_file(file_path: str, pairs: list[tuple[str, str | None]], 
 
 EncreEnvManagerTool = build_tool(
     name="env_manager",
-    description="Manage env vars and config files. get/set/delete/list (process env), load/save (file: .env, JSON, YAML, TOML).",
+    description=(
+        "Read and modify environment variables and config files. The 'process' "
+        "scope mutates the current process environment (get/set/delete/list); "
+        "the 'file' scope persists changes to a .env file. The 'load' action "
+        "imports variables from .env, JSON, YAML, or TOML files into the "
+        "process environment, and 'save' exports the current environment to a "
+        "file in env, JSON, or YAML format. Use this instead of bash "
+        "`export`/`set`/`unset` and hand-editing .env files -- it handles "
+        "multiple formats, preserves comments on file writes, and keeps "
+        "config changes auditable. "
+        "TIP: Use scope='file' with action='set' to update a specific key in "
+        "an existing .env without rewriting unrelated lines. "
+        "AVOID: Storing secrets in plain .env files committed to version "
+        "control -- prefer environment variables or a secrets manager."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["get", "set", "delete", "list", "load", "save"],
-                "description": "Action to perform",
+                "description": "Action to perform (required). 'get' returns one variable or all; 'set'/'delete' modify by scope; 'list' dumps all process env; 'load' reads a config file into the process env; 'save' writes the process env to a file.",
             },
-            "key": {"type": "string", "description": "Environment variable name"},
-            "value": {"type": "string", "description": "Value to set"},
-            "file_path": {"type": "string", "description": "Path to config file"},
-            "data": {"type": "object", "description": "Key-value pairs for batch operations"},
+            "key": {"type": "string", "description": "Environment variable name (required for 'set' and 'delete'; optional for 'get', which returns all variables when omitted)."},
+            "value": {"type": "string", "description": "Value to assign (required for action='set')."},
+            "file_path": {"type": "string", "description": "Path to the config file (required for 'load' and 'save'; required for 'set'/'delete' when scope='file')."},
+            "data": {"type": "object", "description": "Key-value pairs for batch operations (optional, reserved for bulk set/write flows)."},
             "format": {
                 "type": "string",
                 "enum": ["env", "json", "yaml"],
-                "description": "Config file format (default: env)",
+                "description": "Config file format for action='save' (optional, default 'env'). 'load' infers the format from the file extension.",
             },
             "scope": {
                 "type": "string",
                 "enum": ["process", "file"],
-                "description": "Scope: process (current env) or file (persist to file, default: process)",
+                "description": "Scope for 'set'/'delete' (optional, default 'process'). 'process' mutates the current process env; 'file' persists the change to the .env file at file_path.",
             },
         },
         "required": ["action"],

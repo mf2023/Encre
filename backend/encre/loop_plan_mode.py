@@ -77,6 +77,7 @@ class PlanModeManager:
         self._plan_event: asyncio.Event | None = None
         self._plan_decision: bool = False
         self._plan_proposals: dict[str, dict[str, Any]] = {}
+        self._plan_decision_timed_out: bool = False
 
     # ── Permission API ────────────────────────────────────────────────
 
@@ -332,6 +333,7 @@ class PlanModeManager:
         }
         self._plan_event = asyncio.Event()
         self._plan_decision = False
+        self._plan_decision_timed_out = False
         try:
             await asyncio.wait_for(self._plan_event.wait(), timeout=timeout)
         except TimeoutError:
@@ -339,6 +341,7 @@ class PlanModeManager:
                 f"Plan proposal '{proposal.proposal_id}' timed out after {timeout}s -- auto-rejecting",
             )
             self._plan_decision = False
+            self._plan_decision_timed_out = True
         self._plan_event = None
         decision = self._plan_decision
         self._plan_proposals.pop(proposal.proposal_id, None)

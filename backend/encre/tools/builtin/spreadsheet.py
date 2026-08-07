@@ -144,30 +144,40 @@ async def _handle_excel(action: str, file_path: str, sheet_name: str, data: str,
 
 EncreSpreadsheetTool = build_tool(
     name="spreadsheet",
-    description="Read, write, and manipulate CSV and Excel spreadsheets",
+    description=(
+        "Read, write, or inspect CSV and Excel (.xlsx/.xls) spreadsheet files. "
+        "Use this to extract tabular data, dump rows into a sheet, or list "
+        "worksheets in a workbook; Excel handling requires openpyxl. "
+        "Do NOT use this for Office documents (use document) or PDFs (use pdf); "
+        "and avoid it for heavy analytics better suited to pandas/SQL. "
+        "Tips: for Excel writes, supply `data` as a JSON array of arrays; CSV writes "
+        "accept raw CSV text; reading caps output at 100 rows with a trailing count. "
+        "Pitfalls: the `range` parameter is parsed but not enforced on reads — filter "
+        "large sheets via `sheet_name` or pre-truncate the file."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["read", "write", "list_sheets"],
-                "description": "Action to perform",
+                "description": "Spreadsheet operation: read (header + up to 100 rows), write (create/overwrite the file), or list_sheets (Excel worksheet names).",
             },
             "file_path": {
                 "type": "string",
-                "description": "Path to the spreadsheet file",
+                "description": "Path to the spreadsheet file; the extension selects the handler (.csv via the csv module, .xlsx/.xls via openpyxl).",
             },
             "sheet_name": {
                 "type": "string",
-                "description": "Sheet name (for Excel files)",
+                "description": "Excel worksheet to target; defaults to the active sheet when omitted. Ignored for CSV files.",
             },
             "data": {
                 "type": "string",
-                "description": "CSV or JSON data to write (for write action)",
+                "description": "Payload for write: raw CSV text for .csv, or a JSON array of arrays for Excel (e.g. '[[\"a\",1],[\"b\",2]]').",
             },
             "range": {
                 "type": "string",
-                "description": "Cell range to read (e.g. 'A1:C10', Excel only)",
+                "description": "Cell range hint for Excel reads (e.g. 'A1:C10'); Excel only and not enforced on read.",
             },
         },
         "required": ["action", "file_path"],

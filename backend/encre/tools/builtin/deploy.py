@@ -151,27 +151,40 @@ async def _deploy_execute(**kwargs: Any) -> str:
 
 EncreDeployTool = build_tool(
     name="deploy",
-    description="Deploy applications to cloud platforms and container registries",
+    description=(
+        "Build, deploy, roll back, or inspect an application on a target platform "
+        "(Docker, Kubernetes, Cloud Run, Vercel, Netlify) by invoking the platform's "
+        "native CLI. "
+        "Use this for repeatable deploy-style operations such as `kubectl apply`, "
+        "`docker build/push`, `gcloud run deploy`, or `vercel deploy`. "
+        "Do NOT use this for ad-hoc container management — use the docker tool instead; "
+        "and avoid it for IaC pipelines driven by Terraform/Helm. "
+        "Tips: pass `config_file` for a manifest or Dockerfile path and `project_name` "
+        "to scope the deployment. "
+        "Pitfalls: each invocation blocks up to 600s, so large builds may time out; "
+        "the matching CLI (docker, kubectl, gcloud, vercel, netlify) must already be "
+        "installed and authenticated."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "target": {
                 "type": "string",
                 "enum": ["docker", "kubernetes", "cloud_run", "vercel", "netlify"],
-                "description": "Deployment target platform",
+                "description": "Platform to deploy to; selects the underlying CLI driver (docker/kubectl/gcloud/vercel/netlify).",
             },
             "action": {
                 "type": "string",
                 "enum": ["build", "deploy", "rollback", "status"],
-                "description": "Action to perform",
+                "description": "Lifecycle action to perform on the target platform.",
             },
             "config_file": {
                 "type": "string",
-                "description": "Path to configuration file (Dockerfile, k8s manifest, etc.)",
+                "description": "Path to a deployment manifest (e.g. Dockerfile, k8s YAML, vercel.json, netlify.toml); optional.",
             },
             "project_name": {
                 "type": "string",
-                "description": "Project or application name",
+                "description": "Name of the application, service, or deployment to scope the action; required for some target/action pairs.",
             },
         },
         "required": ["target", "action"],

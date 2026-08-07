@@ -48,6 +48,7 @@ from typing import Any
 
 from encre.hooks.system import EncreHookSystem
 from encre.hooks.types import HookEventType, HookResult
+from encre.tools.builtin._encoding import decode_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +245,7 @@ async def _run_command_entry(
         return {}
 
     if proc.returncode == 2:
-        reason = (stderr_b or b"").decode("utf-8", "replace").strip()
+        reason = decode_bytes(stderr_b or b"").strip()
         if not reason:
             reason = f"Blocked by hook: {entry.event_type}"
         return {"block": True, "block_reason": reason}
@@ -255,7 +256,7 @@ async def _run_command_entry(
         )
         return {}
 
-    out = (stdout_b or b"").decode("utf-8", "replace").strip()
+    out = decode_bytes(stdout_b or b"").strip()
     if not out:
         return {}
     try:

@@ -69,6 +69,37 @@ function typeIcon(type: string): string {
 }
 
 /**
+ * Copies the notification's original text to the clipboard and flashes the button.
+ */
+function flashCopy(btn: HTMLElement): void {
+  const orig = btn.getAttribute("data-original-icon");
+  const original = orig || "copy";
+  if (!orig) btn.setAttribute("data-original-icon", original);
+
+  btn.style.transition = "opacity 0.12s ease";
+  btn.style.opacity = "0";
+  setTimeout(() => {
+    const i = btn.querySelector("[data-lucide]");
+    if (i) i.setAttribute("data-lucide", "check");
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: btn });
+    }
+    btn.style.opacity = "1";
+  }, 120);
+  setTimeout(() => {
+    btn.style.opacity = "0";
+    setTimeout(() => {
+      const i = btn.querySelector("[data-lucide]");
+      if (i) i.setAttribute("data-lucide", original);
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: btn });
+      }
+      btn.style.opacity = "1";
+    }, 120);
+  }, 2000);
+}
+
+/**
  * The notifications controller: badge, panel and toast lifecycle.
  */
 export class Notifications {
@@ -108,6 +139,16 @@ export class Notifications {
   /** Snapshots the current notification ids as "already seen". */
   syncSeenIds(): void {
     this.lastNotificationIds = new Set(getState().notifications.map((n) => n.id));
+  }
+
+  /** Copies a notification's original text to the clipboard with visual feedback. */
+  copyNotification(item: NotificationItem, btn: HTMLElement): void {
+    const text = [item.title, item.message, item.source && `${t("notifications.source")}: ${item.source}`]
+      .filter(Boolean)
+      .join("\n");
+    navigator.clipboard.writeText(text)
+      .then(() => flashCopy(btn))
+      .catch(() => { /* clipboard unavailable */ });
   }
 
   /** Re-renders the badge/panel and pops toasts for any new notifications. */
@@ -165,10 +206,21 @@ export class Notifications {
     toast.innerHTML = `
       <div class="notification-toast-message">${this.esc(item.message || item.title)}</div>
       ${sourceHtml}
-      <button class="notification-toast-collapse" data-tooltip="${t("notifications.dismiss")}">
-        <i data-lucide="chevron-down" class="lucide lucide-sm"></i>
-      </button>
+      <div class="notification-toast-actions">
+        <button class="notification-toast-copy" data-tooltip="${t("notifications.copy")}">
+          <i data-lucide="copy" class="lucide lucide-sm"></i>
+        </button>
+        <button class="notification-toast-collapse" data-tooltip="${t("notifications.dismiss")}">
+          <i data-lucide="chevron-down" class="lucide lucide-sm"></i>
+        </button>
+      </div>
     `;
+
+    const copyBtn = toast.querySelector(".notification-toast-copy");
+    copyBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.copyNotification(item, copyBtn as HTMLElement);
+    });
 
     const collapseBtn = toast.querySelector(".notification-toast-collapse");
     collapseBtn?.addEventListener("click", (e) => {
@@ -338,6 +390,9 @@ export class Notifications {
             <i data-lucide="arrow-left" class="lucide lucide-sm"></i>
             <span>${t("notifications.back")}</span>
           </button>
+          <button class="notification-detail-copy" data-tooltip="${t("notifications.copy")}">
+            <i data-lucide="copy" class="lucide lucide-sm"></i>
+          </button>
         </div>
         ${n.media ? `<div class="notification-detail-media" id="notif-detail-media"></div>` : ""}
         <div class="notification-detail-body">
@@ -370,6 +425,12 @@ export class Notifications {
       e.stopPropagation();
       this._detailId = null;
       this.renderPanel();
+    });
+
+    this.panel.querySelector(".notification-detail-copy")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const btn = this.panel!.querySelector(".notification-detail-copy") as HTMLElement;
+      this.copyNotification(n, btn);
     });
 
     if (typeof (window as any).lucide !== "undefined") {

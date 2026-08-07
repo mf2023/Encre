@@ -33,16 +33,73 @@ Usage::
 
     loader = PromptLoader()
     content = loader.load("identity")
-    content = loader.load_with_context("permission", mode="bypass", guidance="...")
+    content = loader.load("bypass", category="permission")
+    content = loader.load_with_context("datetime", category="blocks", year="2026")
 """
 
 import os
+import re
 from typing import Any
 
 # Absolute path to the directory that contains the ``.prompt`` block files.
 _PROMPTS_ROOT: str = os.path.abspath(os.path.dirname(__file__))
 # Process-wide cache mapping "<category>/<name>" -> prompt text.
 _CACHE: dict[str, str] = {}
+
+
+def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """Parse YAML-style frontmatter from a prompt file.
+
+    The frontmatter is delimited by ``---`` lines at the start of the file::
+
+        ---
+        name: identity
+        priority: 0
+        condition: ~
+        ---
+
+    Returns ``(metadata, body)`` where *body* is the text after the closing
+    ``---``.  If no frontmatter is found, *metadata* is empty and *body* is
+    the original text.
+    """
+    # Heuristic: must start with "---" on the very first line.
+    if not text.startswith("---"):
+        return {}, text
+
+    # Find the closing ---
+    end_idx = text.find("\n---", 3)
+    if end_idx == -1:
+        return {}, text
+
+    header = text[3:end_idx].strip()
+    body = text[end_idx + 4:].strip()
+
+    meta: dict[str, Any] = {}
+    for line in header.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.match(r"^(\w+)\s*:\s*(.*)", line)
+        if not m:
+            continue
+        key = m.group(1)
+        raw = m.group(2).strip()
+
+        # null / None / ~
+        if raw in ("~", "null", "None", ""):
+            meta[key] = None
+        # list: [a, b, c]
+        elif raw.startswith("[") and raw.endswith("]"):
+            items = raw[1:-1].split(",")
+            meta[key] = [i.strip().strip("'\"") for i in items if i.strip()]
+        # integer
+        elif raw.isdigit() or (raw.startswith("-") and raw[1:].isdigit()):
+            meta[key] = int(raw)
+        # string
+        else:
+            meta[key] = raw.strip("'\"")
+
+    return meta, body
 
 
 class PromptLoader:
@@ -55,7 +112,7 @@ class PromptLoader:
         self._root = root or _PROMPTS_ROOT
 
     def load(self, name: str, category: str = "blocks") -> str:
-        """Load a prompt file, cache, return content.
+        """Load a prompt file, strip frontmatter, return body.
 
         Parameters
         ----------
@@ -64,6 +121,30 @@ class PromptLoader:
         category:
             Sub-directory under the prompts root, e.g. ``"blocks"``, ``"skills"``.
         """
+        raw = self._read_raw(name, category)
+        _meta, body = _parse_frontmatter(raw)
+        return body
+
+    def load_with_context(self, name: str, category: str = "blocks", **ctx: Any) -> str:
+        """Load a prompt (stripping frontmatter) and substitute ``{{key}}`` placeholders."""
+        body = self.load(name, category=category)
+        for key, val in ctx.items():
+            body = body.replace(f"{{{{{key}}}}}", str(val))
+        return body
+
+    def load_full(self, name: str, category: str = "blocks") -> tuple[dict[str, Any], str]:
+        """Load a prompt file with frontmatter, return ``(metadata, body)``.
+
+        *metadata* is a dict with keys like ``name``, ``priority``, ``condition``
+        parsed from the YAML frontmatter.  *body* is the content after the
+        frontmatter, with ``{{placeholder}}`` variables still present.
+        """
+        raw = self._read_raw(name, category)
+        meta, body = _parse_frontmatter(raw)
+        return meta, body
+
+    def _read_raw(self, name: str, category: str) -> str:
+        """Read the raw file content from cache or disk."""
         cache_key = f"{category}/{name}"
         if cache_key in _CACHE:
             return _CACHE[cache_key]
@@ -79,13 +160,6 @@ class PromptLoader:
             ) from None
 
         _CACHE[cache_key] = content
-        return content
-
-    def load_with_context(self, name: str, category: str = "blocks", **ctx: Any) -> str:
-        """Load a prompt and substitute ``{{key}}`` placeholders with *ctx* values."""
-        content = self.load(name, category=category)
-        for key, val in ctx.items():
-            content = content.replace(f"{{{{{key}}}}}", str(val))
         return content
 
     def get_block_path(self, name: str, category: str = "blocks") -> str:

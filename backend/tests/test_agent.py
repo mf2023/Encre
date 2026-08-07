@@ -25,6 +25,7 @@ from __future__ import annotations
 
 """Tests for EncreAgent: construction, properties, run, lifecycle."""
 
+import asyncio
 import inspect
 
 import pytest

@@ -20,7 +20,7 @@
 
 [package]
 name = "encre"
-version = "0.2.0-pre.1"
+version = "0.3.0"
 edition = "2021"
 description = "Core Rust library for Encre Agent Framework"
 
@@ -38,6 +38,7 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_JobObjects",
     "Win32_System_SystemServices",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Globalization",
 ] }
 
 [target.'cfg(not(windows))'.dependencies]

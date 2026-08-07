@@ -74,41 +74,53 @@ async def _question_execute(**kwargs: Any) -> str:
 EncreQuestionTool = build_tool(
     name="question",
     description=(
-        "Ask the user for clarification or choices. "
-        "Pauses the conversation until the user answers. "
-        "Send multiple questions at once via 'questions' array."
+        "Ask the user for clarification, a decision, or missing information; "
+        "the conversation pauses until the user answers.\n\n"
+        "WHEN to use: the user's request is ambiguous, incomplete, or has "
+        "multiple valid interpretations; a destructive action needs "
+        "confirmation; required input (credentials, file path, preference) is "
+        "missing.\n"
+        "WHEN NOT to use: when you can reasonably infer the answer from "
+        "context; for open-ended exploration where guessing and iterating is "
+        "cheaper than a round-trip to the user.\n"
+        "TIPS: provide options whenever the choice set is small and known -- "
+        "the frontend renders them as clickable buttons; batch related "
+        "questions via the 'questions' array so the user answers all at once; "
+        "include a 'details' field explaining WHY you're asking.\n"
+        "PITFALLS: asking too many low-value questions frustrates users -- "
+        "only ask when truly blocked."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "question": {
                 "type": "string",
-                "description": "A single question to ask. Use 'questions' for multiple.",
+                "description": "A single question to ask the user. Use 'questions' instead when you have more than one to ask at once.",
             },
             "details": {
                 "type": "string",
-                "description": "Optional context explaining why you're asking.",
+                "description": "Optional context explaining why the question is being asked. Shown alongside the question to help the user decide.",
             },
             "options": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Optional predefined choices for the user.",
+                "description": "Optional predefined choices rendered as clickable buttons. Prefer this over free-text input when the valid answers are a small known set.",
             },
             "questions": {
                 "type": "array",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "question": {"type": "string", "description": "Question text."},
-                        "details": {"type": "string", "description": "Optional context."},
+                        "question": {"type": "string", "description": "The question text to display to the user."},
+                        "details": {"type": "string", "description": "Optional context shown with this question."},
                         "options": {
                             "type": "array", "items": {"type": "string"},
-                            "description": "Optional predefined choices.",
+                            "description": "Optional predefined choices for this question.",
                         },
                     },
                     "required": ["question"],
                 },
-                "description": "Multiple questions sent together. User answers all before model continues.",
+                "description": "Multiple questions sent together; the user must answer all of them before the model continues. Prefer this over repeated single-question calls.",
             },
         },
     },

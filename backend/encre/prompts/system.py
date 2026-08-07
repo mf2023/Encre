@@ -43,6 +43,53 @@ from encre.utils.types import PermissionMode
 
 _loader = PromptLoader()
 
+# Valid permission-mode labels; anything else falls back to "default".
+_PERMISSION_MODES = frozenset({
+    "bypass", "dont_ask", "accept_edits", "plan", "spec", "auto", "default",
+})
+
+# Model-name substrings mapped to their family prompt file.  The first match
+# (in insertion order) wins, so order matters: put more specific patterns
+# before more general ones.  Unknown models fall back to ``default`` (an empty
+# block), so no model ever receives guidance meant for a different family.
+#
+# IMPORTANT: the prompt *content* never names the model — only this selection
+# logic uses the model name.  This keeps the identity-protection rule in
+# identity.prompt ("never mention any model/provider name") intact: the model
+# receives behavioural guidance without learning which family it belongs to.
+_MODEL_FAMILY_PATTERNS: list[tuple[str, str]] = [
+    # OpenAI / xAI family (codex is more specific than gpt)
+    ("codex", "gpt"),
+    ("gpt", "gpt"),
+    ("grok", "gpt"),
+    # Google family
+    ("gemini", "gemini"),
+    ("gemma", "gemini"),
+    # Anthropic family
+    ("claude", "claude"),
+    ("anthropic", "claude"),
+    # Chinese proprietary models
+    ("glm", "glm"),
+    ("qwen", "qwen"),
+    ("deepseek", "deepseek"),
+    ("kimi", "kimi"),
+    ("hunyuan", "hunyuan"),
+    ("hy3", "hunyuan"),
+    ("minimax", "minimax"),
+    ("doubao", "doubao"),
+    # Open-weight models
+    ("llama", "llama"),
+    ("mistral", "mistral"),
+    ("mixtral", "mistral"),
+    ("mimo", "mimo"),
+    # Other providers
+    ("nova", "nova"),
+    ("phi", "phi"),
+    ("virtuoso", "arcee"),
+    ("maestro", "arcee"),
+    ("caller", "arcee"),
+]
+
 # ── Block definitions ──────────────────────────────────────────────
 
 
@@ -77,141 +124,182 @@ class PromptBlock:
 # ── Core presets ────────────────────────────────────────────────────
 
 
+def _block_from_file(name: str, category: str = "blocks", **overrides: Any) -> PromptBlock:
+    """Load a block from its ``.prompt`` file, reading metadata from frontmatter.
+
+    The priority, name and condition are taken from the file's YAML frontmatter
+    (see :func:`encre.prompts.loader._parse_frontmatter`), so the block's layout
+    lives in one place — the file itself — rather than being duplicated in code.
+    Explicit ``overrides`` (keyword args) take precedence over frontmatter for
+    callers that need to special-case a block.
+    """
+    meta, body = _loader.load_full(name, category=category)
+    return PromptBlock(
+        priority=overrides.get("priority", meta.get("priority", 100)),
+        name=overrides.get("name", meta.get("name", name)),
+        condition=overrides.get("condition", meta.get("condition")),
+        content=body,
+    )
+
+
 def _identity_block() -> PromptBlock:
     """Core identity/behaviour block, always included (highest priority 0)."""
-    return PromptBlock(priority=0, name="identity", condition=None, content=_loader.load("identity"))
+    return _block_from_file("identity")
+
+
+def _task_completion_block() -> PromptBlock:
+    """Delivery-anchor block: finish the job, no stubs, no fabrication.
+
+    Placed right after identity (priority 1) so the "deliver finished work"
+    frame is established before any mode or tool guidance.  This is the
+    single most important behavioural block — it counters the two universal
+    failure modes: stopping after a stub, and fabricating output when a real
+    path is blocked.
+    """
+    return _block_from_file("task_completion")
+
+
+def _tool_execution_block() -> PromptBlock:
+    """Tool-execution discipline: act-don't-describe, batch, verify, ground.
+
+    Placed at priority 3 (after task_completion, before tool_usage) so the
+    execution frame precedes the specific tool-selection guidance.  Complements
+    ``tool_usage`` (which says *which* tools to use) with *how* to use them.
+    """
+    return _block_from_file("tool_execution")
+
+
+def _post_execution_validation_block() -> PromptBlock:
+    """Post-execution verification protocol: read-back, test, falsify.
+
+    Placed at priority 4, immediately after tool_execution (3) and before
+    tool_usage/safety (5), so the execution frame is immediately followed by
+    the verification frame — "act, then verify" reads back-to-back.
+    """
+    return _block_from_file("post_execution_validation")
+
+
+def _model_family_block(model: str = "") -> PromptBlock:
+    """Model-family-specific operational guidance.
+
+    Matches the model name against known families (GPT, Gemini, GLM, Qwen,
+    DeepSeek, Claude) and injects the matching ``models/<family>.prompt``
+    block.  Unknown models get an empty ``default`` block — no model ever
+    receives guidance meant for a different family.
+
+    Placed at priority 90 (after all core guidance, before the specialty
+    block) so it acts as a modifier on top of the universal rules rather
+    than replacing them.
+    """
+    model_lower = (model or "").lower()
+    family = "default"
+    for pattern, fam in _MODEL_FAMILY_PATTERNS:
+        if pattern in model_lower:
+            family = fam
+            break
+    content = _loader.load(family, category="models")
+    return PromptBlock(priority=90, name="model_family", condition=None, content=content)
 
 
 def _tool_usage_block(_tools: list[dict[str, Any]] | None = None) -> PromptBlock:
     """Tool-usage guidance block (the model's instructions for using tools)."""
-    return PromptBlock(
-        priority=5, name="tool_usage",
-        condition=None,
-        content=_loader.load("tool_usage"),
-    )
+    return _block_from_file("tool_usage")
 
 
 def _permission_block(mode: PermissionMode) -> PromptBlock:
-    """Permission/autonomy block describing how freely the agent may act."""
-    if mode == "bypass":
-        guidance = "You have full autonomy to execute any tool without asking for permission. Use this responsibly."
-    elif mode == "dont_ask":
-        guidance = "Execute tasks directly without asking for confirmation. Only pause if an operation appears destructive and irreversible."
-    elif mode == "accept_edits":
-        guidance = "You may read, write, and edit files freely. Shell commands and web requests may require confirmation."
-    elif mode == "plan":
-        guidance = "First create a clear plan. Present it to the user for approval before executing any changes."
-    elif mode == "spec":
-        guidance = "First produce a complete specification. Present it to the user for review and approval before writing any code or making changes."
-    elif mode == "auto":
-        guidance = "Most operations are auto-approved. Dangerous operations (rm -rf, chmod 777, etc.) require confirmation."
-    else:
-        guidance = "Ask for permission before executing tools that modify files, run shell commands, or access the network."
+    """Permission/autonomy block describing how freely the agent may act.
 
-    return PromptBlock(
-        priority=20, name="permission", condition=None,
-        content=_loader.load_with_context("permission", mode=mode, guidance=guidance),
-    )
+    Each mode maps to a self-contained prompt file under
+    ``permission/<mode>.prompt``; unknown modes fall back to ``default``.
+    """
+    mode_name = mode if mode in _PERMISSION_MODES else "default"
+    content = _loader.load(mode_name, category="permission")
+    return PromptBlock(priority=20, name="permission", condition=None, content=content)
 
 
 def _language_block(lang_pref: str, app_lang: str) -> PromptBlock | None:
     """Language block forcing the response language (``zh``/``en``), or None."""
     resolved = lang_pref if lang_pref != "auto" else app_lang
-    if resolved == "zh":
-        instruction = "IMPORTANT: You must always respond in Chinese (中文) throughout the entire conversation. Even if the user writes in another language, you must reply in Chinese. Do not switch to other languages under any circumstances."
-    elif resolved == "en":
-        instruction = "IMPORTANT: You must always respond in English throughout the entire conversation. Even if the user writes in another language, you must reply in English. Do not switch to other languages under any circumstances."
-    else:
+    if resolved not in ("zh", "en"):
         return None
-    return PromptBlock(priority=25, name="language", condition=None, content=instruction)
+    content = _loader.load(resolved, category="language")
+    return PromptBlock(priority=25, name="language", condition=None, content=content)
 
 
 def _output_format_block() -> PromptBlock:
     """Output-formatting block (inverted pyramid, diff format, no emojis)."""
-    return PromptBlock(priority=30, name="output_format", condition=["general", "coding", "data"], content=_loader.load("output_format"))
+    return _block_from_file("output_format")
 
 
 def _safety_block() -> PromptBlock:
     """Safety/security block (secrets, data protection, risk framework)."""
-    return PromptBlock(priority=5, name="safety", condition=None, content=_loader.load("safety"))
+    return _block_from_file("safety")
 
 
 def _task_management_block() -> PromptBlock:
     """Task-management block (todo lists) for coding/data sessions."""
-    return PromptBlock(priority=15, name="task_management", condition=["coding", "data"], content=_loader.load("task_management"))
+    return _block_from_file("task_management")
+
+
+def _memory_discipline_block() -> PromptBlock:
+    """Memory-discipline block: declarative vs imperative, recall rules.
+
+    Counters the failure mode where stored memory instructions override the
+    live user's intent.  Always included — memory discipline applies to every
+    session, not just coding/data.
+    """
+    return _block_from_file("memory_discipline")
 
 
 def _specialty_coding_block() -> PromptBlock:
     """Specialty block for coding-domain guidance."""
-    return PromptBlock(priority=100, name="specialty", condition=["coding"], content=_loader.load("specialty_coding"))
+    return _block_from_file("specialty_coding")
 
 
 def _specialty_research_block() -> PromptBlock:
     """Specialty block for research-domain guidance."""
-    return PromptBlock(priority=100, name="specialty", condition=["research"], content=_loader.load("specialty_research"))
+    return _block_from_file("specialty_research")
 
 
 def _specialty_data_block() -> PromptBlock:
     """Specialty block for data-analysis-domain guidance."""
-    return PromptBlock(priority=100, name="specialty", condition=["data"], content=_loader.load("specialty_data"))
+    return _block_from_file("specialty_data")
 
 
 def _specialty_general_block() -> PromptBlock:
     """Fallback specialty block used when no specific intent is detected."""
-    return PromptBlock(priority=100, name="specialty", condition=None, content=_loader.load("specialty_general"))
+    return _block_from_file("specialty_general")
 
 
 def _iwork_block(workspace_root: str, workspace_name: str, project_summary: str = "") -> PromptBlock:
     """Workspace (iWork) mode block describing the project and its files."""
     ctx = dict(workspace_name=workspace_name, workspace_root=workspace_root)
-    content = _loader.load_with_context("workspace_mode", **ctx)
     if project_summary:
-        snapshot = f"\n\n### Project Snapshot\n{project_summary}"
-        content = content.replace("{{project_snapshot}}", snapshot)
+        ctx["project_snapshot"] = f"\n\n### Project Snapshot\n{project_summary}"
     else:
-        content = content.replace("{{project_snapshot}}", "")
-    return PromptBlock(priority=2, name="iwork", condition=None, content=content)
+        ctx["project_snapshot"] = ""
+    return _block_from_file("workspace_mode").with_context(ctx)
 
 
 def _plan_mode_block() -> PromptBlock:
     """Plan-mode block: instruct the model to plan, not execute."""
-    content = _loader.load("plan_mode", category="modes")
-    return PromptBlock(priority=195, name="plan_mode", condition=None, content=content)
+    return _block_from_file("plan_mode", category="modes")
 
 
 def _spec_mode_block() -> PromptBlock:
     """Spec-mode block: instruct the model to specify, not implement."""
-    content = _loader.load("spec_mode", category="modes")
-    return PromptBlock(priority=195, name="spec_mode", condition=None, content=content)
+    return _block_from_file("spec_mode", category="modes")
 
 
 def _command_instructions_block(name: str, body: str) -> PromptBlock:
-    """Active-command block: sticky one-shot-style prompt injection.
-
-    A slash *command* (built-in action or user-defined ``*.md`` command) is
-    NOT a mode.  Its prompt body is injected every turn while active, but it
-    must never be confused with plan/spec: there is no tool interception and
-    no spec gate.  The block is framed explicitly so the model treats it as
-    supplementary instructions rather than a mode declaration.
-    """
     name = (name or "").strip()
     body = (body or "").strip()
     if not name:
         return PromptBlock(priority=190, name="command_instructions",
                            condition=None, content="")
-    parts = [
-        f"## Active Command: /{name}",
-        "",
-        "These are **command instructions**, active for this session until "
-        "the user clears them. This is **NOT a mode** - the operating mode "
-        "(normal / plan / spec) is unchanged and its rules still apply. "
-        "Treat the text below as additional instructions to follow alongside "
-        "the active mode; do not declare yourself to be in a new mode.",
-        "",
-        body,
-    ]
-    return PromptBlock(priority=190, name="command_instructions",
-                       condition=None, content="\n".join(parts))
+    return _block_from_file("command_instructions").with_context(dict(
+        command_name=name, command_body=body,
+    ))
 
 
 def _slash_commands_block(
@@ -220,55 +308,52 @@ def _slash_commands_block(
 ) -> PromptBlock:
     """Inform the model about available slash commands and the active mode."""
     commands = slash_commands or []
-    lines: list[str] = ["## Slash Commands"]
+    lines: list[str] = [_loader.load("header", category="slash_commands")]
     if slash_command_mode:
-        lines.append(
-            f"The current session is in **/{slash_command_mode}** mode. "
-            "Follow the mode instructions above for this turn. "
-            "This is authoritative -- when asked which mode you are in, "
-            f"answer **{slash_command_mode} mode**."
-        )
+        lines.append(_loader.load_with_context(
+            "mode_active", category="slash_commands", mode=slash_command_mode,
+        ))
     else:
         # Normal mode is an explicit, declared state -- not "no mode".
         # Without this, the model can misread the internal "Work Phase"
         # (discover/execute/...) hint as the current mode and answer
         # e.g. "discover mode" when asked.
-        lines.append(
-            "The current session is in **normal mode** (no plan/spec mode "
-            "is active). When asked which mode you are in, answer "
-            "**normal mode**. The 'Work Phase' hint elsewhere is an "
-            "internal scheduling cue, not a mode."
-        )
+        lines.append(_loader.load("normal_mode", category="slash_commands"))
     if active_command_name:
         # A command may be active alongside (or instead of) a mode.  State
         # it explicitly so the model does not mistake the command's injected
         # instructions for a mode declaration.
-        lines.append(
-            f"A slash **command** ``/{active_command_name}`` is active. A "
-            "command is NOT a mode - it only injects extra instructions for "
-            "this turn. The session mode above is unchanged by the command."
-        )
+        lines.append(_loader.load_with_context(
+            "active_command", category="slash_commands",
+            command_name=active_command_name,
+        ))
     if commands:
         modes = [c for c in commands if c.get("kind") == "mode"]
         actions = [c for c in commands if c.get("kind", "action") != "mode"]
         if modes:
-            lines.append("Available modes:")
+            lines.append(_loader.load("modes_header", category="slash_commands"))
             for cmd in modes:
-                name = cmd.get("name", "")
-                title = cmd.get("title", name)
-                description = cmd.get("description", "")
-                lines.append(f"- /{name}: {title}{f' -- {description}' if description else ''}")
+                lines.append(_render_command_line(cmd))
         if actions:
-            lines.append("Available commands:")
+            lines.append(_loader.load("actions_header", category="slash_commands"))
             for cmd in actions:
-                name = cmd.get("name", "")
-                title = cmd.get("title", name)
-                description = cmd.get("description", "")
-                lines.append(f"- /{name}: {title}{f' -- {description}' if description else ''}")
+                lines.append(_render_command_line(cmd))
     else:
-        lines.append("No slash commands are available.")
+        lines.append(_loader.load("no_commands", category="slash_commands"))
     content = "\n".join(lines)
     return PromptBlock(priority=48, name="slash_commands", condition=None, content=content)
+
+
+def _render_command_line(cmd: dict[str, Any]) -> str:
+    """Render a single slash-command entry from the ``command_line`` template."""
+    name = cmd.get("name", "")
+    title = cmd.get("title", name)
+    description = cmd.get("description", "")
+    desc_suffix = f" -- {description}" if description else ""
+    return _loader.load_with_context(
+        "command_line", category="slash_commands",
+        cmd_name=name, title=title, description_suffix=desc_suffix,
+    )
 
 
 def _skills_block(skill_summary: str = "") -> PromptBlock | None:
@@ -281,16 +366,16 @@ def _skills_block(skill_summary: str = "") -> PromptBlock | None:
     """
     if not skill_summary or not skill_summary.strip():
         return None
-    content = "## Skills (auto-discovered)\n\n" + skill_summary.strip()
-    return PromptBlock(priority=47, name="skills", condition=None, content=content)
+    return _block_from_file("skills_header").with_context(dict(
+        skill_summary=skill_summary.strip(),
+    ))
 
 
 def _normal_mode_block(session_id: str = "") -> PromptBlock:
     """Normal (non-workspace) mode block with the session files directory."""
     from encre.tools.builtin._sandbox import get_session_files_dir
     files_root = str(get_session_files_dir(session_id))
-    content = _loader.load_with_context("general_mode", files_root=files_root)
-    return PromptBlock(priority=2, name="mode", condition=None, content=content)
+    return _block_from_file("general_mode").with_context(dict(files_root=files_root))
 
 
 def _environment_block(workspace_root: str = "") -> PromptBlock:
@@ -302,49 +387,24 @@ def _environment_block(workspace_root: str = "") -> PromptBlock:
     os_name = _platform.system() or _sys.platform
     if os_name == "Windows":
         details = f"Windows {_platform.version()} ({_platform.machine()})"
-        shell_hint = (
-            "You are on **Windows**.  The shell is `cmd.exe` — use **Windows commands**:\n"
-            "  • `dir` instead of `ls`        • `type` instead of `cat`\n"
-            "  • `find` / `findstr` instead of `grep` / `find`\n"
-            "  • `copy` instead of `cp`       • `move` / `ren` instead of `mv`\n"
-            "  • `del` instead of `rm`         • `mkdir` / `rmdir` instead of `mkdir` / `rm -rf`\n"
-            "  • `echo` works the same way     • `cd` works the same way\n"
-            "File paths use **backslashes** (`\\\\`).  PowerShell commands also work.\n"
-            "**Do NOT** output Linux/bash commands like `ls`, `cat`, `grep`, `rm -rf`, `cp`, `mv`."
-        )
+        shell_hint = _loader.load("shell_windows", category="environment")
     elif os_name == "Darwin":
         details = f"macOS {_platform.mac_ver()[0]} ({_platform.machine()})"
-        shell_hint = (
-            "You are on **macOS**.  The shell is `bash`/`zsh` — use Unix commands.\n"
-            "File paths use forward slashes (`/`)."
-        )
+        shell_hint = _loader.load("shell_macos", category="environment")
     elif os_name == "Linux":
         details = f"Linux ({_platform.machine()})"
-        shell_hint = (
-            "You are on **Linux**.  The shell is `bash` — use standard Unix commands.\n"
-            "File paths use forward slashes (`/`)."
-        )
+        shell_hint = _loader.load("shell_linux", category="environment")
     else:
         details = os_name
         shell_hint = ""
 
-    # CC-style <env> facts: working directory + whether it is a git repo.
     cwd = workspace_root or _os.getcwd()
     is_git = _os.path.isdir(_os.path.join(cwd, ".git"))
-    env_facts = (
-        f"Working directory: {cwd}\n"
-        f"Is directory a git repo: {'Yes' if is_git else 'No'}\n"
-    )
-
-    content = (
-        f"## Environment\n"
-        f"{env_facts}"
-        f"\n"
-        f"## Operating System\n"
-        f"**{os_name}** -- {details}\n"
-        f"{shell_hint}"
-    ).strip()
-    return PromptBlock(priority=8, name="environment", condition=None, content=content)
+    block = _block_from_file("environment")
+    return block.with_context(dict(
+        os_name=os_name, details=details, cwd=cwd,
+        is_git="Yes" if is_git else "No", shell_hint=shell_hint,
+    ))
 
 
 def _current_datetime_block() -> PromptBlock:
@@ -353,18 +413,12 @@ def _current_datetime_block() -> PromptBlock:
     overrides it with the real current date."""
     from datetime import datetime as _dt
     now = _dt.now()
-    year = now.year
-    content = (
-        f"## Current Date & Time\n"
-        f"Today is: **{now.strftime('%A, %B %d, %Y')}**\n"
-        f"Current time: **{now.strftime('%H:%M:%S')}**\n"
-        f"\n"
-        f"**IMPORTANT: The current year is {year}.** Your training data may have\n"
-        f"an earlier cutoff date, but the actual current date is {year}.\n"
-        f"Use this information when the task involves time-sensitive topics,\n"
-        f"news, events, scheduling, or any scenario where recency matters."
-    ).strip()
-    return PromptBlock(priority=9, name="current_datetime", condition=None, content=content)
+    block = _block_from_file("datetime")
+    return block.with_context(dict(
+        date=now.strftime("%A, %B %d, %Y"),
+        time=now.strftime("%H:%M:%S"),
+        year=str(now.year),
+    ))
 
 
 # ── Builder ─────────────────────────────────────────────────────────
@@ -405,6 +459,7 @@ class EncrePromptBuilder:
         slash_commands: list[dict[str, Any]] | None = None,
         skill_summary: str = "",
         active_command: dict[str, Any] | None = None,
+        model: str = "",
     ) -> str:
         """Assemble the full system prompt from the active blocks.
 
@@ -427,14 +482,19 @@ class EncrePromptBuilder:
         # Always-add core blocks (if not overridden)
         defaults = [
             _identity_block(),
+            _task_completion_block(),
+            _tool_execution_block(),
+            _post_execution_validation_block(),
             _safety_block(),
             _current_datetime_block(),
             _environment_block(workspace_root),
             _tool_usage_block(tools),
             _task_management_block(),
+            _memory_discipline_block(),
             _permission_block(mode),
             _language_block(language_preference, app_language),
             _output_format_block(),
+            _model_family_block(model),
         ]
         for block in defaults:
             if block is not None and block.name not in blocks:
@@ -457,12 +517,11 @@ class EncrePromptBuilder:
         # Active slash *command* (not a mode): sticky prompt injection,
         # re-applied every turn while active.  Explicitly framed so the
         # model never mistakes it for a mode declaration.
-        if active_command and active_command.get("name"):
-            if "command_instructions" not in blocks:
-                blocks["command_instructions"] = _command_instructions_block(
-                    active_command.get("name", ""),
-                    active_command.get("prompt", ""),
-                )
+        if active_command and active_command.get("name") and "command_instructions" not in blocks:
+            blocks["command_instructions"] = _command_instructions_block(
+                active_command.get("name", ""),
+                active_command.get("prompt", ""),
+            )
 
         # Dynamic skill catalogue (replaces hard-coded skill lists in mode prompts).
         if "skills" not in blocks:
@@ -524,9 +583,67 @@ class EncrePromptBuilder:
 
         # Prompt caching boundary: everything above is static/cacheable,
         # everything below is dynamic/session-specific.
-        prompt += "\n\n__PROMPT_CACHE_BOUNDARY__\n"
+        prompt += "\n\n" + _loader.load("cache_boundary", category="blocks") + "\n"
 
         return prompt
+
+    def build_with_restrictions(
+        self,
+        mode: PermissionMode = "default",
+        tools: list[dict[str, Any]] | None = None,
+        specialty: str = "general",
+        custom_instructions: str = "",
+        intents: list[str] | None = None,
+        workspace_root: str = "",
+        workspace_name: str = "",
+        project_summary: str = "",
+        language_preference: str = "auto",
+        app_language: str = "zh",
+        session_id: str = "",
+        slash_command_mode: str = "",
+        slash_commands: list[dict[str, Any]] | None = None,
+        skill_summary: str = "",
+        active_command: dict[str, Any] | None = None,
+        model: str = "",
+    ) -> tuple[str, dict[str, Any]]:
+        """Build the system prompt and return it with a restrictions metadata dict.
+
+        The restrictions dict describes what constraints the caller should
+        enforce at the code level (beyond what the prompt text instructs).
+        """
+        prompt = self.build(
+            mode=mode, tools=tools, specialty=specialty,
+            custom_instructions=custom_instructions, intents=intents,
+            workspace_root=workspace_root, workspace_name=workspace_name,
+            project_summary=project_summary,
+            language_preference=language_preference,
+            app_language=app_language, session_id=session_id,
+            slash_command_mode=slash_command_mode,
+            slash_commands=slash_commands,
+            skill_summary=skill_summary, active_command=active_command,
+            model=model,
+        )
+
+        # Determine which tools are restricted based on the active mode.
+        restricted_tools: list[str] = []
+        if slash_command_mode == "plan":
+            restricted_tools = ["file_write", "file_edit", "write_file", "writeFile", "apply_patch", "bash"]
+        elif slash_command_mode == "spec":
+            restricted_tools = ["file_write", "file_edit", "write_file", "writeFile", "apply_patch", "bash"]
+
+        # Bypass mode lifts safety re-ask prompts, but secrets/blast-radius
+        # rules remain active at the prompt level.
+        safety_level = "bypass" if mode == "bypass" else "normal"
+
+        restrictions: dict[str, Any] = {
+            "mode": slash_command_mode or "normal",
+            "permission_mode": mode,
+            "restricted_tools": restricted_tools,
+            "safety_level": safety_level,
+            "specialty": specialty,
+            "intents": list(set(intents or ["general"])),
+        }
+        return prompt, restrictions
 
     def build_with_context(
         self,

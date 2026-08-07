@@ -42,6 +42,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from encre.tools.builtin._encoding import decode_bytes, encode_text
 from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
 
 
@@ -201,7 +202,9 @@ class TerminalSessionManager:
         session.cmd_count += 1
 
         try:
-            session.process.stdin.write(stdin_data.encode("utf-8"))
+            session.process.stdin.write(
+                encode_text(stdin_data, terminal=session.terminal)
+            )
             await session.process.stdin.drain()
         except Exception as exc:
             elapsed = int((time.monotonic() - started) * 1000)
@@ -252,8 +255,8 @@ class TerminalSessionManager:
         await asyncio.gather(*pending, return_exceptions=True)
 
         elapsed = int((time.monotonic() - started) * 1000)
-        stdout_text = b"".join(stdout_parts).decode("utf-8", errors="replace")
-        stderr_text = b"".join(stderr_parts).decode("utf-8", errors="replace")
+        stdout_text = decode_bytes(b"".join(stdout_parts))
+        stderr_text = decode_bytes(b"".join(stderr_parts))
 
         # Strip everything from the marker line onwards
         if found_marker:

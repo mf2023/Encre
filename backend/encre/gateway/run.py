@@ -356,6 +356,27 @@ class GatewayRunner:
                 await self.stop_adapter(adapter_id)
                 await self.start_adapter(adapter_id, stored)
 
+    def _resolve_adapter_target_models(self, adapter_id: str) -> list[str] | None:
+        """Return the adapter's selected target model ids (if any).
+
+        Reads the ``models`` field stored in the adapter config (a JSON array
+        of model ids chosen in Settings -> Gateway -> Target Models).  Returns None
+        when the adapter has no model restriction (fall back to indicator).
+        """
+        import json
+        stored = self._stored_configs.get(adapter_id, {})
+        raw = stored.get("models") or stored.get("model_ids")
+        if not raw:
+            return None
+        try:
+            ids = json.loads(raw) if isinstance(raw, str) else list(raw)
+        except Exception:
+            logger.warning("[gateway] adapter '%s' has unparseable target models: %r", adapter_id, raw)
+            return None
+        if not isinstance(ids, list) or not ids:
+            return None
+        return [str(i) for i in ids]
+
     def get_status(self) -> dict[str, Any]:
         """Get aggregated status for all adapters (for UI display)."""
         adapters_list = []
@@ -483,10 +504,12 @@ class GatewayRunner:
         )
 
         # 4. Submit to agent and consume the stream
+        target_model_ids = self._resolve_adapter_target_models(adapter.name)
         try:
             async with self._router.iclaw_context():
                 async for agent_event in self._router.submit_stream(
-                    source.platform, event.text, session_id=session_id
+                    source.platform, event.text, session_id=session_id,
+                    target_model_ids=target_model_ids,
                 ):
                     await consumer.feed(agent_event)
 

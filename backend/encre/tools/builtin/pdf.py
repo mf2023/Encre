@@ -120,22 +120,34 @@ def _parse_pages(pages: str, num_pages: int) -> list[int]:
 
 EncrePDFTool = build_tool(
     name="pdf",
-    description="Read, extract text, and parse PDF documents",
+    description=(
+        "Extract text or metadata from PDF files using pdfplumber (preferred) or "
+        "PyPDF2 as a fallback. "
+        "Use this to read document content, search text across pages, or inspect "
+        "page count and metadata; prefer it over OCR when the source is a real text "
+        "PDF. "
+        "Do NOT use this for scanned/image-only PDFs (run them through an OCR tool), "
+        "for editing PDFs, or for Office documents (use document/spreadsheet tools). "
+        "Tips: pass a page range via `pages` (e.g. '1-5' or '1,3,5') to cap output "
+        "size; omit it to read the first 50 pages. "
+        "Pitfalls: scanned PDFs yield little or no text; large PDFs without a page "
+        "range can produce very long responses."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["read", "extract_text", "metadata"],
-                "description": "Action to perform on the PDF",
+                "description": "PDF operation: 'read' or 'extract_text' returns per-page text, 'metadata' returns document metadata and total page count.",
             },
             "file_path": {
                 "type": "string",
-                "description": "Path to the PDF file",
+                "description": "Absolute or relative path to the PDF file to process.",
             },
             "pages": {
                 "type": "string",
-                "description": "Page range to read (e.g. '1-5' or '1,3,5')",
+                "description": "1-indexed page selector: '1-5' for a range, '1,3,5' for a list. Defaults to the first 50 pages when omitted.",
             },
         },
         "required": ["action", "file_path"],

@@ -42,6 +42,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 
 class DBType(Enum):
@@ -1152,9 +1153,9 @@ def _serialize_redis_result(result: Any) -> Any:
     if isinstance(result, (list, tuple)):
         return [_serialize_redis_result(r) for r in result]
     if isinstance(result, bytes):
-        return result.decode("utf-8", errors="replace")
+        return decode_bytes(result)
     if isinstance(result, dict):
-        return {k.decode("utf-8", errors="replace") if isinstance(k, bytes) else k: _serialize_redis_result(v) for k, v in result.items()}
+        return {decode_bytes(k) if isinstance(k, bytes) else k: _serialize_redis_result(v) for k, v in result.items()}
     if isinstance(result, set):
         return [_serialize_redis_result(r) for r in result]
     return result
@@ -1770,12 +1771,17 @@ async def _database_execute_impl(**kwargs: Any) -> str:
 EncreDatabaseTool = build_tool(
     name="database",
     description=(
-        "Execute SQL queries or NoSQL operations against connected databases. "
-        "Supports: sqlite://, postgresql://, mysql://, mssql://, oracle://, "
-        "duckdb://, clickhouse://, mongodb://, redis://. "
-        "Actions: query, execute, tables, views, indexes, describe, explain, "
-        "size, export (json/csv/markdown), metadata (db-specific), ping, "
-        "close_pool, close_all, list_databases, create_database, mongodb, redis."
+        "Execute SQL queries, DDL/DML, and NoSQL operations against connected "
+        "relational, document, or key-value databases. "
+        "Use this for inspecting schemas (tables/views/indexes/describe), running "
+        "SELECTs (`query`), INSERT/UPDATE/DELETE/DDL (`execute`), explaining plans, "
+        "exporting results, or driving MongoDB/Redis via dedicated sub-actions. "
+        "Do NOT use this for application-level ORM calls, file-based data analysis "
+        "(use spreadsheet/pandas), or migrating schemas across environments. "
+        "Tips: pass values via `params` instead of interpolating SQL; cap `limit` to "
+        "avoid huge payloads; set `read_only=true` to enforce SELECT-only safety. "
+        "Pitfalls: dangerous DDL (DROP DATABASE/SCHEMA/USER, GRANT/REVOKE, ALTER "
+        "SYSTEM) is blocked; queries time out after `timeout` seconds (default 30)."
     ),
     input_schema={
         "type": "object",
@@ -1789,12 +1795,12 @@ EncreDatabaseTool = build_tool(
                     "mongodb", "redis",
                 ],
                 "description": (
-                    "query: SELECT/WITH. execute: INSERT/UPDATE/DELETE/DDL. "
+                    "Database operation to perform. query: SELECT/WITH. execute: INSERT/UPDATE/DELETE/DDL. "
                     "tables: list tables. views: list views. indexes: list indexes. "
                     "describe: show table schema. explain: query plan. "
                     "size: table/database size. export: export as json/csv/markdown. "
                     "metadata: db-specific info (engines, variables, processlist, etc). "
-                    "ping: test connection. close_pool/close_all: manage pools. "
+                    "ping: test connection. close_pool/close_all: manage connection pools. "
                     "list_databases: list databases. "
                     "create_database: create a new database (requires new_database param). "
                     "mongodb: MongoDB operations. redis: Redis operations."
@@ -1803,17 +1809,17 @@ EncreDatabaseTool = build_tool(
             },
             "sql": {
                 "type": "string",
-                "description": "SQL query (required for query/execute/explain/export)",
+                "description": "SQL statement text; required for query, execute, explain, and export actions.",
             },
             "params": {
                 "type": "array",
                 "items": {},
-                "description": "Parameters for parameterized queries (safer than string interpolation)",
+                "description": "Positional parameters bound to placeholders (?) in the SQL; preferred over string interpolation for safety.",
             },
             "database_url": {
                 "type": "string",
                 "description": (
-                    "Connection URL.\n"
+                    "Connection URL for the target database.\n"
                     "  sqlite:///path | sqlite:///:memory:\n"
                     "  postgresql://user:pass@host:port/db\n"
                     "  mysql://user:pass@host:port/db\n"
@@ -1823,41 +1829,41 @@ EncreDatabaseTool = build_tool(
                     "  clickhouse://user:pass@host:9000/db\n"
                     "  mongodb://user:pass@host:27017/db\n"
                     "  redis://user:pass@host:6379/0\n"
-                    "Defaults to in-memory SQLite."
+                    "Defaults to in-memory SQLite when omitted."
                 ),
             },
             "table": {
                 "type": "string",
-                "description": "Table name (for describe/indexes/size actions)",
+                "description": "Target table name used by describe, indexes, and size actions.",
             },
             "new_database": {
                 "type": "string",
-                "description": "New database name (for create_database action)",
+                "description": "Name of the database to create; required when action=create_database.",
             },
             "limit": {
                 "type": "integer",
-                "description": "Max result rows (default: 100)",
+                "description": "Maximum number of rows to return per result set; caps memory usage.",
                 "default": 100,
             },
             "read_only": {
                 "type": "boolean",
-                "description": "Only allow SELECT/PRAGMA/EXPLAIN/SHOW/DESCRIBE/WITH",
+                "description": "If true, restrict execution to SELECT/PRAGMA/EXPLAIN/SHOW/DESCRIBE/WITH statements only.",
                 "default": False,
             },
             "timeout": {
                 "type": "integer",
-                "description": "Query timeout in seconds (default: 30)",
+                "description": "Per-query timeout in seconds before the statement is cancelled.",
                 "default": 30,
             },
             "export_format": {
                 "type": "string",
                 "enum": ["json", "csv", "markdown"],
-                "description": "Export format for action=export",
+                "description": "Output format used when action=export.",
             },
             "meta_action": {
                 "type": "string",
                 "description": (
-                    "Database-specific metadata action for action=metadata.\n"
+                    "Database-specific metadata sub-action when action=metadata.\n"
                     "PG: extensions, functions, sequences, schemata, locks\n"
                     "MySQL: engines, variables, status, processlist, charset, collation\n"
                     "MSSQL: schemas, procedures\n"
@@ -1877,94 +1883,94 @@ EncreDatabaseTool = build_tool(
                     "rename_collection", "count", "estimated_count", "distinct",
                     "indexes", "create_index", "drop_index", "bulk_write", "watch",
                 ],
-                "description": "MongoDB operation (only when action=mongodb)",
+                "description": "MongoDB operation to run; only consulted when action=mongodb.",
             },
             "mongodb_db": {
                 "type": "string",
-                "description": "MongoDB database name (defaults to URL database)",
+                "description": "MongoDB database name; falls back to the database segment of the connection URL.",
             },
             "mongodb_collection": {
                 "type": "string",
-                "description": "MongoDB collection name",
+                "description": "MongoDB collection name to operate on.",
             },
             "mongodb_filter": {
                 "type": "string",
-                "description": "Filter document as JSON string",
+                "description": "MongoDB query filter expressed as a JSON string (e.g. '{\"status\": \"active\"}').",
             },
             "mongodb_document": {
                 "type": "string",
-                "description": "Document(s) to insert as JSON string",
+                "description": "Document or array of documents to insert, encoded as a JSON string.",
             },
             "mongodb_update": {
                 "type": "string",
-                "description": "Update document as JSON string",
+                "description": "MongoDB update operators document (e.g. '{\"$set\": {...}}') as a JSON string.",
             },
             "mongodb_replacement": {
                 "type": "string",
-                "description": "Replacement document as JSON string (for find_one_and_replace)",
+                "description": "Replacement document for find_one_and_replace, as a JSON string.",
             },
             "mongodb_multi": {
                 "type": "boolean",
-                "description": "Affect multiple documents (update: default false, delete: default true)",
+                "description": "If true, update or delete multiple matching documents (delete defaults to true, update to false).",
                 "default": False,
             },
             "mongodb_pipeline": {
                 "type": "string",
-                "description": "Aggregation pipeline as JSON string",
+                "description": "Aggregation pipeline stages as a JSON array string.",
             },
             "mongodb_field": {
                 "type": "string",
-                "description": "Field name for distinct operation",
+                "description": "Field name used by the distinct operation.",
             },
             "mongodb_sort": {
                 "type": "string",
-                "description": "Sort specification as JSON list, e.g. [[\"field\", 1]]",
+                "description": "Sort specification as a JSON list, e.g. '[[\"field\", 1]]'.",
             },
             "mongodb_projection": {
                 "type": "string",
-                "description": "Projection as JSON dict, e.g. {\"field\": 1}",
+                "description": "Projection document as a JSON object, e.g. '{\"field\": 1}'.",
             },
             "mongodb_skip": {
                 "type": "integer",
-                "description": "Number of documents to skip",
+                "description": "Number of documents to skip before returning results.",
                 "default": 0,
             },
             "mongodb_return_document": {
                 "type": "string",
                 "enum": ["before", "after"],
-                "description": "Return document before or after update/replace",
+                "description": "Whether to return the document before or after the update/replace is applied.",
                 "default": "after",
             },
             "mongodb_new_name": {
                 "type": "string",
-                "description": "New collection name (for rename_collection)",
+                "description": "New collection name for rename_collection.",
             },
             "mongodb_keys": {
                 "type": "string",
-                "description": "Index keys as JSON list, e.g. [[\"field\", 1]]",
+                "description": "Index key specification as a JSON list, e.g. '[[\"field\", 1]]'.",
             },
             "mongodb_index_name": {
                 "type": "string",
-                "description": "Index name (for create_index/drop_index)",
+                "description": "Name of the index to create or drop.",
             },
             "mongodb_unique": {
                 "type": "boolean",
-                "description": "Create unique index",
+                "description": "If true, create a unique index.",
                 "default": False,
             },
             "mongodb_operations": {
                 "type": "string",
-                "description": "Bulk write operations as JSON list",
+                "description": "Bulk write operation descriptors as a JSON array string.",
             },
             # Redis
             "redis_command": {
                 "type": "string",
-                "description": "Redis command (GET, SET, KEYS, DEL, LPUSH, SADD, HSET, SCAN, INFO, etc.)",
+                "description": "Redis command name (e.g. GET, SET, KEYS, DEL, LPUSH, SADD, HSET, SCAN, INFO).",
             },
             "redis_args": {
                 "type": "array",
                 "items": {},
-                "description": "Arguments for the Redis command",
+                "description": "Positional arguments for the Redis command, in the order expected by the server.",
             },
         },
     },

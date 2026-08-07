@@ -39,6 +39,8 @@ import time
 import uuid
 from dataclasses import dataclass
 
+from encre.tools.builtin._encoding import decode_bytes
+
 
 @dataclass
 class _CellData:
@@ -120,7 +122,7 @@ class EncreNotebookSession:
             text=False,
             **popen_kwargs,
         )
-        ready_line = self._process.stdout.readline().decode("utf-8", errors="replace").strip() if self._process.stdout else ""
+        ready_line = decode_bytes(self._process.stdout.readline()).strip() if self._process.stdout else ""
         if ready_line != "READY":
             self._started = False
             raise RuntimeError("Kernel failed to start")
@@ -170,7 +172,7 @@ class EncreNotebookSession:
                 cell.error = f"Execution timed out after {timeout}s"
                 cell.execution_time = time.time() - t0
                 return {"output": "", "error": cell.error, "execution_time": cell.execution_time}
-            result = json.loads(line_bytes.decode("utf-8", errors="replace"))
+            result = json.loads(decode_bytes(line_bytes))
             elapsed = time.time() - t0
             cell.output = result.get("output", "")
             cell.error = result.get("error", "")

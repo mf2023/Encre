@@ -354,8 +354,26 @@ async def _agent_execute(**kwargs: Any) -> Any:
         await _emit_combined()
 
         # Cap concurrency so at most MAX_PARALLEL_SUB_AGENTS tasks run at
-        # once; the rest queue on the semaphore and start when a slot frees.
-        sem = asyncio.Semaphore(MAX_PARALLEL_SUB_AGENTS)
+        # once; the rest queue until a slot frees. We deliberately avoid
+        # `asyncio.Semaphore`/`asyncio.Condition`: on Python 3.11+ they bind
+        # their internal loop lazily via get_event_loop(), which under
+        # pytest-asyncio / embedded loops can point at a stale loop and
+        # silently disable the cap. asyncio is single-threaded and
+        # cooperative, so a synchronous check-and-decrement of a shared int
+        # is race-free; `asyncio.sleep(0)` (which always uses the *running*
+        # loop) yields control so a finished task can free a slot.
+        _slots: list[int] = [MAX_PARALLEL_SUB_AGENTS]
+
+        @contextlib.asynccontextmanager
+        async def _acquire_slot():
+            nonlocal _slots
+            while _slots[0] <= 0:
+                await asyncio.sleep(0)
+            _slots[0] -= 1
+            try:
+                yield
+            finally:
+                _slots[0] += 1
 
         # Build coroutines for each task
         async def _runner(idx: int, t: dict[str, Any]) -> dict[str, Any]:
@@ -371,8 +389,8 @@ async def _agent_execute(**kwargs: Any) -> Any:
                 await _emit_combined()
 
             # Queue here when all slots are busy -- the sub-agent only starts
-            # (and streams) once it holds the semaphore.
-            async with sem:
+            # (and streams) once it holds a free concurrency slot.
+            async with _acquire_slot():
                 return await _run_one_sub_agent(
                     parent_loop,
                     t.get("prompt", ""),
@@ -526,48 +544,79 @@ def _agent_to_anthropic_format(self) -> dict[str, Any]:
 
 EncreAgentTool = build_tool(
     name="agent",
-    description="Spawn sub-agents for parallel work. Use this when a goal splits into independent workstreams that can run concurrently. Pass a `tasks` array to run multiple sub-agents in parallel; results are aggregated into a single response. Be specific in each prompt -- it is the complete instruction for the sub-agent. Sub-agents cannot spawn further sub-agents (single level of delegation only).",
+    description=(
+        "Spawn one or more sub-agents to work on independent sub-tasks in "
+        "parallel; each sub-agent runs as a full autonomous session with its "
+        "own tool budget and returns an aggregated result.\n\n"
+        "WHEN to use: a goal splits into independent workstreams (e.g. research "
+        "X while coding Y); you want to fan out exploration across multiple "
+        "angles; a long sub-task would otherwise block the main thread.\n"
+        "WHEN NOT to use: for a single linear task, do it inline; for a "
+        "sequenced pipeline with dependencies use the workflow tool; for role-"
+        "specialised multi-agent review use the swarm tool.\n"
+        "TIPS: pass a `tasks` array to run sub-agents concurrently (capped at "
+        "4 in flight); each prompt is the COMPLETE instruction -- be specific "
+        "about inputs, expected output, and constraints; pick a built-in "
+        "agent_name (Explore=readonly, Plan=no-writes) to scope capabilities.\n"
+        "PITFALLS: sub-agents cannot spawn further sub-agents (single level of "
+        "delegation only); concurrency is per-call, not global.\n"
+        "IMPORTANT: All prompts passed to sub-agents MUST be written in "
+        "English -- sub-agents think, reason, and respond in English for "
+        "reliable state matching and output parsing."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "prompt": {
                 "type": "string",
-                "description": "The full task instruction for the sub-agent. "
-                               "The sub-agent runs as an independent session with "
-                               "all tools and capabilities available. Required for "
+                "description": "Complete task instruction for a single sub-agent. "
+                               "MUST be written in English -- the sub-agent's "
+                               "thinking, output, and tool calls are all in English "
+                               "for reliable parsing. Include all context, inputs, "
+                               "and the expected output format. Required for "
                                "single-task mode; ignored when `tasks` is provided.",
             },
             "agent_name": {
                 "type": "string",
-                "description": "Optional sub-agent name. Built-ins include Explore "
-                               "(read-only), Plan (no writes), general-purpose (full), "
-                               "coder, researcher, critic, architect, planner.",
+                "description": "Optional built-in sub-agent name that scopes "
+                               "capabilities. Built-ins: Explore (read-only), "
+                               "Plan (no writes), general-purpose (full access), "
+                               "coder, researcher, critic, architect, planner. "
+                               "Omit for an unrestricted general-purpose sub-agent.",
             },
             "mode": {
                 "type": "string",
                 "enum": ["sync", "async", "background", "isolated"],
-                "description": "Execution mode: 'sync' (default, wait for result), "
-                               "'async' (fire-and-forget), 'background' (auto-detect "
-                               "long-running), 'isolated' (run in temp worktree).",
+                "description": "Execution lifecycle (optional, default 'sync'). "
+                               "'sync' waits inline for the result; 'async' "
+                               "fire-and-forgets and returns a session ID; "
+                               "'background' auto-detects long-running tasks and "
+                               "switches to async; 'isolated' runs in a temp "
+                               "git worktree so the parent's files are untouched.",
             },
             "isolated": {
                 "type": "boolean",
-                "description": "When True, run the sub-agent in an isolated temp "
-                               "worktree so it cannot affect the parent's files. "
-                               "Changes are synced back on completion.",
+                "description": "When true, run the sub-agent in an isolated "
+                               "temporary git worktree so it cannot affect the "
+                               "parent's working directory. Changed files are "
+                               "synced back on completion (optional, default false).",
             },
             "tasks": {
                 "type": "array",
-                "description": "Run multiple sub-agents in parallel. Each entry is "
-                               "an object with the same `prompt` and `agent_name` "
-                               "fields as the single-task form. The parent receives a "
-                               "single aggregated result containing all sub-agent "
-                               "outcomes in the order they were submitted.",
+                "description": "Run multiple sub-agents concurrently (max 4 in "
+                               "flight; extras queue). Each entry has the same "
+                               "`prompt` (required, MUST be in English) and "
+                               "optional `agent_name` as the single-task form. "
+                               "The parent receives one aggregated result with "
+                               "each sub-agent's outcome in submission order.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "prompt": {"type": "string"},
-                        "agent_name": {"type": "string"},
+                        "prompt": {
+                            "type": "string",
+                            "description": "Complete task instruction in English -- the sole input a sub-agent receives.",
+                        },
+                        "agent_name": {"type": "string", "description": "Optional built-in sub-agent name (see agent_name above)."},
                     },
                     "required": ["prompt"],
                 },

@@ -37,8 +37,11 @@ fixed ``specialty`` to the builder.
 from abc import ABC, abstractmethod
 from typing import Any
 
+from encre.prompts.loader import PromptLoader
 from encre.prompts.system import EncrePromptBuilder
 from encre.utils.types import PermissionMode
+
+_loader = PromptLoader()
 
 
 class EncreBasePrompt(ABC):
@@ -61,11 +64,33 @@ class EncreBasePrompt(ABC):
         slash_commands: list[dict[str, Any]] | None = None,
         skill_summary: str = "",
         active_command: dict[str, Any] | None = None,
+        model: str = "",
     ) -> str:
         ...
 
     @abstractmethod
     def build_tool_instructions(self, tool_names: list[str]) -> str:
+        ...
+
+    @abstractmethod
+    def build_with_restrictions(
+        self,
+        mode: PermissionMode,
+        tools: list[dict[str, Any]] | None = None,
+        custom_instructions: str = "",
+        intents: list[str] | None = None,
+        workspace_root: str = "",
+        workspace_name: str = "",
+        project_summary: str = "",
+        language_preference: str = "auto",
+        app_language: str = "zh",
+        session_id: str = "",
+        slash_command_mode: str = "",
+        slash_commands: list[dict[str, Any]] | None = None,
+        skill_summary: str = "",
+        active_command: dict[str, Any] | None = None,
+        model: str = "",
+    ) -> tuple[str, dict[str, Any]]:
         ...
 
 
@@ -100,6 +125,7 @@ class EncrePromptTemplate(EncreBasePrompt):
         slash_commands: list[dict[str, Any]] | None = None,
         skill_summary: str = "",
         active_command: dict[str, Any] | None = None,
+        model: str = "",
     ) -> str:
         """Build the system prompt from session context.
 
@@ -123,6 +149,7 @@ class EncrePromptTemplate(EncreBasePrompt):
             slash_commands=slash_commands,
             skill_summary=skill_summary,
             active_command=active_command,
+            model=model,
         )
 
     def build_tool_instructions(self, tool_names: list[str]) -> str:
@@ -136,11 +163,54 @@ class EncrePromptTemplate(EncreBasePrompt):
             are available.
         """
         if not tool_names:
-            return "You do not have access to any tools."
+            return _loader.load("no_tools")
         tools_list = "\n".join(f"- {name}" for name in tool_names)
-        return f"You have access to the following tools:\n{tools_list}\n\nUse them as needed to accomplish the task."
+        return _loader.load_with_context("tool_instructions", tools_list=tools_list)
 
     @property
     def builder(self) -> EncrePromptBuilder:
         """The underlying prompt builder instance."""
         return self._builder
+
+    def build_with_restrictions(
+        self,
+        mode: PermissionMode,
+        tools: list[dict[str, Any]] | None = None,
+        custom_instructions: str = "",
+        intents: list[str] | None = None,
+        workspace_root: str = "",
+        workspace_name: str = "",
+        project_summary: str = "",
+        language_preference: str = "auto",
+        app_language: str = "zh",
+        session_id: str = "",
+        slash_command_mode: str = "",
+        slash_commands: list[dict[str, Any]] | None = None,
+        skill_summary: str = "",
+        active_command: dict[str, Any] | None = None,
+        model: str = "",
+    ) -> tuple[str, dict[str, Any]]:
+        """Build the system prompt with active restrictions metadata.
+
+        Returns ``(prompt, restrictions)`` where ``restrictions`` is a dict
+        describing which constraints the caller should enforce at the code
+        level (e.g., restricted tools in plan/spec mode, safety level).
+        """
+        return self._builder.build_with_restrictions(
+            mode=mode,
+            tools=tools,
+            specialty=self._specialty,
+            custom_instructions=custom_instructions,
+            intents=intents,
+            workspace_root=workspace_root,
+            workspace_name=workspace_name,
+            project_summary=project_summary,
+            language_preference=language_preference,
+            app_language=app_language,
+            session_id=session_id,
+            slash_command_mode=slash_command_mode,
+            slash_commands=slash_commands,
+            skill_summary=skill_summary,
+            active_command=active_command,
+            model=model,
+        )

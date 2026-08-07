@@ -297,34 +297,55 @@ async def _hash_crypto_execute(**kwargs: Any) -> str:
 
 EncreHashCryptoTool = build_tool(
     name="hash_crypto",
-    description="Hashing (MD5/SHA), HMAC, checksums, AES encrypt/decrypt (CBC/ECB/CTR/GCM), Base64 encode/decode.",
+    description=(
+        "Compute hashes (MD5/SHA1/SHA256/SHA512), HMACs, and file checksums, "
+        "perform AES symmetric encrypt/decrypt (CBC/ECB/CTR/GCM), and "
+        "base64 encode/decode. Use this instead of shelling out to openssl "
+        "or python one-liners -- it returns structured JSON and streams large "
+        "files in chunks for hashing.\n\n"
+        "WHEN to use: verify file integrity (checksums), hash a string, sign a "
+        "payload with HMAC, encrypt/decrypt a secret with a passphrase, or do "
+        "quick base64 conversions.\n"
+        "WHEN NOT to use: for password storage use a slow KDF (argon2/bcrypt) "
+        "rather than plain sha256; for TLS/SSL or public-key cryptography use a "
+        "dedicated library; for production key management use a vault.\n"
+        "TIPS: for checksum, pass a comma-separated 'algorithm' (e.g. "
+        "'sha256,sha1') to compute several checksums in one pass; the AES key "
+        "is derived as sha256(passphrase), so the same passphrase reproduces "
+        "the same key; GCM mode is recommended for authenticated encryption "
+        "(it returns a tag you must keep for decrypt).\n"
+        "PITFALLS: avoid MD5/SHA1 for security-sensitive purposes -- prefer "
+        "SHA256 or stronger; AES ECB mode is insecure for most data -- prefer "
+        "CBC or GCM; decrypt requires the exact iv (and tag for GCM) returned "
+        "by the matching encrypt call."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["hash", "hmac", "checksum", "encrypt", "decrypt", "base64_encode", "base64_decode"],
-                "description": "Action to perform",
+                "description": "Action (required). 'hash' hashes text or a file; 'hmac' computes an HMAC; 'checksum' computes file checksums; 'encrypt'/'decrypt' run AES; 'base64_encode'/'base64_decode' handle base64.",
             },
             "algorithm": {
                 "type": "string",
-                "description": "Hash algorithm: md5, sha1, sha256, sha512 (default sha256). Comma-separated for checksum.",
+                "description": "Hash algorithm (optional, default 'sha256'): md5, sha1, sha256, sha512. For 'checksum', comma-separated to compute several at once.",
             },
-            "data": {"type": "string", "description": "Text data to hash/encrypt/encode"},
-            "file_path": {"type": "string", "description": "Path to file (for hash/checksum/base64)"},
-            "key": {"type": "string", "description": "Secret key (for HMAC/AES)"},
+            "data": {"type": "string", "description": "Text payload for hash/hmac/encrypt/decrypt/base64 actions (required when file_path is not given). For decrypt, this is the base64 ciphertext produced by the matching encrypt call."},
+            "file_path": {"type": "string", "description": "Absolute path to a file (optional). Used by hash/checksum (streamed in 64KB chunks, suitable for large files) and base64_encode (reads bytes) / base64_decode (writes decoded bytes to the path)."},
+            "key": {"type": "string", "description": "Secret passphrase for HMAC and AES actions (required for hmac/encrypt/decrypt). The AES key is derived as sha256(key) internally, so any string works but longer/random values are stronger."},
             "mode": {
                 "type": "string",
                 "enum": ["CBC", "ECB", "CTR", "GCM"],
-                "description": "AES cipher mode (default CBC)",
+                "description": "AES cipher mode (optional, default 'CBC'). GCM is recommended for authenticated encryption.",
             },
             "encoding": {
                 "type": "string",
                 "enum": ["hex", "base64"],
-                "description": "Output encoding (default hex)",
+                "description": "Output encoding for hash/hmac results (optional, default 'hex').",
             },
-            "iv": {"type": "string", "description": "Base64 IV (required for decrypt)"},
-            "tag": {"type": "string", "description": "Base64 auth tag (for GCM decrypt)"},
+            "iv": {"type": "string", "description": "Base64 initialization vector returned by encrypt (required for decrypt)."},
+            "tag": {"type": "string", "description": "Base64 auth tag returned by GCM encrypt (required for GCM decrypt)."},
         },
         "required": ["action"],
     },

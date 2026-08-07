@@ -34,6 +34,7 @@ encrypted ``config.toml`` under the data directory. Also provides the
 
 import contextlib
 import os
+import random
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -379,6 +380,11 @@ class EncreConfig:
     log_level: str = "INFO"
     models: list[ModelConfig] = field(default_factory=list)
     active_model_index: int = 0
+    # Per-run model restriction (e.g. a gateway adapter's selected target
+    # models, or an automation job's pinned model).  When non-empty, only these
+    # model ids are eligible for a run, falling back to the indicator model and
+    # then to a random enabled model on failure.
+    target_model_ids: list[str] = field(default_factory=list)
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
     enabled_skills: list[str] = field(default_factory=list)
     system_prompt: str = ""
@@ -420,6 +426,74 @@ class EncreConfig:
     #   "sandbox" → "allow"     — allow sandbox isolation
     # Empty = use mode-based default for that tool.
     permission_settings: dict[str, str] = field(default_factory=dict)
+
+    # Device context acquisition.  When enabled, the agent collects a
+    # lightweight device catalog (OS, host, timezone, available device_*
+    # tools) at startup and injects it into the system prompt so the model
+    # knows what device information is available on demand.  Detailed data
+    # is fetched lazily via the device_info / device_location / device_sensor
+    # / device_battery / device_display / device_network tools.
+    device_context_enabled: bool = True
+    # Cache TTL (seconds) for collected device context before re-probing.
+    device_context_cache_ttl: int = 86400
+    # Per-provider opt-out whitelist.  Empty = all providers enabled.
+    # Provider names: platform_info, hardware_info, gpu_info, display_info,
+    # network_info, location_info, sensor_info, battery_info.
+    device_context_providers: list[str] = field(default_factory=list)
+
+    def get_enabled_models(self) -> list[ModelConfig]:
+        """All enabled models in priority order (indicator first)."""
+        if not self.models:
+            return []
+        ordered = []
+        if 0 <= self.active_model_index < len(self.models):
+            ordered.append(self.models[self.active_model_index])
+        for i, m in enumerate(self.models):
+            if i != self.active_model_index:
+                ordered.append(m)
+        return [m for m in ordered if getattr(m, "enabled", True)]
+
+    def get_model_by_id(self, model_id: str) -> ModelConfig | None:
+        for m in self.models:
+            if m.model_id == model_id:
+                return m
+        return None
+
+    def resolve_model_candidates(self, tried: set[str] | None = None) -> list[ModelConfig]:
+        """Ordered model candidates for a run: target models first, then the
+        indicator (active) model, then the remaining enabled models randomly.
+
+        Used by both gateway and automation so model-failure fallback behaves
+        identically.  Models already in *tried* are excluded.
+        """
+        tried = tried or set()
+        enabled = self.get_enabled_models()
+        if not enabled:
+            return []
+        ordered: list[ModelConfig] = []
+        seen: set[str] = set()
+
+        # 1. Explicit target models (per-adapter / per-job restriction).
+        for tid in getattr(self, "target_model_ids", None) or []:
+            m = self.get_model_by_id(tid)
+            if m and getattr(m, "enabled", True) and m.model_id not in seen:
+                ordered.append(m)
+                seen.add(m.model_id)
+
+        # 2. The indicator (active) model -- get_enabled_models() returns it first.
+        if enabled and enabled[0].model_id not in seen:
+            ordered.append(enabled[0])
+            seen.add(enabled[0].model_id)
+
+        # 3. Remaining enabled models, shuffled so repeats are unpredictable.
+        rest = [m for m in enabled if m.model_id not in seen]
+        random.shuffle(rest)
+        ordered.extend(rest)
+
+        if tried:
+            remaining = [m for m in ordered if m.model_id not in tried]
+            return remaining
+        return ordered
 
     def get_active_model(self) -> ModelConfig:
         if self.models:

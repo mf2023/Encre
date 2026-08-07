@@ -999,6 +999,9 @@ class IClawEngine:
                     config.base_url = agent_config["base_url"]
                 if agent_config.get("model_id"):
                     config.model = agent_config["model_id"]
+                    # Pin the job's model so the loop's unified fallback tries
+                    # it first, then the indicator, then a random enabled model.
+                    config.target_model_ids = [agent_config["model_id"]]
                 if agent_config.get("max_tokens"):
                     config.max_tokens = agent_config["max_tokens"]
                 # Apply workspace path if stored with the job

@@ -32,6 +32,7 @@ import shlex
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 
 async def _git_execute(**kwargs: Any) -> str:
@@ -67,9 +68,9 @@ async def _git_execute(**kwargs: Any) -> str:
             proc.kill()
             await proc.wait()
             return "Error: Git command timed out after 120 seconds"
-        output = stdout.decode("utf-8", errors="replace") if stdout else ""
+        output = decode_bytes(stdout) if stdout else ""
         if stderr:
-            err_text = stderr.decode("utf-8", errors="replace")
+            err_text = decode_bytes(stderr)
             if err_text:
                 output += "\n" + err_text
         if proc.returncode and proc.returncode != 0:
@@ -83,22 +84,34 @@ async def _git_execute(**kwargs: Any) -> str:
 
 EncreGitTool = build_tool(
     name="git",
-    description="Full git operations: commit, branch, push, pull, log, diff, status",
+    description=(
+        "Run Git CLI commands against a local repository to inspect history, manage "
+        "branches, stage and commit changes, or sync with remotes. "
+        "Use this for routine version-control tasks such as viewing status/diff/log, "
+        "creating branches, committing, pushing, pulling, stashing, or cloning. "
+        "Do NOT use this for GitHub-specific actions (issues, PRs, releases) — use the "
+        "github tool instead; and avoid it for large binary asset history. "
+        "Tips: pass raw subcommand flags via `args` (e.g. \"--oneline -n 10\"); specify "
+        "`repo_path` when operating outside the working directory. "
+        "Pitfalls: commands run with a 120s timeout, so long clones or pushes may be "
+        "killed; destructive ops (force push, reset) are not guarded here — confirm "
+        "intent before invoking."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "command": {
                 "type": "string",
                 "enum": ["status", "diff", "log", "branch", "commit", "add", "push", "pull", "stash", "checkout", "clone"],
-                "description": "Git subcommand to execute",
+                "description": "The Git subcommand to execute (e.g. \"status\" for working-tree state, \"log\" for commit history, \"commit\" to record staged changes).",
             },
             "repo_path": {
                 "type": "string",
-                "description": "Path to the git repository (default: current directory)",
+                "description": "Filesystem path to the target Git repository; defaults to the current working directory if omitted.",
             },
             "args": {
                 "type": "string",
-                "description": "Additional arguments to pass to the git command",
+                "description": "Extra flags or arguments appended to the subcommand, shell-split with shlex (e.g. \"--oneline -n 20\", \"-m \\\"fix: typo\\\"\").",
             },
         },
         "required": ["command"],

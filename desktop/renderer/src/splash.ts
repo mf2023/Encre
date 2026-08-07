@@ -36,6 +36,7 @@ export class SplashScreen {
       this.loader = new EALoader(el, {
         maxWidth: "140px",
         staticSrc: "assets/Encre.svg",
+        staticDarkSrc: "assets/Encre-dm.svg",
       });
     }
 

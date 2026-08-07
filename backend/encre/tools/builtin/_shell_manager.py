@@ -41,6 +41,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from encre.tools.builtin._encoding import decode_bytes
 from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
 
 
@@ -107,14 +108,28 @@ class BackgroundShellManager:
         shell_id = "shell_" + secrets.token_hex(4)
 
         kwargs = hidden_subprocess_kwargs()
+        base_env = os.environ.copy()
+        # Prefer UTF-8 output from external tools (python, git, node, …) so
+        # the accumulated buffer is decodable regardless of the ANSI code page.
+        base_env.setdefault("PYTHONUTF8", "1")
+        base_env.setdefault("PYTHONIOENCODING", "utf-8")
+        base_env.setdefault("LANG", "C.UTF-8")
+        base_env.setdefault("LC_ALL", "C.UTF-8")
+        if env:
+            base_env.update(env)
+        spawn_env = base_env
+
         if sys.platform == "win32":
+            # No /U: /U forces cmd built-ins to UTF-16LE output while external
+            # programs stay on the ANSI code page, producing an undecodable
+            # mixed stream.  Plain /C keeps everything on the ANSI code page.
             proc = await asyncio.create_subprocess_exec(
-                "cmd.exe", "/U", "/C", command,
+                "cmd.exe", "/C", command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=cwd or None,
-                env=({**os.environ, **env} if env else None),
+                env=spawn_env,
                 **kwargs,
             )
         else:
@@ -124,7 +139,7 @@ class BackgroundShellManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=cwd or None,
-                env=({**os.environ, **env} if env else None),
+                env=spawn_env,
                 **kwargs,
             )
 
@@ -210,8 +225,8 @@ class BackgroundShellManager:
             "command": rec.command,
             "running": rec.running,
             "exit_code": rec.exit_code,
-            "stdout": out_bytes.decode("utf-8", errors="replace"),
-            "stderr": err_bytes.decode("utf-8", errors="replace"),
+            "stdout": _decode_bytes(out_bytes),
+            "stderr": _decode_bytes(err_bytes),
             "stdout_total_bytes": len(rec.stdout_buf),
             "stderr_total_bytes": len(rec.stderr_buf),
             "started_at": rec.started_at,

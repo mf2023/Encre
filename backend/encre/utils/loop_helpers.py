@@ -45,6 +45,122 @@ _TASK_STAGES = ("discover", "plan", "execute", "verify", "report")
 _STUCK_LOOP_THRESHOLD = 6
 _SUMMARY_INTERVAL_TURNS = 3
 
+# Anti-stuck guardrail ladder (port of Hermes tool_guardrails.py).  A tool
+# call is fingerprinted by a canonical hash of (name, normalized args) so that
+# formatting differences never hide a true repeat.  Escalation is
+# warn -> block -> halt: warn injects guidance, block feeds a synthetic error
+# result back to the model so it sees the call was refused, and halt hard-stops
+# the current turn (opt-in circuit breaker).
+_GUARDRAIL_WARN_AFTER = 3
+_GUARDRAIL_BLOCK_AFTER = 5
+_GUARDRAIL_HALT_AFTER = 8
+# Idempotent read-only tools whose *result* being byte-identical on repeat is a
+# strong "no progress" signal, even when the args differ.  Mirrors Hermes
+# IDEMPOTENT_TOOL_NAMES.
+_IDEMPOTENT_TOOL_NAMES = frozenset({
+    "file_read", "glob", "grep", "web_search", "web_fetch",
+    "lsp", "codebase_search", "codebase_context", "browser",
+})
+# How many consecutive identical results on an idempotent tool count as no-progress.
+_NO_PROGRESS_AFTER = 3
+
+
+def _canonical_tool_signature(name: str, args_raw: str) -> str:
+    """Stable fingerprint for ``(tool_name, args)``.
+
+    Args are whitespace-normalized and canonical-sorted JSON (when parseable)
+    then hashed, so two logically-identical calls always collide regardless of
+    formatting/whitespace/ordering of JSON keys.
+
+    Args:
+        name: The tool name.
+        args_raw: The raw arguments string from the model.
+
+    Returns:
+        A short hex digest of the canonical form.
+    """
+    compact = ("".join((args_raw or "").split()))
+    try:
+        parsed = json.loads(compact) if compact else {}
+        if isinstance(parsed, dict):
+            compact = json.dumps(parsed, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        pass  # keep the whitespace-normalized raw string as the canonical form
+    return hashlib.sha256(f"{name}|{compact}".encode("utf-8")).hexdigest()[:16]
+
+
+def _result_digest(result: str) -> str:
+    """A coarse digest of a tool result for no-progress detection."""
+    return hashlib.sha256(("".join((result or "").split()))[:4000].encode("utf-8")).hexdigest()[:16]
+
+
+def _is_idempotent_tool(name: str) -> bool:
+    return name in _IDEMPOTENT_TOOL_NAMES
+
+
+# Verify-on-stop (port of Hermes verification_stop.py): when a turn edited code
+# and is about to end without any verification tool having run, nudge the model
+# to verify.  The nudge loop is bounded by _MAX_VERIFY_ON_STOP_NUDGES so it can
+# never deadlock the agent; it is a quality reminder, not a hard gate.
+_MAX_VERIFY_ON_STOP_NUDGES = 2
+# Tools that count as "verification evidence" -- using one clears the pending
+# verify-on-stop nudge.
+_VERIFY_TOOL_NAMES = frozenset({"test_run", "lint_format", "lsp", "bash", "powershell"})
+
+
+def build_verify_on_stop_message(files: list[str]) -> str:
+    """Synthetic user message asking the model to verify changed files."""
+    _files = "\n".join(f"- `{f}`" for f in files[:6])
+    _more = f"\n  ... and {len(files) - 6} more" if len(files) > 6 else ""
+    return (
+        "[VERIFY-ON-STOP] You changed code files this session but did not run any "
+        "verification tool on them before stopping. The task is not complete until "
+        "the change is verified. Please verify now by running the appropriate "
+        "lint/typecheck/test tool on the changed files:\n"
+        f"{_files}{_more}\n"
+        "Run `test_run`, `lint_format`, or `lsp` (or an equivalent command) and "
+        "report the result. Fix any errors you find before finishing."
+    )
+
+
+def _summarize_verify_result(tool: str, result: str, passed: bool) -> str:
+    """Extract a short human summary from a verification tool's JSON result.
+
+    test_run returns {"passed":N,"failed":M,"tests":[...]}; lint_format
+    returns {"ok":bool,"summary":"...","diagnostics":[...]}; bash returns a
+    shell envelope.  This is best-effort: any parse failure falls back to a
+    generic pass/fail tag so the ledger never breaks the loop.
+    """
+    text = (result or "").strip()
+    try:
+        data = json.loads(text)
+    except Exception:
+        data = None
+    if isinstance(data, dict):
+        _d: Any = data
+        if tool == "test_run":
+            passed_n = int(_d.get("passed", _d.get("passed_count", 0)))
+            failed_n = int(_d.get("failed", _d.get("failed_count", 0)))
+            skipped = int(_d.get("skipped", 0))
+            total = int(_d.get("total", passed_n + failed_n + skipped))
+            return f"test_run: {passed_n} passed, {failed_n} failed, {skipped} skipped (of {total})"
+        if tool == "lint_format":
+            ok = _d.get("ok", passed)
+            mode = _d.get("mode", "check")
+            summ = _d.get("summary", "")
+            diags = _d.get("diagnostics", [])
+            n = len(diags) if isinstance(diags, list) else 0
+            return f"lint_format({mode}): ok={ok} {summ or (f'{n} diagnostics' if n else '')}".strip()
+        if tool in ("bash", "powershell"):
+            success = _d.get("success", passed)
+            summary = _d.get("summary", "")
+            code = _d.get("exit_code")
+            tail = f" (exit {code})" if code is not None else ""
+            return f"bash: success={success}{tail} {summary}".strip()
+    if passed:
+        return f"{tool}: passed"
+    return f"{tool}: failed"
+
 _MAX_TOOL_CONCURRENCY = max(
     1, int(os.environ.get("ENCRE_MAX_TOOL_USE_CONCURRENCY", "10") or "10")
 )
@@ -150,13 +266,53 @@ def _extract_file_path(tool_name: str, result: str) -> str | None:
     return None
 
 
+# Language → best-fit verification tool mapping.  Used to turn the passive
+# "[VERIFY] read the file" reminder into an actionable quality gate that tells
+# the model *which* existing tool to run on the changed file.
+_VERIFY_TOOL_BY_EXT = {
+    ".py": "lint_format", ".pyi": "lint_format",  # ruff
+    ".js": "lint_format", ".jsx": "lint_format",
+    ".ts": "lint_format", ".tsx": "lint_format",  # eslint/prettier
+    ".rs": "lint_format",                         # cargo fmt + clippy
+    ".go": "test_run", ".java": "test_run",
+    ".c": "test_run", ".h": "test_run",
+    ".cpp": "test_run", ".cc": "test_run", ".hpp": "test_run",
+}
+
+
+def build_verify_instruction(file_path: str, *, has_lsp: bool = False) -> str:
+    """Build an actionable, tool-specific verification instruction.
+
+    Replaces the vague "read the file back" reminder with a directive to run
+    the concrete verification tool that already exists in the toolchain
+    (``lint_format`` / ``test_run``) for the changed file's language, plus
+    LSP diagnostics when available.
+    """
+    ext = pathlib.Path(file_path).suffix.lower()
+    tool = _VERIFY_TOOL_BY_EXT.get(ext)
+    lines = [
+        f"[VERIFY] You changed `{file_path}`. Verification is required before this change is done:",
+    ]
+    if has_lsp:
+        lines.append(f"- Run `lsp` (diagnostics) on `{file_path}` and resolve any reported errors.")
+    if tool:
+        lines.append(
+            f"- Run the `{tool}` tool on `{file_path}` and resolve any errors/warnings it reports "
+            f"for the changed file. Do not claim the change is verified unless that check passed."
+        )
+    lines.append(
+        "- If neither LSP nor a lint/test tool applies, read `{fp}` back and confirm the edit "
+        "matches the intended change exactly.".replace("{fp}", file_path)
+    )
+    return "\n".join(lines)
+
+
+
 def _extract_diff_text(_tool_name: str, result: str) -> str:
     m = re.search(r"```diff\n(.+?)\n```", result, re.DOTALL)
     if m:
         return m.group(1).strip()
     return ""
-
-
 def _args_summary(args: dict[str, Any]) -> str:
     try:
         return json.dumps(args, ensure_ascii=False)[:600]
@@ -413,13 +569,22 @@ def _tool_retry_allowed(p: dict[str, Any], repeated_signatures: list[tuple[str, 
     if not repeated_signatures:
         return True
     sig = f"{p.get('name', '')}:{p.get('args_summary', '')[:80]}"
+    # Search the whole recent window rather than only the immediately preceding
+    # turn.  Otherwise an alternating pattern (A,B,A,B,...) or a tool repeated
+    # after other work slips past the guarded retry guard and can loop forever.
+    recent = repeated_signatures[-8:]
     if retryability == "manual":
-        last = repeated_signatures[-1]
-        return not any(sig == item for item in last)
-    if retryability == "guarded":
-        last = repeated_signatures[-1]
-        if any(sig == item for item in last):
+        # Manual retry is permitted unless the exact call already happened in
+        # the very recent past, where re-invoking is almost always a stall.
+        if any(sig == item for turn in recent for item in turn):
             return False
+        return True
+    if retryability == "guarded":
+        # Guarded (write/exec/orchestrate): block once the identical call has
+        # been made recently, even if other tools ran in between.
+        if any(sig == item for turn in recent for item in turn):
+            return False
+        return True
     return True
 
 

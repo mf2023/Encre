@@ -507,16 +507,22 @@ EncreBrowserTool = build_tool(
     description=(
         "Control an embedded Chromium webview to browse the web, interact with pages, "
         "and extract information.\n\n"
+        "WHEN to use: tasks that need real browser interaction -- logins, "
+        "clicking buttons, filling forms, scraping JS-rendered SPAs, or taking "
+        "screenshots for vision-based reasoning.\n"
+        "WHEN NOT to use: for plain keyword search use web_search (returns "
+        "content inline, no browser needed); for a single static URL use "
+        "web_fetch; for raw JSON API calls use rest_client.\n\n"
         "WORKFLOW:\n"
         "1. Start with `navigate(url)` to load a page, or pass a plain search query (e.g. "
         "\"today's weather\") and it will be sent to the configured search engine.\n"
         "2. Wait for the page to load, then call `get_page_structure()` to get all "
         "interactive elements (buttons, links, inputs, headings) with their bounding boxes, "
-        "roles, and accessible names — this gives you a complete 'map' of the page.\n"
+        "roles, and accessible names -- this gives you a complete 'map' of the page.\n"
         "3. Interact using text/role-based methods first (more reliable):\n"
-        "   - `click_text(\"Sign in\")` — click visible text\n"
-        "   - `click_by_role(\"button\", \"Submit\")` — click by ARIA role + name\n"
-        "   - `type(selector, text)` — type into a field (selector from get_page_structure)\n"
+        "   - `click_text(\"Sign in\")` -- click visible text\n"
+        "   - `click_by_role(\"button\", \"Submit\")` -- click by ARIA role + name\n"
+        "   - `type(selector, text)` -- type into a field (selector from get_page_structure)\n"
         "4. If text/role methods fail, use CSS selectors from get_page_structure:\n"
         "   - `click(selector)`, `type(selector, text)`, `select_option(selector, value)`\n"
         "5. For vision-capable models, use coordinate actions:\n"
@@ -525,18 +531,19 @@ EncreBrowserTool = build_tool(
         "SEARCH:\n"
         "`navigate(url)` treats any non-URL input as a search query and routes it through "
         "the user's configured default search engine (set in browser settings).\n\n"
-        "KEY GUIDELINES:\n"
+        "TIPS:\n"
         "- Always call `get_page_structure()` after navigation to discover what's on the page.\n"
-        "- Prefer text-based methods (`click_text`, `click_by_role`) over CSS selectors — "
+        "- Prefer text-based methods (`click_text`, `click_by_role`) over CSS selectors -- "
         "they're more robust to page changes.\n"
-        "- Prefer CSS selectors over coordinates — coordinates break on different viewports.\n"
+        "- Prefer CSS selectors over coordinates -- coordinates break on different viewports.\n"
         "- Use `wait(ms)` to pause between actions (e.g. after a click that triggers navigation).\n"
-        "- Use `screenshot()` with `screenshot_viewport()` for vision models — the viewport "
+        "- Use `screenshot()` with `screenshot_viewport()` for vision models -- the viewport "
         "info tells you the scroll position and page dimensions.\n"
-        "- If a `click` or `type` fails, the element might not be visible — try `scroll_to(x, y)` first.\n"
-        "- Use `execute_js(code)` for complex interactions not covered by the standard actions.\n"
-        "- The webview is embedded in the desktop app sidebar — no external browser window is opened.\n"
-        "- For advanced DevTools access, use `execute_cdp(method, params)` to call any Chrome DevTools Protocol method directly (e.g. Network.enable, Console.enable, DOM.getDocument). This gives you full access to the same capabilities as the F12 DevTools panel."
+        "- For advanced DevTools access, use `execute_cdp(method, params)` to call any Chrome "
+        "DevTools Protocol method directly (e.g. Network.enable, Console.enable, DOM.getDocument).\n\n"
+        "PITFALLS: if a `click` or `type` fails, the element might not be visible -- try "
+        "`scroll_to(x, y)` first; the webview lives in the desktop app sidebar (no external "
+        "window opens), so make sure the user has the browser tab open."
     ),
     input_schema={
         "type": "object",
@@ -592,11 +599,11 @@ EncreBrowserTool = build_tool(
             },
             "full_page": {
                 "type": "boolean",
-                "description": "Capture full page screenshot",
+                "description": "screenshot: when true, capture the entire scrollable page instead of just the visible viewport (default false).",
             },
             "code": {
                 "type": "string",
-                "description": "JavaScript code to execute",
+                "description": "execute_js: JavaScript expression or statement block to evaluate in the page context. Must return a JSON-serializable value to be readable.",
             },
             "timeout": {
                 "type": "integer",

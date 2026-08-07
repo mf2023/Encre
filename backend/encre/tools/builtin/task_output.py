@@ -96,24 +96,35 @@ async def _task_output_execute(**kwargs: Any) -> str:
 EncreTaskOutputTool = build_tool(
     name="task_output",
     description=(
-        "Retrieve output from a running or completed background task. "
-        "Can block waiting for completion, or return current status."
+        "Retrieve the output (status, result, error, timestamps) of a "
+        "background task, optionally blocking until it finishes.\n\n"
+        "WHEN to use: right after task_create to wait for and collect the "
+        "task's result; periodically to monitor a long-running task's "
+        "progress.\n"
+        "WHEN NOT to use: for a quick non-blocking snapshot where you don't "
+        "want to wait, call this with block=false; to enumerate tasks use "
+        "task_list.\n"
+        "TIPS: with block=true (default) the call polls until the task "
+        "reaches a terminal state or the timeout elapses; results over 5000 "
+        "chars and errors over 2000 chars are truncated.\n"
+        "PITFALLS: a timeout does NOT cancel the task -- it just returns the "
+        "current state; the task keeps running in the background."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "task_id": {
                 "type": "string",
-                "description": "The ID of the task to get output from",
+                "description": "The unique ID of the task to read output from (from task_create or task_list).",
             },
             "block": {
                 "type": "boolean",
-                "description": "Wait for task completion (default: true)",
+                "description": "When true (default), wait for the task to reach a terminal state (completed/failed/cancelled) before returning. When false, return the current state immediately.",
                 "default": True,
             },
             "timeout": {
                 "type": "integer",
-                "description": "Max wait time in milliseconds (default: 30000)",
+                "description": "Maximum time to wait in milliseconds when block=true (default: 30000). The call returns the latest state once this elapses even if the task is still running.",
                 "default": 30000,
             },
         },

@@ -51,25 +51,28 @@ async def _glob_execute(**kwargs: Any) -> str:
 EncreGlobTool = build_tool(
     name="glob",
     description=(
-        "Fast file pattern matching using glob patterns. "
-        "Supports patterns like \"**/*.py\", \"src/**/*.ts\", "
-        "or \"data/*.csv\". "
-        "Returns matching file paths sorted alphabetically. "
-        "Skips hidden dirs and common tooling directories.\n\n"
-        "Use for: finding files by name patterns, exploring a directory tree, "
-        "or narrowing a search before using grep.\n"
-        "For open-ended searches that need multiple rounds, consider the agent tool."
+        "Fast file pattern matching using glob patterns. Supports patterns "
+        "like \"**/*.py\", \"src/**/*.ts\", or \"data/*.csv\". Returns matching "
+        "file paths sorted alphabetically, skipping hidden dirs and common "
+        "tooling directories. Use this instead of `ls` or `find` in bash for "
+        "file discovery -- it is faster, returns a clean list, and respects "
+        "sandbox rules. "
+        "TIP: Use 'path' to scope to a subdirectory before grepping; the "
+        "smaller the search root, the faster everything runs. "
+        "TIP: Use '**' to recurse, e.g. \"src/**/*.ts\". "
+        "AVOID: Overly broad patterns like \"**/*\" on huge monorepos -- "
+        "they return thousands of paths and waste tokens."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": "The glob pattern to match (e.g. **/*.py)",
+                "description": "Glob pattern to match (required). Supports ** for recursion, e.g. \"**/*.py\", \"src/**/*.ts\".",
             },
             "path": {
                 "type": "string",
-                "description": "Root directory to search in (default: current directory)",
+                "description": "Root directory to search in (optional, default: current working directory). Use an absolute path for reproducible results.",
             },
         },
         "required": ["pattern"],

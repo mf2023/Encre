@@ -67,6 +67,7 @@ from encre.sandbox.types import (
     SandboxResult,
     SeccompProfile,
 )
+from encre.tools.builtin._encoding import decode_bytes
 
 # ── Constants ──────────────────────────────────────────────────────
 
@@ -324,10 +325,8 @@ class EncreContainerSandbox:
                     severity="info",
                 ))
 
-                stdout = (stdout_bytes.decode("utf-8", errors="replace")
-                          if stdout_bytes else "")
-                stderr = (stderr_bytes.decode("utf-8", errors="replace")
-                          if stderr_bytes else "")
+                stdout = decode_bytes(stdout_bytes) if stdout_bytes else ""
+                stderr = decode_bytes(stderr_bytes) if stderr_bytes else ""
 
                 return SandboxResult(
                     stdout=_truncate_output(stdout, self.config.max_output_bytes),

@@ -369,6 +369,9 @@ export interface UsageStatsSessionEntry {
   turns: number;
   tool_calls: number;
   first_active: number;
+  /** Timestamp of the session's most recent activity. Falls back to
+   *  `first_active` when the backend predates this field. */
+  last_active?: number;
 }
 
 export interface UsageStatsData {
@@ -1525,6 +1528,7 @@ export interface Message {
   /** Turn status card data — populated from backend events. */
   errorMessage?: string;
   errorCode?: string;
+  errorCategory?: string;
   interruptedReason?: string;
   turnStatusText?: string;  // e.g. "任务完成" from backend
   cancelledText?: string;   // set when user presses stop button (reason="cancelled")

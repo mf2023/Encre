@@ -129,28 +129,37 @@ async def _web_fetch_execute(**kwargs: Any) -> str:
 EncreWebFetchTool = build_tool(
     name="web_fetch",
     description=(
-        "Fetch a single URL and return its content as text/markdown. Uses a "
-        "crawler that handles JavaScript rendering and anti-scraping, so it "
-        "works on sites (ctrip/fliggy/...) that block plain HTTP. NOTE: "
-        "web_search already returns page content inline, so you usually do "
-        "NOT need this -- call it only for one specific URL the search did "
-        "not cover (e.g. a link the user pasted)."
+        "Fetch a single URL and return its content as text or markdown.\n\n"
+        "WHAT: uses an Exa-based crawler that renders JavaScript and bypasses "
+        "common anti-scraping, with an httpx fallback for raw HTML or when the "
+        "crawler is unreachable.\n"
+        "WHEN to use: the user pastes a specific URL, or web_search returned a "
+        "URL whose inline content was truncated/empty and you need the full "
+        "page.\n"
+        "WHEN NOT to use: do NOT call this right after web_search -- the search "
+        "already inlines page content; for interactive/log-in flows use the "
+        "browser tool instead.\n"
+        "TIPS: prefer format=markdown for readable article content; use "
+        "format=html only when you need the raw DOM; the httpx fallback cannot "
+        "render JS, so SPA pages may come back empty.\n"
+        "PITFALLS: response bodies are truncated to 50K chars; login-gated or "
+        "aggressively anti-bot sites may return empty strings."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "url": {
                 "type": "string",
-                "description": "The URL to fetch content from",
+                "description": "Absolute URL to fetch, including the scheme (http:// or https://). Relative paths are not supported.",
             },
             "format": {
                 "type": "string",
                 "enum": ["text", "markdown", "html"],
-                "description": "Output format: text (default), markdown, html (raw). Exa crawler is used for text/markdown; html uses plain HTTP.",
+                "description": "Output format: 'text' (default, plain text extracted from HTML), 'markdown' (converted HTML suitable for reading), or 'html' (raw HTML bytes via plain HTTP, bypasses the Exa crawler).",
             },
             "timeout": {
                 "type": "integer",
-                "description": "Request timeout in seconds for the httpx fallback (5-120, default 30).",
+                "description": "Request timeout in seconds for the httpx fallback only, clamped to 5-120 (default: 30). The Exa crawler has its own server-side timeout.",
             },
         },
         "required": ["url"],

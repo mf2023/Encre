@@ -411,43 +411,59 @@ async def _vlm_execute(**kwargs: Any) -> str:
 EncreVLMComputerUseTool = build_tool(
     name="vlm_computer_use",
     description=(
-        "Vision-Language-Model-driven computer use.  Give it a high-level "
-        "goal (e.g. 'open Chrome, navigate to gmail, and log in') and it "
-        "will take screenshots, reason about what to click/type, execute "
-        "the action, re-screenshot, and repeat until the goal is achieved "
-        "or max_steps is reached.  Requires a VLM backend configured via "
-        "the OPENAI_API_KEY (or ANTHROPIC_API_KEY) environment variable.  "
-        "Returns a JSON object with success, steps_taken, decisions, the "
-        "last screenshot (base64 PNG), the full action trajectory, and "
-        "the task template that was used.  Use the 'computer_use' tool "
-        "for individual low-level actions across both browser and "
-        "desktop; use this tool when you need vision-guided multi-step "
-        "automation.  Pass template_name to specialise the system "
-        "prompt and per-step guidance for a particular task category "
-        "(navigate / fill_form / extract_data / login / search).  "
-        "Unknown names fall back to the generic prompt automatically."
+        "WHAT: Vision-Language-Model-driven computer use. Hand it a "
+        "high-level goal and it screenshots, reasons, clicks/types, "
+        "re-screenshots, and repeats until the goal is reached or "
+        "max_steps is exhausted. "
+        "WHEN: Use for vision-guided multi-step desktop automation "
+        "where the model must read pixels to decide the next action "
+        "(e.g. 'open Chrome, navigate to gmail, and log in'). "
+        "WHEN NOT: Use `computer_use` for individual low-level actions "
+        "across browser and desktop, or `desktop` / `browser` when you "
+        "know exactly which backend and action you need. This tool is "
+        "much slower (one VLM round-trip per step) and should not be "
+        "used for single deterministic actions. "
+        "TIPS: Keep goals concrete and observable on screen; pass "
+        "`template_name` to specialise the system prompt for known "
+        "task categories (navigate / fill_form / extract_data / login "
+        "/ search); raise `max_steps` for long flows. "
+        "PITFALLS: Requires a VLM backend configured via the "
+        "OPENAI_API_KEY (or ANTHROPIC_API_KEY) environment variable -- "
+        "without one the tool returns an error. Unknown template names "
+        "fall back to the generic prompt. Returns a JSON envelope with "
+        "success, steps_taken, decisions, the last screenshot (base64 "
+        "PNG), the full action trajectory, and the task template that "
+        "was used."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "goal": {
                 "type": "string",
-                "description": "High-level goal for the computer-use session, "
-                               "e.g. 'open Notepad and type hello world'",
+                "description": (
+                    "Required. High-level natural-language goal for the "
+                    "session, phrased in terms of what should be visible "
+                    "on screen when done (e.g. 'open Notepad and type "
+                    "hello world')."
+                ),
             },
             "max_steps": {
                 "type": "integer",
-                "description": "Maximum VLM decision steps before giving up "
-                               "(default 20, each step is screenshot+reason+act)",
+                "description": (
+                    "Maximum VLM decision steps before giving up. Each "
+                    "step is one screenshot + reason + act cycle. "
+                    "Default 20; raise for long multi-screen flows."
+                ),
                 "default": 20,
             },
             "template_name": {
                 "type": "string",
                 "description": (
-                    "Optional VLM task template to specialise the prompt "
-                    "for.  One of: 'navigate', 'fill_form', 'extract_data', "
-                    "'login', 'search'.  Empty / unknown names fall back "
-                    "to the generic computer-use prompt."
+                    "Optional VLM task template that specialises the "
+                    "system prompt and per-step guidance. One of "
+                    "'navigate', 'fill_form', 'extract_data', 'login', "
+                    "'search'. Empty string (default) or unknown names "
+                    "fall back to the generic computer-use prompt."
                 ),
                 "enum": [
                     "",

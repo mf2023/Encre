@@ -59,13 +59,14 @@ import json
 import os
 import re
 import time
+from collections import Counter
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from encre.backend import create_backend
 from encre.backends.base import BaseBackend, format_backend_error
 from encre.codebase.indexer import EncreCodeIndex
-from encre.compact.engine import CompactEngine
+from encre.compact.engine import CompactEngine, extract_user_requirements
 from encre.compact.pipeline import CompactionPipeline
 from encre.config import EncreConfig
 from encre.evolution.config import EvolutionConfig
@@ -94,6 +95,7 @@ from encre.loop_stability import (
     build_auto_continue_message,
     build_delegation_guidance,
     build_steer_injection,
+    build_stub_retry_message,
     build_thinking_prefill,
     build_tombstone_messages,
     build_truncated_retry_message,
@@ -101,9 +103,11 @@ from encre.loop_stability import (
     check_token_pressure,
     classify_error,
     is_empty_response,
+    is_stub_response,
     is_truncated_tool_call,
     repair_messages,
     should_post_tool_compact,
+    MAX_STUB_RESPONSE_RETRIES,
 )
 from encre.recovery_loop import (
     MAX_OUTPUT_TOKENS_RECOVERY_LIMIT,
@@ -179,7 +183,7 @@ from encre.utils.types import (
 
 from encre.loop_state.state import LoopState
 from encre.loop_state.transition import TurnTransition
-from encre.loop_error import ErrorOrchestrator, RecoveryAction, PostStreamAction
+from encre.loop_error import ErrorOrchestrator, RecoveryAction, RecoveryDecision, PostStreamAction
 from encre.errors import classify_error_code, get_error_metadata, ErrorCode
 from encre.utils.loop_helpers import (
     _WRITE_TOOL_NAMES,
@@ -198,14 +202,45 @@ from encre.utils.loop_helpers import (
     _spillover_dir,
     _split_writes_by_path_conflict,
     _STUCK_LOOP_THRESHOLD,
+    build_verify_instruction,
     _tool_retry_allowed,
     _try_lsp_diagnostics,
     _MAX_TOOL_CONCURRENCY,
     _EVOLUTION_ENABLED,
     _PLAN_STATUS_MAP,
+    _GUARDRAIL_WARN_AFTER,
+    _GUARDRAIL_BLOCK_AFTER,
+    _GUARDRAIL_HALT_AFTER,
+    _canonical_tool_signature,
+    _result_digest,
+    _is_idempotent_tool,
+    _NO_PROGRESS_AFTER,
+    _MAX_VERIFY_ON_STOP_NUDGES,
+    _VERIFY_TOOL_NAMES,
+    _summarize_verify_result,
 )
+from encre.utils.verification_ledger import VerificationLedger
 
 logger = get_logger(__name__)
+
+# Hard safety ceiling for the main session.  Config/workspace may set
+# ``max_turns`` freely (0 = unlimited), but a runaway loop -- e.g. one that
+# defeats stuck-detection with an alternating or non-erroring no-op tool --
+# must never run forever.  This is deliberately very high so legitimate
+# long-running sessions are never cut short; it exists only to bound an
+# otherwise-unbounded loop.  Env override for operators/CI.
+_MAIN_SESSION_HARD_TURN_CAP = int(os.environ.get("ENCRE_MAX_TURNS_HARD_CAP", "100000"))
+
+# Diminishing-returns guard (Claude Code tokenBudget.ts port): if the model has
+# auto-continued at least this many times consecutively while producing less than
+# this many output tokens each time, stop auto-continuing (it is going in circles).
+_AUTO_CONTINUE_DIMINISHING_MIN_CONTINUES = 3
+_AUTO_CONTINUE_DIMINISHING_MIN_DELTA = 500
+
+# Max times the forced-review escalation (the review stage of the
+# implement -> verify -> review -> fix loop) fires per session.  Bounded so a
+# model that refuses to fix a failing check cannot wedge the loop forever.
+_MAX_FORCED_REVIEWS = 1
 
 # ── Context overflow detection (reactive compact) ──────────────
 _CONTEXT_OVERFLOW_PATTERN = re.compile(
@@ -337,6 +372,12 @@ class EncreLoop:
         self._cache_edits_state: Any = None
         self.feedback = feedback
         self._pending_code_scan: EncreCodeIndex | None = None
+        # Tracks the currently-streaming (not yet committed) assistant turn so a
+        # cancel / hard-exit can persist the partial text/thinking that would
+        # otherwise be lost on refresh (the backend only commits an assistant
+        # message when a text block completes or tool calls are declared).
+        self._pending_stream_text: list[str] = []
+        self._pending_stream_thinking: list[str] = []
 
         # Context renderer for tracking what changed between turns.
         from encre.context.renderer import ContextRenderer
@@ -393,7 +434,41 @@ class EncreLoop:
         self._rules_loader = RulesLoader()
         self._recent_tool_names: list[tuple[str, ...]] = []  # tool_name:args_sig signatures
         self._error_tool_names: set[str] = set()
+        # Anti-stuck guardrail ladder state: per canonical signature counts and
+        # per-idempotent-tool last result digest for no-progress detection.
+        # Counts are *consecutive-turn* counters (a signature only accumulates
+        # when it recurs on adjacent turns), so a common tool used legitimately
+        # on scattered turns never accumulates a false count.
+        self._guardrail_call_counts: dict[str, int] = {}
+        self._guardrail_prev_sigs: set[str] = set()
+        self._guardrail_no_progress_digests: dict[str, str] = {}
+        self._guardrail_no_progress_counts: dict[str, int] = {}
+        # When a turn is hard-halted by the guardrail this is set True and the
+        # main loop breaks out (opt-in circuit breaker, see _GUARDRAIL_HALT_AFTER).
+        self._guardrail_halt = False
+        # Verify-on-stop (Hermes port): a bounded nudge counter to prevent
+        # deadlock, plus a verification ledger that tracks per-file evidence so
+        # the nudge is evidence-driven (never-checked vs checked-and-failed)
+        # rather than a blind reminder.
+        self._verify_on_stop_nudges = 0
+        self._verif_ledger = VerificationLedger()
+        # Forced-review escalation (review stage of the loop): counts how many
+        # times we injected a critical-review demand after verify nudges were
+        # exhausted but a check still failed.  Bounded by _MAX_FORCED_REVIEWS.
+        self._forced_review_count = 0
+        # Diminishing-returns guard (Claude Code tokenBudget port): track
+        # consecutive auto-continues whose output is tiny; stop continuing when
+        # the model keeps producing near-empty output instead of real progress.
+        self._auto_continue_consecutive = 0
+        self._auto_continue_last_output = 0
         self._sanitized_branches: set[str] = set()
+        # Device context manager — collects a lightweight device catalog for
+        # L1 prompt injection and powers the device_* tools on demand.
+        try:
+            from encre.device_context import DeviceContextManager as _DCM
+            self._device_context_manager = _DCM(config)
+        except Exception:
+            self._device_context_manager = None
         # Active tool set name.  Default is "default"; changes when the mode
         # switches (e.g. plan mode → "plan") or when the user explicitly sets it.
         self._tool_set_name: str = self._resolve_tool_set_for_mode()
@@ -405,11 +480,21 @@ class EncreLoop:
             profile_system=self.profile_system,
             git=getattr(self, "git", None) or getattr(self, "_git", None),
             rules_loader=self._rules_loader,
+            device_context_manager=self._device_context_manager,
         )
         if code_index is not None:
             self._ctx_bldr._code_index = code_index
         # Background compaction task -- runs in parallel to avoid blocking the main loop
         self._compact_task: asyncio.Task[None] | None = None
+        # Compaction epoch: incremented every time a NEW compaction pass is
+        # triggered (background or synchronous).  A running background task
+        # records the epoch it was launched with; when it finishes it only
+        # replaces the branch messages if no newer compaction pass started in
+        # the meantime.  This replaces the old cancel-and-restart behaviour,
+        # which threw away the summary LLM call every turn and, when the
+        # compaction was slow (near-limit context), meant compaction never
+        # completed while the context kept growing.
+        self._compact_epoch: int = 0
         # Pending compact notification to yield at next turn start
         self._compact_notification: CompactNotification | None = None
         # Whether any compaction (synchronous or background) replaced messages
@@ -434,6 +519,8 @@ class EncreLoop:
         # Fallback model tracking: set when a fallback switch occurs.
         self._active_fallback_model: str = ""
         self._active_fallback_backend_type: str = ""
+        # Model ids already tried this session (for unified model fallback).
+        self._fallback_tried: set[str] = set()
         # Reactive compact guard: set to True after first reactive compact per turn.
         self._has_attempted_reactive_compact: bool = False
         # System prompt cache: keyed by content hash so we skip rebuild when nothing changed.
@@ -510,6 +597,22 @@ class EncreLoop:
         """Expose the tool name awaiting plan-mode approval (write accessor)."""
         self._plan_mode._pending_tool_name = value
 
+    def _resolve_slot_budget(self) -> int:
+        """Resolve the per-turn output slot budget.
+
+        Honors a one-shot max-tokens override (consumed once used), else falls
+        back to the configured default slot tokens when smaller than max_tokens.
+        Centralized so both the pre-API pressure check and the chat call use
+        the identical budget without fragile in-scope name probing.
+        """
+        if self._max_output_tokens_override:
+            budget = self._max_output_tokens_override
+            self._max_output_tokens_override = None
+            return budget
+        if self.config.default_slot_tokens and self.config.default_slot_tokens < self.config.max_tokens:
+            return self.config.default_slot_tokens
+        return self.config.max_tokens
+
     @property
     def _plan_decision(self) -> bool:
         """Expose the plan approval decision (read accessor)."""
@@ -519,6 +622,11 @@ class EncreLoop:
     def _plan_decision(self, value: bool) -> None:
         """Expose the plan approval decision (write accessor)."""
         self._plan_mode._plan_decision = value
+
+    @property
+    def _plan_decision_timed_out(self) -> bool:
+        """Expose whether the last plan decision wait timed out (read accessor)."""
+        return self._plan_mode._plan_decision_timed_out
 
     @property
     def _plan_event(self) -> asyncio.Event | None:
@@ -628,6 +736,36 @@ class EncreLoop:
         await self._working_set.maybe_write_milestone(
             context_msgs, backend=self.backend, compact_engine=self.compact_engine,
         )
+
+    def _update_user_requirements(self, messages: list[dict[str, Any]]) -> None:
+        """Persist the user's core requirements after a compaction.
+
+        Extracts the ``Primary Request and Intent`` section from the newest
+        compact-summary block in ``messages`` and stores it in session
+        metadata (``user_requirements_summary``), from where it is re-injected
+        into the system prompt each turn.  Without this refresh the injected
+        requirements stay stale after every compaction, so the model slowly
+        forgets what the user actually asked for and starts repeating work.
+
+        Args:
+            messages: The compacted message list (result of a compaction).
+        """
+        try:
+            summary = ""
+            for m in reversed(messages or []):
+                if m.get("is_compact_summary") or m.get("name") == "compact_summary":
+                    content = m.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        summary = content
+                        break
+            if not summary:
+                return
+            req = extract_user_requirements(summary)
+            if req:
+                self._state_mgr.user_requirements_summary = req
+                logger.debug("[compact] user requirements summary updated")
+        except Exception:
+            logger.warning("[compact] user requirements update failed", exc_info=True)
 
     def _infer_task_stage(self, prompt: str, prepared: list[dict[str, Any]] | None = None) -> str:
         """Infer the current task stage from the prompt and prepared tools.
@@ -1298,6 +1436,36 @@ class EncreLoop:
         Returns the number of tombstones added. Idempotent: a second call on
         an already-closed history adds nothing.
         """
+        # Persist any partially-streamed assistant content (text/thinking) that
+        # was never committed because the run was cancelled before a text block
+        # completed. Without this, a refresh loses the tail the user already saw.
+        pending_text = "".join(self._pending_stream_text).strip()
+        pending_thinking = "".join(self._pending_stream_thinking).strip()
+        if pending_text or pending_thinking:
+            msgs = self.session.messages
+            # Only append when the last message is a user message (i.e. no
+            # committed assistant for the current turn yet). If a committed
+            # assistant already exists, the content is already persisted.
+            last_role = msgs[-1].get("role") if msgs else None
+            if last_role == "user":
+                msg_kwargs: dict[str, Any] = {}
+                segs: list[dict[str, Any]] = []
+                if pending_thinking:
+                    msg_kwargs["reasoning_content"] = pending_thinking
+                    segs.append({"kind": "thinking", "text": pending_thinking})
+                if pending_text:
+                    segs.append({"kind": "text", "text": pending_text})
+                if segs:
+                    msg_kwargs["segments"] = segs
+                msg_kwargs["interrupted"] = True
+                self.session.add_message("assistant", pending_text or None, **msg_kwargs)
+                logger.info(
+                    "[run] persisted partial streamed assistant (%d text, %d thinking chars)",
+                    len(pending_text), len(pending_thinking),
+                )
+            self._pending_stream_text = []
+            self._pending_stream_thinking = []
+
         msgs = self.session.messages
         if not msgs:
             return 0
@@ -1559,6 +1727,12 @@ class EncreLoop:
         # (other platforms) automatically.
         _ws = getattr(self.config, "workspace", "") or ""
         _bash_ws_token = set_bash_workspace(_ws if _ws else None)
+        # Build the device catalog on first run (lazy init, uses disk cache).
+        if self._device_context_manager is not None:
+            try:
+                await self._device_context_manager.build_catalog()
+            except Exception:
+                pass
         try:
             async for ev in self._run_impl(
                 prompt, system_prompt, custom_instructions,
@@ -1675,6 +1849,7 @@ class EncreLoop:
                 tuple(sorted(s.name for s in self.skill_registry.list_all()
                        if s.user_invocable and not s.name.startswith("tool-"))) if self.skill_registry else (),
                 self.active_command_name,
+                self.config.model,
             )
             if self._sys_prompt_cache is not None and self._sys_prompt_cache_key == _cache_key:
                 system_prompt = self._sys_prompt_cache
@@ -1694,6 +1869,7 @@ class EncreLoop:
                     slash_commands=slash_commands,
                     skill_summary=self._render_skill_catalogue(),
                     active_command=getattr(self.config, "active_command", None),
+                    model=self.config.model,
                 )
                 self._sys_prompt_cache = system_prompt
                 self._sys_prompt_cache_key = _cache_key
@@ -1717,6 +1893,7 @@ class EncreLoop:
                 slash_commands=slash_commands,
                 skill_summary=self._render_skill_catalogue(),
                 active_command=getattr(self.config, "active_command", None),
+                model=self.config.model,
             )
             system_prompt = system_prompt + "\n\n" + built
         else:
@@ -1801,20 +1978,12 @@ class EncreLoop:
                     "the tools available and return a concise final answer. If you need to "
                     "parallelize work, return a list of sub-tasks to the parent instead."
                 )
-            # Language preference
-            _lang_pref = self.config.language_preference or ""
-            _app_lang = self.config.language or ""
-            _resolved = _lang_pref if _lang_pref and _lang_pref != "auto" else _app_lang
-            if _resolved == "zh":
-                _behavioral_parts.append(
-                    "IMPORTANT: You must always respond in Chinese (中文) "
-                    "throughout the entire conversation."
-                )
-            elif _resolved == "en":
-                _behavioral_parts.append(
-                    "IMPORTANT: You must always respond in English "
-                    "throughout the entire conversation."
-                )
+            # Language preference -- NOTE: sub-agents always think and respond
+            # in English (enforced by sub_agent_enforcement.prompt) for reliable
+            # state matching and output parsing. The parent agent handles
+            # translation when relaying results to the user. Do NOT inject
+            # non-English language preferences here -- it conflicts with the
+            # English-only enforcement and breaks output parsing.
             if _behavioral_parts:
                 system_prompt = system_prompt + "\n\n" + "\n\n".join(_behavioral_parts)
         else:
@@ -1847,6 +2016,15 @@ class EncreLoop:
                         system_prompt = system_prompt + "\n\n" + soul_prompt
                 except Exception:
                     pass
+
+            # Inject device context catalog (L1 — lightweight, always visible)
+            try:
+                device_prompt = self._ctx_bldr.build_device_context_prompt()
+                if device_prompt:
+                    self._ctx_renderer.record("Device Context", device_prompt)
+                    system_prompt = system_prompt + "\n\n" + device_prompt
+            except Exception:
+                pass
 
             # Inject reference document context
             try:
@@ -1999,7 +2177,10 @@ class EncreLoop:
             self._sanitized_branches.add(active_branch_id)
             ctx_msgs = self.session.get_context_messages()
 
-        while not self.session.is_max_turns_reached() and not self._cancelled():
+        while (not self.session.is_max_turns_reached()
+               and not self._cancelled()
+               and not self._guardrail_halt
+               and self.session.turn_count < _MAIN_SESSION_HARD_TURN_CAP):
             turn_start = time.time()
             self._compacted_this_turn = False
             turn_events = 0
@@ -2070,44 +2251,75 @@ class EncreLoop:
 
                 # Async autocompact background task (if pipeline triggered it)
                 if pipeline_report.needs_compact:
-                    if self._compact_task and not self._compact_task.done():
-                        self._compact_task.cancel()
-                    logger.info(
-                        "[compact] triggering turn=%d tokens=%dk window=%dk (async)",
-                        self.session.turn_count, est_tokens // 1000, window // 1000,
-                    )
+                    if self._compact_task is not None and not self._compact_task.done():
+                        # A compaction pass is already running -- do NOT cancel
+                        # and restart it.  Cancelling throws away the summary
+                        # LLM call and, when compaction is slow (near-limit
+                        # context), means it never completes while the context
+                        # keeps growing -- the trigger fires every turn and the
+                        # task is cancelled before it can finish.  Let the
+                        # in-flight pass finish; it applies its result and the
+                        # next turn re-triggers if still over budget.
+                        logger.debug(
+                            "[compact] pass already running turn=%d -- skipping new trigger",
+                            self.session.turn_count,
+                        )
+                    else:
+                        self._compact_epoch += 1
+                        logger.info(
+                            "[compact] triggering turn=%d tokens=%dk window=%dk (async)",
+                            self.session.turn_count, est_tokens // 1000, window // 1000,
+                        )
 
-                    async def _do_compact(context_msgs=context_msgs, est_tokens=est_tokens):
-                        """Run one synchronous compaction pass over the context.
+                        async def _do_compact(context_msgs=context_msgs, est_tokens=est_tokens,
+                                              epoch=self._compact_epoch):
+                            """Run one synchronous compaction pass over the context.
 
-                        Archives the current context, emits a pre-compact hook,
-                        compacts via the compaction engine, and on success
-                        replaces the active branch's messages and sets the
-                        ``_compacted_this_turn`` flag so the frontend can refresh.
+                            Archives the current context, emits a pre-compact hook,
+                            compacts via the compaction engine, and on success
+                            replaces the active branch's messages and sets the
+                            ``_compacted_this_turn`` flag so the frontend can refresh.
 
-                        Args:
-                            context_msgs: The messages to compact (captured by
-                                closure default).
-                            est_tokens: Estimated token count (captured by
-                                closure default), used for the pre-compact hook.
-                        """
-                        try:
-                            # Record the highest seq_in_branch at snapshot time
-                            # so we can detect messages added while compact ran.
-                            snap_max_seq = max(
-                                (m.get("seq_in_branch", -1) for m in context_msgs),
-                                default=-1,
-                            )
-                            self.session.set_compact_archive(context_msgs)
-                            await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
-                            compacted = await self.compact_engine.compact(
-                                context_msgs, backend=self.backend,
-                                turn_count=self.session.turn_count,
-                                system_prompt=system_prompt or "",
-                                enable_caching=self.config.enable_prompt_caching,
-                                session_id=self.session.id or "",
-                            )
-                            if compacted is not None:
+                            Args:
+                                context_msgs: The messages to compact (captured by
+                                    closure default).
+                                est_tokens: Estimated token count (captured by
+                                    closure default), used for the pre-compact hook.
+                                epoch: Compaction epoch at launch time.  If a NEWER
+                                    compaction pass (synchronous force-compact or
+                                    reactive compact) started while this one was
+                                    running, its result is stale and discarded so
+                                    the two passes never fight over the branch.
+                            """
+                            try:
+                                # Record the highest seq_in_branch at snapshot time
+                                # so we can detect messages added while compact ran.
+                                snap_max_seq = max(
+                                    (m.get("seq_in_branch", -1) for m in context_msgs),
+                                    default=-1,
+                                )
+                                self.session.set_compact_archive(context_msgs)
+                                await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
+                                compacted = await self.compact_engine.compact(
+                                    context_msgs, backend=self.backend,
+                                    turn_count=self.session.turn_count,
+                                    system_prompt=system_prompt or "",
+                                    enable_caching=self.config.enable_prompt_caching,
+                                    session_id=self.session.id or "",
+                                )
+                                if compacted is None:
+                                    return
+                                # ── Stale-result guard ──────────────────────────
+                                # A synchronous force-compact (token pressure) or
+                                # reactive compact started after this pass: its
+                                # result already replaced the branch, so applying
+                                # ours would clobber it.  Discard quietly.
+                                if self._compact_epoch != epoch:
+                                    logger.info(
+                                        "[compact] stale result (epoch %d -> %d) -- discarding",
+                                        epoch, self._compact_epoch,
+                                    )
+                                    return
                                 # ── Race guard ─────────────────────────────────────
                                 # If new messages (assistant reply, tool results, etc.)
                                 # were added to this branch while compact was running,
@@ -2148,15 +2360,15 @@ class EncreLoop:
                                     self.session.turn_count, len(context_msgs),
                                     len(compacted), est_tokens // 1000, new_tokens // 1000,
                                 )
-                        except asyncio.CancelledError:
-                            logger.info("[compact] cancelled (new turn started)")
-                        except Exception:
-                            logger.warning(
-                                "[compact] bg failed turn=%d -- circuit breaker or API error",
-                                self.session.turn_count,
-                            )
+                            except asyncio.CancelledError:
+                                logger.info("[compact] cancelled (new turn started)")
+                            except Exception:
+                                logger.warning(
+                                    "[compact] bg failed turn=%d -- circuit breaker or API error",
+                                    self.session.turn_count,
+                                )
 
-                    self._compact_task = asyncio.create_task(_do_compact())
+                        self._compact_task = asyncio.create_task(_do_compact())
 
             except Exception as _pe:
                 logger.warning("[pipeline] failed turn=%d: %s", self.session.turn_count, _pe)
@@ -2184,6 +2396,10 @@ class EncreLoop:
             # Inline thinking-tag extraction state
             _think_buf = ''
             _in_think = False
+            # Reset the streaming buffer for this turn so the cancel-persistence
+            # path only ever sees the current turn's partial content.
+            self._pending_stream_text = []
+            self._pending_stream_thinking = []
 
             # Patterns for community-standard thinking / CoT tags
             _THINK_OPEN = re.compile(r'<(think|thought|thinking|reasoning|analysis)>|\[internal\]')
@@ -2324,8 +2540,12 @@ class EncreLoop:
 
             # 4. Pre-API token pressure check
             _context_window = self.backend.context_window_size()
+            # Compute the output slot budget once per turn (used both for the
+            # pre-API pressure check and for the chat call below), instead of
+            # probing an in-scope local via the fragile `dir()` hack.
+            _slot_budget = self._resolve_slot_budget()
             _pressure = check_token_pressure(
-                backend_messages, _context_window, _slot_budget if '_slot_budget' in dir() else self.config.max_tokens,
+                backend_messages, _context_window, _slot_budget,
             )
             if _pressure > 0.85:
                 logger.warning(
@@ -2333,6 +2553,10 @@ class EncreLoop:
                     _pressure * 100, self.session.turn_count,
                 )
                 try:
+                    # This synchronous pass is authoritative: bump the epoch so
+                    # any in-flight background compaction discards its result
+                    # instead of clobbering this one.
+                    self._compact_epoch += 1
                     _context_msgs = self.session.get_context_messages()
                     self.session.set_compact_archive(_context_msgs)
                     _compacted = await self.compact_engine.compact(
@@ -2341,6 +2565,7 @@ class EncreLoop:
                         system_prompt=system_prompt or "",
                         enable_caching=self.config.enable_prompt_caching,
                         session_id=self.session.id or "",
+                        force=True,
                     )
                     if _compacted is not None:
                         self.session.replace_branch_messages(
@@ -2415,14 +2640,6 @@ class EncreLoop:
             # limit ("max_tokens" or "length" finish reason).  This
             # encourages concise responses (~70% fit in 4K) while
             # allowing long outputs on demand.
-            _slot_budget: int
-            if self._max_output_tokens_override:
-                _slot_budget = self._max_output_tokens_override
-                self._max_output_tokens_override = None
-            elif self.config.default_slot_tokens and self.config.default_slot_tokens < self.config.max_tokens:
-                _slot_budget = self.config.default_slot_tokens
-            else:
-                _slot_budget = self.config.max_tokens
             _slot_finish_reason = "stop"
             # Fallback loop: retry with fallback model on rate-limit/overload
             _attempt_fallback = True
@@ -2461,6 +2678,7 @@ class EncreLoop:
                                             _extra_thinking.append(_think_buf)
                                         else:
                                             thinking_parts.append(_think_buf)
+                                            self._pending_stream_thinking.append(_think_buf)
                                         yield create_thinking_delta(_think_buf)
                                     _think_buf = ''
                                     _in_think = False
@@ -2481,7 +2699,8 @@ class EncreLoop:
                                             yield create_text_delta(before)
                                         else:
                                             text_parts.append(before)
-                                            yield create_text_delta(before)
+                                            self._pending_stream_text.append(before)
+                                        yield create_text_delta(before)
                                     _in_think = True
                                     _think_buf = ''
                                     text = text[om.end():]
@@ -2493,6 +2712,7 @@ class EncreLoop:
                                                 _extra_thinking.append(think)
                                             else:
                                                 thinking_parts.append(think)
+                                                self._pending_stream_thinking.append(think)
                                             yield create_thinking_delta(think)
                                         _in_think = False
                                         text = text[cm.end():]
@@ -2509,7 +2729,8 @@ class EncreLoop:
                                             yield create_text_delta(text)
                                         else:
                                             text_parts.append(text)
-                                            yield create_text_delta(text)
+                                            self._pending_stream_text.append(text)
+                                        yield create_text_delta(text)
                                     text = ''
                             turn_events += 1
 
@@ -2522,6 +2743,7 @@ class EncreLoop:
                                 yield create_thinking_delta(event.text)
                             else:
                                 thinking_parts.append(event.text)
+                                self._pending_stream_thinking.append(event.text)
                                 yield create_thinking_delta(event.text)
                             turn_events += 1
 
@@ -2689,6 +2911,9 @@ class EncreLoop:
                     if decision.action == RecoveryAction.COMPACT_CONTINUE:
                         # Reactive compact: compress session and retry
                         try:
+                            # Authoritative pass: bump the epoch so any in-flight
+                            # background compaction discards its result.
+                            self._compact_epoch += 1
                             context_msgs = self.session.get_context_messages()
                             est = count_message_tokens(context_msgs)
                             self.session.set_compact_archive(context_msgs)
@@ -2698,6 +2923,7 @@ class EncreLoop:
                                 system_prompt=system_prompt or "",
                                 enable_caching=self.config.enable_prompt_caching,
                                 session_id=self.session.id or "",
+                                force=True,
                             )
                             if compacted is not None:
                                 self.session.replace_branch_messages(self.session.active_branch_id, compacted)
@@ -2723,13 +2949,38 @@ class EncreLoop:
                                            self.session.turn_count, _ce)
 
                     if decision.action == RecoveryAction.FALLBACK_CONTINUE:
-                        # Model fallback
+                        # Model fallback: try the indicator model, then a random
+                        # enabled model, restricted to the target model ids when
+                        # one was configured (gateway adapter / automation job).
                         original_model = self.config.model
-                        fallback_model = self.config.fallback_model
+                        if original_model:
+                            self._fallback_tried.add(original_model)
+                        candidates = self.config.resolve_model_candidates(self._fallback_tried)
+                        if not candidates:
+                            logger.warning("[fallback] no more fallback models available after %s", original_model)
+                            decision = RecoveryDecision(
+                                RecoveryAction.RELEASE,
+                                error_code=_agent_err.code.value,
+                                error_category=_agent_err.category.value,
+                                detail="no fallback models",
+                            )
+                            # fall through to RELEASE handling below
+                            _llm_span.set_attribute("llm.error", str(exc))
+                            _llm_span.end()
+                            await self.hook_system.emit_error(exc, "backend_chat_exception")
+                            await self.hook_system.emit_backend_error(str(exc), type(self.backend).__name__ if self.backend else "unknown")
+                            err_msg = format_backend_error(exc)
+                            yield create_finish("error", error=err_msg,
+                                                error_code=_agent_err.code.value,
+                                                error_category=_agent_err.category.value)
+                            return
+                        _next = candidates[0]
+                        fallback_model = _next.model_id
+                        fallback_backend_type = _next.backend_type or self.config.backend_type
                         logger.info("[fallback] switching from %s to %s due to: %s",
                                     original_model, fallback_model, exc)
                         self._active_fallback_model = fallback_model
-                        self._active_fallback_backend_type = self.config.fallback_backend_type or self.config.backend_type
+                        self._active_fallback_backend_type = fallback_backend_type
                         _llm_span.set_attribute("llm.fallback", f"{original_model}->{fallback_model}")
                         _llm_span.end()
                         yield create_system_message(build_fallback_system_message(original_model, fallback_model))
@@ -2740,12 +2991,13 @@ class EncreLoop:
                                     tool_call_id=_ts.get("tool_call_id"), name=_ts.get("name"),
                                     is_error=_ts.get("is_error", False))
                             tool_call_buffers.clear()
-                        from encre.backends.base import create_backend
+                        from encre.backend import create_backend
                         fallback_backend = create_backend(
-                            fallback_model,
-                            self.config.fallback_base_url or self.config.base_url,
-                            self.config.fallback_api_key or self.config.api_key,
-                            backend_type=self._active_fallback_backend_type,
+                            fallback_backend_type,
+                            model=fallback_model,
+                            base_url=_next.base_url or self.config.base_url,
+                            api_key=_next.api_key or self.config.api_key,
+                            thinking_config=self._thinking_config,
                         )
                         self.backend = fallback_backend
                         _attempt_fallback = True
@@ -2919,6 +3171,12 @@ class EncreLoop:
                     yield create_finish("stop")
                     return
 
+            # Reset stub counter when the model actually does work (calls tools)
+            if tool_call_buffers:
+                self._stub_response_retry_count = 0
+                self._auto_continue_consecutive = 0
+                self._auto_continue_last_output = 0
+
             if text_parts and not tool_call_buffers:
                 full_text = "".join(text_parts)
 
@@ -3002,6 +3260,41 @@ class EncreLoop:
                 for _e in self._save_review_output(_review_text, slash_command_mode, prompt):
                     yield _e
 
+                # ── Anti-stub: if the model returned a brief acknowledgment
+                # without any tool calls or prior tool work, nudge it to
+                # actually act.  This catches the #1 task-delivery failure
+                # mode: "I'll help you with that." / "Done!" with no work.
+                # Only triggers when there was no prior tool work to merge
+                # into (``merged`` is False) and not in plan/spec mode
+                # (where text-only IS the expected deliverable).
+                _is_stub = (
+                    not merged
+                    and slash_command_mode not in ("plan", "spec")
+                    and is_stub_response(text_parts, tool_call_buffers, thinking_parts, prompt)
+                )
+                if _is_stub:
+                    _stub_count = getattr(self, "_stub_response_retry_count", 0)
+                    if _stub_count < MAX_STUB_RESPONSE_RETRIES:
+                        self._stub_response_retry_count = _stub_count + 1
+                        self.session.add_message(
+                            "user", build_stub_retry_message(_stub_count + 1),
+                        )
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.STUB_RESPONSE,
+                                turn=self.session.turn_count,
+                                detail=f"retry={_stub_count + 1}/{MAX_STUB_RESPONSE_RETRIES}",
+                            )
+                        logger.info(
+                            "[run] stub response detected, retrying turn=%d retry=%d/%d",
+                            self.session.turn_count, _stub_count + 1, MAX_STUB_RESPONSE_RETRIES,
+                        )
+                        continue
+                else:
+                    # Reset stub counter on any non-stub response so the
+                    # next task starts fresh.
+                    self._stub_response_retry_count = 0
+
                 # ── Auto-continue: when budget remains, nudge the model to
                 # keep going instead of stopping early.  Mirrors Claude Code's
                 # token-budget auto-continue (query/tokenBudget.ts).
@@ -3013,13 +3306,32 @@ class EncreLoop:
                 ):
                     self._budget_state.add_usage(
                         _backend_usage.get("output_tokens", 0)
+                        + _backend_usage.get("input_tokens", 0)
                     )
                     self.session.metadata[BudgetState.META_KEY] = self._budget_state.checkpoint()
+                    # Diminishing-returns guard: track consecutive auto-continues
+                    # with tiny output.  If the model keeps "continuing" without
+                    # producing meaningful output, stop (it is going in circles).
+                    _out_tokens = _backend_usage.get("output_tokens", 0)
                     if (
-                        not self._budget_state.is_exhausted
-                        and self._budget_state.used_tokens > 0
+                        self._auto_continue_consecutive >= _AUTO_CONTINUE_DIMINISHING_MIN_CONTINUES
+                        and _out_tokens < _AUTO_CONTINUE_DIMINISHING_MIN_DELTA
+                        and self._auto_continue_last_output < _AUTO_CONTINUE_DIMINISHING_MIN_DELTA
                     ):
-                        _auto_continue = True
+                        logger.warning(
+                            "[run] auto-continue diminishing returns (output=%d) turn=%d -- stopping",
+                            _out_tokens, self.session.turn_count,
+                        )
+                        _auto_continue = False
+                    else:
+                        if (
+                            not self._budget_state.is_exhausted
+                            and self._budget_state.used_tokens > 0
+                        ):
+                            _auto_continue = True
+                            self._auto_continue_consecutive += 1
+                            self._auto_continue_last_output = _out_tokens
+                    if _auto_continue:
                         if self._state is not None:
                             self._state.transitions.record(
                                 TurnTransition.AUTO_CONTINUE,
@@ -3038,6 +3350,74 @@ class EncreLoop:
                         continue
 
                 if not _auto_continue:
+                    # ── Verify-on-stop (bounded nudge, Hermes port) ─────
+                    # If this turn's text-only finish happened after editing
+                    # code that was never verified (or whose verification
+                    # failed), nudge the model to verify instead of silently
+                    # ending.  Evidence-driven via the verification ledger:
+                    # it distinguishes "checked and failed" (report that) from
+                    # "never checked".  Bounded by _MAX_VERIFY_ON_STOP_NUDGES
+                    # so it can never deadlock.
+                    _verify_nudge = False
+                    _unverified = self._verif_ledger.unverified_files()
+                    if (
+                        slash_command_mode not in ("plan", "spec")
+                        and _unverified
+                        and self._verify_on_stop_nudges < _MAX_VERIFY_ON_STOP_NUDGES
+                    ):
+                        self._verify_on_stop_nudges += 1
+                        _failed = self._verif_ledger.has_failed_evidence()
+                        self.session.add_message(
+                            "user", self._verif_ledger.build_nudge_message(failed=_failed),
+                        )
+                        _verify_nudge = True
+                        logger.info(
+                            "[run] verify-on-stop nudge %d/%d for %d files turn=%d failed=%s",
+                            self._verify_on_stop_nudges, _MAX_VERIFY_ON_STOP_NUDGES,
+                            len(_unverified), self.session.turn_count, _failed,
+                        )
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.TEXT_ONLY,
+                                turn=self.session.turn_count,
+                                detail="verify_on_stop",
+                            )
+                        continue
+
+                    # ── Forced review escalation ─────────────────────────
+                    # If verify nudges were exhausted but a verification still
+                    # failed, do not silently finish: demand a critical review
+                    # (code-review skill / critic sub-agent) as the review stage
+                    # of the implement -> verify -> review -> fix loop.  Bounded
+                    # by _MAX_FORCED_REVIEWS so it can never deadlock.
+                    _forced_review = False
+                    if (
+                        slash_command_mode not in ("plan", "spec")
+                        and _unverified
+                        and self._verif_ledger.has_failed_evidence()
+                        and self._forced_review_count < _MAX_FORCED_REVIEWS
+                    ):
+                        self._forced_review_count += 1
+                        self.session.add_message(
+                            "user",
+                            self._verif_ledger.build_forced_review_message(
+                                list(self._verif_ledger.unverified_files())
+                            ),
+                        )
+                        _forced_review = True
+                        logger.info(
+                            "[run] forced review escalation %d/%d for %d files turn=%d",
+                            self._forced_review_count, _MAX_FORCED_REVIEWS,
+                            len(_unverified), self.session.turn_count,
+                        )
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.TEXT_ONLY,
+                                turn=self.session.turn_count,
+                                detail="forced_review",
+                            )
+                        continue
+
                     if self._state is not None:
                         self._state.transitions.record(
                             TurnTransition.TEXT_ONLY,
@@ -3352,11 +3732,14 @@ class EncreLoop:
                         yield _event
                         turn_events += 1
                     if proposal_emitted and not self._plan_decision:
-                        # User rejected the proposal -- feed a synthetic
-                        # error result back to the model so it can
-                        # adjust its plan without leaving the tool call
-                        # hanging in the conversation.
-                        plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
+                        # User did not approve (rejected or timed out).  Feed a
+                        # synthetic error result back to the model so it can
+                        # adjust its plan without leaving the tool call hanging.
+                        if self._plan_decision_timed_out:
+                            plan_err = ("Plan approval timed out with no decision. "
+                                        "Proceed carefully, or present a smaller, clearer proposal.")
+                        else:
+                            plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
                         yield create_tool_result(
                             id=p["client_id"],
                             content=plan_err,
@@ -3635,8 +4018,11 @@ class EncreLoop:
                         session_id=self.session.id or "",
                         tool_name=p.get("name", ""),
                     )
-                    # Auto-verify: append LSP diagnostics (or a VERIFY
-                    # reminder when LSP is unavailable) for write tools.
+                    # Auto-verify: append LSP diagnostics (or an actionable
+                    # VERIFY instruction when LSP is unavailable) for write
+                    # tools.  The instruction tells the model which existing
+                    # lint/test tool to run on the changed file, so the gate
+                    # is enforceable rather than a passive reminder.
                     if not p["is_error"] and p["name"] in _WRITE_TOOL_NAMES:
                         fp = _extract_file_path(p["name"], p["result"])
                         if fp:
@@ -3644,10 +4030,9 @@ class EncreLoop:
                             if _lsp_text:
                                 p["result"] += _lsp_text
                             else:
-                                p["result"] += (
-                                    f"\n\n[VERIFY] Please verify the changes to "
-                                    f"`{fp}` are correct by reading the file."
-                                )
+                                p["result"] += "\n\n" + build_verify_instruction(fp)
+                            # Track changed code in the verification ledger.
+                            self._verif_ledger.mark_edited(fp)
                     yield create_tool_result(
                         id=p["client_id"],
                         content=p["result"],
@@ -4286,7 +4671,11 @@ class EncreLoop:
                                 yield _event
                                 turn_events += 1
                             if sec_proposal_emitted and not self._plan_decision:
-                                plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
+                                if self._plan_decision_timed_out:
+                                    plan_err = ("Plan approval timed out with no decision. "
+                                                "Proceed carefully, or present a smaller, clearer proposal.")
+                                else:
+                                    plan_err = "Plan rejected by user. Adjust your plan and try a different approach."
                                 yield create_tool_result(
                                     id=p["client_id"],
                                     content=plan_err,
@@ -4407,6 +4796,9 @@ class EncreLoop:
                     self.session.turn_count, len(_post_tool_msgs),
                 )
                 try:
+                    # Authoritative synchronous pass: bump the epoch so any
+                    # in-flight background compaction discards its result.
+                    self._compact_epoch += 1
                     self.session.set_compact_archive(_post_tool_msgs)
                     _post_compacted = await self.compact_engine.compact(
                         _post_tool_msgs, backend=self.backend,
@@ -4436,6 +4828,7 @@ class EncreLoop:
             if _backend_usage:
                 self._budget_state.add_usage(
                     _backend_usage.get("output_tokens", 0)
+                    + _backend_usage.get("input_tokens", 0)
                 )
                 self.session.metadata[BudgetState.META_KEY] = self._budget_state.checkpoint()
             if self._budget_state.is_exhausted and self._budget_state.can_grace:
@@ -4458,31 +4851,135 @@ class EncreLoop:
             self.session.turn_count += 1
             turn_latency = (time.time() - turn_start) * 1000
 
-            # ── Repetitive tool-call loop detection ─────────────────────
-            # Detect when the model is genuinely stuck: same tool+args
-            # across consecutive turns.  Different queries with the same
-            # tool name (e.g. web_search with different queries) are fine.
+            # ── Repetitive tool-call loop detection + guardrail ladder ──
+            # Detect when the model is genuinely stuck: same tool+args across
+            # consecutive turns.  Different queries with the same tool name
+            # (e.g. web_search with different queries) are fine.
+            # Escalation (port of Hermes tool_guardrails.py):
+            #   warn  (>= _GUARDRAIL_WARN_AFTER)  -> inject guidance
+            #   block (>= _GUARDRAIL_BLOCK_AFTER) -> feed a synthetic error
+            #   halt  (>= _GUARDRAIL_HALT_AFTER)  -> hard-stop the turn
             turn_sigs: list[str] = []
+            _canonical = _canonical_tool_signature
+            _turn_sigs_set: set[str] = set()
+            _turn_sig_names: dict[str, str] = {}
             for tc in assistant_tool_calls:
                 func = tc.get("function", {})
                 name = func.get("name", "")
                 args_raw = func.get("arguments", "")
-                args_key = (args_raw or "")[:80]
+                # Normalize whitespace so formatting differences (newlines vs
+                # single-line JSON, extra indentation) don't hide a true repeat.
+                args_key = ("".join((args_raw or "").split()))[:80]
                 turn_sigs.append(f"{name}:{args_key}")
+                # Canonical-hash fingerprint for the guardrail ladder.  Only
+                # consecutive-turn repeats accumulate: a signature that did not
+                # appear on the previous turn resets to 1, so legitimate but
+                # scattered use of a common tool never triggers a false halt.
+                sig = _canonical(name, args_raw)
+                _turn_sigs_set.add(sig)
+                _turn_sig_names[sig] = name
+                if sig in self._guardrail_prev_sigs:
+                    self._guardrail_call_counts[sig] = self._guardrail_call_counts.get(sig, 1) + 1
+                else:
+                    self._guardrail_call_counts[sig] = 1
+            self._guardrail_prev_sigs = _turn_sigs_set
             if turn_sigs:
                 self._recent_tool_names.append(tuple(turn_sigs))
                 if len(self._recent_tool_names) > 20:
                     self._recent_tool_names.pop(0)
-                if len(self._recent_tool_names) >= _STUCK_LOOP_THRESHOLD and not self._error_tool_names:
-                    recent = self._recent_tool_names[-_STUCK_LOOP_THRESHOLD:]
-                    if recent.count(recent[-1]) >= _STUCK_LOOP_THRESHOLD:
-                        logger.warning(
-                            "[run] repetitive tool-loop: %s turn=%d -- continuing session",
-                            recent[-1], self.session.turn_count,
+
+                # No-progress detection for idempotent read-only tools: when
+                # the same tool returns a byte-identical result on repeat, the
+                # model is re-reading the same data (a stall), even if the args
+                # differ cosmetically.
+                for p in prepared:
+                    pname = p.get("name", "")
+                    # A successful verify/lint/test tool records passing evidence
+                    # in the verification ledger (the change has been checked).
+                    if pname in _VERIFY_TOOL_NAMES and not p.get("skip"):
+                        _vpassed = not p.get("is_error", False)
+                        self._verif_ledger.record_verification(
+                            pname, _vpassed,
+                            summary=_summarize_verify_result(pname, str(p.get("result", "")), _vpassed),
                         )
-                        self._record_stuck_event(recent[-1])
+                    if _is_idempotent_tool(pname) and not p.get("is_error"):
+                        pdigest = _result_digest(str(p.get("result", "")))
+                        _dkey = f"{pname}:{pdigest}"
+                        if self._guardrail_no_progress_digests.get(pname) == pdigest:
+                            self._guardrail_no_progress_counts[_dkey] = \
+                                self._guardrail_no_progress_counts.get(_dkey, 0) + 1
+                        else:
+                            self._guardrail_no_progress_counts[_dkey] = 1
+                        self._guardrail_no_progress_digests[pname] = pdigest
+                        if self._guardrail_no_progress_counts.get(_dkey, 0) >= _NO_PROGRESS_AFTER:
+                            logger.warning(
+                                "[run] idempotent tool %s returned identical result %dx "
+                                "turn=%d -- no progress, injecting guidance",
+                                pname, self._guardrail_no_progress_counts[_dkey],
+                                self.session.turn_count,
+                            )
+                            p["result"] = (
+                                f"{p.get('result', '')}\n\n[NO-PROGRESS] `{pname}` returned "
+                                "an identical result on repeated calls with no state change. "
+                                "Stop re-reading the same data and choose a different action."
+                            )
+
+                # Detect repetitive tool-loops even when tools are failing:
+                # a model stuck re-invoking the same tool+args (often the
+                # exact failing call) is the most common runaway scenario,
+                # and _record_stuck_event only injects guidance -- it never
+                # aborts -- so firing on error turns is safe and desirable.
+                if len(self._recent_tool_names) >= _STUCK_LOOP_THRESHOLD:
+                    # Count each distinct signature across the window so that an
+                    # alternating pattern (A,B,A,B,...) is caught as stuck, not
+                    # just a strictly-consecutive repeat.
+                    recent = self._recent_tool_names[-_STUCK_LOOP_THRESHOLD:]
+                    _counts = Counter(recent)
+                    _repeated_sig, _repeated_count = _counts.most_common(1)[0]
+                    if _repeated_count >= _STUCK_LOOP_THRESHOLD:
+                        logger.warning(
+                            "[run] repetitive tool-loop: %s x%d turn=%d",
+                            _repeated_sig, _repeated_count, self.session.turn_count,
+                        )
+                        self._record_stuck_event(_repeated_sig)
                         self._set_task_stage("discover", reason="stuck loop recovery")
                         self._refresh_working_set(prompt, prepared)
+
+                # Guardrail escalation on the most-repeated canonical signature.
+                if self._guardrail_call_counts:
+                    _top_sig, _top_count = max(
+                        self._guardrail_call_counts.items(), key=lambda kv: kv[1],
+                    )
+                    if _top_count >= _GUARDRAIL_HALT_AFTER and not self._guardrail_halt:
+                        self._guardrail_halt = True
+                        logger.error(
+                            "[run] guardrail HALT: %s called %dx -- stopping turn %d",
+                            _top_sig, _top_count, self.session.turn_count,
+                        )
+                        self._record_stuck_event((_top_sig,))
+                        self._set_task_stage("discover", reason="guardrail halt")
+                        break
+                    if _top_count >= _GUARDRAIL_BLOCK_AFTER:
+                        # Feed a synthetic block result so the model sees the call
+                        # was refused rather than silently looping again.
+                        _blocked_name = _turn_sig_names.get(_top_sig, "")
+                        for p in prepared:
+                            if _blocked_name and p.get("name") == _blocked_name:
+                                p["result"] = (
+                                    f"[GUARDRAIL-BLOCK] `{_blocked_name}` has been called "
+                                    f"{_top_count} times in a loop and is blocked. Stop invoking "
+                                    "this identical call; choose a different tool or action."
+                                )
+                        logger.warning(
+                            "[run] guardrail BLOCK: %s called %dx turn=%d",
+                            _top_sig, _top_count, self.session.turn_count,
+                        )
+                    elif _top_count >= _GUARDRAIL_WARN_AFTER:
+                        logger.warning(
+                            "[run] guardrail WARN: %s called %dx turn=%d",
+                            _top_sig, _top_count, self.session.turn_count,
+                        )
+                        self._record_stuck_event((_top_sig,))
 
             if not _backend_usage:
                 _input_est = estimate_tokens(prompt or "")

@@ -642,12 +642,6 @@ def _summarize_for_model(
                 "the active-window screenshot is held in the session "
                 "trajectory and fed to the VLM, not the LLM>"
             )
-        # Pass through the window position fields so the model can
-        # reason about the spatial layout.
-        for k in ("active_window_left", "active_window_top",
-                  "active_window_width", "active_window_height"):
-            if k in envelope:
-                envelope.setdefault(k, envelope[k])
 
     # 2. Truncate bulky text in the ``result`` sub-payload.
     if "result" in envelope and not include_full:
@@ -677,36 +671,70 @@ def _build_schema() -> dict[str, Any]:
         "properties": {
             "action": {
                 "type": "string",
-                "description": "Computer-use action to perform",
+                "description": (
+                    "Required. Action to dispatch. Send 'list_actions' to "
+                    "discover the canonical enum at runtime. Interaction "
+                    "actions (click, type, screenshot, ...) target the "
+                    "browser or desktop via `target`; meta-actions "
+                    "(trajectory, reset, metrics, ...) operate on the "
+                    "session itself."
+                ),
             },
             "target": {
                 "type": "string",
                 "enum": ["browser", "desktop", "auto"],
                 "description": (
-                    "Which backend to route to. 'auto' (default) lets the "
-                    "dispatcher pick based on the action. Omit for "
-                    "cross-target actions like 'click' or 'screenshot'."
+                    "Backend to route cross-target actions to. 'auto' "
+                    "(default) lets the dispatcher pick based on the "
+                    "action; browser-only / desktop-only actions ignore "
+                    "this field. Optional."
                 ),
             },
             "x": {
                 "type": "integer",
                 "description": (
-                    "X coordinate in physical pixels (desktop) or "
-                    "viewport pixels (browser)"
+                    "X coordinate. For desktop this is physical pixels "
+                    "by default (see coord_space); for browser it is "
+                    "viewport CSS pixels. Required for click, "
+                    "double_click, right_click, move_mouse, drag start, "
+                    "scroll anchor."
                 ),
             },
-            "y": {"type": "integer", "description": "Y coordinate"},
-            "x2": {"type": "integer", "description": "Drag / line end X"},
-            "y2": {"type": "integer", "description": "Drag / line end Y"},
+            "y": {
+                "type": "integer",
+                "description": (
+                    "Y coordinate, same coordinate space as `x`. "
+                    "Required alongside `x` for click / move / drag "
+                    "start / scroll anchor."
+                ),
+            },
+            "x2": {
+                "type": "integer",
+                "description": (
+                    "End X coordinate for drag (drop target) or line "
+                    "draw. Required for `drag` alongside `y2`."
+                ),
+            },
+            "y2": {
+                "type": "integer",
+                "description": (
+                    "End Y coordinate for drag (drop target) or line "
+                    "draw. Required for `drag` alongside `x2`."
+                ),
+            },
             "text": {
                 "type": "string",
-                "description": "Text to type (type) or URL (navigate)",
+                "description": (
+                    "String payload. For `type` it is the literal text "
+                    "to type; for `navigate` it is the URL; for "
+                    "clipboard_set it is the clipboard content."
+                ),
             },
             "query": {
                 "type": "string",
                 "description": (
                     "Text to find for click_text / find_text / "
-                    "find_element_by_name.  Also used as the free-text "
+                    "find_element_by_name. Also used as the free-text "
                     "substring match on name, description, and tags for "
                     "library_search (case-insensitive)."
                 ),
@@ -714,190 +742,269 @@ def _build_schema() -> dict[str, Any]:
             "tag": {
                 "type": "string",
                 "description": (
-                    "library_search: filter to macros that include "
-                    "this tag."
+                    "library_search: filter to macros that include this "
+                    "tag. Optional."
                 ),
             },
             "key": {
                 "type": "string",
-                "description": "Key name to press (press_key)",
+                "description": (
+                    "Single key name for press_key (e.g. 'Enter', 'Tab', "
+                    "'Escape', 'F1'). Use `keys` for combinations."
+                ),
             },
             "keys": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Key combination (hotkey)",
+                "description": (
+                    "Ordered list of key names for hotkey, pressed "
+                    "sequentially then released in reverse (e.g. "
+                    "[\"Control\", \"c\"] for copy)."
+                ),
             },
             "scroll_amount": {
                 "type": "integer",
-                "description": "Positive=down, negative=up",
+                "description": (
+                    "Scroll direction and magnitude. Positive scrolls "
+                    "down, negative scrolls up. Magnitude unit is "
+                    "backend-defined (typically wheel clicks)."
+                ),
             },
             "selector": {
                 "type": "string",
-                "description": "CSS / ARIA selector (browser-only actions)",
+                "description": (
+                    "CSS or ARIA selector for browser-only actions "
+                    "(fill_form field key, wait_for_selector, "
+                    "click_by_role target, etc.)."
+                ),
             },
             "fields": {
                 "type": "object",
-                "description": "fill_form: {selector: value} map",
+                "description": (
+                    "fill_form: map of {selector: value} entries to "
+                    "populate in one batch. Each value is typed into the "
+                    "matching input."
+                ),
             },
             "tab_index": {
                 "type": "integer",
-                "description": "switch_tab / close_tab: 0-based tab index",
+                "description": (
+                    "0-based tab index for switch_tab / close_tab. "
+                    "Out-of-range values return an error."
+                ),
             },
             "option_value": {
                 "type": "string",
-                "description": "select_option: option value",
+                "description": (
+                    "select_option: value to match against the option. "
+                    "Interpreted according to `option_by` (default "
+                    "matches the option's `value` attribute)."
+                ),
             },
             "option_by": {
                 "type": "string",
                 "enum": ["value", "label", "index"],
                 "description": (
-                    "select_option: how option_value is matched (default value)"
+                    "select_option: how option_value is matched. "
+                    "'value' (default) matches the value attribute, "
+                    "'label' matches visible text, 'index' treats "
+                    "option_value as a 0-based position."
                 ),
             },
             "attr_name": {
                 "type": "string",
                 "description": (
-                    "get_attribute / get_property: attribute / property name"
+                    "get_attribute / get_property: name of the DOM "
+                    "attribute or element property to read."
                 ),
             },
             "js_code": {
                 "type": "string",
-                "description": "execute_js: JavaScript source",
+                "description": (
+                    "execute_js: JavaScript source to evaluate in the "
+                    "active page context. Return value is serialised "
+                    "back to the caller."
+                ),
             },
             "fuzzy": {
                 "type": "boolean",
-                "description": "click_text / find_text: fuzzy token match",
+                "description": (
+                    "click_text / find_text: when True, treat `query` as "
+                    "ordered whitespace-separated tokens that must all "
+                    "appear in the matched text. Default False."
+                ),
             },
             "exact": {
                 "type": "boolean",
                 "description": (
-                    "click_text / find_text / click_by_role: exact match"
+                    "click_text / find_text / click_by_role: when True, "
+                    "require the match to equal `query` exactly rather "
+                    "than as a substring. Default False."
                 ),
             },
             "occurrence": {
                 "type": "integer",
-                "description": "click_text / find_text: 1-based match index",
+                "description": (
+                    "click_text / find_text: 1-based index of the match "
+                    "to use when the same text appears multiple times. "
+                    "Default 1."
+                ),
             },
             "ms": {
                 "type": "integer",
-                "description": "wait: milliseconds to sleep",
+                "description": (
+                    "wait: milliseconds to sleep before returning. "
+                    "Use short values for animation settle, longer for "
+                    "network waits."
+                ),
             },
             "button": {
                 "type": "string",
                 "enum": ["left", "middle", "right"],
-                "description": "Mouse button (click / click_text)",
+                "description": (
+                    "Mouse button for click / click_text. Default "
+                    "'left'."
+                ),
             },
             "coord_space": {
                 "type": "string",
                 "enum": ["auto", "physical", "logical"],
-                "description": "Desktop coordinate system (auto / physical / logical)",
+                "description": (
+                    "Desktop coordinate system. 'physical' = raw "
+                    "screenshot pixels, 'logical' = OS-scaled pixels, "
+                    "'auto' (default) infers from magnitude. Ignored "
+                    "for browser actions."
+                ),
             },
             "accept": {
                 "type": "boolean",
-                "description": "set_dialog_handler: True=accept, False=dismiss",
+                "description": (
+                    "set_dialog_handler: True to auto-accept alert / "
+                    "confirm dialogs, False to dismiss them."
+                ),
             },
             "prompt_text": {
                 "type": "string",
-                "description": "set_dialog_handler: prompt() value",
+                "description": (
+                    "set_dialog_handler: text to inject into a prompt() "
+                    "dialog before accepting. Optional."
+                ),
             },
             "paths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "set_file_chooser_handler / file_drop: list of file paths",
+                "description": (
+                    "set_file_chooser_handler / file_drop: list of "
+                    "absolute file paths to upload or drop."
+                ),
             },
             "timeout": {
                 "type": "integer",
-                "description": "wait_for_selector timeout (ms)",
+                "description": (
+                    "wait_for_selector timeout in milliseconds. The "
+                    "action fails if the selector does not appear "
+                    "within this window."
+                ),
             },
             "dry_run": {
                 "type": "boolean",
                 "description": (
                     "When True, dispatch returns a preview report "
                     "(selector_present / text_match_count / would_send) "
-                    "without actually mutating the UI. Use this to "
-                    "sanity-check a click target before committing."
+                    "without mutating the UI. Use to sanity-check a "
+                    "click target before committing. Default False."
                 ),
             },
             "keep_screenshots": {
                 "type": "integer",
                 "description": (
-                    "compress_trajectory: number of recent steps to "
-                    "keep screenshots for (older screenshots are dropped). "
-                    "Defaults to 5."
+                    "compress_trajectory: number of most recent steps "
+                    "to keep screenshots for; older screenshots are "
+                    "dropped (text action logs are retained). Defaults "
+                    "to 5."
                 ),
             },
             "n": {
                 "type": "integer",
                 "description": (
-                    "recent_screensshots: how many recent steps to return "
-                    "with their screenshots. Defaults to 5."
+                    "recent_screenshots: how many recent steps to "
+                    "return with their base64 screenshots for VLM "
+                    "context. Defaults to 5. Clamped to max_steps."
                 ),
             },
             "expect_change": {
                 "type": "boolean",
                 "description": (
-                    "When True, dispatcher verifies the DOM / screen "
-                    "state hash changed after the action.  Returns "
-                    "page_changed: bool and a warning if not.  Use this "
-                    "to catch no-op clicks on dead elements."
+                    "When True, the dispatcher verifies the DOM / "
+                    "screen state hash changed after the action and "
+                    "returns page_changed: bool plus a warning if not. "
+                    "Use to catch no-op clicks on dead elements. "
+                    "Default False."
                 ),
             },
             "timeout_ms": {
                 "type": "integer",
                 "description": (
-                    "Per-action timeout in milliseconds.  Overrides the "
-                    "session default.  None means 'use session default'."
+                    "Per-action timeout in milliseconds. Overrides the "
+                    "session default. Omit / null to use the session "
+                    "default."
                 ),
             },
             "state": {
                 "type": "object",
                 "description": (
                     "load_state: dict returned from a prior save_state "
-                    "call.  Use to restore a session."
+                    "call. Restores cookies, URL, and localStorage."
                 ),
             },
             "name": {
                 "type": "string",
                 "description": (
-                    "register_macro / execute_macro: name of the macro."
+                    "register_macro / execute_macro / library_register / "
+                    "library_remove: name of the macro to register, "
+                    "execute, or remove."
                 ),
             },
             "actions": {
                 "type": "array",
                 "items": {"type": "object"},
                 "description": (
-                    "register_macro: list of action dicts to register "
-                    "as a named sequence."
+                    "register_macro / library_register: list of action "
+                    "dicts (each with at least an 'action' key) to "
+                    "register as a named sequence."
                 ),
             },
             "stop_on_failure": {
                 "type": "boolean",
                 "description": (
-                    "execute_macro / replay_trajectory: if True (default), "
-                    "stop at the first failed step and skip / abort the "
-                    "remainder."
+                    "execute_macro / replay_trajectory / replay_bundle: "
+                    "if True (default), stop at the first failed step "
+                    "and skip the remainder; if False, continue "
+                    "dispatching remaining steps."
                 ),
             },
             "steps": {
                 "type": "array",
                 "items": {"type": "object"},
                 "description": (
-                    "replay_trajectory: list of step dicts (each with an "
-                    "'action' field) to re-execute."
+                    "replay_trajectory: list of step dicts (each with "
+                    "an 'action' field) to re-execute in order."
                 ),
             },
             "start": {
                 "type": "integer",
                 "description": (
-                    "replay_trajectory: index to start from; earlier "
-                    "steps are skipped.  Defaults to 0."
+                    "replay_trajectory / replay_bundle: 0-based index "
+                    "to start from; earlier steps are skipped. Defaults "
+                    "to 0."
                 ),
             },
             "category": {
                 "type": "string",
                 "description": (
-                    "library_register: category to tag the macro with "
-                    "(e.g. 'login', 'search').  Defaults to 'general'."
+                    "library_register / library_search: category to tag "
+                    "the macro with (e.g. 'login', 'search') or to "
+                    "filter by. Defaults to 'general'."
                 ),
             },
             "tags": {
@@ -912,15 +1019,16 @@ def _build_schema() -> dict[str, Any]:
                 "type": "boolean",
                 "description": (
                     "library_register: when True, replace an existing "
-                    "macro with the same name (still bumps version).  "
+                    "macro with the same name (still bumps version). "
                     "Defaults to False."
                 ),
             },
             "bundle": {
                 "type": "object",
                 "description": (
-                    "export_bundle / replay_bundle: the session "
-                    "bundle to exchange."
+                    "replay_bundle: bundle dict produced by a prior "
+                    "export_bundle call. Contains recorded actions and "
+                    "optional state checkpoint."
                 ),
             },
             "variables": {
@@ -928,7 +1036,7 @@ def _build_schema() -> dict[str, Any]:
                 "description": (
                     "replay_bundle: mapping used to substitute "
                     "'{{key}}' placeholders inside the recorded action "
-                    "payloads (e.g. {'username': 'alice'}).  Missing "
+                    "payloads (e.g. {'username': 'alice'}). Missing "
                     "keys are left in place rather than raising."
                 ),
             },
@@ -944,7 +1052,7 @@ def _build_schema() -> dict[str, Any]:
                 "type": "boolean",
                 "description": (
                     "export_bundle: when True (default), include the "
-                    "browser state checkpoint in the bundle.  Set False "
+                    "browser state checkpoint in the bundle. Set False "
                     "to keep the bundle tiny (replay then uses a fresh "
                     "session)."
                 ),
@@ -953,9 +1061,10 @@ def _build_schema() -> dict[str, Any]:
                 "type": "boolean",
                 "description": (
                     "Computer-use envelope: by default the base64 PNG "
-                    "screenshot is REPLACED with a one-line placeholder "
-                    "so the LLM context isn't flooded.  Set True to opt "
-                    "back in to the full base64 (debugging / VLM only)."
+                    "screenshot is replaced with a one-line placeholder "
+                    "so the LLM context isn't flooded. Set True to opt "
+                    "back into the full base64 (debugging / VLM only). "
+                    "Default False."
                 ),
             },
             "include_full_result": {
@@ -963,46 +1072,49 @@ def _build_schema() -> dict[str, Any]:
                 "description": (
                     "Computer-use envelope: by default bulky string "
                     "fields under result (text, html, value, output, "
-                    "data, ...) are truncated to max_text_chars.  Set "
-                    "True to return the raw result untouched."
+                    "data, ...) are truncated to max_text_chars. Set "
+                    "True to return the raw result untouched. Default "
+                    "False."
                 ),
             },
             "max_text_chars": {
                 "type": "integer",
                 "description": (
                     "Computer-use envelope: override the per-string "
-                    "truncation cap (default 8000).  Use 0 to disable "
-                    "truncation entirely (same as include_full_result)."
+                    "truncation cap (default 8000). Use 0 to disable "
+                    "truncation entirely (equivalent to "
+                    "include_full_result=true)."
                 ),
             },
             "source": {
                 "type": "string",
                 "description": (
                     "export_bundle: free-form label for the producer "
-                    "(e.g. an agent identifier).  Informational only."
+                    "(e.g. an agent identifier). Informational only."
                 ),
             },
             "enabled": {
                 "type": "boolean",
                 "description": (
-                    "set_no_op_as_failure: when True (default), an action "
-                    "that returns success but produces an unchanged DOM / "
-                    "screen hash is converted to a NO_CHANGE failure so "
-                    "the retry policy can fire.  Set False to revert to "
-                    "the success-with-warning behaviour."
+                    "set_no_op_as_failure: when True (default), an "
+                    "action that returns success but produces an "
+                    "unchanged DOM / screen hash is converted to a "
+                    "NO_CHANGE failure so the retry policy can fire. "
+                    "Set False to revert to success-with-warning."
                 ),
             },
             "author": {
                 "type": "string",
                 "description": (
-                    "library_register: free-form author / origin tag."
+                    "library_register: free-form author or origin tag. "
+                    "Informational."
                 ),
             },
             "description": {
                 "type": "string",
                 "description": (
                     "library_register: human-readable summary of what "
-                    "the macro does.  Surfaced to the VLM so it knows "
+                    "the macro does. Surfaced to the VLM so it knows "
                     "when to invoke the macro by name."
                 ),
             },
@@ -1014,44 +1126,59 @@ def _build_schema() -> dict[str, Any]:
 EncreComputerUseTool = build_tool(
     name="computer_use",
     description=(
-        "Unified computer-use tool: a single, curated action schema that "
-        "works against both the browser and the desktop. Use this when you "
-        "want a model-friendly interface for visual / interactive "
-        "automation. Actions: click, double_click, right_click, type, "
-        "press_key / key, hotkey, scroll, drag, move_mouse, hover, "
-        "screenshot, click_text, find_text, wait, navigate, fill_form, "
-        "select_option, get_attribute, get_property, get_html, get_text, "
-        "get_all_text, execute_js, list_tabs, switch_tab, new_tab, "
-        "close_tab, set_dialog_handler, set_file_chooser_handler, "
-        "a11y_snapshot, click_by_role, get_by_text_count, "
-        "get_page_structure, triple_click, clipboard_get, clipboard_set, "
-        "file_drop, get_screen_size, get_cursor_position, "
+        "WHAT: Unified computer-use tool exposing one curated action "
+        "schema that routes each action to the browser or desktop backend "
+        "behind the scenes, with a trajectory buffer and step budget. "
+        "WHEN: Use for visual / interactive automation that benefits from "
+        "a single model-friendly API across both browser and desktop; "
+        "ideal for multi-step loops that benefit from trajectory memory, "
+        "macros, and page-change verification. "
+        "WHEN NOT: Call `browser` or `desktop` directly when you know "
+        "exactly which backend you need; use `vlm_computer_use` when the "
+        "model should delegate pixel-level decisions to a vision model. "
+        "TIPS: Set `dry_run: true` to preview an action without mutating "
+        "the UI; set `expect_change: true` to flag dead-element clicks; "
+        "call `compress_trajectory` periodically to bound context size; "
+        "call `list_actions` to re-discover the canonical action enum. "
+        "PITFALLS: The session enforces a step budget (default 200) -- "
+        "beyond it the tool refuses to dispatch and returns an explicit "
+        "error, so call `reset` once a task is complete. Base64 "
+        "screenshots are stripped from the LLM envelope by default to "
+        "avoid flooding context -- opt back in with "
+        "`include_screenshot_b64: true` (debugging / VLM only). "
+        "Interaction actions: click, double_click, right_click, "
+        "triple_click, type, press_key / key, hotkey, scroll, drag, "
+        "move_mouse, hover, screenshot, click_text, find_text, wait, "
+        "navigate, fill_form, select_option, get_attribute, get_property, "
+        "get_html, get_text, get_all_text, execute_js, list_tabs, "
+        "switch_tab, new_tab, close_tab, set_dialog_handler, "
+        "set_file_chooser_handler, a11y_snapshot, click_by_role, "
+        "get_by_text_count, get_page_structure, clipboard_get, "
+        "clipboard_set, file_drop, get_screen_size, get_cursor_position, "
         "accessibility_tree, find_element_by_name, get_elements, "
-        "take_screenshot_png, locate_on_screen, done. Plus meta-actions: "
-        "'trajectory' (return past actions), 'reset' (forget history), "
-        "'list_actions' (return the action enum), 'cancel' (abort further "
-        "dispatches), 'recent_screenshots' (return the last N steps with "
-        "their base64 screenshots for VLM context), 'compress_trajectory' "
-        "(drop screenshots older than keep_screenshots to free context), "
-        "'save_state' / 'load_state' (browser cookie/storage checkpoint), "
-        "'register_macro' / 'execute_macro' (in-session named action "
-        "sequences), 'replay_trajectory' (re-execute a recorded sequence), "
-        "'metrics' (success rate, latency, failure breakdown, page-change "
+        "take_screenshot_png, locate_on_screen, done. "
+        "Meta-actions: 'trajectory' (return past actions), 'reset' "
+        "(forget history), 'list_actions' (return the action enum), "
+        "'cancel' (abort further dispatches), 'recent_screenshots' "
+        "(return the last N steps with their base64 screenshots for VLM "
+        "context), 'compress_trajectory' (drop screenshots older than "
+        "keep_screenshots to free context), 'save_state' / 'load_state' "
+        "(browser cookie/storage checkpoint), 'register_macro' / "
+        "'execute_macro' (in-session named action sequences), "
+        "'replay_trajectory' (re-execute a recorded sequence), 'metrics' "
+        "(success rate, latency, failure breakdown, page-change "
         "verification, no-op count), 'set_no_op_as_failure' (toggle the "
-        "expect_change=no-op → NO_CHANGE failure conversion), "
+        "expect_change no-op to NO_CHANGE failure conversion), "
         "'library_register' / 'library_search' / 'library_list' / "
         "'library_save' / 'library_remove' (persistent macro library on "
         "disk, versioned and searchable by category / tag / free-text), "
-        "'export_bundle' / 'replay_bundle' "
-        "(cross-session session export with optional state restore and "
-        "variable substitution via {{key}} placeholders).  Set 'dry_run': "
-        "true to preview an action without actually mutating the UI.  Set "
-        "'expect_change': true to verify the DOM / screen state actually "
-        "changed after the action.  Browser-only actions (navigate, "
-        "fill_form, etc.) auto-route to the browser backend; desktop-only "
-        "actions (triple_click, clipboard_*, etc.) route to the desktop. "
-        "Cross-target actions (click, type, screenshot, etc.) honour the "
-        "'target' field -- default 'browser'."
+        "'export_bundle' / 'replay_bundle' (cross-session export with "
+        "optional state restore and variable substitution via {{key}} "
+        "placeholders). Browser-only actions (navigate, fill_form, ...) "
+        "auto-route to the browser backend; desktop-only actions "
+        "(triple_click, clipboard_*, ...) route to the desktop. "
+        "Cross-target actions (click, type, screenshot, ...) honour the "
+        "`target` field -- default 'browser'."
     ),
     input_schema=_build_schema(),
     execute=_computer_use_execute,

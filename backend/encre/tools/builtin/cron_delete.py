@@ -67,13 +67,24 @@ async def _cron_delete_execute(**kwargs: Any) -> str:
 
 EncreCronDeleteTool = build_tool(
     name="cron_delete",
-    description="Cancel/delete a previously scheduled cron job by its ID",
+    description=(
+        "Cancel or delete a previously scheduled cron job by its ID so it stops "
+        "firing. "
+        "Use this when a scheduled task is no longer needed or was created by "
+        "mistake. "
+        "Do NOT use this to pause a job temporarily (reschedule with cron_create "
+        "instead) or to inspect jobs (use cron_list). "
+        "Tips: obtain the `job_id` from cron_list before deleting. "
+        "Pitfalls: deletion cannot be undone — a deleted recurring job must be "
+        "recreated with cron_create if needed again; deleting a non-existent job "
+        "returns a 'not_found' status."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "job_id": {
                 "type": "string",
-                "description": "The ID of the scheduled job to cancel",
+                "description": "Unique identifier of the scheduled job to cancel; obtain it via cron_list.",
             },
         },
         "required": ["job_id"],

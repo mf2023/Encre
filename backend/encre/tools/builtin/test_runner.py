@@ -91,6 +91,7 @@ from pathlib import Path
 from typing import Any
 
 from encre.tools.base import build_tool
+from encre.tools.builtin._encoding import decode_bytes
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -118,8 +119,8 @@ async def _exec(cmd: list[str], cwd: str, timeout: float) -> tuple[int, str, str
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
         return 124, "", f"timeout after {timeout}s"
-    out = stdout_b.decode("utf-8", errors="replace")
-    err = stderr_b.decode("utf-8", errors="replace")
+    out = decode_bytes(stdout_b)
+    err = decode_bytes(stderr_b)
     return proc.returncode or 0, out, err
 
 
@@ -505,14 +506,18 @@ async def _test_run_execute(**kwargs: Any) -> str:
 EncreTestRunTool = build_tool(
     name="test_run",
     description=(
-        "Run the project's test suite and return a structured JSON "
-        "report.  Auto-detects pytest, vitest, jest and cargo test.  "
-        "Each result includes per-test status (passed / failed / "
-        "skipped / error), duration, file location, and a truncated "
-        "failure message -- enough for the agent to decide which tests "
-        "to fix and where.  Use the 'filter' argument to scope to a "
-        "single test (pytest ``-k``, jest/vitest ``-t``, cargo test "
-        "name)."
+        "Run the project's test suite and return a structured JSON report. "
+        "Auto-detects pytest, vitest, jest, and cargo test from project "
+        "files. Use this instead of invoking the test runner directly via "
+        "bash -- it parses results into per-test status (passed/failed/"
+        "skipped/error), duration, file location, and a truncated failure "
+        "message, so you can decide which tests to fix and where. Use the "
+        "'filter' argument to scope to a single test (pytest -k, "
+        "jest/vitest -t, cargo test name). "
+        "TIP: After a code change, run with a narrow 'filter' on the "
+        "affected tests first, then run the full suite. "
+        "AVOID: Running the full suite repeatedly without a filter when "
+        "iterating on one test -- use the filter to stay fast."
     ),
     input_schema={
         "type": "object",
@@ -520,30 +525,31 @@ EncreTestRunTool = build_tool(
             "workspace": {
                 "type": "string",
                 "description": (
-                    "Absolute path to the project root.  Defaults to the "
-                    "agent's configured workspace when omitted."
+                    "Absolute path to the project root (required). Must be "
+                    "an existing directory."
                 ),
             },
             "framework": {
                 "type": "string",
                 "enum": ["pytest", "vitest", "jest", "cargo"],
                 "description": (
-                    "Force a specific test framework.  When omitted the "
-                    "tool auto-detects from project files."
+                    "Force a specific test framework (optional). When "
+                    "omitted the tool auto-detects from project files "
+                    "(Cargo.toml, package.json, pyproject.toml, etc.)."
                 ),
             },
             "filter": {
                 "type": "string",
                 "description": (
-                    "Optional test filter -- pytest ``-k`` expression, "
-                    "jest/vitest ``-t`` substring, or a cargo test name."
+                    "Optional test filter: pytest '-k' expression, "
+                    "jest/vitest '-t' substring, or a cargo test name."
                 ),
             },
             "max_duration": {
                 "type": "number",
                 "description": (
-                    "Maximum wall-clock duration in seconds.  Defaults to "
-                    "120.  The subprocess is killed if it overruns."
+                    "Maximum wall-clock duration in seconds (optional, "
+                    "default 120). The subprocess is killed if it overruns."
                 ),
             },
         },

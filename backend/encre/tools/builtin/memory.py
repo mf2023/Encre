@@ -296,22 +296,29 @@ async def _memory_profile_execute(**kwargs: Any) -> str:
 EncreMemoryCreateTool = build_tool(
     name="memory_create",
     description=(
-        "Create a new persistent memory file. Memories are encrypted, "
-        "persist across sessions, and are automatically loaded into the "
-        "agent's context on future runs. Use frontmatter (YAML between --- "
-        "lines) to set metadata: name, description, type (user/feedback/"
-        "project/reference), and tags."
+        "Create a new persistent memory file that is encrypted at rest and "
+        "automatically loaded into the agent's context on future runs. "
+        "Use this to record durable user preferences, project context, feedback, or "
+        "reference notes that should outlive the current session. "
+        "Do NOT use this for ephemeral scratch data (use todo/task tools), for "
+        "bulk file storage (use file_write), or to overwrite an existing memory "
+        "(use memory_update instead). "
+        "Tips: include YAML frontmatter (between --- lines) to set name, "
+        "description, type (user/feedback/project/reference), and tags for richer "
+        "retrieval. "
+        "Pitfalls: filenames must use the .md extension; creating a file that "
+        "already exists will overwrite it."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "filename": {
                 "type": "string",
-                "description": "The .md filename for the memory (e.g. 'user_preferences.md')",
+                "description": "The .md filename for the memory (e.g. 'user_preferences.md').",
             },
             "content": {
                 "type": "string",
-                "description": "Full markdown content with optional YAML frontmatter",
+                "description": "Full markdown body, optionally starting with YAML frontmatter (--- ... ---) declaring name, description, type, and tags.",
             },
         },
         "required": ["filename", "content"],
@@ -326,15 +333,21 @@ EncreMemoryCreateTool = build_tool(
 EncreMemoryReadTool = build_tool(
     name="memory_read",
     description=(
-        "Read a memory file by filename. Returns the full decrypted content "
-        "including frontmatter."
+        "Read a memory file by filename, returning the full decrypted content "
+        "including any YAML frontmatter. "
+        "Use this when you already know the memory filename and want its full "
+        "contents loaded into context. "
+        "Do NOT use this to discover memories by meaning (use memory_search) or to "
+        "inspect the user profile (use memory_profile). "
+        "Tips: pair with memory_search to first locate the relevant filename. "
+        "Pitfalls: returns an error if the filename does not exist."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "filename": {
                 "type": "string",
-                "description": "The .md filename to read (e.g. 'user_preferences.md')",
+                "description": "The .md filename to read (e.g. 'user_preferences.md').",
             },
         },
         "required": ["filename"],
@@ -350,19 +363,25 @@ EncreMemoryReadTool = build_tool(
 EncreMemoryUpdateTool = build_tool(
     name="memory_update",
     description=(
-        "Update an existing memory file. The existing file is read, and the "
-        "new content replaces it entirely. Content is encrypted on save."
+        "Replace the entire contents of an existing memory file with new content, "
+        "encrypted on save. "
+        "Use this to refresh or correct a memory that has grown stale. "
+        "Do NOT use this to create a new memory (use memory_create) or to delete "
+        "(use memory_delete); for partial edits, read first then write the merged "
+        "content. "
+        "Tips: preserve any YAML frontmatter so metadata stays intact. "
+        "Pitfalls: the previous content is overwritten with no history retained."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "filename": {
                 "type": "string",
-                "description": "The .md filename to update",
+                "description": "The .md filename to update.",
             },
             "content": {
                 "type": "string",
-                "description": "The new full content for the memory file",
+                "description": "The new full content for the memory file (frontmatter plus markdown body).",
             },
         },
         "required": ["filename", "content"],
@@ -377,14 +396,20 @@ EncreMemoryUpdateTool = build_tool(
 EncreMemoryDeleteTool = build_tool(
     name="memory_delete",
     description=(
-        "Delete a memory file permanently. This cannot be undone."
+        "Permanently delete a memory file. "
+        "Use this to remove obsolete or incorrect memories that should no longer "
+        "influence future sessions. "
+        "Do NOT use this for routine updates (use memory_update) or to clear the "
+        "user profile (use memory_profile with appropriate updates). "
+        "Tips: confirm the filename with memory_read or memory_search first. "
+        "Pitfalls: deletion cannot be undone and there is no trash bin."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "filename": {
                 "type": "string",
-                "description": "The .md filename to delete",
+                "description": "The .md filename to delete.",
             },
         },
         "required": ["filename"],
@@ -399,19 +424,27 @@ EncreMemoryDeleteTool = build_tool(
 EncreMemorySearchTool = build_tool(
     name="memory_search",
     description=(
-        "Search memory files semantically. Returns the most relevant memory "
-        "files matching the query."
+        "Search memory files semantically and return the most relevant matches "
+        "for the query. "
+        "Use this when you need to recall a memory by meaning rather than by "
+        "filename, e.g. 'what does the user prefer for testing?'. "
+        "Do NOT use this when you already know the filename (use memory_read) or "
+        "for structured user profile fields (use memory_profile). "
+        "Tips: write the query as a natural-language question for best recall; "
+        "raise `top_k` to broaden the result set. "
+        "Pitfalls: very generic queries can surface many similar memories — "
+        "narrow the wording or reduce `top_k` to focus results."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search query to find relevant memories",
+                "description": "Natural-language query used to find relevant memories.",
             },
             "top_k": {
                 "type": "integer",
-                "description": "Number of results to return (default 5)",
+                "description": "Maximum number of results to return; defaults to 5.",
             },
         },
         "required": ["query"],
@@ -427,13 +460,17 @@ EncreMemorySearchTool = build_tool(
 EncreMemoryProfileTool = build_tool(
     name="memory_profile",
     description=(
-        "Read or update the user profile -- structured observations about the "
-        "user (expertise, communication style, preferences, OS, editor, etc.). "
-        "This is stored as `_profile.md` in the memory directory and is part "
-        "of the unified memory system.\n\n"
-        "Query (no value): returns all known profile fields with confidence "
-        "levels so you can tailor your responses.\n"
-        "Update (field + value): records an observation about the user."
+        "Read or update the user profile — structured observations about the user "
+        "(expertise, communication style, preferences, OS, editor, etc.) stored as "
+        "_profile.md inside the unified memory system.\n\n"
+        "Use this to tailor responses to the user (query) or to record a new "
+        "observation (update).\n"
+        "Do NOT use this for free-form memories (use memory_create/update) or for "
+        "one-off facts that do not belong in the profile.\n"
+        "Tips: query with no args to dump the whole profile; pass field+value to "
+        "record an observation, optionally with a confidence score.\n"
+        "Pitfalls: profile fields are a fixed enumeration — see the `field` enum "
+        "description for the supported set."
     ),
     input_schema={
         "type": "object",
@@ -459,7 +496,7 @@ EncreMemoryProfileTool = build_tool(
             },
             "confidence": {
                 "type": "number",
-                "description": "How confident you are (0.0-1.0, default 0.7). Only used when updating.",
+                "description": "Confidence in the observation, from 0.0 to 1.0; only used when updating. Defaults to 0.7.",
             },
         },
     },

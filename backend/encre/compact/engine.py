@@ -69,6 +69,7 @@ render a visual divider, and ``is_compact_summary`` so the model can
 distinguish the summary from real user input.
 """
 
+import time
 from typing import Any
 
 from encre.logging_config import get_logger
@@ -83,6 +84,13 @@ MICROCOMPACT_CACHE_TTL_MINUTES = 30  # clear tool results older than this
 MICROCOMPACT_KEEP_RECENT_TURNS = 5   # keep this many recent turns during microcompact
 COMPACT_MAX_OUTPUT_TOKENS = 16_384   # max tokens for the summary response
 MAX_CONSECUTIVE_COMPACT_FAILURES = 3  # circuit breaker
+
+# Anti-thrash thresholds (Hermes/Claude autocompact port): a compaction that
+# frees less than this fraction of the pre-compact token count is "ineffective";
+# after two consecutive ineffective passes automatic compaction backs off.  A
+# summary-LLM failure puts summarisation into this many seconds of cooldown.
+_INEFFECTIVE_COMPACT_MIN_SAVE = 0.10
+_COMPACT_FAILURE_COOLDOWN_SECONDS = 60.0
 
 # Three-tier tool classification for microcompact:
 #   CLEARABLE: large one-shot outputs, safe to wipe entirely
@@ -206,6 +214,13 @@ class CompactEngine:
         # before the most recent compaction.  Saved BEFORE compact runs so
         # the model can request a recall if the summary missed critical info.
         self._pre_compact_cache: dict[str, list[dict[str, Any]]] = {}
+        # Anti-thrash guards (port of Hermes/Claude autocompact): consecutive
+        # compactions that saved little (< _INEFFECTIVE_COMPACT_MIN_SAVE%) make
+        # future automatic compactions skip until real progress, and summary-LLM
+        # failures put summarisation into a cooldown window instead of retrying
+        # immediately in a hot loop.
+        self._ineffective_compaction_count = 0
+        self._summary_failure_cooldown_until = 0.0
 
     def sanitize(
         self, messages: list[dict[str, Any]]
@@ -348,6 +363,9 @@ class CompactEngine:
         system_prompt: str = "",
         workspace_context: str = "",
         session_id: str = "",
+        *,
+        enable_caching: bool = False,
+        force: bool = False,
     ) -> list[dict[str, Any]] | None:
         """Run model-driven summarisation.
 
@@ -365,6 +383,31 @@ class CompactEngine:
         Returns ``None`` if summarisation fails (circuit breaker open,
         API error, etc.).
         """
+        # ── Anti-thrash guards (port of Hermes/Claude autocompact) ─────
+        # Skip automatic compaction when recent compactions saved little (the
+        # context is dominated by irreducible recent turns) or when the summary
+        # LLM recently failed -- otherwise we burn LLM calls re-compacting the
+        # same near-limit context in a hot loop.  ``force=True`` (reactive /
+        # overflow recovery) bypasses these so a genuine overflow is always
+        # handled.
+        if not force:
+            if self._ineffective_compaction_count >= 2:
+                logger.warning(
+                    "[compact] skipping -- %d consecutive ineffective compactions",
+                    self._ineffective_compaction_count,
+                )
+                return _budget_fallback(
+                    messages, backend.context_window_size(), keep_recent=8,
+                )
+            if time.time() < self._summary_failure_cooldown_until:
+                logger.warning(
+                    "[compact] skipping -- summary LLM in cooldown until %.1f",
+                    self._summary_failure_cooldown_until,
+                )
+                return _budget_fallback(
+                    messages, backend.context_window_size(), keep_recent=8,
+                )
+
         if self._failure_count >= MAX_CONSECUTIVE_COMPACT_FAILURES:
             logger.warning("[compact] circuit breaker open -- %d consecutive failures, attempting segmented rescue",
                            self._failure_count)
@@ -452,136 +495,41 @@ class CompactEngine:
                 return rescued
 
 
-        # P3+P4: verify that key constraints from the original user messages
-        # are preserved in the summary.  Two-phase verification:
-        # Phase 1 (P3, cheap): text-match check
-        # Phase 2 (P4, LLM check): ask the model directly
-        # If either fails, retry the summary.
+        # P3: cheap text-match check that key constraints from the REAL user
+        # messages survive the summary (synthetic compaction blocks are
+        # skipped by _extract_key_constraints).  When terms are missing,
+        # retry the summary ONCE with an explicit reminder.  A heavy retry
+        # loop here burns LLM calls in an already near-limit context, which
+        # stalls compaction and triggers repeated turns.
         _key_terms = _extract_key_constraints(messages)
-        _verification_ok = True
-        if _key_terms:
-            # Phase 1: text-match check
-            _missing_text = _verify_key_constraints(summary, _key_terms)
-            if _missing_text:
-                logger.warning(
-                    "[compact] P3: summary missing %d/%d key constraint terms: %s",
-                    len(_missing_text), len(_key_terms), _missing_text[:6],
-                )
-                _verification_ok = False
-            else:
-                # Phase 2: LLM verification (only if Phase 1 passed)
-                _verification_ok, _missing_llm = await _verify_summary_coverage(
-                    backend, summary, _key_terms,
-                )
-                if not _verification_ok:
-                    logger.warning(
-                        "[compact] P4: summary missing %d critical constraints in LLM check: %s",
-                        len(_missing_llm), _missing_llm,
-                    )
-
-        if not _verification_ok and self._failure_count < _MAX_VERIFICATION_RETRIES:
-            self._failure_count += 1
+        _missing_text = _verify_key_constraints(summary, _key_terms) if _key_terms else []
+        if _missing_text:
             logger.warning(
-                "[compact] verification failed, retry %d/%d",
-                self._failure_count, _MAX_VERIFICATION_RETRIES,
-            )
-            _missing_list = _missing_text if _missing_text else _missing_llm
-            _extra_list = "\n".join(f"- {m}" for m in _missing_list)
-            _extra = (
-                "Your previous summary was missing some critical user requirements. "
-                "You MUST include the following constraints in your summary:\n"
-                + _extra_list
-                + "\n\nRe-emit the full summary with ALL 9 sections and include "
-                "these constraints in the 'Primary Request and Intent' section."
+                "[compact] P3: summary missing %d/%d key constraint terms: %s",
+                len(_missing_text), len(_key_terms), _missing_text[:6],
             )
             try:
+                _extra_list = "\n".join(f"- {m}" for m in _missing_text[:8])
+                _extra = (
+                    "Your previous summary was missing some critical user requirements. "
+                    "You MUST include the following constraints in your summary:\n"
+                    + _extra_list
+                    + "\n\nRe-emit the full summary with ALL 9 sections and include "
+                    "these constraints in the 'Primary Request and Intent' section."
+                )
                 _retry_summary = await _generate_summary(
                     backend, compact_msgs, extra_instruction=_extra,
                     enable_caching=enable_caching,
                 )
                 if _retry_summary and len(_retry_summary) >= 100:
                     summary = _retry_summary
-                    _re_verify = await _verify_summary_coverage(
-                        backend, summary, _key_terms,
-                    )
-                    if _re_verify[0]:
-                        self._failure_count = 0
-                        _verification_ok = True
+                    _missing_text = _verify_key_constraints(summary, _key_terms)
             except Exception as _rexc:
-                logger.warning("[compact] verification retry failed: %s", _rexc)
+                logger.warning("[compact] P3 retry failed: %s", _rexc)
 
-        if not _verification_ok:
+        if _missing_text:
             logger.warning(
-                "[compact] verification still failing after retries -- rescuing",
-            )
-            self._failure_count += 1
-            rescued = await _segmented_rescue(messages, backend, self._failure_count)
-            if rescued is not None:
-                self._failure_count = 0
-                return rescued
-
-
-        # P3+P4: verify that key constraints from the original user messages
-        # are preserved in the summary.  Two-phase verification:
-        # Phase 1 (P3, cheap): text-match check
-        # Phase 2 (P4, LLM check): ask the model directly
-        # If either fails, retry the summary.
-        _key_terms = _extract_key_constraints(messages)
-        _verification_ok = True
-        if _key_terms:
-            # Phase 1: text-match check
-            _missing_text = _verify_key_constraints(summary, _key_terms)
-            if _missing_text:
-                logger.warning(
-                    "[compact] P3: summary missing %d/%d key constraint terms: %s",
-                    len(_missing_text), len(_key_terms), _missing_text[:6],
-                )
-                _verification_ok = False
-            else:
-                # Phase 2: LLM verification (only if Phase 1 passed)
-                _verification_ok, _missing_llm = await _verify_summary_coverage(
-                    backend, summary, _key_terms,
-                )
-                if not _verification_ok:
-                    logger.warning(
-                        "[compact] P4: summary missing %d critical constraints in LLM check: %s",
-                        len(_missing_llm), _missing_llm,
-                    )
-
-        if not _verification_ok and self._failure_count < _MAX_VERIFICATION_RETRIES:
-            self._failure_count += 1
-            logger.warning(
-                "[compact] verification failed, retry %d/%d",
-                self._failure_count, _MAX_VERIFICATION_RETRIES,
-            )
-            _missing_list = _missing_text if _missing_text else _missing_llm
-            _extra_list = "\n".join(f"- {m}" for m in _missing_list)
-            _extra = (
-                "Your previous summary was missing some critical user requirements. "
-                "You MUST include the following constraints in your summary:\n"
-                + _extra_list
-                + "\n\nRe-emit the full summary with ALL 9 sections and include "
-                "these constraints in the 'Primary Request and Intent' section."
-            )
-            try:
-                _retry_summary = await _generate_summary(
-                    backend, compact_msgs, extra_instruction=_extra,
-                    enable_caching=enable_caching,
-                )
-                if _retry_summary and len(_retry_summary) >= 100:
-                    summary = _retry_summary
-                    _re_verify = await _verify_summary_coverage(
-                        backend, summary, _key_terms,
-                    )
-                    if _re_verify[0]:
-                        self._failure_count = 0
-                        _verification_ok = True
-            except Exception as _rexc:
-                logger.warning("[compact] verification retry failed: %s", _rexc)
-
-        if not _verification_ok:
-            logger.warning(
-                "[compact] verification still failing after retries -- rescuing",
+                "[compact] summary still missing key constraints after retry -- rescuing",
             )
             self._failure_count += 1
             rescued = await _segmented_rescue(messages, backend, self._failure_count)
@@ -589,6 +537,24 @@ class CompactEngine:
                 self._failure_count = 0
                 return rescued
             return _budget_fallback(messages, backend.context_window_size(), keep_recent=8)
+
+        # P4: optional LLM spot-check of the most critical constraints.
+        # Log-only -- a negative result never triggers a heavy summary
+        # regeneration.  Each check is an extra LLM call; in a near-limit
+        # context these calls tend to fail and stall compaction, which is
+        # exactly the failure mode that causes repeated/repetitive turns.
+        if _key_terms:
+            try:
+                _p4_ok, _p4_missing = await _verify_summary_coverage(
+                    backend, summary, _key_terms,
+                )
+                if not _p4_ok:
+                    logger.warning(
+                        "[compact] P4: summary may miss %d constraints (log-only): %s",
+                        len(_p4_missing), _p4_missing[:6],
+                    )
+            except Exception:
+                logger.debug("[compact] P4 verification skipped", exc_info=True)
 
         self._failure_count = 0
         self._last_compact_turn = turn_count
@@ -603,6 +569,32 @@ class CompactEngine:
             est // 1000, new_est // 1000, len(summary),
             len(validation.found), 9,
         )
+
+        # ── Post-compact fit check + ineffective tracking (Hermes port) ──
+        # If the compacted result is still over the context window (or barely
+        # shrank), the compaction did not do its job.  Track consecutive
+        # ineffective passes so automatic compaction backs off instead of
+        # re-firing every turn; the summary LLM failure goes into cooldown.
+        try:
+            _window = backend.context_window_size()
+        except Exception:
+            _window = 0
+        _save_ratio = (est - new_est) / est if est else 0.0
+        if new_est >= _window > 0:
+            logger.warning(
+                "[compact] result still over context %dk >= %dk -- treating as ineffective",
+                new_est // 1000, _window // 1000,
+            )
+            self._ineffective_compaction_count += 1
+            self._summary_failure_cooldown_until = time.time() + _COMPACT_FAILURE_COOLDOWN_SECONDS
+        elif _save_ratio < _INEFFECTIVE_COMPACT_MIN_SAVE:
+            logger.warning(
+                "[compact] saved only %.1f%% (ineffective) -- streak=%d",
+                _save_ratio * 100, self._ineffective_compaction_count + 1,
+            )
+            self._ineffective_compaction_count += 1
+        else:
+            self._ineffective_compaction_count = 0
 
         return compacted
 
@@ -788,6 +780,25 @@ def extract_user_requirements(summary: str) -> str:
     return ""
 
 
+def _is_synthetic_user_message(msg: dict[str, Any]) -> bool:
+    """Return ``True`` for compaction-generated user messages.
+
+    Synthetic entries (summary blocks, active archives, archive hints and
+    workspace-context blocks) are ``role: user`` but are NOT user input.
+    Anchor/key-constraint logic must skip them, otherwise a re-compaction of
+    an already-compacted session anchors on an OLD summary instead of the
+    real original task -- losing the original instruction and leaving two
+    contradictory summaries in context (the model then repeats old work).
+    """
+    return bool(
+        msg.get("is_compact_summary")
+        or msg.get("is_compact_active_archive")
+        or msg.get("is_compact_archive_hint")
+        or msg.get("is_compact_context")
+        or msg.get("is_compact_boundary")
+    )
+
+
 def _build_compacted(
     messages: list[dict[str, Any]],
     summary: str,
@@ -862,11 +873,18 @@ def _build_compacted(
             "is_compact_context": True,
         })
 
-    # Anchor: first user message (task definition)
+    # Anchor: first REAL user message (task definition).  Synthetic
+    # compaction blocks (previous summaries, archives, hints, workspace
+    # context) are skipped so the anchor is the genuine original task even
+    # when this session was already compacted before.  Using the old summary
+    # as the anchor previously dropped the original instruction and left
+    # multiple contradictory summary blocks in context.
     first_user = None
-    for msg in messages:
-        if msg.get("role") == "user":
+    first_user_idx = -1
+    for i, msg in enumerate(messages):
+        if msg.get("role") == "user" and not _is_synthetic_user_message(msg):
             first_user = dict(msg)
+            first_user_idx = i
             break
     if first_user:
         result.append(first_user)
@@ -886,14 +904,10 @@ def _build_compacted(
     # accumulated compression passes don't push keep_from past real turns.
     user_idxs = [
         i for i, m in enumerate(messages)
-        if m.get("role") == "user"
-        and not m.get("is_compact_summary")
-        and not m.get("is_compact_active_archive")
-        and not m.get("is_compact_archive_hint")
-        and not m.get("is_compact_context")
+        if m.get("role") == "user" and not _is_synthetic_user_message(m)
     ]
     keep_from = user_idxs[-4] if len(user_idxs) >= 4 else user_idxs[-2] if len(user_idxs) >= 2 else 0
-    keep_from = max(keep_from, messages.index(first_user) if first_user else 0)
+    keep_from = max(keep_from, first_user_idx if first_user_idx >= 0 else 0)
 
     seen_ids = {m.get("id", "") for m in result}
     for msg in messages[keep_from:]:
@@ -1088,7 +1102,7 @@ def _budget_fallback(
     system = [m for m in messages if m.get("role") == "system"]
     first_user = None
     for m in messages:
-        if m.get("role") == "user":
+        if m.get("role") == "user" and not _is_synthetic_user_message(m):
             first_user = dict(m)
             break
 
@@ -1269,6 +1283,11 @@ def _extract_key_constraints(messages, max_terms=15):
     terms = set()
     for msg in messages:
         if msg.get("role") != "user":
+            continue
+        # Skip compaction-generated synthetic blocks (previous summaries,
+        # archives, hints): they are not user input and would pollute the
+        # constraint set with stale content on re-compaction.
+        if _is_synthetic_user_message(msg):
             continue
         content = msg.get("content", "")
         if not isinstance(content, str):

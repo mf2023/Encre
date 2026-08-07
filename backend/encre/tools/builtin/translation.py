@@ -177,26 +177,39 @@ async def _translation_execute(**kwargs: Any) -> str:
 
 EncreTranslationTool = build_tool(
     name="translation",
-    description="Translate text between languages. LibreTranslate (self-hosted) or Google Translate. Language detection and listing.",
+    description=(
+        "Translate text between languages, detect the source language, or list "
+        "supported languages via LibreTranslate (self-hosted) or Google Translate. "
+        "Use `translate` to convert text/files, `detect` to identify a language, or "
+        "`languages` to enumerate supported codes; prefer LibreTranslate for "
+        "offline/private setups. "
+        "Do NOT use this for speech-to-English (use translate_audio), for "
+        "summarization, or for in-app i18n string catalogs. "
+        "Tips: set `source_lang='auto'` for auto-detection; when translating a file, "
+        "the result is written next to it with a `_<target>` suffix. "
+        "Pitfalls: the `libre` service needs a reachable `engine_url` (default "
+        "http://localhost:5000); the `google` service requires the deep-translator "
+        "package."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["translate", "detect", "languages"],
-                "description": "Action to perform",
+                "description": "Translation operation: translate (convert text to target_lang), detect (identify the source language), or languages (list supported language codes).",
             },
-            "text": {"type": "string", "description": "Text to translate or detect"},
-            "source_lang": {"type": "string", "description": "Source language code (auto for auto-detect)"},
-            "target_lang": {"type": "string", "description": "Target language code (default en)"},
-            "file_path": {"type": "string", "description": "Path to file with text to translate"},
+            "text": {"type": "string", "description": "Text to translate or detect; required for translate/detect unless file_path is given."},
+            "source_lang": {"type": "string", "description": "Source language code (e.g. 'en', 'zh', 'fr'); defaults to 'auto' for auto-detection."},
+            "target_lang": {"type": "string", "description": "Target language code for translate; defaults to 'en'."},
+            "file_path": {"type": "string", "description": "Path to a text file to translate; the translated output is saved as '<stem>_<target_lang>.<ext>'. Alternative to passing text directly."},
             "service": {
                 "type": "string",
                 "enum": ["libre", "google"],
-                "description": "Translation service: libre (LibreTranslate) or google (deep-translator)",
+                "description": "Translation backend: 'libre' (self-hosted LibreTranslate HTTP API) or 'google' (deep-translator GoogleTranslator). Defaults to 'libre'.",
             },
-            "engine_url": {"type": "string", "description": "LibreTranslate API URL (default http://localhost:5000)"},
-            "preserve_format": {"type": "boolean", "description": "Preserve HTML/text formatting (default false)"},
+            "engine_url": {"type": "string", "description": "Base URL of the LibreTranslate API server; libre service only. Defaults to 'http://localhost:5000'."},
+            "preserve_format": {"type": "boolean", "description": "If true, treat input as HTML and preserve markup during translation; defaults to false (plain text)."},
         },
         "required": ["action"],
     },

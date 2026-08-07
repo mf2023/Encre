@@ -50,7 +50,8 @@ class ContextBuilder:
                  soul_system: Any = None,
                  profile_system: Any = None,
                  git: Any = None,
-                 rules_loader: Any = None) -> None:
+                 rules_loader: Any = None,
+                 device_context_manager: Any = None) -> None:
         self._config = config
         self._session = session
         self._cache_fresh = cache_fresh
@@ -64,6 +65,7 @@ class ContextBuilder:
         self._document_manager: EncreDocumentManager | None = None
         self._document_manager_data_dir: str | None = None
         self._code_index: EncreCodeIndex | None = None
+        self._device_context_manager = device_context_manager
 
         # Prompt caches
         self._workspace_info_cache: tuple[str, float, tuple[str, str, str]] | None = None
@@ -386,6 +388,27 @@ class ContextBuilder:
         prompt = self.soul_system.build_prompt()
         self._soul_prompt_cache = (cache_key, time.time(), prompt)
         return prompt
+
+    # ── Device context prompt ────────────────────────────────────────
+
+    def build_device_context_prompt(self) -> str:
+        """Return the L1 device catalog block, or '' if disabled/unavailable.
+
+        The returned text is loaded from the ``device_context.prompt`` block
+        template with the catalog injected via the ``{{device_context}}``
+        placeholder.
+        """
+        if self._device_context_manager is None:
+            return ""
+        try:
+            catalog = self._device_context_manager.get_catalog()
+            if not catalog:
+                return ""
+            from encre.prompts.loader import PromptLoader
+            loader = PromptLoader()
+            return loader.load_with_context("device_context", device_context=catalog)
+        except Exception:
+            return ""
 
     # ── Profile prompt ───────────────────────────────────────────────
 

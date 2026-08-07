@@ -206,26 +206,41 @@ async def _notify_execute(**kwargs: Any) -> str:
 
 EncreNotifyTool = build_tool(
     name="notify",
-    description="Send notifications: webhook (HTTP POST), slack, discord, desktop (OS native toast).",
+    description=(
+        "Send a notification to the user or an external channel via webhook, "
+        "Slack, Discord, or a native desktop toast.\n\n"
+        "WHEN to use: surface progress on long-running work to the user, "
+        "alert a monitoring channel when a job finishes or fails, or ping a "
+        "chat webhook as part of an automation.\n"
+        "WHEN NOT to use: to ask the user a question that needs an answer use "
+        "the question tool; for in-conversation status updates just reply in "
+        "the chat.\n"
+        "TIPS: for Slack/Discord pass the incoming-webhook URL in "
+        "webhook_url; keep messages concise (chat clients truncate long "
+        "text); desktop toasts work cross-platform but require OS support.\n"
+        "PITFALLS: webhooks that need auth must include credentials in the "
+        "headers or URL; desktop notifications on Linux need libnotify-bin "
+        "installed."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["webhook", "slack", "discord", "desktop"],
-                "description": "Notification channel",
+                "description": "Notification channel: 'webhook' (arbitrary HTTP POST), 'slack' (Slack incoming webhook), 'discord' (Discord webhook), or 'desktop' (native OS toast/message box).",
             },
-            "url": {"type": "string", "description": "Webhook URL (for webhook action)"},
-            "method": {"type": "string", "description": "HTTP method for webhook (default POST)"},
-            "headers": {"type": "object", "description": "Custom HTTP headers for webhook"},
-            "body": {"type": "string", "description": "Request body for webhook"},
-            "content_type": {"type": "string", "description": "Content-Type header for webhook (default application/json)"},
-            "webhook_url": {"type": "string", "description": "Slack or Discord webhook URL"},
-            "message": {"type": "string", "description": "Notification message text"},
-            "channel": {"type": "string", "description": "Slack channel override"},
-            "username": {"type": "string", "description": "Bot username for Slack/Discord"},
-            "icon_emoji": {"type": "string", "description": "Icon emoji for Slack (e.g. :robot_face:)"},
-            "title": {"type": "string", "description": "Notification title (for desktop action)"},
+            "url": {"type": "string", "description": "Target URL for the 'webhook' action (the endpoint that will receive the POST/PUT request)."},
+            "method": {"type": "string", "description": "HTTP method for the 'webhook' action (default POST). Use PUT/PATCH when the target endpoint expects it."},
+            "headers": {"type": "object", "description": "Custom HTTP headers for the 'webhook' action (e.g. Authorization, X-Api-Key). Content-Type is added automatically if not provided."},
+            "body": {"type": "string", "description": "Raw request body for the 'webhook' action. For JSON endpoints, pass a JSON-serialized string."},
+            "content_type": {"type": "string", "description": "Content-Type header value for the 'webhook' action (default application/json). Override for form-encoded or text payloads."},
+            "webhook_url": {"type": "string", "description": "Incoming webhook URL for the 'slack' or 'discord' action (from the Slack/Discord app config)."},
+            "message": {"type": "string", "description": "Notification message text. Required for every action. Keep it concise -- chat clients truncate long messages."},
+            "channel": {"type": "string", "description": "Slack channel override for the 'slack' action (e.g. '#alerts' or a user ID). Optional; the webhook's default channel is used if omitted."},
+            "username": {"type": "string", "description": "Bot display name for the 'slack' or 'discord' action (default 'Encre Bot')."},
+            "icon_emoji": {"type": "string", "description": "Slack emoji for the bot avatar, e.g. ':robot_face:' (for the 'slack' action)."},
+            "title": {"type": "string", "description": "Title shown in the desktop notification (for the 'desktop' action, default 'Encre Notification')."},
         },
         "required": ["action", "message"],
     },

@@ -757,6 +757,93 @@ class TestEncreSchedulerDurability:
 
 
 # ===========================================================================
+# EncreScheduler: missed recurring occurrences must not fire late
+# ===========================================================================
+
+class TestRecurringMissedOccurrences:
+    """Recurring jobs whose scheduled time passed while the process was
+    offline (e.g. the app/server was started after the scheduled time)
+    must NOT fire on startup -- they wait for the next occurrence.
+    """
+
+    def _run_one_poll(self, sched: EncreScheduler, monkeypatch: pytest.MonkeyPatch) -> list[ScheduledJob]:
+        """Run a single scheduler poll iteration and return spawned jobs."""
+        spawned: list[ScheduledJob] = []
+        monkeypatch.setattr(sched, "_spawn_job", lambda j: spawned.append(j))
+
+        async def _stop(seconds: float) -> None:
+            sched._running = False
+
+        monkeypatch.setattr("asyncio.sleep", _stop)
+        sched._running = True
+        import asyncio
+        asyncio.run(sched._loop())
+        return spawned
+
+    def test_occurrence_before_session_start_is_skipped(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        """Server started at 12:05; a daily 10:00 job must not fire late."""
+        now = time.mktime(time.strptime("2026-08-07 12:05:30", "%Y-%m-%d %H:%M:%S"))
+        monkeypatch.setattr("encre.scheduler.time.time", lambda: now)
+
+        sched = EncreScheduler(durable_path=str(tmp_path / "jobs.json"))
+        job_id = sched.schedule(name="10am job", prompt="...", cron="0 10 * * *")
+        job = sched.get_job(job_id)
+        assert job is not None
+        # Job was created at 09:30 the same day and never fired (offline at 10:00).
+        job.created_at = time.mktime(time.strptime("2026-08-07 09:30:00", "%Y-%m-%d %H:%M:%S"))
+        job.last_fired = None
+        sched._started_at = now
+
+        spawned = self._run_one_poll(sched, monkeypatch)
+
+        # Confirm the expected result: no late execution, state stays PENDING,
+        # and the reference advances past the missed 10:00 occurrence.
+        assert spawned == []
+        assert job.state == JobState.PENDING
+        assert job.last_fired == time.mktime(time.strptime("2026-08-07 10:00:00", "%Y-%m-%d %H:%M:%S"))
+
+    def test_occurrence_before_session_start_with_previous_run_skipped(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        """Fired yesterday 10:00, server offline today at 10:00 -- no late fire."""
+        now = time.mktime(time.strptime("2026-08-07 12:05:30", "%Y-%m-%d %H:%M:%S"))
+        monkeypatch.setattr("encre.scheduler.time.time", lambda: now)
+
+        sched = EncreScheduler(durable_path=str(tmp_path / "jobs.json"))
+        job_id = sched.schedule(name="10am job", prompt="...", cron="0 10 * * *")
+        job = sched.get_job(job_id)
+        assert job is not None
+        job.created_at = time.mktime(time.strptime("2026-08-05 09:00:00", "%Y-%m-%d %H:%M:%S"))
+        job.last_fired = time.mktime(time.strptime("2026-08-06 10:00:00", "%Y-%m-%d %H:%M:%S"))
+        sched._started_at = now
+
+        spawned = self._run_one_poll(sched, monkeypatch)
+
+        # Confirm the expected result: today's missed 10:00 occurrence is
+        # skipped; the job is armed for tomorrow 10:00.
+        assert spawned == []
+        assert job.state == JobState.PENDING
+        assert job.last_fired == time.mktime(time.strptime("2026-08-07 10:00:00", "%Y-%m-%d %H:%M:%S"))
+
+    def test_occurrence_within_session_fires(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        """Server online since 09:00: the 10:00 occurrence fires normally."""
+        now = time.mktime(time.strptime("2026-08-07 12:05:30", "%Y-%m-%d %H:%M:%S"))
+        monkeypatch.setattr("encre.scheduler.time.time", lambda: now)
+
+        sched = EncreScheduler(durable_path=str(tmp_path / "jobs.json"))
+        job_id = sched.schedule(name="10am job", prompt="...", cron="0 10 * * *")
+        job = sched.get_job(job_id)
+        assert job is not None
+        job.created_at = time.mktime(time.strptime("2026-08-06 09:00:00", "%Y-%m-%d %H:%M:%S"))
+        job.last_fired = time.mktime(time.strptime("2026-08-06 10:00:00", "%Y-%m-%d %H:%M:%S"))
+        sched._started_at = time.mktime(time.strptime("2026-08-07 09:00:00", "%Y-%m-%d %H:%M:%S"))
+
+        spawned = self._run_one_poll(sched, monkeypatch)
+
+        # Confirm the expected result: today's 10:00 occurrence happened while
+        # the scheduler was online, so it fires (normal catch-up).
+        assert spawned == [job]
+
+
+# ===========================================================================
 # Job lifecycle callbacks
 # ===========================================================================
 

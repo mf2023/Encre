@@ -100,7 +100,7 @@ class StepNode:
 
 @dataclass
 class RuntimePlan:
-    """当前会话的运行中计划"""
+    """The live plan for the current session."""
     # English: the live plan for the current session -- its steps, the index
     # of the step in progress, and aggregate progress counters.
     original_task: str = ""
@@ -126,19 +126,19 @@ class RuntimePlan:
         return all(s.status in (StepStatus.COMPLETED, StepStatus.SKIPPED) for s in self.steps)
 
     def to_prompt_context(self) -> str:
-        """生成注入 system prompt 的上下文块"""
+        """Build the progress block injected into the system prompt."""
         # English: build the progress block injected into the system prompt.
         if not self.steps:
             return ""
-        lines = ["## Plan-Do-Review 进度", ""]
+        lines = ["## Plan-Do-Review Progress", ""]
         done = self.completed_steps
         total = len(self.steps)
         pct = int(done / total * 100) if total > 0 else 0
-        lines.append(f"进度: {done}/{total} ({pct}%)")
+        lines.append(f"Progress: {done}/{total} ({pct}%)")
         lines.append("")
-        lines.append("步骤:")
+        lines.append("Steps:")
         for i, step in enumerate(self.steps):
-            marker = "<-- 当前" if i == self.current_step_index else ""
+            marker = "<-- current" if i == self.current_step_index else ""
             lines.append(f"  {i+1}. {step.summary_line()} {marker}")
             if step.notes:
                 for note in step.notes[-2:]:
@@ -147,23 +147,23 @@ class RuntimePlan:
         if self.completed_steps + self.failed_steps > 0:
             parts = []
             if self.completed_steps > 0:
-                parts.append(f"完成: {self.completed_steps}")
+                parts.append(f"Completed: {self.completed_steps}")
             if self.failed_steps > 0:
-                parts.append(f"失败: {self.failed_steps}")
+                parts.append(f"Failed: {self.failed_steps}")
             if self.retry_count > 0:
-                parts.append(f"重试: {self.retry_count}")
+                parts.append(f"Retries: {self.retry_count}")
             if parts:
-                lines.append(f"摘要: {' | '.join(parts)}")
+                lines.append(f"Summary: {' | '.join(parts)}")
                 lines.append("")
         curr = self.current_step
         if curr and curr.status == StepStatus.IN_PROGRESS:
-            lines.append(f"当前任务: {curr.description}")
+            lines.append(f"Current task: {curr.description}")
             if curr.success_criteria:
-                lines.append(f"成功标准: {curr.success_criteria}")
+                lines.append(f"Success criteria: {curr.success_criteria}")
             if curr.tool_calls:
                 last = curr.tool_calls[-1]
                 icon = "!" if last.is_error else ">"
-                lines.append(f"{icon} 上一步调用: `{last.tool_name}` > {last.result_summary[:120]}")
+                lines.append(f"{icon} Last tool call: `{last.tool_name}` > {last.result_summary[:120]}")
         return "\n".join(lines)
 
 
@@ -326,7 +326,7 @@ def _infer_criteria(text: str) -> str:
 
 
 class PlanDoReviewEngine:
-    """Plan-Do-Review 自主循环引擎。"""
+    """Plan-Do-Review autonomous loop engine."""
 
     # English: drives the plan lifecycle -- builds the step graph from a task,
     # advances through steps, records tool calls and applies light/deep review.

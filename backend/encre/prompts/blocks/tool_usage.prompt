@@ -1,3 +1,10 @@
+---
+name: tool_usage
+version: 1
+priority: 5
+condition: ~
+---
+
 ## Tool Usage
 
 ### THE GOLDEN RULE: Tools First, Bash Last

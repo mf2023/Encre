@@ -282,47 +282,48 @@ def _ppt_list_slides(file_path: str) -> str:
 
 EncrePresentationTool = build_tool(
     name="presentation",
-    description="""Read, create, and edit PowerPoint (.pptx) presentations.
-
-Actions:
-- read: Read full presentation content (all slides, text, tables)
-- extract_text: Extract all text from the presentation
-- info: Get presentation metadata (slides count, dimensions, author)
-- create: Create a new presentation with optional slides
-- add_slide: Add a slide to an existing presentation
-- list_slides: List all slides with layout and shape info
-
-Slide types for add_slide: blank, title, content, two_content, section_header
-
-Requires: pip install python-pptx""",
+    description=(
+        "Read, create, and edit PowerPoint (.pptx) presentations via python-pptx, "
+        "including slides, titles, bullet bodies, and tables. "
+        "Use this for `read` (full slide dump), `extract_text` (plain text), `info` "
+        "(metadata), `create` (new deck with optional slides), `add_slide` (append), "
+        "or `list_slides` (overview). "
+        "Do NOT use this for Word documents (use document) or PDFs (use pdf); and "
+        "avoid it for .odp or Keynote files. "
+        "Tips: for `create`, pass `slides` as a list of strings or {title, content} "
+        "dicts; for `add_slide` use `slide_type` to pick a layout and put the title "
+        "on the first `content` line. "
+        "Pitfalls: requires python-pptx installed; `add_slide` reuses built-in layouts "
+        "and may not match custom template layouts."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
                 "enum": ["read", "extract_text", "info", "create", "add_slide", "list_slides"],
-                "description": "Operation to perform",
+                "description": "Presentation operation: read (full content), extract_text (plain text), info (metadata), create (new deck), add_slide (append), or list_slides (overview).",
             },
             "file_path": {
                 "type": "string",
-                "description": "Path to the .pptx file",
+                "description": "Path to the .pptx file; required for all actions except create.",
             },
             "title": {
                 "type": "string",
-                "description": "Presentation title (for create action)",
+                "description": "Title used on the title slide when action=create.",
             },
             "slides": {
                 "type": "array",
-                "description": "List of slide definitions for create: strings or {title, content} dicts",
+                "description": "Initial slides for create; each item is a string (slide title) or a dict with 'title' and 'content' keys.",
             },
             "slide_type": {
                 "type": "string",
                 "enum": ["blank", "title", "content", "two_content", "section_header"],
-                "description": "Slide layout type for add_slide",
+                "description": "Layout to apply when adding a slide via add_slide.",
             },
             "content": {
                 "type": "string",
-                "description": "Slide content (first line = title, rest = body)",
+                "description": "Body for add_slide; the first line becomes the slide title and subsequent lines become bullet points.",
             },
         },
         "required": ["action"],

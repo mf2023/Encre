@@ -133,26 +133,38 @@ async def _find_tool_execute(**kwargs: Any) -> str:
 EncreFindToolTool = build_tool(
     name="find_tool",
     description=(
-        "Discover and unlock specialized tools beyond the basic set. "
-        "Call proactively at the start of any task needing non-basic capabilities."
+        "Discover and unlock specialized tools beyond the always-on basic set "
+        "(file_read/write/edit, bash, grep, glob, todo). Returns matching tool "
+        "cards and unlocks them for the rest of the session so they become "
+        "directly callable on the next turn. "
+        "WHEN to use: at the start of any task needing non-basic capabilities "
+        "(e.g. database, browser, docker, web fetch, ssh, email). "
+        "WHEN NOT to use: for basic file/shell operations (already always "
+        "available); for listing all tools (call with a broad query instead). "
+        "TIP: Describe the capability you need in natural language (e.g. "
+        "\"run SQL queries\"), not a tool name. "
+        "TIP: Pass 'category' to narrow the search and get more relevant hits. "
+        "PITFALLS: calling find_tool repeatedly for the same capability wastes "
+        "turns -- once unlocked, tools stay available for the whole session; "
+        "very vague queries may return too many irrelevant matches."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Natural-language description of the capability you need.",
+                "description": "Natural-language description of the capability you need (required). Describe what you want to do, not a tool name.",
             },
             "top_k": {
                 "type": "integer",
-                "description": "Max results to return (default 5, max 15).",
+                "description": "Max results to return (optional, default 5, max 15).",
             },
             "category": {
                 "type": "string",
                 "description": (
                     "Optional category filter: filesystem, search, shell, web, "
                     "infra, data, code_intel, gui, docs, media, memory, task, "
-                    "delegation. Omit for global search."
+                    "delegation. Omit for a global search across all categories."
                 ),
             },
         },
