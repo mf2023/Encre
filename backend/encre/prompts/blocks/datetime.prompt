@@ -1,0 +1,15 @@
+---
+name: current_datetime
+version: 1
+priority: 9
+condition: ~
+---
+
+## Current Date & Time
+Today is: **{{date}}**
+Current time: **{{time}}**
+
+**IMPORTANT: The current year is {{year}}.** Your training data may have
+an earlier cutoff date, but the actual current date is {{year}}.
+Use this information when the task involves time-sensitive topics,
+news, events, scheduling, or any scenario where recency matters.

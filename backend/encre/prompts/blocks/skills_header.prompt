@@ -1,0 +1,10 @@
+---
+name: skills
+version: 1
+priority: 47
+condition: ~
+---
+
+## Skills (auto-discovered)
+
+{{skill_summary}}

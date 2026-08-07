@@ -1,0 +1,12 @@
+---
+name: command_instructions
+version: 1
+priority: 190
+condition: ~
+---
+
+## Active Command: /{{command_name}}
+
+These are **command instructions**, active for this session until the user clears them. This is **NOT a mode** - the operating mode (normal / plan / spec) is unchanged and its rules still apply. Treat the text below as additional instructions to follow alongside the active mode; do not declare yourself to be in a new mode.
+
+{{command_body}}

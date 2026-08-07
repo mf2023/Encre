@@ -1,0 +1,8 @@
+---
+name: cache_boundary
+version: 1
+priority: 999
+condition: ~
+---
+
+__PROMPT_CACHE_BOUNDARY__
