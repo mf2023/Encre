@@ -36,11 +36,12 @@
  * the main process through the `electronAPI` exposed by `preload.ts`.
  */
 
-import { app, BrowserWindow, ipcMain, shell, dialog, Tray, nativeImage, nativeTheme, session, protocol, net, webContents } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog, Tray, nativeImage, nativeTheme, session, protocol, net, webContents, clipboard } from "electron";
 import { ChildProcess, spawn, execSync, exec } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as crypto from "crypto";
+import { pathToFileURL, fileURLToPath } from "url";
 import * as os from "os";
 import * as WebSocket from "ws";
 import * as http from "http";
@@ -1302,7 +1303,7 @@ async function restartService(event: Electron.IpcMainInvokeEvent): Promise<{ suc
 // Currently selected tray locale ("en" or "zh").
 let currentTrayLocale = "en";
 // Currently selected tray theme ("dark" or "light").
-let currentTrayTheme = "dark";
+let currentTrayTheme: "dark" | "light" = "dark";
 // Currently active session mode in the tray ("normal" or "iwork").
 let currentTrayMode = "normal";
 // Cache of all sessions shown in the tray popup.
@@ -1335,7 +1336,7 @@ function updateTrayStatus(running: boolean): void {
  * @param themePreference - "light", "dark", or "system".
  * @returns The resolved concrete theme ("light" | "dark").
  */
-function resolveTrayTheme(themePreference: string): string {
+function resolveTrayTheme(themePreference: string): "dark" | "light" {
   if (themePreference === "light" || themePreference === "dark") return themePreference;
   return nativeTheme.shouldUseDarkColors ? "dark" : "light";
 }
@@ -1599,15 +1600,27 @@ ipcMain.handle("pickDirectory", async () => {
   return result.canceled ? null : result.filePaths[0] || null;
 });
 
-// Reads a file from disk, returning its UTF-8 content and byte size.
+// Reads a file from disk, returning its UTF-8 content (for text files) or empty content (for binary files).
 ipcMain.handle("readFile", async (_event, filePath: string) => {
   try {
     const buf = fs.readFileSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+      ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+      ".ico": "image/x-icon", ".svg": "image/svg+xml",
+      ".mp4": "video/mp4", ".webm": "video/webm",
+      ".pdf": "application/pdf",
+      ".zip": "application/zip",
+    };
+    const mime = mimeMap[ext] || "";
+    const binaryExts = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".ico", ".mp4", ".webm", ".pdf", ".zip", ".gz", ".tar", ".exe", ".dll", ".so", ".dylib", ".bin", ".dat", ".ttf", ".otf", ".woff", ".woff2"]);
+    const isBinary = binaryExts.has(ext) || buf.indexOf(0) !== -1;
     return {
-      content: buf.toString("utf-8"),
+      content: isBinary ? "" : buf.toString("utf-8"),
       size: buf.length,
-      mime_type: "",
-      is_binary: false,
+      mime_type: mime,
+      is_binary: isBinary,
     };
   } catch {
     return null;
@@ -1624,6 +1637,214 @@ ipcMain.handle("writeFile", async (_event, filePath: string, data: string) => {
   } catch (err) {
     console.error("writeFile error:", err);
     return false;
+  }
+});
+
+// Copies files/directories to the system clipboard so they can be pasted into
+// the OS file manager (cross-application copy). Platform-specific formats:
+//   - Windows : CF_HDROP ('FileName') with a DROPFILES struct.
+//   - macOS   : pasteboard type 'public.file-url' holding a file:// URL.
+//   - Linux   : 'x-special/gnome-copied-files' (GNOME/KDE) + 'text/uri-list'.
+ipcMain.handle("clipboard:copy-files", (_event, filePaths: string[]) => {
+  try {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) return false;
+    const paths = filePaths
+      .filter((p) => typeof p === "string" && p.length > 0)
+      .map((p) => p.replace(/[\\/]+$/, ""));
+    if (paths.length === 0) return false;
+
+    if (process.platform === "win32") {
+      // DROPFILES struct: 20-byte header + UTF-16LE double-null-terminated paths.
+      const header = Buffer.alloc(20);
+      header.writeUInt32LE(20, 0); // pFiles: offset of the file list
+      header.writeUInt32LE(1, 16); // fWide: TRUE (UTF-16 paths)
+      const list = paths.map((p) => p.replace(/\//g, "\\") + "\0").join("") + "\0";
+      clipboard.writeBuffer("FileName", Buffer.concat([header, Buffer.from(list, "utf16le")]));
+      return true;
+    }
+
+    if (process.platform === "darwin") {
+      // 'public.file-url' is the modern UTType Finder and most apps use for a
+      // single copied file (multiple files need the NSKeyedArchiver-encoded
+      // 'NSFilenamesPboardType', not constructible without a native module).
+      clipboard.writeBuffer("public.file-url", Buffer.from(pathToFileURL(paths[0]).href, "utf8"));
+      return true;
+    }
+
+    // Linux: GNOME/KDE copy format is 'x-special/gnome-copied-files'
+    // ("copy\n<uris>"); 'text/uri-list' is the generic fallback.
+    const uris = paths.map((p) => pathToFileURL(p).href);
+    clipboard.writeBuffer("x-special/gnome-copied-files", Buffer.from("copy\n" + uris.join("\n"), "utf8"));
+    clipboard.writeBuffer("text/uri-list", Buffer.from(uris.join("\r\n") + "\r\n", "utf8"));
+    return true;
+  } catch (err) {
+    console.error("clipboard:copy-files error:", err);
+    return false;
+  }
+});
+
+// Reads file paths from the system clipboard, e.g. files copied in the OS file
+// manager. Returns [] when the clipboard holds no files.
+ipcMain.handle("clipboard:read-files", () => {
+  try {
+    if (process.platform === "win32") {
+      const buffer = clipboard.readBuffer("FileName");
+      if (!buffer || buffer.length === 0) return [];
+      const list = buffer.subarray(Math.min(20, buffer.length)).toString("utf16le");
+      const paths = list
+        .split("\0")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0)
+        .map((p) => p.replace(/\//g, "\\"));
+      return [...new Set(paths)];
+    }
+
+    if (process.platform === "darwin") {
+      const buffer = clipboard.readBuffer("public.file-url");
+      if (!buffer || buffer.length === 0) return [];
+      const url = buffer.toString("utf8").trim();
+      if (!url) return [];
+      try {
+        return [fileURLToPath(url)];
+      } catch {
+        return [url];
+      }
+    }
+
+    // Linux: try GNOME/KDE format first, then the generic text/uri-list.
+    for (const fmt of ["x-special/gnome-copied-files", "text/uri-list"]) {
+      const buffer = clipboard.readBuffer(fmt);
+      if (!buffer || buffer.length === 0) continue;
+      const lines = buffer
+        .toString("utf8")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !/^(copy|cut)$/.test(l));
+      const paths: string[] = [];
+      for (const uri of lines) {
+        try {
+          paths.push(fileURLToPath(uri));
+        } catch {
+          if (uri.startsWith("file://")) {
+            paths.push(decodeURIComponent(uri.slice(7)));
+          }
+        }
+      }
+      if (paths.length > 0) return [...new Set(paths)];
+    }
+    return [];
+  } catch (err) {
+    console.error("clipboard:read-files error:", err);
+    return [];
+  }
+});
+
+// Copies the given files/directories into targetDir. Used by the file-tree
+// "Paste" action; auto-renames on name conflicts (Explorer-style "(1)").
+ipcMain.handle("fs:paste-files", async (_event, sourcePaths: string[], targetDir: string) => {
+  try {
+    if (!Array.isArray(sourcePaths) || sourcePaths.length === 0 || !targetDir) {
+      return { success: false, error: "No source paths or target directory" };
+    }
+    fs.mkdirSync(targetDir, { recursive: true });
+    const uniqueDest = (name: string): string => {
+      const dest = path.join(targetDir, name);
+      if (!fs.existsSync(dest)) return dest;
+      const dot = name.lastIndexOf(".");
+      const base = dot > 0 ? name.slice(0, dot) : name;
+      const ext = dot > 0 ? name.slice(dot) : "";
+      for (let i = 1; ; i++) {
+        const candidate = path.join(targetDir, `${base} (${i})${ext}`);
+        if (!fs.existsSync(candidate)) return candidate;
+      }
+    };
+    const copyRec = (src: string, dest: string): void => {
+      const st = fs.statSync(src);
+      if (st.isDirectory()) {
+        fs.mkdirSync(dest, { recursive: true });
+        for (const child of fs.readdirSync(src)) {
+          copyRec(path.join(src, child), path.join(dest, child));
+        }
+      } else {
+        fs.copyFileSync(src, dest);
+      }
+    };
+    const results: Array<{ source: string; target: string }> = [];
+    for (const src of sourcePaths) {
+      if (!fs.existsSync(src)) continue;
+      const name = path.basename(src.replace(/[\\/]+$/, ""));
+      const dest = uniqueDest(name);
+      copyRec(src, dest);
+      results.push({ source: src, target: dest });
+    }
+    return { success: results.length > 0, results };
+  } catch (err) {
+    console.error("fs:paste-files error:", err);
+    return { success: false, error: String(err) };
+  }
+});
+
+// Creates a new empty file in parentDir. Auto-renames on name conflicts the
+// same way Explorer does ("name (1).txt").
+ipcMain.handle("fs:create-file", async (_event, parentDir: string, name: string) => {
+  try {
+    if (!parentDir || !name) return { success: false, error: "Missing parent directory or name" };
+    const clean = name.replace(/[/\\]/g, "");
+    if (!clean) return { success: false, error: "Invalid file name" };
+    fs.mkdirSync(parentDir, { recursive: true });
+    const uniqueName = (base: string): string => {
+      const dot = base.lastIndexOf(".");
+      const stem = dot > 0 ? base.slice(0, dot) : base;
+      const ext = dot > 0 ? base.slice(dot) : "";
+      if (!fs.existsSync(path.join(parentDir, base))) return base;
+      for (let i = 1; ; i++) {
+        const candidate = `${stem} (${i})${ext}`;
+        if (!fs.existsSync(path.join(parentDir, candidate))) return candidate;
+      }
+    };
+    const finalName = uniqueName(clean);
+    fs.writeFileSync(path.join(parentDir, finalName), "");
+    return { success: true, path: path.join(parentDir, finalName), name: finalName };
+  } catch (err) {
+    console.error("fs:create-file error:", err);
+    return { success: false, error: String(err) };
+  }
+});
+
+// Creates a new folder in parentDir. Auto-renames on name conflicts.
+ipcMain.handle("fs:create-folder", async (_event, parentDir: string, name: string) => {
+  try {
+    if (!parentDir || !name) return { success: false, error: "Missing parent directory or name" };
+    const clean = name.replace(/[/\\]/g, "");
+    if (!clean) return { success: false, error: "Invalid folder name" };
+    fs.mkdirSync(parentDir, { recursive: true });
+    if (!fs.existsSync(path.join(parentDir, clean))) {
+      fs.mkdirSync(path.join(parentDir, clean));
+      return { success: true, path: path.join(parentDir, clean), name: clean };
+    }
+    for (let i = 1; ; i++) {
+      const candidate = `${clean} (${i})`;
+      if (!fs.existsSync(path.join(parentDir, candidate))) {
+        fs.mkdirSync(path.join(parentDir, candidate));
+        return { success: true, path: path.join(parentDir, candidate), name: candidate };
+      }
+    }
+  } catch (err) {
+    console.error("fs:create-folder error:", err);
+    return { success: false, error: String(err) };
+  }
+});
+
+// Deletes a file/folder by moving it to the OS trash (recoverable), matching
+// the behaviour of native file managers.
+ipcMain.handle("fs:delete", async (_event, targetPath: string) => {
+  try {
+    if (!targetPath) return { success: false, error: "Missing path" };
+    await shell.trashItem(targetPath);
+    return { success: true };
+  } catch (err) {
+    console.error("fs:delete error:", err);
+    return { success: false, error: String(err) };
   }
 });
 
@@ -2668,6 +2889,24 @@ async function healthCheck(): Promise<boolean> {
   }
 }
 
+// --- Single-instance lock -----------------------------------------------
+// Prevents multiple app instances from fighting over port 7110 / the backend
+// (which produced a stuck splash: the old instance owned the WebSocket while
+// the new window could never establish its own connection). The lock must be
+// requested before whenReady(). If another instance is already running we quit
+// immediately and ask it to bring its main window to the foreground instead.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
 // Application entry: runs once Electron is ready.
 app.whenReady().then(async () => {
   // Force the app's theme to dark so native browser widgets (e.g. the
@@ -2712,43 +2951,51 @@ app.whenReady().then(async () => {
 
   // Set up encrypted browser cookie store
   setupBrowserSession();
-  // Force-free the port before anything else (kills orphaned processes from dead terminals)
-  killProcessOnPort(WS_PORT);
 
-  // Check if service is already running from a previous session
-  const existingPid = readPidFile();
-  if (existingPid !== null && isProcessRunning(existingPid)) {
-    const healthy = await healthCheck();
-    if (healthy) {
-      console.log(`Background service already running (PID ${existingPid}), connecting`);
-      updateTrayStatus(true);
+  // Show the main window immediately (the splash screen renders right away);
+  // the Python backend boots in parallel below instead of blocking it.
+  createWindow();
+  createTray();
+
+  // Async background boot: free the port, then start or attach to the
+  // Python service. The renderer's WebSocket connect() retries until the
+  // backend is reachable, so the window never waits on this.
+  void (async () => {
+    // Force-free the port before anything else (kills orphaned processes from dead terminals)
+    killProcessOnPort(WS_PORT);
+
+    // Check if service is already running from a previous session
+    const existingPid = readPidFile();
+    if (existingPid !== null && isProcessRunning(existingPid)) {
+      const healthy = await healthCheck();
+      if (healthy) {
+        console.log(`Background service already running (PID ${existingPid}), connecting`);
+        updateTrayStatus(true);
+      } else {
+        // PID is stale/zombie …kill it and restart fresh
+        console.log(`Server PID ${existingPid} is unresponsive, restarting`);
+        killServiceByPid(existingPid);
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+          await startPythonServer();
+        } catch (err) {
+          console.error("Failed to start background service:", err);
+          serverStartError = String(err);
+          updateTrayStatus(false);
+        }
+      }
     } else {
-      // PID is stale/zombie …kill it and restart fresh
-      console.log(`Server PID ${existingPid} is unresponsive, restarting`);
-      killServiceByPid(existingPid);
-      await new Promise(r => setTimeout(r, 1500));
       try {
         await startPythonServer();
+        serverStartError = null;
+        console.log(`Background service started on port ${WS_PORT}`);
       } catch (err) {
         console.error("Failed to start background service:", err);
         serverStartError = String(err);
         updateTrayStatus(false);
       }
     }
-  } else {
-    try {
-      await startPythonServer();
-      serverStartError = null;
-      console.log(`Background service started on port ${WS_PORT}`);
-    } catch (err) {
-      console.error("Failed to start background service:", err);
-      serverStartError = String(err);
-      updateTrayStatus(false);
-    }
-  }
-
-  createWindow();
-  createTray();
+  })();
 
   // Apply persisted auto-start setting on each launch
   const autoStart = readAutoStartFile();

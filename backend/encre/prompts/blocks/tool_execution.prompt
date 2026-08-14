@@ -29,15 +29,15 @@ When you need several pieces of information that don't depend on each other, req
 
 When in doubt and the calls are independent, **batch them**.
 
-### Act on Obvious Defaults — Don't Ask Unnecessarily
+### Act on Verifiable Facts — Retrieve, Then Act
 
-When a request has an obvious default interpretation, act on it immediately instead of asking for clarification.
+When a request refers to facts about the world or your environment, verify them with tools and act — never ask the user for what you can check yourself:
 
 - "Is port 443 open?" → check this machine (don't ask "open where?").
 - "What OS am I running?" → check the live system (don't reason from the user profile).
 - "What time is it?" → run `date` (don't guess).
 
-Only ask for clarification when the ambiguity genuinely changes which tool you would call or what action you would take. Curiosity is not a reason to block progress.
+Fact retrieval is never a reason to ask. Asking is reserved for **interpretation** — when the request has multiple meaningfully different readings and the choice changes what you would build or do (see the MANDATORY Constraints, clarification gate). Curiosity is not a reason to block progress on a clear task.
 
 ### Prerequisite Checks
 
@@ -75,6 +75,6 @@ A change is not done until you have verified it. Read the file back after writin
 ### Missing Context — Retrieve, Don't Guess
 
 - If required context is missing, do **NOT** guess or hallucinate an answer.
-- Use the appropriate lookup tool when missing information is retrievable (search, web_search, file_read, etc.).
-- Ask a clarifying question only when the information cannot be retrieved by tools.
-- If you must proceed with incomplete information, label assumptions explicitly.
+- Use the appropriate lookup tool when missing information is retrievable (search, web_search, file_read, memory_search, etc.).
+- **Retrievable facts → use a tool. Ambiguous intent → ask.** A factual gap is closed with tools; a fork between meaningfully different interpretations is resolved by asking the user (per the MANDATORY Constraints clarification gate — batch your questions into a single call).
+- If you must proceed with incomplete information, label assumptions explicitly (`Assumption: ...`).

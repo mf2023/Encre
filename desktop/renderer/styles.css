@@ -37,6 +37,7 @@
   --accent: #999999;
   --accent-hover: #bbbbbb;
   --accent-light: rgba(153, 153, 153, 0.15);
+  --item-selected-bg: rgba(255, 255, 255, 0.08);
   --success: #22c55e;
   --error: #ef4444;
   --bg-danger-tab: rgba(239, 68, 68, 0.15);
@@ -90,6 +91,13 @@
   --editor-tab-text: var(--text-secondary);
   --editor-tab-active-bg: var(--bg-tertiary);
   --editor-tab-active-text: var(--text-primary);
+
+  /* Media viewer floating toolbar */
+  --toolbar-bg: rgba(20, 20, 22, 0.82);
+  --toolbar-border: rgba(255, 255, 255, 0.12);
+  --toolbar-fg: #fff;
+  --toolbar-hover: rgba(255, 255, 255, 0.15);
+  --toolbar-track: rgba(255, 255, 255, 0.2);
 }
 
 [data-theme="light"] {
@@ -107,6 +115,7 @@
   --accent: #666666;
   --accent-hover: #444444;
   --accent-light: rgba(102, 102, 102, 0.10);
+  --item-selected-bg: rgba(0, 0, 0, 0.06);
   --success: #15a877;
   --error: #e8463a;
   --bg-danger-tab: rgba(232, 70, 58, 0.12);
@@ -150,6 +159,13 @@
   --editor-tab-text: var(--text-secondary);
   --editor-tab-active-bg: var(--bg-tertiary);
   --editor-tab-active-text: var(--text-primary);
+
+  /* Media viewer floating toolbar (light) */
+  --toolbar-bg: rgba(255, 255, 255, 0.88);
+  --toolbar-border: rgba(0, 0, 0, 0.12);
+  --toolbar-fg: #3a3a3a;
+  --toolbar-hover: rgba(0, 0, 0, 0.08);
+  --toolbar-track: rgba(0, 0, 0, 0.18);
 }
 
 *,
@@ -952,7 +968,6 @@ body {
   gap: 1px;
 }
 
-.workspace-tree-empty,
 .ws-tree-empty-sessions {
   font-size: 11.5px;
   color: var(--text-muted);
@@ -983,9 +998,10 @@ body {
   color: var(--accent);
 }
 
-.ws-tree-node-header.active {
+.ws-tree-node-header.active,
+.ws-tree-node-header.context-target {
   color: var(--accent);
-  background: transparent;
+  background: var(--item-selected-bg);
 }
 
 .ws-expand-button {
@@ -1072,7 +1088,6 @@ body {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  accent-color: var(--accent);
 }
 
 .ws-tree-children {
@@ -1106,9 +1121,18 @@ body {
   color: var(--text-primary);
 }
 
-.ws-tree-session-item.active {
-  background: transparent;
+.ws-tree-session-item.active,
+.ws-tree-session-item.context-target {
+  background: var(--item-selected-bg);
   color: var(--text-primary);
+}
+
+/* While a context menu is open (target highlighted), the current active
+   item drops its selection background so only the right-clicked item
+   appears selected; it returns when the menu closes. */
+body:has(.context-target) .ws-tree-node-header.active,
+body:has(.context-target) .ws-tree-session-item.active {
+  background: transparent;
 }
 
 /* ── Batch Action Bar ─────────────────────────────────────────── */
@@ -1142,7 +1166,6 @@ body {
   width: 15px;
   height: 15px;
   margin: 0 8px 0 0;
-  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -1211,13 +1234,18 @@ body {
   min-width: 0;
 }
 
-.session-running {
+.session-running,
+.session-waiting {
   display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #22c55e;
   flex-shrink: 0;
+}
+
+.session-waiting {
+  background: var(--warning);
 }
 
 /* Platform-origin pill for adapter-sourced sessions (Phase 5).  Uses
@@ -1381,13 +1409,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.search-empty {
-  padding: 40px 16px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 .search-result-count {
@@ -2711,6 +2732,31 @@ body {
   transition: transform 0.2s ease;
 }
 
+/* ── Summary Panel Reference Items ──────────────────────────── */
+.sp-ref-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sp-ref-item-icon {
+  flex-shrink: 0;
+  width: 12px !important;
+  height: 12px !important;
+  opacity: 0.6;
+}
+
+.sp-ref-item-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 /* ── Chat Container ──────────────────────────────────────────────── */
 #chat-container {
   flex: 1 1 0;
@@ -2930,6 +2976,7 @@ body {
   padding: 10px 16px;
   border-radius: 18px;
   border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
   line-height: 1.65;
   font-size: 14px;
   word-wrap: break-word;
@@ -3465,34 +3512,48 @@ body {
 
 /* Task lists */
 .msg-text input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
   width: 15px;
   height: 15px;
-  border: 1.5px solid var(--accent);
-  border-radius: 3px;
+  border: 1.5px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-input);
   margin-right: 8px;
-  vertical-align: middle;
-  cursor: pointer;
   position: relative;
   top: -1px;
-  flex-shrink: 0;
+}
+
+.msg-text input[type="checkbox"]:hover {
+  background: var(--bg-hover);
 }
 
 .msg-text input[type="checkbox"]:checked {
   background: var(--accent);
+  border-color: var(--accent);
 }
 
-.msg-text input[type="checkbox"]:checked::after {
+.msg-text input[type="checkbox"]:checked:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.msg-text input[type="checkbox"]::after {
   content: "";
   position: absolute;
-  left: 3px;
-  top: 0px;
-  width: 7px;
-  height: 11px;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+  width: 5px;
+  height: 9px;
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+  opacity: 0;
+}
+
+.msg-text input[type="checkbox"]:checked::after {
+  opacity: 1;
 }
 
 .msg-text li:has(> input[type="checkbox"]) {
@@ -3664,6 +3725,27 @@ body {
 }
 .strip-item.expanded .strip-body { display: block; }
 .thought-body { color: var(--text-secondary); }
+
+/* ── Compact-starting indicator (non-expandable) ──────────── */
+.compact-starting-item .strip {
+  cursor: default;
+  opacity: 0.8;
+}
+.compact-starting-item .icon-wrap {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.compact-starting-item .icon-wrap .semantic {
+  width: 14px;
+  height: 14px;
+  color: var(--tool-text);
+  display: block;
+}
+.compact-starting-item .icon-wrap .arrow {
+  display: none !important;
+}
 
 /* ── Compact card body ─────────────────────────────────────── */
 .compact-body {
@@ -4512,6 +4594,66 @@ body {
   content: "";
 }
 
+/* ── Composer expand/shrink toggle (top-right inside the input box) ── */
+.input-expand-zone {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  width: 32px;
+  height: 26px;
+}
+.input-expand-zone.hidden {
+  display: none;
+}
+.input-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.85);
+  pointer-events: none;
+  transition: opacity var(--transition-fast),
+              color var(--transition-fast),
+              background var(--transition-fast),
+              transform var(--transition-fast);
+}
+.input-expand-zone:hover .input-expand-btn,
+.input-expand-btn:hover {
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1);
+  pointer-events: auto;
+}
+.input-expand-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-modifier-hover);
+}
+.input-expand-btn .lucide {
+  width: 12px;
+  height: 12px;
+}
+
+.prompt-input.input-anim {
+  transition: height var(--transition-emphasized);
+}
+.prompt-input.expanded {
+  min-height: 220px;
+  max-height: min(620px, 55vh);
+}
+
 /* ── Setting rich text (based on prompt-input UI + 外边框) ─────────── */
 .setting-rich-text {
   width: 100%;
@@ -5032,63 +5174,6 @@ body {
   margin: 4px 8px;
 }
 
-/* ── Rename Dialog ─────────────────────────────────────────────── */
-#rename-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 260;
-}
-
-#rename-dialog {
-  width: 380px;
-  max-width: 90vw;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.rename-dialog-header h3 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-#rename-dialog-input {
-  width: 100%;
-  padding: 10px 12px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-  box-sizing: border-box;
-}
-
-#rename-dialog-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-light);
-}
-
-.rename-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 /* ── Unified Button System (compact, tonal) ─────────────────────── */
 .btn {
   display: inline-flex;
@@ -5129,6 +5214,18 @@ body {
   opacity: 0.9;
 }
 
+.btn-empty {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+.btn-empty:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  opacity: 1;
+}
+
 /* ── Dialog (reusable modal) ─────────────────────────────────────── */
 .encre-dialog-overlay {
   position: fixed;
@@ -5145,6 +5242,20 @@ body {
 
 .encre-dialog-overlay.encre-dialog-dismissing {
   animation: yimFadeOut var(--duration-fast) ease-out forwards;
+}
+
+/* Dialog confined to a container (e.g. the session sidebar) instead of the
+   whole window: covers the container and stays inside it. */
+.encre-dialog-overlay--inline {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.35);
+}
+.encre-dialog-card--inline {
+  min-width: 0;
+  width: min(360px, calc(100% - 32px));
+  padding: 20px;
 }
 
 @keyframes yimFadeIn {
@@ -5212,6 +5323,10 @@ body {
 .encre-dialog-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.15);
+}
+
+.encre-dialog-input--text {
+  font-family: inherit;
 }
 
 .encre-dialog-footer {
@@ -5639,7 +5754,7 @@ body {
   color: rgb(34, 197, 94);
 }
 
-.log-empty, .log-loading {
+.log-loading {
   padding: 32px 16px;
   text-align: center;
   color: var(--text-muted);
@@ -5878,6 +5993,20 @@ body.child-mode #header-bar {
   height: 10px;
   pointer-events: none;
   display: block;
+}
+.header-tabs .tab-close--dirty {
+  opacity: 0.9;
+}
+.header-tabs .tab-close--dirty:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+.header-tabs .tab-close .tab-close-dot {
+  width: 6px;
+  height: 6px;
+  fill: currentColor;
+  pointer-events: none;
+  flex-shrink: 0;
 }
 .header-tabs .tab.dragging {
   opacity: 0.5;
@@ -6674,6 +6803,12 @@ body.child-mode #header-bar {
   min-width: 120px;
 }
 
+.settings-dropdown-trigger > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-dropdown-trigger:hover {
   border-color: var(--text-muted);
   background: var(--bg-hover);
@@ -6724,12 +6859,24 @@ body.child-mode #header-bar {
 }
 
 .settings-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
   color: var(--text-primary);
   transition: background var(--transition-fast);
+}
+
+.settings-dropdown-item-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .settings-dropdown-item:hover {
@@ -7480,7 +7627,38 @@ body.child-mode #header-bar {
 
 /* Automation dialog push-gateway card */
 .auto-push-gw-check {
-  margin: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg-input);
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.auto-push-gw-item:hover .auto-push-gw-check {
+  background: var(--bg-hover);
+}
+.auto-push-gw-check::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.auto-push-gw-item.selected .auto-push-gw-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.auto-push-gw-item.selected .auto-push-gw-check::after {
+  opacity: 1;
 }
 .auto-push-gateways {
   border-top: 1px solid var(--border);
@@ -7543,36 +7721,6 @@ body.child-mode #header-bar {
 .history-timeline > .si-panel-empty {
   height: 100%;
   min-height: 100%;
-}
-
-.configured-empty,
-.history-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--editor-empty);
-  font-size: 13px;
-  user-select: none;
-}
-.configured-empty i,
-.history-empty i {
-  width: 28px;
-  height: 28px;
-  opacity: 0.35;
-}
-.configured-empty .empty-title,
-.history-empty .empty-title {
-  font-size: 14px;
-  font-weight: 500;
-  opacity: 0.8;
-}
-.configured-empty .empty-sub,
-.history-empty .empty-sub {
-  font-size: 12px;
-  opacity: 0.5;
 }
 
 /* ── Automation Create Button & Dropdown ──────────────────────────── */
@@ -7994,22 +8142,6 @@ body.child-mode #header-bar {
   flex: 1;
 }
 
-.search-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 60px 20px;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.search-placeholder-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
 /* ── Agents View ─────────────────────────────────────────────────── */
 .agents-container {
   flex: 1;
@@ -8044,24 +8176,6 @@ body.child-mode #header-bar {
 
 .agents-list {
   flex: 1;
-}
-
-.agents-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 60px 20px;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.agents-placeholder-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  max-width: 320px;
-  line-height: 1.5;
 }
 
 /* ── Notification Bell ───────────────────────────────────────────── */
@@ -8220,13 +8334,6 @@ body.child-mode #header-bar {
 .notification-panel-clear:hover {
   color: var(--error);
   background: rgba(239, 68, 68, 0.08);
-}
-
-.notification-panel-empty {
-  padding: 40px 24px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
 }
 
 .notification-section-label {
@@ -8429,6 +8536,7 @@ body.child-mode #header-bar {
   max-height: 320px;
   object-fit: contain;
   display: block;
+  transition: transform 0.18s ease;
 }
 
 .media-viewer-video {
@@ -8439,6 +8547,198 @@ body.child-mode #header-bar {
   display: block;
   background: var(--bg-tertiary);
 }
+
+.media-viewer-toolbar {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--toolbar-bg);
+  border: 1px solid var(--toolbar-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 5;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+/* Special mode (activity promo / notification center): only the video
+   volume control. Keep it always visible there (no hover-to-reveal). */
+.media-viewer-toolbar--special {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Reveal the toolbar whenever the cursor is anywhere inside the media
+   container (not only on the media element itself). This avoids the paradox
+   where moving toward the toolbar hides it again. */
+.media-viewer:hover .media-viewer-toolbar,
+.media-viewer:focus-within .media-viewer-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.media-tool {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--toolbar-fg);
+  border-radius: 5px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.media-tool:hover {
+  background: var(--toolbar-hover);
+}
+.media-tool-label {
+  width: auto;
+  min-width: 36px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: inherit;
+}
+.media-tool-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--toolbar-border);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+/* Video: progress bar inside the toolbar — time display by default, bar on hover */
+.media-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.media-progress-time {
+  font-size: 11px;
+  color: var(--toolbar-fg);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.media-progress {
+  position: relative;
+  width: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--toolbar-track);
+  cursor: pointer;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.2s ease;
+}
+.media-progress-wrap:hover .media-progress {
+  width: 120px;
+}
+.media-progress-wrap:hover .media-progress {
+  height: 4px;
+}
+.media-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.media-progress-knob {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.media-progress-wrap:hover .media-progress-knob {
+  opacity: 1;
+}
+/* Video: vertical volume control (up = louder), icon-only by default */
+.media-volume {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.media-volume-slider {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  height: 96px;
+  width: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--toolbar-bg);
+  border: 1px solid var(--toolbar-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(4px);
+  transition: opacity var(--transition-fast), visibility var(--transition-fast), transform var(--transition-fast);
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+/* Transparent hover bridge between the button and the slider.
+   The slider is positioned above the button (outside .media-volume's
+   bounding box), so hovering the slider would lose :hover on the parent.
+   This ::before bridges the gap so the mouse can reach the slider. */
+.media-volume::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 104px;
+  pointer-events: auto;
+}
+.media-volume:hover .media-volume-slider {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.volume-track {
+  position: relative;
+  width: 4px;
+  height: 64px;
+  border-radius: 2px;
+  background: var(--toolbar-track);
+  cursor: pointer;
+}
+.volume-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.volume-thumb {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
 
 .notification-detail-icon {
   width: 36px;
@@ -8595,10 +8895,20 @@ body.child-mode #header-bar {
 }
 
 .model-empty {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
+}
+.model-empty .lucide {
+  width: 28px;
+  height: 28px;
+  opacity: 0.35;
 }
 
 .btn-add-model {
@@ -8651,18 +8961,6 @@ body.child-mode #header-bar {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
-}
-
-/* Platform adapter icons that are inherently monochrome (Matrix, SMS,
-   Webhook) ship with hardcoded black/dark fills which vanish on a dark
-   background.  Force them to follow the active theme's text color. */
-.adapter-platform-icon.pi-mono {
-  color: var(--text-text-secondary, #9599a6);
-}
-.adapter-platform-icon.pi-mono path,
-.adapter-platform-icon.pi-mono rect,
-.adapter-platform-icon.pi-mono circle {
-  fill: currentColor;
 }
 
 .model-manage-actions {
@@ -9563,6 +9861,7 @@ input.model-form-input--reveal {
   font-size: 14px;
   border: none;
   box-shadow: none;
+  white-space: pre-wrap;
 }
 
 [data-theme="light"] .user-bubble {
@@ -10308,18 +10607,6 @@ input.model-form-input--reveal {
   display: none;
 }
 
-/* Sub-agent empty state */
-.sub-agent-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 48px 24px;
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
 /* Fallback rendering of the aggregated tool result when the inline
    sub-agent transcript could not be restored (see chat.ts render()). */
 .sub-agent-result-fallback {
@@ -11016,6 +11303,249 @@ input.model-form-input--reveal {
 .si-panel-empty .si-panel-empty-sub {
   font-size: 12px;
   opacity: 0.5;
+}
+
+/* ── Shared centered empty state (unified across sidebar/panel empties) ── */
+.si-empty-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  user-select: none;
+}
+.si-empty-center .lucide {
+  width: 28px;
+  height: 28px;
+  opacity: 0.35;
+}
+.si-empty-center .si-empty-title {
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.si-empty-center .si-empty-sub {
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+/* ── Office document viewer (docx / xlsx / pptx) ─────────────────── */
+.si-office-viewer {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.si-office-loading {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.si-office-loading .lucide.spin {
+  animation: si-spin 1s linear infinite;
+}
+@keyframes si-spin {
+  to { transform: rotate(360deg); }
+}
+.si-office-page {
+  padding: 24px 32px;
+  line-height: 1.6;
+  font-size: 13px;
+}
+.si-office-page.docx {
+  max-width: 820px;
+  margin: 0 auto;
+  background: #fff;
+  color: #1a1a1a;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  min-height: 100%;
+}
+.si-office-page.docx h1,
+.si-office-page.docx h2,
+.si-office-page.docx h3 {
+  margin: 0.8em 0 0.4em;
+  line-height: 1.3;
+}
+.si-office-page.docx p { margin: 0.6em 0; }
+.si-office-page.docx img { max-width: 100%; height: auto; }
+.si-office-page.docx table { border-collapse: collapse; }
+.si-office-page.docx table td,
+.si-office-page.docx table th {
+  border: 1px solid #ccc;
+  padding: 4px 8px;
+}
+.si-office-page.docx a { color: #0366d6; }
+.si-office-viewer[data-theme="dark"] .si-office-page.docx { filter: none; }
+.si-office-page.xlsx-wrap table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.si-office-page.xlsx-wrap table td,
+.si-office-page.xlsx-wrap table th {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.si-office-page.xlsx-wrap table th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+.si-office-slides {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.si-office-slide {
+  background: #fff;
+  color: #1a1a1a;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  max-width: 100%;
+}
+.si-office-slide img,
+.si-office-slide svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Office: PPT slide viewer ─────────────────────────────────────── */
+.si-office-ppt-viewer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: row;
+  background: var(--bg-secondary);
+}
+.si-office-ppt-rail {
+  width: 172px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+.si-office-ppt-thumb {
+  position: relative;
+  width: 148px;
+  height: 83px;
+  overflow: hidden;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  background: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.si-office-ppt-thumb:hover {
+  border-color: var(--text-muted);
+}
+.si-office-ppt-thumb.active {
+  border-color: var(--accent);
+}
+.si-office-ppt-thumb-inner {
+  width: 960px;
+  height: 540px;
+  transform: scale(0.15417);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.si-office-ppt-thumb-inner img,
+.si-office-ppt-thumb-inner svg {
+  display: block;
+}
+.si-office-ppt-stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+}
+.si-office-ppt-stage-slide {
+  display: none;
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.si-office-ppt-stage-slide.active {
+  display: block;
+}
+.si-office-ppt-stage-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 960px;
+  height: 540px;
+  transform-origin: 0 0;
+}
+.si-office-ppt-stage-inner img,
+.si-office-ppt-stage-inner svg {
+  display: block;
+}
+.si-office-ppt-nav {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.si-office-ppt-nav button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.si-office-ppt-nav button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.si-office-ppt-counter {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
 }
 
 /* ── Settings: Usage Stats Dashboard ──────────────────────────────── */
@@ -11750,6 +12280,7 @@ input.model-form-input--reveal {
   font-size: 12px;
   color: var(--text-secondary);
   min-width: 0;
+  flex-wrap: nowrap;
   font-family: var(--font-sans);
 }
 
@@ -11970,7 +12501,6 @@ input.model-form-input--reveal {
 }
 .si-review-diff .diff-body {
   overflow: auto;
-  max-height: 340px;
 }
 .si-review-diff.review-wrap .diff-content {
   white-space: pre-wrap;
@@ -11992,7 +12522,7 @@ input.model-form-input--reveal {
 
 /* Split view in review panel */
 .si-review-diff.review-split .diff-split-scroll-side {
-  max-height: 340px;
+  max-height: none;
 }
 
 /* ===== Light theme overrides for word diff ===== */
@@ -12323,45 +12853,12 @@ input.model-form-input--reveal {
 }
 
 .browser-overlay-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
   max-width: 420px;
-  gap: 10px;
-}
-
-.browser-overlay-icon {
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.browser-overlay-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.browser-overlay-desc {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-  word-break: break-word;
+  min-height: 0;
 }
 
 .browser-overlay-retry {
-  margin-top: 10px;
-  padding: 8px 22px;
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.browser-overlay-retry:hover {
-  background: var(--bg-hover);
+  margin-top: 12px;
 }
 
 /* ── BrowserView compact (sidebar) ── */

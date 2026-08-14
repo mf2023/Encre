@@ -244,6 +244,14 @@ export function renderDiffHtml(
   const adds = lines.filter((l) => l.kind === "add").length;
   const dels = lines.filter((l) => l.kind === "del").length;
 
+  // Longest content line (in characters). Used to stretch every add/del row
+  // to the right edge of the widest line so the red/green highlight covers
+  // the entire row, even when a changed line is short or empty.
+  const maxTextLen = lines.reduce((m, l) =>
+    (l.kind === "add" || l.kind === "del" || l.kind === "ctx") && l.text.length > m
+      ? l.text.length
+      : m, 0);
+
   // Rich-text summary view: no per-line table.
   if (opts.richText) {
     return renderRichText(fileLabel, lines, adds, dels);
@@ -251,7 +259,7 @@ export function renderDiffHtml(
 
   // Split view: two-column (old | new) layout.
   if (opts.splitView) {
-    return renderSplitView(fileLabel, lines, adds, dels, opts);
+    return renderSplitView(fileLabel, lines, adds, dels, opts, maxTextLen);
   }
 
   // Inline view (default)
@@ -267,7 +275,7 @@ export function renderDiffHtml(
       }
       contentCount++;
     }
-    bodyRows.push(renderRow(dl, opts));
+    bodyRows.push(renderRow(dl, opts, maxTextLen));
   }
   if (truncated > 0) {
     const notice = opts.truncatedNotice
@@ -286,25 +294,38 @@ export function renderDiffHtml(
     </div>`;
 }
 
+/**
+ * Stretch a content span so every row shares the widest line's width.
+ * `.diff-content` has `padding: 0 10px` and the global reset uses
+ * `box-sizing: border-box`, so a `min-width` of `Nch` would leave only
+ * `Nch - 20px` for the text and clip the last character of the widest
+ * line. Reserve the padding explicitly.
+ */
+function contentWidthStyle(maxTextLen: number): string {
+  if (maxTextLen <= 0) return "";
+  return ` style="min-width: calc(${maxTextLen}ch + 20px)"`;
+}
+
 /** Render one logical diff line as an HTML row (inline view). */
-function renderRow(dl: DiffLine, opts: DiffRenderOptions): string {
+function renderRow(dl: DiffLine, opts: DiffRenderOptions, maxTextLen = 0): string {
   if (dl.kind === "hunk") return ""; // skipped
   const wsOnly = opts.hideWhitespace && isWhitespaceOnly(dl.text);
   const wsClass = wsOnly ? " diff-row-ws-only" : "";
+  const minW = contentWidthStyle(maxTextLen);
   if (dl.kind === "add") {
     const content = opts.wordDiff
       ? `<ins>${escapeHtml(dl.text)}</ins>`
       : (escapeHtml(dl.text) || " ");
-    return `<div class="diff-row diff-row-add${wsClass}"><span class="diff-ln">${dl.ln}</span><span class="diff-content">${content}</span></div>`;
+    return `<div class="diff-row diff-row-add${wsClass}"><span class="diff-ln">${dl.ln}</span><span class="diff-content"${minW}>${content}</span></div>`;
   }
   if (dl.kind === "del") {
     const content = opts.wordDiff
       ? `<del>${escapeHtml(dl.text)}</del>`
       : (escapeHtml(dl.text) || " ");
-    return `<div class="diff-row diff-row-del${wsClass}"><span class="diff-ln">&nbsp;</span><span class="diff-content">${content}</span></div>`;
+    return `<div class="diff-row diff-row-del${wsClass}"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>${content}</span></div>`;
   }
   // context
-  return `<div class="diff-row${wsClass}"><span class="diff-ln">${dl.ln}</span><span class="diff-content">${escapeHtml(dl.text) || " "}</span></div>`;
+  return `<div class="diff-row${wsClass}"><span class="diff-ln">${dl.ln}</span><span class="diff-content"${minW}>${escapeHtml(dl.text) || " "}</span></div>`;
 }
 
 /**
@@ -364,8 +385,10 @@ function renderSplitView(
   adds: number,
   dels: number,
   opts: DiffRenderOptions,
+  maxTextLen = 0,
 ): string {
   const maxLines = opts.maxLines ?? MAX_RENDER_LINES;
+  const minW = contentWidthStyle(maxTextLen);
   let contentCount = 0;
   let truncated = 0;
 
@@ -385,11 +408,11 @@ function renderSplitView(
     const side = isDel ? "left" : "right";
     const lineNum = isDel ? oldLn : newLn;
     if (side === "left") {
-      leftRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content">${escapeHtml(text) || " "}</span></div>`);
-      rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
+      leftRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(text) || " "}</span></div>`);
+      rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
     } else {
-      leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
-      rightRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content">${escapeHtml(text) || " "}</span></div>`);
+      leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
+      rightRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(text) || " "}</span></div>`);
     }
   }
 
@@ -399,14 +422,14 @@ function renderSplitView(
       const d = delQueue[i];
       const a = addQueue[i];
       if (d) {
-        leftRows.push(`<div class="diff-row diff-row-del"><span class="diff-ln">${d.oldLn || "&nbsp;"}</span><span class="diff-content">${escapeHtml(d.text) || " "}</span></div>`);
+        leftRows.push(`<div class="diff-row diff-row-del"><span class="diff-ln">${d.oldLn || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(d.text) || " "}</span></div>`);
       } else {
-        leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
+        leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
       }
       if (a) {
-        rightRows.push(`<div class="diff-row diff-row-add"><span class="diff-ln">${a.ln || "&nbsp;"}</span><span class="diff-content">${escapeHtml(a.text) || " "}</span></div>`);
+        rightRows.push(`<div class="diff-row diff-row-add"><span class="diff-ln">${a.ln || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(a.text) || " "}</span></div>`);
       } else {
-        rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content">&nbsp;</span></div>`);
+        rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
       }
     }
     delQueue = [];
@@ -430,7 +453,7 @@ function renderSplitView(
       // ctx: flush pending changes, then render a paired context row.
       flushQueues();
       contentCount++;
-      const ctxRow = `<div class="diff-row"><span class="diff-ln">${dl.oldLn}</span><span class="diff-content">${escapeHtml(dl.text) || " "}</span></div>`;
+      const ctxRow = `<div class="diff-row"><span class="diff-ln">${dl.oldLn}</span><span class="diff-content"${minW}>${escapeHtml(dl.text) || " "}</span></div>`;
       leftRows.push(ctxRow);
       rightRows.push(ctxRow);
     }

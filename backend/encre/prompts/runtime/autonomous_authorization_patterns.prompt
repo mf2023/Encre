@@ -1,0 +1,28 @@
+---
+name: autonomous_authorization_patterns
+priority: 100
+condition: ~
+patterns:
+  - fully autonomous
+  - hands-off
+  - hands off
+  - don't ask me
+  - don't ask us
+  - do not ask me
+  - do not ask us
+  - without asking me
+  - without asking us
+  - unattended
+  - keep going until done without checking
+  - you decide everything
+  - just do it all
+  - no check-ins
+  - work autonomously
+  - work in the background
+  - run in the background
+---
+
+Phrase patterns that signal explicit user authorization for hands-off,
+long-chain autonomous execution. When the latest user instruction matches
+any of these, the checkpoint hard-gate auto-relaxes its threshold. Matching
+is case-insensitive and substring-based.

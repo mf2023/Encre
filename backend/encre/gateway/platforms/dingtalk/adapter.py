@@ -61,33 +61,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
-try:
-    import dingtalk_stream
-    from dingtalk_stream import ChatbotMessage
-    from dingtalk_stream.frames import CallbackMessage, AckMessage
+import dingtalk_stream
+from dingtalk_stream import ChatbotMessage
+from dingtalk_stream.frames import CallbackMessage, AckMessage
+DINGTALK_STREAM_AVAILABLE = True
 
-    DINGTALK_STREAM_AVAILABLE = True
-except Exception:  # noqa: BLE001 — broad: optional SDK's transitive deps (cryptography) may raise non-ImportError; degrade gracefully (#41112)
-    DINGTALK_STREAM_AVAILABLE = False
-    dingtalk_stream = None  # type: ignore[assignment]
-    ChatbotMessage = None  # type: ignore[assignment]
-    CallbackMessage = None  # type: ignore[assignment]
-    AckMessage = type(
-        "AckMessage",
-        (),
-        {
-            "STATUS_OK": 200,
-            "STATUS_SYSTEM_EXCEPTION": 500,
-        },
-    )  # type: ignore[assignment]
-
-try:
-    import httpx
-
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
-    httpx = None  # type: ignore[assignment]
+import httpx
+HTTPX_AVAILABLE = True
 
 # Card SDK for AI Cards (following QwenPaw pattern).
 # Catch broad Exception, not just ImportError: the alibabacloud_dingtalk SDK
@@ -97,27 +77,17 @@ except ImportError:
 # cryptography). An optional SDK with a broken dependency chain must degrade
 # gracefully — same as a missing one — rather than crash the whole adapter
 # (and therefore the whole plugin) import. #41112.
-try:
-    from alibabacloud_dingtalk.card_1_0 import (
-        client as dingtalk_card_client,
-        models as dingtalk_card_models,
-    )
-    from alibabacloud_dingtalk.robot_1_0 import (
-        client as dingtalk_robot_client,
-        models as dingtalk_robot_models,
-    )
-    from alibabacloud_tea_openapi import models as open_api_models
-    from alibabacloud_tea_util import models as tea_util_models
-
-    CARD_SDK_AVAILABLE = True
-except Exception:
-    CARD_SDK_AVAILABLE = False
-    dingtalk_card_client = None
-    dingtalk_card_models = None
-    dingtalk_robot_client = None
-    dingtalk_robot_models = None
-    open_api_models = None
-    tea_util_models = None
+from alibabacloud_dingtalk.card_1_0 import (
+    client as dingtalk_card_client,
+    models as dingtalk_card_models,
+)
+from alibabacloud_dingtalk.robot_1_0 import (
+    client as dingtalk_robot_client,
+    models as dingtalk_robot_models,
+)
+from alibabacloud_tea_openapi import models as open_api_models
+from alibabacloud_tea_util import models as tea_util_models
+CARD_SDK_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.helpers import MessageDeduplicator
@@ -1568,10 +1538,7 @@ async def _standalone_send(
     webhook_url instead. Replaces the legacy _send_dingtalk helper.
     """
     extra = getattr(pconfig, "extra", {}) or {}
-    try:
-        import httpx
-    except ImportError:
-        return {"error": "httpx not installed"}
+    import httpx
     try:
         webhook_url = extra.get("webhook_url") or os.getenv("DINGTALK_WEBHOOK_URL", "")
         if not webhook_url:

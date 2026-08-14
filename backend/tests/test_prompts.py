@@ -383,6 +383,246 @@ class TestEncrePromptBuilder:
         # Confirm the expected result for this scenario: custom block can override default.
         assert "friendly assistant" in result
 
+    def test_mandatory_constraints_block_present_by_default(self):
+        """The flagship mandatory-constraints block is injected by default."""
+        from encre.prompts.system import EncrePromptBuilder
+        builder = EncrePromptBuilder()
+        result = builder.build()
+        assert "MANDATORY Constraints" in result
+        assert "Binding Pre-Action Governance" in result
+
+    def test_mandatory_constraints_ordered_after_identity_before_task_completion(self):
+        """Priority 0.5 places mandatory constraints between identity (0) and task_completion (1)."""
+        from encre.prompts.system import EncrePromptBuilder
+        builder = EncrePromptBuilder()
+        result = builder.build()
+        idx_identity = result.find("Encre Agent")
+        idx_mand = result.find("MANDATORY Constraints")
+        idx_task = result.find("Deliver Finished Work")
+        assert 0 <= idx_identity < idx_mand < idx_task
+
+    def test_mandatory_constraints_precedence_line(self):
+        """The override line anchoring constraint authority is present."""
+        from encre.prompts.system import EncrePromptBuilder
+        builder = EncrePromptBuilder()
+        result = builder.build()
+        assert "override" in result.lower()
+        assert "autonomous" in result.lower()
+
+    def test_memory_discipline_front_positioned(self):
+        """Memory recall protocol must sit early, within the governance cluster."""
+        from encre.prompts.system import EncrePromptBuilder
+        builder = EncrePromptBuilder()
+        result = builder.build()
+        assert "Memory Discipline" in result
+        idx_discipline = result.index("Memory Discipline")
+        idx_task = result.index("Task Completion")
+        assert idx_discipline < idx_task
+
+    def test_memory_discipline_recall_protocol_present(self):
+        """The mandatory recall protocol is present in the built system prompt."""
+        from encre.prompts.system import EncrePromptBuilder
+        builder = EncrePromptBuilder()
+        result = builder.build()
+        assert (
+            "MANDATORY Recall Protocol" in result
+            or "mandatory recall protocol" in result.lower()
+        )
+
+
+class TestRuntimePromptFiles:
+    """All runtime prompts referenced by loop_stability are on disk, never hardcoded."""
+    def test_runtime_prompt_files_exist(self):
+        from encre.loop_stability import (
+            build_auto_continue_message,
+            build_grace_message,
+            build_delegation_guidance,
+            build_steer_injection,
+            build_thinking_prefill,
+        )
+        assert build_auto_continue_message()
+        assert "remaining" in build_grace_message().lower() \
+            or "what remains" in build_grace_message().lower()
+        assert build_delegation_guidance()
+        assert build_steer_injection(["alpha", "beta"])
+        assert build_thinking_prefill("help", enabled=True)
+        assert build_thinking_prefill("why does this bug happen", enabled=True)
+        assert build_thinking_prefill("What is the answer to this question?", enabled=True)
+
+
+class TestPromptFrontmatter:
+    """Tests for frontmatter parsing, including float priorities."""
+    def test_float_priority_parses(self):
+        """A float priority (e.g. 0.5) is parsed as a number, not a string."""
+        from encre.prompts.loader import _parse_frontmatter
+        meta, body = _parse_frontmatter(
+            "---\nname: slack\npriority: 0.5\ncondition: ~\n---\nCONTENT"
+        )
+        assert meta["priority"] == 0.5
+        assert isinstance(meta["priority"], float)
+        assert body == "CONTENT"
+
+    def test_negative_float_priority_parses(self):
+        from encre.prompts.loader import _parse_frontmatter
+        meta, _ = _parse_frontmatter("---\npriority: -1.5\n---\n")
+        assert meta["priority"] == -1.5
+
+    def test_integer_and_list_frontmatter_still_parse(self):
+        from encre.prompts.loader import _parse_frontmatter
+        meta, _ = _parse_frontmatter(
+            "---\npriority: 16\ncondition: [general, coding]\n---\n"
+        )
+        assert meta["priority"] == 16
+        assert meta["condition"] == ["general", "coding"]
+
+    def test_block_style_yaml_list_parses(self):
+        """Block-style `- item` list values in frontmatter are parsed as lists."""
+        from encre.prompts.loader import _parse_frontmatter
+        meta, body = _parse_frontmatter(
+            "---\nname: patterns\npriority: 100\npatterns:\n  - fully autonomous\n"
+            "  - hands-off\n  - don't ask me\n---\nBODY"
+        )
+        assert meta["patterns"] == ["fully autonomous", "hands-off", "don't ask me"]
+        assert body == "BODY"
+
+    def test_block_style_yaml_list_empty_value_falls_back_none(self):
+        """A key whose block-style list is empty parses to None, not a broken entry."""
+        from encre.prompts.loader import _parse_frontmatter
+        meta, _ = _parse_frontmatter("---\nname: x\npatterns:\n---\nBODY")
+        assert meta["patterns"] is None
+
+    def test_frontmatter_without_closing_delimiter_still_parses(self):
+        from encre.prompts.loader import _parse_frontmatter
+        meta, body = _parse_frontmatter("---\nname: x\npriority: 1\n---\nCONTENT")
+        assert meta["name"] == "x"
+        assert body == "CONTENT"
+
+
+class TestCheckpointHardGate:
+    """Tests for the code-level checkpoint hard-gate helpers."""
+    def test_count_consecutive_tool_steps(self):
+        from encre.loop_stability import count_consecutive_tool_steps
+        msgs = [
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "", "tool_calls": ["a"]},
+            {"role": "tool", "tool_call_id": "a", "content": "ok"},
+            {"role": "assistant", "content": "", "tool_calls": ["b"]},
+            {"role": "tool", "tool_call_id": "b", "content": "ok"},
+            {"role": "assistant", "content": "", "tool_calls": ["c"]},
+        ]
+        assert count_consecutive_tool_steps(msgs) == 3
+
+    def test_count_consecutive_tool_steps_breaks_on_user(self):
+        from encre.loop_stability import count_consecutive_tool_steps
+        msgs = [
+            {"role": "user", "content": "do it"},
+            {"role": "assistant", "content": "", "tool_calls": ["a"]},
+            {"role": "tool", "tool_call_id": "a", "content": "ok"},
+            {"role": "user", "content": "interrupt"},
+            {"role": "assistant", "content": "", "tool_calls": ["b"]},
+        ]
+        assert count_consecutive_tool_steps(msgs) == 1
+
+    def test_count_consecutive_tool_steps_ignores_plain_text(self):
+        from encre.loop_stability import count_consecutive_tool_steps
+        msgs = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "thinking text only"},
+            {"role": "assistant", "content": "", "tool_calls": ["a"]},
+        ]
+        assert count_consecutive_tool_steps(msgs) == 1
+
+    def test_checkpoint_gate_relaxed_on_authorization(self):
+        from encre.loop_stability import checkpoint_gate_relaxed
+        assert checkpoint_gate_relaxed("run fully autonomous and don't ask me")
+        assert checkpoint_gate_relaxed("HANDS-OFF please")
+
+    def test_checkpoint_gate_not_relaxed_on_normal_prompt(self):
+        from encre.loop_stability import checkpoint_gate_relaxed
+        assert not checkpoint_gate_relaxed("refactor the auth module")
+        assert not checkpoint_gate_relaxed("")
+
+    def test_build_checkpoint_message(self):
+        from encre.loop_stability import build_checkpoint_message
+        msg = build_checkpoint_message(7)
+        assert msg
+        assert "7" in msg
+        assert "Checkpoint" in msg
+
+    def test_checkpoint_threshold_constant(self):
+        from encre.loop_stability import CHECKPOINT_TOOL_STEP_THRESHOLD
+        assert isinstance(CHECKPOINT_TOOL_STEP_THRESHOLD, int)
+        assert CHECKPOINT_TOOL_STEP_THRESHOLD >= 3
+
+
+class TestStandingOrdersReminder:
+    """Tests for the per-turn standing-orders reminder."""
+    def test_reminder_loads_from_prompt_file(self):
+        from encre.loop_stability import build_standing_orders_reminder
+        reminder = build_standing_orders_reminder()
+        assert reminder
+        assert "Standing Orders" in reminder
+        assert "RECALL BEFORE ACTING" in reminder.upper()
+
+    def test_append_to_last_user_message(self):
+        from encre.loop_stability import append_to_last_user_message
+        msgs = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hi"},
+        ]
+        append_to_last_user_message(msgs, "REMINDER-SUFFIX")
+        assert "REMINDER-SUFFIX" in msgs[-1]["content"]
+
+    def test_append_to_last_user_message_noop_without_user(self):
+        from encre.loop_stability import append_to_last_user_message
+        msgs = [{"role": "system", "content": "sys"}]
+        append_to_last_user_message(msgs, "X")
+        assert len(msgs) == 1
+        assert "X" not in msgs[0]["content"]
+
+
+class TestUserRulesInterpretation:
+    """The rules block teaches that user rules are intent, not infallible law."""
+    def test_rules_block_loads_with_context(self):
+        from encre.prompts.loader import PromptLoader
+        loader = PromptLoader()
+        block = loader.load_with_context(
+            "rules", rules_content="TESTRULE", execution_context="CONTEXT"
+        )
+        assert "TESTRULE" in block
+        assert "CONTEXT" in block
+        assert "Interpret as Intent" in block
+
+    def test_rules_block_not_mandatory_law(self):
+        from encre.prompts.loader import PromptLoader
+        block = PromptLoader().load("rules")
+        assert "without exception" not in block
+        assert "intent" in block.lower()
+
+    def test_rules_block_scope_check_present(self):
+        from encre.prompts.loader import PromptLoader
+        block = PromptLoader().load("rules")
+        assert "conversational rule" in block
+        assert "automation" in block.lower() or "headless" in block.lower()
+
+    def test_rules_block_asks_when_unclear(self):
+        from encre.prompts.loader import PromptLoader
+        block = PromptLoader().load("rules")
+        assert "ask" in block.lower()
+        assert "question" in block.lower()
+
+    def test_execution_context_placeholders_substitute(self):
+        from encre.prompts.loader import PromptLoader
+        headless = PromptLoader().load_with_context(
+            "rules", rules_content="R", execution_context="headless"
+        )
+        interactive = PromptLoader().load_with_context(
+            "rules", rules_content="R", execution_context="interactive"
+        )
+        assert "headless" in headless
+        assert "interactive" in interactive
+        assert "{{execution_context}}" not in headless
+
 
 class TestSpecializationPrompts:
     """Test cases covering specialization prompts.

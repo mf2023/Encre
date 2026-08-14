@@ -99,12 +99,8 @@ def _approval_event_choices(*, smart_denied: bool, allow_permanent: bool) -> lis
     return ["once", "session", "always", "deny"] if allow_permanent else ["once", "session", "deny"]
 
 
-try:
-    from aiohttp import web
-    AIOHTTP_AVAILABLE = True
-except ImportError:
-    AIOHTTP_AVAILABLE = False
-    web = None  # type: ignore[assignment]
+from aiohttp import web
+AIOHTTP_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.base import (

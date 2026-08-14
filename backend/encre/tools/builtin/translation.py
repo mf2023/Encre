@@ -107,10 +107,7 @@ async def _translation_execute(**kwargs: Any) -> str:
                     return json.dumps(output, ensure_ascii=False, indent=2)
 
                 elif service == "google":
-                    try:
-                        from deep_translator import GoogleTranslator
-                    except ImportError:
-                        return "deep_translator library required. Install: pip install deep-translator"
+                    from deep_translator import GoogleTranslator
 
                     src = source_lang if source_lang != "auto" else "auto"
                     translator = GoogleTranslator(source=src, target=target_lang)
@@ -160,10 +157,7 @@ async def _translation_execute(**kwargs: Any) -> str:
                         result = json.loads(resp.read().decode("utf-8"))
                     return json.dumps(result, ensure_ascii=False, indent=2)
                 elif service == "google":
-                    try:
-                        from deep_translator import GoogleTranslator
-                    except ImportError:
-                        return "deep_translator library required. Install: pip install deep-translator"
+                    from deep_translator import GoogleTranslator
                     langs = GoogleTranslator().get_supported_languages(as_dict=True)
                     return json.dumps(langs, ensure_ascii=False, indent=2)
                 return f"Unsupported service: {service}"

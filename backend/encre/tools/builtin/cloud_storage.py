@@ -73,11 +73,8 @@ async def _s3_action(action: str, bucket: str, key: str, local_path: str, prefix
         prefix: Description of the prefix parameter.
         kwargs: Description of the kwargs parameter.
     """
-    try:
-        import boto3
-        from botocore.exceptions import ClientError, NoCredentialsError
-    except ImportError:
-        return "Error: boto3 is required for S3. Install with: pip install boto3"
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
 
     aws_access_key = kwargs.get("access_key") or os.environ.get("AWS_ACCESS_KEY_ID", "")
     aws_secret_key = kwargs.get("secret_key") or os.environ.get("AWS_SECRET_ACCESS_KEY", "")
@@ -201,11 +198,8 @@ async def _gcs_action(action: str, bucket: str, key: str, local_path: str, prefi
         prefix: Description of the prefix parameter.
         kwargs: Description of the kwargs parameter.
     """
-    try:
-        from google.cloud import storage
-        from google.cloud.exceptions import NotFound
-    except ImportError:
-        return "Error: google-cloud-storage is required. Install with: pip install google-cloud-storage"
+    from google.cloud import storage
+    from google.cloud.exceptions import NotFound
 
     try:
         credentials_path = kwargs.get("credentials_path") or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
@@ -293,10 +287,7 @@ async def _azure_action(action: str, container: str, blob_name: str, local_path:
         prefix: Description of the prefix parameter.
         kwargs: Description of the kwargs parameter.
     """
-    try:
-        from azure.storage.blob import BlobServiceClient
-    except ImportError:
-        return "Error: azure-storage-blob is required. Install with: pip install azure-storage-blob"
+    from azure.storage.blob import BlobServiceClient
 
     conn_str = kwargs.get("connection_string") or os.environ.get("AZURE_STORAGE_CONNECTION_STRING", "")
     if not conn_str:

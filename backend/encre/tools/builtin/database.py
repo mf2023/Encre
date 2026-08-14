@@ -507,10 +507,7 @@ async def _execute_mysql(pool, sql: str, params: Optional[list], limit: int, tim
 # ---------------------------------------------------------------------------
 
 async def _execute_mssql(params_dict: dict, sql: str, params: Optional[list], limit: int, timeout: int) -> str:
-    try:
-        import pymssql
-    except ImportError:
-        return json.dumps({"error": "SQL Server: pip install pymssql"})
+    import pymssql
 
     def _query() -> str:
         conn = pymssql.connect(
@@ -550,10 +547,7 @@ async def _execute_mssql(params_dict: dict, sql: str, params: Optional[list], li
 # ---------------------------------------------------------------------------
 
 async def _execute_oracle(params_dict: dict, sql: str, params: Optional[list], limit: int, timeout: int) -> str:
-    try:
-        import oracledb
-    except ImportError:
-        return json.dumps({"error": "Oracle: pip install oracledb"})
+    import oracledb
 
     dsn = oracledb.makedsn(params_dict["host"], params_dict["port"], service_name=params_dict["service_name"])
 
@@ -592,10 +586,7 @@ async def _execute_oracle(params_dict: dict, sql: str, params: Optional[list], l
 # ---------------------------------------------------------------------------
 
 async def _execute_duckdb(params_dict: dict, sql: str, params: Optional[list], limit: int, timeout: int) -> str:
-    try:
-        import duckdb
-    except ImportError:
-        return json.dumps({"error": "DuckDB: pip install duckdb"})
+    import duckdb
 
     def _query() -> str:
         conn = duckdb.connect(params_dict["database"])
@@ -629,10 +620,7 @@ async def _execute_duckdb(params_dict: dict, sql: str, params: Optional[list], l
 # ---------------------------------------------------------------------------
 
 async def _execute_clickhouse(params_dict: dict, sql: str, params: Optional[list], limit: int, timeout: int) -> str:
-    try:
-        from clickhouse_driver import Client as CHClient
-    except ImportError:
-        return json.dumps({"error": "ClickHouse: pip install clickhouse-driver"})
+    from clickhouse_driver import Client as CHClient
 
     def _query() -> str:
         client = CHClient(
@@ -1511,10 +1499,7 @@ async def _create_database(db_url: str, db_type: DBType, new_db: str, timeout: i
 
 
 async def _create_pg_database(db_url: str, new_db: str, timeout: int) -> str:
-    try:
-        import asyncpg
-    except ImportError:
-        return json.dumps({"error": "PostgreSQL: pip install asyncpg"})
+    import asyncpg
     _, params = _parse_db_url(db_url)
     try:
         conn = await asyncio.wait_for(
@@ -1537,10 +1522,7 @@ async def _create_pg_database(db_url: str, new_db: str, timeout: int) -> str:
 
 
 async def _create_mysql_database(db_url: str, new_db: str, timeout: int) -> str:
-    try:
-        import aiomysql
-    except ImportError:
-        return json.dumps({"error": "MySQL: pip install aiomysql"})
+    import aiomysql
     _, params = _parse_db_url(db_url)
     try:
         conn = await asyncio.wait_for(
@@ -1565,10 +1547,7 @@ async def _create_mysql_database(db_url: str, new_db: str, timeout: int) -> str:
 
 
 async def _create_mssql_database(db_url: str, new_db: str, timeout: int) -> str:
-    try:
-        import pymssql
-    except ImportError:
-        return json.dumps({"error": "SQL Server: pip install pymssql"})
+    import pymssql
     _, params = _parse_db_url(db_url)
 
     def _create() -> str:
@@ -1593,10 +1572,7 @@ async def _create_mssql_database(db_url: str, new_db: str, timeout: int) -> str:
 
 
 async def _create_clickhouse_database(db_url: str, new_db: str, timeout: int) -> str:
-    try:
-        from clickhouse_driver import Client as CHClient
-    except ImportError:
-        return json.dumps({"error": "ClickHouse: pip install clickhouse-driver"})
+    from clickhouse_driver import Client as CHClient
     _, params = _parse_db_url(db_url)
 
     def _create() -> str:

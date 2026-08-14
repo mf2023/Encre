@@ -83,6 +83,7 @@ function syncActiveSessionState(): void {
   state.artifacts = snapshot.artifacts;
   state.references = snapshot.references;
 state.compactEvents = snapshot.compactEvents;
+  state.compactStartingEvents = snapshot.compactStartingEvents || [];
   state.systemMessages = snapshot.systemMessages || [];
   state.branches = snapshot.branches;
   state.activeBranchId = snapshot.activeBranchId;
@@ -633,6 +634,7 @@ export function loadSessionMessages(rawMessages: Array<{ role: string; content: 
   }
   snapshot.artifacts = [];
   snapshot.compactEvents = [];
+  snapshot.compactStartingEvents = [];
   if (totalInput > 0 || totalOutput > 0) {
     snapshot.tokenUsage = { input_tokens: totalInput, output_tokens: totalOutput, total_tokens: totalInput + totalOutput };
     state.contextTokens = totalInput + totalOutput;
@@ -699,6 +701,7 @@ export function clearMessages(sessionId = state.sessionId): void {
   snapshot.artifacts = [];
   snapshot.references = [];
   snapshot.compactEvents = [];
+  snapshot.compactStartingEvents = [];
   snapshot.branches = [];
   snapshot.activeBranchId = "";
   snapshot.running = false;
@@ -946,19 +949,45 @@ export function setRunning(v: boolean, sessionId = state.sessionId): void {
   const sid = sessionId;
   if (sid) {
     state.sessionsList = state.sessionsList.map(e =>
-      e.session_id === sid ? { ...e, is_running: v } : e
+      e.session_id === sid
+        ? { ...e, is_running: v, awaiting_approval: v ? e.awaiting_approval : false }
+        : e
     );
     window.electronAPI?.traySessionsUpdate?.(state.sessionsList);
     // Also update the dual-mode tray cache so the popup sees the
     // real-time is_running indicator (green dot) immediately.
     traySessionsCache.normal = traySessionsCache.normal.map(e =>
-      e.session_id === sid ? { ...e, is_running: v } : e
+      e.session_id === sid
+        ? { ...e, is_running: v, awaiting_approval: v ? e.awaiting_approval : false }
+        : e
     );
     traySessionsCache.iwork = traySessionsCache.iwork.map(e =>
-      e.session_id === sid ? { ...e, is_running: v } : e
+      e.session_id === sid
+        ? { ...e, is_running: v, awaiting_approval: v ? e.awaiting_approval : false }
+        : e
     );
     window.electronAPI?.traySessionsBothUpdate?.({ normal: traySessionsCache.normal, iwork: traySessionsCache.iwork });
   }
+}
+
+/** Marks a session as waiting for user approval (e.g. a runtime tool
+ *  permission prompt).  Flips its sidebar/tray breathing light to yellow
+ *  everywhere (main app + tray popup) so all surfaces stay unified. */
+export function setSessionAwaitingApproval(awaiting: boolean, sessionId = state.sessionId): void {
+  const sid = sessionId;
+  if (!sid) return;
+  state.sessionsList = state.sessionsList.map(e =>
+    e.session_id === sid ? { ...e, awaiting_approval: awaiting } : e
+  );
+  emit();
+  window.electronAPI?.traySessionsUpdate?.(state.sessionsList);
+  traySessionsCache.normal = traySessionsCache.normal.map(e =>
+    e.session_id === sid ? { ...e, awaiting_approval: awaiting } : e
+  );
+  traySessionsCache.iwork = traySessionsCache.iwork.map(e =>
+    e.session_id === sid ? { ...e, awaiting_approval: awaiting } : e
+  );
+  publishTraySessions();
 }
 
 /** Sets the currently active (expanded) tool-call id for the detail panel. */
@@ -1209,6 +1238,22 @@ export function appendReferences(newRefs: import("./types.js").ReferenceItem[], 
   const snapshot = getOrCreateSessionSnapshot(sessionId);
   snapshot.references = [...(snapshot.references || []), ...newRefs];
   syncSessionState(sessionId);
+  emit();
+}
+
+/** Records a context-compaction-starting event for the (active) session. */
+export function addCompactStartingEvent(sessionId = state.sessionId): void {
+  const snapshot = getOrCreateSessionSnapshot(sessionId);
+  snapshot.compactStartingEvents = [...snapshot.compactStartingEvents, { timestamp: Date.now() }];
+  syncSessionState(sessionId);
+  emit();
+}
+
+/** Clears all compact-starting events. */
+export function clearCompactStartingEvents(): void {
+  const snapshot = getOrCreateSessionSnapshot();
+  snapshot.compactStartingEvents = [];
+  syncSessionState();
   emit();
 }
 

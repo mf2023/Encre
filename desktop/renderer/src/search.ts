@@ -108,7 +108,7 @@ const SECTION_DEFS: Record<string, SectionTemplate> = {
   },
   skill: {
     getLabel: () => t("search.sectionSkills"),
-    icon: `<i data-lucide="wand-2" class="lucide lucide-sm"></i>`,
+    icon: `<i data-lucide="wrench" class="lucide lucide-sm"></i>`,
     kindLabel: (r) => r.name || t("search.resultSkill"),
   },
   workspace: {
@@ -158,7 +158,7 @@ const SECTION_DEFS: Record<string, SectionTemplate> = {
   },
   slash_command: {
     getLabel: () => t("search.sectionSlashCommands"),
-    icon: `<i data-lucide="command" class="lucide lucide-sm"></i>`,
+    icon: `<i data-lucide="wand-2" class="lucide lucide-sm"></i>`,
     kindLabel: () => t("search.resultSlashCommand"),
   },
   tool: {
@@ -828,8 +828,9 @@ export class Search {
 
     if (results.length === 0) {
       this.resultsEl.innerHTML = q
-        ? `<div class="search-empty">${t("search.noResultsFor", { query: this.esc(q) })}</div>`
+        ? `<div class="si-empty-center" style="min-height:0;padding:32px 16px"><i data-lucide="search-x" class="lucide"></i><span class="si-empty-title">${t("search.noResultsFor", { query: this.esc(q) })}</span></div>`
         : "";
+      if (q && typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.resultsEl });
       return;
     }
 

@@ -62,54 +62,27 @@ from urllib.parse import quote
 # runtime; nothing in the codebase calls ``typing.get_type_hints()`` on
 # this class so the annotation never has to resolve to a real symbol.
 
-try:
-    from aiohttp import web
+from aiohttp import web
+AIOHTTP_AVAILABLE = True
 
-    AIOHTTP_AVAILABLE = True
-except ImportError:
-    AIOHTTP_AVAILABLE = False
-    web = None  # type: ignore[assignment]
-
-try:
-    from microsoft_teams.apps import App, ActivityContext
-    from microsoft_teams.common.http.client import ClientOptions
-    from microsoft_teams.api import MessageActivity, ConversationReference
-    from microsoft_teams.api.activities.typing import TypingActivityInput
-    from microsoft_teams.api.activities.invoke.adaptive_card import AdaptiveCardInvokeActivity
-    from microsoft_teams.api.models.adaptive_card import (
-        AdaptiveCardActionCardResponse,
-        AdaptiveCardActionMessageResponse,
-    )
-    from microsoft_teams.api.models.invoke_response import InvokeResponse, AdaptiveCardInvokeResponse
-    from microsoft_teams.apps.http.adapter import (
-        HttpMethod,
-        HttpRequest,
-        HttpResponse,
-        HttpRouteHandler,
-    )
-    from microsoft_teams.cards import AdaptiveCard, ExecuteAction, TextBlock
-
-    TEAMS_SDK_AVAILABLE = True
-except ImportError:
-    TEAMS_SDK_AVAILABLE = False
-    ClientOptions = None  # type: ignore[assignment,misc]
-    App = None  # type: ignore[assignment,misc]
-    ActivityContext = None  # type: ignore[assignment,misc]
-    MessageActivity = None  # type: ignore[assignment,misc]
-    ConversationReference = None  # type: ignore[assignment,misc]
-    TypingActivityInput = None  # type: ignore[assignment,misc]
-    AdaptiveCardInvokeActivity = None  # type: ignore[assignment,misc]
-    AdaptiveCardActionCardResponse = None  # type: ignore[assignment,misc]
-    AdaptiveCardActionMessageResponse = None  # type: ignore[assignment,misc]
-    AdaptiveCardInvokeResponse = None  # type: ignore[assignment,misc,union-attr]
-    InvokeResponse = None  # type: ignore[assignment,misc]
-    HttpMethod = str  # type: ignore[assignment,misc]
-    HttpRequest = None  # type: ignore[assignment,misc]
-    HttpResponse = None  # type: ignore[assignment,misc]
-    HttpRouteHandler = None  # type: ignore[assignment,misc]
-    AdaptiveCard = None  # type: ignore[assignment,misc]
-    ExecuteAction = None  # type: ignore[assignment,misc]
-    TextBlock = None  # type: ignore[assignment,misc]
+from microsoft_teams.apps import App, ActivityContext
+from microsoft_teams.common.http.client import ClientOptions
+from microsoft_teams.api import MessageActivity, ConversationReference
+from microsoft_teams.api.activities.typing import TypingActivityInput
+from microsoft_teams.api.activities.invoke.adaptive_card import AdaptiveCardInvokeActivity
+from microsoft_teams.api.models.adaptive_card import (
+    AdaptiveCardActionCardResponse,
+    AdaptiveCardActionMessageResponse,
+)
+from microsoft_teams.api.models.invoke_response import InvokeResponse, AdaptiveCardInvokeResponse
+from microsoft_teams.apps.http.adapter import (
+    HttpMethod,
+    HttpRequest,
+    HttpResponse,
+    HttpRouteHandler,
+)
+from microsoft_teams.cards import AdaptiveCard, ExecuteAction, TextBlock
+TEAMS_SDK_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.helpers import MessageDeduplicator
@@ -1137,21 +1110,21 @@ class TeamsAdapter(BasePlatformAdapter):
         }
 
         actions = [ExecuteAction(
-title="Allow Once", verb="encre_approve",
+             title="Allow Once", verb="encre_approve",
              data={**btn_data_base, "encre_action": "approve_once"}, style="positive",
-         )]
-         if not smart_denied:
-             actions.append(ExecuteAction(
-                 title="Allow Session", verb="encre_approve",
-                 data={**btn_data_base, "encre_action": "approve_session"},
-             ))
-             if allow_permanent:
-                 actions.append(ExecuteAction(
-                     title="Always Allow", verb="encre_approve",
-                     data={**btn_data_base, "encre_action": "approve_always"},
-                 ))
-         actions.append(ExecuteAction(
-             title="Deny", verb="encre_approve",
+        )]
+        if not smart_denied:
+            actions.append(ExecuteAction(
+                title="Allow Session", verb="encre_approve",
+                data={**btn_data_base, "encre_action": "approve_session"},
+            ))
+            if allow_permanent:
+                actions.append(ExecuteAction(
+                    title="Always Allow", verb="encre_approve",
+                    data={**btn_data_base, "encre_action": "approve_always"},
+                ))
+        actions.append(ExecuteAction(
+            title="Deny", verb="encre_approve",
             data={**btn_data_base, "encre_action": "deny"}, style="destructive",
         ))
         body = [

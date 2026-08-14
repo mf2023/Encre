@@ -277,7 +277,10 @@ export class Files {
     const summary = isDir ? "· folder"
       : att.mime_type === "text/x-terminal" ? `· ${att.size} line${att.size !== 1 ? "s" : ""}`
       : `· ${this.fmtSize(att.size)}`;
-    chip.innerHTML = `<i data-lucide="${icon}" class="chip-icon" style="width:12px;height:12px;"></i><span class="mode-card-label">${label}</span><span class="mode-card-summary">${summary}</span><button class="mode-card-remove" data-path="${att.path}"><i data-lucide="x" class="lucide" style="width:11px;height:11px;"></i></button>`;
+    const iconHtml = icon.startsWith("data:")
+      ? `<img src="${icon}" class="chip-icon" style="width:12px;height:12px;margin:0 2px 0 0">`
+      : `<i data-lucide="${icon}" class="chip-icon" style="width:12px;height:12px;"></i>`;
+    chip.innerHTML = `${iconHtml}<span class="mode-card-label">${label}</span><span class="mode-card-summary">${summary}</span><button class="mode-card-remove" data-path="${att.path}"><i data-lucide="x" class="lucide" style="width:11px;height:11px;"></i></button>`;
 
     chip.querySelector(".mode-card-remove")?.addEventListener("click", (e) => {
       e.stopPropagation();

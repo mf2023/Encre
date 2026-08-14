@@ -65,10 +65,7 @@ async def _qr_execute(**kwargs: Any) -> str:
 
         def _generate() -> str:
             """Generate."""
-            try:
-                import qrcode
-            except ImportError:
-                return "qrcode library required. Install: pip install qrcode[pil]"
+            import qrcode
 
             try:
                 ec_map = {
@@ -111,11 +108,8 @@ async def _qr_execute(**kwargs: Any) -> str:
 
         def _read() -> str:
             """Read."""
-            try:
-                from PIL import Image
-                from pyzbar.pyzbar import decode
-            except ImportError:
-                return "pyzbar and Pillow required. Install: pip install pyzbar pillow"
+            from PIL import Image
+            from pyzbar.pyzbar import decode
 
             try:
                 img = Image.open(file_path)
@@ -148,11 +142,8 @@ async def _qr_execute(**kwargs: Any) -> str:
 
         def _generate_svg() -> str:
             """Generate svg."""
-            try:
-                import qrcode
-                import qrcode.image.svg
-            except ImportError:
-                return "qrcode library required. Install: pip install qrcode"
+            import qrcode
+            import qrcode.image.svg
 
             try:
                 ec_map = {

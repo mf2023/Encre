@@ -440,7 +440,31 @@ def _is_reference_tool(tool_name: str) -> bool:
     return False
 
 
-def _extract_ref_summary(tool_name: str, args: dict[str, Any], result: str) -> str:
+def _memory_file_exists_on_disk(fn: str) -> bool:
+    """Check whether a memory file exists in the memory dir.
+
+    Uses the same on-disk name as the memory tools (raw filename, ``.md``
+    suffix appended when missing).  References must never point at memory
+    files that do not exist, otherwise the summary panel shows phantom
+    entries.
+    """
+    if not fn:
+        return False
+    if not fn.endswith(".md"):
+        fn += ".md"
+    from encre.config import get_data_dir
+
+    return os.path.isfile(str(get_data_dir() / "memory" / fn))
+
+
+def _extract_ref_summary(tool_name: str, args: dict[str, Any], result: str) -> str | None:
+    """Build the display summary for a reference entry.
+
+    Returns ``None`` when the reference should be omitted entirely: memory
+    file operations that targeted a file that does not exist (e.g. the model
+    passed a Chinese name while the on-disk file is its sanitized slug) must
+    not leave phantom entries in the summary panel.
+    """
     if tool_name.startswith("mcp__"):
         parts = tool_name.split("__", 2)
         if len(parts) >= 3:
@@ -454,14 +478,20 @@ def _extract_ref_summary(tool_name: str, args: dict[str, Any], result: str) -> s
 
     if name in ("memory_create", "memory_update"):
         fn = args.get("filename", "") or args.get("name", "")
+        if name == "memory_update" and not _memory_file_exists_on_disk(fn):
+            return None
         return f"Memory: {fn}" if fn else f"Memory: {tool_name}"
 
     if name == "memory_read":
         fn = args.get("filename", "") or args.get("name", "")
+        if not _memory_file_exists_on_disk(fn):
+            return None
         return f"Read memory: {fn}" if fn else "Read memory"
 
     if name == "memory_delete":
         fn = args.get("filename", "") or args.get("name", "")
+        if not _memory_file_exists_on_disk(fn):
+            return None
         return f"Deleted memory: {fn}" if fn else "Deleted memory"
 
     if name == "memory_search":

@@ -114,7 +114,7 @@ export class EALoader {
   }
 
   private static srcFor(dark: boolean): string {
-    return dark ? "assets/EAw-animated.svg" : "assets/EAb-animated.svg";
+    return dark ? "assets/Encre-load-dm.svg" : "assets/Encre-load-lm.svg";
   }
 
   private static readDark(): boolean {

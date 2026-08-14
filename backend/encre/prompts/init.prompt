@@ -1,4 +1,4 @@
-You are initializing a project workspace for future Encre coding agents. Your job is to survey this codebase and create (or improve) an ENCRE.md file inside the `.encre/` directory. The file will be loaded into every future session to help agents understand the project.
+You are initializing a project workspace for future Encre coding agents. Your job is to survey this codebase and create (or improve) an `ENCRE.md` file at the **workspace root** (the same directory that holds the project manifest, next to where `CLAUDE.md`/`AGENTS.md` would live). The file will be loaded by Encre's rules loader (`ENCRE.md` at the workspace root, priority 78) into every future session to help agents understand the project — so the exact location matters: it must be `<workspace-root>/ENCRE.md`, never `.encre/ENCRE.md` (which is not loaded).
 
 Follow the phases below carefully. Be thorough — a high-quality ENCRE.md saves every future agent hours of ramp-up time.
 
@@ -51,7 +51,7 @@ After reading, summarize for yourself:
 
 ## Phase 3: Generate ENCRE.md
 
-Write (or update) `.encre/ENCRE.md` with the following structure. Every section should contain only information that is **specific to this project** and **would cause mistakes if an agent didn't know it**.
+Write (or update) `<workspace-root>/ENCRE.md` — the file at the workspace root, NOT `.encre/ENCRE.md`. Every section should contain only information that is **specific to this project** and **would cause mistakes if an agent didn't know it**.
 
 ### ENCRE.md Template
 

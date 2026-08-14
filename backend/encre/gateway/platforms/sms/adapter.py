@@ -463,10 +463,7 @@ async def _standalone_send(
     """Out-of-process SMS delivery via the Twilio REST API. Implements the
     standalone_sender_fn contract; replaces the legacy _send_sms helper."""
     auth_token = getattr(pconfig, "api_key", None) or os.getenv("TWILIO_AUTH_TOKEN", "")
-    try:
-        import aiohttp
-    except ImportError:
-        return {"error": "aiohttp not installed. Run: pip install aiohttp"}
+    import aiohttp
     import base64
 
     account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")

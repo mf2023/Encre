@@ -101,10 +101,7 @@ async def _handle_excel(action: str, file_path: str, sheet_name: str, data: str,
         data: Description of the data parameter.
         _range: Description of the _range parameter.
     """
-    try:
-        import openpyxl
-    except ImportError:
-        return "Error: openpyxl not installed. Install with: pip install openpyxl"
+    import openpyxl
 
     if action == "read":
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)

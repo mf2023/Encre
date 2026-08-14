@@ -172,17 +172,11 @@ export class BrowserView {
         <div class="browser-webview-status hidden">
           <div class="browser-status-loading"></div>
           <div class="browser-status-error hidden">
-            <div class="browser-overlay-content">
-              <div class="browser-overlay-icon">
-                <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-              </div>
-              <div class="browser-overlay-title" data-i18n="browserNav.failedToLoad">Failed to load</div>
-              <div class="browser-overlay-desc" data-i18n="browserNav.checkConnection">The page could not be loaded. Please check your connection and try again.</div>
-              <button class="browser-overlay-retry" type="button" data-i18n="browserNav.retry">Retry</button>
+            <div class="browser-overlay-content si-empty-center">
+              <i data-lucide="triangle-alert" class="lucide"></i>
+              <div class="si-empty-title" data-i18n="browserNav.failedToLoad">Failed to load</div>
+              <div class="si-empty-sub" data-i18n="browserNav.checkConnection">The page could not be loaded. Please check your connection and try again.</div>
+              <button class="browser-overlay-retry btn-empty" type="button" data-i18n="browserNav.retry">Retry</button>
             </div>
           </div>
         </div>
@@ -192,16 +186,20 @@ export class BrowserView {
     this.statusEl = container.querySelector(".browser-webview-status");
     this.loadingEl = container.querySelector(".browser-status-loading");
     this.errorEl = container.querySelector(".browser-status-error");
-    this.overlayTitle = container.querySelector(".browser-overlay-title");
-    this.overlayDesc = container.querySelector(".browser-overlay-desc");
+    this.overlayTitle = container.querySelector(".si-empty-title");
+    this.overlayDesc = container.querySelector(".si-empty-sub");
     this.retryBtn = container.querySelector(".browser-overlay-retry");
     this._settingsBtn = container.querySelector(".browser-settings-btn") as HTMLButtonElement;
 
     this._starBtn = container.querySelector(".browser-star-btn") as HTMLButtonElement;
 
     applyI18n();
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: container });
+    }
     this._bindSettings();
     this._bindStarButton();
+    this._bindRetry();
     this.loadBookmarks();
     this._unsubLocale = onLocaleChange(() => applyI18n());
 
@@ -476,7 +474,10 @@ export class BrowserView {
       const url = this.webview.getURL();
       // Only show error overlay for real chrome-error pages, not for
       // the initial about:blank state that happens before CDP navigation
-      if (url && url.startsWith("chrome-error://")) {
+      if (this._showedError) {
+        // An error was already displayed (e.g. did-fail-load fired first);
+        // don't let a subsequent did-finish-load wipe it out.
+      } else if (url && url.startsWith("chrome-error://")) {
         this.showError(t("browserNav.failedToLoad"), t("browserNav.checkConnection"));
       } else {
         this.hideStatus();
@@ -525,6 +526,17 @@ export class BrowserView {
     });
   }
 
+  private _bindRetry(): void {
+    if (!this.retryBtn) return;
+    this.retryBtn.addEventListener("click", () => {
+      if (this._destroyed) return;
+      this.hideStatus();
+      this._mainLoaded = false;
+      this.explicitNav = true;
+      this.webview.reload();
+    });
+  }
+
   private bindUrlInput(): void {
     this.urlInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -547,7 +559,7 @@ export class BrowserView {
     this.loadingEl?.classList.remove("hidden");
     this.errorEl?.classList.add("hidden");
     if (!this.loader && this.loadingEl) {
-      this.loader = new EALoader(this.loadingEl);
+      this.loader = new EALoader(this.loadingEl, { maxWidth: "50px" });
     }
   }
 

@@ -90,10 +90,13 @@ from encre.loop_stability import (
     SteerQueue,
     WithheldError,
     _detect_requirement_change,
+    append_to_last_user_message,
+    build_checkpoint_message,
     build_empty_retry_message,
     build_grace_message,
     build_auto_continue_message,
     build_delegation_guidance,
+    build_standing_orders_reminder,
     build_steer_injection,
     build_stub_retry_message,
     build_thinking_prefill,
@@ -101,12 +104,15 @@ from encre.loop_stability import (
     build_truncated_retry_message,
     check_interrupt,
     check_token_pressure,
+    checkpoint_gate_relaxed,
     classify_error,
+    count_consecutive_tool_steps,
     is_empty_response,
     is_stub_response,
     is_truncated_tool_call,
     repair_messages,
     should_post_tool_compact,
+    CHECKPOINT_TOOL_STEP_THRESHOLD,
     MAX_STUB_RESPONSE_RETRIES,
 )
 from encre.recovery_loop import (
@@ -151,6 +157,7 @@ from encre.utils.types import (
     BackendToolCall,
     BackendToolCallDelta,
     CompactNotification,
+    CompactStarting,
     Finish,
     PlanModeChanged,
     PlanProposal,
@@ -2057,7 +2064,22 @@ class EncreLoop:
             if rules_prompt:
                 from encre.prompts.loader import PromptLoader
                 _loader = PromptLoader()
-                rules_block = _loader.load_with_context("rules", rules_content=rules_prompt)
+                _exec_ctx = (
+                    "Execution context: **headless** — this is a background automation "
+                    "job or a delegated sub-agent task, not an interactive chat with a "
+                    "live user. Conversational rules (e.g. \"answer only\", \"no file "
+                    "operations\") must NOT disable the actual work of this task; apply "
+                    "them to how you report, not to whether you act."
+                    if _skip_enrichment
+                    else "Execution context: **interactive** — a live user is present "
+                    "and waiting for your response. Rules that shape how you talk to "
+                    "the user apply here."
+                )
+                rules_block = _loader.load_with_context(
+                    "rules",
+                    rules_content=rules_prompt,
+                    execution_context=_exec_ctx,
+                )
                 self._ctx_renderer.record("User Rules", rules_prompt)
                 system_prompt = system_prompt + "\n\n" + rules_block
         except Exception:
@@ -2168,6 +2190,24 @@ class EncreLoop:
         logger.info("[run] emit_session_start done (%.2fs)", time.time() - _t_hook)
         _last_backend_usage: dict[str, Any] | None = None
 
+        # Standing-orders reminder: loaded once per ``run()`` and merged into
+        # the LAST user message before the first model call of a fresh user
+        # turn (main agent only).  Re-arms the binding pre-action constraints
+        # (recall-first, clarify, checkpoint) right where the model begins
+        # responding; the full gates still live in the system prompt.
+        _standing_orders_text = (
+            build_standing_orders_reminder() if not _skip_enrichment else ""
+        )
+        _standing_orders_injected = False
+
+        # Checkpoint hard-gate state: injected once per run() when the number
+        # of consecutive tool-call steps (since the last user message) crosses
+        # the threshold AND the user has not explicitly authorised a hands-off
+        # run.  The injected message hands control back to the user -- the
+        # code-level mirror of Gate 4 in mandatory_constraints.prompt.
+        _checkpoint_injected_this_run = False
+        _checkpoint_text = ""
+
         # Sanitize session messages on every run -- old sessions loaded from disk
         # may contain broken tool_call groups (from crashes) that cause 400 errors.
         # Only sanitize active branch context; other branches remain untouched.
@@ -2249,126 +2289,83 @@ class EncreLoop:
                             s.detail or "",
                         )
 
-                # Async autocompact background task (if pipeline triggered it)
+                # ── Synchronous autocompact (was async background) ────────
+                # Instead of running the compact as a detached background task
+                # while the model continues to generate output (which causes
+                # confusing "thinking" text from the user's perspective), we
+                # now run compact synchronously: signal the frontend, pause,
+                # compact, then resume.  This keeps the model from generating
+                # during compression and provides a clear UI indicator.
                 if pipeline_report.needs_compact:
-                    if self._compact_task is not None and not self._compact_task.done():
-                        # A compaction pass is already running -- do NOT cancel
-                        # and restart it.  Cancelling throws away the summary
-                        # LLM call and, when compaction is slow (near-limit
-                        # context), means it never completes while the context
-                        # keeps growing -- the trigger fires every turn and the
-                        # task is cancelled before it can finish.  Let the
-                        # in-flight pass finish; it applies its result and the
-                        # next turn re-triggers if still over budget.
-                        logger.debug(
-                            "[compact] pass already running turn=%d -- skipping new trigger",
-                            self.session.turn_count,
+                    self._compact_epoch += 1
+                    logger.info(
+                        "[compact] starting turn=%d tokens=%dk window=%dk",
+                        self.session.turn_count, est_tokens // 1000, window // 1000,
+                    )
+
+                    # Signal frontend that compression is starting
+                    yield CompactStarting()
+
+                    # Record the highest seq_in_branch at snapshot time
+                    # so we can detect messages added while compact ran.
+                    snap_max_seq = max(
+                        (m.get("seq_in_branch", -1) for m in context_msgs),
+                        default=-1,
+                    )
+                    self.session.set_compact_archive(context_msgs)
+                    await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
+                    compacted = await self.compact_engine.compact(
+                        context_msgs, backend=self.backend,
+                        turn_count=self.session.turn_count,
+                        system_prompt=system_prompt or "",
+                        enable_caching=self.config.enable_prompt_caching,
+                        session_id=self.session.id or "",
+                    )
+                    if compacted is not None:
+                        # ── Race guard ─────────────────────────────────────
+                        # If new messages (assistant reply, tool results, etc.)
+                        # were added to this branch while compact was running,
+                        # preserve them by appending after the compacted result.
+                        current_max_seq = self.session._branch_last_seq.get(
+                            self.session.active_branch_id, -1,
+                        )
+                        if current_max_seq > snap_max_seq:
+                            new_msgs = sorted(
+                                [m for m in self.session.messages
+                                 if m.get("branch_id") == self.session.active_branch_id
+                                 and isinstance(m.get("seq_in_branch"), int)
+                                 and m["seq_in_branch"] > snap_max_seq],
+                                key=lambda m: m["seq_in_branch"],
+                            )
+                            if new_msgs:
+                                compacted = compacted + new_msgs
+                                logger.info(
+                                    "[compact] race guard: appended %d msgs "
+                                    "(seq %d..%d) added after snapshot",
+                                    len(new_msgs), snap_max_seq + 1,
+                                    current_max_seq,
+                                )
+                        self.session.replace_branch_messages(self.session.active_branch_id, compacted)
+                        self._compacted_this_turn = True
+                        self._update_user_requirements(compacted)
+                        new_tokens = count_message_tokens(compacted)
+                        yield CompactNotification(
+                            old_count=len(context_msgs),
+                            new_count=len(compacted),
+                            old_tokens=est_tokens,
+                            new_tokens=new_tokens,
+                        )
+                        # Refresh context so the model sees the compacted messages
+                        ctx_msgs = self.session.get_context_messages()
+                        context_msgs = ctx_msgs
+                        est_tokens = new_tokens
+                        logger.info(
+                            "[compact] done turn=%d msgs %d->%d tokens %dk->%dk",
+                            self.session.turn_count, len(context_msgs),
+                            len(compacted), est_tokens // 1000, new_tokens // 1000,
                         )
                     else:
-                        self._compact_epoch += 1
-                        logger.info(
-                            "[compact] triggering turn=%d tokens=%dk window=%dk (async)",
-                            self.session.turn_count, est_tokens // 1000, window // 1000,
-                        )
-
-                        async def _do_compact(context_msgs=context_msgs, est_tokens=est_tokens,
-                                              epoch=self._compact_epoch):
-                            """Run one synchronous compaction pass over the context.
-
-                            Archives the current context, emits a pre-compact hook,
-                            compacts via the compaction engine, and on success
-                            replaces the active branch's messages and sets the
-                            ``_compacted_this_turn`` flag so the frontend can refresh.
-
-                            Args:
-                                context_msgs: The messages to compact (captured by
-                                    closure default).
-                                est_tokens: Estimated token count (captured by
-                                    closure default), used for the pre-compact hook.
-                                epoch: Compaction epoch at launch time.  If a NEWER
-                                    compaction pass (synchronous force-compact or
-                                    reactive compact) started while this one was
-                                    running, its result is stale and discarded so
-                                    the two passes never fight over the branch.
-                            """
-                            try:
-                                # Record the highest seq_in_branch at snapshot time
-                                # so we can detect messages added while compact ran.
-                                snap_max_seq = max(
-                                    (m.get("seq_in_branch", -1) for m in context_msgs),
-                                    default=-1,
-                                )
-                                self.session.set_compact_archive(context_msgs)
-                                await self.hook_system.emit_pre_compact(len(context_msgs), est_tokens)
-                                compacted = await self.compact_engine.compact(
-                                    context_msgs, backend=self.backend,
-                                    turn_count=self.session.turn_count,
-                                    system_prompt=system_prompt or "",
-                                    enable_caching=self.config.enable_prompt_caching,
-                                    session_id=self.session.id or "",
-                                )
-                                if compacted is None:
-                                    return
-                                # ── Stale-result guard ──────────────────────────
-                                # A synchronous force-compact (token pressure) or
-                                # reactive compact started after this pass: its
-                                # result already replaced the branch, so applying
-                                # ours would clobber it.  Discard quietly.
-                                if self._compact_epoch != epoch:
-                                    logger.info(
-                                        "[compact] stale result (epoch %d -> %d) -- discarding",
-                                        epoch, self._compact_epoch,
-                                    )
-                                    return
-                                # ── Race guard ─────────────────────────────────────
-                                # If new messages (assistant reply, tool results, etc.)
-                                # were added to this branch while compact was running,
-                                # preserve them by appending after the compacted result.
-                                # Without this guard the compacted result would
-                                # silently overwrite the latest conversation turn.
-                                current_max_seq = self.session._branch_last_seq.get(
-                                    self.session.active_branch_id, -1,
-                                )
-                                if current_max_seq > snap_max_seq:
-                                    new_msgs = sorted(
-                                        [m for m in self.session.messages
-                                         if m.get("branch_id") == self.session.active_branch_id
-                                         and isinstance(m.get("seq_in_branch"), int)
-                                         and m["seq_in_branch"] > snap_max_seq],
-                                        key=lambda m: m["seq_in_branch"],
-                                    )
-                                    if new_msgs:
-                                        compacted = compacted + new_msgs
-                                        logger.info(
-                                            "[compact] race guard: appended %d msgs "
-                                            "(seq %d..%d) added after snapshot",
-                                            len(new_msgs), snap_max_seq + 1,
-                                            current_max_seq,
-                                        )
-                                self.session.replace_branch_messages(self.session.active_branch_id, compacted)
-                                self._compacted_this_turn = True
-                                self._update_user_requirements(compacted)
-                                new_tokens = count_message_tokens(compacted)
-                                self._compact_notification = CompactNotification(
-                                    old_count=len(context_msgs),
-                                    new_count=len(compacted),
-                                    old_tokens=est_tokens,
-                                    new_tokens=new_tokens,
-                                )
-                                logger.info(
-                                    "[compact] bg done turn=%d msgs %d->%d tokens %dk->%dk",
-                                    self.session.turn_count, len(context_msgs),
-                                    len(compacted), est_tokens // 1000, new_tokens // 1000,
-                                )
-                            except asyncio.CancelledError:
-                                logger.info("[compact] cancelled (new turn started)")
-                            except Exception:
-                                logger.warning(
-                                    "[compact] bg failed turn=%d -- circuit breaker or API error",
-                                    self.session.turn_count,
-                                )
-
-                        self._compact_task = asyncio.create_task(_do_compact())
+                        logger.info("[compact] returned None -- no compaction applied")
 
             except Exception as _pe:
                 logger.warning("[pipeline] failed turn=%d: %s", self.session.turn_count, _pe)
@@ -2491,6 +2488,15 @@ class EncreLoop:
                             return
                 _merge_advisor(backend_messages, f"[SUB-AGENT ADVICE]\n{advisor_note}")
 
+            # 0. Standing-orders reminder: re-arm the binding pre-action
+            #    constraints on the FIRST model call after a fresh user turn.
+            #    Merged into the last user message (not a new turn) so it does
+            #    not trigger a text-only exit or a spurious "fresh instruction"
+            #    response.  Main agent only; sub-agents get their own briefing.
+            if not _standing_orders_injected and _standing_orders_text:
+                append_to_last_user_message(backend_messages, _standing_orders_text)
+                _standing_orders_injected = True
+
             # ── Pre-API stability checks ────────────────────────────────
             # 1. Interrupt check: abort if the user cancelled
             if check_interrupt(self):
@@ -2537,6 +2543,34 @@ class EncreLoop:
             # 3b. Re-pair tool_call groups after repair so an assistant message
             # with tool_calls is always followed by matching tool results.
             backend_messages = self.compact_engine.sanitize(backend_messages)
+
+            # 3c. Checkpoint hard-gate (Gate 4 enforcement): if the agent has
+            # been running many consecutive tool-call steps with no fresh user
+            # message, inject a checkpoint user message that hands control back
+            # to the user.  This is the code-level mirror of the prompt-level
+            # gate: the model is asked to report done / remaining / next and
+            # stop, so it cannot silently keep driving an autonomous chain.
+            # Main agent only; the user must explicitly authorise a hands-off
+            # run (matching phrases in autonomous_authorization_patterns.prompt)
+            # for the threshold to auto-relax.  Injected at most once per run()
+            # and re-armed after a pre-API compact below.
+            if (
+                not _skip_enrichment
+                and not _checkpoint_injected_this_run
+                and not checkpoint_gate_relaxed(prompt)
+            ):
+                _tool_steps = count_consecutive_tool_steps(backend_messages)
+                if _tool_steps >= CHECKPOINT_TOOL_STEP_THRESHOLD:
+                    _checkpoint_text = build_checkpoint_message(_tool_steps)
+                    if _checkpoint_text:
+                        backend_messages.append(
+                            {"role": "user", "content": _checkpoint_text}
+                        )
+                        _checkpoint_injected_this_run = True
+                        logger.info(
+                            "[run] checkpoint hard-gate fired after %d tool steps turn=%d",
+                            _tool_steps, self.session.turn_count,
+                        )
 
             # 4. Pre-API token pressure check
             _context_window = self.backend.context_window_size()
@@ -2586,6 +2620,16 @@ class EncreLoop:
                         # Re-inject steer messages that were lost during session refresh
                         if _steer_text:
                             backend_messages.append({"role": "user", "content": _steer_text})
+                        # Re-inject the standing-orders reminder lost during session refresh
+                        if _standing_orders_injected and _standing_orders_text:
+                            append_to_last_user_message(
+                                backend_messages, _standing_orders_text
+                            )
+                        # Re-inject the checkpoint gate message lost during session refresh
+                        if _checkpoint_injected_this_run and _checkpoint_text:
+                            backend_messages.append(
+                                {"role": "user", "content": _checkpoint_text}
+                            )
                         logger.info("[run] pre-API compact succeeded turn=%d", self.session.turn_count)
                 except Exception as _pc_err:
                     logger.warning("[run] pre-API compact failed: %s", _pc_err)
@@ -3270,6 +3314,7 @@ class EncreLoop:
                 _is_stub = (
                     not merged
                     and slash_command_mode not in ("plan", "spec")
+                    and not _checkpoint_injected_this_run
                     and is_stub_response(text_parts, tool_call_buffers, thinking_parts, prompt)
                 )
                 if _is_stub:
@@ -3302,6 +3347,7 @@ class EncreLoop:
                 if (
                     self.config.token_budget > 0
                     and not tool_call_buffers
+                    and not _checkpoint_injected_this_run
                     and _backend_usage
                 ):
                     self._budget_state.add_usage(
@@ -3363,6 +3409,7 @@ class EncreLoop:
                     if (
                         slash_command_mode not in ("plan", "spec")
                         and _unverified
+                        and not _checkpoint_injected_this_run
                         and self._verify_on_stop_nudges < _MAX_VERIFY_ON_STOP_NUDGES
                     ):
                         self._verify_on_stop_nudges += 1
@@ -3395,6 +3442,7 @@ class EncreLoop:
                         slash_command_mode not in ("plan", "spec")
                         and _unverified
                         and self._verif_ledger.has_failed_evidence()
+                        and not _checkpoint_injected_this_run
                         and self._forced_review_count < _MAX_FORCED_REVIEWS
                     ):
                         self._forced_review_count += 1
@@ -3843,8 +3891,9 @@ class EncreLoop:
                         yield Artifact(artifact=_entry)
                     elif _is_reference_tool(p["name"]):
                         _summary = _extract_ref_summary(p["name"], p.get("args", {}), _pre_result)
-                        _entry = self.session.add_reference(p["name"], _summary)
-                        yield Reference(reference=_entry)
+                        if _summary is not None:
+                            _entry = self.session.add_reference(p["name"], _summary)
+                            yield Reference(reference=_entry)
                     _plan_items = _ensure_plan_items(p["name"], p["args"])
                     if _plan_items:
                         yield PlanUpdate(plan_items=_plan_items)
@@ -4092,9 +4141,10 @@ class EncreLoop:
                             # Non-file tool -> record as reference
                             if _is_reference_tool(p["name"]):
                                 summary = _extract_ref_summary(p["name"], p.get("args", {}), p["result"])
-                                ref_icon = ""
-                                entry = self.session.add_reference(p["name"], summary, icon=ref_icon)
-                                yield Reference(reference=entry)
+                                if summary is not None:
+                                    ref_icon = ""
+                                    entry = self.session.add_reference(p["name"], summary, icon=ref_icon)
+                                    yield Reference(reference=entry)
                             # Forward references from sub-agents (agent / workflow tools)
                             for sub_ref in (p.get("sub_agent_references") or []):
                                 if isinstance(sub_ref, dict) and _is_reference_tool(sub_ref.get("tool", "")):
@@ -4430,8 +4480,9 @@ class EncreLoop:
                         # Non-file tool -> record as reference
                         if _is_reference_tool(p["name"]):
                             summary = _extract_ref_summary(p["name"], p.get("args", {}), result)
-                            entry = self.session.add_reference(p["name"], summary)
-                            yield Reference(reference=entry)
+                            if summary is not None:
+                                entry = self.session.add_reference(p["name"], summary)
+                                yield Reference(reference=entry)
                     # Forward references from sub-agents (agent tool)
                     for sub_ref in sub_agent_references:
                         if isinstance(sub_ref, dict) and _is_reference_tool(sub_ref.get("tool", "")):

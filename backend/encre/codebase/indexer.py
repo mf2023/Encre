@@ -147,10 +147,7 @@ class EncreCodeIndex:
 
     async def watch(self) -> asyncio.Task | None:
         """Start an optional ``watchfiles`` watcher that triggers incremental re-index."""
-        try:
-            import watchfiles
-        except ImportError:
-            return None
+        import watchfiles
 
         if self._watcher_task is not None and not self._watcher_task.done():
             return self._watcher_task

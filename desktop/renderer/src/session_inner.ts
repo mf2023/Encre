@@ -35,10 +35,13 @@ import { getFileIcon } from "./files.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { send } from "./ws.js";
 import { getMonaco, monacoLang, registerEditor, unregisterEditor } from "./monaco.js";
+import { Dialog } from "./dialog.js";
 
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
+// Heavy on-demand libraries (xterm, xlsx, mammoth, pptx-to-html) are loaded
+// dynamically at first use so they never block startup parsing of bundle.js:
+//   - xterm            -> setupTerminalPanel()  (terminal tabs)
+//   - mammoth / xlsx   -> _renderOfficeDocx() / _renderOfficeXlsx()
+//   - pptx-to-html     -> _renderOfficePptx()
 import { renderDiffHtml, setupSplitViewScrollSync } from "./diff_render.js";
 import { showContextMenu } from "./context-menu.js";
 import { BrowserView } from "./browser.js";
@@ -118,6 +121,7 @@ function tabIcon(type: string, shellPath?: string): string {
     case "markdown": return "file-text";
     case "code": return "file-text";
     case "media": return "image";
+    case "office": return "file-text";
     default: return "square";
   }
 }
@@ -275,12 +279,16 @@ export class SessionInner {
   private panelBrowsers = new Map<string, BrowserView>();
   private panelMarkdownPreviews = new Map<string, MarkdownPreviewView>();
   private panelCodeEditors = new Map<string, any>();
+  /** Tracks which code tabs have unsaved edits (true = dirty). */
+  private _dirtyTabs = new Map<string, boolean>();
   private panelMediaViewers = new Map<string, MediaViewer>();
+  private panelOfficeControllers = new Map<string, HTMLElement>();
   private _terminalCounter = 0;
   private _browserCounter = 0;
   private _markdownCounter = 0;
   private _codeCounter = 0;
   private _mediaCounter = 0;
+  private _officeCounter = 0;
   private _editorCounter = 0;
   private _availableShells: Array<{ name: string; path: string; args?: string[] }> = [];
   private _shellsLoaded = false;
@@ -386,8 +394,12 @@ export class SessionInner {
   private async renderTabs(): Promise<void> {
     this.tabList.innerHTML = this.tabs.map((tab) => {
       const activeCls = tab.id === this.activeTab ? " active" : "";
+      const isDirty = tab.type === "code" && !!this._dirtyTabs.get(tab.id);
+      const closeSvg = `<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
       const closeBtn = tab.closable
-        ? `<span class="tab-close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>`
+        ? (isDirty
+          ? `<span class="tab-close tab-close--dirty" data-tooltip="${t("sessionInner.closeUnsavedTitle")}"><i data-lucide="circle" class="lucide tab-close-dot"></i></span>`
+          : `<span class="tab-close" data-tooltip="${t("sessionInner.closeTab")}">${closeSvg}</span>`)
         : "";
       let iconHtml: string;
       if (tab.type === "browser" && tab.favicon) {
@@ -414,6 +426,28 @@ export class SessionInner {
       const homeEl = this.tabBody.querySelector(".si-home");
       if (homeEl) homeEl.remove();
       await this.renderPanels();
+    }
+    this.refreshLucide();
+  }
+
+  /**
+   * Sync the close button of a code tab with its dirty state without
+   * rebuilding the whole tab bar / panels.
+   */
+  private _refreshTabClose(id: string): void {
+    const tabEl = this.tabList.querySelector(`.tab[data-tab="${id}"]`) as HTMLElement | null;
+    if (!tabEl) return;
+    const isDirty = !!this._dirtyTabs.get(id);
+    const close = tabEl.querySelector(".tab-close") as HTMLElement | null;
+    if (!close) return;
+    if (isDirty) {
+      close.classList.add("tab-close--dirty");
+      close.dataset.tooltip = t("sessionInner.closeUnsavedTitle");
+      close.innerHTML = `<i data-lucide="circle" class="lucide tab-close-dot"></i>`;
+    } else {
+      close.classList.remove("tab-close--dirty");
+      close.dataset.tooltip = t("sessionInner.closeTab");
+      close.innerHTML = `<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
     }
     this.refreshLucide();
   }
@@ -650,6 +684,10 @@ export class SessionInner {
       this._mediaCounter++;
       id = `media-${this._mediaCounter}`;
       label = opts?.title || t("sessionInner.tabMedia");
+    } else if (type === "office") {
+      this._officeCounter++;
+      id = `office-${this._officeCounter}`;
+      label = opts?.title || t("sessionInner.tabOffice");
     } else {
       id = type;
       label = tabLabel(type);
@@ -696,6 +734,8 @@ export class SessionInner {
         await this.setupCodePanel(panel, t.id, t.content || "", t.filePath || "");
       } else if (t.type === "media") {
         this.setupMediaPanel(panel, t.id, t.filePath || "");
+      } else if (t.type === "office") {
+        this.setupOfficePanel(panel, t.id, t.filePath || "");
       }
 
       this.tabBody.appendChild(panel);
@@ -739,10 +779,14 @@ export class SessionInner {
         if (ptype === "code") {
           const editor = this.panelCodeEditors.get(pid);
           if (editor) {
+            if (typeof (editor as any)._ctxMenuCleanup === "function") {
+              (editor as any)._ctxMenuCleanup();
+            }
             unregisterEditor(editor);
             editor.dispose();
             this.panelCodeEditors.delete(pid);
           }
+          this._dirtyTabs.delete(pid);
         }
         if (ptype === "media") {
           const mv = this.panelMediaViewers.get(pid);
@@ -750,6 +794,11 @@ export class SessionInner {
             mv.destroy();
             this.panelMediaViewers.delete(pid);
           }
+        }
+        if (ptype === "office") {
+          const c = this.panelOfficeControllers.get(pid);
+          if (c && typeof (c as any)._officeCleanup === "function") (c as any)._officeCleanup();
+          this.panelOfficeControllers.delete(pid);
         }
         p.remove();
       } else {
@@ -833,6 +882,12 @@ export class SessionInner {
 
     const sh = getShellPath();
     const args = getShellArgs();
+    // Lazy-load the terminal engine (xterm) on first terminal tab open.
+    const [{ Terminal }, { FitAddon }, { WebglAddon }] = await Promise.all([
+      import("@xterm/xterm"),
+      import("@xterm/addon-fit"),
+      import("@xterm/addon-webgl"),
+    ]);
     let ptyId: number;
     try {
       const result = await api.terminalSpawn(sh || undefined, args.length ? args : undefined);
@@ -1156,7 +1211,6 @@ export class SessionInner {
       if (entries.length === 0) return `<div class="si-panel-empty">
         <i data-lucide="check-circle-2" class="lucide"></i>
         <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-        <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>
       </div>`;
       const groups = new Map<string, StatusEntry[]>();
       for (const e of entries) {
@@ -1236,6 +1290,9 @@ export class SessionInner {
         wrapEl.style.display = "none";
         emptyEl.style.display = "flex";
         emptyEl.innerHTML = html;
+        // In normal mode (no workspace) the toolbar holds no controls; hide it
+        // entirely so its border-bottom divider doesn't render as a stray line.
+        toolbar.style.display = ws ? "" : "none";
         toolbar.style.borderBottom = "none";
         statsEl.innerHTML = "";
         if (typeof (window as any).lucide !== "undefined") {
@@ -1258,35 +1315,29 @@ export class SessionInner {
         el.classList.toggle("selected", el.getAttribute("data-filter") === this._reviewFilter);
       });
 
-      // lastRound filter: show artifacts from the most recent AI round
+      // "Changes" filter: show every artifact recorded in this conversation
+      // (any round), so the user can inspect each recorded change's diff
+      // regardless of which AI round first produced it.
       if (this._reviewFilter === "lastRound") {
         const arts = getState().artifacts;
         if (arts.length === 0) {
           showEmptyState(`<i data-lucide="check-circle-2" class="lucide"></i>
-            <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-            <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>`);
+            <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`);
           return;
         }
-        // Without a workspace the panel reviews every artifact the current
-        // session produced (all changes); with one, "last round" stays scoped
-        // to the most recent artifact group.
-        let roundArts: ArtifactItem[];
-        if (!ws) {
-          roundArts = arts;
-        } else {
-          const groups = new Map<number, ArtifactItem[]>();
-          for (const a of arts) {
-            const key = a.created_at || 0;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(a);
-          }
-          const sorted = [...groups.entries()].sort((a, b) => b[0] - a[0]);
-          roundArts = sorted.length > 0 ? sorted[0][1] : arts;
+        // Every recorded change is shown, most recent first.
+        const roundArts = [...arts].reverse();
+        // An artifact pinned via the summary-panel "eye" button may belong to
+        // an older round (or was already committed); always include it so the
+        // review shows exactly the change that was clicked.
+        if (this._reviewArtifact && !roundArts.some((a) => a.path === this._reviewArtifact!.path)) {
+          roundArts.push(this._reviewArtifact);
         }
         if (requestSeq !== this._reviewRequestSeq) return;
         wrapEl.style.display = "flex";
         emptyEl.style.display = "none";
-        toolbar.style.borderBottom = "";
+        toolbar.style.display = ws ? "" : "none";
+        toolbar.style.borderBottom = ws ? "" : "none";
         const targetPath = filePath || roundArts[0]?.path || "";
         const currentArtifact = roundArts.find((a: ArtifactItem) => a.path === targetPath) || null;
         diffEl.innerHTML = currentArtifact
@@ -1313,8 +1364,7 @@ export class SessionInner {
 
       if (!ws) {
         showEmptyState(`<i data-lucide="git-pull-request" class="lucide"></i>
-          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-          <div class="si-panel-empty-sub">${t("workspace.empty")}</div>`);
+          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`);
         return;
       }
       if (!api) {
@@ -1371,8 +1421,7 @@ export class SessionInner {
         wrapEl.style.display = "none";
         emptyEl.style.display = "flex";
         emptyEl.innerHTML = `<i data-lucide="check-circle-2" class="lucide"></i>
-          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-          <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>`;
+          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`;
         statsEl.innerHTML = "";
         if (typeof (window as any).lucide !== "undefined") {
           (window as any).lucide.createIcons({ root: panel });
@@ -2055,7 +2104,8 @@ export class SessionInner {
 
     const agentState = getState().agentState;
     if (!agentState) {
-      root.innerHTML = `<div class="si-panel-empty">${this.esc(t("sessionInner.agentNoState"))}</div>`;
+      root.innerHTML = `<div class="si-empty-center"><i data-lucide="bot" class="lucide"></i><span class="si-empty-title">${this.esc(t("sessionInner.agentNoState"))}</span></div>`;
+      if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root });
       return;
     }
 
@@ -2286,7 +2336,6 @@ export class SessionInner {
     if (artifacts.length === 0) return `<div class="si-panel-empty">
       <i data-lucide="check-circle-2" class="lucide"></i>
       <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-      <div class="si-panel-empty-sub">${t("sessionInner.reviewNoChangesSub")}</div>
     </div>`;
     // Group by top-level directory (same as git buildTree style)
     const groups = new Map<string, ArtifactItem[]>();
@@ -2328,7 +2377,6 @@ export class SessionInner {
       panel.innerHTML = `<div class="si-panel-empty si-editor-empty">
         <i data-lucide="file-code-2" class="lucide"></i>
         <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
-        <span class="si-panel-empty-sub">${t("workspace.empty")}</span>
       </div>`;
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: panel });
@@ -2358,10 +2406,39 @@ export class SessionInner {
       treeCtxIsDir = isDir;
       const ext = path.split(".").pop()?.toLowerCase() || "";
       const isMd = !isDir && ext === "md";
-      treeCtxMenu.innerHTML = isDir
-        ? `<div class="context-menu-item" data-action="send-folder">${t("sessionInner.termSendToChat")}</div>`
-        : `<div class="context-menu-item" data-action="send-file">${t("sessionInner.termSendToChat")}</div>`
-        + (isMd ? `<div class="context-menu-divider"></div><div class="context-menu-item" data-action="preview">预览</div>` : "");
+      let menu = "";
+      if (isDir) {
+        // Folder: new file/folder, paste into it, send, delete.
+        menu =
+          `<div class="context-menu-item" data-action="new-file">${t("sessionInner.newFile")}</div>` +
+          `<div class="context-menu-item" data-action="new-folder">${t("sessionInner.newFolder")}</div>` +
+          `<div class="context-menu-divider"></div>` +
+          `<div class="context-menu-item" data-action="paste">${t("sessionInner.pasteFile")}</div>` +
+          `<div class="context-menu-divider"></div>` +
+          `<div class="context-menu-item" data-action="send-folder">${t("sessionInner.termSendToChat")}</div>` +
+          `<div class="context-menu-divider"></div>` +
+          `<div class="context-menu-item context-menu-item-danger" data-action="delete">${t("sessionInner.delete")}</div>`;
+      } else if (!path) {
+        // Empty area (no file/folder under the cursor): create + paste into root.
+        menu =
+          `<div class="context-menu-item" data-action="new-file">${t("sessionInner.newFile")}</div>` +
+          `<div class="context-menu-item" data-action="new-folder">${t("sessionInner.newFolder")}</div>` +
+          `<div class="context-menu-divider"></div>` +
+          `<div class="context-menu-item" data-action="paste">${t("sessionInner.pasteFile")}</div>`;
+      } else {
+        // File: copy it, send to conversation, preview (.md), delete.
+        menu =
+          `<div class="context-menu-item" data-action="copy">${t("sessionInner.copyFile")}</div>` +
+          `<div class="context-menu-divider"></div>` +
+          `<div class="context-menu-item" data-action="send-file">${t("sessionInner.termSendToChat")}</div>`;
+        if (isMd) {
+          menu += `<div class="context-menu-divider"></div><div class="context-menu-item" data-action="preview">预览</div>`;
+        }
+        menu +=
+          `<div class="context-menu-divider"></div>` +
+          `<div class="context-menu-item context-menu-item-danger" data-action="delete">${t("sessionInner.delete")}</div>`;
+      }
+      treeCtxMenu.innerHTML = menu;
       showContextMenu(treeCtxMenu, ev.clientX, ev.clientY);
     };
 
@@ -2398,6 +2475,51 @@ export class SessionInner {
           const name = treeCtxPath.split(/[/\\]/).pop() || treeCtxPath;
           this.openMarkdownPreview(result.content, name, treeCtxPath);
         }
+      } else if (action === "copy" && api) {
+        await api.copyFilesToClipboard([treeCtxPath]);
+      } else if (action === "paste" && api) {
+        const sources = await api.readFilesFromClipboard();
+        if (sources && sources.length > 0) {
+          const destDir = treeCtxIsDir ? treeCtxPath : rootPath;
+          const res = await api.pasteFiles(sources, destDir);
+          if (res && res.success) await renderTree();
+        }
+      } else if ((action === "new-file" || action === "new-folder") && api) {
+        treeCtxMenu.classList.add("hidden");
+        const parentDir = treeCtxIsDir ? treeCtxPath : rootPath;
+        const label = action === "new-file" ? t("sessionInner.newFile") : t("sessionInner.newFolder");
+        const defVal = action === "new-file" ? "untitled.txt" : "untitled";
+        const name = await Dialog.promptIn(
+          this.el,
+          label,
+          action === "new-file"
+            ? t("sessionInner.newFileHint")
+            : t("sessionInner.newFolderHint"),
+          defVal,
+          { primary: t("dialog.save") },
+        );
+        if (name && name.trim()) {
+          const res = action === "new-file"
+            ? await api.createFile(parentDir, name.trim())
+            : await api.createFolder(parentDir, name.trim());
+          if (res && res.success) {
+            await renderTree();
+            if (action === "new-file" && res.path) {
+              this.openFileInEditor(res.path);
+            }
+          }
+        }
+      } else if (action === "delete" && api) {
+        treeCtxMenu.classList.add("hidden");
+        const baseName = treeCtxPath.split(/[/\\]/).pop() || treeCtxPath;
+        if (await Dialog.confirmIn(this.el, t("sessionInner.confirmDeleteTitle"), t("sessionInner.confirmDelete", { name: baseName }))) {
+          const res = await api.deletePath(treeCtxPath);
+          if (res && res.success) {
+            await renderTree();
+          } else if (res && res.error) {
+            Dialog.alert(t("dialog.error"), res.error);
+          }
+        }
       }
       treeCtxMenu.classList.add("hidden");
     });
@@ -2405,6 +2527,12 @@ export class SessionInner {
       if (!treeCtxMenu.contains(e.target as Node)) {
         treeCtxMenu.classList.add("hidden");
       }
+    });
+
+    // Right-click on empty tree space (not a file/folder): paste into root.
+    treeBody.addEventListener("contextmenu", (ev: MouseEvent) => {
+      if ((ev.target as HTMLElement).closest(".si-tree-entry")) return;
+      showTreeCtx(ev, "", false);
     });
 
     let rootPath = "";
@@ -2461,6 +2589,7 @@ export class SessionInner {
     };
 
     const renderTree = async () => {
+      dirCache.clear();
       const out: string[] = [];
       await renderRecursive(rootPath, 0, out);
       treeBody.innerHTML = out.length ? out.join("") : `<div class="si-empty">${t("sessionInner.filesEmpty")}</div>`;
@@ -2517,10 +2646,12 @@ export class SessionInner {
   private static _videoExts = new Set(["mp4","avi","mov","wmv","flv","mkv","webm"]);
   private static _mediaExts = new Set([...SessionInner._imgExts, ...SessionInner._videoExts]);
 
+  private static _officeExts = new Set(["doc","docx","xls","xlsx","ppt","pptx"]);
+
   private static _binaryExts = new Set([
     "exe","dll","so","dylib","bin","dat","iso","img","dmg",
     "zip","rar","7z","gz","tar","bz2","xz","zst",
-    "pdf","doc","docx","xls","xlsx","ppt","pptx",
+    "pdf",
     "mp3","wav","flac","ogg",
     "ttf","otf","woff","woff2","eot",
     "pyc","class","o","obj","lib","a","lo",
@@ -2538,6 +2669,11 @@ export class SessionInner {
 
     if (SessionInner._mediaExts.has(ext)) {
       await this._openMediaPreview(name, filePath);
+      return;
+    }
+
+    if (SessionInner._officeExts.has(ext)) {
+      await this._openOfficePreview(name, filePath);
       return;
     }
 
@@ -2588,6 +2724,16 @@ export class SessionInner {
     await this.createTab("media", { title: name, filePath });
   }
 
+  private async _openOfficePreview(name: string, filePath: string): Promise<void> {
+    const existing = this.tabs.find(t => t.type === "office" && t.filePath === filePath);
+    if (existing) {
+      this.activeTab = existing.id;
+      await this.renderTabs();
+      return;
+    }
+    await this.createTab("office", { title: name, filePath });
+  }
+
   private setupMediaPanel(panel: HTMLElement, tabId: string, filePath: string): void {
     panel.style.overflow = "hidden";
     panel.style.background = "var(--bg-primary)";
@@ -2609,6 +2755,166 @@ export class SessionInner {
 
     const mv = new MediaViewer(container, { type: isVideo ? "video" : "image", src: filePath });
     this.panelMediaViewers.set(tabId, mv);
+  }
+
+  private setupOfficePanel(panel: HTMLElement, tabId: string, filePath: string): void {
+    panel.style.overflow = "hidden";
+    panel.style.background = "var(--bg-primary)";
+
+    const existing = this.panelOfficeControllers.get(tabId);
+    if (existing) {
+      if (existing.parentElement !== panel) panel.appendChild(existing);
+      return;
+    }
+
+    const container = document.createElement("div");
+    container.className = "si-office-viewer";
+    panel.appendChild(container);
+    this.panelOfficeControllers.set(tabId, container);
+
+    const ext = filePath.split(".").pop()?.toLowerCase() || "";
+    const api = (window as any).electronAPI;
+    if (!api) return;
+
+    container.innerHTML = `<div class="si-office-loading"><i data-lucide="loader" class="lucide spin"></i><span>${this.esc(t("sessionInner.officeLoading"))}</span></div>`;
+
+    api.readFileBase64(filePath).then(async (r: any) => {
+      if (!r || !r.data) {
+        container.innerHTML = `<div class="si-panel-empty"><i data-lucide="file-x-2" class="lucide"></i><span class="si-panel-empty-sub">${this.esc(t("sessionInner.binaryFileNotShown"))}</span></div>`;
+        return;
+      }
+      const bin = Uint8Array.from(atob(r.data), (c) => c.charCodeAt(0));
+      const buffer = bin.buffer;
+      try {
+        if (ext === "doc" || ext === "docx") {
+          await this._renderOfficeDocx(container, buffer);
+        } else if (ext === "xls" || ext === "xlsx") {
+          await this._renderOfficeXlsx(container, buffer);
+        } else if (ext === "ppt" || ext === "pptx") {
+          await this._renderOfficePptx(container, buffer);
+        } else {
+          container.innerHTML = `<div class="si-panel-empty"><i data-lucide="file-x-2" class="lucide"></i><span class="si-panel-empty-sub">${this.esc(t("sessionInner.binaryFileNotShown"))}</span></div>`;
+        }
+      } catch (e) {
+        container.innerHTML = `<div class="si-panel-empty"><i data-lucide="alert-triangle" class="lucide"></i><span class="si-panel-empty-sub">${this.esc(String(e))}</span></div>`;
+      }
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: container });
+      }
+    });
+  }
+
+  private async _renderOfficeDocx(container: HTMLElement, buffer: ArrayBuffer): Promise<void> {
+    // Lazy-load mammoth on first .docx preview.
+    const mammoth = (await import("mammoth")).default;
+    const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+    container.innerHTML = `<div class="si-office-page docx">${result.value}</div>`;
+  }
+
+  private async _renderOfficeXlsx(container: HTMLElement, buffer: ArrayBuffer): Promise<void> {
+    // Lazy-load SheetJS on first .xlsx preview.
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buffer, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const html = XLSX.utils.sheet_to_html(sheet, { id: "xlsx-table" });
+    container.innerHTML = `<div class="si-office-page xlsx-wrap">${html}</div>`;
+  }
+
+  private async _renderOfficePptx(container: HTMLElement, buffer: ArrayBuffer): Promise<void> {
+    // Lazy-load pptx-to-html on first .pptx preview.
+    const { pptxToHtml } = await import("@jvmr/pptx-to-html");
+    const slides = await pptxToHtml(buffer, { width: 960, height: 540, scaleToFit: true });
+    const total = slides.length;
+
+    const viewer = document.createElement("div");
+    viewer.className = "si-office-ppt-viewer";
+
+    const rail = document.createElement("div");
+    rail.className = "si-office-ppt-rail";
+
+    const stage = document.createElement("div");
+    stage.className = "si-office-ppt-stage";
+
+    const stageSlides: HTMLElement[] = [];
+
+    slides.forEach((slideHtml, idx) => {
+      const thumb = document.createElement("div");
+      thumb.className = "si-office-ppt-thumb" + (idx === 0 ? " active" : "");
+      thumb.dataset.idx = String(idx);
+      thumb.innerHTML = `<div class="si-office-ppt-thumb-inner">${slideHtml}</div>`;
+      rail.appendChild(thumb);
+
+      const stageSlide = document.createElement("div");
+      stageSlide.className = "si-office-ppt-stage-slide" + (idx === 0 ? " active" : "");
+      stageSlide.innerHTML = `<div class="si-office-ppt-stage-inner">${slideHtml}</div>`;
+      stage.appendChild(stageSlide);
+      stageSlides.push(stageSlide);
+    });
+
+    const fitStage = () => {
+      const active = stage.querySelector(".si-office-ppt-stage-slide.active");
+      if (!active) return;
+      const w = active.clientWidth;
+      if (!w) return;
+      const scale = w / 960;
+      active.querySelectorAll<HTMLElement>(".si-office-ppt-stage-inner").forEach((inner) => {
+        inner.style.transform = `scale(${scale})`;
+      });
+    };
+
+    const selectSlide = (idx: number) => {
+      rail.querySelectorAll(".si-office-ppt-thumb").forEach((el, i) => {
+        el.classList.toggle("active", i === idx);
+      });
+      stageSlides.forEach((el, i) => {
+        el.classList.toggle("active", i === idx);
+      });
+      updateCounter();
+      fitStage();
+    };
+
+    rail.querySelectorAll(".si-office-ppt-thumb").forEach((el, idx) => {
+      el.addEventListener("click", () => selectSlide(idx));
+    });
+
+    // Prev / next navigation.
+    const nav = document.createElement("div");
+    nav.className = "si-office-ppt-nav";
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.innerHTML = `<i data-lucide="chevron-left" class="lucide"></i>`;
+    const next = document.createElement("button");
+    next.type = "button";
+    next.innerHTML = `<i data-lucide="chevron-right" class="lucide"></i>`;
+    const counter = document.createElement("span");
+    counter.className = "si-office-ppt-counter";
+    const updateCounter = () => {
+      const activeIdx = [...stageSlides].findIndex((el) => el.classList.contains("active"));
+      counter.textContent = `${activeIdx + 1} / ${total}`;
+    };
+    prev.addEventListener("click", () => {
+      const activeIdx = [...stageSlides].findIndex((el) => el.classList.contains("active"));
+      if (activeIdx > 0) selectSlide(activeIdx - 1);
+    });
+    next.addEventListener("click", () => {
+      const activeIdx = [...stageSlides].findIndex((el) => el.classList.contains("active"));
+      if (activeIdx < total - 1) selectSlide(activeIdx + 1);
+    });
+    updateCounter();
+    nav.appendChild(prev);
+    nav.appendChild(counter);
+    nav.appendChild(next);
+
+    viewer.appendChild(rail);
+    viewer.appendChild(stage);
+    viewer.appendChild(nav);
+    container.innerHTML = "";
+    container.appendChild(viewer);
+
+    requestAnimationFrame(fitStage);
+    const ro = new ResizeObserver(() => fitStage());
+    ro.observe(stage);
+    (container as any)._officeCleanup = () => ro.disconnect();
   }
 
   private setupBinaryPanel(panel: HTMLElement, filePath: string): void {
@@ -2648,7 +2954,7 @@ export class SessionInner {
       value: content,
       language: monacoLang(ext),
       theme: isDark ? "vs-dark" : "vs",
-      readOnly: true,
+      readOnly: false,
       minimap: { enabled: false },
       automaticLayout: true,
       scrollBeyondLastLine: false,
@@ -2660,9 +2966,97 @@ export class SessionInner {
       padding: { top: 8 },
     });
 
+    const model = view.getModel();
+    if (model && typeof model.onDidChangeContent === "function") {
+      model.onDidChangeContent(() => {
+        const dirty = model.getValue() !== content;
+        if (dirty !== !!this._dirtyTabs.get(tabId)) {
+          this._dirtyTabs.set(tabId, dirty);
+          this._refreshTabClose(tabId);
+        }
+      });
+    }
+
     (view as any)._codeContainer = container;
     registerEditor(view);
     this.panelCodeEditors.set(tabId, view);
+
+    /* context menu (reuses the app's standard context-menu UI) */
+    const ctxMenu = document.createElement("div");
+    ctxMenu.className = "context-menu hidden";
+    ctxMenu.setAttribute("id", `code-ctx-menu-${tabId}`);
+    ctxMenu.innerHTML = `
+      <div class="context-menu-item" data-action="copy">${t("sessionInner.termCopy")}</div>
+      <div class="context-menu-item" data-action="paste">${t("sessionInner.termPaste")}</div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-item" data-action="send">${t("sessionInner.termSendToChat")}</div>`;
+    document.body.appendChild(ctxMenu);
+    let ctxEditorTarget: any = null;
+
+    container.addEventListener("contextmenu", (ev: MouseEvent) => {
+      ev.preventDefault();
+      ctxEditorTarget = view;
+      showContextMenu(ctxMenu, ev.clientX, ev.clientY);
+    }, true);
+
+    const outsideClick = (e: MouseEvent) => {
+      if (!ctxMenu.contains(e.target as Node)) {
+        ctxMenu.classList.add("hidden");
+      }
+    };
+    document.addEventListener("click", outsideClick);
+
+    ctxMenu.querySelectorAll(".context-menu-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const action = (item as HTMLElement).dataset.action;
+        if (action === "copy" && ctxEditorTarget) {
+          const sel = ctxEditorTarget.getSelection();
+          const model = ctxEditorTarget.getModel();
+          const text = sel && model && !sel.isEmpty() ? model.getValueInRange(sel) : "";
+          if (text) navigator.clipboard.writeText(text).catch(() => {});
+        } else if (action === "paste" && ctxEditorTarget) {
+          navigator.clipboard.readText().then((text) => {
+            if (!text || !ctxEditorTarget) return;
+            const sel = ctxEditorTarget.getSelection();
+            if (sel) {
+              ctxEditorTarget.executeEdits("ctx-paste", [{ range: sel, text, forceMoveMarkers: true }]);
+            }
+            ctxEditorTarget.focus();
+          }).catch(() => {});
+        } else if (action === "send" && ctxEditorTarget) {
+          void this._sendCodeToChat(ctxEditorTarget, filePath);
+        }
+        ctxMenu.classList.add("hidden");
+        ctxEditorTarget = null;
+      });
+    });
+
+    (view as any)._ctxMenuCleanup = () => {
+      ctxMenu.remove();
+      document.removeEventListener("click", outsideClick);
+    };
+  }
+
+  /** Add the (possibly modified) content of a code editor to the conversation. */
+  private async _sendCodeToChat(view: any, filePath: string): Promise<void> {
+    const api = (window as any).electronAPI;
+    const name = filePath.split(/[/\\]/).pop() || filePath;
+    let mime = "text/plain";
+    if (api && filePath) {
+      try {
+        const r = await api.readFile(filePath);
+        if (r) mime = r.mime_type || "text/plain";
+      } catch {}
+    }
+    const content = view.getValue() || "";
+    const att: AttachmentMeta = {
+      name, path: filePath,
+      content,
+      mime_type: mime,
+      size: content.length,
+      is_binary: false,
+    };
+    addAttachments([att]);
   }
 
   private _reviewLoad: ((filePath?: string) => Promise<void>) | null = null;
@@ -2859,10 +3253,22 @@ export class SessionInner {
     }
   }
 
-  private closeTab(id: string): void {
+  private async closeTab(id: string): Promise<void> {
     const idx = this.tabs.findIndex((tab) => tab.id === id);
     if (idx < 0) return;
     const tab = this.tabs[idx];
+
+    // Unsaved code editors: ask for confirmation inside the sidebar before closing.
+    if (tab.type === "code" && this._dirtyTabs.get(id)) {
+      const name = tab.label || (tab.filePath ? tab.filePath.split(/[/\\]/).pop() || tab.filePath : tab.id);
+      const ok = await Dialog.confirmIn(
+        this.el,
+        t("sessionInner.closeUnsavedTitle"),
+        t("sessionInner.closeUnsavedMessage", { name }),
+        { primary: t("sessionInner.discardChanges") },
+      );
+      if (!ok) return;
+    }
     if (tab.type === "terminal") {
       const terms = this.panelTerminals.get(id);
       if (terms) {
@@ -2896,10 +3302,14 @@ export class SessionInner {
     if (tab.type === "code") {
       const editor = this.panelCodeEditors.get(id);
       if (editor) {
+        if (typeof (editor as any)._ctxMenuCleanup === "function") {
+          (editor as any)._ctxMenuCleanup();
+        }
         unregisterEditor(editor);
         editor.dispose();
         this.panelCodeEditors.delete(id);
       }
+      this._dirtyTabs.delete(id);
     }
     if (tab.type === "media") {
       const mv = this.panelMediaViewers.get(id);
@@ -2907,6 +3317,11 @@ export class SessionInner {
         mv.destroy();
         this.panelMediaViewers.delete(id);
       }
+    }
+    if (tab.type === "office") {
+      const c = this.panelOfficeControllers.get(id);
+      if (c && typeof (c as any)._officeCleanup === "function") (c as any)._officeCleanup();
+      this.panelOfficeControllers.delete(id);
     }
     this.tabs.splice(idx, 1);
     _saveTabs(this.tabs);

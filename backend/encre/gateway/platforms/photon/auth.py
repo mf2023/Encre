@@ -116,13 +116,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 
-try:
-
-    import httpx
-
-except ImportError:  # pragma: no cover - httpx is an Encre dependency
-
-    httpx = None  # type: ignore[assignment]
+import httpx
 
 
 
@@ -1854,13 +1848,7 @@ def _configured_operator_phone() -> Optional[str]:
 
 def _get_config_env_value(key: str) -> Optional[str]:
 
-    try:
-
-        from encre.config import get_env_value
-
-    except Exception:
-
-        return os.getenv(key)
+    from encre.config import get_env_value
 
     return get_env_value(key)
 

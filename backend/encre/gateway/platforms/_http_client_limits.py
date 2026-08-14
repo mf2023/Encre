@@ -53,10 +53,7 @@ Override via ``ENCRE_GATEWAY_HTTPX_KEEPALIVE_EXPIRY`` /
 
 import os
 
-try:
-    import httpx
-except ImportError:  # pragma: no cover — optional dep
-    httpx = None  # type: ignore[assignment]
+import httpx
 
 
 _DEFAULT_KEEPALIVE_EXPIRY_S = 2.0

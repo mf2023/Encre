@@ -1596,10 +1596,7 @@ async def _standalone_send(
     ``/send`` message beforehand.
     """
     extra = getattr(pconfig, "extra", {}) or {}
-    try:
-        import aiohttp
-    except ImportError:
-        return {"error": "aiohttp not installed. Run: pip install aiohttp"}
+    import aiohttp
     try:
         bridge_port = extra.get("bridge_port", 3000)
         normalized_chat_id = to_whatsapp_jid(chat_id)

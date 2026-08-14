@@ -66,10 +66,10 @@ export class Agents {
           <span class="agents-count">${t("agents.activeCount", { count: 0 })}</span>
         </div>
         <div class="agents-list">
-          <div class="agents-placeholder">
-            <i data-lucide="bot" class="lucide" style="width:32px;height:32px;color:var(--text-muted)"></i>
-            <p>${t("agents.noActiveAgents")}</p>
-            <span class="agents-placeholder-hint">${t("agents.agentsHint")}</span>
+          <div class="si-empty-center">
+            <i data-lucide="bot" class="lucide"></i>
+            <span class="si-empty-title">${t("agents.noActiveAgents")}</span>
+            <span class="si-empty-sub">${t("agents.agentsHint")}</span>
           </div>
         </div>
       </div>

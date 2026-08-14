@@ -36,6 +36,7 @@
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.6",
     "@dev.icons/core": "^1.1.0",
+    "@jvmr/pptx-to-html": "^1.1.1",
     "@vscode/codicons": "^0.0.45",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
@@ -44,6 +45,7 @@
     "codemirror": "^6.0.2",
     "devicon": "^2.17.0",
     "highlight.js": "^11.11.1",
+    "mammoth": "^1.12.1",
     "markdown-it": "^14.1.1",
     "minisearch": "^7.2.0",
     "monaco-editor": "^0.56.0",
@@ -51,6 +53,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "simple-icons": "^16.21.0",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "xlsx": "^0.18.5"
   }
 }

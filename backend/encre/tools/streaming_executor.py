@@ -123,10 +123,7 @@ def _extract_paths(
             pass
 
     # Fallback: generic arg scanning via safety module
-    try:
         from encre.safety import _extract_tool_target_paths, _normalize_path_for_immune_check
-    except Exception:
-        return frozenset()
     raw = _extract_tool_target_paths(tool.name, tool.args or {})
     out: set[str] = set()
     for p in raw:

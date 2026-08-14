@@ -216,8 +216,123 @@ export class Dialog {
     });
   }
 
-  /** Shows a text-input prompt; resolves the entered value, or `null` on cancel. */
-  static prompt(title: string, message: string, defaultValue = "", priority: DialogPriority = "normal"): Promise<string | null> {
+  /**
+   * Shows a confirm dialog confined to a given container (e.g. the session
+   * sidebar) instead of the full screen. Reuses the same card/overlay visuals
+   * as {@link confirm} but is rendered inside `container` and covers only it.
+   *
+   * @param container - The element the overlay is appended to (must be
+   *                    position:relative so the overlay can cover it).
+   * @param options   - Optional custom primary/secondary labels.
+   * @returns `true` for the primary button, `false` otherwise.
+   */
+  static confirmIn(
+    container: HTMLElement,
+    title: string,
+    message: string,
+    options?: { primary?: string; secondary?: string },
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const overlay = this.makeOverlay();
+      overlay.classList.add("encre-dialog-overlay--inline");
+      const card = this.card(overlay);
+      card.classList.add("encre-dialog-card--inline");
+      this.titleEl(card, title);
+      this.bodyEl(card, message);
+      const { primaryBtn, secondaryBtn } = this.buttons(
+        card,
+        options?.primary || t("dialog.confirm"),
+        options?.secondary || t("dialog.cancel"),
+      );
+
+      const done = (val: boolean) => {
+        overlay.remove();
+        resolve(val);
+      };
+
+      primaryBtn.addEventListener("click", () => done(true));
+      if (secondaryBtn) secondaryBtn.addEventListener("click", () => done(false));
+      primaryBtn.focus();
+
+      overlay.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") done(false);
+      });
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) done(false);
+      });
+
+      container.appendChild(overlay);
+    });
+  }
+
+  /**
+   * Inline prompt (inside a sidebar container, not a full-screen modal).
+   * Standalone — not queue-based. Resolves the entered value, or `null` on cancel.
+   */
+  static promptIn(
+    container: HTMLElement,
+    title: string,
+    message: string,
+    defaultValue = "",
+    options?: { primary?: string; secondary?: string; placeholder?: string; inputClass?: string },
+  ): Promise<string | null> {
+    return new Promise<string | null>((resolve) => {
+      const overlay = this.makeOverlay();
+      overlay.classList.add("encre-dialog-overlay--inline");
+      const card = this.card(overlay);
+      card.classList.add("encre-dialog-card--inline");
+      this.titleEl(card, title);
+      this.bodyEl(card, message);
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = `encre-dialog-input${options?.inputClass ? ` ${options.inputClass}` : ""}`;
+      input.value = defaultValue;
+      if (options?.placeholder) input.placeholder = options.placeholder;
+      card.appendChild(input);
+
+      const { primaryBtn, secondaryBtn } = this.buttons(
+        card,
+        options?.primary || t("dialog.save"),
+        options?.secondary || t("dialog.cancel"),
+      );
+
+      const done = (val: string | null) => {
+        overlay.remove();
+        resolve(val);
+      };
+
+      primaryBtn.addEventListener("click", () => done(input.value));
+      if (secondaryBtn) secondaryBtn.addEventListener("click", () => done(null));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") done(input.value);
+        if (e.key === "Escape") done(null);
+      });
+      setTimeout(() => {
+        input.focus();
+        input.setSelectionRange(0, input.value.length);
+      }, 100);
+
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) done(null);
+      });
+
+      container.appendChild(overlay);
+    });
+  }
+
+  /**
+   * Shows a text-input prompt; resolves the entered value, or `null` on cancel.
+   *
+   * @param options - Optional custom primary/secondary labels, placeholder and input class.
+   */
+  static prompt(
+    title: string,
+    message: string,
+    defaultValue = "",
+    options?: { primary?: string; secondary?: string; placeholder?: string; inputClass?: string },
+    priority: DialogPriority = "normal",
+  ): Promise<string | null> {
     return this.enqueue<string | null>(priority, (resolve) => {
       const overlay = this.makeOverlay();
       const card = this.card(overlay);
@@ -226,11 +341,16 @@ export class Dialog {
 
       const input = document.createElement("input");
       input.type = "text";
-      input.className = "encre-dialog-input";
+      input.className = `encre-dialog-input${options?.inputClass ? ` ${options.inputClass}` : ""}`;
       input.value = defaultValue;
+      if (options?.placeholder) input.placeholder = options.placeholder;
       card.appendChild(input);
 
-      const { primaryBtn, secondaryBtn } = this.buttons(card, t("dialog.save"), t("dialog.cancel"));
+      const { primaryBtn, secondaryBtn } = this.buttons(
+        card,
+        options?.primary || t("dialog.save"),
+        options?.secondary || t("dialog.cancel"),
+      );
 
       const done = (val: string | null) => {
         overlay.remove();

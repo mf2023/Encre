@@ -48,10 +48,7 @@ async def _image_execute(**kwargs: Any) -> str:
         return f"Error: File not found: {file_path}"
 
     try:
-        try:
-            from PIL import ExifTags, Image
-        except ImportError:
-            return "Error: Pillow not installed. Install with: pip install Pillow"
+        from PIL import ExifTags, Image
 
         with Image.open(file_path) as img:
             if action == "info":
@@ -72,10 +69,7 @@ async def _image_execute(**kwargs: Any) -> str:
                 return json.dumps(info, indent=2, default=str)
 
             elif action == "ocr":
-                try:
-                    import pytesseract
-                except ImportError:
-                    return "Error: pytesseract not installed. Install with: pip install pytesseract"
+                import pytesseract
                 text = pytesseract.image_to_string(img)
                 return text if text.strip() else "(no text detected)"
 

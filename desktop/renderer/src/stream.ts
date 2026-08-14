@@ -167,7 +167,8 @@ function _isSessionBoundStreamEvent(type: ServerEvent["type"]): boolean {
     type === "command_changed" ||
     type === "plan_resolved" ||
     type === "assistant_boundary" ||
-    type === "compact";
+    type === "compact" ||
+    type === "compact_starting";
 }
 
 function _requiresExplicitSessionId(type: ServerEvent["type"]): boolean {
@@ -629,7 +630,11 @@ export function handleEvent(event: ServerEvent): void {
     case "permission_request":
       if (permissionResolve) {
         permissionResolve(false);
+        state.setSessionAwaitingApproval(false, _eventSessionId(event));
       }
+      // Pause-like state: the agent loop is blocked awaiting user consent,
+      // so flip the session's breathing light to yellow (sidebar + tray).
+      state.setSessionAwaitingApproval(true, _eventSessionId(event));
       permissions?.show(
         event.tool_name,
         event.reason,
@@ -641,6 +646,7 @@ export function handleEvent(event: ServerEvent): void {
           });
           permissionResolve = null;
           permissions?.hide();
+          state.setSessionAwaitingApproval(false, _eventSessionId(event));
         }
       );
       // Ensure the main chat area updates immediately so users see the
@@ -753,6 +759,17 @@ export function handleEvent(event: ServerEvent): void {
       // and cause "Message not found" errors on rollback.
       if ((event as any).compacted && (event as any).messages) {
         state.loadSessionMessages((event as any).messages, sid);
+      }
+      // Summary-panel data is persisted independently of compaction on the
+      // backend; restore it so entangled entries survive compaction.
+      if ((event as any).compacted && (event as any).plan_items) {
+        state.setPlanItems((event as any).plan_items, sid);
+      }
+      if ((event as any).compacted && (event as any).artifacts) {
+        state.setArtifacts((event as any).artifacts, sid);
+      }
+      if ((event as any).compacted && (event as any).references) {
+        state.setReferences((event as any).references, sid);
       }
       chat?.render();
       (window as any).__sessionInner?.render?.();
@@ -878,7 +895,18 @@ export function handleEvent(event: ServerEvent): void {
 
     case "plan_update":
       if (!_hasSessionId(event)) break;
-      state.setPlanItems(event.plan_items, _eventSessionId(event));
+      {
+        const sid = _eventSessionId(event);
+        const prevCount = (state.getState().planItems || []).length;
+        state.setPlanItems(event.plan_items, sid);
+        const newCount = (event.plan_items || []).length;
+        // When the model first creates todos (plan items go 0 -> >0) in the
+        // active session, auto-open the summary panel so progress is visible.
+        const activeSid = state.getState().sessionId;
+        if (sid && activeSid && sid === activeSid && prevCount === 0 && newCount > 0) {
+          (window as any).__app?.openSummaryPanel?.();
+        }
+      }
       chat?.render();
       (window as any).__sessionInner?.render?.();
       break;
@@ -1043,6 +1071,7 @@ export function handleEvent(event: ServerEvent): void {
         "auto_expand", "sub_agent_auto_open_view", "automation_auto_open_view",
         "startup_session_mode", "startup_session_behavior",
         "default_search_engine", "default_search_engine_url",
+        "language", "language_preference",
       ] as const;
       for (const key of _generalKeys) {
         const val = cfg[key];
@@ -1228,6 +1257,11 @@ export function handleEvent(event: ServerEvent): void {
       state.setMemoryDetail({ path: event.path, content: event.content, error: event.error });
       break;
 
+    case "compact_starting":
+      if (!_hasSessionId(event as any)) break;
+      state.addCompactStartingEvent(_eventSessionId(event as any));
+      break;
+
     case "compact":
       if (!_hasSessionId(event as any)) break;
       state.addCompactEvent({
@@ -1238,6 +1272,18 @@ export function handleEvent(event: ServerEvent): void {
       }, _eventSessionId(event as any));
       if ((event as any).messages) {
         state.loadSessionMessages((event as any).messages, _eventSessionId(event as any));
+      }
+      // The backend persists summary-panel data (plan/artifacts/references)
+      // independently of the compacted message list, so restore it here to
+      // prevent the panel from losing entries after compaction.
+      if ((event as any).plan_items) {
+        state.setPlanItems((event as any).plan_items, _eventSessionId(event as any));
+      }
+      if ((event as any).artifacts) {
+        state.setArtifacts((event as any).artifacts, _eventSessionId(event as any));
+      }
+      if ((event as any).references) {
+        state.setReferences((event as any).references, _eventSessionId(event as any));
       }
       break;
 
@@ -1733,8 +1779,9 @@ function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getSta
   const derivedLastActive = lastMsgMs > 0 ? Math.floor(lastMsgMs / 1000) : nowSec;
   const derivedCreatedAt = firstMsgMs > 0 ? Math.floor(firstMsgMs / 1000) : nowSec;
   const found = st.sessionsList.some(e => e.session_id === sessionId);
-  const updated = found
-    ? st.sessionsList.map(e =>
+  if (found) {
+    state.setSessionsList(
+      st.sessionsList.map(e =>
         e.session_id === sessionId
           ? {
               ...e,
@@ -1747,20 +1794,32 @@ function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getSta
             }
           : e
       )
-    : [...st.sessionsList, {
-        session_id: sessionId,
-        message_count: snapMsgs.length,
-        preview,
-        created_at: derivedCreatedAt,
-        last_active: derivedLastActive,
-        is_running: isRunning,
-        channel: st.workspaceMode === "iwork" ? "iwork" : "normal",
-        metadata: {
-          workspace: st.activeWorkspace || undefined,
-          workspace_path: st.activeWorkspace || undefined,
-        },
-      }];
-  state.setSessionsList(updated);
+    );
+    return;
+  }
+  const tray = state.getTraySessions();
+  const inIworkTray = tray.iwork.some(e => e.session_id === sessionId);
+  const inNormalTray = tray.normal.some(e => e.session_id === sessionId);
+  const trueChannel = inIworkTray ? "iwork" : inNormalTray ? "normal" : "";
+  const currentChannel = st.workspaceMode === "iwork" ? "iwork" : "normal";
+  if (trueChannel && trueChannel !== currentChannel) return;
+  const channel = trueChannel || currentChannel;
+  const known = [...tray.iwork, ...tray.normal].find(e => e.session_id === sessionId);
+  const knownMeta = (known?.metadata || {}) as Record<string, unknown>;
+  const knownWs = (knownMeta.workspace || knownMeta.workspace_path) as string | undefined;
+  state.setSessionsList([...st.sessionsList, {
+    session_id: sessionId,
+    message_count: snapMsgs.length,
+    preview,
+    created_at: derivedCreatedAt,
+    last_active: derivedLastActive,
+    is_running: isRunning,
+    channel,
+    metadata: {
+      workspace: knownWs || (channel === "iwork" ? st.activeWorkspace : undefined),
+      workspace_path: knownWs || (channel === "iwork" ? st.activeWorkspace : undefined),
+    },
+  }]);
 }
 
 /** Triggers a markdown file download in the browser. */

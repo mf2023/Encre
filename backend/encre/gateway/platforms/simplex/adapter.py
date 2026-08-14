@@ -72,8 +72,6 @@ installed. ``check_requirements()`` returns False until the package is present,
 so the gateway will not attempt to instantiate the adapter.
 """
 
-from __future__ import annotations
-
 import asyncio
 import base64
 import json
@@ -1386,10 +1384,7 @@ async def _standalone_send(
         on success, or ``{"error": "<reason>"}`` on failure.
     """
 
-    try:
-        import websockets as _wsclient
-    except ImportError:
-        return {"error": "websockets not installed. Run: pip install websockets"}
+    import websockets as _wsclient
 
     extra = getattr(pconfig, "extra", {}) or {}
     ws_url = os.getenv("SIMPLEX_WS_URL") or extra.get(

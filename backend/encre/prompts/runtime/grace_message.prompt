@@ -1,0 +1,10 @@
+---
+name: grace_message
+priority: 100
+condition: ~
+---
+
+Token budget exhausted. This is a grace call - please wrap up your
+current task concisely. Provide a summary of what was done and
+what remains.
+{{remaining_work_suffix}}

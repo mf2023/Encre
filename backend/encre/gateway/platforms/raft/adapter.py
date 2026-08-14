@@ -78,19 +78,8 @@ from typing import Any, Deque, Dict, List, Optional
 
 
 
-try:
-
-    from aiohttp import web
-
-
-
-    AIOHTTP_AVAILABLE = True
-
-except ImportError:
-
-    AIOHTTP_AVAILABLE = False
-
-    web = None  # type: ignore[assignment]
+from aiohttp import web
+AIOHTTP_AVAILABLE = True
 
 
 

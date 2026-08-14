@@ -1929,7 +1929,7 @@ class PhotonAdapter(BasePlatformAdapter):
 
         # discord/whatsapp adapters use for their sidecar spawns.
 
-from encre._subprocess_compat import windows_hide_flags
+        from encre._subprocess_compat import windows_hide_flags
 
 
 

@@ -58,25 +58,12 @@ logger = logging.getLogger(__name__)
 
 WEIXIN_COPY_LINE_WIDTH = 120
 
-try:
-    import aiohttp
+import aiohttp
+AIOHTTP_AVAILABLE = True
 
-    AIOHTTP_AVAILABLE = True
-except ImportError:  # pragma: no cover - dependency gate
-    aiohttp = None  # type: ignore[assignment]
-    AIOHTTP_AVAILABLE = False
-
-try:
-    from cryptography.hazmat.backends import default_backend
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
-    CRYPTO_AVAILABLE = True
-except ImportError:  # pragma: no cover - dependency gate
-    default_backend = None  # type: ignore[assignment]
-    Cipher = None  # type: ignore[assignment]
-    algorithms = None  # type: ignore[assignment]
-    modes = None  # type: ignore[assignment]
-    CRYPTO_AVAILABLE = False
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+CRYPTO_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.helpers import MessageDeduplicator
@@ -153,11 +140,8 @@ def _make_ssl_connector() -> Optional["aiohttp.TCPConnector"]:
     verification. Otherwise fall back to aiohttp's default (which honors
     ``SSL_CERT_FILE`` env var via ``trust_env=True``).
     """
-    try:
-        import ssl
-        import certifi
-    except ImportError:
-        return None
+    import ssl
+    import certifi
     if not AIOHTTP_AVAILABLE:
         return None
     ssl_ctx = ssl.create_default_context(cafile=certifi.where())

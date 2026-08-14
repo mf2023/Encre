@@ -13,6 +13,12 @@ files:
   - renderer/**/*
   - "!renderer/src/**/*"
   - "!renderer/tsconfig.json"
+  # Unused 66MB demo video (no code references it) — keep it out of the installer.
+  - "!renderer/assets/*.mp4"
+  # Dead build artifacts / unused icon fonts (nothing references them).
+  - "!renderer/devicon.css"
+  - "!renderer/fonts/**/*"
+  - "!renderer/dist/**/*"
 
 extraResources:
   - from: ../build/server/encre-server

@@ -10,7 +10,7 @@ html,body{height:100%}
   --tp-bg:#ffffff;--tp-color:#1f1f1f;--tp-hover:#f5f5f5;--tp-border:#f0f0f0;
   --tp-line:#e8e8e8;--tp-scrollbar:#ddd;--tp-sub-color:#999;
   --tp-name:#1f1f1f;--tp-meta:#888;--tp-empty:#bbb;--tp-badge-bg:#eef2ff;
-  --tp-badge-color:#4f46e5;  --tp-dot:#ccc;--tp-sep:#f0f0f0;--tp-bg-tertiary:#f0f0f0;--tp-accent:#666;
+  --tp-badge-color:#4f46e5;  --tp-dot:#ccc;--tp-sep:#f0f0f0;--tp-bg-tertiary:#f0f0f0;--tp-accent:#666;--tp-active:rgba(0,0,0,0.06);
   color-scheme:light;
   /* Map tray palette to the shared .seg component variables
      (defined in _components.css). Both surfaces now resolve through
@@ -21,7 +21,7 @@ html,body{height:100%}
   --tp-bg:#1a1a1a;--tp-color:#e5e5e5;--tp-hover:#262626;--tp-border:#333333;
   --tp-line:#333333;--tp-scrollbar:#444;--tp-sub-color:#777;
   --tp-name:#e5e5e5;--tp-meta:#888;--tp-empty:#666;--tp-badge-bg:#1e1b4b;
-  --tp-badge-color:#a5b4fc;  --tp-dot:#555;--tp-sep:#2a2a2a;--tp-bg-tertiary:#2a2a2a;--tp-accent:#999;
+  --tp-badge-color:#a5b4fc;  --tp-dot:#555;--tp-sep:#2a2a2a;--tp-bg-tertiary:#2a2a2a;--tp-accent:#999;--tp-active:rgba(255,255,255,0.08);
   color-scheme:dark;
   --seg-bg:#2a2a2a;--seg-active-bg:#3a3a3a;--seg-text:#999;--seg-text-hover:#f5f5f5;--seg-active-text:#f5f5f5;
 }
@@ -40,14 +40,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica N
 .sub svg.icon{width:12px;height:12px;opacity:.5;flex-shrink:0}
 .ws-tree-session-item{position:relative;flex-shrink:0;display:flex;flex-direction:column;padding:9px 12px;border-radius:6px;cursor:pointer;margin-bottom:1px;color:var(--tp-name);font-size:13px;transition:background .1s}
 .ws-tree-session-item:hover{background:var(--tp-hover)}
-.ws-tree-session-item.active{background:transparent;color:var(--tp-color)}
+.ws-tree-session-item.active{background:var(--tp-active);color:var(--tp-color)}
 .session-item-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .session-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-.session-running{display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.session-running,.session-waiting{display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.session-waiting{background:#f59e0b}
 .ws-tree-node{margin-bottom:2px}
 .ws-tree-node-header{display:flex;align-items:center;gap:5px;padding:7px 8px;cursor:pointer;font-size:13px;font-weight:500;color:var(--tp-color);border-radius:6px}
 .ws-tree-node-header:hover{background:var(--tp-hover)}
-.ws-tree-node-header.active{background:transparent}
+.ws-tree-node-header.active{background:var(--tp-active)}
 .ws-expand-button{appearance:none;-webkit-appearance:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin:-4px 0 -4px -4px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--tp-meta);cursor:pointer;flex-shrink:0;outline:none;box-shadow:none}
 .ws-expand-button:hover{background:var(--tp-hover);color:var(--tp-color)}
 .ws-expand-button:focus,.ws-expand-button:focus-visible{outline:none;box-shadow:none}
@@ -82,7 +83,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica N
       <span id="seg-chats">General</span>
     </button>
     <button type="button" class="seg-item" data-mode="iwork" role="tab" aria-selected="false">
-      <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
       <span id="seg-workspaces">Work</span>
     </button>
   </div>
@@ -130,7 +131,7 @@ function truncate(str, max) {
 /* ── Inline SVG icons (Lucide-compatible paths) ── */
 var ICONS = {
   chat: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-  layers: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+  layers: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
   inbox: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
 };
 
@@ -143,7 +144,7 @@ function renderSessions(sessions, iconKey, emptyKey) {
     for (var i = 0; i < sessions.length; i++) {
       var s = sessions[i];
       var name = esc(truncate(s.name || s.preview || (s.session_id || "").slice(0, 8) || "Untitled", 28));
-      var runningBadge = s.is_running ? '<span class="session-running"></span>' : "";
+      var runningBadge = (s.awaiting_approval || s.is_running) ? '<span class="session-' + (s.awaiting_approval ? "waiting" : "running") + '"></span>' : "";
       var row = document.createElement("div");
       row.className = "ws-tree-session-item";
       row.setAttribute("data-sid", s.session_id || "");
@@ -193,7 +194,7 @@ function renderIworkSessions(sessions) {
     for (var si = 0; si < wsSessions.length; si++) {
       var s2 = wsSessions[si];
       var name2 = esc(truncate(s2.name || s2.preview || (s2.session_id || "").slice(0, 8) || "Untitled", 28));
-      var runningBadge2 = s2.is_running ? '<span class="session-running"></span>' : "";
+      var runningBadge2 = (s2.awaiting_approval || s2.is_running) ? '<span class="session-' + (s2.awaiting_approval ? "waiting" : "running") + '"></span>' : "";
       var row2 = document.createElement("div");
       row2.className = "ws-tree-session-item";
       row2.setAttribute("data-sid", s2.session_id || "");

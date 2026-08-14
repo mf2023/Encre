@@ -1408,15 +1408,7 @@ class EncreDesktopSession:
         self, max_depth: int = 6, max_nodes: int = 500,
     ) -> list[dict[str, Any]]:
         """Windows UIAutomation accessibility tree."""
-        try:
-            import uiautomation as uia  # type: ignore
-        except ImportError:
-            return [{
-                "error": (
-                    "UIAutomation package required. "
-                    "Install with: pip install encre[windows]"
-                )
-            }]
+        import uiautomation as uia  # type: ignore
 
         try:
             root = uia.GetForegroundControl()
@@ -1500,16 +1492,8 @@ class EncreDesktopSession:
         """macOS Accessibility API (AX) tree via pyobjc."""
         if max_depth < 1:
             return []
-        try:
-            import ApplicationServices as AS  # type: ignore
-            from AppKit import NSWorkspace  # type: ignore
-        except ImportError:
-            return [{
-                "error": (
-                    "macOS AX requires pyobjc. "
-                    "Install: pip install encre[macos]"
-                )
-            }]
+        import ApplicationServices as AS  # type: ignore
+        from AppKit import NSWorkspace  # type: ignore
 
         try:
             front_app = NSWorkspace.sharedWorkspace().frontmostApplication()
@@ -1661,16 +1645,7 @@ class EncreDesktopSession:
         """
         if max_depth < 1:
             return []
-        try:
-            import pyatspi  # type: ignore
-        except ImportError:
-            return [{
-                "error": (
-                    "Linux AT-SPI2 accessibility requires pyatspi. "
-                    "Install: pip install pyatspi "
-                    "(also needs at-spi2-core runtime)"
-                )
-            }]
+        import pyatspi  # type: ignore
 
         try:
             desktop = pyatspi.Registry.getDesktop(0)

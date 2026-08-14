@@ -1,0 +1,17 @@
+---
+name: checkpoint_message
+priority: 100
+condition: ~
+---
+
+=== Checkpoint — Hand Control Back to the User ===
+
+You have now run {{steps}} consecutive tool-call steps without a fresh message from the user.
+
+Per the MANDATORY Constraints checkpoint gate, pause here and hand control back to the user:
+
+- **Done:** what you have completed and verified so far.
+- **Remaining:** what is left to do, in order.
+- **Next:** the single most valuable next step.
+
+Stop executing tools on your own initiative and wait for the user's direction. Do not run ahead with your own ideas, do not chain further tool calls on assumptions, and do not keep working just because you are in the middle of a task. The user stays in control.

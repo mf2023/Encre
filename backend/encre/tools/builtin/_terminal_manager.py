@@ -116,6 +116,7 @@ class _SessionRecord:
     process: asyncio.subprocess.Process
     started_at: float
     cmd_count: int = 0  # number of commands sent to this session
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)  # serialize access to this session's pipes
 
     @property
     def running(self) -> bool:
@@ -201,75 +202,94 @@ class TerminalSessionManager:
         stdin_data = f"{command}\r\n{marker_line}\r\n"
         session.cmd_count += 1
 
-        try:
-            session.process.stdin.write(
-                encode_text(stdin_data, terminal=session.terminal)
+        async with session.lock:
+            try:
+                session.process.stdin.write(
+                    encode_text(stdin_data, terminal=session.terminal)
+                )
+                await session.process.stdin.drain()
+            except Exception as exc:
+                elapsed = int((time.monotonic() - started) * 1000)
+                async with self._lock:
+                    self._sessions.pop(session.terminal, None)
+                return {
+                    "success": False,
+                    "exit_code": -1,
+                    "stdout": "",
+                    "stderr": f"stdin write failed: {exc}",
+                    "elapsed_ms": elapsed,
+                }
+
+            stdout_parts: list[bytes] = []
+            stderr_parts: list[bytes] = []
+            found_marker = False
+            deadline = time.monotonic() + timeout
+
+            async def _read_stream(pipe, parts, marker_bytes):
+                nonlocal found_marker
+                carry = b""
+                while time.monotonic() < deadline and not found_marker:
+                    try:
+                        remaining = max(0.1, deadline - time.monotonic())
+                        chunk = await asyncio.wait_for(pipe.read(4096), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        break
+                    if not chunk:
+                        break
+                    parts.append(chunk)
+                    if not found_marker:
+                        if marker_bytes in carry + chunk:
+                            found_marker = True
+                            break
+                        carry = chunk[-(len(marker_bytes) - 1):] if len(chunk) >= len(marker_bytes) - 1 else chunk
+                return found_marker
+
+            marker_bytes = marker.encode("utf-8")
+            read_task = asyncio.create_task(
+                _read_stream(session.process.stdout, stdout_parts, marker_bytes)
             )
-            await session.process.stdin.drain()
-        except Exception as exc:
+            stderr_task = asyncio.create_task(
+                _read_stream(session.process.stderr, stderr_parts, marker_bytes)
+            )
+            done, pending = await asyncio.wait(
+                [read_task, stderr_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            # Grace window: let pending tasks drain buffered output before
+            # cancelling — the marker is echoed after the command completes,
+            # so any output still pending is already in the pipe buffer.
+            if pending:
+                _, still_pending = await asyncio.wait(
+                    pending, timeout=0.25,
+                    return_when=asyncio.ALL_COMPLETED,
+                )
+                for task in still_pending:
+                    task.cancel()
+                await asyncio.gather(*still_pending, return_exceptions=True)
+
             elapsed = int((time.monotonic() - started) * 1000)
-            async with self._lock:
-                self._sessions.pop(session.terminal, None)
-            return {
-                "success": False,
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": f"stdin write failed: {exc}",
-                "elapsed_ms": elapsed,
-            }
+            stdout_text = decode_bytes(b"".join(stdout_parts))
+            stderr_text = decode_bytes(b"".join(stderr_parts))
 
-        stdout_parts: list[bytes] = []
-        stderr_parts: list[bytes] = []
-        found_marker = False
-        deadline = time.monotonic() + timeout
-
-        async def _read_stream(pipe, parts, marker_bytes):
-            nonlocal found_marker
-            while time.monotonic() < deadline and not found_marker:
-                try:
-                    remaining = max(0.1, deadline - time.monotonic())
-                    chunk = await asyncio.wait_for(pipe.read(4096), timeout=remaining)
-                except asyncio.TimeoutError:
-                    break
-                if not chunk:
-                    break
-                parts.append(chunk)
-                if not found_marker and marker_bytes in chunk:
-                    found_marker = True
-                    break
-            return found_marker
-
-        marker_bytes = marker.encode("utf-8")
-        read_task = asyncio.create_task(
-            _read_stream(session.process.stdout, stdout_parts, marker_bytes)
-        )
-        stderr_task = asyncio.create_task(
-            _read_stream(session.process.stderr, stderr_parts, marker_bytes)
-        )
-        done, pending = await asyncio.wait(
-            [read_task, stderr_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-
-        elapsed = int((time.monotonic() - started) * 1000)
-        stdout_text = decode_bytes(b"".join(stdout_parts))
-        stderr_text = decode_bytes(b"".join(stderr_parts))
-
-        # Strip everything from the marker line onwards
-        if found_marker:
-            lines = stdout_text.splitlines()
-            clean: list[str] = []
-            for line in lines:
-                if marker in line:
-                    break
-                clean.append(line)
-            stdout_text = "\n".join(clean).rstrip("\r\n")
-        else:
-            # Marker not found — likely a timeout; return what we have
-            stdout_text = stdout_text.rstrip("\r\n")
+            # Strip everything from the marker line onwards
+            if found_marker:
+                lines = stdout_text.splitlines()
+                clean: list[str] = []
+                for line in lines:
+                    if marker in line:
+                        break
+                    clean.append(line)
+                stdout_text = "\n".join(clean).rstrip("\r\n")
+            else:
+                # Marker not found within the deadline — return a timeout
+                # error instead of faking success with possibly empty output.
+                return {
+                    "success": False,
+                    "exit_code": -1,
+                    "stdout": stdout_text,
+                    "stderr": stderr_text,
+                    "elapsed_ms": elapsed,
+                }
 
         return {
             "success": True,
@@ -300,8 +320,11 @@ class TerminalSessionManager:
                             await asyncio.wait_for(rec.process.wait(), timeout=2.0)
                     except Exception:
                         pass
-                # Close pipe handles
+                # Close pipe handles — StreamWriter (stdin) has is_closing(),
+                # StreamReader (stdout/stderr) does not.
                 for pipe in (rec.process.stdin, rec.process.stdout, rec.process.stderr):
-                    if pipe is not None and not pipe.is_closing():
-                        pipe.close()
+                    if pipe is not None:
+                        if hasattr(pipe, "is_closing"):
+                            if not pipe.is_closing():
+                                pipe.close()
             self._sessions.clear()

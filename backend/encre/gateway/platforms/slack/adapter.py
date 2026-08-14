@@ -43,9 +43,6 @@ installed; :func:`check_slack_requirements` triggers their lazy installation
 and rebinds the module globals on success.
 """
 
-from __future__ import annotations
-
-
 
 import asyncio
 import contextvars
@@ -57,18 +54,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, Tuple, List
 
-try:
-    from slack_bolt.async_app import AsyncApp
-    from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
-    from slack_sdk.web.async_client import AsyncWebClient
-    import aiohttp
-
-    SLACK_AVAILABLE = True
-except ImportError:
-    SLACK_AVAILABLE = False
-    AsyncApp = Any
-    AsyncSocketModeHandler = Any
-    AsyncWebClient = Any
+from slack_bolt.async_app import AsyncApp
+from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
+from slack_sdk.web.async_client import AsyncWebClient
+import aiohttp
+SLACK_AVAILABLE = True
 
 import sys
 from pathlib import Path as _Path
@@ -773,10 +763,7 @@ class SlackAdapter(BasePlatformAdapter):
         if api_detail:
             return api_detail
 
-        try:
-            import httpx
-        except Exception:  # pragma: no cover
-            httpx = None
+        import httpx
 
         if httpx is not None and isinstance(exc, httpx.HTTPStatusError):
             status = exc.response.status_code
@@ -4981,10 +4968,7 @@ async def _standalone_send(
                 exc_info=True,
             )
 
-    try:
-        import aiohttp
-    except ImportError:
-        return {"error": "aiohttp not installed. Run: pip install aiohttp"}
+    import aiohttp
 
     try:
         from encre.gateway.platforms.base import resolve_proxy_url, proxy_kwargs_for_aiohttp

@@ -24,6 +24,30 @@ let monacoReady: Promise<typeof monaco.editor> | null = null;
 let monacoEditor: typeof monaco.editor | null = null;
 const editors = new Set<any>();
 
+// True once the Monaco AMD loader script has been injected into the page.
+let loaderInjected = false;
+
+/**
+ * Injects the Monaco AMD loader script (monaco/vs/loader.js) and kicks off
+ * the download of the full editor bundle. Previously index.html loaded
+ * editor.main synchronously at startup (~3MB of JS parsed before first
+ * paint); now it only starts when the first code file is opened.
+ */
+function ensureMonacoLoader(): void {
+  const win = window as any;
+  if (loaderInjected || (win.require && typeof win.require.config === "function")) return;
+  loaderInjected = true;
+  const script = document.createElement("script");
+  script.src = "monaco/vs/loader.js";
+  script.onload = () => {
+    if (win.require && typeof win.require.config === "function") {
+      win.require.config({ paths: { vs: "monaco/vs" } });
+      win.require(["vs/editor/editor.main"], () => {});
+    }
+  };
+  document.head.appendChild(script);
+}
+
 export function getMonaco(): Promise<typeof monaco.editor> {
   if (monacoReady) return monacoReady;
   monacoReady = new Promise((resolve) => {
@@ -33,6 +57,8 @@ export function getMonaco(): Promise<typeof monaco.editor> {
       resolve(monacoEditor);
       return;
     }
+    // Start loading Monaco on demand instead of blocking startup.
+    ensureMonacoLoader();
     const check = () => {
       if (win.monaco && win.monaco.editor) {
         monacoEditor = win.monaco.editor;

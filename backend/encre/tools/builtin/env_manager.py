@@ -121,10 +121,7 @@ async def _env_execute(**kwargs: Any) -> str:
                     try:
                         import tomllib
                     except ImportError:
-                        try:
                             import tomli as tomllib
-                        except ImportError:
-                            return "tomllib/tomli not available for TOML parsing"
                     parsed = tomllib.loads(content)
                     if isinstance(parsed, dict):
                         for k, v in parsed.items():

@@ -506,12 +506,13 @@ class GatewayRunner:
         # 4. Submit to agent and consume the stream
         target_model_ids = self._resolve_adapter_target_models(adapter.name)
         try:
-            async with self._router.iclaw_context():
-                async for agent_event in self._router.submit_stream(
-                    source.platform, event.text, session_id=session_id,
-                    target_model_ids=target_model_ids,
-                ):
-                    await consumer.feed(agent_event)
+            async with asyncio.timeout(600):
+                async with self._router.iclaw_context(timeout=30.0):
+                    async for agent_event in self._router.submit_stream(
+                        source.platform, event.text, session_id=session_id,
+                        target_model_ids=target_model_ids,
+                    ):
+                        await consumer.feed(agent_event)
 
             # 5. Finalize delivery
             final_text = await consumer.finalize()
@@ -520,6 +521,12 @@ class GatewayRunner:
             if is_intentional_silence_response(final_text):
                 logger.info("[gateway] Suppressed silence response for %s", session_key)
 
+        except asyncio.TimeoutError:
+            logger.error("[gateway] Agent execution timed out for %s (session=%s)", session_key, session_id)
+            try:
+                await adapter.send(source.chat_id, "⚠️ Agent execution timed out. Please try again.")
+            except Exception as send_err:
+                logger.error("[gateway] Failed to send timeout notice: %s", send_err)
         except Exception as e:
             logger.error("[gateway] Message processing error: %s %s", type(e).__name__, e, exc_info=True)
             error_msg = f"⚠️ Error processing message: {type(e).__name__}: {e}"

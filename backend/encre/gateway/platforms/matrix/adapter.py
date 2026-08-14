@@ -9141,13 +9141,7 @@ async def _standalone_send(
 
     token = getattr(pconfig, "token", None)
 
-    try:
-
-        import aiohttp
-
-    except ImportError:
-
-        return {"error": "aiohttp not installed. Run: pip install aiohttp"}
+    import aiohttp
 
     try:
 

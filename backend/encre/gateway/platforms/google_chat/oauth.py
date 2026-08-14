@@ -274,10 +274,7 @@ def refresh_or_none(creds: Any, email: Optional[str] = None) -> Optional[Any]:
     if creds.valid:
         return creds
 
-    try:
         from google.auth.transport.requests import Request
-    except ImportError:
-        return None
 
     if creds.expired and creds.refresh_token:
         try:

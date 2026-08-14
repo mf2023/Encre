@@ -301,7 +301,7 @@ export class Notifications {
     const read = all.filter((n) => n.read);
 
     const empty = all.length === 0
-      ? `<div class="notification-panel-empty">${t("notifications.empty")}</div>`
+      ? `<div class="si-empty-center"><i data-lucide="bell" class="lucide"></i><span class="si-empty-title">${t("notifications.empty")}</span></div>`
       : "";
 
     const header = all.length > 0
@@ -410,7 +410,7 @@ export class Notifications {
       const mediaEl = this.panel.querySelector<HTMLElement>("#notif-detail-media");
       if (mediaEl) {
         this._destroyMediaViewer();
-        this._mediaViewer = new MediaViewer(mediaEl, n.media);
+        this._mediaViewer = new MediaViewer(mediaEl, { ...n.media, toolbar: false });
       }
     }
 

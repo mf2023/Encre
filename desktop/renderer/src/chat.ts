@@ -216,21 +216,9 @@ function firstParam(tc: ToolCallState, keys: string[]): string {
 
 function getToolIcon(name: string, terminal?: string): string {
   if (isTerminalTool(name)) {
-    const terminalIcons: Record<string, string> = {
-      auto: "command",
-      bash: "terminal",
-      cmd: "monitor",
-      powershell: "terminal",
-      pwsh: "terminal",
-      python: "code-2",
-      node: "code",
-      irb: "gem",
-      julia: "sigma",
-      lua: "code",
-      php: "file-type",
-      R: "sigma",
-    };
-    return terminal ? (terminalIcons[terminal] || "command") : "command";
+    // All terminal tools share one glyph (the `>_` prompt, matching the
+    // PowerShell icon). No per-shell differentiation.
+    return "terminal";
   }
   if (isFileMutationTool(name)) return "pencil-line";
   if (isFileReadTool(name)) return "eye";
@@ -779,6 +767,7 @@ export type TimelineItem =
   | { kind: "warning_card"; id: string; messageId: string; interruptedReason: string; showActions?: boolean; showBranchSwitcher?: boolean }
   | { kind: "inline_success"; id: string; messageId: string; turnStatusText: string; showActions?: boolean; showBranchSwitcher?: boolean }
   | { kind: "inline_cancelled"; id: string; messageId: string; text: string; showActions?: boolean; showBranchSwitcher?: boolean }
+  | { kind: "compact_starting"; id: string }
   | { kind: "compact"; id: string }
   | { kind: "system_message"; id: string; content: string; kindTag: string }
   | { kind: "spec_card"; id: string; spec: import("./types.js").SpecData }
@@ -815,6 +804,10 @@ function buildTimeline(msgs: Message[]): TimelineItem[] {
   if (st.branches.length > 1) {
     console.log("[buildTimeline] branches=%d active=%s msgs=%d", st.branches.length, st.activeBranchId?.slice(-8), msgs.length);
   }
+  for (let ci = 0; ci < st.compactStartingEvents.length; ci++) {
+    items.push({ kind: "compact_starting", id: `compact-starting-${ci}` });
+  }
+
   for (let ci = 0; ci < st.compactEvents.length; ci++) {
     items.push({ kind: "compact", id: `compact-${ci}` });
   }
@@ -1546,6 +1539,13 @@ export class Chat {
 
   private _parallelRenderTimer: number | null = null;
   private _pendingParallelRender = false;
+  /** True while building marker-pipeline HTML for a sub-agent transcript
+   *  (normal-chat sub-agent view, parallel tiles, or the automation detail
+   *  panel).  renderUserItem reads this so user bubbles render their full
+   *  content and hide rollback/delete actions even when the global
+   *  `getState().subAgentView` is not set (the automation detail never sets
+   *  it, because the automation panel is an independent view). */
+  private _subAgentRender = false;
 
   renderForce(): void {
     this.renderedKey = "";
@@ -1612,11 +1612,22 @@ export class Chat {
       // snapshot after its transcript has been resumed. Inline sub-agents use
       // the tool-call snapshot instead.
       const sessionBacked = (window as any).__activeSubAgentSessionId === state.sessionId;
-      // Prefer the inline snapshot when available; it survives navigation
-      // back to the parent session and re-entry into the sub-agent view.
-      let subMsgs = subTc.subAgentMessages?.length
-        ? subTc.subAgentMessages
-        : (sessionBacked ? state.messages : []);
+      // Prefer the live session snapshot while session-backed — the sub-agent
+      // session streams every text/thinking/tool delta into `state.messages`,
+      // so rendering from it makes the sub-agent view update incrementally
+      // instead of showing one frozen tool-call snapshot and then the whole
+      // transcript at once. Fall back to the inline snapshot when no session
+      // has been resumed (e.g. plain inline sub-agent, automation detail).
+      let subMsgs: Message[];
+      if (sessionBacked) {
+        subMsgs = state.messages.length > 0
+          ? state.messages
+          : (subTc.subAgentMessages ?? []);
+      } else {
+        subMsgs = subTc.subAgentMessages?.length
+          ? subTc.subAgentMessages
+          : [];
+      }
 
       // When the user clicked one card of a parallel agent run, show only
       // that single task's transcript instead of the combined run.
@@ -1637,7 +1648,7 @@ export class Chat {
         // (no user box, no assistant box) and show only the centered EA
         // loader.  Both bubbles will appear together once data lands.
         this.ml.innerHTML = "";
-        this.liveLoader = new EALoader(this.ml);
+        this.liveLoader = new EALoader(this.ml, { maxWidth: "50px" });
       } else if (subTc.isError) {
         const errorCode = String(subTc.result || "AUTOMATION_EXECUTION_FAILED");
         this.ml.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;">
@@ -1655,7 +1666,7 @@ export class Chat {
           this.ml.innerHTML = `<div class="sub-agent-result-fallback">${renderMarkdown(resultText)}</div>`;
         } else {
           // Finished (or never started) without producing any output.
-          this.ml.innerHTML = `<div class="sub-agent-empty"><p>${t("chat.noSubAgentOutput")}</p></div>`;
+          this.ml.innerHTML = `<div class="si-empty-center"><i data-lucide="bot" class="lucide"></i><span class="si-empty-title">${t("chat.noSubAgentOutput")}</span></div>`;
         }
       }
       createLucideIcons();
@@ -1711,7 +1722,13 @@ export class Chat {
     // user bubbles belong to the current turn (in-turn), not standalone
     // blocks. Pass treatAsSubAgent=true so buildTimelineHTML matches what
     // chat.render() produces when state.subAgentView is set.
-    const html = this.buildTimelineHTML(timeline, messages, true);
+    this._subAgentRender = true;
+    let html: string;
+    try {
+      html = this.buildTimelineHTML(timeline, messages, true);
+    } finally {
+      this._subAgentRender = false;
+    }
 const _vs = saveVideoPlayback();
     window.__stopAllMedia?.();
     container.innerHTML = html;
@@ -1924,9 +1941,15 @@ const _vs = saveVideoPlayback();
     for (const g of shown) {
       const isRunning = statusMeta(g.divider.taskStatus).cls === "is-running";
       const bodyTimeline = buildSubAgentTimeline(g.body, isRunning);
-      const bodyHtml = g.body.length > 0
-        ? this.buildTimelineHTML(bodyTimeline, g.body, true)
-        : `<div class="parallel-task-pending">${t("chat.taskWaiting") || "Waiting for output…"}</div>`;
+      this._subAgentRender = true;
+      let bodyHtml: string;
+      try {
+        bodyHtml = g.body.length > 0
+          ? this.buildTimelineHTML(bodyTimeline, g.body, true)
+          : `<div class="parallel-task-pending">${t("chat.taskWaiting") || "Waiting for output…"}</div>`;
+      } finally {
+        this._subAgentRender = false;
+      }
       tileBodies.push(bodyHtml);
     }
 
@@ -2322,6 +2345,7 @@ const _vs = saveVideoPlayback();
       case "assistant_text": return this.renderAssistantText(item);
       case "error_card": return this.renderErrorCard(item);
       case "warning_card": return this.renderWarningCard(item);
+      case "compact_starting": return this.renderCompactStartingCard(item);
       case "compact": return this.renderCompactCard(item);
       case "system_message": return this.renderSystemMessage(item);
       case "spec_card": return this.renderSpecCard(item);
@@ -2346,7 +2370,7 @@ const _vs = saveVideoPlayback();
   }
 
   private renderUserItem(item: Extract<TimelineItem, { kind: "user" }>): string {
-    const isSubAgent = !!getState().subAgentView;
+    const isSubAgent = !!getState().subAgentView || this._subAgentRender;
     const cmdMatch = item.content.match(/^\/(\w[\w-]*)(?:\s+(.*))?$/s);
     const cmdTagMatch = !cmdMatch ? item.content.match(/^<command>(\w[\w-]*)<\/command>$/s) : null;
     const effectiveCmdMatch = cmdMatch || cmdTagMatch;
@@ -2365,12 +2389,9 @@ const _vs = saveVideoPlayback();
       const cmd = findSlashCommand(cmdName);
       const cmdBadge = cmd
         ? `<span class="mode-chip" data-mode="${cmdName}"><i data-lucide="${cmd.icon}" class="chip-icon" style="width:12px;height:12px;"></i><span>${cmd.title}</span></span>`
-        : `<span class="mode-chip" data-mode="${cmdName}"><i data-lucide="command" class="chip-icon" style="width:12px;height:12px;"></i><span>${escapeHtml(cmdName)}</span></span>`;
+        : `<span class="mode-chip" data-mode="${cmdName}"><i data-lucide="wand-2" class="chip-icon" style="width:12px;height:12px;"></i><span>${escapeHtml(cmdName)}</span></span>`;
       return `<div class="user-item" data-user-idx="${item.index}">
-        <div class="user-bubble">
-          ${cmdBadge}
-          ${modeBadge}
-          ${displayContent}</div>
+        <div class="user-bubble">${cmdBadge}${modeBadge}${displayContent}</div>
         <div class="user-actions">
           <button class="btn-icon btn-icon--msg msg-copy-btn" data-tooltip="${t("chat.copy")}">
             <i data-lucide="copy" class="lucide lucide-sm"></i>
@@ -2388,8 +2409,7 @@ const _vs = saveVideoPlayback();
       ? escapeHtml(item.content)
       : (item.content.includes("<attach ") || item.content.includes("<terminal>") || item.content.includes("<mode>")) ? "" : escapeHtml(item.content);
     return `<div class="user-item" data-user-idx="${item.index}">
-      <div class="user-bubble">
-        ${modeBadge}${termCard}${fileCards}${contentHtml}</div>
+      <div class="user-bubble">${modeBadge}${termCard}${fileCards}${contentHtml}</div>
       <div class="user-actions">
         <button class="btn-icon btn-icon--msg msg-copy-btn" data-tooltip="${t("chat.copy")}">
           <i data-lucide="copy" class="lucide lucide-sm"></i>
@@ -2596,7 +2616,7 @@ const _vs = saveVideoPlayback();
     const id = `tc-${tc.id}`;
     const expanded = this.expandedItems.has(id);
     const term = tc.params.terminal as string | undefined;
-    const termIcon = term ? getToolIcon("bash", term) : "command";
+    const termIcon = "terminal";
     const summary = getToolSummary(tc);
     const hasResult = !!tc.result;
     const bodyHtml = hasResult ? getToolBodyText(tc) : "";
@@ -2799,6 +2819,19 @@ const _vs = saveVideoPlayback();
       <span class="branch-indicator">${activeIdx + 1} / ${sorted.length}</span>
       <button class="branch-next">›</button>
     </span>`;
+  }
+
+  private renderCompactStartingCard(item: Extract<TimelineItem, { kind: "compact_starting" }>): string {
+    // Non-expandable indicator — no summary, no expand/collapse, just a
+    // single-line status showing that context compression is in progress.
+    return `<div class="strip-item compact-starting-item" data-id="${item.id}">
+      <div class="strip" style="cursor:default">
+        <span class="icon-wrap">
+          <i data-lucide="file-archive" class="semantic" style="width:14px;height:14px"></i>
+        </span>
+        <span class="strip-name">${t("chat.compressingContext")}</span>
+      </div>
+    </div>`;
   }
 
   private renderCompactCard(item: Extract<TimelineItem, { kind: "compact" }>): string {

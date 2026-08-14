@@ -1142,14 +1142,21 @@ class BasePlatformAdapter(ABC):
             logger.error("[%s] Message handler error: %s %s", self.name, type(e).__name__, e)
         finally:
             if session_key:
+                # Keep _active_sessions active during drain to prevent concurrent processing.
+                # Drain all pending messages synchronously, looping until queue is empty
+                # (handles messages that arrive during draining).
+                while True:
+                    pending = self._pending_messages.pop(session_key, [])
+                    if not pending:
+                        break
+                    for pending_event in pending:
+                        try:
+                            result = self._message_handler(self, pending_event)
+                            if asyncio.iscoroutine(result) or asyncio.isfuture(result):
+                                await result
+                        except Exception as e:
+                            logger.error("[%s] Drain handler error: %s %s", self.name, type(e).__name__, e)
                 self._active_sessions.pop(session_key, None)
-                # Drain pending messages for this session
-                pending = self._pending_messages.pop(session_key, [])
-                for pending_event in pending:
-                    self._spawn_task(
-                        self.handle_message(pending_event),
-                        name=f"drain-{session_key}",
-                    )
 
     # -- Source construction --
 
@@ -1257,7 +1264,14 @@ class BasePlatformAdapter(ABC):
         """Spawn a background task tracked by this adapter."""
         task = asyncio.create_task(coro, name=name)
         self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        def _log_exception(t: asyncio.Task) -> None:
+            self._background_tasks.discard(t)
+            if not t.cancelled():
+                exc = t.exception()
+                if exc:
+                    logger.error("[%s] Background task %s failed: %s %s",
+                                 self.name, t.get_name(), type(exc).__name__, exc)
+        task.add_done_callback(_log_exception)
         return task
 
     async def _cancel_background_tasks(self) -> None:

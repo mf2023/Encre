@@ -59,15 +59,26 @@ esbuild.buildSync({
 });
 
 // Bundle the React renderer (browser target, automatic JSX runtime).
+// - format "esm" + splitting: dynamic import() of heavy on-demand libraries
+//   (xlsx/mammoth/pptx/xterm/chart.js) is split into separate chunk files
+//   that are only fetched when the feature is first used.
+// - minify: shrinks the entry bundle by ~55% (6.7MB -> ~3MB before
+//   splitting; much smaller after heavy libs move to lazy chunks).
 // Renderer
 esbuild.buildSync({
   entryPoints: [path.join(desktop, "renderer", "src", "app.ts")],
   bundle: true,
   platform: "browser",
   target: "es2022",
-  outfile: path.join(desktop, "renderer", "bundle.js"),
+  outdir: path.join(desktop, "renderer"),
+  entryNames: "bundle",
+  chunkNames: "chunks/[name]-[hash]",
   jsx: "automatic",
   jsxImportSource: "react",
+  format: "esm",
+  splitting: true,
+  minify: true,
+  legalComments: "inline",
 });
 
 // Copy xterm CSS

@@ -199,6 +199,7 @@ from encre.keybinds import (  # noqa: E402
     save_keybinds,
 )
 from encre.settings_manager import (  # noqa: E402
+    _GENERAL_SETTINGS_KEYS,
     load_custom_slash_commands,
     save_custom_slash_commands,
 )
@@ -208,6 +209,7 @@ from encre.utils.types import (  # noqa: E402
     BackendError,
     BackendFinish,
     CompactNotification,
+    CompactStarting,
     EngineInstallProgress,
     EngineInstallRequest,
     Finish,
@@ -548,7 +550,7 @@ class EncreWSHandler:
                     self._info = resumed
                     self._current_session_id = resumed.session_id
                     sess = resumed.agent.session
-                    sess.rebuild_artifacts_from_messages()
+                    sess.ensure_artifacts_from_messages()
                     # Re-apply the resumed session's persisted slash-command
                     # mode so config + derived plan_mode_active agree with
                     # metadata before the first run (and before _send_session_mode
@@ -563,6 +565,7 @@ class EncreWSHandler:
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=resumed.session_id,
                                      messages=msgs, plan_items=plan, artifacts=arts,
+                                     references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id)
                 else:
                     placeholder = self._get_or_create_session()
@@ -672,6 +675,19 @@ class EncreWSHandler:
                             logger.info("[configure] set %s: %r -> %r", key, old_val, value)
                         else:
                             logger.warning("[configure] key=%s NOT found on EncreConfig, skipping", key)
+                    # Sync general settings (language, language_preference, etc.) to
+                    # _default_config so newly created sessions (new_session / resume)
+                    # inherit them instead of reverting to "auto"/"zh".
+                    for key in _GENERAL_SETTINGS_KEYS:
+                        if key in msg.config and msg.config.get(key) != "" and hasattr(self._default_config, key):
+                            setattr(self._default_config, key, msg.config[key])
+                    # Force clear the live session's system-prompt cache whenever
+                    # language or language_preference changes, so the next turn
+                    # immediately rebuilds with the new language instruction.
+                    if {"language", "language_preference"} & set(msg.config.keys()):
+                        if hasattr(session, "agent") and hasattr(session.agent, "loop"):
+                            session.agent.loop._sys_prompt_cache = None
+                            logger.info("[configure] cleared _sys_prompt_cache due to language change")
                     if _rebuild:
                         session.agent.rebuild_backend()
                         logger.info("[configure] backend rebuilt due to key change")
@@ -1023,6 +1039,22 @@ class EncreWSHandler:
                     system_prompt = msg.system_prompt
                     mode_prompt = msg.mode_prompt or ""
 
+                    # Strip raw '<mode>...</mode>' markers from the prompt so
+                    # they never reach the model as literal user text.  Legacy
+                    # clients fabricate them when the user sends an empty
+                    # message inside a mode; the real mode lives in msg.mode /
+                    # msg.mode_prompt and is injected into the system prompt.
+                    _mode_marker = re.match(
+                        r"^\s*<mode>\s*([A-Za-z0-9_]+)\s*</mode>\s*$", str(prompt)
+                    )
+                    if _mode_marker and not msg.mode:
+                        msg.mode = _mode_marker.group(1)
+                    _stripped_prompt = re.sub(
+                        r"<mode>\s*[A-Za-z0-9_]+\s*</mode>", "", str(prompt)
+                    ).strip()
+                    if _stripped_prompt != prompt:
+                        prompt = _stripped_prompt
+
                     if msg.attachments:
                         # Check if the active model supports multimodal.
                         active_model = session.agent.config.get_active_model()
@@ -1042,9 +1074,15 @@ class EncreWSHandler:
                                             "type": "image_url",
                                             "image_url": {"url": f"data:{mime};base64,{data}"},
                                         })
+                                    else:
+                                        file_path = att.get("path", "")
+                                        if file_path:
+                                            content.append({"type": "text", "text": f"[Attached image: {att.get('name', 'file')} at `{file_path}`]"})
                                 else:
                                     name = att.get("name", "file")
-                                    content.append({"type": "text", "text": f"[Attached: {name}]"})
+                                    file_path = att.get("path", "")
+                                    path_info = f" at `{file_path}`" if file_path else ""
+                                    content.append({"type": "text", "text": f"[Attached: {name}{path_info}]"})
                             session.session.add_message("user", content)
                             # Set prompt empty since we already built the combined content
                             prompt = ""
@@ -2244,7 +2282,7 @@ class EncreWSHandler:
                         index_status=idx_status, index_files=idx_files)
 
                     sess = info.agent.session
-                    sess.rebuild_artifacts_from_messages()
+                    sess.ensure_artifacts_from_messages()
                     msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=info.session_id, messages=msgs,
@@ -2305,7 +2343,7 @@ class EncreWSHandler:
                     self._persist_config(info)
                     await self._send(ws, "workspace_closed")
                     sess = info.agent.session
-                    sess.rebuild_artifacts_from_messages()
+                    sess.ensure_artifacts_from_messages()
                     msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=info.session_id, messages=msgs,
@@ -2655,7 +2693,7 @@ class EncreWSHandler:
                         session.is_running = True
                     sess = session.agent.session
                     sess.mark_messages_dirty()
-                    sess.rebuild_artifacts_from_messages()
+                    sess.ensure_artifacts_from_messages()
                     msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
                     await self._send(ws, "session_ready", session_id=session.session_id, messages=msgs,
@@ -4398,18 +4436,25 @@ class EncreWSHandler:
         elif isinstance(event, AssistantBoundary):
             await self._send(ws, "assistant_boundary", session_id=sid)
 
+        elif isinstance(event, CompactStarting):
+            await self._send(ws, "compact_starting", session_id=sid)
+
         elif isinstance(event, CompactNotification):
             # Send the compacted message list so the frontend's state
             # matches the backend. Without this, the frontend still shows
             # compacted-away messages, leading to "Message not found"
             # errors when the user tries to rollback to them.
             compact_msgs = self._renderer_session_messages(_info.agent.session) if _info else []
+            compact_session = _info.agent.session if _info else None
             await self._send(ws, "compact",
                 old_count=event.old_count,
                 new_count=event.new_count,
                 old_tokens=event.old_tokens,
                 new_tokens=event.new_tokens,
                 messages=compact_msgs,
+                plan_items=compact_session.plan_items if compact_session else None,
+                artifacts=compact_session.artifacts if compact_session else None,
+                references=compact_session.references if compact_session else None,
                 session_id=sid)
             await _send_agent_state()
         elif isinstance(event, SystemMessage):
@@ -4528,6 +4573,7 @@ class EncreWSHandler:
             finish_msgs = []
             if event.compacted and _info:
                 finish_msgs = self._renderer_session_messages(_info.agent.session)
+            finish_session = _info.agent.session if _info else None
             await self._send(ws, "finish", reason=event.reason, usage=event.usage,
                              error=event.error,
                              error_code=event.error_code or "",
@@ -4535,6 +4581,9 @@ class EncreWSHandler:
                              assistant_message_id=last_msg_id,
                              compacted=event.compacted,
                              messages=finish_msgs if finish_msgs else None,
+                             plan_items=finish_session.plan_items if finish_session else None,
+                             artifacts=finish_session.artifacts if finish_session else None,
+                             references=finish_session.references if finish_session else None,
                              session_id=sid)
             await _send_agent_state()
             # Push updated context usage so the canvas panel stays in sync
@@ -4553,8 +4602,9 @@ class EncreWSHandler:
 def _format_attachments(attachments: list[dict]) -> str:
     """Format attachment list into a structured markdown block for the agent.
 
-    Text files (is_binary=False) include their content in a fenced code block.
-    Binary files are listed by name and size only.
+    Each file is listed with its path so the agent can use tools (file_read,
+    pdf, document, etc.) to read the file from disk.  Binary files include
+    their path; text files also include inline content.
     """
     if not attachments:
         return ""
@@ -4565,14 +4615,17 @@ def _format_attachments(attachments: list[dict]) -> str:
         size = att.get("size", 0)
         is_binary = att.get("is_binary", True)
         content = att.get("content", "")
+        file_path = att.get("path", "")
 
         size_str = _fmt_size(size)
+        path_str = f" `{file_path}`" if file_path else ""
+
         if is_binary or not content.strip():
-            parts.append(f"- **{name}** (binary, {size_str})")
+            parts.append(f"- **{name}** ({size_str},{path_str})")
         else:
             ext = os.path.splitext(name)[1].lower()
             lang = _ext_to_lang(ext)
-            parts.append(f"- **{name}** ({size_str}):\n```{lang}\n{content.rstrip()}\n```")
+            parts.append(f"- **{name}** ({size_str},{path_str}):\n```{lang}\n{content.rstrip()}\n```")
 
     if not parts:
         return ""

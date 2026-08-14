@@ -122,15 +122,28 @@ class EventRouter:
         self._connected_adapters = names
 
     @asynccontextmanager
-    async def iclaw_context(self) -> AsyncIterator[None]:
+    async def iclaw_context(self, timeout: float | None = None) -> AsyncIterator[None]:
         """Context manager: acquire iClaw lock to serialize concurrent iClaw operations.
 
         Sessions are saved to the main sessions directory -- the same place desktop
         client sessions live -- so the frontend sees all conversations regardless of
         source (adapter, iClaw desktop, or normal desktop).
+
+        If *timeout* is provided, the lock acquisition will wait at most that many
+        seconds before proceeding without the lock (to avoid blocking adapter
+        messages indefinitely behind a desktop session).
         """
-        async with self._iclaw_lock:
-            yield
+        if timeout is not None:
+            try:
+                async with asyncio.timeout(timeout):
+                    async with self._iclaw_lock:
+                        yield
+            except asyncio.TimeoutError:
+                logger.warning("[router] iclaw_context timeout after %.1fs, proceeding without lock", timeout)
+                yield
+        else:
+            async with self._iclaw_lock:
+                yield
 
     async def submit(
         self,

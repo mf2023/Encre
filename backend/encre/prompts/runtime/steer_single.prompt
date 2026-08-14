@@ -1,0 +1,8 @@
+---
+name: steer_single
+priority: 100
+condition: ~
+---
+
+[User instruction mid-conversation]
+{{message}}

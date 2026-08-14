@@ -575,6 +575,52 @@ class EncreSession:
             if bid in self.branches:
                 self.branches[bid].artifacts = arts
 
+    def ensure_artifacts_from_messages(self) -> None:
+        """Rebuild artifacts only when none were persisted.
+
+        Artifacts loaded from the summary DB / meta file are authoritative;
+        rebuilding from (potentially compacted) messages would drop the file
+        operations that were compacted away.  This fallback exists purely for
+        legacy sessions that never persisted artifacts.
+        """
+        if not self.artifacts:
+            self.rebuild_artifacts_from_messages()
+
+    def prune_phantom_references(self) -> None:
+        """Drop references whose memory file no longer exists on disk.
+
+        Old sessions can contain references created against a memory file
+        that was later deleted, or that never existed because the model passed
+        a name that did not match the on-disk (sanitized) filename.  Those
+        phantom entries pollute the summary panel, so filter them out after
+        loading.  Only memory file references are checked; web/MCP/summary
+        references have no on-disk counterpart.
+        """
+        if not self.references:
+            return
+        from encre.config import get_data_dir
+
+        memory_dir = get_data_dir() / "memory"
+        keep: list[dict[str, Any]] = []
+        for ref in self.references:
+            tool = str(ref.get("tool", "")).lower()
+            if tool.startswith("memory_") and tool not in (
+                "memory_search",
+                "memory_profile",
+            ):
+                fn = str(ref.get("summary", ""))
+                for prefix in ("Memory: ", "Read memory: ", "Deleted memory: "):
+                    if fn.startswith(prefix):
+                        fn = fn[len(prefix):]
+                        break
+                if not fn.endswith(".md"):
+                    fn += ".md"
+                if not (memory_dir / fn).is_file():
+                    continue
+            keep.append(ref)
+        if len(keep) != len(self.references):
+            self.references = keep
+
     def _get_next_seq(self, branch_id: str) -> int:
         return self._branch_last_seq.get(branch_id, -1) + 1
 
@@ -1278,6 +1324,11 @@ class EncreSession:
         # Write meta
         self._save_meta_file(d)
 
+        # Persist summary-panel data (plan/artifacts/references) into the
+        # per-session SQLite store.  These tables are never rebuilt from
+        # (compacted) messages, so they survive context compaction.
+        self._save_summary_db(d)
+
     @classmethod
     def load_from_dir(cls, dirpath: str, config: EncreConfig) -> "EncreSession":
         """Load a session from a directory of turn files."""
@@ -1352,9 +1403,24 @@ class EncreSession:
                 continue
 
         session.messages = _inject_orphan_tool_tombstones(messages)
+        # Prefer the per-session SQLite store for summary-panel data: it is
+        # written on every save and never derived from (compacted) messages.
+        # Older sessions fall back to the values persisted in the meta file,
+        # and only legacy sessions with no persisted artifacts fall through to
+        # message reconstruction.
+        try:
+            db_plan, db_arts, db_refs = session._load_summary_db(d)
+            if db_plan or db_arts or db_refs:
+                session.plan_items = db_plan or session.plan_items
+                session.artifacts = db_arts or session.artifacts
+                session.references = db_refs or session.references
+        except Exception:
+            logger.debug("[session] no summary db for %s, using meta values", dirpath)
+        session.prune_phantom_references()
         # Rebuild artifacts from authoritative message data rather than
-        # relying on potentially-buggy streaming artifact creation.
-        session.rebuild_artifacts_from_messages()
+        # relying on potentially-buggy streaming artifact creation -- only
+        # when nothing was persisted (legacy sessions).
+        session.ensure_artifacts_from_messages()
         session.rebuild_runtime_caches()
         return session
 
@@ -1600,6 +1666,34 @@ class EncreSession:
         with contextlib.suppress(Exception):
             payload = encrypt(payload)
         _atomic_write_text(dirpath / "meta.json", payload)
+
+    def _save_summary_db(self, dirpath: pathlib.Path) -> None:
+        """Write summary-panel data into the per-session SQLite store."""
+        from encre.session_db import SessionDB
+
+        try:
+            db = SessionDB(session_dir=dirpath)
+            try:
+                db.save(self.plan_items, self.artifacts, self.references)
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("[session] failed to write summary db in %s", dirpath)
+
+    def _load_summary_db(self, dirpath: pathlib.Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        """Read summary-panel data from the per-session SQLite store.
+
+        Returns ``(plan_items, artifacts, references)`` or raises
+        ``FileNotFoundError``/any sqlite error so the caller can fall back to
+        the meta file (older sessions predate the summary DB).
+        """
+        from encre.session_db import SessionDB
+
+        db = SessionDB(session_dir=dirpath)
+        try:
+            return db.load()
+        finally:
+            db.close()
 
     def _partition_messages_into_turns(self) -> list[list[dict[str, Any]]]:
         """Split self.messages into per‑turn chunks.

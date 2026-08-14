@@ -66,7 +66,7 @@ const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
     name: "spec",
     title: t("slashCommands.specTitle"),
     description: t("slashCommands.specDesc"),
-    icon: "list-checks",
+    icon: "clipboard-list",
     kind: "mode",
   },
   {
@@ -126,12 +126,17 @@ export interface ServerSlashCommand {
 function normalizeServerCommand(s: ServerSlashCommand): SlashCommand {
   const id = s.name;
   const kind: SlashCommandKind = s.kind === "mode" ? "mode" : "action";
+  const rawIcon = (s.icon || "wand-2").trim();
   return {
     id,
     name: s.name,
     title: s.title,
     description: s.description,
-    icon: s.icon || "command",
+    // User-defined commands get the app-wide "skills" glyph (wand-2) by
+    // default, mirroring the sidebar Skills panel. ``command`` was the
+    // old macOS ⌘ default stored in configs/files — normalize it away so
+    // it never leaks into the UI again.
+    icon: rawIcon === "command" ? "wand-2" : (rawIcon || "wand-2"),
     kind,
     prompt: s.prompt,
     source: s.source || "user",

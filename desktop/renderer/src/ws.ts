@@ -37,6 +37,13 @@ type EventHandler = (event: ServerEvent) => void;
 
 const WS_PORT = 7110;
 
+/** How long the initial connect() keeps retrying while the backend boots. */
+const CONNECT_TIMEOUT_MS = 45_000;
+
+/** True while the initial connect() call is retrying — suppresses the
+ *  background scheduleReconnect() path so it cannot double-connect. */
+let _initialConnect = false;
+
 let ws: WebSocket | null = null;
 let handler: EventHandler | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -54,6 +61,9 @@ async function drainQueue(): Promise<void> {
 
 /**
  * Opens the WebSocket connection and wires up event/lifecycle handlers.
+ * Retries automatically (up to CONNECT_TIMEOUT_MS) so a window that
+ * appears before the Python backend finishes booting never surfaces a
+ * spurious connection error.
  *
  * @param onEvent - Handler invoked for every (decrypted) server event.
  */
@@ -67,18 +77,48 @@ export async function connect(onEvent: EventHandler): Promise<void> {
   }
 
   const url = `ws://localhost:${WS_PORT}/ws`;
-
+  _initialConnect = true;
   try {
-    ws = new WebSocket(url);
+    const deadline = Date.now() + CONNECT_TIMEOUT_MS;
+    for (;;) {
+      const opened = await openSocket(url);
+      if (opened) break;
+      if (Date.now() >= deadline) break;
+      await new Promise<void>((r) => setTimeout(r, 400));
+    }
+  } catch (e) {
+    console.warn("[ws] connect failed:", e);
+  } finally {
+    _initialConnect = false;
+    // If we gave up, keep the usual reconnect machinery retrying in the
+    // background (matches the previous behaviour after a failed connect).
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      scheduleReconnect();
+    }
+  }
+}
 
-    ws.addEventListener("open", () => {
+/**
+ * Creates a single WebSocket attempt and wires up the event handlers.
+ * Resolves true once the socket is open, false if the attempt failed.
+ */
+function openSocket(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const socket = new WebSocket(url);
+    ws = socket;
+
+    socket.addEventListener("open", () => {
+      if (settled) return;
+      settled = true;
       handler?.({ type: "pong" });
       setConnected(true);
       startPing();
       drainQueue();
+      resolve(true);
     });
 
-    ws.addEventListener("message", async (evt: MessageEvent<string>) => {
+    socket.addEventListener("message", async (evt: MessageEvent<string>) => {
       try {
         let raw = evt.data;
         let event: ServerEvent;
@@ -103,39 +143,22 @@ export async function connect(onEvent: EventHandler): Promise<void> {
       }
     });
 
-    ws.addEventListener("close", () => {
+    socket.addEventListener("close", () => {
       stopPing();
       setConnected(false);
-      scheduleReconnect();
+      if (!_initialConnect) {
+        scheduleReconnect();
+      }
+      if (!settled) {
+        settled = true;
+        resolve(false);
+      }
     });
 
-    ws.addEventListener("error", () => {
-      ws?.close();
+    socket.addEventListener("error", () => {
+      socket.close();
     });
-
-    // Wait for the WebSocket to actually open before resolving
-    await new Promise<void>((resolve) => {
-      const onOpen = () => {
-        cleanup();
-        resolve();
-      };
-      const onError = () => {
-        cleanup();
-        // Reconnect will be scheduled by the close handler
-        ws?.close();
-        resolve();
-      };
-      const cleanup = () => {
-        ws?.removeEventListener("open", onOpen);
-        ws?.removeEventListener("error", onError);
-      };
-      ws?.addEventListener("open", onOpen, { once: true });
-      ws?.addEventListener("error", onError, { once: true });
-    });
-  } catch (e) {
-    console.warn("[ws] connect failed:", e);
-    scheduleReconnect();
-  }
+  });
 }
 
 /**

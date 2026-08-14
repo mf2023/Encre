@@ -67,19 +67,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
-try:
-    import aiohttp
-    AIOHTTP_AVAILABLE = True
-except ImportError:
-    AIOHTTP_AVAILABLE = False
-    aiohttp = None  # type: ignore[assignment]
+import aiohttp
+import httpx
 
-try:
-    import httpx
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
-    httpx = None  # type: ignore[assignment]
+AIOHTTP_AVAILABLE = True
+HTTPX_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.helpers import MessageDeduplicator
@@ -1102,10 +1094,7 @@ class WeComAdapter(BasePlatformAdapter):
         if len(key) != 32:
             raise ValueError(f"Invalid WeCom AES key length: expected 32 bytes, got {len(key)}")
 
-        try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-        except ImportError as exc:  # pragma: no cover - dependency is environment-specific
-            raise RuntimeError("cryptography is required for WeCom media decryption") from exc
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
         cipher = Cipher(algorithms.AES(key), modes.CBC(key[:16]))
         decryptor = cipher.decryptor()
@@ -1592,12 +1581,8 @@ def qr_scan_for_bot_info(
     admin-console web UI's bot-creation flow and may change without notice.
     The same pattern is used by the feishu/dingtalk QR setup wizards.
     """
-    try:
-        import urllib.request
-        import urllib.parse
-    except ImportError:  # pragma: no cover
-        logger.error("urllib is required for WeCom QR scan")
-        return None
+    import urllib.request
+    import urllib.parse
 
     generate_url = f"{_QR_GENERATE_URL}?source=encre"
 
@@ -1626,17 +1611,12 @@ def qr_scan_for_bot_info(
     # ── Step 2: Render QR code in terminal ──
     print()
     qr_rendered = False
-    try:
-        import qrcode as _qrcode
-        qr = _qrcode.QRCode()
-        qr.add_data(auth_url)
-        qr.make(fit=True)
-        qr.print_ascii(invert=True)
-        qr_rendered = True
-    except ImportError:
-        pass
-    except Exception:
-        pass
+    import qrcode as _qrcode
+    qr = _qrcode.QRCode()
+    qr.add_data(auth_url)
+    qr.make(fit=True)
+    qr.print_ascii(invert=True)
+    qr_rendered = True
 
     page_url = f"{_QR_CODE_PAGE}{urllib.parse.quote(scode)}"
     if qr_rendered:

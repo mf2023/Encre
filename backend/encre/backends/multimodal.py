@@ -998,10 +998,7 @@ class MultimodalMixin:
         package is not installed.  The caller can wire up an alternative
         transport (websockets, aiohttp, etc.) themselves.
         """
-        try:
-            from httpx_ws import aconnect_ws  # type: ignore[import-not-found]
-        except Exception:
-            return None
+        from httpx_ws import aconnect_ws  # type: ignore[import-not-found]
 
         ws_url = self._multimodal_base().replace("https://", "wss://").replace(
             "http://", "ws://"

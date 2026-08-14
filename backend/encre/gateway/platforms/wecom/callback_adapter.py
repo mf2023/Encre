@@ -72,29 +72,14 @@ from typing import Any, Dict, List, Optional
 # defusedxml to block billion-laughs / entity-expansion (and XXE) DoS. The
 # parsing API (fromstring) is a drop-in for the stdlib calls used below;
 # response-building XML lives in wecom_crypto.py and is not parsed here.
-try:
-    import defusedxml.ElementTree as ET
+import defusedxml.ElementTree as ET
+DEFUSEDXML_AVAILABLE = True
 
-    DEFUSEDXML_AVAILABLE = True
-except ImportError:
-    ET = None  # type: ignore[assignment]
-    DEFUSEDXML_AVAILABLE = False
+from aiohttp import web
+AIOHTTP_AVAILABLE = True
 
-try:
-    from aiohttp import web
-
-    AIOHTTP_AVAILABLE = True
-except ImportError:
-    web = None  # type: ignore[assignment]
-    AIOHTTP_AVAILABLE = False
-
-try:
-    import httpx
-
-    HTTPX_AVAILABLE = True
-except ImportError:
-    httpx = None  # type: ignore[assignment]
-    HTTPX_AVAILABLE = False
+import httpx
+HTTPX_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.base import BasePlatformAdapter, MessageEvent, MessageType, SendResult

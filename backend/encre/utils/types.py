@@ -288,6 +288,15 @@ class PlanReviewData:
 
 
 @dataclass
+class CompactStarting:
+    """Signals that a context compaction is about to begin.
+
+    The frontend should show a non-expandable compression indicator
+    while the model pauses to compact the context.
+    """
+
+
+@dataclass
 class CompactNotification:
     """Reports the before/after message and token counts of a compaction."""
     old_count: int
@@ -401,7 +410,7 @@ class WorkflowCompletedEvent:
     total_duration: float = 0.0
 
 
-AgentEvent = TextDelta | ThinkingDelta | ToolCallStart | ToolCallDelta | ToolCallEnd | ToolProgress | ToolResult | PermissionRequest | QuestionRequest | Finish | Artifact | PlanUpdate | CompactNotification | EditProposal | AssistantBoundary | WorkflowStartedEvent | WorkflowTaskEvent | WorkflowCompletedEvent | SystemMessage
+AgentEvent = TextDelta | ThinkingDelta | ToolCallStart | ToolCallDelta | ToolCallEnd | ToolProgress | ToolResult | PermissionRequest | QuestionRequest | Finish | Artifact | PlanUpdate | CompactStarting | CompactNotification | EditProposal | AssistantBoundary | WorkflowStartedEvent | WorkflowTaskEvent | WorkflowCompletedEvent | SystemMessage
 
 
 # ── Multimodal Content Blocks ──────────────────────────────────────

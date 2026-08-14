@@ -27,7 +27,53 @@ import logging
 import re
 from typing import Any
 
+from encre.prompts.loader import PromptLoader
+
 logger = logging.getLogger(__name__)
+
+# Prompt copy for runtime-injected messages (grace calls, auto-continue,
+# delegation guidance, steer injections, thinking prefills, standing-orders
+# reminders) lives in prompts/runtime/ -- never hardcoded in Python.  Runtime
+# texts are static per process; the loader already caches them, so callers
+# may invoke the loaders freely on every turn.
+
+_RUNTIME_LOADER: PromptLoader | None = None
+
+
+def _get_runtime_loader() -> PromptLoader:
+    global _RUNTIME_LOADER
+    if _RUNTIME_LOADER is None:
+        _RUNTIME_LOADER = PromptLoader()
+    return _RUNTIME_LOADER
+
+
+def _load_runtime_text(name: str, **ctx: Any) -> str:
+    """Load a runtime prompt body (stripping frontmatter) from ``runtime/``.
+
+    Falls back to an empty string when the file is missing so callers can
+    degrade gracefully instead of raising mid-loop.
+    """
+    try:
+        if ctx:
+            return _get_runtime_loader().load_with_context(name, category="runtime", **ctx)
+        return _get_runtime_loader().load(name, category="runtime")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("[runtime_prompt] load '%s' failed: %s", name, exc)
+        return ""
+
+
+def _load_runtime_meta(name: str) -> dict[str, Any]:
+    """Load a runtime prompt's frontmatter metadata from ``runtime/``.
+
+    Returns an empty dict when the file is missing or has no frontmatter so
+    the checkpoint gate can degrade to safe defaults.
+    """
+    try:
+        meta, _body = _get_runtime_loader().load_full(name, category="runtime")
+        return meta
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("[runtime_prompt] meta '%s' failed: %s", name, exc)
+        return {}
 
 # ── Limits ────────────────────────────────────────────────────────────
 MAX_EMPTY_RESPONSE_RETRIES = 2
@@ -595,14 +641,18 @@ def build_thinking_prefill(
     if not enabled:
         return None
 
-    # Build a brief thinking hint based on the prompt
+    # Build a brief thinking hint based on the prompt.  The hint copy lives
+    # in prompts/runtime/ (category "runtime"), never hardcoded in Python.
     if not hint:
         if "?" in prompt:
-            hint = "Let me analyze this question step by step."
+            hint = _load_runtime_text("thinking_prefill_question") \
+                or "Let me analyze this question step by step."
         elif "error" in prompt.lower() or "bug" in prompt.lower():
-            hint = "Let me investigate this issue systematically."
+            hint = _load_runtime_text("thinking_prefill_bug") \
+                or "Let me investigate this issue systematically."
         else:
-            hint = "Let me think about the best approach."
+            hint = _load_runtime_text("thinking_prefill_default") \
+                or "Let me think about the best approach."
 
     return hint
 
@@ -676,14 +726,15 @@ class BudgetState:
 
 def build_grace_message(remaining_work: str = "") -> str:
     """Build the grace call message when budget is exhausted."""
-    msg = (
+    msg = _load_runtime_text("grace_message") or (
         "Token budget exhausted. This is a grace call - please wrap up your "
         "current task concisely. Provide a summary of what was done and "
         "what remains."
     )
+    msg = msg.replace("{{remaining_work_suffix}}", "")
     if remaining_work:
         msg += f"\n\nRemaining work: {remaining_work}"
-    return msg
+    return msg.strip()
 
 
 def build_auto_continue_message() -> str:
@@ -694,7 +745,7 @@ def build_auto_continue_message() -> str:
     still has budget, inject a concise nudge so it keeps going rather than
     forcing the user to say "continue".
     """
-    return (
+    return _load_runtime_text("auto_continue_message") or (
         "[Continue from where you left off. Do NOT repeat work already done. "
         "Keep going with the next task or step.]"
     )
@@ -712,7 +763,7 @@ def build_delegation_guidance() -> str:
     This is guidance, not enforcement: the model retains full tool access
     but is steered toward good delegation hygiene on large multi-step work.
     """
-    return (
+    return _load_runtime_text("delegation_guidance") or (
         "=== Delegation Guidance (coordinator mode) ===\n"
         "For complex, multi-step, or parallelisable work, DELEGATE to sub-agents "
         "via the `agent` or `swarm` tools instead of doing everything yourself.\n"
@@ -808,6 +859,128 @@ def build_steer_injection(steer_messages: list[str]) -> str:
     if not steer_messages:
         return ""
     if len(steer_messages) == 1:
-        return f"[User instruction mid-conversation]\n{steer_messages[0]}"
+        return _load_runtime_text("steer_single", message=steer_messages[0]) or \
+            f"[User instruction mid-conversation]\n{steer_messages[0]}"
     parts = "\n".join(f"- {m}" for m in steer_messages)
-    return f"[User instructions mid-conversation]\n{parts}"
+    return _load_runtime_text("steer_multi", items=parts) or \
+        f"[User instructions mid-conversation]\n{parts}"
+
+
+# ── 12. Standing Orders Reminder ──────────────────────────────────────
+# A per-turn reminder of the binding pre-action governance constraints
+# (recall memory first, clarify ambiguity, checkpoint long chains, disclose
+# assumptions, honour authority precedence).  Merged into the LAST user
+# message on fresh user turns so the model re-arms its constraints right
+# before it starts responding -- mirroring the existing guidance-merge
+# pattern used for evolution feedback and advisor notes.
+
+def build_standing_orders_reminder() -> str:
+    """Build the standing-orders reminder injected on fresh user turns.
+
+    The reminder text lives in ``prompts/reminders/standing_orders_reminder.prompt``
+    (category ``reminders``) so prompt copy is never hardcoded in Python.
+    Returns an empty string when the file cannot be loaded so the loop
+    degrades gracefully.
+    """
+    try:
+        return _get_runtime_loader().load("standing_orders_reminder", category="reminders")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("[standing_orders] reminder load failed: %s", exc)
+        return ""
+
+
+def append_to_last_user_message(
+    messages: list[dict[str, Any]], suffix: str
+) -> None:
+    """Append *suffix* to the last ``user`` message in *messages* in place.
+
+    Uses a shallow copy of the target dict so the original session messages
+    are not mutated (mirrors ``_merge_into_last_user`` in loop.py).  No-op
+    when no user message exists or *suffix* is empty.
+    """
+    if not suffix or not messages:
+        return
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            msg = dict(messages[i])
+            existing = str(msg.get("content") or "")
+            msg["content"] = existing + "\n\n" + suffix
+            messages[i] = msg
+            return
+
+
+# ── 13. Checkpoint Hard-Gate ─────────────────────────────────────────
+# Code-level enforcement of the mandatory checkpoint gate (Gate 4): after a
+# bounded run of consecutive tool-call steps with no fresh user message, the
+# loop injects a checkpoint user message that hands control back to the user.
+# The prompt copy lives in prompts/runtime/checkpoint_message.prompt.  The
+# threshold auto-relaxes when the user has explicitly authorised a hands-off
+# run (matched against patterns in prompts/runtime/
+# autonomous_authorization_patterns.prompt).
+
+# Consecutive tool-call steps (assistant turns that invoked tools) allowed
+# before the loop forces a checkpoint.  Mirrors the "about 5 tool-call steps"
+# wording in mandatory_constraints.prompt and standing_orders_reminder.prompt.
+CHECKPOINT_TOOL_STEP_THRESHOLD = 5
+
+
+def build_checkpoint_message(steps: int) -> str:
+    """Build the checkpoint user message handed to the model.
+
+    Text lives in ``prompts/runtime/checkpoint_message.prompt`` (category
+    ``runtime``) so prompt copy is never hardcoded in Python.  ``{{steps}}``
+    is substituted with the actual step count.  Returns an empty string when
+    the file cannot be loaded so the loop degrades gracefully.
+    """
+    try:
+        return _get_runtime_loader().load_with_context(
+            "checkpoint_message", category="runtime", steps=str(steps),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("[checkpoint] message load failed: %s", exc)
+        return ""
+
+
+def _checkpoint_authorization_patterns() -> list[str]:
+    """Return the hands-off authorization phrases from the runtime prompt file."""
+    meta = _load_runtime_meta("autonomous_authorization_patterns")
+    patterns = meta.get("patterns")
+    if isinstance(patterns, list):
+        return [str(p).lower() for p in patterns if str(p).strip()]
+    return []
+
+
+def checkpoint_gate_relaxed(latest_user_prompt: str) -> bool:
+    """Return True when the user has explicitly authorised a hands-off run.
+
+    Matches the latest user instruction (lowercased) against the phrases in
+    ``prompts/runtime/autonomous_authorization_patterns.prompt``.  A match
+    means the checkpoint threshold auto-relaxes: the user asked the agent to
+    work unattended, so pausing every ~5 steps would fight their explicit
+    intent.  The match is deliberately conservative (specific phrases only)
+    so ordinary instructions do not accidentally disable the gate.
+    """
+    if not latest_user_prompt:
+        return False
+    lowered = latest_user_prompt.lower()
+    return any(p in lowered for p in _checkpoint_authorization_patterns())
+
+
+def count_consecutive_tool_steps(messages: list[dict[str, Any]]) -> int:
+    """Count consecutive assistant tool-calling turns since the last user message.
+
+    Walks *messages* backwards from the end, counting assistant messages that
+    carried ``tool_calls``, stopping at the first ``user`` message (the most
+    recent user turn resets the run).  Tool-result entries and text-only
+    assistant messages are skipped -- only turns that actually invoked tools
+    count as steps.  This is the code-side mirror of the prompt-level
+    checkpoint gate.
+    """
+    steps = 0
+    for msg in reversed(messages):
+        role = msg.get("role")
+        if role == "user":
+            break
+        if role == "assistant" and msg.get("tool_calls"):
+            steps += 1
+    return steps

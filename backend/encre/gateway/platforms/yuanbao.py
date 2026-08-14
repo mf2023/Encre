@@ -65,13 +65,9 @@ import sys
 
 import httpx
 
-try:
-    import websockets
-    import websockets.exceptions
-    WEBSOCKETS_AVAILABLE = True
-except ImportError:
-    WEBSOCKETS_AVAILABLE = False
-    websockets = None  # type: ignore[assignment]
+import websockets
+import websockets.exceptions
+WEBSOCKETS_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.base import (

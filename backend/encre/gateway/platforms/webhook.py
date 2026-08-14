@@ -69,13 +69,8 @@ import time
 from collections import deque
 from typing import Any, Deque, Dict, List, Optional
 
-try:
-    from aiohttp import web
-
-    AIOHTTP_AVAILABLE = True
-except ImportError:
-    AIOHTTP_AVAILABLE = False
-    web = None  # type: ignore[assignment]
+from aiohttp import web
+AIOHTTP_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.base import (

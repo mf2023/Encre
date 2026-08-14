@@ -233,10 +233,7 @@ async def _shutdown_abandoned_app(app) -> None:
 
 try:
     from telegram import Update, Bot, Message, InlineKeyboardButton, InlineKeyboardMarkup
-    try:
-        from telegram import LinkPreviewOptions
-    except ImportError:
-        LinkPreviewOptions = None
+    from telegram import LinkPreviewOptions
     from telegram.ext import (
         Application,
         CommandHandler,
@@ -413,10 +410,7 @@ def check_telegram_requirements() -> bool:
     try:
         from telegram import Update as _Update, Bot as _Bot, Message as _Message
         from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
-        try:
-            from telegram import LinkPreviewOptions as _LPO
-        except ImportError:
-            _LPO = None
+        from telegram import LinkPreviewOptions as _LPO
         from telegram.ext import (
             Application as _App, CommandHandler as _CH,
             CallbackQueryHandler as _CQH,
@@ -4085,15 +4079,9 @@ class TelegramAdapter(BasePlatformAdapter):
             requested_thread_id = self._message_thread_id_for_send(thread_id)
             used_thread_fallback = False
             
-            try:
-                from telegram.error import NetworkError as _NetErr
-            except ImportError:
-                _NetErr = OSError  # type: ignore[misc,assignment]
+            from telegram.error import NetworkError as _NetErr
 
-            try:
-                from telegram.error import BadRequest as _BadReq
-            except ImportError:
-                _BadReq = None  # type: ignore[assignment,misc]
+            from telegram.error import BadRequest as _BadReq
 
             try:
                 from telegram.error import TimedOut as _TimedOut

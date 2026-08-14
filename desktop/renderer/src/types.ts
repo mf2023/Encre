@@ -50,6 +50,7 @@ export type ServerEvent =
   | PlanResolved
   | ArtifactsUpdate
   | AssistantBoundaryEvent
+  | CompactStartingEvent
   | CompactEvent
   | SystemMessageEvent
   | ModelsList
@@ -990,6 +991,10 @@ export interface SessionEntryData {
   created_at: number;
   last_active: number;
   is_running: boolean;
+  /** True while the session is paused waiting for user approval (e.g. a
+   *  runtime tool-permission prompt). Rendered as a yellow breathing light
+   *  in both the sidebar and the tray. */
+  awaiting_approval?: boolean;
   preview?: string;
   name?: string;
   channel?: string;
@@ -1595,6 +1600,7 @@ export interface SessionSnapshot {
   artifacts: ArtifactItem[];
   references: ReferenceItem[];
   compactEvents: CompactInfo[];
+  compactStartingEvents: CompactStartingInfo[];
   systemMessages: SystemMessageInfo[];
   branches: BranchMeta[];
   activeBranchId: string;
@@ -1657,6 +1663,7 @@ export interface AppState {
   artifacts: ArtifactItem[];
   references: ReferenceItem[];
   compactEvents: CompactInfo[];
+  compactStartingEvents: CompactStartingInfo[];
   systemMessages: SystemMessageInfo[];
   memoryList: MemoryEntry[];
   memoryDetail: { path: string; content: string; error?: string } | null;
@@ -1886,6 +1893,11 @@ export interface AssistantBoundaryEvent {
   session_id?: string;
 }
 
+export interface CompactStartingEvent {
+  type: "compact_starting";
+  session_id?: string;
+}
+
 export interface CompactEvent {
   type: "compact";
   old_count: number;
@@ -1899,6 +1911,10 @@ export interface SystemMessageEvent {
   content: string;
   kind: string;
   session_id: string;
+}
+
+export interface CompactStartingInfo {
+  timestamp: number;
 }
 
 export interface CompactInfo {
@@ -1997,6 +2013,7 @@ export function createEmptySessionSnapshot(): SessionSnapshot {
     artifacts: [],
     references: [],
     compactEvents: [],
+    compactStartingEvents: [],
     systemMessages: [],
     branches: [],
     activeBranchId: "",

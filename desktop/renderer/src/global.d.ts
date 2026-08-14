@@ -51,6 +51,12 @@ interface ElectronAPI {
   readFileBase64(filePath: string): Promise<{ data: string; mime_type: string } | null>;
   readDirectory(dirPath: string): Promise<{ path: string; name: string } | null>;
   writeFile(filePath: string, data: string): Promise<boolean>;
+  copyFilesToClipboard(filePaths: string[]): Promise<boolean>;
+  readFilesFromClipboard(): Promise<string[]>;
+  pasteFiles(sourcePaths: string[], targetDir: string): Promise<{ success: boolean; error?: string }>;
+  createFile(parentDir: string, name: string): Promise<{ success: boolean; error?: string; path?: string; name?: string }>;
+  createFolder(parentDir: string, name: string): Promise<{ success: boolean; error?: string; path?: string; name?: string }>;
+  deletePath(targetPath: string): Promise<{ success: boolean; error?: string }>;
   readKeyfile(): Promise<ArrayBuffer>;
   readMachineId(): Promise<string>;
   getAppPath(): Promise<string>;

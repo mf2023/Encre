@@ -67,10 +67,7 @@ def _dotenv_path() -> str:
 
 
 def _load_dotenv_if_available(dotenv_path: str) -> None:
-    try:
-        from dotenv import load_dotenv  # type: ignore
-    except Exception:
-        return
+    from dotenv import load_dotenv  # type: ignore
     try:
         load_dotenv(dotenv_path=dotenv_path, override=False)
     except Exception:
@@ -81,10 +78,7 @@ def _persist_env_to_dotenv_if_available(dotenv_path: str, key: str, value: str) 
     value = (value or "").strip()
     if not value:
         return
-    try:
-        from dotenv import set_key  # type: ignore
-    except Exception:
-        return
+    from dotenv import set_key  # type: ignore
     try:
         os.makedirs(os.path.dirname(dotenv_path) or ".", exist_ok=True)
         set_key(dotenv_path, key, value, quote_mode="never")

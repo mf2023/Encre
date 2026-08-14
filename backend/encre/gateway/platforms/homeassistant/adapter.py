@@ -46,12 +46,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional, Set
 
-try:
-    import aiohttp
-    AIOHTTP_AVAILABLE = True
-except ImportError:
-    AIOHTTP_AVAILABLE = False
-    aiohttp = None  # type: ignore[assignment]
+import aiohttp
+AIOHTTP_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.base import (

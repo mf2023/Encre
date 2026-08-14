@@ -64,7 +64,9 @@ class SlashCommandDef:
     title: str
     description: str
     kind: Literal["mode", "action"]
-    icon: str = "command"
+    # Default glyph for user-defined commands mirrors the sidebar "Skills"
+    # panel.  ``command`` (macOS ⌘) is intentionally never used.
+    icon: str = "wand-2"
     # Extended fields -- populated for file-backed commands, empty for
     # the hard-coded BUILTIN set.  Default values keep the dataclass
     # backwards-compatible with all existing call sites.
@@ -297,7 +299,9 @@ def _command_from_markdown(
     # modes (no tool interception, no spec gate, no set_mode).
     kind: Literal["mode", "action"] = "action"
     _ = kind_raw  # kept for clarity; intentionally ignored
-    icon = str(metadata.get("icon", "command")).strip() or "command"
+    icon = str(metadata.get("icon", "wand-2")).strip() or "wand-2"
+    if icon == "command":
+        icon = "wand-2"
     argument_hint = str(metadata.get("argument_hint", "")).strip()
     aliases_raw = metadata.get("aliases", [])
     if isinstance(aliases_raw, str):
@@ -350,7 +354,9 @@ def _command_from_settings_dict(d: dict, source: CommandSource,
     name = raw_name.lower().replace("_", "-")
     title = str(d.get("title", name)).strip() or name
     description = str(d.get("description", "")).strip()
-    icon = str(d.get("icon", "command")).strip() or "command"
+    icon = str(d.get("icon", "wand-2")).strip() or "wand-2"
+    if icon == "command":
+        icon = "wand-2"
     argument_hint = str(d.get("argument_hint", "")).strip()
     prompt_body = str(d.get("prompt", "") or d.get("prompt_body", "")).strip()
     aliases_raw = d.get("aliases", [])

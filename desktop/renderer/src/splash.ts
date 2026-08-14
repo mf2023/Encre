@@ -35,7 +35,7 @@ export class SplashScreen {
     if (!this.loader) {
       this.loader = new EALoader(el, {
         maxWidth: "140px",
-        staticSrc: "assets/Encre.svg",
+        staticSrc: "assets/Encre-lm.svg",
         staticDarkSrc: "assets/Encre-dm.svg",
       });
     }
@@ -84,15 +84,14 @@ export class SplashScreen {
     el.className = "splash-error hidden";
     el.innerHTML = `
       <div class="splash-error-icon-wrap">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-        </svg>
+        <i data-lucide="triangle-alert" class="lucide"></i>
       </div>
       <div class="splash-error-title"></div>
       <div class="splash-error-detail hidden"></div>
       <button class="splash-restart-btn btn btn-sm"></button>
     `;
     parent.appendChild(el);
+    if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: el });
     this.errorEl = el;
   }
 }

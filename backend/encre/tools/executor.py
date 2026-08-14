@@ -862,8 +862,9 @@ class ToolPipeline:
             else:
                 if _is_reference_tool(p["name"]):
                     summary = _extract_ref_summary(p["name"], p.get("args", {}), p["result"])
-                    entry = loop.session.add_reference(p["name"], summary, icon="")
-                    yield Reference(reference=entry)
+                    if summary is not None:
+                        entry = loop.session.add_reference(p["name"], summary, icon="")
+                        yield Reference(reference=entry)
                 for sub_ref in (p.get("sub_agent_references") or []):
                     if isinstance(sub_ref, dict) and _is_reference_tool(sub_ref.get("tool", "")):
                         ref_entry = loop.session.add_reference(

@@ -1,0 +1,8 @@
+---
+name: steer_multi
+priority: 100
+condition: ~
+---
+
+[User instructions mid-conversation]
+{{items}}

@@ -43,7 +43,7 @@ import {
   downloadMarkdownFile,
 } from "./stream.js";
 import { renderMarkdown, Chat } from "./chat.js";
-import { PLATFORM_ICONS } from "./icons.js";
+import { platformIconHtml } from "./icons.js";
 import type { Message } from "./types.js";
 
 interface TaskTemplate {
@@ -387,7 +387,7 @@ private createDropdown: HTMLElement;
       this.detailContentEl.innerHTML = `<div class="automation-detail-loader"><i data-lucide="loader-circle" class="lucide" style="animation:historySpin 1s linear infinite;"></i></div>`;
       if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
     } else {
-      this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="padding:40px 20px;">${t("automation.noMessages") || "No messages"}</div>`;
+      this.detailContentEl.innerHTML = `<div class="si-empty-center"><i data-lucide="message-square" class="lucide"></i><span class="si-empty-title">${t("automation.noMessages") || "No messages"}</span></div>`;
     }
     this.containerEl.style.display = "none";
     this.detailEl.classList.remove("hidden");
@@ -655,12 +655,17 @@ private createDropdown: HTMLElement;
     // Auto-resize prompt textarea (same pattern as settings rule editor)
     const promptTa = overlay.querySelector("#auto-dlg-prompt") as HTMLTextAreaElement;
     if (promptTa) {
+      let raf = 0;
       const resize = () => {
-        promptTa.style.height = "auto";
-        promptTa.style.height = Math.min(promptTa.scrollHeight, 300) + "px";
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          promptTa.style.height = "auto";
+          promptTa.style.height = Math.min(promptTa.scrollHeight, 300) + "px";
+        });
       };
       promptTa.addEventListener("input", resize);
-      setTimeout(resize, 0);
+      resize();
     }
 
     let scheduleValue = parsed.scheduleType;
@@ -805,7 +810,9 @@ private createDropdown: HTMLElement;
     const buildPushGateways = () => {
       const gs = getState().gatewayStatus;
       const adapters = gs?.adapters || [];
-      const available = adapters.filter(a => a.connected);
+      const available = adapters.filter(a => a.connected).slice().sort((a, b) =>
+        gatewayDisplayName(a.name).localeCompare(gatewayDisplayName(b.name), undefined, { sensitivity: "base" })
+      );
       if (available.length === 0) {
         pushGatewaysContainer.innerHTML = `<span style="color:var(--text-muted);font-size:13px">${t("automation.pushGatewaysEmpty")}</span>`;
         return;
@@ -813,28 +820,20 @@ private createDropdown: HTMLElement;
       const selected = new Set<string>(editJob?.push_gateways || []);
       pushGatewaysContainer.innerHTML = available.map(a => {
         const isSel = selected.has(a.name);
-        const iconData = PLATFORM_ICONS[a.name];
-        const iconHtml = iconData
-          ? `<svg viewBox="${iconData.viewBox || "0 0 24 24"}" width="18" height="18" style="flex-shrink:0">${iconData.inner}</svg>`
-          : `<div style="width:18px;height:18px;border-radius:4px;background:#888;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${escapeHtml(gatewayDisplayName(a.name).substring(0, 2))}</div>`;
+        const iconHtml = platformIconHtml(a.name, 18);
         return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-gateway-id="${a.name}">
           ${iconHtml}
           <span class="auto-push-gw-name">${escapeHtml(gatewayDisplayName(a.name))}</span>
           <span class="auto-push-gw-dot" title="${escapeHtml(a.name)}"></span>
-          <input type="checkbox" class="auto-push-gw-check" ${isSel ? "checked" : ""} />
+          <span class="auto-push-gw-check"></span>
         </div>`;
       }).join("");
-      pushGatewaysContainer.querySelectorAll(".auto-push-gw-check").forEach((cb) => {
-        cb.addEventListener("click", (e) => e.preventDefault());
-      });
       pushGatewaysContainer.querySelectorAll(".auto-push-gw-item").forEach(item => {
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           const gwId = (item as HTMLElement).getAttribute("data-gateway-id");
           if (!gwId) return;
           const wasSel = selected.has(gwId);
-          const cb = item.querySelector(".auto-push-gw-check") as HTMLInputElement;
-          if (cb) cb.checked = !wasSel;
           if (wasSel) {
             selected.delete(gwId);
             item.classList.remove("selected");
@@ -1613,10 +1612,18 @@ private createDropdown: HTMLElement;
 
   private onConfiguredAction(id: string, action: string): void {
     if (action === "delete") {
-      send({ type: "automation_delete_job", job_id: id });
-      // Refresh list immediately instead of relying on event chain
-      this.requestJobsList();
-      this.requestHistory();
+      const job = this.jobs.find((j) => j.id === id);
+      const name = job?.name || id;
+      Dialog.confirm(
+        t("automation.confirmDeleteTaskTitle") || "Delete Task",
+        t("automation.confirmDeleteTask", { name }) || `Delete task "${name}"? This cannot be undone.`
+      ).then((confirmed) => {
+        if (!confirmed) return;
+        send({ type: "automation_delete_job", job_id: id });
+        // Refresh list immediately instead of relying on event chain
+        this.requestJobsList();
+        this.requestHistory();
+      });
     }
   }
 

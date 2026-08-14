@@ -51,6 +51,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
   writeFile: (filePath: string, data: string): Promise<boolean> =>
     ipcRenderer.invoke("writeFile", filePath, data),
 
+  // File clipboard (cross-application copy/paste via Windows CF_HDROP)
+  copyFilesToClipboard: (filePaths: string[]): Promise<boolean> =>
+    ipcRenderer.invoke("clipboard:copy-files", filePaths),
+  readFilesFromClipboard: (): Promise<string[]> =>
+    ipcRenderer.invoke("clipboard:read-files"),
+  pasteFiles: (sourcePaths: string[], targetDir: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("fs:paste-files", sourcePaths, targetDir),
+
+  // File-tree operations: create file/folder, delete (move to trash).
+  createFile: (parentDir: string, name: string): Promise<{ success: boolean; error?: string; path?: string; name?: string }> =>
+    ipcRenderer.invoke("fs:create-file", parentDir, name),
+  createFolder: (parentDir: string, name: string): Promise<{ success: boolean; error?: string; path?: string; name?: string }> =>
+    ipcRenderer.invoke("fs:create-folder", parentDir, name),
+  deletePath: (targetPath: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("fs:delete", targetPath),
+
   getAppPath: (): Promise<string> => ipcRenderer.invoke("getAppPath"),
 
   // Crypto keyfile access for transport encryption

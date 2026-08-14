@@ -52,13 +52,9 @@ logger = get_logger("encre.tracing")
 # Lazy OTel imports -- the module works without opentelemetry installed
 # ---------------------------------------------------------------------------
 
-try:
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.trace import SpanKind
-
-    _OTEL_AVAILABLE = True
-except ImportError:
-    _OTEL_AVAILABLE = False
+from opentelemetry import trace as otel_trace
+from opentelemetry.trace import SpanKind
+_OTEL_AVAILABLE = True
 
 
 # ---------------------------------------------------------------------------

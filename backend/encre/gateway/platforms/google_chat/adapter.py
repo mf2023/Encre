@@ -834,10 +834,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
 
         # No explicit SA configured — try ADC. This is the Cloud Run / GCE
         # path; google-auth picks up the workload identity automatically.
-        try:
-            import google.auth as google_auth
-        except ImportError:
-            google_auth = None  # type: ignore[assignment]
+        import google.auth as google_auth
         if google_auth is None:
             raise ValueError(
                 "No Service Account credentials configured. Set "
@@ -3595,10 +3592,7 @@ async def _standalone_send(
     if service_account is None:
         return {"error": "Google Chat standalone send: google-auth not installed"}
 
-    try:
-        from google.auth.transport.requests import Request as _GoogleAuthRequest
-    except Exception as e:
-        return {"error": f"Google Chat standalone send: google-auth import failed: {e}"}
+    from google.auth.transport.requests import Request as _GoogleAuthRequest
 
     try:
         if sa_value:
@@ -3619,13 +3613,7 @@ async def _standalone_send(
                     return {"error": f"Google Chat standalone send: SA JSON file is invalid: {exc}"}
                 creds = service_account.Credentials.from_service_account_info(info, scopes=_CHAT_SCOPES)
         else:
-            try:
-                import google.auth as _google_auth
-            except ImportError:
-                return {"error": (
-                    "Google Chat standalone send: no SA credentials configured "
-                    "and google-auth is not installed for ADC fallback"
-                )}
+            import google.auth as _google_auth
             try:
                 creds, _project = _google_auth.default(scopes=_CHAT_SCOPES)
             except Exception as exc:
@@ -3661,10 +3649,7 @@ async def _standalone_send(
         body["thread"] = {"name": thread_id}
 
     url = f"https://chat.googleapis.com/v1/{chat_id}/messages"
-    try:
-        import aiohttp as _aiohttp
-    except ImportError:
-        return {"error": "Google Chat standalone send: aiohttp not installed"}
+    import aiohttp as _aiohttp
 
     try:
         async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=30.0), trust_env=True) as session:

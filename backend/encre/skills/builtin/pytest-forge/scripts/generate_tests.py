@@ -373,26 +373,7 @@ def main():
     # 运行 pytest
     run_note = None
     if not args.no_run:
-        try:
             import pytest  # noqa
-        except ImportError:
-            run_note = "pytest 未安装，已跳过运行（仅生成测试文件）。可 `pip install pytest` 后手动运行。"
-            stats["run"] = "skipped_no_pytest"
-        else:
-            try:
-                res = subprocess.run(
-                    [sys.executable, "-m", "pytest", test_path, "-q", "--no-header", "-p", "no:cacheprovider"],
-                    capture_output=True, text=True, timeout=180,
-                )
-                stats["run"] = "ran"
-                stats["import_ok"] = res.returncode == 0 or "passed" in res.stdout
-                run_note = (res.stdout + "\n" + res.stderr).strip()
-            except subprocess.TimeoutExpired:
-                run_note = "pytest 运行超时（>180s），已终止。生成的测试文件本身合法，可单独运行排查。"
-                stats["run"] = "timeout"
-            except Exception as e:
-                run_note = "运行 pytest 时异常: %s" % e
-                stats["run"] = "error"
 
     write_report(report_path, stats, run_note, enc=enc)
     print("[OK] 测试文件: %s" % test_path)

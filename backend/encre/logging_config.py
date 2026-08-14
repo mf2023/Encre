@@ -54,11 +54,8 @@ import sys
 from typing import Any
 
 _LOGURU_AVAILABLE: bool = False
-try:
-    from loguru import logger as _loguru_logger  # type: ignore[import-untyped]
-    _LOGURU_AVAILABLE = True
-except ImportError:
-    _loguru_logger = None  # type: ignore[assignment]
+from loguru import logger as _loguru_logger  # type: ignore[import-untyped]
+_LOGURU_AVAILABLE = True
 
 
 class _StdlibLogger:
@@ -168,10 +165,7 @@ def _get_loguru_serializer(json_format: bool = False):
     if not json_format:
         return None
 
-    try:
-        import json as _json
-    except ImportError:
-        return None
+    import json as _json
 
     def _serialize(record: Any) -> str:
         """Format a loguru record as a single JSON line.

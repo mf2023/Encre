@@ -1149,10 +1149,7 @@ class GoogleBackend(BaseBackend):
 
     async def _open_gemini_live_transport(self, _model_name, _cfg, _extra_params):
         ws_url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
-        try:
-            from httpx_ws import aconnect_ws  # type: ignore[import-not-found]
-        except Exception:
-            return None
+        from httpx_ws import aconnect_ws  # type: ignore[import-not-found]
         try:
             return await aconnect_ws(
                 ws_url,

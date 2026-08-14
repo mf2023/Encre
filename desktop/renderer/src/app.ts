@@ -129,6 +129,7 @@ class App {
   private _slashActive = false;
   private _currentChipMode = "";
   private _persistentMode = "";
+  private _summaryDoneCollapsed: boolean | null = null;
   /** Active slash *command* (distinct from a mode).  Mirrors the backend
    *  ``session.metadata["active_command"]`` slot: a sticky prompt injection
    *  that stays across turns until cleared.  ``null`` = no command active. */
@@ -145,9 +146,21 @@ class App {
   private _inputHistoryIdx: number = -1;
   private _shortcutsApplied: boolean = false;
   private _shortcutSub: (() => void) | undefined;
+  /** Pending auto-resize animation frame for the composer */
+  private _inputResizeRaf = 0;
+  /** True while the composer is in its expanded (taller) mode. */
+  private _inputExpanded = false;
+  /** Timer clearing the temporary height-animation class after a toggle. */
+  private _inputAnimTimer = 0;
+  private inputExpandBtn: HTMLButtonElement;
+  private inputExpandZone: HTMLElement;
+  /** Cache key of the last queue-card render; skips DOM rebuilds when unchanged. */
+  private _queueRenderKey = "";
 
   constructor() {
     this.input = document.getElementById("prompt-input") as HTMLTextAreaElement;
+    this.inputExpandBtn = document.getElementById("btn-input-expand") as HTMLButtonElement;
+    this.inputExpandZone = document.getElementById("input-expand-zone") as HTMLElement;
     this.btnSend = document.getElementById("btn-send") as HTMLButtonElement;
     this.btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
     this.tokenCountEl = document.getElementById("token-count")!;
@@ -374,7 +387,7 @@ class App {
       }
       this.btnStop.classList.remove("cancelling");
       this.btnStop.style.pointerEvents = "";
-    this.btnSend.disabled = !hasText && !this.hasModeChip() && getState().attachments.length === 0;
+    this.btnSend.disabled = !hasText && !this.effectiveMode() && !this.hasCommandChip() && getState().attachments.length === 0;
     });
 
     // Re-fetch models when backend or base_url changes
@@ -953,7 +966,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       if (!bodyEl) return;
       ctxMenu?.classList.add("hidden");
       if (allEntries.length === 0) {
-        bodyEl.innerHTML = `<div class="log-empty">${t("settings.aboutLogNoLogs")}</div>`;
+        bodyEl.innerHTML = `<div class="si-empty-center"><i data-lucide="scroll-text" class="lucide"></i><span class="si-empty-title">${t("settings.aboutLogNoLogs")}</span></div>`;
+        if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: bodyEl });
         return;
       }
       bodyEl.innerHTML = allEntries.map((e) => {
@@ -1025,7 +1039,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           }
         } catch {
           if (loadedCount === 0 && bodyEl) {
-            bodyEl.innerHTML = `<div class="log-empty">${t("settings.aboutLogNoLogs")}</div>`;
+            bodyEl.innerHTML = `<div class="si-empty-center"><i data-lucide="scroll-text" class="lucide"></i><span class="si-empty-title">${t("settings.aboutLogNoLogs")}</span></div>`;
+            if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: bodyEl });
           }
         }
         loading = false;
@@ -1266,23 +1281,38 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const body = document.getElementById("queue-card-body");
     const statusBar = document.getElementById("chat-status-bar");
     if (!card || !body) return;
-    if (s.pendingQueueCount === 0 || s.queuedPrompts.length === 0) {
-      card.classList.add("hidden");
+    const active = s.pendingQueueCount > 0 && s.queuedPrompts.length > 0;
+    const key = active
+      ? s.queuedPrompts.map((p) => `${p.mode}\u0000${p.text}`).join("\u0001")
+      : "";
+
+    if (!active) {
+      if (!card.classList.contains("hidden")) card.classList.add("hidden");
       if (statusBar) statusBar.style.maxWidth = "";
+      this._queueRenderKey = "";
       return;
     }
+
     card.classList.remove("hidden");
     if (statusBar) statusBar.style.maxWidth = "calc(var(--input-max-w) - 100px)";
+
+    // Streaming emits fire on every token update. Skip rebuilding the DOM
+    // (and re-creating lucide icons) unless the queue actually changed —
+    // this removes the flicker, layout thrash, and the drag-focus breakage
+    // that came from replacing the drag source element mid-drag.
+    if (key === this._queueRenderKey) return;
+    this._queueRenderKey = key;
+
     body.innerHTML = s.queuedPrompts.map((p, i) =>
       `<div class="queue-item" draggable="true" data-queue-index="${i}">
         <span class="queue-item-drag-handle" data-queue-index="${i}">
           <i data-lucide="grip-vertical" class="lucide"></i>
         </span>
         <span class="queue-item-text">${this.esc(p.text)}</span>
-        <button class="queue-item-send" data-queue-index="${i}" title="直接发送">
+        <button class="queue-item-send" draggable="false" data-queue-index="${i}" title="直接发送">
           <i data-lucide="send" class="lucide"></i>
         </button>
-        <button class="queue-item-remove" data-queue-index="${i}">
+        <button class="queue-item-remove" draggable="false" data-queue-index="${i}">
           <i data-lucide="x" class="lucide"></i>
         </button>
       </div>`
@@ -1326,7 +1356,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         item.classList.remove("drop-target");
         if (dragSrcIdx !== null && dragSrcIdx !== idx) {
           moveQueuedPrompt(dragSrcIdx, idx);
-          this._renderQueueCard();
+          // Defer the rebuild so the drag source isn't destroyed mid-drop,
+          // which can leave the renderer's pointer/drag state stuck and make
+          // the prompt input un-focusable afterwards.
+          requestAnimationFrame(() => this._renderQueueCard());
         }
         dragSrcIdx = null;
       });
@@ -1549,9 +1582,13 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       this.handleManualSlashCommand();
       this.updateChipState();
       this.resizeInput();
+      this.updateInputExpandButton();
       this.updatePlaceholder();
       this.updateSendButton();
     });
+
+    // Composer expand/shrink toggle (top-right inside the input box).
+    this.inputExpandBtn.addEventListener("click", () => this.toggleInputExpand());
 
     // Strip all formatting on paste so the composer always contains plain text.
     this.input.addEventListener("paste", (e) => {
@@ -1559,6 +1596,9 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       const text = e.clipboardData?.getData("text/plain") ?? "";
       if (!text) return;
       document.execCommand("insertText", false, text);
+      // Explicit resize: execCommand may dispatch "input" before the new
+      // text is fully committed to layout; resizeInput re-measures on rAF.
+      this.resizeInput();
     });
 
     // Watch for mode-chip removal so we can clean up state when user deletes it
@@ -1574,6 +1614,16 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       }
     });
     chipObserver.observe(this.input, { childList: true, subtree: true });
+
+    // Re-measure whenever the composer content changes without a native
+    // "input" event (e.g. textContent/innerHTML writes from chat/search/
+    // stream restore the last user message into the box). Resize coalesces
+    // to a single rAF per frame, so this is cheap even on every keystroke.
+    const inputContentObserver = new MutationObserver(() => {
+      this.resizeInput();
+      this.updateInputExpandButton();
+    });
+    inputContentObserver.observe(this.input, { childList: true, characterData: true, subtree: true });
 
     // ── Toolbar mode-chip close button ────────────────────────────
     const closeBtn = document.getElementById("btn-mode-close");
@@ -1937,6 +1987,16 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     });
   }
 
+  /** Force-open the summary panel (used when the model first creates todos). */
+  openSummaryPanel(): void {
+    const btn = document.getElementById("btn-summary-panel");
+    if (this.summaryPanel.classList.contains("hidden")) {
+      this.summaryPanel.classList.remove("hidden");
+      if (btn) btn.classList.add("active");
+      this.renderSummaryPanel();
+    }
+  }
+
   private renderSummaryPanel(): void {
     const st = getState();
     this.renderSummaryProgress(st);
@@ -1971,10 +2031,12 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     };
     active.slice(0, 8).forEach((i: any) => parts.push(renderItem(i)));
     if (done.length > 0) {
-      const collapsed = done.length > 2;
-      const displayCount = collapsed ? 0 : done.length;
+      // Auto-collapse once there are a few items, but remember the user's
+      // own toggle so a later completion re-render does not re-collapse a
+      // section the user just expanded.
+      const collapsed = this._summaryDoneCollapsed ?? done.length > 2;
       parts.push(`<div class="sp-todo-done-section${collapsed ? " collapsed" : ""}">
-        <div class="sp-todo-done-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <div class="sp-todo-done-header">
           <i data-lucide="check-circle-2" class="lucide lucide-sm sp-todo-done-icon"></i>
           <span class="sp-todo-done-label">${t("sessionInner.doneItems", { count: done.length })}</span>
           <i data-lucide="chevron-down" class="lucide lucide-sm sp-todo-chevron"></i>
@@ -1983,6 +2045,14 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       </div>`);
     }
     el.innerHTML = parts.join("");
+    const doneToggle = el.querySelector(".sp-todo-done-header") as HTMLElement | null;
+    if (doneToggle) {
+      doneToggle.addEventListener("click", () => {
+        const section = doneToggle.parentElement as HTMLElement;
+        const nowCollapsed = section.classList.toggle("collapsed");
+        this._summaryDoneCollapsed = nowCollapsed;
+      });
+    }
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: el });
     }
@@ -1991,11 +2061,14 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
   private renderSummaryArtifacts(st: ReturnType<typeof getState>): void {
     const el = document.getElementById("summary-artifacts-items");
     if (!el) return;
+    const viewAll = document.getElementById("summary-view-all");
     const artifacts = st.artifacts;
     if (!artifacts || artifacts.length === 0) {
+      if (viewAll) viewAll.classList.add("hidden");
       el.innerHTML = `<div style="padding:6px 0;font-size:12px;color:var(--text-muted)">${t("sessionInner.noArtifacts")}</div>`;
       return;
     }
+    if (viewAll) viewAll.classList.remove("hidden");
     el.innerHTML = artifacts.slice(0, 6).map((a: any) => {
       const iconSrc = getFileIcon(a.name);
       const adds = a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : 0;
@@ -2035,12 +2108,23 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
     const shown = refs.slice(-12).reverse();
 
+    // De-duplicate: the same memory file / search may be referenced many
+    // times during a run; showing each repetition under an already-grouped
+    // header is pure noise.
+    const seen = new Set<string>();
+    const unique = shown.filter((r) => {
+      const key = `${r.tool}\u0000${r.summary}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
     const groups: { label: string; icon: string; refs: any[] }[] = [
       { label: t("sessionInner.referencesWeb") || "Web", icon: "globe", refs: [] },
       { label: t("sessionInner.referencesMemory") || "Memory", icon: "brain", refs: [] },
       { label: t("sessionInner.referencesMcp") || "MCP", icon: "cable", refs: [] },
     ];
-    for (const r of shown) {
+    for (const r of unique) {
       const t = r.tool.toLowerCase();
       if (t.startsWith("mcp__")) {
         groups[2].refs.push(r);
@@ -2053,9 +2137,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
     const renderItem = (r: any) => {
       const iconSrc = r.icon || "zap";
-      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;color:var(--text-secondary)">
-        <i data-lucide="${iconSrc}" class="lucide lucide-sm" style="flex-shrink:0;width:12px;height:12px;opacity:0.6"></i>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this.esc(r.summary)}</span>
+      const text = stripRefTypePrefix(r.tool, r.summary);
+      return `<div class="sp-ref-item">
+        <i data-lucide="${iconSrc}" class="lucide lucide-sm sp-ref-item-icon"></i>
+        <span class="sp-ref-item-text" title="${this.esc(r.summary)}">${this.esc(text)}</span>
       </div>`;
     };
 
@@ -2451,9 +2536,32 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
   /* ── Contenteditable helpers ─────────────────────────────────── */
 
   private getPlainText(): string {
-    const clone = this.input.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll('[contenteditable="false"]').forEach(el => el.remove());
-    return clone.textContent?.trim() || "";
+    const parts: string[] = [];
+    this._collectText(this.input, parts);
+    return parts.join('').trim();
+  }
+
+  /** Walk DOM nodes recursively, inserting newlines for block-level elements
+   *  and `<br>` so that Enter-key and paste line breaks are both preserved
+   *  in the serialized text.  Skips `[contenteditable="false"]` chips. */
+  private _collectText(node: Node, out: string[]): void {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        out.push(child.textContent || '');
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as Element;
+        if (el.getAttribute('contenteditable') === 'false') continue;
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'br') {
+          out.push('\n');
+        } else if (tag === 'div' || tag === 'p') {
+          if (out.length > 0) out.push('\n');
+          this._collectText(child, out);
+        } else {
+          this._collectText(child, out);
+        }
+      }
+    }
   }
 
   private hasModeChip(): boolean {
@@ -2542,12 +2650,22 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     if (chip) chip.remove();
   }
 
-  /** Resolve a Lucide icon name, falling back to ``command`` when unknown. */
+  /** Resolve a Lucide icon name, falling back to the app-wide skills glyph
+   *  (``wand-2``) when unknown.  lucide's icon registry is keyed by PascalCase
+   *  (e.g. ``ListChecks``), while commands store kebab-case names — normalize
+   *  before checking.  ``command`` (macOS ⌘) is intentionally never used. */
   private resolveIcon(name: string): string {
-    const candidate = (name && name.trim()) || "command";
+    const candidateRaw = (name && name.trim()) || "wand-2";
+    // ``command`` is the macOS ⌘ glyph — legacy default stored in old
+    // configs.  Normalize it to the app-wide skills glyph.
+    const candidate = candidateRaw === "command" ? "wand-2" : candidateRaw;
     if ((window as any).lucide && (window as any).lucide.icons) {
       const known = (window as any).lucide.icons as Record<string, unknown>;
-      if (!(candidate in known)) return "command";
+      const pascal = candidate
+        .split("-")
+        .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+        .join("");
+      if (!(candidate in known) && !(pascal in known)) return "wand-2";
     }
     return candidate;
   }
@@ -2591,7 +2709,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const icon = chip.querySelector(".chip-icon") as HTMLElement;
     const label = chip.querySelector(".toolbar-command-label") as HTMLElement;
     const def = SLASH_COMMANDS.find((c) => c.id === cmd.name);
-    if (icon) icon.setAttribute("data-lucide", this.resolveIcon(def?.icon || cmd.icon || "command"));
+    if (icon) icon.setAttribute("data-lucide", this.resolveIcon(def?.icon || cmd.icon || "wand-2"));
     if (label) label.textContent = def?.title || cmd.title || cmd.name;
     this.refreshIcons();
   }
@@ -2625,14 +2743,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const mode = this.effectiveMode();
     if (mode) {
       el.setAttribute("data-input-mode", mode);
-      // Ensure the mode chip is visible inside the prompt input.
-      // Without this, session switches / mode_changed events update the
-      // toolbar chip + border but leave the input itself bare — the user
-      // can't tell the mode is still active.
-      if (this.input && !this.hasModeChip()) {
-        this.insertModeChip(mode);
-        this._currentChipMode = mode;
-      }
+      // The inline mode-chip is created only by explicit user action
+      // (activateSlashCommand / insertModeChip / restoreInputModeChip).
+      // It never auto-reappears here: once the backend confirms the mode
+      // the input shows ONLY the toolbar mode-chip, not the inline one.
     } else if (this.hasCommandChip()) {
       el.setAttribute("data-input-mode", "command");
     } else {
@@ -2935,13 +3049,6 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       t.removeAttribute("data-tooltip-visible");
     });
 
-    // ── 11. Rename dialog ──────────────────────────────────────────
-    const renameOverlay = document.getElementById("rename-dialog-overlay");
-    if (renameOverlay) {
-      renameOverlay.classList.add("hidden");
-      renameOverlay.innerHTML = "";
-    }
-
     // ── 12. Session inner sidebar — hide the container AND drop tabs ─
     // The user might have opened the right-side #session-inner-sidebar
     // in the previous view (e.g. opened a terminal tab in normal mode and
@@ -3126,10 +3233,74 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
   }
 
+  /**
+   * Auto-height the composer. Height is measured in a requestAnimationFrame
+   * callback so the browser has committed the latest DOM mutation and layout
+   * first — contenteditable scrollHeight can otherwise lag one frame, which
+   * made the box fail to grow (or shrink) right after a big paste or a
+   * programmatic textContent/innerHTML write. Calls within a frame coalesce.
+   */
   private resizeInput(): void {
-    this.input.style.height = "auto";
-    const h = Math.min(Math.max(this.input.scrollHeight, 56), 320);
-    this.input.style.height = `${h}px`;
+    if (this._inputResizeRaf) return;
+    this._inputResizeRaf = requestAnimationFrame(() => {
+      this._inputResizeRaf = 0;
+      this.input.style.height = "auto";
+      const minH = this._inputExpanded ? 220 : 56;
+      const maxH = this._inputExpanded ? Math.min(620, Math.round(window.innerHeight * 0.6)) : 320;
+      const h = Math.min(Math.max(this.input.scrollHeight, minH), maxH);
+      this.input.style.height = `${h}px`;
+    });
+  }
+
+  /** Shows/hides the top-right expand toggle based on real text content
+   *  (mode chips, @-mentions and file chips are `contenteditable=false`
+   *  and are excluded by getPlainText(), so plain-text-only drives it). */
+  /** The toggle lives behind an invisible hover-zone at the box's top-right
+   *  corner and only reveals on hover (like the app's ghost icons), so it
+   *  never covers the text being typed. It only exists while there is real
+   *  text content (mode chips, @-mentions and file chips are
+   *  `contenteditable=false` and excluded by getPlainText()). */
+  private updateInputExpandButton(): void {
+    if (!this.inputExpandZone) return;
+    const hasText = this.getPlainText().length > 0;
+    this.inputExpandZone.classList.toggle("hidden", !hasText);
+    this.renderExpandIcon();
+    const titleKey = this._inputExpanded ? "input.collapse" : "input.expand";
+    this.inputExpandBtn.setAttribute("data-i18n-title", titleKey);
+    this.inputExpandBtn.title = t(titleKey as any);
+  }
+
+  /** Re-renders the toggle icon. lucide replaces the <i> node with an <svg>
+   *  on first pass, so we always rebuild the icon markup instead of trying
+   *  to patch an existing element. */
+  private renderExpandIcon(): void {
+    const want = this._inputExpanded ? "minimize-2" : "maximize-2";
+    if (this.inputExpandBtn.dataset.render === want) return;
+    this.inputExpandBtn.dataset.render = want;
+    this.inputExpandBtn.innerHTML = `<i data-lucide="${want}" class="lucide"></i>`;
+    (window as any).lucide?.createIcons?.();
+  }
+
+  private setInputExpanded(v: boolean): void {
+    if (this._inputExpanded === v) return;
+    this._inputExpanded = v;
+    // Temporarily enable the height transition so the expand/collapse glides
+    // with the app's standard easing; clears once the animation settles so
+    // normal typing auto-resize stays snappy.
+    this.input.classList.add("input-anim");
+    window.clearTimeout(this._inputAnimTimer);
+    this._inputAnimTimer = window.setTimeout(() => {
+      this.input.classList.remove("input-anim");
+    }, 400);
+    this.input.classList.toggle("expanded", v);
+    this.updateInputExpandButton();
+    this.resizeInput();
+    this.placeCursorAtEnd();
+    this.input.focus();
+  }
+
+  private toggleInputExpand(): void {
+    this.setInputExpanded(!this._inputExpanded);
   }
 
   private updateSendButton(): void {
@@ -3145,7 +3316,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       this.btnSend.style.display = "flex";
       this.btnStop.style.display = "none";
     }
-    this.btnSend.disabled = !hasText && !this.hasModeChip();
+    this.btnSend.disabled = !hasText && !this.effectiveMode() && !this.hasCommandChip();
   }
 
   private placeCursorAtEnd(): void {
@@ -3290,7 +3461,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const st = getState();
     const hasAttachments = st.attachments.length > 0;
 
-    if (!text.trim() && !this.hasModeChip() && !this.hasCommandChip() && !hasAttachments) return;
+    if (!text.trim() && !this.effectiveMode() && !this.hasCommandChip() && !hasAttachments) return;
 
     // Safety net: if the input text is a known slash command but no chip
     // is active yet (e.g. user clicked the send button instead of Enter,
@@ -3313,9 +3484,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
     // If user submitted with no text, generate default text
     if (!text.trim()) {
-      if (sendMode) {
-        text = `<mode>${sendMode}</mode>`;
-      } else if (this.hasCommandChip()) {
+      if (this.hasCommandChip()) {
         text = `<command>${this.getCurrentCommand()}</command>`;
       } else if (hasAttachments) {
         const first = st.attachments[0];
@@ -3334,6 +3503,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       clearAttachments();
       this.input.innerHTML = "";
       this.input.style.height = "56px";
+      this.setInputExpanded(false);
       this._currentChipMode = "";
       setInputMode("");
       this.updateChipState();
@@ -3348,6 +3518,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       send({ type: "steer", session_id: st.sessionId || undefined, prompt: text } as any);
       this.input.innerHTML = "";
       this.input.style.height = "56px";
+      this.setInputExpanded(false);
       this._currentChipMode = "";
       setInputMode("");
       this.updateChipState();
@@ -3404,20 +3575,18 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     // every turn until the next message).
     this.input.innerHTML = "";
     this.input.style.height = "56px";
+    this.setInputExpanded(false);
     this._currentChipMode = "";
     setInputMode("");
     // Only persist mode commands (plan/spec) — action commands (init, custom)
     // are one-shot and must not keep the toolbar chip visible after send.
+    // The inline mode-chip is intentionally NOT re-inserted here: after
+    // sending, the input shows only the toolbar mode-chip + persistent border
+    // (the backend confirms via mode_changed); the inline chip is one-shot.
     if (sendMode) {
       const _cmd = SLASH_COMMANDS.find(c => c.id === sendMode);
       if (_cmd?.kind === "mode") {
         this._persistentMode = sendMode;
-        // Re-insert the mode chip into the prompt input so it persists
-        // across turns.  Without this, the chip disappears after submit
-        // and only the toolbar chip + border survive — the input itself
-        // looks like normal mode to the user.
-        this._currentChipMode = sendMode;
-        this.insertModeChip(sendMode);
       }
     }
     // Command chips are one-shot: clear the in-memory slot.
@@ -3992,6 +4161,33 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
 const app = new App();
 app.start();
+
+/** Strip the type prefix that backend `_extract_ref_summary` prepends to a
+ *  reference summary (e.g. "Memory:", "Web search:", "Fetched:").  The
+ *  summary panel already groups references under a typed header, so repeating
+ *  the type on every row is redundant. */
+function stripRefTypePrefix(tool: string, summary: string): string {
+  const t = (tool || "").toLowerCase();
+  let s = (summary || "").trim();
+  if (t.startsWith("mcp__")) {
+    return s.replace(/^mcp\s*:\s*/i, "").replace(/^mcp\s+/i, "");
+  }
+  if (t.includes("memory") || t.includes("profile")) {
+    s = s.replace(/^read\s+memory:\s*/i, "");
+    s = s.replace(/^deleted\s+memory:\s*/i, "");
+    s = s.replace(/^searched\s+memory:\s*/i, "");
+    s = s.replace(/^memory:\s*/i, "");
+    s = s.replace(/^profile\s*:\s*/i, "");
+    return s;
+  }
+  if (t.startsWith("web_")) {
+    s = s.replace(/^web\s+search:\s*/i, "");
+    s = s.replace(/^web\s+fetch:\s*/i, "");
+    s = s.replace(/^fetched\s*:\s*/i, "");
+    return s;
+  }
+  return s;
+}
 
 export function updateRunningUI(running: boolean): void {
   const btnSend = document.getElementById("btn-send") as HTMLButtonElement;

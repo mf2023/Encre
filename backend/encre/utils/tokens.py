@@ -32,11 +32,8 @@ from typing import Any
 # Native Rust tokenizer (fastest path)
 # ---------------------------------------------------------------------------
 _HAS_NATIVE: bool = False
-try:
-    from encre._native import count_tokens as _native_count_tokens
-    _HAS_NATIVE = True
-except ImportError:
-    pass
+from encre._native import count_tokens as _native_count_tokens
+_HAS_NATIVE = True
 
 # ---------------------------------------------------------------------------
 # tiktoken availability (checked once)

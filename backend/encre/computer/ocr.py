@@ -39,15 +39,12 @@ logger = logging.getLogger("encre.computer.ocr")
 
 def _ocr_winrt(image_bytes: bytes) -> list[dict[str, Any]] | None:
     """Windows OCR via winrt-Windows.Media.Ocr (Win 10+ built-in)."""
-    try:
-        from winrt.windows.graphics.imaging import BitmapDecoder, BitmapPixelFormat
-        from winrt.windows.media.ocr import OcrEngine
-        from winrt.windows.storage.streams import (
-            DataWriter,
-            InMemoryRandomAccessStream,
-        )
-    except ImportError:
-        return None
+    from winrt.windows.graphics.imaging import BitmapDecoder, BitmapPixelFormat
+    from winrt.windows.media.ocr import OcrEngine
+    from winrt.windows.storage.streams import (
+        DataWriter,
+        InMemoryRandomAccessStream,
+    )
 
     import asyncio
 
@@ -108,11 +105,8 @@ def _ocr_macos_vision(image_bytes: bytes) -> list[dict[str, Any]] | None:
     When available this gives native-quality text recognition with no
     separate binary dependency (no Tesseract needed on macOS).
     """
-    try:
-        import Vision  # type: ignore
-        from Foundation import NSData  # type: ignore
-    except ImportError:
-        return None
+    import Vision  # type: ignore
+    from Foundation import NSData  # type: ignore
 
     try:
         ns_data = NSData.dataWithBytes_length_(image_bytes, len(image_bytes))
@@ -169,11 +163,8 @@ def _ocr_macos_vision(image_bytes: bytes) -> list[dict[str, Any]] | None:
 
 def _ocr_pytesseract(image_bytes: bytes) -> list[dict[str, Any]] | None:
     """Fallback OCR via pytesseract (requires Tesseract installed)."""
-    try:
-        import pytesseract
-        from PIL import Image
-    except ImportError:
-        return None
+    import pytesseract
+    from PIL import Image
 
     try:
         pil_img = Image.open(io.BytesIO(image_bytes))

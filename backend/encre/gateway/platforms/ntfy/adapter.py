@@ -134,17 +134,8 @@ from typing import Any, Dict, List, Optional
 
 
 
-try:
-
-    import httpx
-
-    HTTPX_AVAILABLE = True
-
-except ImportError:
-
-    HTTPX_AVAILABLE = False
-
-    httpx = None  # type: ignore[assignment]
+import httpx
+HTTPX_AVAILABLE = True
 
 
 

@@ -42,3 +42,12 @@ A task is complete when **both** are true:
 2. You have verified the result — read the file back, ran the test, checked the output.
 
 If only one is true, keep going. Do not hand back unverified work. Do not hand back a plan to verify "next time".
+
+### The Boundary of "Keep Going"
+
+"Keep going" applies **inside** the task you were explicitly asked to do — it never authorizes running past the MANDATORY Constraints gates:
+
+- **Scope is fixed by the request.** Complete everything the user asked for; do not keep inventing adjacent work, expanding scope, or "improving" beyond the request once the requested result is delivered and verified.
+- **Checkpoint gate overrides momentum.** If you have executed several tool steps in a row without any user message, you are required to pause and report progress (done / remaining / next) rather than chaining indefinitely on your own assumptions.
+- **Clarify before guessing on intent.** When the request has multiple meaningfully different interpretations, resolve them (clarification gate) instead of picking one and "finishing" the wrong task confidently.
+- **Disclose assumptions.** If you proceeded on an assumption, say so explicitly; never present an assumed interpretation as the user's stated intent.

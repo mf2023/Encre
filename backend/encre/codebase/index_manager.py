@@ -264,10 +264,7 @@ class IndexManager:
         Returns the populated :class:`EncreASTIndex` or ``None`` if
         tree-sitter is not installed in the current environment.
         """
-        try:
-            from encre.codebase.ast_index import EncreASTIndex
-        except Exception:
-            return None
+        from encre.codebase.ast_index import EncreASTIndex
         with self._lock:
             existing = self._ast_indices.get(ws_id)
             if existing is not None and getattr(existing, "_indexed", False):
@@ -303,10 +300,7 @@ class IndexManager:
         Returns the populated :class:`EncreEmbeddingIndex` or ``None``
         when no embedding backend is configured (i.e. no API key).
         """
-        try:
-            from encre.codebase.embedding_index import EncreEmbeddingIndex
-        except Exception:
-            return None
+        from encre.codebase.embedding_index import EncreEmbeddingIndex
         if embedding_fn is None and not os.environ.get("OPENAI_API_KEY"):
             # No embedding backend -- nothing to build.
             return None

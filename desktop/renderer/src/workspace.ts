@@ -493,7 +493,13 @@ export class Workspace {
     const activeWs = s.activeWorkspace;
 
     if (workspaceGroups.length === 0) {
-      this.treeListEl.innerHTML = `<div class="workspace-tree-empty">${t("workspace.empty")}</div>`;
+      this.treeListEl.innerHTML = `<div class="si-empty-center">
+        <i data-lucide="folder-open" class="lucide"></i>
+        <span class="si-empty-title">${t("workspace.empty")}</span>
+      </div>`;
+      if (typeof (window as any).lucide !== "undefined") {
+        (window as any).lucide.createIcons({ root: this.treeListEl });
+      }
       return;
     }
 
@@ -528,14 +534,16 @@ export class Workspace {
 
   private renderWorkspaceSessions(sessions: SessionEntryData[]): string {
     if (sessions.length === 0) {
-      return `<div class="ws-tree-empty-sessions">${t("workspace.noSessions")}</div>`;
+      return `<div class="ws-tree-empty-sessions si-empty-center"><i data-lucide="message-square" class="lucide"></i><span class="si-empty-title">${t("workspace.noSessions")}</span></div>`;
     }
     const activeSid = getState().sessionId;
     let html = "";
     for (const sess of sessions) {
       const active = sess.session_id === activeSid ? " active" : "";
       const displayName = sess.name || sess.preview || t("general.emptySessionName");
-      const runningBadge = sess.is_running ? '<span class="session-running"></span>' : "";
+      const runningBadge = (sess.awaiting_approval || sess.is_running)
+        ? `<span class="session-${sess.awaiting_approval ? "waiting" : "running"}"></span>`
+        : "";
 
       html += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}">
         <div class="session-item-top">
@@ -591,6 +599,7 @@ export class Workspace {
         if (this._exiting || this._transitioning || this.batchMode) return;
         const path = (el as HTMLElement).getAttribute("data-ws-path");
         if (!path) return;
+        this.setContextTarget(el as HTMLElement);
         this.showWsContextMenu(path, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
       });
     });
@@ -622,6 +631,7 @@ export class Workspace {
         if (this._exiting || this._transitioning) return;
         const sid = (el as HTMLElement).dataset.sid;
         if (!sid) return;
+        this.setContextTarget(el as HTMLElement);
         import("./session.js").then(({ showSessionContextMenu }) => {
           showSessionContextMenu(sid, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
         });
@@ -835,6 +845,12 @@ export class Workspace {
     };
     const label = labels[channel] || channel;
     return `<span class="session-channel-badge" data-channel="${this.esc(channel)}">${this.esc(label)}</span>`;
+  }
+
+  /** Marks an element as the right-click target (temporary highlight). */
+  private setContextTarget(el: HTMLElement): void {
+    document.querySelectorAll(".context-target").forEach((n) => n.classList.remove("context-target"));
+    el.classList.add("context-target");
   }
 
   private showWsContextMenu(path: string, x: number, y: number): void {

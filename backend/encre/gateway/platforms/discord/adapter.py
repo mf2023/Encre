@@ -116,17 +116,10 @@ _DISCORD_NONCONVERSATIONAL_HISTORY_MESSAGE_PATTERNS = (
     re.compile(r"^\s*♻️?\s+Gateway\s+(?:restarted successfully|online\b)[\s\S]*$", re.IGNORECASE),
 )
 
-try:
-    import discord
-    from discord import Message as DiscordMessage, Intents
-    from discord.ext import commands
-    DISCORD_AVAILABLE = True
-except ImportError:
-    DISCORD_AVAILABLE = False
-    discord = None
-    DiscordMessage = Any
-    Intents = Any
-    commands = None
+import discord
+from discord import Message as DiscordMessage, Intents
+from discord.ext import commands
+DISCORD_AVAILABLE = True
 
 import sys
 from pathlib import Path as _Path
@@ -8982,10 +8975,7 @@ async def _standalone_send(
     ``force_document`` is accepted for signature parity but unused — Discord
     treats every uploaded file as a generic attachment.
     """
-    try:
-        import aiohttp
-    except ImportError:
-        return {"error": "aiohttp not installed. Run: pip install aiohttp"}
+    import aiohttp
 
     token = (getattr(pconfig, "token", None) or os.getenv("DISCORD_BOT_TOKEN", "")).strip()
     if not token:

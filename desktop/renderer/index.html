@@ -8,12 +8,9 @@
   <link rel="stylesheet" href="design-system.css" />
   <link rel="stylesheet" href="xterm.css" />
   <link rel="stylesheet" href="codicon.css" />
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script src="monaco/vs/loader.js"></script>
-  <script>
-    require.config({ paths: { vs: 'monaco/vs' } });
-    require(['vs/editor/editor.main'], function() {});
-  </script>
+  <!-- Vendored locally: no network round-trip at startup (was unpkg.com CDN).
+       The Monaco editor is loaded on demand by monaco.ts (see getMonaco()). -->
+  <script src="vendor/lucide.min.js"></script>
 </head>
 <body>
   <div id="app-shell">
@@ -36,11 +33,11 @@
           <span data-i18n="mode.normal">General</span>
         </button>
         <button type="button" class="seg-item" data-mode="iwork" role="tab" aria-selected="false">
-          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
           <span data-i18n="mode.iwork">Work</span>
         </button>
         <button type="button" class="seg-item" data-mode="automation" role="tab" aria-selected="false">
-          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+          <svg class="seg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M6.38 18.7 4 21"/><path d="M17.64 18.67 20 21"/></svg>
           <span data-i18n="mode.automation">Automation</span>
         </button>
       </div>
@@ -281,6 +278,11 @@
             <div class="input-wrapper">
               <div class="input-row">
                 <div id="prompt-input" class="prompt-input" contenteditable="true" role="textbox" aria-multiline="true"></div>
+                <div class="input-expand-zone hidden" id="input-expand-zone">
+                  <button type="button" id="btn-input-expand" class="input-expand-btn" data-i18n-title="input.expand" aria-label="Expand input">
+                    <i data-lucide="maximize-2" class="lucide"></i>
+                  </button>
+                </div>
                 <div id="prompt-placeholder" class="prompt-placeholder" data-i18n="input.placeholder">Ask Encre anything...</div>
               </div>
               <!-- @ dropdown (above input box) -->
@@ -322,7 +324,7 @@
                     </button>
                   </div>
                   <div id="toolbar-command-chip" class="toolbar-command-chip hidden" data-command="">
-                    <i data-lucide="command" class="chip-icon" style="width:12px;height:12px;"></i>
+                    <i data-lucide="wand-2" class="chip-icon" style="width:12px;height:12px;"></i>
                     <span class="toolbar-command-label"></span>
                     <button class="toolbar-command-close" id="btn-command-close" data-i18n-title="input.cancelCommand" title="Clear command">
                       <i data-lucide="x" class="lucide" style="width:11px;height:11px;"></i>
@@ -485,15 +487,14 @@
   <!-- Session context menu (dynamically rendered) -->
   <div id="session-context-menu" class="hidden context-menu"></div>
 
-  <!-- Rename dialog (dynamically rendered) -->
-  <div id="rename-dialog-overlay" class="hidden"></div>
-
   <!-- Splash / loading screen -->
   <div id="splash-screen" class="hidden"></div>
 
   </div><!-- /app-shell -->
 
-  <script src="bundle.js"></script>
+  <!-- ESM entry: bundle.js is loaded with type="module" so esbuild code
+       splitting can lazy-load heavy on-demand chunks (xlsx, xterm, chart.js…). -->
+  <script type="module" src="bundle.js"></script>
   <script>lucide.createIcons();</script>
 
 </body>

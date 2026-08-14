@@ -94,62 +94,41 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-# aiohttp/websockets are independent optional deps — import outside lark_oapi
-# so they remain available for tests and webhook mode even if lark_oapi is missing.
-try:
-    import aiohttp
-    from aiohttp import web
-except ImportError:
-    aiohttp = None  # type: ignore[assignment]
-    web = None  # type: ignore[assignment]
+import aiohttp
+from aiohttp import web
+import websockets
 
-try:
-    import websockets
-except ImportError:
-    websockets = None  # type: ignore[assignment]
+import lark_oapi as lark
+from lark_oapi.api.application.v6 import GetApplicationRequest
+from lark_oapi.api.im.v1 import (
+    CreateFileRequest,
+    CreateFileRequestBody,
+    CreateImageRequest,
+    CreateImageRequestBody,
+    CreateMessageRequest,
+    CreateMessageRequestBody,
+    GetChatRequest,
+    GetMessageRequest,
+    GetMessageResourceRequest,
+    P2ImMessageMessageReadV1,
+    ReplyMessageRequest,
+    ReplyMessageRequestBody,
+    UpdateMessageRequest,
+    UpdateMessageRequestBody,
+)
+from lark_oapi.core import AccessTokenType, HttpMethod
+from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
+from lark_oapi.core.model import BaseRequest
+from lark_oapi.event.callback.model.p2_card_action_trigger import (
+    CallBackCard,
+    P2CardActionTriggerResponse,
+)
+from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
+from lark_oapi.ws import Client as FeishuWSClient
 
-try:
-    import lark_oapi as lark
-    from lark_oapi.api.application.v6 import GetApplicationRequest
-    from lark_oapi.api.im.v1 import (
-        CreateFileRequest,
-        CreateFileRequestBody,
-        CreateImageRequest,
-        CreateImageRequestBody,
-        CreateMessageRequest,
-        CreateMessageRequestBody,
-        GetChatRequest,
-        GetMessageRequest,
-        GetMessageResourceRequest,
-        P2ImMessageMessageReadV1,
-        ReplyMessageRequest,
-        ReplyMessageRequestBody,
-        UpdateMessageRequest,
-        UpdateMessageRequestBody,
-    )
-    from lark_oapi.core import AccessTokenType, HttpMethod
-    from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
-    from lark_oapi.core.model import BaseRequest
-    from lark_oapi.event.callback.model.p2_card_action_trigger import (
-        CallBackCard,
-        P2CardActionTriggerResponse,
-    )
-    from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
-    from lark_oapi.ws import Client as FeishuWSClient
-
-    FEISHU_AVAILABLE = True
-except ImportError:
-    FEISHU_AVAILABLE = False
-    lark = None  # type: ignore[assignment]
-    CallBackCard = None  # type: ignore[assignment]
-    P2CardActionTriggerResponse = None  # type: ignore[assignment]
-    EventDispatcherHandler = None  # type: ignore[assignment]
-    FeishuWSClient = None  # type: ignore[assignment]
-    FEISHU_DOMAIN = None  # type: ignore[assignment]
-    LARK_DOMAIN = None  # type: ignore[assignment]
-
-FEISHU_WEBSOCKET_AVAILABLE = websockets is not None
-FEISHU_WEBHOOK_AVAILABLE = aiohttp is not None
+FEISHU_AVAILABLE = True
+FEISHU_WEBSOCKET_AVAILABLE = True
+FEISHU_WEBHOOK_AVAILABLE = True
 
 from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.base import (
@@ -5271,10 +5250,7 @@ def _poll_registration(
     return None
 
 
-try:
-    import qrcode as _qrcode_mod
-except (ImportError, TypeError):
-    _qrcode_mod = None  # type: ignore[assignment]
+import qrcode as _qrcode_mod
 
 
 def _render_qr(url: str) -> bool:

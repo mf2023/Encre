@@ -147,6 +147,18 @@ def _identity_block() -> PromptBlock:
     return _block_from_file("identity")
 
 
+def _mandatory_constraints_block() -> PromptBlock:
+    """Binding pre-action governance block: recall, clarify, checkpoint.
+
+    Placed at priority 0.5 — between identity (0) and task_completion (1) —
+    so the mandatory constraints OVERRIDE the autonomy-enhancing guidance in
+    task_completion/tool_execution before that guidance is even read.  This
+    is the load-bearing block that prevents the model charging ahead on its
+    own invented plan while the live user's real intent differs.
+    """
+    return _block_from_file("mandatory_constraints")
+
+
 def _task_completion_block() -> PromptBlock:
     """Delivery-anchor block: finish the job, no stubs, no fabrication.
 
@@ -482,6 +494,7 @@ class EncrePromptBuilder:
         # Always-add core blocks (if not overridden)
         defaults = [
             _identity_block(),
+            _mandatory_constraints_block(),
             _task_completion_block(),
             _tool_execution_block(),
             _post_execution_validation_block(),

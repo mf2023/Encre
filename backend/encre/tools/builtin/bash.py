@@ -406,6 +406,7 @@ EncreBashTool = build_tool(
         "required": ["command", "terminal"],
     },
     execute=_bash_execute,
+    is_concurrency_safe=lambda _: False,
     intents=["general", "coding", "data"],
     category="shell",
     triggers=["shell", "terminal", "command", "run", "execute", "cmd", "powershell", "npm", "pip", "cargo", "bash"],

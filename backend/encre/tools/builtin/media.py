@@ -405,10 +405,7 @@ async def _media_transcribe(file_path: str) -> str:
     if not os.path.isfile(file_path):
         return f"Error: File not found: {file_path}"
 
-    try:
         import whisper
-    except ImportError:
-        return "Error: openai-whisper is required. Install with: pip install openai-whisper"
 
     try:
         model = whisper.load_model("base")

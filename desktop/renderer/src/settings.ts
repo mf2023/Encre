@@ -30,10 +30,10 @@ import { Dialog } from "./dialog.js";
 import { t, initLocale, setLocale, getLocale, clearLocaleCache, onLocaleChange, type Locale } from "./i18n.js";
 import { applyServerCommands } from "./slash_commands.js";
 import { renderMarkdown } from "./chat.js";
-import { PLATFORM_ICONS } from "./icons.js";
+import { platformIconHtml, searchEngineIconSrc } from "./icons.js";
 import { formatShortcut } from "./shortcutDisplay.js";
-import { Chart, registerables } from "chart.js";
-Chart.register(...registerables);
+// Chart.js is lazy-loaded on first render of the usage panel (see
+// _renderUsageSection) so it no longer blocks startup parsing.
 import { showTooltipAt, hideTooltip } from "./tooltip.js";
 import { SEARCH_ENGINES, getDefaultSearchEngine } from "./browser.js";
 import { searchSettingsNavItems, SEARCH_FILTER_META, SETTINGS_NAV_ITEMS } from "./search.js";
@@ -94,12 +94,13 @@ function setDevModeEnabled(enabled: boolean): void {
 
 const PERMISSION_OPTIONS = ["default", "accept_edits", "plan", "auto", "dont_ask", "bypass"];
 
-interface DropdownOption { id: string; label: string }
+interface DropdownOption { id: string; label: string; icon?: string }
 
 interface AdapterFieldDef {
   key: string;
   labelKey: string;
   type: "text" | "password" | "number" | "textarea";
+  placeholderKey?: string;
 }
 
 interface AdapterDef {
@@ -111,113 +112,113 @@ interface AdapterDef {
 }
 
 const ADAPTER_DEFS: AdapterDef[] = [
-  { id: "qqbot", name: "QQ Bot", desc: "接入 QQ 机器人平台，实时接收与回复群聊及私聊消息", fields: [
-    { key: "app_id", labelKey: "fieldAppId", type: "text" },
-    { key: "client_secret", labelKey: "fieldClientSecret", type: "password" },
-  ], docs: "https://bot.q.qq.com/wiki/" },
-  { id: "telegram", name: "Telegram", desc: "连接 Telegram Bot API，自动处理频道与私信中的指令和对话", fields: [
-    { key: "token", labelKey: "fieldBotToken", type: "password" },
-  ], docs: "https://core.telegram.org/bots#how-do-i-create-a-bot" },
-  { id: "discord", name: "Discord", desc: "集成 Discord 机器人，管理服务器频道消息与交互", fields: [
-    { key: "token", labelKey: "fieldBotToken", type: "password" },
-  ], docs: "https://discord.com/developers/applications" },
-  { id: "weixin", name: "微信", desc: "通过 iLink Bot 扫码绑定微信个人号，自动收发消息", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
-  { id: "wecom", name: "企业微信", desc: "对接企业微信自建应用回调，接收成员消息并自动回复", fields: [
-    { key: "token", labelKey: "fieldWecomToken", type: "text" },
-    { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password" },
-    { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text" },
-  ], docs: "https://developer.work.weixin.qq.com/document/" },
-{ id: "feishu", name: "飞书", desc: "连接飞书开放平台机器人，接收机器人事件并回复消息", fields: [
-     { key: "app_id", labelKey: "fieldAppId", type: "text" },
-     { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-   ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
-  { id: "dingtalk", name: "钉钉", desc: "接入钉钉开放平台机器人，通过 WebSocket 接收事件并通过 OpenAPI 回复消息", fields: [
-    { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text" },
-    { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password" },
-  ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
-  { id: "slack", name: "Slack", desc: "集成 Slack 工作空间，通过 Bot Token 监听和发送频道消息", fields: [
-    { key: "token", labelKey: "fieldBotToken", type: "password" },
-    { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password" },
-  ], docs: "https://api.slack.com/apps" },
-  { id: "whatsapp", name: "WhatsApp", desc: "连接 WhatsApp Business API，处理客户消息与对话", fields: [
-    { key: "phone_number_id", labelKey: "fieldPhoneNumberId", type: "text" },
-    { key: "access_token", labelKey: "fieldAccessToken", type: "password" },
-  ], docs: "https://developers.facebook.com/docs/whatsapp/" },
-  { id: "signal", name: "Signal", desc: "对接 Signal 消息服务，通过 REST API 收发加密消息", fields: [
-    { key: "phone_number", labelKey: "fieldPhoneNumber", type: "text" },
-    { key: "api_url", labelKey: "fieldApiUrl", type: "text" },
-  ]},
-  { id: "matrix", name: "Matrix", desc: "接入 Matrix 去中心化通信网络，加入房间并自动响应消息", fields: [
-    { key: "homeserver_url", labelKey: "fieldHomeserverUrl", type: "text" },
-    { key: "access_token", labelKey: "fieldAccessToken", type: "password" },
-  ], docs: "https://matrix.org/docs/guides/" },
-  { id: "email", name: "Email", desc: "通过 SMTP/IMAP 协议收发电子邮件，支持自动回复与管理", fields: [
-    { key: "smtp_host", labelKey: "fieldSmtpHost", type: "text" },
-    { key: "smtp_port", labelKey: "fieldSmtpPort", type: "number" },
-    { key: "smtp_user", labelKey: "fieldSmtpUser", type: "text" },
-    { key: "smtp_pass", labelKey: "fieldSmtpPass", type: "password" },
-    { key: "imap_host", labelKey: "fieldImapHost", type: "text" },
-    { key: "imap_port", labelKey: "fieldImapPort", type: "number" },
-  ]},
-  { id: "sms", name: "SMS", desc: "对接短信服务商 API，发送和接收短信通知", fields: [
-    { key: "provider", labelKey: "fieldProvider", type: "text" },
-    { key: "account_sid", labelKey: "fieldAccountSid", type: "text" },
-    { key: "auth_token", labelKey: "fieldAuthToken", type: "password" },
-  ]},
-  { id: "yuanbao", name: "元宝", desc: "接入元宝开放平台，通过 API 实现消息交互", fields: [
-    { key: "app_key", labelKey: "fieldAppKey", type: "text" },
-    { key: "app_secret", labelKey: "fieldAppSecret", type: "password" },
-  ]},
-  { id: "bluebubbles", name: "BlueBubbles", desc: "连接 BlueBubbles 服务器，实现 iMessage 消息收发", fields: [
-    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-    { key: "api_key", labelKey: "fieldApiKey", type: "password" },
+  { id: "bluebubbles", name: "BlueBubbles", desc: "Connect to a BlueBubbles server to send and receive iMessage", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text", placeholderKey: "placeholderServerUrl" },
+    { key: "api_key", labelKey: "fieldApiKey", type: "password", placeholderKey: "placeholderApiKey" },
   ], docs: "https://bluebubbles.app/" },
-  { id: "webhook", name: "Webhook", desc: "启动 Webhook 监听服务，接收外部系统的 HTTP 回调请求", fields: [
-    { key: "listen_path", labelKey: "fieldListenPath", type: "text" },
-    { key: "secret", labelKey: "fieldSecret", type: "password" },
+  { id: "dingtalk", name: "DingTalk", desc: "Connect to a DingTalk custom bot webhook to send work notifications and group messages", fields: [
+    { key: "client_id", labelKey: "fieldDingtalkClientId", type: "text", placeholderKey: "placeholderClientId" },
+    { key: "client_secret", labelKey: "fieldDingtalkClientSecret", type: "password", placeholderKey: "placeholderClientSecret" },
+  ], docs: "https://open.dingtalk.com/document/orgapp/create-and-configure-a-robot" },
+  { id: "discord", name: "Discord", desc: "Integrate Discord bots to manage server channel messages and interactions", fields: [
+    { key: "token", labelKey: "fieldBotToken", type: "password", placeholderKey: "placeholderBotToken" },
+  ], docs: "https://discord.com/developers/applications" },
+  { id: "email", name: "Email", desc: "Send and receive emails via SMTP/IMAP, with auto-reply and processing support", fields: [
+    { key: "smtp_host", labelKey: "fieldSmtpHost", type: "text", placeholderKey: "placeholderSmtpHost" },
+    { key: "smtp_port", labelKey: "fieldSmtpPort", type: "number", placeholderKey: "placeholderSmtpPort" },
+    { key: "smtp_user", labelKey: "fieldSmtpUser", type: "text", placeholderKey: "placeholderSmtpUser" },
+    { key: "smtp_pass", labelKey: "fieldSmtpPass", type: "password", placeholderKey: "placeholderSmtpPass" },
+    { key: "imap_host", labelKey: "fieldImapHost", type: "text", placeholderKey: "placeholderImapHost" },
+    { key: "imap_port", labelKey: "fieldImapPort", type: "number", placeholderKey: "placeholderImapPort" },
   ]},
-  { id: "homeassistant", name: "Home Assistant", desc: "连接 Home Assistant 智能家居平台，执行设备控制与状态查询", fields: [
-    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-    { key: "access_token", labelKey: "fieldLongLivedToken", type: "password" },
-  ], docs: "https://www.home-assistant.io/docs/authentication/" },
-  { id: "google_chat", name: "Google Chat", desc: "连接 Google Chat 空间，通过 Webhook 收发消息", fields: [
-    { key: "webhook_url", labelKey: "fieldWebhookUrl", type: "text" },
-    { key: "service_account", labelKey: "fieldServiceAccount", type: "textarea" },
+  { id: "feishu", name: "Feishu", desc: "Connect to the Feishu open platform to receive bot events and reply to messages", fields: [
+    { key: "app_id", labelKey: "fieldAppId", type: "text", placeholderKey: "placeholderAppId" },
+    { key: "app_secret", labelKey: "fieldAppSecret", type: "password", placeholderKey: "placeholderAppSecret" },
+  ], docs: "https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes" },
+  { id: "google_chat", name: "Google Chat", desc: "Connect to Google Chat spaces to send and receive messages via Webhook", fields: [
+    { key: "webhook_url", labelKey: "fieldWebhookUrl", type: "text", placeholderKey: "placeholderWebhookUrl" },
+    { key: "service_account", labelKey: "fieldServiceAccount", type: "textarea", placeholderKey: "placeholderServiceAccount" },
   ], docs: "https://developers.google.com/chat" },
-  { id: "irc", name: "IRC", desc: "连接 IRC 服务器，加入频道并自动响应消息", fields: [
-    { key: "server", labelKey: "fieldServer", type: "text" },
-    { key: "port", labelKey: "fieldPort", type: "number" },
-    { key: "nickname", labelKey: "fieldNickname", type: "text" },
-    { key: "password", labelKey: "fieldPassword", type: "password" },
+  { id: "homeassistant", name: "Home Assistant", desc: "Connect to the Home Assistant smart home platform to control devices and query state", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text", placeholderKey: "placeholderServerUrl" },
+    { key: "access_token", labelKey: "fieldLongLivedToken", type: "password", placeholderKey: "placeholderAccessToken" },
+  ], docs: "https://www.home-assistant.io/docs/authentication/" },
+  { id: "irc", name: "IRC", desc: "Connect to an IRC server to join channels and auto-respond to messages", fields: [
+    { key: "server", labelKey: "fieldServer", type: "text", placeholderKey: "placeholderServer" },
+    { key: "port", labelKey: "fieldPort", type: "number", placeholderKey: "placeholderPort" },
+    { key: "nickname", labelKey: "fieldNickname", type: "text", placeholderKey: "placeholderNickname" },
+    { key: "password", labelKey: "fieldPassword", type: "password", placeholderKey: "placeholderPassword" },
   ]},
-  { id: "line", name: "LINE", desc: "连接 LINE Messaging API，自动处理好友与群聊消息", fields: [
-    { key: "channel_access_token", labelKey: "fieldChannelAccessToken", type: "password" },
-    { key: "channel_secret", labelKey: "fieldChannelSecret", type: "password" },
+  { id: "line", name: "LINE", desc: "Connect to the LINE Messaging API to handle friend and group chat messages", fields: [
+    { key: "channel_access_token", labelKey: "fieldChannelAccessToken", type: "password", placeholderKey: "placeholderChannelAccessToken" },
+    { key: "channel_secret", labelKey: "fieldChannelSecret", type: "password", placeholderKey: "placeholderChannelSecret" },
   ], docs: "https://developers.line.biz/en/services/messaging-api/" },
-  { id: "mattermost", name: "Mattermost", desc: "集成 Mattermost 团队协作平台，监听和发送频道消息", fields: [
-    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-    { key: "token", labelKey: "fieldBotToken", type: "password" },
+  { id: "matrix", name: "Matrix", desc: "Connect to the Matrix decentralized communication network to join rooms and auto-respond to messages", fields: [
+    { key: "homeserver_url", labelKey: "fieldHomeserverUrl", type: "text", placeholderKey: "placeholderHomeserverUrl" },
+    { key: "access_token", labelKey: "fieldAccessToken", type: "password", placeholderKey: "placeholderAccessToken" },
+  ], docs: "https://matrix.org/docs/guides/" },
+  { id: "mattermost", name: "Mattermost", desc: "Integrate the Mattermost team collaboration platform to listen and send channel messages", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text", placeholderKey: "placeholderServerUrl" },
+    { key: "token", labelKey: "fieldBotToken", type: "password", placeholderKey: "placeholderBotToken" },
   ], docs: "https://developers.mattermost.com/" },
-  { id: "ntfy", name: "ntfy", desc: "通过 ntfy 推送服务发送通知消息", fields: [
-    { key: "topic", labelKey: "fieldTopic", type: "text" },
-    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
+  { id: "ntfy", name: "ntfy", desc: "Send notification messages via the ntfy push service", fields: [
+    { key: "topic", labelKey: "fieldTopic", type: "text", placeholderKey: "placeholderTopic" },
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text", placeholderKey: "placeholderServerUrl" },
   ], docs: "https://ntfy.sh/docs/" },
-  { id: "photon", name: "Photon", desc: "连接 Photon 社交平台，实现消息收发与交互", fields: [
-    { key: "api_url", labelKey: "fieldApiUrl", type: "text" },
-    { key: "api_key", labelKey: "fieldApiKey", type: "password" },
+  { id: "photon", name: "Photon", desc: "Connect to the Photon social platform for messaging and interaction", fields: [
+    { key: "api_url", labelKey: "fieldApiUrl", type: "text", placeholderKey: "placeholderApiUrl" },
+    { key: "api_key", labelKey: "fieldApiKey", type: "password", placeholderKey: "placeholderApiKey" },
   ]},
-  { id: "raft", name: "Raft", desc: "接入 Raft 分布式通信网络，处理节点间消息", fields: [
-    { key: "node_id", labelKey: "fieldNodeId", type: "text" },
-    { key: "peers", labelKey: "fieldPeers", type: "text" },
+  { id: "qqbot", name: "QQ", desc: "Connect to the QQ platform to receive and reply to group and private chat messages in real time", fields: [
+    { key: "app_id", labelKey: "fieldAppId", type: "text", placeholderKey: "placeholderAppId" },
+    { key: "client_secret", labelKey: "fieldClientSecret", type: "password", placeholderKey: "placeholderClientSecret" },
+  ], docs: "https://bot.q.qq.com/wiki/" },
+  { id: "raft", name: "Raft", desc: "Connect to the Raft distributed communication network to handle inter-node messages", fields: [
+    { key: "node_id", labelKey: "fieldNodeId", type: "text", placeholderKey: "placeholderNodeId" },
+    { key: "peers", labelKey: "fieldPeers", type: "text", placeholderKey: "placeholderPeers" },
   ]},
-  { id: "simplex", name: "SimpleX", desc: "连接 SimpleX 去中心化消息平台，保护隐私安全通信", fields: [
-    { key: "server_url", labelKey: "fieldServerUrl", type: "text" },
-    { key: "display_name", labelKey: "fieldDisplayName", type: "text" },
+  { id: "signal", name: "Signal", desc: "Connect to the Signal messaging service to send and receive encrypted messages via REST API", fields: [
+    { key: "phone_number", labelKey: "fieldPhoneNumber", type: "text", placeholderKey: "placeholderPhoneNumber" },
+    { key: "api_url", labelKey: "fieldApiUrl", type: "text", placeholderKey: "placeholderApiUrl" },
+  ]},
+  { id: "simplex", name: "SimpleX", desc: "Connect to the SimpleX decentralized messaging platform for private secure communication", fields: [
+    { key: "server_url", labelKey: "fieldServerUrl", type: "text", placeholderKey: "placeholderServerUrl" },
+    { key: "display_name", labelKey: "fieldDisplayName", type: "text", placeholderKey: "placeholderDisplayName" },
   ], docs: "https://simplex.chat/" },
-  { id: "teams", name: "Microsoft Teams", desc: "集成 Microsoft Teams，通过 Bot Framework 处理频道与群聊消息", fields: [
-    { key: "app_id", labelKey: "fieldAppId", type: "text" },
-    { key: "app_password", labelKey: "fieldAppPassword", type: "password" },
+  { id: "slack", name: "Slack", desc: "Integrate a Slack workspace to listen on and send channel messages via Bot Token", fields: [
+    { key: "token", labelKey: "fieldBotToken", type: "password", placeholderKey: "placeholderBotToken" },
+    { key: "signing_secret", labelKey: "fieldSigningSecret", type: "password", placeholderKey: "placeholderSigningSecret" },
+  ], docs: "https://api.slack.com/apps" },
+  { id: "sms", name: "SMS", desc: "Connect to an SMS provider API to send and receive SMS notifications", fields: [
+    { key: "provider", labelKey: "fieldProvider", type: "text", placeholderKey: "placeholderProvider" },
+    { key: "account_sid", labelKey: "fieldAccountSid", type: "text", placeholderKey: "placeholderAccountSid" },
+    { key: "auth_token", labelKey: "fieldAuthToken", type: "password", placeholderKey: "placeholderAuthToken" },
+  ]},
+  { id: "teams", name: "Microsoft Teams", desc: "Integrate Microsoft Teams to handle channel and group chat messages via Bot Framework", fields: [
+    { key: "app_id", labelKey: "fieldAppId", type: "text", placeholderKey: "placeholderAppId" },
+    { key: "app_password", labelKey: "fieldAppPassword", type: "password", placeholderKey: "placeholderAppPassword" },
   ], docs: "https://learn.microsoft.com/en-us/microsoftteams/platform/" },
+  { id: "telegram", name: "Telegram", desc: "Connect to the Telegram Bot API to automatically handle commands and conversations in channels and direct messages", fields: [
+    { key: "token", labelKey: "fieldBotToken", type: "password", placeholderKey: "placeholderBotToken" },
+  ], docs: "https://core.telegram.org/bots#how-do-i-create-a-bot" },
+  { id: "webhook", name: "Webhook", desc: "Start a Webhook listener to receive HTTP callbacks from external systems", fields: [
+    { key: "listen_path", labelKey: "fieldListenPath", type: "text", placeholderKey: "placeholderListenPath" },
+    { key: "secret", labelKey: "fieldSecret", type: "password", placeholderKey: "placeholderSecret" },
+  ]},
+  { id: "weixin", name: "WeChat", desc: "After configuring iLink Bot, connect to WeChat to send and receive messages and auto-reply", fields: [], docs: "https://www.wechatbot.dev/zh/protocol" },
+  { id: "wecom", name: "WeCom", desc: "Connect to a WeCom custom app to enable internal message notifications and collaboration", fields: [
+    { key: "token", labelKey: "fieldWecomToken", type: "text", placeholderKey: "placeholderWecomToken" },
+    { key: "encoding_aes_key", labelKey: "fieldEncodingAesKey", type: "password", placeholderKey: "placeholderEncodingAesKey" },
+    { key: "receive_id", labelKey: "fieldWecomReceiveId", type: "text", placeholderKey: "placeholderWecomReceiveId" },
+  ], docs: "https://developer.work.weixin.qq.com/document/" },
+  { id: "whatsapp", name: "WhatsApp", desc: "Connect to the WhatsApp Business API to handle customer messages and conversations", fields: [
+    { key: "phone_number_id", labelKey: "fieldPhoneNumberId", type: "text", placeholderKey: "placeholderPhoneNumberId" },
+    { key: "access_token", labelKey: "fieldAccessToken", type: "password", placeholderKey: "placeholderAccessToken" },
+  ], docs: "https://developers.facebook.com/docs/whatsapp/" },
+  { id: "yuanbao", name: "Yuanbao", desc: "Connect to the Yuanbao open platform to exchange messages via API", fields: [
+    { key: "app_key", labelKey: "fieldAppKey", type: "text", placeholderKey: "placeholderAppKey" },
+    { key: "app_secret", labelKey: "fieldAppSecret", type: "password", placeholderKey: "placeholderAppSecret" },
+  ]},
 ];
 
 export class Settings {
@@ -228,7 +229,7 @@ export class Settings {
   private searchInput: HTMLInputElement;
   private searchTimer: number = 0;
   private _versions: { desktop: string; agent: string } | null = null;
-  private _usageBarChart: Chart | null = null;
+  private _usageBarChart: import("chart.js").Chart | null = null;
   private _usageBarChartData: {
     labels: string[];
     datasets: any[];
@@ -739,7 +740,7 @@ setModelConfigs(currentModels, activeIdx);
       const cur = getState().usageStats;
       if (cur !== lastUsageStats) {
         lastUsageStats = cur;
-        if (this.currentPanel === "usage") this._renderUsageSection();
+        if (this.currentPanel === "usage") void this._renderUsageSection();
       }
     });
 
@@ -1229,7 +1230,7 @@ setModelConfigs(currentModels, activeIdx);
       send({ type: "get_memory_list" });
     } else if (id === "usage") {
       this.panels.usage.classList.add("active");
-      this._renderUsageSection();
+      void this._renderUsageSection();
       send({ type: "get_usage_stats" });
     } else if (id === "shortcuts") {
       this.panels.shortcuts.classList.add("active");
@@ -1301,7 +1302,7 @@ setModelConfigs(currentModels, activeIdx);
 
   renderAll(): void {
     this.renderGeneral();
-    this._renderUsageSection();
+    void this._renderUsageSection();
     this.renderShortcuts();
     this.renderModel();
     this.renderGateway();
@@ -1370,13 +1371,15 @@ setModelConfigs(currentModels, activeIdx);
 
   private renderDropdown(id: string, options: DropdownOption[], currentId: string, onChange: (val: string) => void): string {
     const current = options.find(o => o.id === currentId) || options[0];
+    const itemHtml = (o: DropdownOption) => `${o.icon ? `<img class="settings-dropdown-item-icon" src="${o.icon}" alt="" draggable="false" />` : ""}${o.label}`;
     const items = options.map(o =>
-      `<div class="settings-dropdown-item${o.id === currentId ? " selected" : ""}" data-value="${o.id}">${o.label}</div>`
+      `<div class="settings-dropdown-item${o.id === currentId ? " selected" : ""}" data-value="${o.id}"${o.icon ? ` data-icon="${o.icon}"` : ""}>${itemHtml(o)}</div>`
     ).join("");
+    const curHtml = current.icon ? `<img class="settings-dropdown-item-icon" src="${current.icon}" alt="" draggable="false" />` : "";
     return `
       <div class="settings-dropdown-wrap" id="${id}-wrap">
         <button class="settings-dropdown-trigger" id="${id}-trigger" type="button">
-          <span>${current.label}</span>
+          <span>${curHtml}${current.label}</span>
           <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
         </button>
         <div class="settings-dropdown" id="${id}-dropdown">${items}</div>
@@ -1409,7 +1412,11 @@ setModelConfigs(currentModels, activeIdx);
         e.stopPropagation();
         const val = (item as HTMLElement).getAttribute("data-value") || "";
         const label = (item as HTMLElement).textContent || "";
-        trigger.querySelector("span")!.textContent = label;
+        const icon = (item as HTMLElement).getAttribute("data-icon") || "";
+        const span = trigger.querySelector("span");
+        if (span) {
+          span.innerHTML = (icon ? `<img class="settings-dropdown-item-icon" src="${icon}" alt="" draggable="false" />` : "") + label;
+        }
         dropdown.classList.remove("open");
         dropdown.querySelectorAll(".settings-dropdown-item").forEach((el) => el.classList.remove("selected"));
         (item as HTMLElement).classList.add("selected");
@@ -1904,7 +1911,7 @@ this.renderShortcuts();
     }
 
     const tableHtml = models.length === 0
-      ? `<div class="model-empty">${t("settings.noModelsYet")}</div>`
+      ? `<div class="model-empty"><i data-lucide="cpu" class="lucide"></i><span>${t("settings.noModelsYet")}</span></div>`
       : `
         <div class="model-table">
           <div class="model-table-header">
@@ -1991,30 +1998,7 @@ this.renderShortcuts();
         descHtml = `<span style="color:var(--text-muted);font-size:11px">${this.esc(t(`settings.adapterDesc${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`))}</span>`;
       }
 
-      const iconData = PLATFORM_ICONS[def.id];
-      const isMonoIcon = def.id === "matrix" || def.id === "sms" || def.id === "webhook" || def.id === "google_chat" || def.id === "irc" || def.id === "line" || def.id === "mattermost" || def.id === "ntfy" || def.id === "photon" || def.id === "raft" || def.id === "simplex" || def.id === "teams";
-      let iconHtml: string;
-      if (iconData) {
-        const vb = iconData.viewBox || "0 0 24 24";
-        iconHtml = `<svg viewBox="${vb}" width="22" height="22" class="adapter-platform-icon${isMonoIcon ? " pi-mono" : ""}" style="margin-right:10px;flex-shrink:0">${iconData.inner}</svg>`;
-      } else {
-        const fbColors: Record<string, string> = {
-          feishu: "#3370FF", dingtalk: "#0089FF", slack: "#4A154B",
-          yuanbao: "#FF6A00", bluebubbles: "#007AFF", webhook: "#6B7280", sms: "#34A853",
-        };
-        const fbText: Record<string, string> = {
-          feishu: t("settings.abbrFeishu"),
-          dingtalk: t("settings.abbrDingtalk"),
-          slack: "Sl",
-          yuanbao: t("settings.abbrYuanbao"),
-          bluebubbles: "BB",
-          webhook: "WH",
-          sms: "SMS",
-        };
-        const c = fbColors[def.id] || "#888";
-        const fbLabel = fbText[def.id] || displayName.substring(0, 2);
-        iconHtml = `<div style="width:22px;height:22px;border-radius:5px;background:${c};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-right:10px;flex-shrink:0">${fbLabel}</div>`;
-      }
+      const iconHtml = platformIconHtml(def.id, 22, "", "margin-right:10px");
 
       cardsHtml += `
         <div class="settings-card" style="margin-bottom:12px">
@@ -2150,18 +2134,20 @@ this.renderShortcuts();
     } else {
       for (const f of def.fields) {
         const val = (s[`adapter_${defId}_${f.key}` as keyof typeof s] as string) ?? "";
+        const ph = f.placeholderKey ? tFn("settings." + f.placeholderKey) : "";
+        const phAttr = ph ? ` placeholder="${this.esc(ph)}"` : "";
         if (f.type === "textarea") {
           bodyHtml += `
                 <div class="model-form-row">
                     <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
-                    <textarea id="dlg-${defId}-${f.key}" class="model-form-input" style="resize:vertical;min-height:80px" spellcheck="false">${this.esc(val)}</textarea>
+                    <textarea id="dlg-${defId}-${f.key}" class="model-form-input" style="resize:vertical;min-height:80px" spellcheck="false"${phAttr}>${this.esc(val)}</textarea>
                 </div>`;
         } else if (f.type === "password") {
           bodyHtml += `
                 <div class="model-form-row">
                     <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
                     <div class="model-form-input-wrap">
-                        <input type="password" id="dlg-${defId}-${f.key}" class="model-form-input model-form-input--reveal" value="${this.esc(val)}" spellcheck="false" autocomplete="off" />
+                        <input type="password" id="dlg-${defId}-${f.key}" class="model-form-input model-form-input--reveal" value="${this.esc(val)}" spellcheck="false" autocomplete="off"${phAttr} />
                         <button class="model-form-eye-btn" type="button" data-eye-target="dlg-${defId}-${f.key}" title="显示"><i data-lucide="eye"></i></button>
                     </div>
                 </div>`;
@@ -2169,7 +2155,7 @@ this.renderShortcuts();
           bodyHtml += `
                 <div class="model-form-row">
                     <label class="model-form-label" for="dlg-${defId}-${f.key}"><span class="model-form-required">*</span>${tFn("settings." + f.labelKey)}</label>
-                    <input type="${f.type}" id="dlg-${defId}-${f.key}" class="model-form-input" value="${this.esc(val)}" spellcheck="false" />
+                    <input type="${f.type}" id="dlg-${defId}-${f.key}" class="model-form-input" value="${this.esc(val)}" spellcheck="false"${phAttr} />
                 </div>`;
         }
       }
@@ -2210,7 +2196,7 @@ this.renderShortcuts();
             return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-model-id="${this.esc(m.model_id)}">
               <span class="auto-push-gw-name">${this.esc(m.name || m.model_id)}</span>
               <span class="auto-push-gw-dot" title="${this.esc(m.model_id)}"></span>
-              <input type="checkbox" class="auto-push-gw-check" ${isSel ? "checked" : ""} />
+              <span class="auto-push-gw-check"></span>
             </div>`;
           }).join("")
       ) + `
@@ -2772,7 +2758,7 @@ private _bindModelSelect(): void {
 
   private _renderDocList(docs: import("./types.js").DocumentEntry[], tFn: any): string {
     if (docs.length === 0) {
-      return `<div class="model-empty">${tFn("settings.noDocuments")}</div>`;
+      return `<div class="model-empty"><i data-lucide="file-text" class="lucide"></i><span>${tFn("settings.noDocuments")}</span></div>`;
     }
     const header = `
       <div class="model-table-header">
@@ -2893,9 +2879,14 @@ private _bindModelSelect(): void {
     document.body.appendChild(overlay);
 
     overlay.querySelectorAll("textarea").forEach((ta) => {
+      let raf = 0;
       const autoResize = () => {
-        ta.style.height = "auto";
-        ta.style.height = Math.min(ta.scrollHeight, 300) + "px";
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          ta.style.height = "auto";
+          ta.style.height = Math.min(ta.scrollHeight, 300) + "px";
+        });
       };
       ta.addEventListener("input", autoResize);
       autoResize();
@@ -2904,12 +2895,17 @@ private _bindModelSelect(): void {
     // Auto-resize contenteditable prompt-inputs in dialogs
     overlay.querySelectorAll(".prompt-input[contenteditable]").forEach((el) => {
       const ph = el.parentElement?.querySelector(".prompt-placeholder") as HTMLElement;
+      let raf = 0;
       const update = () => {
-        (el as HTMLElement).style.height = "auto";
-        (el as HTMLElement).style.height = Math.min((el as HTMLElement).scrollHeight, 300) + "px";
-        if (ph) {
-          ph.classList.toggle("hidden", (el.textContent || "").trim().length > 0);
-        }
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          (el as HTMLElement).style.height = "auto";
+          (el as HTMLElement).style.height = Math.min((el as HTMLElement).scrollHeight, 300) + "px";
+          if (ph) {
+            ph.classList.toggle("hidden", (el.textContent || "").trim().length > 0);
+          }
+        });
       };
       el.addEventListener("input", update);
       update();
@@ -2970,7 +2966,7 @@ private _bindModelSelect(): void {
     }
 
     const skillsCardHtml = skills.length === 0
-      ? `<div class="model-empty">${t("settings.noSkills")}</div>`
+      ? `<div class="model-empty"><i data-lucide="wand-2" class="lucide"></i><span>${t("settings.noSkills")}</span></div>`
       : `
         <div class="model-table">
           <div class="model-table-header">
@@ -3017,7 +3013,7 @@ private _bindModelSelect(): void {
     const cmds = st.customCommands;
 
     if (cmds.length === 0) {
-      return `<div class="model-empty">${t("settings.noCommands")}</div>`;
+      return `<div class="model-empty"><i data-lucide="terminal" class="lucide"></i><span>${t("settings.noCommands")}</span></div>`;
     }
 
     let rowsHtml = "";
@@ -3077,7 +3073,7 @@ private _bindModelSelect(): void {
       </div>
       <div class="model-form-row">
         <label class="model-form-label">${t("settings.commandIcon")}</label>
-        <input type="text" id="cmd-icon" class="model-form-input" value="${this.esc(existing?.icon || "command")}" placeholder="${t("settings.commandIconPlaceholder")}" />
+        <input type="text" id="cmd-icon" class="model-form-input" value="${this.esc(existing?.icon && existing.icon !== "command" ? existing.icon : "wand-2")}" placeholder="${t("settings.commandIconPlaceholder")}" />
       </div>
       <div class="model-form-row">
         <label class="model-form-label">${t("settings.commandPrompt")}</label>
@@ -3102,11 +3098,12 @@ private _bindModelSelect(): void {
         return;
       }
 
+      const iconVal = (document.getElementById("cmd-icon") as HTMLInputElement)?.value?.trim() || "wand-2";
       const newCmd: CustomCommand = {
         name,
         title: (document.getElementById("cmd-title") as HTMLInputElement)?.value?.trim() || name,
         description: (document.getElementById("cmd-description") as HTMLInputElement)?.value?.trim() || "",
-        icon: (document.getElementById("cmd-icon") as HTMLInputElement)?.value?.trim() || "command",
+        icon: iconVal === "command" ? "wand-2" : iconVal,
         prompt: (document.getElementById("cmd-prompt") as HTMLTextAreaElement)?.value?.trim() || undefined,
       };
 
@@ -3286,7 +3283,7 @@ private _bindModelSelect(): void {
     }
 
     const tableHtml = servers.length === 0
-      ? `<div class="model-empty">${t("settings.noMcpServers")}</div>`
+      ? `<div class="model-empty"><i data-lucide="server" class="lucide"></i><span>${t("settings.noMcpServers")}</span></div>`
       : `
         <div class="model-table">
           <div class="model-table-header">
@@ -3437,12 +3434,17 @@ private _bindModelSelect(): void {
     // ── Auto-grow textarea: height = content, capped at max-height ──
     const ta = overlay.querySelector("#mcp-import-textarea") as HTMLTextAreaElement;
     if (ta) {
+      let raf = 0;
       const grow = () => {
-        ta.style.height = "auto";
-        ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          ta.style.height = "auto";
+          ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+        });
       };
       ta.addEventListener("input", grow);
-      setTimeout(grow, 0);
+      grow();
     }
 
     let parsedServers: MCPServerConfig[] | null = null;
@@ -3554,7 +3556,7 @@ private _bindModelSelect(): void {
     }
 
     const tableHtml = rules.length === 0
-      ? `<div class="model-empty">${t("settings.noGlobalRules")}</div>`
+      ? `<div class="model-empty"><i data-lucide="file-check" class="lucide"></i><span>${t("settings.noGlobalRules")}</span></div>`
       : `
         <div class="model-table">
           <div class="model-table-header">
@@ -3768,7 +3770,7 @@ private _bindModelSelect(): void {
     const agents = getState().subAgents || [];
 
     const tableContent = agents.length === 0
-      ? `<div class="model-empty">${t("settings.noSubAgentsYet")}</div>`
+      ? `<div class="model-empty"><i data-lucide="bot" class="lucide"></i><span>${t("settings.noSubAgentsYet")}</span></div>`
       : `
         <div class="model-table">
           <div class="model-table-header">
@@ -3896,7 +3898,7 @@ private _bindModelSelect(): void {
     }
 
     const tableHtml = entries.length === 0
-      ? `<div class="model-empty">${tFn("settings.noMemoryEntries")}</div>`
+      ? `<div class="model-empty"><i data-lucide="brain" class="lucide"></i><span>${tFn("settings.noMemoryEntries")}</span></div>`
       : `
         <div class="model-table">
           <div class="model-table-header">
@@ -3946,7 +3948,7 @@ private _bindModelSelect(): void {
     send({ type: "get_memory_detail", path });
   }
 
-  private _renderUsageSection(): void {
+  private async _renderUsageSection(): Promise<void> {
     const el = this.panels.usage;
     if (!el) return;
     const stats = getState().usageStats;
@@ -3959,7 +3961,7 @@ private _bindModelSelect(): void {
         <div class="usage-empty">
           <div class="usage-empty-icon"><i data-lucide="chart-column" class="lucide"></i></div>
           <div class="usage-empty-text">${t("settings.noUsageData")}</div>
-          <button class="btn" id="btn-refresh-usage-empty">${t("settings.refresh")}</button>
+          <button class="btn-empty" id="btn-refresh-usage-empty">${t("settings.refresh")}</button>
         </div>`;
       document.getElementById("btn-refresh-usage-empty")?.addEventListener("click", () => {
         send({ type: "get_usage_stats" });
@@ -4075,6 +4077,9 @@ private _bindModelSelect(): void {
     const canvas = el.querySelector("#usage-bar-chart") as HTMLCanvasElement | null;
     if (canvas && this._usageBarChartData) {
       const data = this._usageBarChartData;
+      // Lazy-load Chart.js on first usage-panel render.
+      const { Chart, registerables } = await import("chart.js");
+      Chart.register(...registerables);
       this._usageBarChart = new Chart(canvas, {
         type: "bar",
         data: { labels: data.labels, datasets: data.datasets },
@@ -4144,7 +4149,7 @@ private _bindModelSelect(): void {
         const mode = (btn as HTMLElement).getAttribute("data-groupby") as "model" | "channel";
         if (mode && mode !== this._usageGroupBy) {
           this._usageGroupBy = mode;
-          this._renderUsageSection();
+          void this._renderUsageSection();
         }
       });
     });
@@ -4275,15 +4280,10 @@ private _bindModelSelect(): void {
       });
     }
     if (!container) return;
-    container.querySelectorAll(".auto-push-gw-check").forEach((cb) => {
-      cb.addEventListener("click", (e) => e.preventDefault());
-    });
     container.querySelectorAll(".auto-push-gw-item").forEach(item => {
       item.addEventListener("click", (e) => {
         e.stopPropagation();
         const wasSel = item.classList.contains("selected");
-        const cb = item.querySelector(".auto-push-gw-check") as HTMLInputElement;
-        if (cb) cb.checked = !wasSel;
         item.classList.toggle("selected", !wasSel);
       });
     });
@@ -4967,7 +4967,7 @@ private _bindModelSelect(): void {
     const st = getState();
     const s = st.settings;
     const currentSearchEngine = (s.default_search_engine as string) || "bing";
-    const searchEngineOptions: DropdownOption[] = SEARCH_ENGINES.map(e => ({ id: e.id, label: e.name }));
+    const searchEngineOptions: DropdownOption[] = SEARCH_ENGINES.map(e => ({ id: e.id, label: e.name, icon: searchEngineIconSrc(e.id) }));
     const currentSearchEngineUrl = SEARCH_ENGINES.find(e => e.id === currentSearchEngine)?.searchUrl || "https://www.bing.com/search?q={query}";
 
     this.panels.browser.innerHTML = `
@@ -5073,7 +5073,7 @@ private _bindModelSelect(): void {
     const bodyHtml = `
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${t("settings.importBrowserDataDesc")}</div>
       <div id="import-browser-list" class="model-table" style="min-height:60px">
-        <div class="model-empty">${t("settings.scanning")}</div>
+        <div class="model-empty"><i data-lucide="loader-circle" class="lucide"></i><span>${t("settings.scanning")}</span></div>
       </div>`;
     const { overlay, close } = this._showFormDialog(t("settings.importBrowserData"), bodyHtml, true);
     const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
@@ -5083,7 +5083,8 @@ private _bindModelSelect(): void {
 
     api.detectBrowsers().then((browsers: any[]) => {
       if (!browsers || browsers.length === 0) {
-        listEl.innerHTML = `<div class="model-empty">${t("settings.noBrowsersFound")}</div>`;
+        listEl.innerHTML = `<div class="model-empty"><i data-lucide="globe" class="lucide"></i><span>${t("settings.noBrowsersFound")}</span></div>`;
+        if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: listEl });
         return;
       }
       listEl.innerHTML = browsers.map((b: any) => `
@@ -5117,7 +5118,8 @@ private _bindModelSelect(): void {
         });
       });
     }).catch(() => {
-      listEl.innerHTML = `<div class="model-empty">${t("settings.scanFailed")}</div>`;
+      listEl.innerHTML = `<div class="model-empty"><i data-lucide="alert-triangle" class="lucide"></i><span>${t("settings.scanFailed")}</span></div>`;
+      if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: listEl });
     });
   }
 
@@ -5232,7 +5234,7 @@ private _bindModelSelect(): void {
           collect(data.roots.other?.children);
         }
         if (all.length === 0) {
-          bookmarksList.innerHTML = `<div class="model-empty">${t("settings.noBookmarks")}</div>`;
+          bookmarksList.innerHTML = `<div class="model-empty"><i data-lucide="bookmark" class="lucide"></i><span>${t("settings.noBookmarks")}</span></div>`;
           return;
         }
         bookmarksList.innerHTML = all.map((bm, i) => `
@@ -5278,7 +5280,7 @@ private _bindModelSelect(): void {
     if (historyList && api.getHistory) {
       api.getHistory().then((history: any[]) => {
         if (!history || history.length === 0) {
-          historyList.innerHTML = `<div class="model-empty">${t("settings.noHistory")}</div>`;
+          historyList.innerHTML = `<div class="model-empty"><i data-lucide="history" class="lucide"></i><span>${t("settings.noHistory")}</span></div>`;
           return;
         }
         historyList.innerHTML = history.map((entry) => {

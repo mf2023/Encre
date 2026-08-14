@@ -75,8 +75,11 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     body = text[end_idx + 4:].strip()
 
     meta: dict[str, Any] = {}
-    for line in header.splitlines():
-        line = line.strip()
+    lines = header.splitlines()
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx].strip()
+        idx += 1
         if not line or line.startswith("#"):
             continue
         m = re.match(r"^(\w+)\s*:\s*(.*)", line)
@@ -87,11 +90,32 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 
         # null / None / ~
         if raw in ("~", "null", "None", ""):
-            meta[key] = None
+            # Block-style list: key: followed by ``- item`` lines
+            if raw == "" and idx < len(lines):
+                block_items: list[str] = []
+                while idx < len(lines):
+                    next_line = lines[idx]
+                    stripped = next_line.strip()
+                    if stripped.startswith("- "):
+                        block_items.append(stripped[2:].strip().strip("'\""))
+                        idx += 1
+                    elif not stripped or stripped.startswith("#"):
+                        idx += 1
+                    else:
+                        break
+                if block_items:
+                    meta[key] = block_items
+                else:
+                    meta[key] = None
+            else:
+                meta[key] = None
         # list: [a, b, c]
         elif raw.startswith("[") and raw.endswith("]"):
             items = raw[1:-1].split(",")
             meta[key] = [i.strip().strip("'\"") for i in items if i.strip()]
+        # float (allows priorities between integer blocks, e.g. ``priority: 0.5``)
+        elif re.match(r"^-?\d+\.\d+$", raw):
+            meta[key] = float(raw)
         # integer
         elif raw.isdigit() or (raw.startswith("-") and raw[1:].isdigit()):
             meta[key] = int(raw)
