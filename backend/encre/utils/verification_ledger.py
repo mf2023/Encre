@@ -187,3 +187,28 @@ class VerificationLedger:
             "passes before you finish. Review the following files:\n"
             f"{_files}{_more}"
         )
+
+    def build_hard_gate_message(self, files: list[str], remaining: int) -> str:
+        """Hard-gate escalation: verification is a non-negotiable requirement
+        for delivery.  Fired only after the verify-on-stop nudges and the
+        forced-review stage are exhausted, so the model cannot silently claim
+        completion over an unverified or failing change.
+
+        Unlike the earlier stages this message frames verification as a
+        *project-level regression gate* (build + typecheck + lint + tests),
+        not a per-file checkbox, and states the number of hard-gate turns left
+        so the bound is transparent to the model.
+        """
+        shown = files[:10]
+        _files = "\n".join(f"- `{f}`" for f in shown)
+        _more = f"\n  ... and {len(files) - 10} more" if len(files) > 10 else ""
+        return (
+            "[VERIFICATION-GATE] The task is NOT complete. Production-grade "
+            "delivery requires the full project to verify green -- run the "
+            "project's build, typecheck, linter, and test suite and fix every "
+            "failure until they pass. Do not summarize, do not skip, do not "
+            "claim completion while any edited file lacks passing evidence.\n"
+            f"{_files}{_more}\n"
+            f"Hard-gate turns remaining: {remaining}. Use them to fix and "
+            "re-verify, then report the passing evidence."
+        )

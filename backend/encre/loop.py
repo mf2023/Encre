@@ -74,6 +74,8 @@ from encre.feedback.learner import EncreFeedbackLearner
 from encre.hooks.system import EncreHookSystem
 from encre.logging_config import get_logger
 from encre.memdir.system import EncreMemorySystem
+from encre.mode_profiles import AgentMode, get_mode_profile
+from encre.evolution.plan_do_review import PlanDoReviewEngine, StepStatus
 from encre.profile.system import EncreProfileSystem
 from encre.prompts.base import EncrePromptTemplate
 from encre.prompts.classifier import classify_intents
@@ -212,7 +214,6 @@ from encre.utils.loop_helpers import (
     build_verify_instruction,
     _tool_retry_allowed,
     _try_lsp_diagnostics,
-    _MAX_TOOL_CONCURRENCY,
     _EVOLUTION_ENABLED,
     _PLAN_STATUS_MAP,
     _GUARDRAIL_WARN_AFTER,
@@ -222,7 +223,6 @@ from encre.utils.loop_helpers import (
     _result_digest,
     _is_idempotent_tool,
     _NO_PROGRESS_AFTER,
-    _MAX_VERIFY_ON_STOP_NUDGES,
     _VERIFY_TOOL_NAMES,
     _summarize_verify_result,
 )
@@ -241,13 +241,22 @@ _MAIN_SESSION_HARD_TURN_CAP = int(os.environ.get("ENCRE_MAX_TURNS_HARD_CAP", "10
 # Diminishing-returns guard (Claude Code tokenBudget.ts port): if the model has
 # auto-continued at least this many times consecutively while producing less than
 # this many output tokens each time, stop auto-continuing (it is going in circles).
+# These mirror GENERAL_PROFILE defaults; per-mode values live in mode_profiles.py.
 _AUTO_CONTINUE_DIMINISHING_MIN_CONTINUES = 3
 _AUTO_CONTINUE_DIMINISHING_MIN_DELTA = 500
 
 # Max times the forced-review escalation (the review stage of the
 # implement -> verify -> review -> fix loop) fires per session.  Bounded so a
 # model that refuses to fix a failing check cannot wedge the loop forever.
+# Mirrors GENERAL_PROFILE.forced_reviews.
 _MAX_FORCED_REVIEWS = 1
+
+# Max times the hard verification gate fires per session before the loop
+# falls back to emitting a "verification_blocked" finish instead of a clean
+# stop.  Kept generous so a capable model has room to fix a genuinely broken
+# project, but bounded so a model that keeps refusing can never wedge the
+# loop forever.  Mirrors GENERAL_PROFILE.verify_hard_gate.
+_MAX_VERIFY_HARD_GATE = 4
 
 # ── Context overflow detection (reactive compact) ──────────────
 _CONTEXT_OVERFLOW_PATTERN = re.compile(
@@ -309,6 +318,7 @@ class EncreLoop:
         feedback: EncreFeedbackLearner | None = None,
         code_index: EncreCodeIndex | None = None,
         sub_agent_depth: int = 0,
+        mode: AgentMode | str | None = None,
     ) -> None:
         """Construct the loop and wire up all collaborating subsystems.
 
@@ -362,6 +372,19 @@ class EncreLoop:
         )
         self._tracer = maybe_get_tracer()
         self.sub_agent_depth = sub_agent_depth
+        # Capability profile: one engine, distinct per-mode behaviour.
+        # Defaults to GENERAL (historical behaviour) when mode is unset.
+        self.mode: AgentMode = AgentMode(mode) if isinstance(mode, str) and not isinstance(mode, AgentMode) else (mode or AgentMode.GENERAL)
+        if not isinstance(self.mode, AgentMode):
+            self.mode = AgentMode.GENERAL
+        self._profile = get_mode_profile(self.mode)
+        # Plan-Do-Review engine (WORKSPACE profile only): decomposes complex
+        # tasks into a step graph, tracks per-step tool calls, and drives
+        # light/deep review between steps.  The plan context is injected into
+        # the system prompt every turn so the coder stays anchored to the
+        # plan instead of drifting (mirrors Claude Code's plan-do-review).
+        self._pdr = PlanDoReviewEngine()
+        self._pdr_active = False
         evo = evolution or EvolutionConfig.create_default()
         self.learner = evo.learner
         self.optimizer = evo.optimizer
@@ -369,6 +392,15 @@ class EncreLoop:
         self.meta = evo.meta
         self.reviewer = evo.reviewer
         self.event_store = evo.event_store
+        # Load persisted evolution/learning state so past experience survives
+        # restarts (previously never loaded, so every restart started empty).
+        for _comp in (self.learner,):
+            _load = getattr(_comp, "load", None)
+            if _load is not None:
+                try:
+                    _load()
+                except Exception:
+                    pass
         self.recovery_engine = recovery or ErrorRecoveryEngine()
         # Wire event store to hook system for automatic lifecycle recording
         if self.event_store is not None and evo.event_store_enabled:
@@ -378,6 +410,12 @@ class EncreLoop:
         # pay zero cost.  Mirrors Claude Code's ``CachedMCState``.
         self._cache_edits_state: Any = None
         self.feedback = feedback
+        _fback_load = getattr(self.feedback, "load", None)
+        if _fback_load is not None:
+            try:
+                _fback_load()
+            except Exception:
+                pass
         self._pending_code_scan: EncreCodeIndex | None = None
         # Tracks the currently-streaming (not yet committed) assistant turn so a
         # cancel / hard-exit can persist the partial text/thinking that would
@@ -463,6 +501,12 @@ class EncreLoop:
         # times we injected a critical-review demand after verify nudges were
         # exhausted but a check still failed.  Bounded by _MAX_FORCED_REVIEWS.
         self._forced_review_count = 0
+        # Hard verification gate: the last line of defence before a text-only
+        # finish is allowed.  Once verify-on-stop nudges and the forced-review
+        # stage are exhausted, this counter escalates the demands (project-level
+        # regression: build + typecheck + lint + tests) before falling through
+        # to the hard-gate fallback.  Bounded by _MAX_VERIFY_HARD_GATE.
+        self._verify_hard_gate_count = 0
         # Diminishing-returns guard (Claude Code tokenBudget port): track
         # consecutive auto-continues whose output is tiny; stop continuing when
         # the model keeps producing near-empty output instead of real progress.
@@ -567,6 +611,7 @@ class EncreLoop:
             sub_agent_depth=self.sub_agent_depth,
             child_loops=self._child_loops,
             session=self.session,
+            mode=self.mode,
         )
 
     # ── PlanModeManager bridge properties ──────────────────────────
@@ -882,6 +927,13 @@ class EncreLoop:
 
         if stage == "discover" and (search_count >= 3 or any(x in prompt_lower for x in ("compare", "investigate", "research", "分析", "调研"))):
             return True, "researcher", "parallel research would reduce repeated discovery turns"
+        # WORKSPACE mode: before heavy implementation begins, force a
+        # planner/architect pass so the coder is anchored to a written
+        # design contract instead of free-styling.  The planner output is
+        # persisted as a contract artifact (see save_architecture_contract)
+        # and re-injected on every turn.
+        if self._profile.workspace_delegation and stage == "execute" and write_count >= 2:
+            return True, "planner", "workspace delivery requires a written architecture contract before implementation"
         if stage == "execute" and write_count >= 2 and tool_count >= 4:
             return True, "executor", "execution has become multi-step and benefits from a focused implementer"
         if stage in {"verify", "report"} or any(x in prompt_lower for x in ("review", "audit", "check regression", "审查", "复核")):
@@ -937,6 +989,19 @@ class EncreLoop:
             )
             content = str(result.get("content", "") or "").strip()
             if content:
+                # Persist planner/architect guidance as a binding architecture
+                # contract artifact in the workspace (if any).  The contract is
+                # re-injected into the system prompt on every turn, so the main
+                # agent stays anchored to the agreed design instead of drifting.
+                try:
+                    from encre.contract import is_contract_role, save_architecture_contract
+                    if is_contract_role(delegate):
+                        ws = getattr(self.config, "workspace", "") or ""
+                        _saved = save_architecture_contract(ws, delegate, content, parent_task=prompt)
+                        if _saved:
+                            logger.info("[delegate] saved %s contract artifact: %s", delegate, _saved)
+                except Exception:
+                    logger.warning("[delegate] failed to persist %s contract artifact", delegate, exc_info=True)
                 history = list(self._state_mgr.delegate_history)
                 history.append({
                     "delegate": delegate,
@@ -1083,15 +1148,32 @@ class EncreLoop:
     def tool_set_name(self, value: str) -> None:
         self._tool_set_name = value
 
-    def _resolve_tool_set_for_mode(self) -> str:
-        """Map the current ``config.slash_command_mode`` to a tool set name."""
+    def _resolve_tool_set_for_mode(self, intents: list[str] | None = None) -> str:
+        """Map the current mode + detected intents to a tool set name.
+
+        Base tool set comes from ``config.slash_command_mode`` (restricted in
+        plan/spec), then expands to the intent-matched sets so the model can
+        reach advanced tools (lsp, git, test_run, notebook, chart, ...)
+        without first calling ``find_tool``.  This fixes the structural gap
+        where browser/computer/docker etc. were only reachable through the
+        model self-selecting find_tool -- most models never did, so advanced
+        tools were effectively dead.
+        """
         mode = self.config.slash_command_mode or ""
-        _MODE_TO_TOOLSET = {
-            "": "default",
-            "plan": "default",  # plan mode uses a restricted set
-            "spec": "default",
-        }
-        return _MODE_TO_TOOLSET.get(mode, "default")
+        base = "default" if mode in ("", "plan", "spec") else "default"
+        intent_sets = {"coding": "coding", "research": "research", "data": "data"}
+        picks: list[str] = [base]
+        # Per-profile base tool sets (WORKSPACE always has the coding
+        # toolchain, AUTOMATION stays bare) merge in before intent sets.
+        for ts in getattr(self._profile, "tool_sets", ()) or ():
+            if ts and ts not in picks:
+                picks.append(ts)
+        for intent in (intents or []):
+            ts = intent_sets.get(intent)
+            if ts and ts not in picks:
+                picks.append(ts)
+        # "all" would blow up context; a curated union is safer.
+        return "+".join(picks) if len(picks) > 1 else base
 
     def set_mode(self, mode: str) -> None:
         """Transition the loop to a new command mode atomically.
@@ -1757,6 +1839,15 @@ class EncreLoop:
                 self._finalize_cancelled_turn()
             except Exception:
                 logger.warning("[run] finalize in finally failed", exc_info=True)
+            # Persist evolution/learning state so learned experience survives
+            # restarts.  Best-effort: never blocks the run teardown.
+            for _comp in (self.learner, self.feedback):
+                _save = getattr(_comp, "save", None)
+                if _save is not None:
+                    try:
+                        _save()
+                    except Exception:
+                        pass
             reset_bash_workspace(_bash_ws_token)
             reset_active_loop(_loop_token)
             reset_agent_active_loop(_agent_loop_token)
@@ -1829,12 +1920,32 @@ class EncreLoop:
             logger.info("[run] detected requirement change: %s -- clearing cached summary", _detected_change)
             self._state_mgr.user_requirements_summary = ""
 
+        # Plan-Do-Review (WORKSPACE profile, top-level turn): build a step
+        # graph from a complex task before execution so the coder is anchored
+        # to a written plan.  Re-initialise when the user redirects mid-task
+        # (detected requirement change) or when no plan exists yet.
+        if (
+            self._profile.workspace_delegation
+            and self.sub_agent_depth == 0
+            and prompt
+            and self._pdr.should_plan(prompt)
+        ):
+            if not self._pdr_active or _detected_change:
+                self._pdr.initialize(prompt)
+                self._pdr_active = True
+                self._pdr.start_next_step()
+                logger.info("[run] Plan-Do-Review initialized for task (steps=%d)", len(self._pdr.plan.steps))
+
         # Activate any skills invoked via /skill-name syntax
         skill_prompt, prompt = await self._activate_skills(prompt)
         _t0 = time.time()
         tools = None
         if self.backend.supports_tool_calling():
-            # Discovery handles ToolSet resolution + find_tool + MCP merging
+            # Discovery handles ToolSet resolution + find_tool + MCP merging.
+            # Expand the base toolset with intent-matched sets (coding /
+            # research / data) so advanced tools are reachable without the
+            # model having to self-select find_tool first.
+            self._tool_set_name = self._resolve_tool_set_for_mode(intents)
             self.discovery.tool_set_name = self._tool_set_name
             tools = self.discovery.get_active_tools_payload(self.session.id, fmt="openai")
         ws_root, ws_name, ws_summary = self._ctx_bldr.workspace_info()
@@ -1856,6 +1967,7 @@ class EncreLoop:
                 tuple(sorted(s.name for s in self.skill_registry.list_all()
                        if s.user_invocable and not s.name.startswith("tool-"))) if self.skill_registry else (),
                 self.active_command_name,
+                _active_cmd_full := (self.config.active_command or {}).get("prompt", ""),
                 self.config.model,
             )
             if self._sys_prompt_cache is not None and self._sys_prompt_cache_key == _cache_key:
@@ -1921,12 +2033,40 @@ class EncreLoop:
             and not _original_system_prompt_was_none
         )
 
+        # Inject the per-mode behaviour preamble (GENERAL / WORKSPACE /
+        # AUTOMATION) so the model actually feels the mode difference, not
+        # just the internal tuning knobs.  Recorded under "Mode" so the
+        # context annotation tracks it across turns.
+        _mode_gain = getattr(self._profile, "prompt_gain", "") or ""
+        if not _skip_enrichment and _mode_gain:
+            self._ctx_renderer.record("Mode", _mode_gain)
+            system_prompt = system_prompt + "\n\n" + _mode_gain
+
         # Inject codebase index context (multi-language code search + dependencies)
         if not _skip_enrichment:
             codebase_ctx = await self._ctx_bldr.build_codebase_context()
             if codebase_ctx:
                 self._ctx_renderer.record("Codebase Index", codebase_ctx)
                 system_prompt = system_prompt + "\n\n" + codebase_ctx
+
+        # Inject the architecture contract artifact (workspace mode): design
+        # decisions agreed by the planner/architect role are BINDING for
+        # implementation.  Re-injected every turn so the coder stays anchored
+        # to the agreed architecture instead of drifting across a long task.
+        if not _skip_enrichment and self._profile.contract_inject:
+            contract_ctx = self._ctx_bldr.build_architecture_contract()
+            if contract_ctx:
+                self._ctx_renderer.record("Architecture Contract", contract_ctx)
+                system_prompt = system_prompt + "\n\n" + contract_ctx
+
+        # Inject Plan-Do-Review progress (WORKSPACE profile): the current step,
+        # success criteria, and progress summary keep the coder anchored to the
+        # written plan across turns (mirrors Claude Code's plan-do-review).
+        if not _skip_enrichment and self._pdr_active:
+            pdr_ctx = self._pdr.get_context()
+            if pdr_ctx:
+                self._ctx_renderer.record("Plan-Do-Review", pdr_ctx)
+                system_prompt = system_prompt + "\n\n" + pdr_ctx
 
         # Prepend skill prompt to system prompt
         if skill_prompt:
@@ -2021,6 +2161,21 @@ class EncreLoop:
                     if soul_prompt:
                         self._ctx_renderer.record("Soul", soul_prompt)
                         system_prompt = system_prompt + "\n\n" + soul_prompt
+                except Exception:
+                    pass
+
+            # Inject meta-cognition self-awareness (known capability
+            # weaknesses from the evolution learner).  This was previously
+            # only merged into the last *user* message behind the
+            # ENCRE_EVOLUTION env gate, which kept it invisible by default.
+            # Surfacing it in the system prompt closes the learning loop:
+            # the agent sees its own weak domains and can compensate.
+            if self.meta is not None:
+                try:
+                    meta_ctx = self.meta.get_self_awareness_context()
+                    if meta_ctx:
+                        self._ctx_renderer.record("Self-Awareness", meta_ctx)
+                        system_prompt = system_prompt + "\n\n" + meta_ctx
                 except Exception:
                     pass
 
@@ -3186,7 +3341,10 @@ class EncreLoop:
                         )
                     logger.warning("[run] empty response, %s turn=%d", post_decision.detail, self.session.turn_count)
                     retry_count = self._error_orch._empty_response_retry_count
-                    self.session.add_message("user", build_empty_retry_message(retry_count))
+                    self.session.add_message(
+                        "user", build_empty_retry_message(retry_count),
+                        is_synthetic=True,
+                    )
                 elif "truncated" in post_decision.detail:
                     _first_tc = next(iter(tool_call_buffers.values()))
                     _args_preview = str(_first_tc.get("arguments", ""))[:200]
@@ -3200,7 +3358,10 @@ class EncreLoop:
                     logger.warning("[run] truncated tool call '%s', %s turn=%d",
                                    _tc_name, post_decision.detail, self.session.turn_count)
                     tool_call_buffers.clear()
-                    self.session.add_message("user", build_truncated_retry_message(_tc_name, _args_preview))
+                    self.session.add_message(
+                        "user", build_truncated_retry_message(_tc_name, _args_preview),
+                        is_synthetic=True,
+                    )
                 continue
 
             if (post_decision.action == PostStreamAction.STOP or
@@ -3323,6 +3484,7 @@ class EncreLoop:
                         self._stub_response_retry_count = _stub_count + 1
                         self.session.add_message(
                             "user", build_stub_retry_message(_stub_count + 1),
+                            is_synthetic=True,
                         )
                         if self._state is not None:
                             self._state.transitions.record(
@@ -3345,7 +3507,8 @@ class EncreLoop:
                 # token-budget auto-continue (query/tokenBudget.ts).
                 _auto_continue = False
                 if (
-                    self.config.token_budget > 0
+                    self._profile.auto_continue
+                    and self.config.token_budget > 0
                     and not tool_call_buffers
                     and not _checkpoint_injected_this_run
                     and _backend_usage
@@ -3360,9 +3523,9 @@ class EncreLoop:
                     # producing meaningful output, stop (it is going in circles).
                     _out_tokens = _backend_usage.get("output_tokens", 0)
                     if (
-                        self._auto_continue_consecutive >= _AUTO_CONTINUE_DIMINISHING_MIN_CONTINUES
-                        and _out_tokens < _AUTO_CONTINUE_DIMINISHING_MIN_DELTA
-                        and self._auto_continue_last_output < _AUTO_CONTINUE_DIMINISHING_MIN_DELTA
+                        self._auto_continue_consecutive >= self._profile.auto_continue_min_continues
+                        and _out_tokens < self._profile.auto_continue_min_delta
+                        and self._auto_continue_last_output < self._profile.auto_continue_min_delta
                     ):
                         logger.warning(
                             "[run] auto-continue diminishing returns (output=%d) turn=%d -- stopping",
@@ -3392,6 +3555,7 @@ class EncreLoop:
                         )
                         self.session.add_message(
                             "user", build_auto_continue_message(),
+                            is_synthetic=True,
                         )
                         continue
 
@@ -3402,25 +3566,27 @@ class EncreLoop:
                     # failed), nudge the model to verify instead of silently
                     # ending.  Evidence-driven via the verification ledger:
                     # it distinguishes "checked and failed" (report that) from
-                    # "never checked".  Bounded by _MAX_VERIFY_ON_STOP_NUDGES
-                    # so it can never deadlock.
+                    # "never checked".  Bounded by the profile's
+                    # verify_on_stop_nudges budget (GENERAL=2) so it can never
+                    # deadlock.
                     _verify_nudge = False
                     _unverified = self._verif_ledger.unverified_files()
                     if (
                         slash_command_mode not in ("plan", "spec")
                         and _unverified
                         and not _checkpoint_injected_this_run
-                        and self._verify_on_stop_nudges < _MAX_VERIFY_ON_STOP_NUDGES
+                        and self._verify_on_stop_nudges < self._profile.verify_on_stop_nudges
                     ):
                         self._verify_on_stop_nudges += 1
                         _failed = self._verif_ledger.has_failed_evidence()
                         self.session.add_message(
                             "user", self._verif_ledger.build_nudge_message(failed=_failed),
+                            is_synthetic=True,
                         )
                         _verify_nudge = True
                         logger.info(
                             "[run] verify-on-stop nudge %d/%d for %d files turn=%d failed=%s",
-                            self._verify_on_stop_nudges, _MAX_VERIFY_ON_STOP_NUDGES,
+                            self._verify_on_stop_nudges, self._profile.verify_on_stop_nudges,
                             len(_unverified), self.session.turn_count, _failed,
                         )
                         if self._state is not None:
@@ -3443,7 +3609,7 @@ class EncreLoop:
                         and _unverified
                         and self._verif_ledger.has_failed_evidence()
                         and not _checkpoint_injected_this_run
-                        and self._forced_review_count < _MAX_FORCED_REVIEWS
+                        and self._forced_review_count < self._profile.forced_reviews
                     ):
                         self._forced_review_count += 1
                         self.session.add_message(
@@ -3451,11 +3617,12 @@ class EncreLoop:
                             self._verif_ledger.build_forced_review_message(
                                 list(self._verif_ledger.unverified_files())
                             ),
+                            is_synthetic=True,
                         )
                         _forced_review = True
                         logger.info(
                             "[run] forced review escalation %d/%d for %d files turn=%d",
-                            self._forced_review_count, _MAX_FORCED_REVIEWS,
+                            self._forced_review_count, self._profile.forced_reviews,
                             len(_unverified), self.session.turn_count,
                         )
                         if self._state is not None:
@@ -3466,11 +3633,124 @@ class EncreLoop:
                             )
                         continue
 
+                    # ── Hard verification gate ────────────────────────────
+                    # The final gate before a text-only finish is allowed.
+                    # After verify-on-stop nudges and the forced-review stage
+                    # are exhausted, unverified code must NOT silently become
+                    # a successful stop: keep escalating the demand (project-
+                    # level regression: build + typecheck + lint + tests).
+                    # Bounded by _MAX_VERIFY_HARD_GATE so a model that
+                    # refuses to fix can never wedge the loop forever; when
+                    # the bound is reached we finish with an explicit
+                    # "verification_blocked" error instead of a clean stop.
+                    _verify_gate = False
+                    if (
+                        slash_command_mode not in ("plan", "spec")
+                        and _unverified
+                        and not _checkpoint_injected_this_run
+                        and self._verify_hard_gate_count < self._profile.verify_hard_gate
+                    ):
+                        self._verify_hard_gate_count += 1
+                        self.session.add_message(
+                            "user",
+                            self._verif_ledger.build_hard_gate_message(
+                                list(self._verif_ledger.unverified_files()),
+                                remaining=self._profile.verify_hard_gate - self._verify_hard_gate_count,
+                            ),
+                            is_synthetic=True,
+                        )
+                        _verify_gate = True
+                        logger.warning(
+                            "[run] hard verification gate %d/%d for %d files turn=%d",
+                            self._verify_hard_gate_count, self._profile.verify_hard_gate,
+                            len(_unverified), self.session.turn_count,
+                        )
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.TEXT_ONLY,
+                                turn=self.session.turn_count,
+                                detail="hard_verify_gate",
+                            )
+                        continue
+
+                    # If the hard gate budget is exhausted and code is still
+                    # unverified, do NOT yield a clean stop -- surface it as a
+                    # blocked finish so the caller knows delivery is gated.
+                    if (
+                        slash_command_mode not in ("plan", "spec")
+                        and _unverified
+                        and not _checkpoint_injected_this_run
+                        and self._profile.verify_budget_total() > 0
+                    ):
+                        if self._state is not None:
+                            self._state.transitions.record(
+                                TurnTransition.TEXT_ONLY,
+                                turn=self.session.turn_count,
+                                detail="verification_blocked",
+                            )
+                        logger.error(
+                            "[run] verification gate blocked %d files after %d hard-gate turns -- blocked finish",
+                            len(_unverified), self._verify_hard_gate_count,
+                        )
+                        yield create_finish(
+                            "stop", usage=_backend_usage,
+                            error=(
+                                "verification_blocked: changes remain unverified "
+                                f"({len(_unverified)} file(s)). Run the project build, "
+                                "typecheck, lint, and tests until they pass before delivery."
+                            ),
+                            error_code="verification_blocked",
+                            error_category="verification",
+                        )
+                        return
+
                     if self._state is not None:
                         self._state.transitions.record(
                             TurnTransition.TEXT_ONLY,
                             turn=self.session.turn_count,
                         )
+                    # Plan-Do-Review step advancement (WORKSPACE): when the
+                    # turn finished cleanly, mark the current step done (or
+                    # failed if verification evidence shows broken state) and
+                    # start the next step so the plan makes visible progress
+                    # across turns.
+                    if self._pdr_active:
+                        _step_failed = self._verif_ledger.has_failed_evidence()
+                        if _step_failed:
+                            _failed_files = self._verif_ledger.unverified_files()
+                            self._pdr.mark_step_failed(
+                                error=f"verification failed for {len(_failed_files)} file(s): {', '.join(_failed_files[:5])}"
+                            )
+                        else:
+                            self._pdr.mark_step_complete(summary="turn completed cleanly")
+                            # Wire the Review phase of Plan-Do-Review: the
+                            # step's tool-call log is graded for error
+                            # density / repeated / empty results.  A bad grade
+                            # rolls the step back to a retry instead of
+                            # advancing to the next one, closing the loop that
+                            # was previously Plan+Do only.
+                            _review = self._pdr.lightweight_review()
+                            if _review in (ReviewGrade.FAIL, ReviewGrade.NEEDS_RETRY):
+                                self._pdr.mark_step_failed(error=f"review grade: {_review.name}")
+                        # Advance only when the current step actually reached
+                        # COMPLETED. mark_step_failed may keep it IN_PROGRESS
+                        # (retry budget) -- advancing then would skip the retry.
+                        _cur = self._pdr.plan.current_step
+                        if _cur is not None and _cur.status == StepStatus.COMPLETED:
+                            _next = self._pdr.start_next_step()
+                            if _next is not None and _next.status == StepStatus.IN_PROGRESS:
+                                logger.info(
+                                    "[run] Plan-Do-Review step %d/%d completed, advancing to next step",
+                                    self._pdr.plan.current_step_index + 1, len(self._pdr.plan.steps),
+                                )
+                                self.session.add_message(
+                                    "user",
+                                    f"[PLAN STEP {self._pdr.plan.current_step_index + 1}] "
+                                    f"Continue the plan. Next step: {_next.description} "
+                                    f"(success criteria: {_next.success_criteria}).",
+                                    is_synthetic=True,
+                                )
+                                continue
                     yield create_finish("stop", usage=_backend_usage)
                     # Main session: text-only ends this run. User sends next message.
                     # Sub-agent: text-only completes the sub-agent task.
@@ -4011,7 +4291,7 @@ class EncreLoop:
 
                 # Cap parallel fan-out to match Claude Code (default 10) instead
                 # of launching every concurrency-safe tool at once.
-                _tool_sem = asyncio.Semaphore(_MAX_TOOL_CONCURRENCY)
+                _tool_sem = asyncio.Semaphore(self._profile.parallel_fan_out)
 
                 async def _execute_safe_bounded(p: dict[str, Any]) -> dict[str, Any]:
                     async with _tool_sem:
@@ -4101,12 +4381,13 @@ class EncreLoop:
                             tool_name=p["name"], error_type="execution_error",
                             context=p["args_summary"], correction="",
                         )
-                        if self.feedback is not None:
-                            self.feedback.record_correction(
-                                tool_name=p["name"], error_type="execution_error",
-                                error_context=p["args_summary"],
-                                user_correction=p["result"][:400],
-                            )
+                        # NOTE: no feedback.record_correction here -- a tool
+                        # execution error is NOT a user correction.  Recording
+                        # the raw error text as a "user correction" polluted
+                        # the feedback learner with noise (it then injected
+                        # tool error strings into later prompts as if the user
+                        # had corrected the agent).  Execution errors go to the
+                        # evolution learner's error channel above instead.
                     else:
                         self._error_tool_names.discard(p["name"])
                         self.learner.record_success(
@@ -4891,7 +5172,7 @@ class EncreLoop:
                         detail=f"used={self._budget_state.used_tokens}/{self._budget_state.max_tokens}",
                     )
                 logger.info("[run] budget exhausted, using grace call turn=%d", self.session.turn_count)
-                self.session.add_message("user", build_grace_message())
+                self.session.add_message("user", build_grace_message(), is_synthetic=True)
                 self._budget_state.grace_enabled = False
 
             # Don't yield an assistant_boundary here -- doing so makes the frontend
@@ -4952,6 +5233,17 @@ class EncreLoop:
                         self._verif_ledger.record_verification(
                             pname, _vpassed,
                             summary=_summarize_verify_result(pname, str(p.get("result", "")), _vpassed),
+                        )
+                    # Plan-Do-Review (WORKSPACE): record the tool call against
+                    # the current step so lightweight review can judge step
+                    # completion from real tool outcomes, not narrative.
+                    if self._pdr_active and not p.get("skip"):
+                        self._pdr.record_tool_call(
+                            turn=self.session.turn_count,
+                            tool_name=pname,
+                            args=p.get("args") or {},
+                            result=str(p.get("result", "")),
+                            is_error=bool(p.get("is_error", False)),
                         )
                     if _is_idempotent_tool(pname) and not p.get("is_error"):
                         pdigest = _result_digest(str(p.get("result", "")))

@@ -1,0 +1,5 @@
+# Terms of Service (Singapore)
+**Last updated: 22 Aug 2026**
+> Six-pack: [Privacy](PRIVACY.md) · these Terms · [User Agreement](USER_AGREEMENT.md) · [Minors](MINORS_PRIVACY.md) · [Content](CONTENT_GUIDELINES.md) · [Data Processing](DATA_PROCESSING.md)
+
+Use = acceptance; nothing limits CPFTA consumer rights. **Services:** Encre (local-first AI Agent platform, 18 chat integrations) · PiscesLx (LLM/fine-tuning/hosted inference) · Dunimd Enterprise · StadionOS · Dunimd Cloud · Dunimd Studio · Dunimd Support. Accounts personal-only. Encre = Apache 2.0; other components non-exclusive non-transferable; no reverse engineering (beyond legal exceptions), no competing-model training. Paid services: prices disclosed at purchase; auto-renew cancellable anytime; refunds per CPFTA and stated policy. Liability capped at last-12-months payments except where unlawful to exclude (incl. fraud). Breaches of [Content Guidelines](CONTENT_GUIDELINES.md): warning→restriction→termination. Governing law: Singapore; courts of Singapore have jurisdiction (small-claims via State Courts where applicable).

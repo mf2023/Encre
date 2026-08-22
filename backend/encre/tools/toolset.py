@@ -220,13 +220,30 @@ def resolve_toolset(name: str) -> frozenset[str]:
     """Resolve a tool set by name into a flat set of tool names.
 
     Includes all transitively included sets.  Falls back to ``default`` if
-    *name* is not found.
+    *name* is not found.  A ``+``-joined name (e.g. ``"default+coding"``)
+    is resolved as the union of each component, letting callers compose
+    base + intent-matched sets without inventing new registry entries.
 
     Examples
     --------
     >>> resolve_toolset("coding")
     frozenset({"file_read", "file_write", "bash", "grep", "agent", ...})
+    >>> resolve_toolset("default+coding")
+    frozenset({"file_read", "file_write", "bash", ..., "lsp", "git", ...})
     """
+    if "+" in name:
+        result: set[str] = set()
+        for part in name.split("+"):
+            part = part.strip()
+            if not part:
+                continue
+            ts = TOOLSETS.get(part)
+            if ts is not None:
+                result.update(ts.resolve(TOOLSETS))
+            elif part == "default":
+                result.update(TOOLSETS["default"].resolve(TOOLSETS))
+        if result:
+            return frozenset(result)
     ts = TOOLSETS.get(name)
     if ts is None:
         ts = TOOLSETS.get("default")

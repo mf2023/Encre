@@ -541,6 +541,8 @@ def _infer_tool_semantics(tool_name: str, tool: Any) -> dict[str, str]:
     safe_fallback = str(getattr(tool, "safe_fallback", "") or "").strip()
     lowered = tool_name.lower()
 
+    declared_type = bool(semantic_type) and semantic_type != "general"
+
     if not semantic_type or semantic_type == "general":
         if lowered in _WRITE_TOOL_NAMES or "write" in lowered or "edit" in lowered or "patch" in lowered or "delete" in lowered:
             semantic_type = "write"
@@ -557,21 +559,26 @@ def _infer_tool_semantics(tool_name: str, tool: Any) -> dict[str, str]:
         else:
             semantic_type = "general"
 
-    if not cost_level:
-        if semantic_type in {"search", "read"}:
-            cost_level = "low"
-        elif semantic_type in {"write", "exec", "network", "orchestrate"}:
-            cost_level = "high"
-        else:
-            cost_level = "medium"
+    # When semantic_type was derived from the tool name (rather than declared
+    # on the tool), the cost/retryability defaults ("medium"/"auto") are just
+    # unset placeholders -- derive them from the inferred type too.  Otherwise
+    # a generic default of "medium" would mask name-based inference and a
+    # search tool (e.g. "grep") would be treated as medium-cost.
+    if semantic_type in {"search", "read"}:
+        inferred_cost = "low"
+        inferred_retry = "auto"
+    elif semantic_type in {"write", "exec", "network", "orchestrate"}:
+        inferred_cost = "high"
+        inferred_retry = "guarded" if semantic_type != "network" else "auto"
+    else:
+        inferred_cost = "medium"
+        inferred_retry = "manual"
 
-    if not retryability:
-        if semantic_type in {"search", "read", "network"}:
-            retryability = "auto"
-        elif semantic_type in {"write", "exec", "orchestrate"}:
-            retryability = "guarded"
-        else:
-            retryability = "manual"
+    if not cost_level or (cost_level == "medium" and not declared_type):
+        cost_level = inferred_cost
+
+    if not retryability or (retryability == "auto" and not declared_type):
+        retryability = inferred_retry
 
     if not safe_fallback:
         fallback_map = {

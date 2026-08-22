@@ -48,7 +48,9 @@ Usage::
     print(f"Passed: {result.passed}, Score: {result.score}")
 """
 
+import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -72,6 +74,16 @@ class EvalTask:
     timeout: int = 120
     required_tools: list[str] = field(default_factory=list)
     expected_output_patterns: list[str] = field(default_factory=list)
+    # Evidence-based judging: when set, the task passes only if the given
+    # verification commands succeed (exit 0) against the task's working
+    # directory after the agent finishes.  This is how we measure real
+    # delivery (SWE-bench style) instead of keyword presence in the output.
+    verify_commands: list[str] = field(default_factory=list)
+    # Optional working directory for verify_commands (defaults to cwd).
+    verify_cwd: str = ""
+    # Optional filesystem assertions: {"path": "substring that must appear"}.
+    # The file must exist and contain the substring for the task to pass.
+    file_assertions: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -157,10 +169,21 @@ class EvalRunner:
         latency = (time.time() - start) * 1000
         output = "".join(output_parts)
 
-        # Score: check success criteria against output
+        # Score: check success criteria against output.
         score = self._score_output(output, task)
-        # Require a strong match (>=0.7) and a clean run (no exception) to pass.
-        passed = score >= 0.7 and not error
+        # Evidence-based judging (SWE-bench style): when the task declares
+        # verification commands or file assertions, a task passes ONLY if the
+        # evidence checks pass -- keyword presence in the model's own output
+        # is not proof of delivery.
+        evidence_passed, evidence_error = await self._score_evidence(task)
+        if evidence_error:
+            error = error or evidence_error
+        if task.verify_commands or task.file_assertions:
+            passed = evidence_passed and not error
+            if not evidence_passed:
+                score = min(score, 0.5)
+        else:
+            passed = score >= 0.7 and not error
 
         return EvalResult(
             name=task.name,
@@ -172,6 +195,46 @@ class EvalRunner:
             tool_calls=tool_count,
             turns=turn_count,
         )
+
+    async def _score_evidence(self, task: EvalTask) -> tuple[bool, str]:
+        """Run evidence checks for a task.
+
+        Returns ``(passed, error)``.  ``error`` is non-empty when an evidence
+        check itself failed to run (distinct from a check that ran and failed).
+        """
+        if not (task.verify_commands or task.file_assertions):
+            return True, ""
+        cwd = task.verify_cwd or os.getcwd()
+        # File assertions: the file must exist and contain the substring.
+        for rel_path, needle in (task.file_assertions or {}).items():
+            full = os.path.join(cwd, rel_path)
+            if not os.path.isfile(full):
+                return False, f"missing file: {rel_path}"
+            try:
+                with open(full, encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+            except Exception as e:
+                return False, f"unreadable file: {rel_path} ({e})"
+            if needle and needle not in content:
+                return False, f"file {rel_path} missing expected content: {needle!r}"
+        # Verification commands: each must exit 0.
+        for cmd in task.verify_commands:
+            try:
+                proc = await asyncio.create_subprocess_shell(
+                    cmd,
+                    cwd=cwd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=max(30.0, float(task.timeout) / 4)
+                )
+            except Exception as e:
+                return False, f"verify command failed to run: {cmd!r} ({e})"
+            if proc.returncode != 0:
+                tail = (stderr or stdout or b"").decode("utf-8", errors="replace")[:300]
+                return False, f"verify command exited {proc.returncode}: {cmd!r} -- {tail}"
+        return True, ""
 
     def _score_output(self, output: str, task: EvalTask) -> float:
         """Score the agent output against success criteria.

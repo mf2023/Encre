@@ -172,7 +172,7 @@ class ErrorRecoveryEngine:
     def decide(
         self,
         tool_name: str,
-        _tool_args: dict[str, Any],
+        tool_args: dict[str, Any],
         error_message: str,
         attempt: int,
         fallback_depth: int = 0,

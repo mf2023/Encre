@@ -305,15 +305,44 @@ class EncreWSHandler:
             # WebSocket disconnected -- cancel any running agent
             self._cancel_current_task()
 
+    def _resolve_spec_engine(self, session_id: str | None):
+        """Resolve the spec engine bound to *session_id*.
+
+        The spec engine is a per-loop collaborator; sharing one singleton
+        across sessions let one session's approve/reject bleed into another
+        session's approval gate.  Prefer the loop's own engine (wired at run
+        time from :attr:`_spec_engine`) so approvals stay scoped; fall back to
+        the shared singleton only when no live session/loop is available.
+        """
+        engine = getattr(self, "_spec_engine", None)
+        sid = session_id or self._current_session_id
+        if sid:
+            info = None
+            for s in getattr(self._manager, "list_sessions", lambda: [])():
+                if s.session_id == sid:
+                    info = s
+                    break
+            loop = getattr(info, "agent", None)
+            loop = getattr(loop, "loop", None)
+            if loop is not None and getattr(loop, "spec_engine", None) is not None:
+                return loop.spec_engine
+        return engine
+
     async def _send_session_mode(self, ws, session) -> None:
         """Send mode_changed for the session's persisted mode (if any).
 
         ALWAYS send, even when the mode is empty — otherwise the frontend
         keeps the previous session's mode chip visible (stale state) when
         switching to a session that has no mode active.
+
+        Mode is persisted on the EncreSession (``agent.session.metadata``),
+        not on the ``SessionInfo`` wrapper, so we read from the underlying
+        session object.
         """
         try:
-            mode = (session.metadata.get("slash_command_mode") if hasattr(session, 'metadata') else None) or ""
+            es = getattr(session, "agent", None)
+            es = getattr(es, "session", None) or session
+            mode = (es.metadata.get("slash_command_mode") if hasattr(es, 'metadata') else None) or ""
             await self._send(ws, "mode_changed", mode=mode, session_id=session.session_id)
         except Exception:
             pass
@@ -351,7 +380,9 @@ class EncreWSHandler:
         derived ``plan_mode_active`` flag all agree before the next run.
         """
         try:
-            mode = session.metadata.get("slash_command_mode", "") or ""
+            es = getattr(session, "agent", None)
+            es = getattr(es, "session", None) or session
+            mode = es.metadata.get("slash_command_mode", "") or ""
             session.agent.loop.set_mode(mode)
         except Exception:
             logger.debug("failed to restore persisted mode", exc_info=True)
@@ -359,7 +390,9 @@ class EncreWSHandler:
     async def _send_session_command(self, ws, session) -> None:
         """Send command_changed for the session's persisted command (if any)."""
         try:
-            cmd = (session.metadata.get("active_command") if hasattr(session, 'metadata') else None)
+            es = getattr(session, "agent", None)
+            es = getattr(es, "session", None) or session
+            cmd = (es.metadata.get("active_command") if hasattr(es, 'metadata') else None)
             if cmd and cmd.get("name"):
                 await self._send(ws, "command_changed", command=cmd,
                                  session_id=session.session_id)
@@ -397,7 +430,9 @@ class EncreWSHandler:
         in-memory mirror agrees before the next run re-injects the block.
         """
         try:
-            cmd = session.metadata.get("active_command") or {}
+            es = getattr(session, "agent", None)
+            es = getattr(es, "session", None) or session
+            cmd = es.metadata.get("active_command") or {}
             if cmd.get("name"):
                 session.agent.loop.set_command(
                     cmd.get("name", ""),
@@ -1122,7 +1157,8 @@ class EncreWSHandler:
                     # for this run WITHOUT touching the persistent slot --
                     # this avoids the old "sticky restore" bug where a one-off
                     # /plan kept replaying across every later normal message.
-                    _persisted = session.metadata.get("slash_command_mode", "") or ""
+                    _es_meta = session.agent.session.metadata
+                    _persisted = _es_meta.get("slash_command_mode", "") or ""
                     if msg.mode and msg.mode != _persisted:
                         await self._apply_mode(ws, session, msg.mode)
                     else:
@@ -1138,7 +1174,7 @@ class EncreWSHandler:
                     # session switch where config was not yet restored).
                     if not getattr(session.agent.config, "active_command", None):
                         session.agent.config.active_command = (
-                            session.metadata.get("active_command") or None
+                            _es_meta.get("active_command") or None
                         )
 
                     session.agent.add_message("user", prompt, mode=session.agent.config.slash_command_mode)
@@ -1233,16 +1269,16 @@ class EncreWSHandler:
                             with contextlib.suppress(Exception):
                                 await self._send(ws, "finish", reason="error", error_code=err_code, session_id=session.session_id)
                         finally:
-                            # One-shot commands: clear the active command after
-                            # the run completes so it is not re-injected on the
-                            # next turn.  The frontend also sends a set_command
-                            # clear message, but this inline clear is the
-                            # authoritative one-shot guarantee.
-                            if _saved_command and _saved_command.get("name"):
-                                try:
-                                    session.agent.loop.clear_command()
-                                except Exception:
-                                    pass
+                            # Sticky commands (activated via ``set_command``)
+                            # persist across runs by design and are only
+                            # cleared by an explicit ``set_command`` with an
+                            # empty name.  One-shot ``mode_prompt`` runs never
+                            # touch ``config.active_command``, so there is
+                            # nothing to clear here -- the previous
+                            # unconditional clear() was wiping persistent
+                            # commands after every single run, making custom
+                            # commands "enter and immediately exit".
+                            pass
                             if session.agent.telemetry.enabled:
                                 with contextlib.suppress(Exception):
                                     summary = session.agent.telemetry.get_summary()
@@ -1432,8 +1468,9 @@ class EncreWSHandler:
                         await self._send(ws, "steer_queued", session_id=sid, error="no_active_session")
 
                 elif isinstance(msg, ClientSpecApprove):
-                    self._spec_engine.approve()
-                    spec = self._spec_engine.current_spec
+                    _spec_eng = self._resolve_spec_engine(msg.session_id)
+                    _spec_eng.approve()
+                    spec = _spec_eng.current_spec
                     if spec:
                         logger.info("[spec] approved by user")
                         await self._send(ws, "spec_update",
@@ -1442,8 +1479,9 @@ class EncreWSHandler:
                                          session_id=msg.session_id or self._current_session_id or "")
 
                 elif isinstance(msg, ClientSpecReject):
-                    self._spec_engine.reject(feedback=msg.feedback or "")
-                    spec = self._spec_engine.current_spec
+                    _spec_eng = self._resolve_spec_engine(msg.session_id)
+                    _spec_eng.reject(feedback=msg.feedback or "")
+                    spec = _spec_eng.current_spec
                     if spec:
                         logger.info("[spec] rejected by user: %s", msg.feedback[:80] if msg.feedback else "(no feedback)")
                         await self._send(ws, "spec_update",
@@ -4349,10 +4387,12 @@ class EncreWSHandler:
             state_mgr = getattr(_info.agent.loop, "_state_mgr", None)
             if state_mgr is None:
                 return
+            mode = getattr(_info.agent.loop, "mode", None)
             await self._send(
                 ws,
                 "agent_state",
                 state=state_mgr.snapshot(),
+                mode=str(mode.value) if mode is not None else "general",
                 session_id=sid,
             )
 

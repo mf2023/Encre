@@ -1334,7 +1334,13 @@ export function handleEvent(event: ServerEvent): void {
 
     case "agent_state":
       if (!_hasSessionId(event as any)) break;
-      state.setAgentState((event as any).state, _eventSessionId(event as any));
+      const _mode = (event as any).mode;
+      state.setAgentState(
+        _mode
+          ? { ...((event as any).state || {}), mode: _mode }
+          : (event as any).state,
+        _eventSessionId(event as any),
+      );
       (window as any).__sessionInner?.render?.();
       break;
 

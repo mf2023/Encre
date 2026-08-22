@@ -1,12 +1,15 @@
-# 服务条款
+# 服务条款（中国大陆）
 
-**最后更新：2026 年 6 月 21 日**
-**个人信息处理者：** Dunimd
-**适用范围：** 全球 — Dunimd 全部服务的所有用户
+**最后更新：2026 年 8 月 22 日**
+**服务提供者：** Dunimd
+**适用范围：** 中华人民共和国境内（不含港澳台）用户使用 Dunimd 全部服务
 
 本服务条款（"**条款**"）约束您对 Dunimd 服务的使用。一旦访问、下载、安装或以其他方式使用任何 Dunimd 服务，即视为您同意本条款。如不同意，请勿使用 Dunimd 服务。
 
-如果您位于**中华人民共和国境内**，[`TERMS_CN.md`](TERMS_CN.md) 中文版为本条款在中国法律相关事项下的优先适用文本；国际版 [`TERMS.md`](TERMS.md) 作为补充适用。
+> **Dunimd 中国大陆服务文件（本文件夹内六件套）：**
+> [隐私政策](PRIVACY.md) · [服务条款](TERMS.md) · [用户协议](USER_AGREEMENT.md) · [未成年人个人信息保护规则](MINORS_PRIVACY.md) · [内容准则](CONTENT_GUIDELINES.md) · [数据处理规则](DATA_PROCESSING.md)
+>
+> 全球基线国际版见 [`docs/TERMS.md`](../../../TERMS.md)；就中国法律相关事项，**本文件优先适用**。
 
 ---
 
@@ -203,12 +206,12 @@ Encre 的聊天平台适配器（Telegram、Discord、Slack 等）连接第三�
 
 ## 9. 隐私
 
-您对服务的使用受我们的隐私政策约束：
+您对服务的使用受以下文件约束（均通过引用纳入本条款）：
 
-- **中国大陆用户**：[`PRIVACY_CN.md`](PRIVACY_CN.md)（PRC 特定）
-- **全球用户**：[`PRIVACY.md`](PRIVACY.md)
-
-适用的隐私政策通过引用纳入本条款。
+- **隐私政策**：[`PRIVACY.md`](PRIVACY.md)（中国大陆版，优先适用）
+- **数据处理规则**：[`DATA_PROCESSING.md`](DATA_PROCESSING.md)（本地优先架构下的数据流向）
+- **未成年人个人信息保护规则**：[`MINORS_PRIVACY.md`](MINORS_PRIVACY.md)
+- 全球基线国际版：[`docs/PRIVACY.md`](../../../PRIVACY.md)（补充适用）
 
 ---
 

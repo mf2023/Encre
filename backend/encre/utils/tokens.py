@@ -219,6 +219,16 @@ def count_message_tokens(
                 if isinstance(block, dict):
                     text = block.get("text", "")
                     total += estimate_tokens(text, model)
+                    # Vision / document blocks carry no text but still consume
+                    # tokens (image tiles + caption).  Counting them as zero
+                    # previously under-estimated multimodal context, delaying
+                    # compression until the API itself rejected the request.
+                    # ~170 tokens per image tile is a close OpenAI/Anthropic
+                    # approximation; use a flat estimate for missing detail.
+                    if text is None or text == "":
+                        img_url = block.get("image_url") or block.get("source")
+                        if img_url or block.get("type") in ("image", "image_url", "document", "file"):
+                            total += 170
         tool_calls = msg.get("tool_calls")
         if tool_calls:
             # Account for the serialised tool name and arguments.

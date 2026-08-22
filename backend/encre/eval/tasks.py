@@ -73,7 +73,50 @@ BUILTIN_TASKS: list[EvalTask] = [
         success_criteria="Error was handled without crashing",
         expected_output_patterns=["not found", "exist", "error"],
     ),
+    # ── Evidence-based tasks (SWE-bench style) ─────────────────────────
+    # These pass ONLY when the delivered artifact actually works: files must
+    # exist with expected content, and verification commands must exit 0.
+    EvalTask(
+        name="ev_build_python_module",
+        prompt="Create a Python module at /tmp/encre_eval/pkg/__init__.py and "
+               "/tmp/encre_eval/pkg/mathx.py exposing a function add(a, b) that "
+               "returns a + b.",
+        success_criteria="Module with add() exists and imports",
+        required_tools=["file_write"],
+        file_assertions={
+            "pkg/mathx.py": "def add(a, b)",
+            "pkg/__init__.py": "",
+        },
+        verify_commands=[
+            "python3 -c \"import sys; sys.path.insert(0, '.'); from pkg.mathx import add; assert add(2, 3) == 5\"",
+        ],
+        verify_cwd="/tmp/encre_eval",
+    ),
+    EvalTask(
+        name="ev_write_and_run_script",
+        prompt="Write /tmp/encre_eval/hello.py that prints 'HELLO_ENCRE_OK' to "
+               "stdout, then run it and report the output.",
+        success_criteria="Script prints the expected marker when run",
+        required_tools=["file_write", "bash"],
+        file_assertions={"hello.py": "HELLO_ENCRE_OK"},
+        verify_commands=["python3 hello.py | grep -q HELLO_ENCRE_OK"],
+        verify_cwd="/tmp/encre_eval",
+    ),
+    EvalTask(
+        name="ev_fix_failing_test",
+        prompt="In /tmp/encre_eval, there is a file fixme.py with a broken "
+               "function that should return the square of its argument. Fix it "
+               "so that running `python3 -c \"import fixme; print(fixme.square(7))\"` "
+               "prints 49.",
+        success_criteria="fixme.square(7) returns 49",
+        required_tools=["file_read", "file_edit"],
+        verify_commands=["python3 -c \"import fixme; assert fixme.square(7) == 49\" && echo PASS"],
+        verify_cwd="/tmp/encre_eval",
+    ),
 ]
+
+# Tasks that assert real delivery via filesystem/command evidence.
+EVIDENCE_TASKS = [t for t in BUILTIN_TASKS if (t.verify_commands or t.file_assertions)]
 
 LIGHT_TASKS = [t for t in BUILTIN_TASKS if t.timeout <= 60]
 # Quick tasks (<= 60s timeout) suitable for fast smoke testing.

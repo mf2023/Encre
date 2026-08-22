@@ -230,8 +230,8 @@ class WorkingSetManager:
             stage = "discover"
         return (
             f"**Work Phase:** {stage}\n"
-            "This is an internal scheduling cue, not a user mode.  "
-            "The current mode block above tells you the real mode.  "
+            "This work phase is an internal scheduling cue, not a user "
+            "mode.  The current mode block above tells you the real mode.  "
             "When asked what mode you are in, do NOT answer "
             f"\"{stage} mode\"."
         )

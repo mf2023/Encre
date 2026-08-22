@@ -46,8 +46,23 @@ async def _skill_execute(**kwargs: Any) -> str:
     subsequent turns (same mechanism as auto-activated document skills).
     """
     name = (kwargs.get("name") or "").strip()
-    if not name:
-        return "Error: 'name' is required. Pick a skill name from the catalogue."
+    if not name or name in ("list", "ls"):
+        # Enumerate all user-invocable skills so the model can discover the
+        # tail of a large catalogue that was not inlined into the system
+        # prompt (catalogue is capped to keep the prompt under budget).
+        registry = getattr(_resolve_loop(), "skill_registry", None)
+        if registry is None:
+            return "Error: no skill registry is available on this loop."
+        names = sorted(
+            s.name for s in registry.list_all()
+            if s.user_invocable and not s.name.startswith("tool-")
+        )
+        if not names:
+            return "No user-invocable skills registered."
+        return (
+            "Available skills (invoke via `/name` or the `skill` tool):\n"
+            + "\n".join(f"- {n}" for n in names)
+        )
     args = kwargs.get("args")
     if isinstance(args, str):
         args = args.strip() or None

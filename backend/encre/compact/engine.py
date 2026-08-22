@@ -559,6 +559,21 @@ class CompactEngine:
         self._failure_count = 0
         self._last_compact_turn = turn_count
 
+        # P5: scrub stale architecture-contract blocks out of the summary.
+        # The system prompt carries the binding "Architecture Contract" block;
+        # compaction may snapshot it into the summary, and once a newer
+        # contract supersedes it the stale copy must not survive -- otherwise
+        # the model anchors on outdated architecture after compacting.
+        try:
+            from encre.contract import scrub_contract_mentions
+            scrubbed = scrub_contract_mentions(summary)
+            if scrubbed and scrubbed != summary:
+                logger.info("[compact] scrubbed stale contract block from summary (chars %d->%d)",
+                            len(summary), len(scrubbed))
+                summary = scrubbed
+        except Exception:
+            pass
+
         # Build the compacted message list
         compacted = _build_compacted(messages, summary, workspace_context, system_prompt, session_id)
         new_est = count_message_tokens(compacted)
@@ -791,7 +806,8 @@ def _is_synthetic_user_message(msg: dict[str, Any]) -> bool:
     contradictory summaries in context (the model then repeats old work).
     """
     return bool(
-        msg.get("is_compact_summary")
+        msg.get("is_synthetic")
+        or msg.get("is_compact_summary")
         or msg.get("is_compact_active_archive")
         or msg.get("is_compact_archive_hint")
         or msg.get("is_compact_context")

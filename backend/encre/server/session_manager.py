@@ -477,7 +477,7 @@ class SessionManager:
         except Exception:
             _log.exception("Failed to save session %s", info.session_id)
 
-    def create_session(self, config: EncreConfig | None = None, session_id: str | None = None) -> SessionInfo:
+    def create_session(self, config: EncreConfig | None = None, session_id: str | None = None, mode: Any = None) -> SessionInfo:
         """Create a brand-new in-memory session with a cloned tool registry.
 
         Args:
@@ -487,12 +487,21 @@ class SessionManager:
                 ``load_or_create_session`` reuse a known adapter session_id
                 instead of generating a new one on every fallback, avoiding
                 "one-time session" behavior for gateway adapters.
+            mode: Optional capability profile (``AgentMode``). When None the
+                profile is auto-derived: a session bound to a workspace runs
+                in WORKSPACE mode (production-grade gating + planner/architect
+                contract loop); a session without a workspace runs in GENERAL
+                mode. This keeps every workspace-session creation path
+                (40+ call sites) consistent without touching each one.
         """
         config = replace(config) if config is not None else EncreConfig()
         if session_id is None:
             session_id = str(uuid.uuid4())
+        if mode is None:
+            from encre.mode_profiles import AgentMode
+            mode = AgentMode.WORKSPACE if (config.workspace or "").strip() else AgentMode.GENERAL
         tool_registry = _clone_tool_registry()
-        agent = EncreAgent(config=config, tool_registry=tool_registry)
+        agent = EncreAgent(config=config, tool_registry=tool_registry, mode=mode)
         agent.telemetry.session_id = session_id
         info = SessionInfo(session_id=session_id, agent=agent)
         info.sessions_dir = self._get_sessions_dir()
@@ -549,7 +558,7 @@ class SessionManager:
             return False
         return info.is_running or (info.agent_task is not None and not info.agent_task.done())
 
-    def load_or_create_session(self, session_id: str, config: EncreConfig | None = None) -> SessionInfo:
+    def load_or_create_session(self, session_id: str, config: EncreConfig | None = None, mode: Any = None) -> SessionInfo:
         """Return the live session for *session_id*, loading it from disk if needed.
 
         Looks up the active pool first (to preserve running agent state), then
@@ -579,7 +588,17 @@ class SessionManager:
             try:
                 cfg = replace(config) if config is not None else EncreConfig()
                 tool_registry = _clone_tool_registry()
-                agent = EncreAgent(config=cfg, tool_registry=tool_registry)
+                # Restore workspace context from session metadata before
+                # deriving the mode so resumed workspace sessions resume in
+                # WORKSPACE mode (not GENERAL).
+                meta = EncreSession.read_meta(str(dir_path))
+                ws_path = (meta.get("metadata", {}) or {}).get("workspace") or meta.get("workspace") or ""
+                if ws_path and os.path.isdir(ws_path):
+                    cfg.workspace = ws_path
+                if mode is None:
+                    from encre.mode_profiles import AgentMode
+                    mode = AgentMode.WORKSPACE if (cfg.workspace or "").strip() else AgentMode.GENERAL
+                agent = EncreAgent(config=cfg, tool_registry=tool_registry, mode=mode)
                 agent.telemetry.session_id = session_id
                 agent.session = EncreSession.load_from_dir(str(dir_path), cfg)
                 agent.loop.session = agent.session
@@ -591,14 +610,10 @@ class SessionManager:
                     agent.telemetry.restore_session_cost_from_jsonl()
                 info = SessionInfo(session_id=session_id, agent=agent)
                 info.sessions_dir = self._get_sessions_dir()
-                meta = EncreSession.read_meta(str(dir_path))
                 if meta:
                     info.created_at = meta.get("created_at", time.time())
                     info.last_active = meta.get("updated_at", time.time())
-                    # Restore workspace context from session metadata
-                    ws_path = (meta.get("metadata", {}) or {}).get("workspace") or meta.get("workspace") or ""
                     if ws_path and os.path.isdir(ws_path):
-                        cfg.workspace = ws_path
                         info.metadata["workspace"] = ws_path
                     sess_channel = agent.session.metadata.get("channel") or ""
                     if sess_channel:
@@ -615,9 +630,9 @@ class SessionManager:
                 self._register_user_message_persist_hook(info)
                 return info
             except Exception:
-                return self.create_session(config=config, session_id=session_id)
+                return self.create_session(config=config, session_id=session_id, mode=mode)
 
-        return self.create_session(config=config, session_id=session_id)
+        return self.create_session(config=config, session_id=session_id, mode=mode)
 
     async def remove_session(self, session_id: str) -> None:
         info = self._sessions.pop(session_id, None)

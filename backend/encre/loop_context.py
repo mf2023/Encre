@@ -75,6 +75,7 @@ class ContextBuilder:
         self._codebase_context_cache: tuple[tuple[str, int, int], float, str] | None = None
         self._profile_prompt_cache: tuple[str, str, float, str] | None = None
         self._rules_prompt_cache: tuple[tuple[str, bool, bool], float, str] | None = None
+        self._contract_prompt_cache: tuple[str, float, str] | None = None
 
     # ── Directory tree (static helper) ──────────────────────────────
 
@@ -219,9 +220,103 @@ class ContextBuilder:
         except Exception:
             pass
 
+        # Project profile: tech-stack detection + entry points.  The agent's
+        # understanding of an unfamiliar workspace is weak because the tree
+        # alone does not tell it what language / framework / build tool the
+        # project uses.  Detecting the stack from manifest files gives the
+        # model a concrete picture before it starts globbing.
+        _profile = self._detect_project_profile(ws_path)
+        if _profile:
+            summary_lines.append("")
+            summary_lines.append("Project profile:")
+            for _line in _profile:
+                summary_lines.append(f"  {_line}")
+
         result = (ws_path, ws_name, "\n".join(summary_lines))
         self._workspace_info_cache = (cache_key, time.time(), result)
         return result
+
+    def _detect_project_profile(self, ws_path: str) -> list[str]:
+        """Detect the project's tech stack and key entry points.
+
+        Reads manifest files (pyproject.toml, package.json, Cargo.toml,
+        go.mod, requirements.txt, etc.) and well-known entry points
+        (README*, Makefile, main.*, index.*).  Returns a list of summary
+        lines or ``[]`` when nothing is detectable.
+        """
+        _MANIFESTS: dict[str, str] = {
+            "pyproject.toml": "Python (pyproject.toml)",
+            "setup.py": "Python (setup.py)",
+            "requirements.txt": "Python (requirements.txt)",
+            "package.json": "Node.js",
+            "tsconfig.json": "TypeScript",
+            "Cargo.toml": "Rust (Cargo.toml)",
+            "go.mod": "Go",
+            "pom.xml": "Java (Maven)",
+            "build.gradle": "Java (Gradle)",
+            "build.gradle.kts": "Kotlin/Gradle",
+            "Gemfile": "Ruby",
+            "composer.json": "PHP (Composer)",
+            "CMakeLists.txt": "C/C++ (CMake)",
+            "Makefile": "Make",
+            "Dockerfile": "Docker",
+        }
+        _ENTRY_NAMES = ("README.md", "README", "README.rst", "readme.md",
+                        "CONTRIBUTING.md", "CHANGELOG.md", "main.py",
+                        "index.py", "main.js", "index.js", "main.ts",
+                        "index.ts", "app.py", "manage.py", "cli.py",
+                        "bin/", "src/", "lib/", "tests/", "test/")
+
+        try:
+            entries = set(os.listdir(ws_path))
+        except OSError:
+            return []
+
+        lines: list[str] = []
+        stacks: list[str] = []
+        for _name in _MANIFESTS:
+            if _name in entries:
+                stacks.append(_MANIFESTS[_name])
+        if stacks:
+            lines.append("stack: " + "; ".join(dict.fromkeys(stacks)))
+
+        entry_points = [n for n in _ENTRY_NAMES if n in entries or os.path.isfile(os.path.join(ws_path, n))]
+        if entry_points:
+            lines.append("key files: " + ", ".join(entry_points[:12]))
+
+        pyproject = os.path.join(ws_path, "pyproject.toml")
+        if os.path.isfile(pyproject):
+            try:
+                import tomllib
+                with open(pyproject, "rb") as _f:
+                    _data = tomllib.load(_f)
+                _proj = _data.get("project", {}) or {}
+                _deps = _proj.get("dependencies", []) or []
+                _scripts = _proj.get("scripts", {}) or {}
+                if _deps:
+                    lines.append("python deps: " + ", ".join(str(d).split("[")[0].strip() for d in _deps[:12]))
+                if _scripts:
+                    lines.append("console scripts: " + ", ".join(list(_scripts)[:8]))
+            except Exception:
+                pass
+
+        package_json = os.path.join(ws_path, "package.json")
+        if os.path.isfile(package_json):
+            try:
+                with open(package_json, encoding="utf-8") as _f:
+                    _pkg = json.load(_f)
+                _scripts = _pkg.get("scripts", {}) or {}
+                if _scripts:
+                    lines.append("npm scripts: " + ", ".join(list(_scripts)[:8]))
+                _deps = _pkg.get("dependencies", {}) or {}
+                _dev = _pkg.get("devDependencies", {}) or {}
+                if _deps or _dev:
+                    _all = list(_deps) + list(_dev)
+                    lines.append("js deps: " + ", ".join(_all[:12]))
+            except Exception:
+                pass
+
+        return lines
 
     # ── Codebase index ───────────────────────────────────────────────
 
@@ -319,6 +414,34 @@ class ContextBuilder:
         result = "\n".join(lines)
         self._codebase_context_cache = (cache_key, time.time(), result)
         return result
+
+    # ── Architecture contract ─────────────────────────────────────────
+
+    def build_architecture_contract(self) -> str:
+        """Return the persisted architecture contract blocks for the workspace.
+
+        Loads ``.encre/contracts/PLAN.md`` and ``ARCHITECTURE.md`` (when
+        present) and returns a single markdown block ready to be appended to
+        the system prompt.  Cached on the newest contract file mtime so a new
+        contract written mid-session is picked up on the next turn.
+        """
+        from encre.contract import latest_contract_mtime, load_architecture_contract
+
+        ws_path = getattr(self._config, "workspace", "") or ""
+        if not ws_path or not os.path.isdir(ws_path):
+            self._contract_prompt_cache = None
+            return ""
+        mtime = latest_contract_mtime(ws_path)
+        cache_key = f"{ws_path}:{mtime}"
+        if (
+            self._contract_prompt_cache is not None
+            and self._contract_prompt_cache[0] == cache_key
+            and self._cache_fresh(self._contract_prompt_cache[1])
+        ):
+            return self._contract_prompt_cache[2]
+        prompt = load_architecture_contract(ws_path)
+        self._contract_prompt_cache = (cache_key, time.time(), prompt)
+        return prompt
 
     # ── Document context ─────────────────────────────────────────────
 

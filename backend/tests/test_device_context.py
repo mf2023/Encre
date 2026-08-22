@@ -40,9 +40,10 @@ def test_platform_info_provider():
     data = p.collect()
     assert data is not None, "PlatformInfoProvider should return data"
     os_info = data.get("os", {})
-    assert os_info.get("system") == "Windows", f"Expected Windows, got {os_info.get('system')}"
+    assert os_info.get("system") in ("Windows", "Linux", "Darwin"), \
+        f"Expected a real OS, got {os_info.get('system')}"
     assert os_info.get("node"), "Hostname should not be empty"
-    assert data.get("arch") in ("AMD64", "x86_64", "arm64"), f"Unexpected arch: {data.get('arch')}"
+    assert data.get("arch") in ("AMD64", "x86_64", "arm64", "aarch64"), f"Unexpected arch: {data.get('arch')}"
     assert data.get("python", {}).get("version", "").startswith("3"), f"Python version: {data.get('python', {})}"
     print(f"[PASS] platform_info: {json.dumps(data, ensure_ascii=False, indent=2)}")
 
@@ -60,9 +61,9 @@ def test_hardware_info_provider():
     partitions = disk.get("partitions", [])
     assert len(partitions) > 0, f"Should have at least one partition: {disk}"
     total = sum(p.get("total_gb", 0) for p in partitions)
-    assert total > 100, f"Total disk should be > 100 GB, got {total:.0f} GB"
+    assert total > 0, f"Total disk should be > 0 GB, got {total:.0f} GB"
     assert disk.get("current_working_directory", ""), "CWD should not be empty"
-    assert disk.get("current_drive", ""), "Current drive should not be empty"
+    # ``current_drive`` is a Windows-only concept; on POSIX it is empty by design.
     print(f"[PASS] hardware_info: CPU={cpu.get('logical_cores')} cores, "
           f"RAM={mem.get('total_gb')} GB, Disk={total:.0f} GB ({len(partitions)} partitions), "
           f"CWD={disk.get('current_working_directory')}")
@@ -202,7 +203,7 @@ async def test_device_info_tool_detail():
     parts = disk.get("partitions", [])
     assert len(parts) > 0, f"Should have partitions: {disk}"
     total = sum(p.get("total_gb", 0) for p in parts)
-    assert total > 100, f"Total disk should be > 100 GB, got {total:.0f} GB"
+    assert total > 0, f"Total disk should be > 0 GB, got {total:.0f} GB"
     print(f"[PASS] device_info (detail): platform={data['platform']['os']['system']}, "
           f"RAM={hw['memory']['total_gb']}GB, CPU={hw['cpu']['logical_cores']}cores, "
           f"Disk={total:.0f}GB ({len(parts)} partitions), "

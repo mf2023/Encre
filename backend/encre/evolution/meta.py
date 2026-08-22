@@ -51,13 +51,23 @@ class CapabilityProfile:
     success_count: int = 0
     last_assessed: float = 0.0
 
-    def update(self, success: bool, _difficulty: float = 0.5) -> None:
-        """Blend a new outcome into the running score and confidence."""
+    def update(self, success: bool, difficulty: float = 0.5) -> None:
+        """Blend a new outcome into the running score and confidence.
+
+        Difficulty scales the outcome: solving a harder task moves the score
+        up more than solving an easy one (and likewise penalises failures on
+        easy tasks harder).
+        """
         self.sample_count += 1
         if success:
             self.success_count += 1
         raw = self.success_count / self.sample_count if self.sample_count > 0 else 0.5
-        self.score = raw * 0.7 + self.score * 0.3
+        weight = 1.0 + min(max(float(difficulty), 0.0), 1.0) * 0.5
+        if success:
+            blend = raw * weight
+        else:
+            blend = raw / weight
+        self.score = blend * 0.7 + self.score * 0.3
         self.confidence = min(self.sample_count / 20.0, 1.0)
         self.last_assessed = time.time()
 

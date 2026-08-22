@@ -55,6 +55,7 @@ from encre.hooks.system import EncreHookSystem
 from encre.logging_config import get_logger
 from encre.loop import EncreLoop
 from encre.memdir.system import EncreMemorySystem
+from encre.mode_profiles import AgentMode
 from encre.prompts.loader import PromptLoader
 from encre.safety import EncreSafetyEngine
 from encre.session import EncreSession
@@ -64,8 +65,12 @@ from encre.tools.defaults import register_default_tools
 from encre.tools.registry import ToolRegistry
 from encre.utils.types import (
     TextDelta,
+    ToolProgress,
     ToolResult,
 )
+
+# Tools whose outcomes count as verification evidence for the goal evaluator.
+_VERIFY_EVIDENCE_TOOLS = frozenset({"test_run", "lint_format", "lsp", "bash", "powershell"})
 
 logger = get_logger("encre.goal")
 
@@ -192,6 +197,7 @@ class EncreGoalRunner:
         self,
         goal: GoalDefinition,
         on_attempt: Callable[[GoalEvent], None] | None = None,
+        mode: AgentMode | str | None = None,
     ) -> GoalResult:
         """Execute a goal-driven autonomous loop and return the result."""
         start_time = time.time()
@@ -209,6 +215,7 @@ class EncreGoalRunner:
             self.hook_system, self.safety,
             self.memory_system, self.skill_registry,
             self.telemetry,
+            mode=mode,
         )
 
         full_trace: list[str] = []
@@ -236,11 +243,33 @@ class EncreGoalRunner:
 
             # Run one turn
             turn_output: list[str] = []
+            verify_evidence: list[tuple[str, bool, str]] = []
+            # Tool-name -> tool_name pairing context, reset every attempt so a
+            # stale tool name from a previous attempt can never be attributed
+            # to a fresh tool result.
+            _progress_ctx: dict[str, str] = {}
             async for event in loop.run(prompt):
                 if isinstance(event, TextDelta):
                     turn_output.append(event.text)
                 elif isinstance(event, ToolResult):
                     turn_output.append(f"\n[Tool: {event.content[:500]}]")
+                    # Collect verification evidence (test/lint/typecheck/bash
+                    # outcomes) so the evaluator can judge delivery on
+                    # evidence, not on the model's own confidence narrative.
+                    # ToolResult lacks a tool_name; match it to the tool name
+                    # stashed from the preceding ToolProgress by client_id.
+                    ev_tool = _progress_ctx.get(f"tool_name:{event.id}", "") or ""
+                    if ev_tool in _VERIFY_EVIDENCE_TOOLS and event.content:
+                        verify_evidence.append(
+                            (ev_tool, not event.is_error, event.content[:600]),
+                        )
+                elif isinstance(event, ToolProgress):
+                    ev_prog_tool = getattr(event, "tool_name", "") or ""
+                    if ev_prog_tool:
+                        # ToolProgress (carrying the tool name) precedes the
+                        # matching ToolResult; key by the shared client_id so
+                        # the pairing survives parallel tool execution.
+                        _progress_ctx[f"tool_name:{event.id}"] = ev_prog_tool
 
             turn_text = "".join(turn_output)
             full_trace.append(f"--- Attempt {attempt} ---\n{turn_text}")
@@ -252,8 +281,9 @@ class EncreGoalRunner:
                     message=turn_text[:300],
                 ))
 
-            # Evaluate: did we achieve the goal?
-            eval_result = await self._evaluate(evaluator, goal, full_trace)
+            # Evaluate: did we achieve the goal?  Evidence-based: the evaluator
+            # sees concrete test/lint/build outcomes, not just narrative.
+            eval_result = await self._evaluate(evaluator, goal, full_trace, verify_evidence)
 
             if eval_result.get("met"):
                 result.status = GoalStatus.SUCCESS
@@ -338,17 +368,45 @@ class EncreGoalRunner:
         evaluator: BaseBackend,
         goal: GoalDefinition,
         trace: list[str],
+        verify_evidence: list[tuple[str, bool, str]] | None = None,
     ) -> dict[str, Any]:
-        """Ask the evaluator model to check if the goal has been met."""
+        """Ask the evaluator model to check if the goal has been met.
+
+        Evidence-based: besides the execution trace, the evaluator receives the
+        concrete verification outcomes (test / lint / typecheck / shell results
+        with pass-fail flags) so it can judge *delivery* rather than the model's
+        self-reported confidence.
+        """
         trace_text = "\n".join(trace[-5:])  # Last 5 attempts
         if len(trace_text) > 8000:
             trace_text = trace_text[-8000:]
+
+        evidence_text = ""
+        if verify_evidence:
+            lines = []
+            for tool, passed, content in verify_evidence[-20:]:
+                status = "PASS" if passed else "FAIL"
+                snippet = content.replace("\n", " ")[:200]
+                lines.append(f"- {tool}: {status} -- {snippet}")
+            if lines:
+                evidence_text = "\n".join(lines)
 
         eval_prompt = (
             f"Goal: {goal.description}\n\n"
             f"Success Criteria: {goal.success_criteria}\n\n"
             f"Agent Execution Trace:\n{trace_text}\n\n"
-            f"Has the goal been met according to the success criteria? Reply with JSON only."
+        )
+        if evidence_text:
+            eval_prompt += (
+                f"Verification Evidence (tool outcomes from this attempt):\n"
+                f"{evidence_text}\n\n"
+            )
+        eval_prompt += (
+            "Has the goal been met according to the success criteria? "
+            "Reply with JSON only. Base your verdict on the verification "
+            "evidence first: if the success criteria require passing tests / "
+            "types / lint and the evidence shows failures or is absent, the "
+            "goal is NOT met regardless of what the trace claims."
         )
 
         messages = [
@@ -442,4 +500,5 @@ class EncreGoalLoop:
             evaluator_model=evaluator_model,
             evaluator_provider=evaluator_provider,
         )
-        return await self.runner.run(goal, on_attempt=on_progress)
+        return await self.runner.run(goal, on_attempt=on_progress,
+                                     mode=getattr(self.agent, "mode", None))

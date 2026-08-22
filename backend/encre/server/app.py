@@ -267,7 +267,8 @@ class EncreServer:
         from encre.agent import EncreAgent
 
         def _factory(job_config: dict[str, Any] | None = None) -> EncreAgent:
-            agent = EncreAgent(config=self.config)
+            from encre.mode_profiles import AgentMode
+            agent = EncreAgent(config=self.config, mode=AgentMode.AUTOMATION)
             agent.config.permission_mode = "bypass"
             if job_config:
                 if self._automation_model_enabled(job_config):

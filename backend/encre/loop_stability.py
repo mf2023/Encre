@@ -186,6 +186,19 @@ def _fix_role_alternation(messages: list[dict[str, Any]]) -> list[dict[str, Any]
                 prev_tc = list(prev.get("tool_calls") or [])
                 prev_tc.extend(msg["tool_calls"])
                 prev["tool_calls"] = prev_tc
+            # Preserve compact-layering markers from the merged message so a
+            # real user instruction merged into a summary doesn't erase the
+            # summary/archive/hint boundary the compact engine set.  Without
+            # this, the model can no longer distinguish "summary" from "live
+            # user instruction" after repair_messages runs.
+            for _marker in (
+                "is_compact_summary",
+                "is_compact_boundary",
+                "is_compact_active_archive",
+                "is_compact_archive_hint",
+            ):
+                if msg.get(_marker) and not prev.get(_marker):
+                    prev[_marker] = True
             continue
 
         result.append(dict(msg))

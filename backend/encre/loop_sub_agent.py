@@ -91,6 +91,7 @@ class SubAgentRunner:
         sub_agent_depth: int,
         child_loops: set[Any],
         session: Any,
+        mode: Any = None,
     ) -> None:
         self._config = config
         self._tool_registry = tool_registry
@@ -103,6 +104,7 @@ class SubAgentRunner:
         self._sub_agent_depth = sub_agent_depth
         self._child_loops = child_loops
         self._session = session
+        self._mode = mode
 
     async def run(
         self,
@@ -179,6 +181,7 @@ class SubAgentRunner:
             skill_registry=self._skill_registry,
             hook_system=self._hook_system,
             safety=self._safety,
+            mode=self._mode,
         )
         sub_agent.loop.sub_agent_depth = self._sub_agent_depth + 1
         if self._sub_agent_depth >= MAX_SUB_AGENT_DEPTH and "agent" in tool_registry._tools:

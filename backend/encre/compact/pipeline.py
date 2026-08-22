@@ -26,9 +26,10 @@ from __future__ import annotations
 """Unified context-compression pipeline.
 
 Replaces the ad-hoc step1/step1a/step1b/step2 inline in loop.py with
-a single :class:`CompactionPipeline`.  Stages before autocompact run
-synchronously; autocompact itself is triggered as a background task to
-avoid blocking the API call.
+a single :class:`CompactionPipeline`.  Stages run synchronously in
+pipeline order, each feeding its transformed message list into the next,
+so budget/collapse/microcompact/snip effects actually reach the API call.
+Autocompact itself is triggered as a synchronous step in the caller.
 """
 
 from dataclasses import dataclass, field
@@ -92,39 +93,39 @@ class CompactionPipeline:
 
         # Stage 0: tool result budget
         if getattr(config, "enable_tool_result_budget", True):
-            s = await self._stage_budget(messages, config, est_tokens)
+            s, messages = await self._stage_budget(messages, config, est_tokens)
             report.add_stage(s)
             if s.did_work and s.tokens_after < est_tokens:
-                messages = report.messages
                 est_tokens = s.tokens_after
 
         # Stage 1: context collapse (deterministic, LLM-free)
         if getattr(config, "enable_context_collapse", True):
-            s = self._stage_collapse(messages, est_tokens)
+            s, messages = self._stage_collapse(messages, est_tokens)
             report.add_stage(s)
             if s.did_work:
-                messages = report.messages
                 est_tokens = s.tokens_after
 
         # Stage 2: microcompact
-        s = await self._stage_microcompact(messages, window, est_tokens)
+        s, messages = await self._stage_microcompact(messages, window, est_tokens)
         report.add_stage(s)
         if s.did_work:
-            messages = report.messages
             est_tokens = s.tokens_after
 
         # Stage 3: snip
         if getattr(config, "enable_snip_compact", True):
-            s = await self._stage_snip(messages, window, est_tokens)
+            s, messages = await self._stage_snip(messages, window, est_tokens)
             report.add_stage(s)
             if s.did_work:
-                messages = report.messages
                 est_tokens = s.tokens_after
         else:
             report.add_stage(StageResult(name="snip", did_work=False, detail="disabled"))
 
         # Stage 4: autocompact check (trigger only, actual compact runs async)
-        s = self._stage_compact_check(messages, window, est_tokens)
+        # Use the real output slot budget (config.max_tokens) rather than the
+        # hard-coded 32k default so the trigger matches what the backend will
+        # actually reserve for output.
+        slot_budget = getattr(config, "max_tokens", None) or getattr(config, "max_output_tokens", 32_768)
+        s = self._stage_compact_check(messages, window, est_tokens, max_output_tokens=slot_budget)
         report.add_stage(s)
         if s.did_work:
             report.needs_compact = True
@@ -138,7 +139,7 @@ class CompactionPipeline:
         messages: list[dict[str, Any]],
         config: Any,
         est_tokens: int,
-    ) -> StageResult:
+    ) -> tuple[StageResult, list[dict[str, Any]]]:
         from encre.tool_output_store import apply_tool_result_budget
 
         max_per = getattr(config, "max_tool_result_chars", 20_000)
@@ -149,21 +150,24 @@ class CompactionPipeline:
             max_aggregate=max_agg,
         )
         new_tokens = _count_tokens(new_msgs)
-        return StageResult(
-            name="tool_result_budget",
-            msgs_before=len(messages),
-            msgs_after=len(new_msgs),
-            tokens_before=est_tokens,
-            tokens_after=new_tokens,
-            did_work=(new_tokens < est_tokens),
-            detail=f"per={max_per} agg={max_agg}",
+        return (
+            StageResult(
+                name="tool_result_budget",
+                msgs_before=len(messages),
+                msgs_after=len(new_msgs),
+                tokens_before=est_tokens,
+                tokens_after=new_tokens,
+                did_work=(new_tokens < est_tokens),
+                detail=f"per={max_per} agg={max_agg}",
+            ),
+            new_msgs,
         )
 
     def _stage_collapse(
         self,
         messages: list[dict[str, Any]],
         est_tokens: int,
-    ) -> StageResult:
+    ) -> tuple[StageResult, list[dict[str, Any]]]:
         try:
             from encre.loop_state.collapse import collapse_old_tool_outputs, count_collapsed
 
@@ -171,53 +175,68 @@ class CompactionPipeline:
             n_col = count_collapsed(collapsed)
             if n_col:
                 new_tokens = _count_tokens(collapsed)
-                return StageResult(
+                return (
+                    StageResult(
+                        name="context_collapse",
+                        msgs_before=len(messages),
+                        msgs_after=len(collapsed),
+                        tokens_before=est_tokens,
+                        tokens_after=new_tokens,
+                        did_work=True,
+                        detail=f"stubbed {n_col} old tool outputs",
+                    ),
+                    collapsed,
+                )
+            return (
+                StageResult(
                     name="context_collapse",
                     msgs_before=len(messages),
-                    msgs_after=len(collapsed),
+                    msgs_after=len(messages),
                     tokens_before=est_tokens,
-                    tokens_after=new_tokens,
-                    did_work=True,
-                    detail=f"stubbed {n_col} old tool outputs",
-                )
-            return StageResult(
-                name="context_collapse",
-                msgs_before=len(messages),
-                msgs_after=len(messages),
-                tokens_before=est_tokens,
-                tokens_after=est_tokens,
-                did_work=False,
+                    tokens_after=est_tokens,
+                    did_work=False,
+                ),
+                messages,
             )
         except Exception as exc:
             logger.warning("[pipeline] context_collapse failed: %s", exc)
-            return StageResult(name="context_collapse", did_work=False, detail=f"error: {exc}")
+            return (
+                StageResult(name="context_collapse", did_work=False, detail=f"error: {exc}"),
+                messages,
+            )
 
     async def _stage_microcompact(
         self,
         messages: list[dict[str, Any]],
         window: int,
         est_tokens: int,
-    ) -> StageResult:
+    ) -> tuple[StageResult, list[dict[str, Any]]]:
         engine = self._get_compact_engine()
         if engine.should_microcompact(messages, window):
             micro = await engine.microcompact(messages, window)
             if len(micro) != len(messages):
                 new_tokens = _count_tokens(micro)
-                return StageResult(
-                    name="microcompact",
-                    msgs_before=len(messages),
-                    msgs_after=len(micro),
-                    tokens_before=est_tokens,
-                    tokens_after=new_tokens,
-                    did_work=True,
+                return (
+                    StageResult(
+                        name="microcompact",
+                        msgs_before=len(messages),
+                        msgs_after=len(micro),
+                        tokens_before=est_tokens,
+                        tokens_after=new_tokens,
+                        did_work=True,
+                    ),
+                    micro,
                 )
-        return StageResult(
-            name="microcompact",
-            msgs_before=len(messages),
-            msgs_after=len(messages),
-            tokens_before=est_tokens,
-            tokens_after=est_tokens,
-            did_work=False,
+        return (
+            StageResult(
+                name="microcompact",
+                msgs_before=len(messages),
+                msgs_after=len(messages),
+                tokens_before=est_tokens,
+                tokens_after=est_tokens,
+                did_work=False,
+            ),
+            messages,
         )
 
     async def _stage_snip(
@@ -225,7 +244,7 @@ class CompactionPipeline:
         messages: list[dict[str, Any]],
         window: int,
         est_tokens: int,
-    ) -> StageResult:
+    ) -> tuple[StageResult, list[dict[str, Any]]]:
         try:
             from encre.compact.strategies import EncreSnipStrategy
 
@@ -233,28 +252,35 @@ class CompactionPipeline:
             if await snipper.should_compact(messages, window):
                 snipped = await snipper.compact(messages, window)
                 new_tokens = _count_tokens(snipped)
-                return StageResult(
-                    name="snip",
-                    msgs_before=len(messages),
-                    msgs_after=len(snipped),
-                    tokens_before=est_tokens,
-                    tokens_after=new_tokens,
-                    did_work=True,
-                    detail=f"msgs {len(messages)}->{len(snipped)}",
+                return (
+                    StageResult(
+                        name="snip",
+                        msgs_before=len(messages),
+                        msgs_after=len(snipped),
+                        tokens_before=est_tokens,
+                        tokens_after=new_tokens,
+                        did_work=True,
+                        detail=f"msgs {len(messages)}->{len(snipped)}",
+                    ),
+                    snipped,
                 )
-            return StageResult(name="snip", did_work=False)
+            return (StageResult(name="snip", did_work=False), messages)
         except Exception as exc:
             logger.warning("[pipeline] snip failed: %s", exc)
-            return StageResult(name="snip", did_work=False, detail=f"error: {exc}")
+            return (
+                StageResult(name="snip", did_work=False, detail=f"error: {exc}"),
+                messages,
+            )
 
     def _stage_compact_check(
         self,
         messages: list[dict[str, Any]],
         window: int,
         est_tokens: int,
+        max_output_tokens: int = 32_768,
     ) -> StageResult:
         engine = self._get_compact_engine()
-        if engine.should_compact(messages, window):
+        if engine.should_compact(messages, window, max_output_tokens=max_output_tokens):
             return StageResult(
                 name="autocompact",
                 did_work=True,

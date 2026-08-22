@@ -248,7 +248,22 @@ async def _run_one_sub_agent(
             progress_callback=progress_callback,
             cache_context=cache_context,
         )
+        # Persist planner/architect sub-agent output as a binding architecture
+        # contract artifact so the parent stays anchored to the agreed design.
         if isinstance(sub_result, dict):
+            content = str(sub_result.get("content", "") or "")
+            if agent_name and content.strip():
+                try:
+                    from encre.contract import is_contract_role, save_architecture_contract
+                    if is_contract_role(agent_name):
+                        ws = getattr(parent_loop.config, "workspace", "") or ""
+                        _saved = save_architecture_contract(
+                            ws, agent_name, content, parent_task=prompt,
+                        )
+                        if _saved:
+                            logger.info("[agent] saved %s contract artifact: %s", agent_name, _saved)
+                except Exception:
+                    logger.warning("[agent] failed to persist %s contract artifact", agent_name, exc_info=True)
             return sub_result
         return {"content": str(sub_result), "messages": []}
     finally:

@@ -641,6 +641,7 @@ class EncreSession:
 
         result: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
+        seen_system = False
         for i, bid in enumerate(lineage):
             branch_meta = self.branches.get(bid) if i > 0 else None
             msgs = sorted(
@@ -662,6 +663,15 @@ class EncreSession:
                     msgs = msgs[1:]
             for m in msgs:
                 mid = m.get("id", "")
+                if m.get("role") == "system":
+                    # Each branch carries its own system message (different
+                    # ``id``) so id-dedup misses them; keep only the FIRST
+                    # (current branch's) system message when merging lineage,
+                    # otherwise the context accumulates stale system prompts
+                    # from every fork point.
+                    if seen_system:
+                        continue
+                    seen_system = True
                 if mid and mid in seen_ids:
                     continue
                 if mid:

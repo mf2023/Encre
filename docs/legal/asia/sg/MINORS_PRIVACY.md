@@ -1,0 +1,4 @@
+# Minors' Data Protection Rules (Singapore)
+**Last updated: 22 Aug 2026** · Parents: [Privacy](PRIVACY.md), [User Agreement](USER_AGREEMENT.md)
+
+Basis: PDPA obligations + PDPC guidance on minors (advisory consent from parents for under-13s); Children and Young Persons Act principles. Under-13: parental consent advised before any collection; service not targeted at children. Principles: minimal collection; no profiling/targeted ads on minors; no third-party disclosure without consent; deletion after purpose; enhanced security. Guardians may exercise access/correction/erasure per PDPA (response ≤30 days). Local-first: Encre local mode stores everything on-device only — OS parental controls recommended; review cloud providers' child policies before connecting. Contact: dunimd@outlook.com (subject "Minors").

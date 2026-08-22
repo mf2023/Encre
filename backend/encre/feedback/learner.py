@@ -88,12 +88,12 @@ class EncreFeedbackLearner:
     def __init__(self, storage_path: str | None = None) -> None:
         """Initialise the record list and resolve the storage path."""
         self._records: list[CorrectionRecord] = []
-        if storage_path is None:
-            from encre.config import get_data_dir
-            _dir = get_data_dir() / "feedback"
-            _dir.mkdir(parents=True, exist_ok=True)
-            storage_path = str(_dir / "corrections.json")
-        self._storage_path: str = storage_path
+        # ``None`` means "no persistence": load() returns False and save()
+        # is a no-op.  Callers that want persistence pass an explicit path
+        # (iclaw passes ``storage_path=str(fb_path)``).  Previously a missing
+        # path silently resolved to a data-dir default, so a bare
+        # ``EncreFeedbackLearner()`` could still read/write disk state.
+        self._storage_path: str | None = storage_path
         self._tool_index: dict[str, list[int]] = {}
 
     def record_correction(
@@ -238,6 +238,8 @@ class EncreFeedbackLearner:
 
     def save(self) -> None:
         """Persist records to disk (applying decay first)."""
+        if self._storage_path is None:
+            return
         self._apply_decay()
         data = [rec.to_dict() for rec in self._records]
         os.makedirs(os.path.dirname(self._storage_path), exist_ok=True)
@@ -246,6 +248,8 @@ class EncreFeedbackLearner:
 
     def load(self) -> bool:
         """Load persisted records; returns ``True`` on success."""
+        if self._storage_path is None:
+            return False
         if not os.path.exists(self._storage_path):
             return False
         try:

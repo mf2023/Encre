@@ -863,6 +863,7 @@ export interface AgentStateSnapshot {
   delegate_history: Array<Record<string, unknown>>;
   stuck_events: Array<Record<string, unknown>>;
   tool_semantics: Record<string, unknown>;
+  mode?: "general" | "workspace" | "automation";
 }
 
 export interface AgentStateEvent {

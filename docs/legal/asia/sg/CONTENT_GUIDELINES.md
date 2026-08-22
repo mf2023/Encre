@@ -1,0 +1,4 @@
+# Content Guidelines (Singapore)
+**Last updated: 22 Aug 2026** · Parents: [Terms](TERMS.md), [User Agreement](USER_AGREEMENT.md)
+
+Basis: Penal Code, POFMA (falsehoods), Children and Young Persons Act, Films Act, Copyright Act, Computer Misuse Act, IMDA AI governance guidance. **Prohibited:** child sexual material (absolute ban, reported); defamation/privacy invasion; IP infringement; fraud/malware/hacking help; deepfake misinformation & election interference; non-consensual intimate imagery; anything unlawful in Singapore. AI output duties: human verification for professional use; label AI media when publishing; permissions for real-person outputs. Architecture split: local=user; third-party cloud=provider+user; PiscesLx hosted=Dunimd. You remain liable for what you publish. Enforcement: warning→restriction→termination. Report: dunimd@outlook.com; police 999 / IWF-style reporting via NCPC.

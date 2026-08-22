@@ -156,11 +156,18 @@ class SkillManager:
         if not skills:
             return ""
         groups: dict[str, list[str]] = {}
-        for s in sorted(skills, key=lambda x: x.name):
+        # Cap the inline catalogue so a huge skill library (e.g. 276 built-in
+        # skills) can never push the system prompt past its hard cap and get
+        # truncated mid-list.  The tail stays reachable via the ``skill`` tool
+        # itself, which is how the catalogue instructs the model to discover
+        # anything not listed.
+        _CATALOGUE_CAP = 120
+        for s in sorted(skills, key=lambda x: x.name)[:_CATALOGUE_CAP]:
             prefix = s.name.split("-", 1)[0] if "-" in s.name else "general"
             groups.setdefault(prefix, []).append(
                 f"- `/{s.name}`: {s.description.strip()}"
             )
+        total = len(skills)
         parts = [
             "Invoke a skill by typing `/skill-name <args>` (aliases also work), "
             "or call the `skill` tool with `name` (and optional `args`) to "
@@ -171,5 +178,12 @@ class SkillManager:
         for group_name in sorted(groups):
             parts.append(f"**{group_name}**")
             parts.extend(groups[group_name])
+            parts.append("")
+        if total > _CATALOGUE_CAP:
+            parts.append(
+                f"*{total - _CATALOGUE_CAP} more skills are available — call the "
+                "`skill` tool with `list` to enumerate them, or guess a "
+                "`/skill-name` for a purpose-matched skill.*"
+            )
             parts.append("")
         return "\n".join(parts).rstrip()

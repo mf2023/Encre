@@ -50,6 +50,7 @@ from encre.hooks.file_loader import load_project_hooks
 from encre.hooks.system import EncreHookSystem
 from encre.loop import EncreLoop
 from encre.memdir.system import EncreMemorySystem
+from encre.mode_profiles import AgentMode
 from encre.plugins.registry import PluginRegistry
 from encre.profile.system import EncreProfileSystem
 from encre.recovery import ErrorRecoveryEngine
@@ -284,6 +285,7 @@ class EncreAgent:
         plugin_registry: PluginRegistry | None = None,
         feedback: EncreFeedbackLearner | None = None,
         code_index: EncreCodeIndex | None = None,
+        mode: Any = None,
     ) -> None:
         from encre.config import get_data_dir
         self.config = config or EncreConfig()
@@ -323,6 +325,9 @@ class EncreAgent:
         _ensure_project_sub_agents_loaded(self, self.config.workspace)
         self.telemetry = EncreTelemetry(enabled=self.config.telemetry_enabled)
         self.evolution = EvolutionConfig.create_default()
+        # Capability profile: one engine, distinct per-mode behaviour.
+        # Defaults to GENERAL when unset so existing callers are unchanged.
+        self.mode = mode or AgentMode.GENERAL
         self.plugin_registry = plugin_registry or _get_shared_plugin_registry()
         self.skill_registry = skill_registry or _get_shared_skill_registry()
         # Load project-level skills for the active workspace.  This is a
@@ -366,12 +371,21 @@ class EncreAgent:
             recovery=self.recovery,
             feedback=self.feedback,
             code_index=self.code_index,
+            mode=self.mode,
         )
         self._wire_tools()
         self._load_plugins()
         # MCP lifecycle (lazy init on first run)
         self._mcp_tools: list[Any] = []
         self._mcp_initialized = False
+        # Skill-learning engine: crystallises repeated tool patterns into
+        # auto-generated skills.  Previously only iClaw wired this; here we
+        # make it available on the main agent path too (started lazily on
+        # first run, fed after each run, stopped on close).
+        from encre.learning.engine import LearningEngine
+        self._learning_engine = LearningEngine(self)
+        self._learning_engine_started = False
+        self._learning_engine_start_lock = __import__("asyncio").Lock()
         # Engine-install bridge: computer-use sessions call this when
         # the bundled chromium binary is missing; we yield the
         # resulting events to the agent's stream so the user (not the
@@ -468,10 +482,73 @@ class EncreAgent:
             except Exception:
                 pass
 
+        # Post-run soul learning: on the normal chat path the soul USER.md
+        # was never updated (only iClaw ran the post-run pipeline), so
+        # "learning the user" silently died.  Extract lightweight preference
+        # signals from the user's own messages and append them to USER.md,
+        # rate-limited so we don't spam the file every turn.
+        if getattr(self, "soul_system", None) is not None:
+            try:
+                self._learn_user_preferences(prompt)
+            except Exception:
+                pass
+
         # Feed tool usage pattern to learning engine for skill crystallization
-        if tool_names and hasattr(self, "_learning_engine") and self._learning_engine is not None:
+        if tool_names and self._learning_engine is not None:
+            async with self._learning_engine_start_lock:
+                if not self._learning_engine_started:
+                    await self._learning_engine.start()
+                    self._learning_engine_started = True
             with contextlib.suppress(Exception):
                 await self._learning_engine.analyze_run(tool_names, prompt)
+
+    def _learn_user_preferences(self, prompt: str) -> None:
+        """Lightweight, deterministic USER.md learning for the normal chat path.
+
+        Extracts preference signals from the current user prompt (explicit
+        "I prefer/use/like/want" statements, recurring tech stack hints) and
+        appends a bounded note to the soul USER.md.  Rate-limited to one
+        learned note per session per distinct signal so repeated turns do not
+        spam the file.  This is intentionally much cheaper than the LLM-driven
+        iClaw enrichment: it runs inline after every run with zero extra API
+        calls, so "understanding the user" actually advances during normal
+        desktop usage.
+        """
+        import re as _re
+
+        soul = self.soul_system
+        if soul is None or not getattr(soul, "_loaded", True):
+            return
+        text = (prompt or "").strip()
+        if len(text) < 8 or len(text) > 2000:
+            return
+
+        signals: list[str] = []
+        # Explicit preference statements.
+        for _pat in (r"[Ii] (prefer|use|like|want|need|work with|develop in)\s+([A-Za-z0-9_+.# /-]{2,60})",
+                     r"my (language|stack|framework|editor|os|tool) is\s+([A-Za-z0-9_+.# /-]{2,60})"):
+            for _m in _re.finditer(_pat, text):
+                _val = _m.group(2).strip().rstrip(".,")
+                if _val and len(_val) >= 2 and _val not in signals:
+                    signals.append(_val)
+        if not signals:
+            return
+
+        # Rate-limit: keep a per-agent set of already-learned signals.
+        _seen = getattr(self, "_learned_signals", None)
+        if _seen is None:
+            _seen = set()
+            self._learned_signals = _seen
+        _fresh = [s for s in signals if s.lower() not in _seen]
+        if not _fresh:
+            return
+        _seen.update(s.lower() for s in _fresh)
+
+        note = "User preferences: " + "; ".join(_fresh) + "."
+        try:
+            soul.append_user_note(note)
+        except Exception:
+            pass
 
     async def run_with_tools(
         self,
@@ -657,6 +734,7 @@ class EncreAgent:
             recovery=self.recovery,
             feedback=self.feedback,
             code_index=self.code_index,
+            mode=self.mode,
         )
         self._wire_tools()
         self._plugins_loaded = False
@@ -676,6 +754,14 @@ class EncreAgent:
         # Close the agent loop (which closes the backend)
         with contextlib.suppress(Exception):
             await self.loop.aclose()
+
+        # Stop the learning engine: cancel any in-flight crystallisation
+        # tasks so a shut-down agent does not leak background skill
+        # generation.
+        _le = getattr(self, "_learning_engine", None)
+        if _le is not None:
+            with contextlib.suppress(Exception):
+                await _le.stop()
 
         # Flush telemetry
         if self.telemetry is not None:
