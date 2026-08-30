@@ -59,53 +59,90 @@ export class TransitionHelper {
     }
 
     return new Promise((resolve) => {
+      // Guard against the promise never settling: requestAnimationFrame is
+      // paused while the window is hidden/minimized, and any exception in
+      // the rAF callback would otherwise leave the transition hanging —
+      // which then wedges every subsequent mode switch (no animation, stuck
+      // view states). Never leave a transition unresolved.
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const cleanup = (): void => {
+        for (const el of exitEls) {
+          el.classList.add("hidden");
+          el.style.transition = "";
+          el.style.transform = "";
+          el.style.opacity = "";
+        }
+        for (const el of enterEls) {
+          el.style.transition = "";
+          el.style.transform = "";
+          el.style.opacity = "";
+        }
+      };
+      // Hard fallback: even if rAF never fires, settle after a generous
+      // margin so the transition state machine can never wedge.
+      const guard = setTimeout(finish, d + 50 + 1000);
+
       requestAnimationFrame(() => {
-        // ── 0. 预变更：在设置初始位置之前执行（DOM 排序等） ──
-        opts.setup?.();
+        try {
+          // ── 0. 预变更：在设置初始位置之前执行（DOM 排序等） ──
+          opts.setup?.();
 
-        // ── 1. 设置初始状态 ──
-        // 退出元素：设置 transition 属性（保持当前位置）
-        for (const el of exitEls) {
-          el.style.transition = `transform ${d}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${d}ms cubic-bezier(0.4, 0, 0.2, 1)`;
-        }
-
-        // 进入元素：移除 hidden，定位到右侧起始位置（无过渡）
-        for (const el of enterEls) {
-          el.classList.remove("hidden");
-          el.style.transition = "none";
-          el.style.transform = "translateX(100%)";
-          el.style.opacity = "0";
-        }
-
-        // ── 2. 强制回流 —— 所有初始状态生效 ──
-        void document.body.offsetHeight;
-
-        // ── 3. 同时触发所有 CSS transition ──
-        for (const el of exitEls) {
-          el.style.transform = "translateX(-100%)";
-          el.style.opacity = "0";
-        }
-        for (const el of enterEls) {
-          el.style.transition = `transform ${d}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${d}ms cubic-bezier(0.4, 0, 0.2, 1)`;
-          el.style.transform = "translateX(0)";
-          el.style.opacity = "1";
-        }
-
-        // ── 4. 动画完成后清理 ──
-        setTimeout(() => {
+          // ── 1. 设置初始状态 ──
+          // 退出元素：设置 transition 属性（保持当前位置）
           for (const el of exitEls) {
-            el.classList.add("hidden");
-            el.style.transition = "";
-            el.style.transform = "";
-            el.style.opacity = "";
+            el.style.transition = `transform ${d}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${d}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+          }
+
+          // 进入元素：移除 hidden，定位到右侧起始位置（无过渡）
+          for (const el of enterEls) {
+            el.classList.remove("hidden");
+            el.style.transition = "none";
+            el.style.transform = "translateX(100%)";
+            el.style.opacity = "0";
+          }
+
+          // ── 2. 强制回流 —— 所有初始状态生效 ──
+          void document.body.offsetHeight;
+
+          // ── 3. 同时触发所有 CSS transition ──
+          for (const el of exitEls) {
+            el.style.transform = "translateX(-100%)";
+            el.style.opacity = "0";
           }
           for (const el of enterEls) {
-            el.style.transition = "";
-            el.style.transform = "";
-            el.style.opacity = "";
+            el.style.transition = `transform ${d}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${d}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+            el.style.transform = "translateX(0)";
+            el.style.opacity = "1";
           }
-          resolve();
-        }, d + 50);
+
+          // ── 4. 动画完成后清理 ──
+          setTimeout(() => {
+            clearTimeout(guard);
+            try {
+              cleanup();
+            } catch (e) {
+              console.error("[transition] cleanup failed:", e);
+            }
+            finish();
+          }, d + 50);
+        } catch (e) {
+          console.error("[transition] slide failed:", e);
+          clearTimeout(guard);
+          // Never leave views stuck mid-transition: force the final state
+          // (exit hidden, enter visible) and settle.
+          try {
+            cleanup();
+          } catch (e2) {
+            console.error("[transition] cleanup failed:", e2);
+          }
+          for (const el of enterEls) el.classList.remove("hidden");
+          finish();
+        }
       });
     });
   }

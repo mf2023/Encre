@@ -82,6 +82,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   windowClose: (): Promise<void> => ipcRenderer.invoke("window-close"),
   windowIsMaximized: (): Promise<boolean> =>
     ipcRenderer.invoke("window-is-maximized"),
+  onWindowMaximizeChange: (cb: (maximized: boolean) => void): void => {
+    ipcRenderer.on("window-maximized-state", (_event, maximized: boolean) => cb(maximized));
+  },
 
   toggleDevTools: (): Promise<void> =>
     ipcRenderer.invoke("toggle-devtools"),
@@ -218,6 +221,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("browser:export-file", options),
   exportBinary: (options: { base64: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
     ipcRenderer.invoke("browser:export-binary", options),
+  copyFileTo: (options: { sourcePath: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke("browser:copy-file-to", options),
 
   // Browser import/export
   detectBrowsers: (): Promise<Array<{ id: string; name: string; profilePath: string; hasBookmarks: boolean; hasCookies: boolean; hasHistory: boolean }>> =>
@@ -241,6 +246,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   getDocumentContent: (docId: string, region?: string): Promise<string> =>
     ipcRenderer.invoke("getDocumentContent", docId, region),
+
+  getDocRegion: (): Promise<string> => ipcRenderer.invoke("getDocRegion"),
+
+  setDocRegion: (region: string): Promise<void> => ipcRenderer.invoke("setDocRegion", region),
 
   openChildWindow: (view: string, label: string): Promise<void> =>
     ipcRenderer.invoke("openChildWindow", view, label),

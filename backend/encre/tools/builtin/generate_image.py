@@ -17,7 +17,44 @@ def _get_backend() -> MultimodalMixin | None:
     return None
 
 
+def _get_multimodal_blocker() -> str | None:
+    """Return a friendly error when the active model cannot generate images,
+    else ``None``.
+
+    Uses the per-endpoint ``images_generation`` capability recorded by the
+    background probe (``"unsupported"`` blocks, ``"supported"`` allows).
+    Falls back to the legacy ``multimodal_support`` gate when the node-level
+    capability has not been probed yet.
+    """
+    from encre.tools.builtin.agent import _resolve_loop
+    loop = _resolve_loop()
+    config = getattr(loop, "config", None) if loop is not None else None
+    if config is None or not hasattr(config, "get_active_model"):
+        return None
+    try:
+        model = config.get_active_model()
+    except Exception:
+        return None
+    if model is None:
+        return None
+    node_cap = None
+    capabilities = getattr(model, "capabilities", None)
+    if isinstance(capabilities, dict):
+        node_cap = capabilities.get("images_generation")
+    if node_cap == "supported":
+        return None
+    if node_cap == "unsupported" or getattr(model, "multimodal_support", "unknown") == "unsupported":
+        return (
+            "The active model's endpoint does not support image generation "
+            "(capability probe reported unsupported)."
+        )
+    return None
+
+
 async def _generate_image_execute(**kwargs: Any) -> str:
+    blocker = _get_multimodal_blocker()
+    if blocker:
+        return f"Error: {blocker}"
     backend = _get_backend()
     if backend is None:
         return "Error: Backend does not support image generation"
@@ -32,6 +69,9 @@ async def _generate_image_execute(**kwargs: Any) -> str:
 
 
 async def _edit_image_execute(**kwargs: Any) -> str:
+    blocker = _get_multimodal_blocker()
+    if blocker:
+        return f"Error: {blocker}"
     backend = _get_backend()
     if backend is None:
         return "Error: Backend does not support image editing"
@@ -46,6 +86,9 @@ async def _edit_image_execute(**kwargs: Any) -> str:
 
 
 async def _image_variation_execute(**kwargs: Any) -> str:
+    blocker = _get_multimodal_blocker()
+    if blocker:
+        return f"Error: {blocker}"
     backend = _get_backend()
     if backend is None:
         return "Error: Backend does not support image variation"

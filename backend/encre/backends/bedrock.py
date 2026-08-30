@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -148,6 +147,7 @@ class BedrockBackend(BaseBackend):
         def _create_client():
             try:
                 import boto3
+
                 session_kwargs: dict[str, Any] = {"region_name": self.region_name}
                 if self.aws_access_key_id and self.aws_secret_access_key:
                     session_kwargs["aws_access_key_id"] = self.aws_access_key_id
@@ -155,16 +155,12 @@ class BedrockBackend(BaseBackend):
                 session = boto3.Session(**session_kwargs)
                 return session.client("bedrock-runtime")
             except ImportError as e:
-                raise ImportError(
-                    "boto3 not installed. Install with: pip install boto3"
-                ) from e
+                raise ImportError("boto3 not installed. Install with: pip install boto3") from e
 
         loop = asyncio.get_running_loop()
         self._client = await loop.run_in_executor(None, _create_client)
 
-    def _convert_messages(
-        self, messages: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    def _convert_messages(self, messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
         """Convert OpenAI-format messages to Bedrock Converse API format.
 
         Handles role mapping (``system`` -> ``system``, ``assistant`` ->
@@ -196,17 +192,15 @@ class BedrockBackend(BaseBackend):
                     for tc in tool_calls:
                         func = tc.get("function", {})
                         func_args = func.get("arguments", "{}")
-                        content_blocks.append({
-                            "toolUse": {
-                                "toolUseId": tc.get(
-                                    "id", f"tooluse_{hash(str(tc))}"
-                                ),
-                                "name": func.get("name", ""),
-                                "input": (
-                                    json.loads(func_args) if func_args else {}
-                                ),
+                        content_blocks.append(
+                            {
+                                "toolUse": {
+                                    "toolUseId": tc.get("id", f"tooluse_{hash(str(tc))}"),
+                                    "name": func.get("name", ""),
+                                    "input": (json.loads(func_args) if func_args else {}),
+                                }
                             }
-                        })
+                        )
                     converted.append({"role": "assistant", "content": content_blocks})
                 else:
                     converted.append({"role": "assistant", "content": [{"text": content}]})
@@ -214,20 +208,23 @@ class BedrockBackend(BaseBackend):
 
             if role == "tool":
                 tool_use_id = msg.get("tool_call_id", f"tooluse_{hash(str(msg))}")
-                converted.append({
-                    "role": "user",
-                    "content": [{
-                        "toolResult": {
-                            "toolUseId": tool_use_id,
-                            "content": [{
-                                "text": (
-                                    content if isinstance(content, str)
-                                    else json.dumps(content)
-                                ),
-                            }],
-                        }
-                    }],
-                })
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "toolResult": {
+                                    "toolUseId": tool_use_id,
+                                    "content": [
+                                        {
+                                            "text": (content if isinstance(content, str) else json.dumps(content)),
+                                        }
+                                    ],
+                                }
+                            }
+                        ],
+                    }
+                )
                 continue
 
             if isinstance(content, str):
@@ -260,6 +257,7 @@ class BedrockBackend(BaseBackend):
             ``image.source.bytes``.
         """
         import base64
+
         image_url = item.get("image_url", {})
         url = image_url.get("url", "")
         mime_type = "image/jpeg"
@@ -299,9 +297,7 @@ class BedrockBackend(BaseBackend):
                     }
                 }
                 if func.get("parameters"):
-                    tool_spec["toolSpec"]["inputSchema"] = {
-                        "json": func["parameters"]
-                    }
+                    tool_spec["toolSpec"]["inputSchema"] = {"json": func["parameters"]}
                 converted.append(tool_spec)
         return converted
 
@@ -430,9 +426,7 @@ class BedrockBackend(BaseBackend):
                                 "name": tool_use.get("name", ""),
                                 "input": "",
                             }
-                            yield create_backend_tool_call_delta(
-                                tool_index, "name", tool_use.get("name", "")
-                            )
+                            yield create_backend_tool_call_delta(tool_index, "name", tool_use.get("name", ""))
                         elif thinking_data:
                             thinking_block = True
                             # Initial thinking text from contentBlockStart
@@ -452,30 +446,22 @@ class BedrockBackend(BaseBackend):
                             text_delta = delta.get("delta", {}).get("text", "")
                             if text_delta:
                                 yield create_backend_text(text_delta)
-                        tool_input_delta = (
-                            delta.get("delta", {})
-                            .get("toolInput", {})
-                            .get("input", "")
-                        )
+                        tool_input_delta = delta.get("delta", {}).get("toolInput", {}).get("input", "")
                         if tool_input_delta and tool_use_buffer is not None:
                             if isinstance(tool_input_delta, str):
                                 tool_use_buffer["input"] += tool_input_delta
                             td = tool_input_delta
-                            arg_val = (
-                                td if isinstance(td, str)
-                                else json.dumps(td)
-                            )
+                            arg_val = td if isinstance(td, str) else json.dumps(td)
                             yield create_backend_tool_call_delta(
-                                tool_index, "arguments", arg_val,
+                                tool_index,
+                                "arguments",
+                                arg_val,
                             )
 
                     elif "contentBlockStop" in event:
                         if tool_use_buffer is not None:
                             buf_input = tool_use_buffer["input"]
-                            arg_str = (
-                                buf_input if isinstance(buf_input, str)
-                                else json.dumps(buf_input)
-                            )
+                            arg_str = buf_input if isinstance(buf_input, str) else json.dumps(buf_input)
                             yield create_backend_tool_call(
                                 id=tool_use_buffer["toolUseId"],
                                 name=tool_use_buffer["name"],
@@ -559,10 +545,22 @@ class BedrockBackend(BaseBackend):
     def context_window_size(self) -> int:
         """Return context window for Bedrock models.
 
-        2026: Claude Opus 4.7: 1M, Claude Sonnet 4.6: 1M, others: 200K.
+        2026: Claude 5.x/4.8/4.7/4.6: 1M, Haiku 4.5: 200K,
+        Llama 4 Scout: 1M, Llama 3.3 70B: 128K,
+        Nova Premier/Pro/Lite: 300K, Nova Micro: 128K.
         """
         m = self.model.lower()
-        if "opus-4-7" in m or "sonnet-4-6" in m:
+        # Llama 4 Scout exposes a 1M window on Bedrock.
+        if "llama4-scout" in m or "llama-4-scout" in m:
+            return 1_048_576
+        if "llama3-3" in m or "llama-3-3" in m:
+            return 128_000
+        if "nova-premier" in m or "nova-pro" in m or "nova-lite" in m:
+            return 300_000
+        if "nova-micro" in m:
+            return 128_000
+        # Claude 5.x / 4.8 / 4.7 / Sonnet 4.6 all expose a 1M window.
+        if "opus-5" in m or "sonnet-5" in m or "fable-5" in m or "opus-4-8" in m or "opus-4-7" in m or "sonnet-4-6" in m:
             return 1_000_000
         return 200_000
 
@@ -571,6 +569,7 @@ class BedrockBackend(BaseBackend):
         if self._client is not None:
             try:
                 import asyncio
+
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._client.close)
             except Exception:
@@ -604,6 +603,7 @@ class BedrockBackend(BaseBackend):
     async def _invoke_model(self, model_id: str, body: dict[str, Any], content_type: str = "application/json"):
         """Invoke a Bedrock model synchronously (in an executor)."""
         import asyncio
+
         await self._ensure_client()
         loop = asyncio.get_running_loop()
 
@@ -744,6 +744,7 @@ class BedrockBackend(BaseBackend):
     ):
         """Generate embeddings via Amazon Titan Embeddings or Cohere Embed."""
         from encre.utils.types import EmbeddingResponse, EmbeddingResult
+
         texts = [input] if isinstance(input, str) else list(input)
 
         model_id = model or "amazon.titan-embed-text-v2:0"
@@ -768,11 +769,7 @@ class BedrockBackend(BaseBackend):
                     body.update(extra_params)
                 payload = await self._invoke_model(model_id, body)
                 embeddings_raw = payload.get("embeddings", []) or []
-                embedding = (
-                    embeddings_raw[0]
-                    if embeddings_raw and isinstance(embeddings_raw[0], list)
-                    else []
-                )
+                embedding = embeddings_raw[0] if embeddings_raw and isinstance(embeddings_raw[0], list) else []
             else:
                 body = {"inputText": text}
                 if dimensions is not None:

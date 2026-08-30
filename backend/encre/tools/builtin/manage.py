@@ -263,7 +263,7 @@ async def _install_mcp(loop: Any, kwargs: dict[str, Any]) -> str:
 
     try:
         mcp_tool = EncreMCPTool(
-            command=f"{command} {' '.join(args)}" if command else "",
+            command=[command, *args] if command else [],
             server_url=url if url else "",
             env=env if env and isinstance(env, dict) else None,
             cwd=cwd,

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -73,6 +72,10 @@ class HuggingFaceBackend(OpenAISSEBackend):
 
     def context_window_size(self) -> int:
         """Return the context window size (in tokens) for HF models."""
-        # Hugging Face Inference API models vary widely; 128K is a safe
-        # conservative default for the hosted Llama/Qwen/DeepSeek SKUs.
+        m = self.model.lower()
+        if "llama-4-scout" in m:
+            return 1_310_720
+        if "llama-4" in m or "qwen3.8" in m or "deepseek-v4" in m or "glm-5.3" in m:
+            return 1_048_576
+        # Older hosted Llama/Qwen/DeepSeek SKUs use a 128K window.
         return 128000

@@ -42,7 +42,7 @@ import { Dialog } from "./dialog.js";
 //   - xterm            -> setupTerminalPanel()  (terminal tabs)
 //   - mammoth / xlsx   -> _renderOfficeDocx() / _renderOfficeXlsx()
 //   - pptx-to-html     -> _renderOfficePptx()
-import { renderDiffHtml, setupSplitViewScrollSync } from "./diff_render.js";
+import { renderDiffHtml, setupSplitViewScrollSync, expandDiffToFullFile } from "./diff_render.js";
 import { showContextMenu } from "./context-menu.js";
 import { BrowserView } from "./browser.js";
 import { getDefaultHomepage } from "./browser.js";
@@ -61,7 +61,8 @@ export interface TabDef {
   favicon?: string;      /** for browser tabs: favicon URL from the page */
   content?: string;      /** for markdown tabs: initial markdown content */
   title?: string;        /** for markdown tabs: preview title */
-   filePath?: string;     /** for editor/markdown tabs: file path */
+  filePath?: string;     /** for editor/markdown tabs: file path */
+  state?: string;        /** breathing light: "running" | "awaiting_approval" | "permission" | "" */
 }
 
 const TABS_STORAGE_KEY = "session-sidebar-tabs";
@@ -85,7 +86,7 @@ interface NewTabOption {
 const NEW_TAB_OPTIONS: NewTabOption[] = [
   { id: "terminal", icon: "terminal" },
   { id: "editor", icon: "code-2" },
-  { id: "review", icon: "eye" },
+  { id: "review", icon: "file-search" },
   { id: "browser", icon: "globe" },
 ];
 
@@ -116,7 +117,7 @@ function tabIcon(type: string, shellPath?: string): string {
   if (type === "terminal") return termIcon(shellPath);
   switch (type) {
     case "editor": return "code-2";
-    case "review": return "eye";
+    case "review": return "file-search";
     case "browser": return "globe";
     case "markdown": return "file-text";
     case "code": return "file-text";
@@ -250,6 +251,9 @@ export class SessionInner {
     this.activeTab = this.tabs.length > 0 ? this.tabs[0].id : "";
     // Force panels to re-render so terminal panel reflects restored state.
     this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
+    // Switching sessions must rebuild the info panel even if its markup
+    // coincidentally matches the previous session's cached HTML.
+    this._lastInfoHtml = "";
     this.renderTabs();
     this.render();
     this.restoreSidebarVisibility();
@@ -260,6 +264,7 @@ export class SessionInner {
   private dragIdx: number = -1;
   private dragStartX: number = 0;
   private dragOverIdx: number = -1;
+  private dragOverAfter = false;
   private dragBound = false;
   private wasDragged = false;
 
@@ -281,6 +286,11 @@ export class SessionInner {
   private panelCodeEditors = new Map<string, any>();
   /** Tracks which code tabs have unsaved edits (true = dirty). */
   private _dirtyTabs = new Map<string, boolean>();
+  /** Last rendered info-panel HTML. Lets renderContent() skip DOM rebuilds
+   *  when state mutated but the info panel content is unchanged (e.g. every
+   *  streaming/status emit while the model answers), so the sidebar does not
+   *  visibly flash on every update. */
+  private _lastInfoHtml = "";
   private panelMediaViewers = new Map<string, MediaViewer>();
   private panelOfficeControllers = new Map<string, HTMLElement>();
   private _terminalCounter = 0;
@@ -392,7 +402,7 @@ export class SessionInner {
   /* ── Tab Management ─────────────────────────────────────────────── */
 
   private async renderTabs(): Promise<void> {
-    this.tabList.innerHTML = this.tabs.map((tab) => {
+    this.tabList.innerHTML = this.tabs.map((tab, i) => {
       const activeCls = tab.id === this.activeTab ? " active" : "";
       const isDirty = tab.type === "code" && !!this._dirtyTabs.get(tab.id);
       const closeSvg = `<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
@@ -403,14 +413,15 @@ export class SessionInner {
         : "";
       let iconHtml: string;
       if (tab.type === "browser" && tab.favicon) {
-        iconHtml = `<img class="tab-favicon" src="${this.esc(tab.favicon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''"/><i data-lucide="globe" class="lucide lucide-xs" style="margin-right:4px;flex-shrink:0;display:none"></i>`;
+        iconHtml = `<img class="tab-favicon" src="${this.esc(tab.favicon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''"/><i data-lucide="globe" class="lucide lucide-xs" style="flex-shrink:0;display:none"></i>`;
       } else if (tab.type === "code" || tab.type === "markdown") {
-        iconHtml = `<img src="${getFileIcon(tab.label)}" class="icon" style="width:14px;height:14px;margin-right:4px;flex-shrink:0">`;
+        iconHtml = `<img src="${getFileIcon(tab.label)}" class="icon" style="width:14px;height:14px;flex-shrink:0">`;
       } else {
-        iconHtml = `<i data-lucide="${tabIcon(tab.type, tab.shellPath)}" class="lucide lucide-xs" style="margin-right:4px;flex-shrink:0"></i>`;
+        iconHtml = `<i data-lucide="${tabIcon(tab.type, tab.shellPath)}" class="lucide lucide-xs" style="flex-shrink:0"></i>`;
       }
-      return `<button class="tab${activeCls}" data-tab="${tab.id}" draggable="true">
-        ${iconHtml}
+      const stateCls = tab.state === "running" ? "session-running" : tab.state === "awaiting_approval" ? "session-waiting" : tab.state === "permission" ? "session-orange" : "";
+      return `<button class="tab${activeCls}" data-tab="${tab.id}" data-idx="${i}" draggable="true">
+        <span class="tab-icon-wrap">${stateCls ? `<span class="${stateCls} tab-indicator-pos"></span>` : ""}${iconHtml}</span>
         <span class="tab-label">${this.esc(tab.label)}</span>${closeBtn}
       </button>`;
     }).join("");
@@ -622,19 +633,16 @@ export class SessionInner {
     this.tabBody.querySelectorAll(".tab-panel").forEach((p) => p.remove());
 
     const cards = [
-      { id: "terminal", icon: "terminal", label: t("sessionInner.tabTerminal"), desc: t("sessionInner.tabTerminalDesc") },
-      { id: "editor", icon: "code-2", label: t("sessionInner.tabEditor"), desc: t("sessionInner.tabEditorDesc") },
-      { id: "review", icon: "eye", label: t("sessionInner.tabReview"), desc: t("sessionInner.tabReviewDesc") },
-      { id: "browser", icon: "globe", label: t("sessionInner.tabBrowser"), desc: t("sessionInner.tabBrowserDesc") },
+      { id: "terminal", icon: "terminal", label: t("sessionInner.tabTerminal") },
+      { id: "editor", icon: "code-2", label: t("sessionInner.tabEditor") },
+      { id: "review", icon: "file-search", label: t("sessionInner.tabReview") },
+      { id: "browser", icon: "globe", label: t("sessionInner.tabBrowser") },
     ];
 
     this.tabBody.innerHTML = `<div class="si-home">${cards.map((c) => `
       <div class="si-home-card" data-tab="${c.id}">
         <i data-lucide="${c.icon}" class="lucide si-home-icon"></i>
-        <div class="si-home-info">
-          <div class="si-home-label">${this.esc(c.label)}</div>
-          <div class="si-home-desc">${this.esc(c.desc)}</div>
-        </div>
+        <div class="si-home-label">${this.esc(c.label)}</div>
         <i data-lucide="chevron-right" class="lucide si-home-arrow"></i>
       </div>
     `).join("")}</div>`;
@@ -661,7 +669,7 @@ export class SessionInner {
     if (type === "terminal") {
       this._terminalCounter++;
       id = `terminal-${this._terminalCounter}`;
-      const shellName = opts?.shellPath ? opts.shellPath.split(/[/\\]/).pop()?.replace(/\.(exe|cmd|bat)$/i, "") || "Terminal" : "Terminal";
+      const shellName = opts?.shellPath ? opts.shellPath.split(/[/\\]/).pop()?.replace(/\.(exe|cmd|bat)$/i, "") || t("sessionInner.tabTerminal") : t("sessionInner.tabTerminal");
       label = `${shellName} ${this._terminalCounter}`;
     } else if (type === "browser") {
       this._browserCounter++;
@@ -674,7 +682,7 @@ export class SessionInner {
     } else if (type === "editor") {
       this._editorCounter = (this._editorCounter || 0) + 1;
       id = `editor-${this._editorCounter}`;
-      const fileName = opts?.filePath ? opts.filePath.split(/[/\\]/).pop() || opts.filePath : "Editor";
+      const fileName = opts?.filePath ? opts.filePath.split(/[/\\]/).pop() || opts.filePath : t("sessionInner.tabEditor");
       label = fileName;
     } else if (type === "code") {
       this._codeCounter++;
@@ -799,6 +807,10 @@ export class SessionInner {
           const c = this.panelOfficeControllers.get(pid);
           if (c && typeof (c as any)._officeCleanup === "function") (c as any)._officeCleanup();
           this.panelOfficeControllers.delete(pid);
+        }
+        if (ptype === "editor" && typeof (p as any)._siTreeTimer === "number") {
+          clearInterval((p as any)._siTreeTimer);
+          (p as any)._siTreeTimer = null;
         }
         p.remove();
       } else {
@@ -1108,10 +1120,10 @@ export class SessionInner {
       <button class="settings-dropdown-trigger si-review-action-trigger si-review-split-btn" type="button" data-tooltip="${t("sessionInner.reviewSplitView")}">
         <i data-lucide="list" class="lucide lucide-sm"></i>
       </button>
-      <div class="settings-dropdown-wrap si-review-actions si-review-git-wrap">
-        <button class="settings-dropdown-trigger si-review-action-trigger si-review-git-trigger" type="button" data-tooltip="${t("sessionInner.reviewActionCommit")}">
+      <div class="settings-dropdown-wrap si-review-git-wrap">
+        <button class="settings-dropdown-trigger si-review-git-trigger" type="button">
           <i data-lucide="git-commit-horizontal" class="lucide lucide-sm si-review-git-icon"></i>
-          <i data-lucide="chevron-down" class="lucide lucide-xs settings-dropdown-chevron"></i>
+          <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
         </button>
         <div class="settings-dropdown si-review-git-dropdown" style="right:0;left:auto;min-width:170px"></div>
       </div>
@@ -1208,10 +1220,7 @@ export class SessionInner {
       const treeCacheKey = `${activePath || ""}\n` + entries.map((e) => `${e.staged}${e.unstaged}:${e.path}`).join("\n");
       const cachedTree = this._reviewTreeCache.get(treeCacheKey);
       if (cachedTree) return cachedTree;
-      if (entries.length === 0) return `<div class="si-panel-empty">
-        <i data-lucide="check-circle-2" class="lucide"></i>
-        <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-      </div>`;
+      if (entries.length === 0) return this.reviewEmptyMarkup();
       const groups = new Map<string, StatusEntry[]>();
       for (const e of entries) {
         const dir = e.path.includes("/") ? e.path.split("/")[0] : "(root)";
@@ -1285,6 +1294,25 @@ export class SessionInner {
     const load = async (filePath?: string, forceRefresh = false) => {
       const requestSeq = ++this._reviewRequestSeq;
       const ws = getState().activeWorkspace;
+      // Reset per-panel view toggles when the underlying conversation, workspace
+      // or mode changes, so one session's collapse/split state isn't carried into
+      // another. Key = workspace + mode + session id.
+      const st = getState();
+      const ctxKey = `${ws || ""}|${st.workspaceMode || ""}|${st.sessionId || ""}`;
+      if (ctxKey !== this._reviewContextKey) {
+        this._reviewContextKey = ctxKey;
+        const changed = this._reviewCollapsed || this._reviewSplitView;
+        this._reviewCollapsed = false;
+        this._reviewSplitView = false;
+        if (changed) {
+          if (this._reviewDiffEl) {
+            this._reviewDiffEl.classList.toggle("review-collapsed", false);
+            this._reviewDiffEl.classList.toggle("review-split", false);
+          }
+          applyContainerClasses();
+          updateToolIcons();
+        }
+      }
       const showEmptyState = (html: string) => {
         if (requestSeq !== this._reviewRequestSeq) return;
         wrapEl.style.display = "none";
@@ -1321,8 +1349,7 @@ export class SessionInner {
       if (this._reviewFilter === "lastRound") {
         const arts = getState().artifacts;
         if (arts.length === 0) {
-          showEmptyState(`<i data-lucide="check-circle-2" class="lucide"></i>
-            <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`);
+          showEmptyState(this.reviewEmptyInner());
           return;
         }
         // Every recorded change is shown, most recent first.
@@ -1342,7 +1369,7 @@ export class SessionInner {
         const currentArtifact = roundArts.find((a: ArtifactItem) => a.path === targetPath) || null;
         diffEl.innerHTML = currentArtifact
           ? this.parseArtifactDiff(currentArtifact, targetPath)
-          : `<div class="si-panel-empty"><i data-lucide="check-circle-2" class="lucide"></i><div class="si-panel-empty-title">${this.esc(t("sessionInner.reviewNoChanges"))}</div></div>`;
+          : this.reviewEmptyMarkup();
         treeEl.innerHTML = this.buildArtifactTree(roundArts, targetPath);
         const adds = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^\+/gm) || []).length : 0;
         const dels = currentArtifact?.diff_text ? (currentArtifact.diff_text.match(/^-/gm) || []).length : 0;
@@ -1418,14 +1445,7 @@ export class SessionInner {
       // `git add` (e.g. a newly staged file still read as unstaged), which
       // looked like staged files disappeared for no reason.
       if (filteredEntries.length === 0 && !filePath && this._reviewFilter !== "lastRound") {
-        wrapEl.style.display = "none";
-        emptyEl.style.display = "flex";
-        emptyEl.innerHTML = `<i data-lucide="check-circle-2" class="lucide"></i>
-          <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`;
-        statsEl.innerHTML = "";
-        if (typeof (window as any).lucide !== "undefined") {
-          (window as any).lucide.createIcons({ root: panel });
-        }
+        showEmptyState(this.reviewEmptyInner());
         return;
       }
 
@@ -1445,14 +1465,31 @@ export class SessionInner {
         if (diffRes.error) {
           diffEl.innerHTML = `<div class="si-empty">${this.esc(diffRes.error)}</div>`;
         } else {
-          diffEl.innerHTML = parseDiffFn(`${ws}:${filePath}`, diffRes.output, String(this._reviewSplitView));
+          // "加载完整文件" (default): merge the on-disk file content into the
+          // compact diff so unchanged lines are shown as context too.
+          // "不加载完整文件": keep the compact hunk-only view.
+          let diffOut = diffRes.output;
+          if (this._reviewFullFile && diffOut && !/^(Binary files |GIT binary patch)/.test(diffOut)) {
+            try {
+              // git status/diff report repo-relative paths; readFile needs an
+              // absolute one resolved against the workspace root.
+              const absPath = /^[a-zA-Z]:[\\/]/.test(filePath) || filePath.startsWith("/")
+                ? filePath.replace(/\\/g, "/")
+                : `${ws.replace(/[/\\]+$/, "")}/${filePath.replace(/\\/g, "/")}`;
+              const fr = await api.readFile(absPath);
+              if (fr && !fr.is_binary && typeof fr.content === "string" && fr.content) {
+                diffOut = expandDiffToFullFile(diffOut, fr.content);
+              }
+            } catch { /* fall back to compact diff */ }
+          }
+          diffEl.innerHTML = parseDiffFn(`${ws}:${filePath}`, diffOut, [this._reviewSplitView, this._reviewWordDiff, this._reviewFullFile, this._reviewHideWs, this._reviewWrap].join("|"));
           setupSplitViewScrollSync(diffEl);
           ({ adds, dels } = computeStats(filteredEntries, diffRes.output));
         }
       } else {
         currentReviewPath = undefined;
         ({ adds, dels, label: statsLabel } = computeStats(filteredEntries));
-        diffEl.innerHTML = `<div class="si-panel-empty"><i data-lucide="check-circle-2" class="lucide"></i><div class="si-panel-empty-title">${this.esc(t("sessionInner.reviewNoChanges"))}</div></div>`;
+        diffEl.innerHTML = this.reviewEmptyMarkup();
       }
 
       if (requestSeq !== this._reviewRequestSeq) return;
@@ -1500,14 +1537,12 @@ export class SessionInner {
         { action: "wrap", icon: "wrap-text", labelKey: "reviewAutoWrap", toggle: true },
         { action: "_divider1", icon: "", labelKey: "", divider: true },
         { action: "fullFile", icon: "file-output", labelKey: "reviewNotFullFile", toggle: true },
-        { action: "richText", icon: "layout-list", labelKey: "reviewRichText", toggle: true },
         { action: "wordDiff", icon: "diff", labelKey: "reviewWordDiff", toggle: true },
         { action: "hideWs", icon: "eraser", labelKey: "reviewHideWhitespace", toggle: true },
       );
       const isChecked = (a: string): boolean => {
         if (a === "wrap") return this._reviewWrap;
         if (a === "fullFile") return !this._reviewFullFile;
-        if (a === "richText") return this._reviewRichText;
         if (a === "wordDiff") return this._reviewWordDiff;
         if (a === "hideWs") return this._reviewHideWs;
         return false;
@@ -1640,11 +1675,10 @@ export class SessionInner {
       updateToolIcons();
     });
 
-    // Toggle split (two-column) view. Mutually exclusive with rich text + word diff.
+    // Toggle split (two-column) view. Mutually exclusive with word diff.
     splitBtn.addEventListener("click", () => {
       this._reviewSplitView = !this._reviewSplitView;
       if (this._reviewSplitView) {
-        this._reviewRichText = false;
         this._reviewWordDiff = false;
       }
       applyContainerClasses();
@@ -1686,6 +1720,13 @@ export class SessionInner {
     };
     moveToBody(actionDropdown);
     moveToBody(gitDropdown);
+    // The git dropdown lives under document.body, so the generic
+    // `.settings-dropdown-wrap:has(.settings-dropdown.open)` chevron-rotate
+    // rule never matches. Mirror the open state onto the wrap so the
+    // trigger's chevron flips like every other dropdown.
+    new MutationObserver(() => {
+      gitWrap.classList.toggle("dd-open", gitDropdown.classList.contains("open"));
+    }).observe(gitDropdown, { attributes: true, attributeFilter: ["class"] });
     const positionDropdown = (dd: HTMLElement, trigger: HTMLElement) => {
       moveToBody(dd);
       const r = trigger.getBoundingClientRect();
@@ -1695,24 +1736,19 @@ export class SessionInner {
       const right = window.innerWidth - r.right;
       dd.style.right = `${Math.max(8, right)}px`;
     };
-    // Git trigger: click on the icon runs the action; click on the chevron
-    // opens the dropdown. Both handlers merged into one to avoid conflicts.
+    // Git trigger: clicking anywhere on the trigger opens/closes the action
+    // dropdown (same interaction as the filter dropdown). The action only
+    // runs when an item inside the dropdown is clicked, so the trigger can
+    // no longer fire commit/push by accident.
     gitTrigger.addEventListener("click", (e) => {
       e.stopPropagation();
-      // If the click landed on the chevron icon, open/close the dropdown.
-      if ((e.target as HTMLElement).classList.contains("settings-dropdown-chevron") ||
-          (e.target as HTMLElement).closest(".settings-dropdown-chevron")) {
-        const isOpen = gitDropdown.classList.contains("open");
-        document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
-        if (!isOpen) {
-          buildGitActionItems();
-          gitDropdown.classList.add("open");
-          positionDropdown(gitDropdown, gitTrigger);
-        }
-        return;
+      const isOpen = gitDropdown.classList.contains("open");
+      document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
+      if (!isOpen) {
+        buildGitActionItems();
+        gitDropdown.classList.add("open");
+        positionDropdown(gitDropdown, gitTrigger);
       }
-      // Click on the icon or button body �?run the selected git action.
-      runGitAction();
     });
     gitDropdown.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
@@ -1721,8 +1757,10 @@ export class SessionInner {
       e.stopPropagation();
       const action = (item.getAttribute("data-git-action") || "commit") as "commit" | "push" | "pull";
       this._reviewGitAction = action;
-      gitDropdown.classList.remove("open");
       buildGitActionItems();
+      gitDropdown.classList.remove("open");
+      // Selecting an item runs it immediately (command-menu style).
+      void runGitAction();
     });
 
     // Trigger the selected git action when the trigger button is clicked directly
@@ -1817,11 +1855,6 @@ export class SessionInner {
       let changed = false;
       if (action === "wrap") { this._reviewWrap = !this._reviewWrap; changed = true; }
       else if (action === "fullFile") { this._reviewFullFile = !this._reviewFullFile; changed = true; }
-      else if (action === "richText") {
-        this._reviewRichText = !this._reviewRichText;
-        if (this._reviewRichText) this._reviewSplitView = false;
-        changed = true;
-      }
       else if (action === "wordDiff") {
         this._reviewWordDiff = !this._reviewWordDiff;
         if (this._reviewWordDiff) this._reviewSplitView = false;
@@ -1971,6 +2004,22 @@ export class SessionInner {
       },
       onNewWindow: (newUrl: string) => {
         this.createTab("browser", { startUrl: newUrl });
+      },
+      onDialog: (type, message, _defaultPromptText, respond) => {
+        this.setTabState(tabId, "awaiting_approval");
+        if (type === "alert") {
+          Dialog.alert(message, "").then(() => { respond(null); this.setTabState(tabId, ""); });
+        } else if (type === "confirm") {
+          Dialog.confirm(message, "").then((ok) => { respond(ok ? "true" : "false"); this.setTabState(tabId, ""); });
+        } else if (type === "prompt") {
+          Dialog.prompt(message, "", _defaultPromptText).then((val) => { respond(val); this.setTabState(tabId, ""); });
+        } else {
+          respond(null);
+          this.setTabState(tabId, "");
+        }
+      },
+      onPermissionRequest: (_permission, _origin, _request) => {
+        this.setTabState(tabId, "permission");
       },
     });
     this.panelBrowsers.set(tabId, bv);
@@ -2252,8 +2301,19 @@ export class SessionInner {
     return "";
   }
 
+  /** Inner content (icon + title) shared by every "no changes" empty state. */
+  private reviewEmptyInner(): string {
+    return `<i data-lucide="check-circle-2" class="lucide"></i>
+      <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>`;
+  }
+
+  /** Full .si-panel-empty block for embedding inside the diff/tree area. */
+  private reviewEmptyMarkup(): string {
+    return `<div class="si-panel-empty">${this.reviewEmptyInner().replace(/\n\s*/g, " ")}</div>`;
+  }
+
   private parseDiff(output: string): string {
-    if (!output.trim()) return `<div class="si-panel-empty"><i data-lucide="check-circle-2" class="lucide"></i><div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div></div>`;
+    if (!output.trim()) return this.reviewEmptyMarkup();
 
     // Check if this is a binary/media file — use same extension sets as editor
     const fnMatch = output.match(/diff --git a\/\S+ b\/(.+?)(?:\n|$)/) || output.match(/^--- (?:[ab]\/)?(.+)$/m);
@@ -2273,8 +2333,7 @@ export class SessionInner {
 
     return renderDiffHtml(output, {
       fileNameFallback: t("sessionInner.reviewUnknownFile"),
-      maxLines: this._reviewFullFile ? 4000 : 1000,
-      richText: this._reviewRichText,
+      maxLines: this._reviewFullFile ? 4000 : 400,
       wordDiff: this._reviewWordDiff,
       hideWhitespace: this._reviewHideWs,
       splitView: this._reviewSplitView,
@@ -2323,8 +2382,7 @@ export class SessionInner {
   private renderArtifactDiffView(diffText: string, filePath: string): string {
     return renderDiffHtml(diffText, {
       fileNameFallback: filePath,
-      maxLines: this._reviewFullFile ? 4000 : 1000,
-      richText: this._reviewRichText,
+      maxLines: this._reviewFullFile ? 4000 : 400,
       wordDiff: this._reviewWordDiff,
       hideWhitespace: this._reviewHideWs,
       splitView: this._reviewSplitView,
@@ -2333,10 +2391,7 @@ export class SessionInner {
   }
 
   private buildArtifactTree(artifacts: ArtifactItem[], activePath: string): string {
-    if (artifacts.length === 0) return `<div class="si-panel-empty">
-      <i data-lucide="check-circle-2" class="lucide"></i>
-      <div class="si-panel-empty-title">${t("sessionInner.reviewNoChanges")}</div>
-    </div>`;
+    if (artifacts.length === 0) return this.reviewEmptyMarkup();
     // Group by top-level directory (same as git buildTree style)
     const groups = new Map<string, ArtifactItem[]>();
     for (const a of artifacts) {
@@ -2373,17 +2428,10 @@ export class SessionInner {
   private async setupEditorPanel(panel: HTMLElement): Promise<void> {
     const api = (window as any).electronAPI;
 
-    if (!getState().activeWorkspace) {
-      panel.innerHTML = `<div class="si-panel-empty si-editor-empty">
-        <i data-lucide="file-code-2" class="lucide"></i>
-        <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
-      </div>`;
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: panel });
-      }
-      return;
-    }
-
+    // Always render the tree skeleton. The "no active workspace" empty state
+    // is produced by renderTree below (and kept refreshed by the poller), so
+    // the tree appears automatically once a workspace becomes active instead
+    // of stalling forever until the tab is reopened.
     panel.innerHTML = `<div class="si-editor-wrap" style="display:flex;height:100%">
       <div class="si-editor-tree" style="flex:1;overflow:auto;max-width:none;width:100%">
         <div class="si-editor-tree-body"></div>
@@ -2402,6 +2450,8 @@ export class SessionInner {
 
     const showTreeCtx = (ev: MouseEvent, path: string, isDir: boolean) => {
       ev.preventDefault();
+      // Without an active workspace there is no valid root to act on.
+      if (!rootPath) return;
       treeCtxPath = path;
       treeCtxIsDir = isDir;
       const ext = path.split(".").pop()?.toLowerCase() || "";
@@ -2538,6 +2588,7 @@ export class SessionInner {
     let rootPath = "";
     const expandedDirs = new Set<string>();
     const dirCache = new Map<string, DirEntry[]>();
+    let lastTreeHtml = "";
 
     const joinPath = (base: string, name: string) => {
       const sep = base.includes("\\") ? "\\" : "/";
@@ -2589,10 +2640,39 @@ export class SessionInner {
     };
 
     const renderTree = async () => {
+      const ws = getState().activeWorkspace;
+      if (!ws) {
+        // No active workspace: show the empty state, but keep the poller
+        // alive so the tree appears as soon as a workspace is activated.
+        rootPath = "";
+        lastTreeHtml = "";
+        if (!treeBody.querySelector(".si-panel-empty")) {
+          treeBody.innerHTML = `<div class="si-panel-empty si-editor-empty" style="min-height:100%;height:100%;box-sizing:border-box">
+            <i data-lucide="file-code-2" class="lucide"></i>
+            <span class="si-panel-empty-title">${t("sessionInner.editorEmpty")}</span>
+          </div>`;
+          if (typeof (window as any).lucide !== "undefined") {
+            (window as any).lucide.createIcons({ root: treeBody });
+          }
+        }
+        return;
+      }
+      if (ws !== rootPath) {
+        // Workspace changed: drop expansion state and force a full re-render.
+        expandedDirs.clear();
+        lastTreeHtml = "";
+      }
+      rootPath = ws;
       dirCache.clear();
       const out: string[] = [];
       await renderRecursive(rootPath, 0, out);
-      treeBody.innerHTML = out.length ? out.join("") : `<div class="si-empty">${t("sessionInner.filesEmpty")}</div>`;
+      const html = out.length ? out.join("") : `<div class="si-empty">${t("sessionInner.filesEmpty")}</div>`;
+      if (html === lastTreeHtml) return;
+      const prevScroll = treeBody.scrollTop;
+      const selEl = treeBody.querySelector(".si-tree-entry.selected") as HTMLElement | null;
+      const selPath = selEl ? selEl.dataset.path || "" : "";
+      lastTreeHtml = html;
+      treeBody.innerHTML = html;
 
       treeBody.querySelectorAll(".si-tree-entry[data-dir]").forEach((el) => {
         el.addEventListener("click", async () => {
@@ -2627,15 +2707,33 @@ export class SessionInner {
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: treeBody });
       }
+
+      if (selPath) {
+        const restored = treeBody.querySelector<HTMLElement>(`.si-tree-entry[data-path="${CSS.escape(selPath)}"]`);
+        if (restored) restored.classList.add("selected");
+      }
+      treeBody.scrollTop = prevScroll;
     };
 
-    /* workspace root */
-    const home = api
-      ? (await api.getAppPath()).replace(/[/\\][^/\\]+$/, "")
-      : ".";
-    const workspace = getState().activeWorkspace;
-    rootPath = workspace || home;
+    /* Initial render (empty state or tree depending on active workspace). */
     await renderTree();
+
+    // Expose an immediate refresh hook so switching back to this tab can
+    // update the tree without waiting for the next poll tick.
+    (panel as any)._siRefreshTree = () => { void renderTree(); };
+
+    // Keep the file tree fresh: re-render every 2s while the sidebar is
+    // connected and visible, so files created/removed on disk appear in real
+    // time without manual refresh.  Deliberately not gated on the panel's
+    // "active" class — panels rebuilt after a session/mode switch can lose
+    // that class and silently stall the poller.
+    const panelTimer = window.setInterval(() => {
+      if (!panel.isConnected) return;
+      const mainBody = document.getElementById("main-body");
+      if (mainBody && mainBody.classList.contains("sidebar-hidden")) return;
+      void renderTree();
+    }, 2000);
+    (panel as any)._siTreeTimer = panelTimer;
 
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: panel });
@@ -3069,11 +3167,14 @@ export class SessionInner {
   // Review display toggles (set by the action menu).
   private _reviewWrap = false;        // word wrap
   private _reviewFullFile = true;     // false => truncate large diffs
-  private _reviewRichText = false;    // rich-text summary view
   private _reviewWordDiff = false;     // inline word diff
   private _reviewHideWs = false;       // dim whitespace-only lines
   private _reviewSplitView = false;    // two-column split diff
   private _reviewCollapsed = false;    // collapse all diff bodies
+  // Context key last used to render the review panel (workspace/session/mode).
+  // Switching context resets per-panel view toggles so one session's collapse
+  // /split state doesn't leak into another conversation or mode.
+  private _reviewContextKey = "";
   // Selected git action for the commit/push/pr trigger.
   private _reviewGitAction: "commit" | "push" | "pull" = "commit";
   // How many side buttons are currently merged into the �?overflow menu.
@@ -3172,7 +3273,8 @@ export class SessionInner {
         if (id !== this.activeTab) this.activateTab(id);
       });
 
-      /* Drag start */
+      /* Drag start — only mark the element, DON'T apply .dragging yet so a
+         plain click doesn't flash the drag visual. */
       el.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
         if ((e.target as HTMLElement).closest(".tab-close")) return;
@@ -3181,7 +3283,7 @@ export class SessionInner {
         this.dragIdx = parseInt(el.dataset.idx ?? "-1");
         this.dragStartX = e.clientX;
         this.dragOverIdx = this.dragIdx;
-        el.classList.add("dragging");
+        this.dragOverAfter = false;
         e.preventDefault();
       });
     });
@@ -3190,23 +3292,29 @@ export class SessionInner {
       this.dragBound = true;
       document.addEventListener("mousemove", (e) => {
         if (!this.dragEl) return;
-        /* Only consider it a drag if moved more than 5px */
-        if (Math.abs(e.clientX - this.dragStartX) > 5) {
-          this.wasDragged = true;
-        }
         const dx = e.clientX - this.dragStartX;
+        /* Only consider it a drag if moved more than 5px */
+        if (!this.wasDragged && Math.abs(dx) > 5) {
+          this.wasDragged = true;
+          this.dragEl.classList.add("dragging");
+          this._showDragOverlay();
+        }
+        if (!this.wasDragged) return;
         this.dragEl.style.transform = `translateX(${dx}px)`;
 
-        const allTabs = [...this.tabList.querySelectorAll(".tab.tab--fill")];
+        const allTabs = [...this.tabList.querySelectorAll(".tab")];
         for (let i = 0; i < allTabs.length; i++) {
+          if (allTabs[i] === this.dragEl) continue;
           const rect = allTabs[i].getBoundingClientRect();
-          if (e.clientX > rect.left && e.clientX < rect.right) {
-            if (i !== this.dragOverIdx) {
-              if (this.dragOverIdx >= 0 && this.dragOverIdx < allTabs.length) {
-                allTabs[this.dragOverIdx].classList.remove("drop-target");
-              }
+          if (e.clientX >= rect.left && e.clientX <= rect.right) {
+            const after = e.clientX > rect.left + rect.width / 2;
+            if (i !== this.dragOverIdx || after !== this.dragOverAfter) {
+              const prev = this.dragOverIdx >= 0 && this.dragOverIdx < allTabs.length ? allTabs[this.dragOverIdx] : null;
+              if (prev) prev.classList.remove("drop-target", "drop-after");
               this.dragOverIdx = i;
+              this.dragOverAfter = after;
               allTabs[i].classList.add("drop-target");
+              if (after) allTabs[i].classList.add("drop-after");
             }
             break;
           }
@@ -3217,17 +3325,26 @@ export class SessionInner {
         if (!this.dragEl) return;
         this.dragEl.style.transform = "";
         this.dragEl.classList.remove("dragging");
-        this.tabList.querySelectorAll(".drop-target").forEach((t) => t.classList.remove("drop-target"));
+        this._hideDragOverlay();
+        this.tabList.querySelectorAll(".drop-target").forEach((t) => t.classList.remove("drop-target", "drop-after"));
 
-        if (this.dragOverIdx >= 0 && this.dragOverIdx !== this.dragIdx) {
-          const moved = this.tabs.splice(this.dragIdx, 1)[0];
-          this.tabs.splice(this.dragOverIdx, 0, moved);
-          this.renderTabs();
+        if (this.wasDragged && this.dragOverIdx >= 0 && this.dragOverIdx !== this.dragIdx) {
+          /* Insert before the hovered tab, or after it when pointer was on
+             its right half — then compensate for the removal shift. */
+          let insertIdx = this.dragOverAfter ? this.dragOverIdx + 1 : this.dragOverIdx;
+          if (insertIdx > this.dragIdx) insertIdx--;
+          if (insertIdx !== this.dragIdx) {
+            const moved = this.tabs.splice(this.dragIdx, 1)[0];
+            this.tabs.splice(insertIdx, 0, moved);
+            _saveTabs(this.tabs);
+            this.renderTabs();
+          }
         }
 
         this.dragEl = null;
         this.dragIdx = -1;
         this.dragOverIdx = -1;
+        this.dragOverAfter = false;
       });
     }
   }
@@ -3250,6 +3367,35 @@ export class SessionInner {
       this._reviewMode = "git";
       this._reviewArtifact = null;
       if (this._reviewLoad) this._reviewLoad(undefined);
+    }
+    // Switching to a panel with a live-refreshing tree (editor) should show
+    // the current disk state immediately instead of waiting for the next poll.
+    const target = this.tabBody.querySelector(`.tab-panel[data-panel="${id}"]`) as HTMLElement | null;
+    if (target && typeof (target as any)._siRefreshTree === "function") {
+      (target as any)._siRefreshTree();
+    }
+  }
+
+  /** Set the breathing light state for a tab by id. */
+  public setTabState(tabId: string, state: "" | "running" | "awaiting_approval" | "permission"): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (tab) tab.state = state;
+    const btn = this.tabList.querySelector(`.tab[data-tab="${tabId}"]`);
+    if (!btn) return;
+    const wrap = btn.querySelector(".tab-icon-wrap") as HTMLElement;
+    if (!wrap) return;
+    let dot = wrap.querySelector(".tab-indicator-pos") as HTMLElement;
+    if (state) {
+      const cls = state === "running" ? "session-running" : state === "awaiting_approval" ? "session-waiting" : "session-orange";
+      if (!dot) {
+        dot = document.createElement("span");
+        dot.className = cls + " tab-indicator-pos";
+        wrap.insertBefore(dot, wrap.firstChild);
+      } else {
+        dot.className = cls + " tab-indicator-pos";
+      }
+    } else {
+      if (dot) dot.remove();
     }
   }
 
@@ -3334,6 +3480,29 @@ export class SessionInner {
     this.renderTabs();
   }
 
+  /* ── Drag overlay ──────────────────────────────────────────────── */
+  /* A full-window transparent overlay shown while dragging. Electron's
+     <webview> runs as a separate process and swallows mouse events once the
+     cursor enters the page, which would freeze document-level mousemove/
+     mouseup handlers. Covering it with an overlay keeps events in the main
+     document so drags (tab reorder / resize) keep working over a webpage. */
+
+  private _showDragOverlay(): void {
+    let ov = document.getElementById("si-drag-overlay") as HTMLElement | null;
+    if (!ov) {
+      ov = document.createElement("div");
+      ov.id = "si-drag-overlay";
+      ov.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:transparent;";
+      document.body.appendChild(ov);
+    }
+    ov.style.display = "block";
+  }
+
+  private _hideDragOverlay(): void {
+    const ov = document.getElementById("si-drag-overlay");
+    if (ov) ov.style.display = "none";
+  }
+
   /* ── Resize ─────────────────────────────────────────────────────── */
 
   private bindResize(): void {
@@ -3345,6 +3514,7 @@ export class SessionInner {
       handle.classList.add("resizing");
       this.resizeStartX = e.clientX;
       this.resizeStartW = this.el.offsetWidth;
+      this._showDragOverlay();
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       e.preventDefault();
@@ -3364,6 +3534,7 @@ export class SessionInner {
       this.resizing = false;
       const handle = this.el.querySelector(".si-resize-handle") as HTMLElement;
       if (handle) handle.classList.remove("resizing");
+      this._hideDragOverlay();
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       this.el.style.transition = "";
@@ -3437,7 +3608,14 @@ export class SessionInner {
     panels.push(this.renderReferencesPanel(st));
     panels.push(this.renderCanvasPanel(st));
 
-    this.infoBody.innerHTML = `<div class="si-panels">${panels.join("")}</div>`;
+    const html = `<div class="si-panels">${panels.join("")}</div>`;
+    // State mutated but the info panel content did not change (typical during
+    // streaming / status churn): keep the existing DOM so the sidebar does
+    // not flash on every emit.  Real content changes rebuild as usual.
+    if (this._lastInfoHtml === html) return;
+    this._lastInfoHtml = html;
+
+    this.infoBody.innerHTML = html;
     this.bindPanelToggles();
     this.bindReviewLink();
     this.bindIndexManagement();
@@ -3605,7 +3783,7 @@ export class SessionInner {
             <span class="si-diff-add">+${a.diff_text ? (a.diff_text.match(/^\+/gm) || []).length : (a.size > 0 ? Math.min(a.size, 9999) : 0)}</span>
             <span class="si-diff-remove">-${a.diff_text ? (a.diff_text.match(/^-/gm) || []).length : 0}</span>
           </span>
-          <a class="si-diff-review" href="#" data-path="${this.esc(a.path)}">${t("sessionInner.viewAllChanges")} <i data-lucide="eye" class="lucide lucide-xs"></i></a>
+          <a class="si-diff-review" href="#" data-path="${this.esc(a.path)}">${t("sessionInner.viewAllChanges")} <i data-lucide="file-search" class="lucide lucide-xs"></i></a>
         </div>`;
       }).join("")}</div>`;
     }

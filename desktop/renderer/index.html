@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Encre</title>
+  <script>console.log("[perf] html-head executed epoch=" + Date.now());</script>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="design-system.css" />
   <link rel="stylesheet" href="xterm.css" />
@@ -17,11 +18,14 @@
   <!-- Unified header bar (sidebar header + topbar merged) -->
   <header id="header-bar">
     <div class="header-left">
+      <button id="btn-encre-menu" class="btn-icon btn-sm">
+        <img id="btn-encre-menu-icon" src="assets/Encre-dm.svg" alt="Encre" />
+      </button>
       <button id="btn-automation-back" class="btn-icon btn-sm hidden" title="Back">
         <i data-lucide="arrow-left" class="lucide"></i>
       </button>
       <button id="btn-toggle-sidebar" class="btn-icon btn-sm" data-i18n-title="header.toggleSidebar" title="Toggle sidebar">
-        <i data-lucide="panel-left" class="lucide"></i>
+        <i data-lucide="panel-left" class="lucide btn-toggle-sidebar-icon btn-toggle-sidebar-icon-sidebar"></i>
       </button>
       <button id="btn-sidebar-search" class="btn-icon btn-sm" data-i18n-title="sidebar.search" title="Search">
         <i data-lucide="search" class="lucide"></i>
@@ -43,15 +47,13 @@
       </div>
     </div>
     <div class="header-right">
-      <button id="btn-bell" class="btn-icon btn-sm" data-i18n-title="header.notifications" title="Notifications">
-        <i data-lucide="bell" class="lucide"></i>
-      </button>
       <div class="header-window-controls">
         <button id="btn-minimize" class="window-btn" data-i18n-title="header.minimize" title="Minimize">
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         </button>
         <button id="btn-maximize" class="window-btn" data-i18n-title="header.maximize" title="Maximize">
-          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><rect x="1.5" y="1.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
+          <svg class="icon-maximize" width="10" height="10" viewBox="0 0 12 12" fill="none"><rect x="1.5" y="1.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>
+          <svg class="icon-restore" width="10" height="10" viewBox="0 0 12 12" fill="none"><rect x="1.5" y="3.5" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 3.5v-1a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1" stroke="currentColor" stroke-width="1.5"/></svg>
         </button>
         <button id="btn-close" class="window-btn window-btn-close" data-i18n-title="header.close" title="Close">
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -59,6 +61,31 @@
       </div>
     </div>
   </header>
+  <script>
+    // Window controls must work during the splash/boot phase, BEFORE the main
+    // app bundle loads (slow cold starts can delay it by seconds). Bound here
+    // at parse time; app.ts intentionally does NOT re-bind these.
+    (function () {
+      var api = window.electronAPI;
+      var bind = function (id, fn) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener("click", fn);
+      };
+      bind("btn-minimize", function () { if (api) api.windowMinimize(); });
+      bind("btn-maximize", function () { if (api) api.windowMaximize(); });
+      bind("btn-close", function () { if (api) api.windowClose(); });
+      // Maximize/restore icon follows the window's real state (Windows
+      // convention): initial sync + live updates pushed from main process.
+      var btnMax = document.getElementById("btn-maximize");
+      var setMaxState = function (m) {
+        if (btnMax) btnMax.classList.toggle("maximized", !!m);
+      };
+      if (api && btnMax) {
+        api.windowIsMaximized().then(setMaxState).catch(function () {});
+        if (api.onWindowMaximizeChange) api.onWindowMaximizeChange(setMaxState);
+      }
+    })();
+  </script>
 
   <div id="app">
     <!-- Sidebar -->
@@ -77,6 +104,18 @@
           </div>
           <!-- iWork entry removed: the top-bar .seg switch is the single
                entry point for normal ↔ iwork ↔ automation mode. -->
+        </div>
+
+        <!-- Workspace section — visible only in iWork mode; mirrors the
+             "All tasks" section UI. Its header shows a right chevron (">")
+             as the navigation affordance. -->
+        <div class="sidebar-section" id="workspace-section">
+          <div class="sidebar-section-header">
+            <span class="sidebar-section-title" data-i18n="sidebar.workspace">Workspace</span>
+            <button class="btn-icon btn-sm" id="btn-workspace-nav" data-i18n-title="sidebar.workspace" title="Workspace">
+              <i data-lucide="chevron-right" class="lucide"></i>
+            </button>
+          </div>
         </div>
 
         <div class="sidebar-section" id="session-section">
@@ -190,12 +229,6 @@
         </div>
       </div>
 
-      <div class="sidebar-settings-trigger">
-        <button class="nav-item nav-sub" id="btn-settings-trigger" data-shortcut="open_settings">
-          <i data-lucide="settings" class="lucide"></i>
-          <span data-i18n="sidebar.settings">Settings</span>
-        </button>
-      </div>
     </nav>
 
     <!-- Main area -->
@@ -211,7 +244,7 @@
                 <i data-lucide="list" class="lucide"></i>
               </button>
               <button id="btn-session-menu" class="btn-icon btn-sm" data-i18n-title="session.toggleSidebar" title="Toggle session sidebar">
-                <i data-lucide="panel-right-close" class="lucide"></i>
+                <i data-lucide="panel-left" class="lucide"></i>
               </button>
             </div>
           </div>
@@ -278,11 +311,6 @@
             <div class="input-wrapper">
               <div class="input-row">
                 <div id="prompt-input" class="prompt-input" contenteditable="true" role="textbox" aria-multiline="true"></div>
-                <div class="input-expand-zone hidden" id="input-expand-zone">
-                  <button type="button" id="btn-input-expand" class="input-expand-btn" data-i18n-title="input.expand" aria-label="Expand input">
-                    <i data-lucide="maximize-2" class="lucide"></i>
-                  </button>
-                </div>
                 <div id="prompt-placeholder" class="prompt-placeholder" data-i18n="input.placeholder">Ask Encre anything...</div>
               </div>
               <!-- @ dropdown (above input box) -->
@@ -315,6 +343,10 @@
                         <i data-lucide="at-sign" class="lucide"></i>
                       </button>
                     </div>
+                    <button type="button" id="btn-input-expand" class="btn-icon input-btn btn-hidden" data-i18n-title="input.expand" aria-label="Expand input">
+                      <i data-lucide="maximize-2" class="lucide expand-icon"></i>
+                      <i data-lucide="minimize-2" class="lucide collapse-icon" style="display:none"></i>
+                    </button>
                   </div>
                   <div id="toolbar-mode-chip" class="toolbar-mode-chip hidden" data-mode="">
                     <i data-lucide="list-checks" class="chip-icon" style="width:12px;height:12px;"></i>
@@ -332,9 +364,17 @@
                   </div>
                 </div>
                 <div class="toolbar-right">
+                  <div class="settings-dropdown-wrap hidden" id="input-workspace-selector-wrap">
+                    <button id="input-workspace-selector" class="input-selector" data-i18n-title="workspace.selectWorkspace" title="Select workspace">
+                      <span class="input-selector-label"></span>
+                      <i data-lucide="chevron-down" class="lucide input-selector-chevron"></i>
+                    </button>
+                    <div id="input-workspace-dropdown" class="mention-dropdown hidden"></div>
+                  </div>
                   <div class="settings-dropdown-wrap" id="input-model-selector-wrap">
-                    <button id="input-model-selector" class="settings-dropdown-trigger" data-i18n-title="input.selectModel" title="Select model">
-                      <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
+                    <button id="input-model-selector" class="input-selector" data-i18n-title="input.selectModel" title="Select model">
+                      <span class="input-selector-label"></span>
+                      <i data-lucide="chevron-down" class="lucide input-selector-chevron"></i>
                     </button>
                     <div id="input-model-dropdown" class="mention-dropdown hidden"></div>
                   </div>
@@ -487,8 +527,12 @@
   <!-- Session context menu (dynamically rendered) -->
   <div id="session-context-menu" class="hidden context-menu"></div>
 
-  <!-- Splash / loading screen -->
-  <div id="splash-screen" class="hidden"></div>
+  <!-- Workspace manager context menu (dynamically rendered) -->
+  <div id="workspace-mgr-context-menu" class="hidden context-menu"></div>
+
+  <!-- In-app splash / loading screen: covers boot while the startup mode's
+       data is filled, fades out on reveal, shown again for connection errors. -->
+  <div id="splash-screen"></div>
 
   </div><!-- /app-shell -->
 

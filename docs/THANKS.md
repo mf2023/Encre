@@ -1,6 +1,6 @@
 # Third-Party Acknowledgments
 
-Encre is built on the work of thousands of people — open-source maintainers, contributors, and the communities around them. This document gives credit to the projects and people Encre depends on, explains what licenses we use and why, and tells you how to keep this list accurate as the project grows.
+Encre Agent is built on the work of thousands of people — open-source maintainers, contributors, and the communities around them. This document gives credit to the projects and people Encre Agent depends on, explains what licenses we use and why, and tells you how to keep this list accurate as the project grows.
 
 If you maintain one of these projects and want us to fix or remove an entry, visit **conduct.dunimd.com** *(pending activation)*. For security issues with our handling of your code, see [SECURITY.md](SECURITY.md).
 
@@ -32,7 +32,7 @@ Maintainer list is updated in [CHANGELOG.md](CHANGELOG.md) when changes happen.
 
 ### Inspirations
 
-Encre's design draws on ideas from these adjacent projects — we learned a lot by reading their code and docs, and we gratefully acknowledge them even where we did not copy code:
+Encre Agent's design draws on ideas from these adjacent projects — we learned a lot by reading their code and docs, and we gratefully acknowledge them even where we did not copy code:
 
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** — permission-mode UX and tool-loop ergonomics
 - **[OpenCode](https://opencode.ai)** — LSP-aware tool design and i18n architecture
@@ -213,7 +213,7 @@ From [`native/crates/encre-core/Cargo.toml`](../native/crates/encre-core/Cargo.t
 ## Fonts, Icons, and Assets
 
 - **Logos and brand marks** for the platforms listed under [Inspirations](#inspirations) are property of their respective owners and used here for descriptive purposes only.
-- **Default UI font** is the system stack on each platform; Encre does not bundle any web fonts.
+- **Default UI font** is the system stack on each platform; Encre Agent does not bundle any web fonts.
 - **Code-editor icon set** uses [Monaco Editor's built-in iconography](https://microsoft.github.io/monaco-editor).
 - **Chat-platform brand icons** use [simple-icons](https://simpleicons.org) (CC0 1.0).
 
@@ -274,7 +274,7 @@ Used by [simple-icons](https://simpleicons.org). The full text is at <https://cr
 
 ### GNU GPL-3.0 / LGPL-3.0
 
-[python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) is licensed under GPL-3.0. This is a copyleft license; if you distribute a binary that links against it, you must also release your source under a compatible license. Encre itself is **not** GPL-licensed; the Telegram adapter is dynamically loaded and can be omitted by simply not installing the `telegram` extra.
+[python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) is licensed under GPL-3.0. This is a copyleft license; if you distribute a binary that links against it, you must also release your source under a compatible license. Encre Agent itself is **not** GPL-licensed; the Telegram adapter is dynamically loaded and can be omitted by simply not installing the `telegram` extra.
 
 - GPL-3.0: <https://www.gnu.org/licenses/gpl-3.0.html>
 - LGPL-3.0: <https://www.gnu.org/licenses/lgpl-3.0.html>
@@ -326,7 +326,7 @@ Don't just delete it from the manifest — also delete the row from this file in
 
 ### Verification Script
 
-This file is consistent with the manifests as of release **0.5.0-pre.1**. To re-verify after editing:
+This file is consistent with the manifests as of release **0.4.1**. To re-verify after editing:
 
 ```bash
 # Compare Python core deps with pyproject.toml
@@ -376,6 +376,6 @@ If you believe we are in violation of your license, see [SECURITY.md → Reporti
 
 ## Acknowledgments
 
-This document was last reviewed against the project manifests on **2026-06-21** for the **0.5.0-pre.1** release. The dependency lists above match `pyproject.toml`, `desktop/package.json`, and `native/crates/*/Cargo.toml` at that commit.
+This document was last reviewed against the project manifests on **2026-08-23** for the **0.4.1** release. The dependency lists above match `pyproject.toml`, `desktop/package.json`, and `native/crates/*/Cargo.toml` at that commit.
 
 If you find a discrepancy, please open a PR — see [CONTRIBUTING.md → Development Setup](CONTRIBUTING.md#development-setup).

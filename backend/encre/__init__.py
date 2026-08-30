@@ -183,6 +183,7 @@ from encre.memdir.semantic import (
     SemanticMemorySearch,
     WorkingMemory,
 )
+from encre.migration import export_all, import_all
 from encre.memdir.system import EncreMemorySystem, EntrypointResult, MemoryHeader
 from encre.native import (
     apply_diff as native_apply_diff,
@@ -684,11 +685,13 @@ __all__ = [
     "encrypt",
     "encrypt_bytes",
     "ensure_keyfile",
+    "export_all",
     "get_data_dir",
     "get_logger",
     "get_model",
     "get_provider",
     "handle_admin",
+    "import_all",
     "native_apply_diff",
     "native_compute_diff",
     "native_count_tokens",

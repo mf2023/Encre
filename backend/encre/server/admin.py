@@ -38,7 +38,7 @@ import time
 from typing import Any
 from urllib.parse import urlparse, parse_qs
 
-from encre.server.session_manager import SessionManager
+from encre.server.session_manager import SessionManager, SessionState
 
 _start_time = time.time()
 
@@ -84,7 +84,7 @@ def handle_admin(path: str, manager: SessionManager) -> tuple[int, str, list[tup
 
     if base_path == "/stats":
         sessions = manager.list_sessions()
-        running = sum(1 for s in sessions if s["is_running"])
+        running = sum(1 for s in sessions if s.get("state", "idle") != "idle")
         uptime = time.time() - _start_time
         return _json_response({
             "uptime_seconds": round(uptime, 1),
@@ -100,7 +100,7 @@ def handle_admin(path: str, manager: SessionManager) -> tuple[int, str, list[tup
             return _json_response({"error": "Session not found"}, 404)
         if info.agent_task and not info.agent_task.done():
             info.agent_task.cancel()
-        info.is_running = False
+        manager.set_session_state(session_id, SessionState.IDLE)
         return _json_response({"ok": True, "session_id": session_id})
 
     if base_path == "/git/status":

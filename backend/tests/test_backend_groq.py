@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -33,14 +32,15 @@ from encre.backends.groq import GroqBackend
 # Construction
 # ===========================================================================
 
+
 class TestGroqBackendConstruction:
     """Test GroqBackend instantiation with various parameters."""
 
     def test_create_default(self):
-        """Default model is llama-3.3-70b-versatile, base URL is api.groq.com."""
+        """Default model is meta-llama/llama-4-scout-17b-16e-instruct, base URL is api.groq.com."""
         be = GroqBackend(api_key="gsk-test")
-        # Verify: be.model == "llama-3.3-70b-versatile"
-        assert be.model == "llama-3.3-70b-versatile"
+        # Verify: be.model == "meta-llama/llama-4-scout-17b-16e-instruct"
+        assert be.model == "meta-llama/llama-4-scout-17b-16e-instruct"
         # Verify: be.api_key == "gsk-test"
         assert be.api_key == "gsk-test"
         # Verify: be.api_base_url == "https://api.groq.com/openai/v1"
@@ -72,8 +72,8 @@ class TestGroqBackendConstruction:
         be = GroqBackend()
         # Verify: be.api_key == ""
         assert be.api_key == ""
-        # Verify: be.model == "llama-3.3-70b-versatile"
-        assert be.model == "llama-3.3-70b-versatile"
+        # Verify: be.model == "meta-llama/llama-4-scout-17b-16e-instruct"
+        assert be.model == "meta-llama/llama-4-scout-17b-16e-instruct"
 
     def test_create_with_http_timeout(self):
         """http_timeout kwarg is forwarded."""
@@ -85,6 +85,7 @@ class TestGroqBackendConstruction:
 # ===========================================================================
 # Capability checks
 # ===========================================================================
+
 
 class TestGroqBackendCapabilities:
     """Test supports_tool_calling, supports_thinking, supports_prompt_caching."""
@@ -122,6 +123,7 @@ class TestGroqBackendCapabilities:
 # Context window size
 # ===========================================================================
 
+
 class TestGroqBackendContextWindow:
     """Test context_window_size() for Groq models."""
 
@@ -155,6 +157,7 @@ class TestGroqBackendContextWindow:
 # ===========================================================================
 # Token counting and model attribute
 # ===========================================================================
+
 
 class TestGroqBackendTokens:
     """Test count_tokens() and model attribute."""
@@ -192,6 +195,7 @@ class TestGroqBackendTokens:
 # ===========================================================================
 # Request data building
 # ===========================================================================
+
 
 class TestGroqBackendRequestBuilding:
     """Test _build_request_data inherited from OpenAISSEBackend."""
@@ -236,6 +240,7 @@ class TestGroqBackendRequestBuilding:
 # ===========================================================================
 # Lifecycle
 # ===========================================================================
+
 
 class TestGroqBackendLifecycle:
     """Test resource cleanup."""

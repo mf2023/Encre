@@ -672,8 +672,9 @@ class EncreAgent:
             elif not command:
                 continue
 
-            # Build full command with args
-            full_command = command + " " + " ".join(str(a) for a in args) if args else command
+            # Build full command as a list to preserve argument boundaries
+            # (avoids fragile string re-tokenisation, especially on Windows).
+            full_command = [command, *(str(a) for a in args)] if args else [command]
 
             try:
                 mcp_tool = EncreMCPTool(

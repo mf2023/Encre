@@ -20,16 +20,67 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import type { SessionEntryData, WorkspaceEntry } from "./types.js";
+import type { SessionEntryData } from "./types.js";
 
-export interface WorkspaceSessionGroup {
-  workspace: WorkspaceEntry;
-  sessions: SessionEntryData[];
+/** Deterministic hue from a workspace name (mirrors the backend icon
+ *  generator), shared by every icon-rendering surface. */
+export function nameHue(name: string): number {
+  let h = 0;
+  const n = String(name || "");
+  for (let i = 0; i < n.length; i++) {
+    h = ((h * 31) + n.charCodeAt(i)) >>> 0;
+  }
+  return h % 360;
+}
+
+function escIconText(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/**
+ * Workspace icon markup for a session row — shared by the sidebar session
+ * list, the workspace manager archive view and (mirrored) the tray popup so
+ * every surface renders the same icons.
+ *
+ * With `force` (workspace/iWork rows), an icon is ALWAYS returned: the real
+ * icon when the workspace is known, a deterministic letter avatar derived
+ * from the path when the workspace list has not loaded it yet, and a neutral
+ * default avatar when the session carries no workspace path at all (legacy
+ * data) — the icon therefore never disappears from any surface.
+ */
+export function workspaceIconHtml(
+  wsPath: string,
+  workspaces: readonly { path: string; name: string; icon_data?: string }[],
+  force = false,
+): string {
+  const norm = (p: string) => String(p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const w = workspaces.find((x) => norm(x.path) === norm(wsPath));
+  if (w) {
+    const initial = (w.name.trim()[0] || "?").toUpperCase();
+    const inner = w.icon_data
+      ? `<img class="session-ws-icon-img" src="${w.icon_data}" alt="" draggable="false">`
+      : `<span class="session-ws-icon-letter">${escIconText(initial)}</span>`;
+    const bgAttr = w.icon_data ? "" : ` style="background:hsl(${nameHue(w.name)}, 62%, 46%)"`;
+    return `<span class="session-ws-icon"${bgAttr}>${inner}</span>`;
+  }
+  if (!wsPath) {
+    if (!force) return "";
+    // Workspace row whose attribution is missing (legacy data): neutral
+    // avatar so the icon never disappears.
+    return `<span class="session-ws-icon" style="background:hsl(0, 0%, 42%)"><span class="session-ws-icon-letter">W</span></span>`;
+  }
+  const base = String(wsPath).split(/[\\/]/).filter(Boolean).pop() || wsPath;
+  const initial = (base[0] || "?").toUpperCase();
+  return `<span class="session-ws-icon" style="background:hsl(${nameHue(base)}, 62%, 46%)"><span class="session-ws-icon-letter">${escIconText(initial)}</span></span>`;
 }
 
 export interface TraySessionData {
   normal: SessionEntryData[];
-  iwork: WorkspaceSessionGroup[];
+  iwork: SessionEntryData[];
+  /** Workspace records (path/name/icon_data only) so the tray popup can
+   *  render each iWork session's owning-workspace icon. */
+  workspaces: Array<{ path: string; name: string; icon_data?: string }>;
 }
 
 /** Produces one stable workspace key for all renderer-side consumers. */
@@ -53,45 +104,24 @@ export function dedupeSessions(sessions: readonly SessionEntryData[]): SessionEn
 }
 
 /**
- * Central workspace projection used by both the sidebar and the tray.
- * Unknown workspace paths are deliberately excluded so stale sessions cannot
- * create phantom workspace rows.
+ * Builds the tray popup session data. Both normal and iwork channels are
+ * flattened, deduplicated session lists — mirroring the unified sidebar
+ * "All tasks" view, so the tray no longer groups iwork sessions by
+ * workspace tree.
  */
-export function getWorkspaceSessionGroups(
-  workspaces: readonly WorkspaceEntry[],
-  sessions: readonly SessionEntryData[],
-): WorkspaceSessionGroup[] {
-  const groups: WorkspaceSessionGroup[] = [];
-  const groupByPath = new Map<string, WorkspaceSessionGroup>();
-
-  for (const workspace of workspaces) {
-    if (!workspace.path || !workspace.name) continue;
-    const key = normalizeWorkspacePath(workspace.path);
-    if (!key || groupByPath.has(key)) continue;
-
-    const group = { workspace, sessions: [] };
-    groupByPath.set(key, group);
-    groups.push(group);
-  }
-
-  for (const session of dedupeSessions(sessions)) {
-    if ((session.message_count || 0) <= 0) continue;
-    const metadata = session.metadata || {};
-    const owner = String(metadata.workspace || metadata.workspace_path || "");
-    const group = groupByPath.get(normalizeWorkspacePath(owner));
-    if (group) group.sessions.push(session);
-  }
-
-  return groups;
-}
-
 export function buildTraySessionData(
   normalSessions: readonly SessionEntryData[],
   iworkSessions: readonly SessionEntryData[],
-  workspaces: readonly WorkspaceEntry[],
+  workspaces?: readonly { path: string; name: string; icon_data?: string }[],
 ): TraySessionData {
+  const active = (sessions: readonly SessionEntryData[]) =>
+    dedupeSessions(sessions).filter((session) => (session.message_count || 0) > 0);
   return {
-    normal: dedupeSessions(normalSessions).filter((session) => (session.message_count || 0) > 0),
-    iwork: getWorkspaceSessionGroups(workspaces, iworkSessions),
+    normal: active(normalSessions),
+    iwork: active(iworkSessions),
+    // Only the fields the tray needs for icon rendering travel over IPC.
+    workspaces: (workspaces || [])
+      .filter((w) => w && w.path && w.name)
+      .map((w) => ({ path: w.path, name: w.name, icon_data: w.icon_data })),
   };
 }

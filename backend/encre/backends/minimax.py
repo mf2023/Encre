@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -60,7 +59,7 @@ class MiniMaxBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "MiniMax-M2.7",
+        model: str = "MiniMax-M3",
         **kwargs: Any,
     ) -> None:
         if not base_url:
@@ -69,5 +68,8 @@ class MiniMaxBackend(OpenAISSEBackend):
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
-        # MiniMax M2.x models expose a 200K (204800) context window.
+        # MiniMax-M3 exposes a 1M context window; M2.x models expose 200K (204800).
+        m = self.model.lower()
+        if "m3" in m or "-m3" in m:
+            return 1_000_000
         return 204_800

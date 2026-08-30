@@ -43,22 +43,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica N
 .ws-tree-session-item.active{background:var(--tp-active);color:var(--tp-color)}
 .session-item-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .session-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+/* Owning-workspace icon on iWork rows (same visuals as the main sidebar). */
+.session-ws-icon{width:16px;height:16px;border-radius:4px;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;user-select:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.session-ws-icon-img{width:100%;height:100%;object-fit:cover;display:block}
+.session-ws-icon-letter{font-size:9px;font-weight:700;color:#fff;line-height:1}
 .session-running,.session-waiting{display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0}
 .session-waiting{background:#f59e0b}
-.ws-tree-node{margin-bottom:2px}
-.ws-tree-node-header{display:flex;align-items:center;gap:5px;padding:7px 8px;cursor:pointer;font-size:13px;font-weight:500;color:var(--tp-color);border-radius:6px}
-.ws-tree-node-header:hover{background:var(--tp-hover)}
-.ws-tree-node-header.active{background:var(--tp-active)}
-.ws-expand-button{appearance:none;-webkit-appearance:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin:-4px 0 -4px -4px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--tp-meta);cursor:pointer;flex-shrink:0;outline:none;box-shadow:none}
-.ws-expand-button:hover{background:var(--tp-hover);color:var(--tp-color)}
-.ws-expand-button:focus,.ws-expand-button:focus-visible{outline:none;box-shadow:none}
-.ws-chevron{width:16px;height:16px;opacity:.45;transition:transform .15s}
-.ws-chevron.open{transform:rotate(90deg)}
-.ws-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ws-session-count{font-size:10.5px;color:var(--tp-meta);flex-shrink:0}
-.ws-tree-children{margin-left:14px;padding-left:12px;display:flex;flex-direction:column;gap:1px}
-.ws-tree-children.rc-hide{display:none}
-.ws-tree-empty-sessions{padding:6px 8px;font-size:12px;color:var(--tp-empty)}
 .e{padding:18px;text-align:center;font-size:12px;color:var(--tp-empty);display:flex;align-items:center;justify-content:center;gap:6px}
 .e svg.icon{width:14px;height:14px;opacity:.4}
 .actions{display:flex;border-top:1px solid var(--tp-border)}
@@ -119,7 +109,8 @@ var currentLabels = LABELS.en;
 var currentMode = null;
 var sessionsNormal = [];
 var sessionsIwork = [];
-var wsExpanded = {};
+// Workspace records (path/name/icon_data) for iWork row icons.
+var trayWorkspaces = [];
 
 function esc(s) {
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -127,15 +118,51 @@ function esc(s) {
 function truncate(str, max) {
   return str.length > max ? str.slice(0, max - 1) + "…" : str;
 }
+function normPath(p) {
+  return String(p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+/* Deterministic hue from a name (mirrors the backend icon generator). */
+function nameHue(name) {
+  name = String(name || "");
+  var h = 0;
+  for (var i = 0; i < name.length; i++) { h = ((h * 31) + name.charCodeAt(i)) >>> 0; }
+  return h % 360;
+}
+/* Icon for the workspace a session belongs to — ALWAYS shown on iWork rows
+   (real icon from the workspace record, a path-derived letter avatar, or a
+   neutral default when the path is missing). */
+function wsIconHtml(wsPath, force) {
+  if (!wsPath) {
+    if (!force) return "";
+    return '<span class="session-ws-icon" style="background:hsl(0,0%,42%)"><span class="session-ws-icon-letter">W</span></span>';
+  }
+  var w = null;
+  for (var i = 0; i < trayWorkspaces.length; i++) {
+    if (normPath(trayWorkspaces[i].path) === normPath(wsPath)) { w = trayWorkspaces[i]; break; }
+  }
+  if (w) {
+    var letter = esc(String(w.name || "?")[0].toUpperCase());
+    var inner = w.icon_data
+      ? '<img class="session-ws-icon-img" src="' + w.icon_data + '" alt="" draggable="false">'
+      : '<span class="session-ws-icon-letter">' + letter + '</span>';
+    var bgAttr = w.icon_data ? "" : ' style="background:hsl(' + nameHue(w.name) + ',62%,46%)"';
+    return '<span class="session-ws-icon"' + bgAttr + '>' + inner + '</span>';
+  }
+  var base = String(wsPath).split(/[\\/]/).filter(Boolean).pop() || wsPath;
+  return '<span class="session-ws-icon" style="background:hsl(' + nameHue(base) + ',62%,46%)">' +
+    '<span class="session-ws-icon-letter">' + esc(String(base[0] || "?").toUpperCase()) + '</span></span>';
+}
+function sessionWsPath(s) {
+  var m = (s && s.metadata) || {};
+  return m.workspace_path || m.workspace || "";
+}
 
 /* ── Inline SVG icons (Lucide-compatible paths) ── */
 var ICONS = {
-  chat: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-  layers: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
   inbox: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
 };
 
-function renderSessions(sessions, iconKey, emptyKey) {
+function renderSessions(sessions, emptyKey) {
   var container = document.getElementById("sessions-container");
   container.innerHTML = "";
   sessions = (sessions || []).filter(function(s) { return (s.message_count || 0) > 0; });
@@ -145,10 +172,12 @@ function renderSessions(sessions, iconKey, emptyKey) {
       var s = sessions[i];
       var name = esc(truncate(s.name || s.preview || (s.session_id || "").slice(0, 8) || "Untitled", 28));
       var runningBadge = (s.awaiting_approval || s.is_running) ? '<span class="session-' + (s.awaiting_approval ? "waiting" : "running") + '"></span>' : "";
+      // iWork rows carry their owning-workspace icon, like the main sidebar.
+      var icon = currentMode === "iwork" ? wsIconHtml(sessionWsPath(s), true) : "";
       var row = document.createElement("div");
       row.className = "ws-tree-session-item";
       row.setAttribute("data-sid", s.session_id || "");
-      row.innerHTML = '<div class="session-item-top"><span class="session-preview">' + name + '</span>' + runningBadge + '</div>';
+      row.innerHTML = '<div class="session-item-top">' + icon + '<span class="session-preview">' + name + '</span>' + runningBadge + '</div>';
       container.appendChild(row);
     }
   } else {
@@ -156,52 +185,6 @@ function renderSessions(sessions, iconKey, emptyKey) {
     empty.className = "e";
     empty.innerHTML = ICONS.inbox + '<span>' + currentLabels[emptyKey] + '</span>';
     container.appendChild(empty);
-  }
-}
-
-function renderIworkSessions(sessions) {
-  var container = document.getElementById("sessions-container");
-  container.innerHTML = "";
-  sessions = sessions || [];
-  if (!sessions || sessions.length === 0) {
-    var empty = document.createElement("div");
-    empty.className = "e";
-    empty.innerHTML = ICONS.inbox + '<span>' + currentLabels.noWorkspaces + '</span>';
-    container.appendChild(empty);
-    return;
-  }
-  for (var gi = 0; gi < sessions.length; gi++) {
-    var group = sessions[gi];
-    var workspace = group.workspace || {};
-    var wsKey = workspace.path || "";
-    var wsSessions = group.sessions || [];
-    var wsName = workspace.name || wsKey.replace(/[/\\]/g, "/").split("/").filter(Boolean).pop() || "?";
-    var isExpanded = wsExpanded[wsKey] === true;
-    var wsRow = document.createElement("div");
-    wsRow.className = "ws-tree-node";
-    wsRow.setAttribute("data-ws-path", wsKey);
-    wsRow.innerHTML = '<div class="ws-tree-node-header active" data-ws-path="' + esc(wsKey) + '">' +
-      '<button type="button" class="ws-expand-button" aria-label="Toggle workspace sessions" aria-expanded="' + (isExpanded ? "true" : "false") + '">' +
-      '<svg class="ws-chevron' + (isExpanded ? ' open' : '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>' +
-      '</button>' +
-      '<span class="ws-name">' + esc(wsName) + '</span>' +
-      '<span class="ws-session-count">' + wsSessions.length + '</span>' +
-      '</div>';
-    container.appendChild(wsRow);
-    var children = document.createElement("div");
-    children.className = "ws-tree-children" + (isExpanded ? "" : " rc-hide");
-    children.setAttribute("data-ws-path", wsKey);
-    for (var si = 0; si < wsSessions.length; si++) {
-      var s2 = wsSessions[si];
-      var name2 = esc(truncate(s2.name || s2.preview || (s2.session_id || "").slice(0, 8) || "Untitled", 28));
-      var runningBadge2 = (s2.awaiting_approval || s2.is_running) ? '<span class="session-' + (s2.awaiting_approval ? "waiting" : "running") + '"></span>' : "";
-      var row2 = document.createElement("div");
-      row2.className = "ws-tree-session-item";
-      row2.setAttribute("data-sid", s2.session_id || "");
-      row2.innerHTML = '<div class="session-item-top"><span class="session-preview">' + name2 + '</span>' + runningBadge2 + '</div>';
-      children.appendChild(row2);
-    }
-    container.appendChild(children);
   }
 }
 
@@ -215,9 +198,9 @@ function render() {
   document.getElementById("title-sub").innerHTML = '<span>' + labels.sessions + '</span>';
 
   if (currentMode === "iwork") {
-    renderIworkSessions(sessionsIwork);
+    renderSessions(sessionsIwork, "noWorkspaces");
   } else {
-    renderSessions(sessionsNormal, "chat", "noSessions");
+    renderSessions(sessionsNormal, "noSessions");
   }
 }
 
@@ -315,41 +298,13 @@ document.getElementById("btn-quit").addEventListener("click", function() {
     window.electronAPI.trayPopupAction("quit", null);
   }
 });
-/* ── Safe finder: avoids CSS escape issues with backslashes in paths ── */
-function _rcByPath(wsPath) {
-  var all = document.querySelectorAll(".ws-tree-children");
-  for (var i = 0; i < all.length; i++) {
-    if (all[i].getAttribute("data-ws-path") === wsPath) return all[i];
-  }
-  return null;
-}
+/* ── Session click: open the selected session ── */
 document.getElementById("sessions-container").addEventListener("click", function(e) {
   var row = e.target.closest ? e.target.closest(".ws-tree-session-item") : null;
   if (row) {
     var sid = row.getAttribute("data-sid");
     if (sid && window.electronAPI && window.electronAPI.trayPopupAction) {
       window.electronAPI.trayPopupAction("open", sid);
-    }
-    return;
-  }
-  var rw = e.target.closest ? e.target.closest(".ws-tree-node-header") : null;
-  if (rw) {
-    var wsKey = rw.getAttribute("data-ws-path");
-    if (wsKey) {
-      var expandButton = e.target.closest(".ws-expand-button");
-      if (expandButton) {
-        e.preventDefault();
-        e.stopPropagation();
-        var expanded = wsExpanded[wsKey] === true;
-        wsExpanded[wsKey] = !expanded;
-        expandButton.setAttribute("aria-expanded", expanded ? "false" : "true");
-        var chev = rw.querySelector(".ws-chevron");
-        if (chev) chev.classList.toggle("open");
-        var rc = _rcByPath(wsKey);
-        if (rc) rc.classList.toggle("rc-hide");
-      } else if (window.electronAPI && window.electronAPI.trayPopupAction) {
-        window.electronAPI.trayPopupAction("open_workspace", wsKey);
-      }
     }
     return;
   }
@@ -367,6 +322,7 @@ if (window.electronAPI && window.electronAPI.onTrayData) {
     }
     if (data.sessionsNormal) sessionsNormal = data.sessionsNormal;
     if (data.sessionsIwork) sessionsIwork = data.sessionsIwork;
+    if (data.workspaces) trayWorkspaces = data.workspaces;
     // Initialize the selected tab from the main window's active mode (first load).
     if (currentMode === null && data.activeMode) {
       setMode(data.activeMode === "iwork" ? "iwork" : "normal");

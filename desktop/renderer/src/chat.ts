@@ -29,7 +29,7 @@
  * helpers used across the renderer.
  */
 
-import { getState, subscribe, showToast, addUserMessage, addAttachments, startAssistantMessage, setRunning, removeBranchMessages, restoreInputModeChip, truncateToUserMessage, setSubAgentView, pushSubAgentBreadcrumb, popSubAgentBreadcrumb, clearSubAgentBreadcrumb, resetToSubAgentBreadcrumbIndex, rememberRollbackEditTarget, isEnabled, toolCallMatchesId } from "./state.js";
+import { getState, subscribe, showToast, addUserMessage, addAttachments, startAssistantMessage, setSessionState, removeBranchMessages, restoreInputModeChip, truncateToUserMessage, setSubAgentView, pushSubAgentBreadcrumb, popSubAgentBreadcrumb, clearSubAgentBreadcrumb, resetToSubAgentBreadcrumbIndex, rememberRollbackEditTarget, isEnabled, toolCallMatchesId } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
 import type { Message, ToolCallState, BranchMeta, AttachmentMeta } from "./types.js";
@@ -695,20 +695,25 @@ function createLucideIcons(root?: HTMLElement): void {
 
 const _openedHtmlCards = new Set<string>();
 
-function saveVideoPlayback(): Array<{id: string; t: number; p: boolean}> {
+function saveVideoPlayback(scope?: HTMLElement): Array<{id: string; t: number; p: boolean}> {
   const states: Array<{id: string; t: number; p: boolean}> = [];
-  document.querySelectorAll<HTMLVideoElement>(".info-card--media video").forEach(v => {
+  ((scope ?? document) as HTMLElement).querySelectorAll<HTMLVideoElement>(".info-card--media video").forEach(v => {
     const card = v.closest<HTMLElement>(".info-card--media");
     if (card?.id) states.push({ id: card.id, t: v.currentTime, p: v.paused });
   });
   return states;
 }
 
-function restoreVideoPlayback(states: Array<{id: string; t: number; p: boolean}>): void {
+function restoreVideoPlayback(states: Array<{id: string; t: number; p: boolean}>, scope?: HTMLElement): void {
   if (states.length === 0) return;
   requestAnimationFrame(() => {
     states.forEach(s => {
-      const card = document.getElementById(s.id);
+      // Scoped lookup: the same tc-* id can exist in the main chat and the
+      // automation detail; restore into the container being re-rendered, not
+      // whichever card the global id resolves to first.
+      const card = scope
+        ? scope.querySelector<HTMLElement>(`#${CSS.escape(s.id)}`)
+        : document.getElementById(s.id);
       if (!card) return;
       const video = card.querySelector<HTMLVideoElement>("video");
       if (!video) return;
@@ -1327,7 +1332,13 @@ export class Chat {
     };
     w.__answerQuestion = (event: Event, btn: HTMLElement, cardId: string) => {
       event.stopPropagation();
-      const card = document.getElementById(cardId);
+      // Resolve the card from the click source first: the same tc-* id can
+      // exist in BOTH the main chat and the automation detail
+      // (renderSubAgentInto reuses the timeline pipeline), so a global
+      // getElementById would hit whichever card came first in the DOM and
+      // answer the WRONG tool call.  closest() guarantees we operate on the
+      // card the user actually clicked.
+      const card = ((btn as HTMLElement).closest('[id^="tc-"]') as HTMLElement | null) ?? document.getElementById(cardId);
       if (!card) return;
       // Manual input wins over a previously selected option: clicking an
       // option fills its value into the input box, so reading the input box
@@ -1350,9 +1361,12 @@ export class Chat {
       const wrap = el.querySelector(".icon-wrap");
       if (wrap) wrap.classList.remove("hover");
     };
-    w.__toggleStatusCard = (id: string) => {
-      const el = document.getElementById(id);
-      if (el) el.classList.toggle("expanded");
+    w.__toggleStatusCard = (el: HTMLElement, id?: string) => {
+      // Same-card-first resolution as __answerQuestion: the automation detail
+      // may render the identical tc-* status card, and a global lookup would
+      // toggle the main chat's copy instead of the one being clicked.
+      const card = ((el as HTMLElement).closest('[id^="tc-"]') as HTMLElement | null) ?? (id ? document.getElementById(id) : null);
+      if (card) card.classList.toggle("expanded");
     };
     w.__viewChanges = (el: HTMLElement) => {
       const card = el.closest(".file-card") as HTMLElement | null;
@@ -1418,8 +1432,14 @@ export class Chat {
       }
     };
 
-    w.__initInfoCardMedia = (cardId: string) => {
-      const card = document.getElementById(cardId);
+    w.__initInfoCardMedia = (elOrId: HTMLElement | string) => {
+      // Accept either the card element (from a scoped traversal) or an id
+      // (legacy external callers).  Element-first resolution keeps the media
+      // init inside the right container when the same card id exists in both
+      // the main chat and the automation detail.
+      const card = typeof elOrId === "string"
+        ? document.getElementById(elOrId)
+        : ((elOrId as HTMLElement).closest('[id^="tc-"]') as HTMLElement | null);
       if (!card) return;
       card.querySelectorAll(":scope > [data-type]").forEach((el) => {
         const type = el.getAttribute("data-type") as "image" | "video" || "image";
@@ -1427,14 +1447,19 @@ export class Chat {
         if (src) new MediaViewer(el as HTMLElement, { type, src, controls: type === "video" });
       });
     };
-    w.__initMediaCards = () => {
-      document.querySelectorAll(".info-card--media").forEach((card) => {
-        const id = card.id;
-        if (id) w.__initInfoCardMedia(id);
+    w.__initMediaCards = (scope?: HTMLElement) => {
+      // Scoped traversal: renderSubAgentInto passes its own container so the
+      // main chat's media cards are never re-initialized (or matched) from
+      // inside the automation detail.
+      ((scope ?? document) as HTMLElement).querySelectorAll(".info-card--media").forEach((card) => {
+        w.__initInfoCardMedia(card as HTMLElement);
       });
     };
-    w.__openInfoHtmlCard = async (cardId: string) => {
-      const card = document.getElementById(cardId);
+    w.__openInfoHtmlCard = async (el: HTMLElement, cardId?: string) => {
+      // Element-first resolution (same rationale as __answerQuestion): the
+      // automation detail reuses the tc-* ids, so operate on the card the
+      // user clicked rather than the first match in the whole document.
+      const card = ((el as HTMLElement).closest('[id^="tc-"]') as HTMLElement | null) ?? (cardId ? document.getElementById(cardId) : null);
       if (!card) return;
       const src = card.getAttribute("data-source");
       if (!src) return;
@@ -1443,12 +1468,14 @@ export class Chat {
         window.dispatchEvent(new CustomEvent("info-html-open", { detail: { url: fileUrl } }));
       }
     };
-    w.__openInfoHtmlCards = () => {
-      document.querySelectorAll<HTMLElement>(".strip-item[data-source]").forEach((card) => {
+    w.__openInfoHtmlCards = (scope?: HTMLElement) => {
+      // Scoped traversal so the auto-open pass never reaches into another
+      // container (main chat <-> automation detail) for the same card ids.
+      ((scope ?? document) as HTMLElement).querySelectorAll<HTMLElement>(".strip-item[data-source]").forEach((card) => {
         const id = card.id;
         if (!id || _openedHtmlCards.has(id)) return;
         _openedHtmlCards.add(id);
-        w.__openInfoHtmlCard(id);
+        w.__openInfoHtmlCard(card, id);
       });
     };
     window.__initMediaCards = w.__initMediaCards;
@@ -1650,11 +1677,23 @@ export class Chat {
         this.ml.innerHTML = "";
         this.liveLoader = new EALoader(this.ml, { maxWidth: "50px" });
       } else if (subTc.isError) {
-        const errorCode = String(subTc.result || "AUTOMATION_EXECUTION_FAILED");
+        // Map the raw tool result into something the user can act on:
+        // bare sandbox exit codes (-1 timeout / -2 Docker missing) get a
+        // readable label, "Error: …" text is shown verbatim instead of
+        // being used as a cryptic error code.
+        const rawResult = typeof subTc.result === "string" ? subTc.result.trim() : "";
+        let errorCode = String(rawResult || "AUTOMATION_EXECUTION_FAILED");
+        if (rawResult === "-1") {
+          errorCode = t("automation.errorBashTimeout") || "Command timed out (-1)";
+        } else if (rawResult === "-2") {
+          errorCode = t("automation.errorDockerMissing") || "Sandbox unavailable: Docker not installed (-2)";
+        } else if (rawResult.startsWith("Error:") && rawResult.length > 6) {
+          errorCode = rawResult.length > 500 ? rawResult.slice(0, 500) + "…" : rawResult;
+        }
         this.ml.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;">
           <i data-lucide="ban" class="lucide"></i>
           <div class="si-panel-empty-title">${t("automation.executionFailed") || "Automation execution error"}</div>
-          <div class="si-panel-empty-sub">${escapeHtml(errorCode)}</div>
+          <div class="si-panel-empty-sub" style="word-break:break-word;">${escapeHtml(errorCode)}</div>
         </div>`;
       } else {
         // No inline transcript survived (e.g. reopened after switching
@@ -1699,7 +1738,9 @@ export class Chat {
     this._updateStatusBar(state.running);
     // Auto-open HTML info cards only when the model just finished
     if (wasRunning && !state.running) {
-      window.__openInfoHtmlCards?.();
+      // Scoped to the main chat container so the pass never reaches into the
+      // automation detail (which can hold the same tc-* card ids).
+      window.__openInfoHtmlCards?.(this.ml);
     }
 
   }
@@ -1729,12 +1770,12 @@ export class Chat {
     } finally {
       this._subAgentRender = false;
     }
-const _vs = saveVideoPlayback();
+const _vs = saveVideoPlayback(container);
     window.__stopAllMedia?.();
     container.innerHTML = html;
     createLucideIcons();
-    window.__initMediaCards();
-    restoreVideoPlayback(_vs);
+    window.__initMediaCards?.(container);
+    restoreVideoPlayback(_vs, container);
     if (!container.dataset.subAgentClickBound) {
       container.addEventListener("click", (e) => this.handleDelegateClick(e));
       container.dataset.subAgentClickBound = "true";
@@ -1975,7 +2016,7 @@ const _vs = saveVideoPlayback();
 
     this.ml.classList.add("parallel-active");
     const existing = this.ml.querySelector(":scope > .parallel-sub-agent") as HTMLElement | null;
-    const _vs = saveVideoPlayback();
+    const _vs = saveVideoPlayback(this.ml);
     window.__stopAllMedia?.();
     if (existing && existing.dataset.count === String(count)) {
       // Diff update: only swap tile bodies whose content changed. This keeps
@@ -1989,12 +2030,13 @@ const _vs = saveVideoPlayback();
         }
         idx++;
       }
-      window.__initMediaCards();
-      restoreVideoPlayback(_vs);
+window.__initMediaCards?.(this.ml);
+      restoreVideoPlayback(_vs, this.ml);
     } else {
       this.ml.innerHTML = html;
-      window.__initMediaCards();
-      restoreVideoPlayback(_vs);
+      window.__initMediaCards?.(this.ml);
+      restoreVideoPlayback(_vs, this.ml);
+      
     }
   }
 
@@ -2092,12 +2134,13 @@ const _vs = saveVideoPlayback();
     const wasScrolledUp = this.userScrolledUp;
     const prevScrollTop = container.scrollTop;
     const prevScrollHeight = container.scrollHeight;
-    const _vs = saveVideoPlayback();
+    const _vs = saveVideoPlayback(this.ml);
     window.__stopAllMedia?.();
     this.ml.innerHTML = html;
     createLucideIcons();
-    window.__initMediaCards();
-    restoreVideoPlayback(_vs);
+    window.__initMediaCards?.(this.ml);
+    restoreVideoPlayback(_vs, this.ml);
+    
     if (wasScrolledUp) {
       // Preserve the user's visual position: when new content is appended
       // below, the previous bottom offset should still point at the same
@@ -2192,7 +2235,7 @@ const _vs = saveVideoPlayback();
       if (!el) continue;
 
       // 1) Status slot — toggle spinner on pending<->running<->done.
-      const statusSlot = el.querySelector(".strip-status, .tool-item-status, .agent-card-status") as HTMLElement | null;
+      const statusSlot = el.querySelector(".strip-status, .tool-item-status") as HTMLElement | null;
       if (statusSlot) {
         const curStatus = statusSlot.getAttribute("data-status") || "";
         if (curStatus !== toolItem.tc.status) {
@@ -2243,17 +2286,7 @@ const _vs = saveVideoPlayback();
         el.classList.remove("expanded");
         this.expandedItems.delete(toolItem.id);
       }
-      // 5) Agent card icon: toggle spin class in-place so the CSS animation
-      //    never restarts during streaming (the icon SVG survives through
-      //    incremental updates because the render key is no longer cleared).
-      if (toolItem.tc.name === "agent") {
-        const iconEl = el.querySelector('.agent-card-icon') as HTMLElement | null;
-        if (iconEl) {
-          const st = getState();
-          const isAgentRunning = st.running && (toolItem.tc.status === "running" || toolItem.tc.status === "pending");
-          iconEl.classList.toggle('spinning', isAgentRunning);
-        }
-      }
+      
     }
 
     // Update workflow card progress bar and task list
@@ -2584,7 +2617,7 @@ const _vs = saveVideoPlayback();
     // display='base' (default): strip card opens in child-window browser.
     const label = escapeHtml(title || t("chat.toolInfo"));
     return `<div class="strip-item" id="${cardId}" data-source="${escapeHtml(content)}">
-      <div class="strip" onclick="window.__openInfoHtmlCard('${cardId}')" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
+      <div class="strip" onclick="window.__openInfoHtmlCard(this, '${cardId}')" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
         <span class="icon-wrap">
           <i data-lucide="layout-dashboard" class="semantic"></i>
           <i data-lucide="chevron-right" class="arrow"></i>
@@ -2681,48 +2714,32 @@ const _vs = saveVideoPlayback();
     const agentName = formatAgentLabel(rawAgentName);
     const isPlanSpec = tc.params.mode === "plan" || tc.params.mode === "spec";
     const agentIcon = isPlanSpec ? "list-checks" : "sparkles";
-    const statusHtml = _toolStatusHtml(tc.status);
+    const id = `tc-${tc.id}`;
 
-    /** Pick the icon name and spinning class based on status and overall run state. */
-    const _cardIcon = (status: string): { name: string; cls: string } => {
-      const stillRunning = getState().running;
-      if ((status === "running" || status === "pending") && stillRunning) {
-        return { name: "loader", cls: "agent-card-icon spinning" };
-      }
-      return { name: agentIcon, cls: "agent-card-icon" };
-    };
-
-    // If this agent tool ran several parallel tasks, show one card per task
-    // in the parent transcript instead of a single combined card.
     const tasks = this._agentTaskDividers(tc);
     if (tasks.length > 1) {
       return tasks.map((task, idx) => {
         const taskName = task.name || `${agentName} ${idx + 1}`;
-        const taskStatus = task.status || tc.status;
-        const { name: icon, cls: iconCls } = _cardIcon(taskStatus);
-        return `<div class="agent-card" data-task-index="${task.index}" onclick="window.__openSubAgentView('${tc.id}', ${task.index})">
-          <i data-lucide="${icon}" class="${iconCls}"></i>
-          <span class="agent-card-name">${escapeHtml(taskName)}</span>
-          <span class="agent-card-status" data-status="${taskStatus}">${_toolStatusHtml(taskStatus)}</span>
-          <span class="agent-card-open">
-            <i data-lucide="square-arrow-out-up-right" class="agent-card-open-icon"></i>
-          </span>
+        return `<div class="strip-item" id="${id}" data-task-index="${task.index}">
+          <div class="strip" onclick="window.__openSubAgentView('${tc.id}', ${task.index})" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
+            <span class="icon-wrap">
+              <i data-lucide="${agentIcon}" class="semantic"></i>
+              <i data-lucide="chevron-right" class="arrow"></i>
+            </span>
+            <span class="strip-name">${escapeHtml(taskName)}</span>
+          </div>
         </div>`;
       }).join("");
     }
 
-    const id = `tc-${tc.id}`;
-    const { name: icon, cls: iconCls } = _cardIcon(tc.status);
-    // Inline summary keeps ONLY the preview (last assistant text) so the
-    // card stays compact. Thinking/tool counts are intentionally hidden in
-    // the parent — they live in the sub-agent view.
-    return `<div class="agent-card" data-id="${id}" onclick="window.__openSubAgentView('${tc.id}')">
-      <i data-lucide="${icon}" class="${iconCls}"></i>
-      <span class="agent-card-name">${escapeHtml(agentName)}</span>
-      <span class="agent-card-status" data-status="${tc.status}">${statusHtml}</span>
-      <span class="agent-card-open">
-        <i data-lucide="square-arrow-out-up-right" class="agent-card-open-icon"></i>
-      </span>
+    return `<div class="strip-item" id="${id}">
+      <div class="strip" onclick="window.__openSubAgentView('${tc.id}')" onmouseenter="window.__hoverOn(this)" onmouseleave="window.__hoverOff(this)">
+        <span class="icon-wrap">
+          <i data-lucide="${agentIcon}" class="semantic"></i>
+          <i data-lucide="chevron-right" class="arrow"></i>
+        </span>
+        <span class="strip-name">${escapeHtml(agentName)}</span>
+      </div>
     </div>`;
   }
 
@@ -2788,7 +2805,7 @@ const _vs = saveVideoPlayback();
       label = t("chat.abortedError");
     }
     return `<div class="turn-status-card status-error${extraClass}" id="${id}">
-      <div class="status-header" onclick="window.__toggleStatusCard('${id}')">
+      <div class="status-header" onclick="window.__toggleStatusCard(this, '${id}')">
         ${iconSvg}
         <span class="status-label">${label}</span>
         <svg class="status-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -3533,7 +3550,7 @@ const _vs = saveVideoPlayback();
     removeBranchMessages(removedIds);
     // Create assistant placeholder for new streaming output
     startAssistantMessage();
-    setRunning(true);
+    setSessionState("running");
 
     const branchId = st.activeBranchId;
     if (typeof (window as any).sendRetry === "function") {

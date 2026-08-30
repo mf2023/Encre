@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -35,8 +34,10 @@ from encre.backends.base import BaseBackend
 # OpenAI
 # ===========================================================================
 
+
 class TestOpenAIBackend:
     """Test suite for OpenAIBackend."""
+
     def test_create(self):
         """Test: Create."""
         be = create_backend("openai", api_key="sk-fake")
@@ -44,8 +45,8 @@ class TestOpenAIBackend:
         assert isinstance(be, BaseBackend)
         # Verify: be.supports_tool_calling() is True
         assert be.supports_tool_calling() is True
-        # Verify: be.context_window_size() == 1048576
-        assert be.context_window_size() == 1048576
+        # Verify: be.context_window_size() == 1050000
+        assert be.context_window_size() == 1050000
 
     def test_model_override(self):
         """Test: Model override."""
@@ -64,8 +65,10 @@ class TestOpenAIBackend:
 # Anthropic
 # ===========================================================================
 
+
 class TestAnthropicBackend:
     """Test suite for AnthropicBackend."""
+
     def test_create(self):
         """Test: Create."""
         be = create_backend("anthropic", api_key="sk-ant-fake")
@@ -73,8 +76,8 @@ class TestAnthropicBackend:
         assert isinstance(be, BaseBackend)
         # Verify: be.supports_tool_calling() is True
         assert be.supports_tool_calling() is True
-        # Verify: be.context_window_size() == 200000
-        assert be.context_window_size() == 200000
+        # Verify: be.context_window_size() == 1000000
+        assert be.context_window_size() == 1000000
         # Verify: be.supports_thinking() is True
         assert be.supports_thinking() is True
         # Verify: be.supports_prompt_caching() is True
@@ -97,8 +100,10 @@ class TestAnthropicBackend:
 # DeepSeek
 # ===========================================================================
 
+
 class TestDeepSeekBackend:
     """Test suite for DeepSeekBackend."""
+
     def test_create(self):
         """Test: Create."""
         be = create_backend("deepseek", api_key="sk-fake")
@@ -120,8 +125,10 @@ class TestDeepSeekBackend:
 # Google
 # ===========================================================================
 
+
 class TestGoogleBackend:
     """Test suite for GoogleBackend."""
+
     def test_create(self):
         """Test: Create."""
         be = create_backend("google", api_key="fake-key")
@@ -143,8 +150,10 @@ class TestGoogleBackend:
 # Groq
 # ===========================================================================
 
+
 class TestGroqBackend:
     """Test suite for GroqBackend."""
+
     def test_create(self):
         """Test: Create."""
         be = create_backend("groq", api_key="gsk-fake")
@@ -166,8 +175,10 @@ class TestGroqBackend:
 # Ollama
 # ===========================================================================
 
+
 class TestOllamaBackend:
     """Test suite for OllamaBackend."""
+
     def test_create(self):
         """Test: Create."""
         be = create_backend("ollama", base_url="http://localhost:11434")
@@ -183,8 +194,10 @@ class TestOllamaBackend:
 # Local
 # ===========================================================================
 
+
 class TestLocalBackend:
     """Test suite for LocalBackend."""
+
     def test_create(self):
         """Test: Create."""
         be = create_backend("local")
@@ -206,15 +219,17 @@ class TestLocalBackend:
 # Bedrock
 # ===========================================================================
 
+
 class TestBedrockBackend:
     """Test suite for BedrockBackend."""
+
     def test_create(self):
         """Test: Create."""
-        be = create_backend("bedrock", aws_access_key_id="fake", aws_secret_access_key="fake", region="us-east-1")  # noqa: E501
+        be = create_backend("bedrock", aws_access_key_id="fake", aws_secret_access_key="fake", region="us-east-1")
         # Verify: isinstance(be, BaseBackend)
         assert isinstance(be, BaseBackend)
-        # Verify: be.context_window_size() == 200000
-        assert be.context_window_size() == 200000
+        # Verify: be.context_window_size() == 1000000
+        assert be.context_window_size() == 1000000
         # Verify: isinstance(be.supports_tool_calling(), bool)
         assert isinstance(be.supports_tool_calling(), bool)
 
@@ -234,17 +249,19 @@ class TestBedrockBackend:
 # OpenAI Compatible
 # ===========================================================================
 
+
 class TestOpenAICompatibleBackend:
     """Test suite for OpenAICompatibleBackend."""
+
     def test_create(self):
         """Test: Create."""
-        be = create_backend("openai_compatible", base_url="https://api.example.com/v1", api_key="sk-fake")  # noqa: E501
+        be = create_backend("openai_compatible", base_url="https://api.example.com/v1", api_key="sk-fake")
         # Verify: isinstance(be, BaseBackend)
         assert isinstance(be, BaseBackend)
         # Verify: isinstance(be.supports_tool_calling(), bool)
         assert isinstance(be.supports_tool_calling(), bool)
-        # Verify: be.context_window_size() == 128000
-        assert be.context_window_size() == 128000
+        # Verify: be.context_window_size() == 1048576
+        assert be.context_window_size() == 1048576
 
     def test_model_override(self):
         """Test: Model override."""
@@ -262,8 +279,10 @@ class TestOpenAICompatibleBackend:
 # Retry integration
 # ===========================================================================
 
+
 class TestRetryIntegration:
     """Test suite for RetryIntegration."""
+
     def test_retry_with_backoff_handler(self):
         """Test: Retry with backoff handler."""
         import httpx
@@ -286,6 +305,7 @@ class TestRetryIntegration:
     def test_retry_config_tool_retries(self):
         """Test: Retry config tool retries."""
         from encre.backends.retry import RetryConfig
+
         rc = RetryConfig()
         # Verify: rc.rate_limit_retries == 8
         assert rc.rate_limit_retries == 8

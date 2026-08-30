@@ -58,4 +58,4 @@ Agent 必须回答：
 
 ## 版本更新策略
 
-Gene 库内容随 skill 版本发布。如需新 gene，发布新版 skill（v0.3.2 / v0.4.0 等）覆盖 `references/gene-library.json` 即可。
+Gene 库内容随 skill 版本发布。如需新 gene，发布新版 skill（v0.3.2 / v0.4.1 等）覆盖 `references/gene-library.json` 即可。

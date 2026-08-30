@@ -1,8 +1,8 @@
-# Contributing to Encre
+# Contributing to Encre Agent
 
-Welcome — and thank you for investing time in Encre. This guide is written so that **you, as a developer, know exactly three things when you finish reading it**: what you can safely change, what you are agreeing to when you submit a contribution, and how to get your change merged without unnecessary back-and-forth.
+Welcome — and thank you for investing time in Encre Agent. This guide is written so that **you, as a developer, know exactly three things when you finish reading it**: what you can safely change, what you are agreeing to when you submit a contribution, and how to get your change merged without unnecessary back-and-forth.
 
-Encre is a single repository that ships three products on one release line:
+Encre Agent is a single repository that ships three products on one release line:
 
 - a **Python** AI Agent framework (`backend/encre/`)
 - a **Rust** native core that backs it (`native/crates/`)
@@ -37,7 +37,7 @@ All three share the same version, the same `master` branch, and the same release
 
 Before you write a single line, here is the deal — in plain language, not legalese:
 
-- **You keep the copyright** to everything you write. Submitting a pull request does **not** transfer ownership to the Encre project or to any individual maintainer.
+- **You keep the copyright** to everything you write. Submitting a pull request does **not** transfer ownership to the Encre Agent project or to any individual maintainer.
 - **You grant the project a license to use your work.** By opening a pull request, you agree to release your contribution under the [Apache License 2.0](../LICENSE), the same license the rest of the codebase uses. Other contributors and downstream users can then use your code under the same terms everyone else enjoys.
 - **You will be credited.** Substantive contributions are listed in [CHANGELOG.md](CHANGELOG.md) and in the release notes of the version where they land, with a link to your GitHub/Gitee profile.
 - **You can withdraw or relicense at any time** for future use of your work, by emailing the maintainers (see [Communication Channels](#communication-channels)). Already-released versions remain under Apache 2.0 — that is the nature of open source — but future revisions can be adjusted.
@@ -79,7 +79,7 @@ When you file, include:
 - **Layer**: Python framework / Rust core / Desktop app / Documentation. (Pick exactly one — cross-layer bugs usually need two separate issues.)
 - **Exact steps to reproduce**, copy-paste runnable. Numbered list, no narrative.
 - **Observed vs. expected behavior.** Quote error messages verbatim, including stack traces.
-- **Environment**: OS, Python version, Node version, Rust version (`rustc --version`), Encre commit hash, backend provider + model, permission mode.
+- **Environment**: OS, Python version, Node version, Rust version (`rustc --version`), Encre Agent commit hash, backend provider + model, permission mode.
 - **Minimal reproducer**: a script or, for the desktop app, a screen recording.
 
 **Example template:**
@@ -97,7 +97,7 @@ When you file, include:
 **Environment:**
 - OS: Ubuntu 24.04
 - Python: 3.12.3
-- Encre: `0da4040`
+- Encre Agent: `0da4040`
 - Backend: openai / gpt-4o
 - Permission mode: default
 
@@ -366,7 +366,7 @@ In all four cases, register the new module in the corresponding `__init__.py` an
 
 ## Commit Messages
 
-Encre uses **date-based commit messages**. Every commit on `master` is a single line of the form `YYYY.MM.DD` representing the date the change was merged.
+Encre Agent uses **date-based commit messages**. Every commit on `master` is a single line of the form `YYYY.MM.DD` representing the date the change was merged.
 
 ```
 2026.06.21
@@ -494,14 +494,15 @@ encre/
 │   ├── CODE_OF_CONDUCT.md
 │   ├── SECURITY.md
 │   ├── CHANGELOG.md
-│   ├── PRIVACY.md / PRIVACY_CN.md
-│   ├── TERMS.md / TERMS_CN.md
-│   ├── CONTENT_GUIDELINES.md
-│   ├── DATA_PROCESSING_RULES.md
-│   ├── MINORS_PRIVACY.md
+│   ├── legal/                  # Jurisdiction-specific legal documents
+│   │   ├── README.md           # Legal documents index
+│   │   ├── asia/               # cn · jp · kr · sg · tw · in · ae · sa · il
+│   │   ├── europe/             # eu · uk · ch · tr
+│   │   ├── americas/           # us · ca · br · mx
+│   │   ├── africa/             # za · ng · ke · eg
+│   │   └── oceania/            # au · nz
 │   ├── PLAN.md
-│   ├── THANKS.md / THANKS_CN.md
-│   └── USER_AGREEMENT.md
+│   └── THANKS.md / THANKS_CN.md
 │
 └── .github/
     └── workflows/
@@ -527,7 +528,7 @@ If your contribution spans more than one of these layers — typical for "add a 
 
 ## Release & Versioning
 
-Encre follows semantic versioning:
+Encre Agent follows semantic versioning:
 
 - **Major** (X.0.0): public-API breaking changes. Posted to the issue tracker at least 30 days in advance.
 - **Minor** (0.X.0): new features, new backends, new tools, additive only.
@@ -586,9 +587,9 @@ We commit to:
 
 ## License
 
-By contributing to Encre, you agree that your contributions will be licensed under the [Apache License 2.0](../LICENSE). The full text is in [`LICENSE`](../LICENSE). A short summary:
+By contributing to Encre Agent, you agree that your contributions will be licensed under the [Apache License 2.0](../LICENSE). The full text is in [`LICENSE`](../LICENSE). A short summary:
 
-- You can use, modify, and distribute Encre, including commercially.
+- You can use, modify, and distribute Encre Agent, including commercially.
 - You must include the license and copyright notice.
 - You must state any changes you make.
 - You cannot use contributor names to endorse derived works without permission.
@@ -598,4 +599,4 @@ If your contribution is based on someone else's code, make sure that code is com
 
 ---
 
-Thank you for reading this far — and for making Encre better. Every PR, issue, doc fix, and review comment helps.
+Thank you for reading this far — and for making Encre Agent better. Every PR, issue, doc fix, and review comment helps.

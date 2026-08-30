@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-We as members, contributors, and leaders pledge to make participation in the Encre project and our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
+We as members, contributors, and leaders pledge to make participation in the Encre Agent project and our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
 
 We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, and healthy community.
 
@@ -15,7 +15,7 @@ Examples of behavior that contributes to a positive environment for our communit
 - Giving and gracefully accepting constructive feedback
 - Accepting responsibility and apologizing to those affected by our mistakes, and learning from the experience
 - Focusing on what is best not just for us as individuals, but for the overall community
-- Recognizing that Encre is a multi-language project (Python, Rust, TypeScript) and that not every contributor is fluent in every layer
+- Recognizing that Encre Agent is a multi-language project (Python, Rust, TypeScript) and that not every contributor is fluent in every layer
 
 Examples of unacceptable behavior include:
 
@@ -28,19 +28,19 @@ Examples of unacceptable behavior include:
 
 ## Scope
 
-This Code of Conduct applies within all Encre community spaces — both project spaces and public spaces when an individual is officially representing the project. Concretely, that includes:
+This Code of Conduct applies within all Encre Agent community spaces — both project spaces and public spaces when an individual is officially representing the project. Concretely, that includes:
 
 - The **encre/encre** GitHub repository and its issues, pull requests, discussions, and wiki
 - The **dunimd/encre** Gitee mirror and its issues
 - The official communication channels listed in [CONTRIBUTING.md → Communication Channels](CONTRIBUTING.md#communication-channels) (GitHub Discussions, X / Twitter, Bilibili, maintainer email)
-- Public events (conferences, meetups, livestreams) where someone is representing Encre as a maintainer or designated contributor
-- Social media interactions where you are speaking in an Encre capacity (e.g., replying from the `@Dunimd2025` account or using an `encre` hashtag)
+- Public events (conferences, meetups, livestreams) where someone is representing Encre Agent as a maintainer or designated contributor
+- Social media interactions where you are speaking in an Encre Agent capacity (e.g., replying from the `@Dunimd2025` account or using an `encre` hashtag)
 
 The CoC does **not** govern private conversations between individual contributors, nor the content of third-party forks.
 
 ## Your Rights as a Community Member
 
-The CoC is not only about what you must not do. As a member of the Encre community you can expect:
+The CoC is not only about what you must not do. As a member of the Encre Agent community you can expect:
 
 - **To be credited** for your work. Substantive contributions are listed in [CHANGELOG.md](CHANGELOG.md) and in [THANKS.md](THANKS.md) — see [CONTRIBUTING.md → Your Rights as a Contributor](CONTRIBUTING.md#your-rights-as-a-contributor) for the full deal.
 - **To be answered.** Open issues and PRs receive a response (even if it's "we can't get to this right now") within the SLAs in [CONTRIBUTING.md → Pull Request Process](CONTRIBUTING.md#pull-request-process). Silence is a bug; please ping if you hit it.
@@ -210,7 +210,7 @@ This Code of Conduct is licensed under the [Creative Commons Attribution 4.0 Int
 
 ---
 
-**Last Updated:** 2026-06-21
+**Last Updated:** 2026-08-23
 **Version:** 1.1
 
-By participating in the Encre community, you agree to abide by this Code of Conduct.
+By participating in the Encre Agent community, you agree to abide by this Code of Conduct.

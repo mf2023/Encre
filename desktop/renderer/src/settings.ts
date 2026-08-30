@@ -22,7 +22,7 @@
 
 import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, setPermissionPolicies, subscribe, showToast, isEnabled } from "./state.js";
 import { send } from "./ws.js";
-import { waitForModelValidation, onAdapterTestResult, onWechatScanResult } from "./stream.js";
+import { waitForModelValidation, onWechatScanResult, refreshAllData } from "./stream.js";
 import { setModelConfigs, setMcpServers, setSkillsList, setSubAgents } from "./state.js";
 import type { ModelConfigMeta, MCPServerConfig, SkillInfo, ModelCatalog, McpCatalog, McpProviderEntry, ProviderEntry, ProfileData, CustomCommand, UsageStatsSessionEntry } from "./types.js";
 import { defaultSearchFilter } from "./types.js";
@@ -60,7 +60,7 @@ export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T
 
 initLocale();
 
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.4.1";
 
 export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "browser" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory" | "search";
 
@@ -224,7 +224,6 @@ const ADAPTER_DEFS: AdapterDef[] = [
 export class Settings {
   private nav: HTMLElement;
   private currentPanel: PanelId = "general";
-  private _adapterTestResults: Record<string, {success: boolean, message: string}> = {};
   private panels: Record<PanelId, HTMLElement>;
   private searchInput: HTMLInputElement;
   private searchTimer: number = 0;
@@ -343,6 +342,7 @@ export class Settings {
             }
           });
         }
+        return;
       }
     });
 
@@ -585,7 +585,7 @@ setModelConfigs(currentModels, activeIdx);
 
       const refreshBtn = target.closest("#btn-refresh-memory");
       if (refreshBtn) {
-        send({ type: "get_memory_list" });
+        refreshAllData();
         return;
       }
 
@@ -775,14 +775,6 @@ setModelConfigs(currentModels, activeIdx);
       }
     });
 
-    // Handle adapter test results
-    onAdapterTestResult((event) => {
-      this._adapterTestResults[event.adapter_id] = { success: event.success, message: event.message };
-      if (this.currentPanel === "gateway") {
-        requestAnimationFrame(() => this.renderGateway());
-      }
-    });
-
     // Handle WeChat QR code scan results
     onWechatScanResult((event) => {
       if (!(this as any)._wechatDialogOpen) return;
@@ -954,7 +946,8 @@ setModelConfigs(currentModels, activeIdx);
     this.modelCreateActive = false;
     if (this.searchInput) this.searchInput.value = "";
     this.filterNavItems("");
-    send({ type: "get_config" } as any);
+    // Unified entry: one snapshot refresh covers every settings panel.
+    refreshAllData();
     this.renderAll();
     this.updateSidebarNav();
     this.switchPanel(this.currentPanel);
@@ -1227,11 +1220,9 @@ setModelConfigs(currentModels, activeIdx);
     } else if (id === "memory") {
       this.panels.memory.classList.add("active");
       this.renderMemory();
-      send({ type: "get_memory_list" });
     } else if (id === "usage") {
       this.panels.usage.classList.add("active");
       void this._renderUsageSection();
-      send({ type: "get_usage_stats" });
     } else if (id === "shortcuts") {
       this.panels.shortcuts.classList.add("active");
       this.renderShortcuts();
@@ -1244,7 +1235,6 @@ setModelConfigs(currentModels, activeIdx);
       console.log("[DEBUG switchPanel] index panel, docsList:", getState().docsList.length, "items");
       this.panels.index.classList.add("active");
       this.renderIndex();
-      send({ type: "list_documents" } as any);
     } else if (id === "rules") {
       this.panels.rules.classList.add("active");
       this.renderRules();
@@ -1959,7 +1949,6 @@ this.renderShortcuts();
         const val = s[`adapter_${def.id}_${f.key}` as keyof typeof s];
         return val && String(val).length > 0;
       });
-      const testResult = this._adapterTestResults[def.id];
 
       // Unified status: only ONE state shown at a time
       let statusLabel: string;
@@ -1973,22 +1962,15 @@ this.renderShortcuts();
       } else if (connected) {
         statusLabel = `● ${t("settings.adapterStatusConnected")}`;
         statusStyle = "color:var(--text-success)";
-      } else if (testResult && !testResult.success) {
-        statusLabel = `● ${t("settings.adapterStatusError")}`;
-        statusStyle = "color:var(--text-danger)";
       } else {
         statusLabel = `● ${t("settings.adapterStatusDisconnected")}`;
         statusStyle = "color:var(--text-warning)";
       }
 
-      // Description shows test result, connection error, adapter description, or config hint
+      // Description shows connection error, adapter description, or config hint
       const connErr = statusInfo?.error || null;
       let descHtml: string;
-      if (testResult) {
-        const icon = testResult.success ? "check-circle" : "x-circle";
-        const color = testResult.success ? "var(--text-success)" : "var(--text-danger)";
-        descHtml = `<span style="color:${color};font-size:11px"><i data-lucide="${icon}" style="width:11px;height:11px;display:inline-block;vertical-align:middle;margin-right:3px"></i> ${this.esc(testResult.message)}</span>`;
-      } else if (connErr && enabled && allConfigured) {
+      if (connErr && enabled && allConfigured) {
         descHtml = `<span style="color:var(--text-danger);font-size:11px"><i data-lucide="alert-circle" style="width:11px;height:11px;display:inline-block;vertical-align:middle;margin-right:3px"></i> ${this.esc(connErr)}</span>`;
       } else if (!enabled) {
         descHtml = `<span style="color:var(--text-muted);font-size:11px">${t("settings.adapterDisabled")} · ${this.esc(t(`settings.adapterDesc${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`))}</span>`;
@@ -2037,7 +2019,6 @@ this.renderShortcuts();
           const current = { ...getState().settings, [`adapter_${def.id}_enabled`]: enabled };
           setSettings(current as any);
           send({ type: "configure", config: { [`adapter_${def.id}_enabled`]: enabled } });
-          delete this._adapterTestResults[def.id];
           this.renderGateway();
         });
       }
@@ -2327,9 +2308,6 @@ this.renderShortcuts();
         config[`adapter_${defId}_models`] = modelsJson;
         setSettings(current as any);
         send({ type: "configure", config });
-        delete this._adapterTestResults[defId];
-        send({ type: "test_adapter", adapter_id: defId, config: { /* use raw field keys */ } });
-        // We don't wait for test result, just save and close
         this.renderGateway();
         close();
       });
@@ -2730,7 +2708,7 @@ private _bindModelSelect(): void {
             <button class="btn-add-model-top" id="doc-add-trigger" type="button">
               <i data-lucide="plus" class="lucide" style="width:14px;height:14px"></i>
               <span>${tFn("settings.addDocument")}</span>
-              <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron" style="width:12px;height:12px;margin-left:2px"></i>
+              <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
             </button>
             <div class="settings-dropdown" id="doc-add-dropdown">
               <div class="settings-dropdown-item" data-action="local">
@@ -2781,7 +2759,7 @@ private _bindModelSelect(): void {
         <div class="model-table-row${isLoading ? " doc-row-loading" : ""}" data-doc-id="${d.id}">
           <div class="model-table-cell model-cell-name">
             <i data-lucide="${d.source === "url" ? "link" : "file"}" class="lucide" style="width:14px;height:14px;margin-right:6px;vertical-align:middle"></i>
-            ${this._escapeHtml(d.name)}<span class="doc-ext">${d.file_type}</span>
+            ${this._escapeHtml(d.name)}
           </div>
           <div class="model-table-cell model-cell-provider">
             <span class="skill-desc-text">${sourceLabel}</span>
@@ -2923,6 +2901,60 @@ private _bindModelSelect(): void {
     }
 
     return { overlay, close };
+  }
+
+  private _chooseImportMode(): Promise<"overwrite" | "replace" | "skip" | null> {
+    // Reuse the standard form dialog + the project's settings-dropdown widget
+    // so the picker matches the rest of the app.  The destructive "replace"
+    // option still triggers a second, high-priority confirmation.
+    return new Promise((done) => {
+      const modeOptions: DropdownOption[] = [
+        { id: "overwrite", label: t("settings.storageImportModeOverwrite") },
+        { id: "replace", label: t("settings.storageImportModeReplace") },
+        { id: "skip", label: t("settings.storageImportModeSkip") },
+      ];
+      const bodyHtml = `
+        <div class="model-form-row" style="flex-direction:column;align-items:stretch">
+          <label class="model-form-label">${this.esc(t("settings.storageImportModeDesc"))}</label>
+          <div class="model-form-dropdown-row">
+            ${this.renderDropdown("import-mode", modeOptions, "overwrite", () => {})}
+          </div>
+          <div class="model-form-hint" id="import-mode-desc">${this.esc(t("settings.storageImportModeOverwriteDesc"))}</div>
+        </div>`;
+
+      const { overlay } = this._showFormDialog(t("settings.storageImportTitle"), bodyHtml, false);
+
+      const modeDescriptions: Record<string, string> = {
+        overwrite: t("settings.storageImportModeOverwriteDesc"),
+        replace: t("settings.storageImportModeReplaceDesc"),
+        skip: t("settings.storageImportModeSkipDesc"),
+      };
+      let selected: "overwrite" | "replace" | "skip" = "overwrite";
+      this.bindDropdown("import-mode", (val) => {
+        selected = (val as "overwrite" | "replace" | "skip") || "overwrite";
+        const desc = overlay.querySelector("#import-mode-desc") as HTMLElement;
+        if (desc) desc.textContent = modeDescriptions[selected] || "";
+      });
+
+      const finish = (v: "overwrite" | "replace" | "skip" | null) => {
+        overlay.remove();
+        done(v);
+      };
+
+      const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
+      okBtn.addEventListener("click", async () => {
+        if (selected === "replace") {
+          const sure = await Dialog.confirm(
+            t("settings.storageImportReplaceTitle"),
+            t("settings.storageImportReplaceConfirm"),
+            "high",
+          );
+          if (!sure) return;
+        }
+        finish(selected);
+      });
+      overlay.querySelector("#dialog-form-cancel")?.addEventListener("click", () => finish(null));
+    });
   }
 
   private renderSkills(): void {
@@ -3605,10 +3637,8 @@ private _bindModelSelect(): void {
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: this.panels.rules });
     }
-
-    if (!rules.length) {
-      send({ type: "list_global_rules" });
-    }
+    // The unified push already delivers global_rules_list on connect and
+    // after every rule save/delete — nothing to fetch here.
   }
 
   private _showRuleFormDialog(name: string, content: string, isEdit: boolean): void {
@@ -3770,7 +3800,7 @@ private _bindModelSelect(): void {
     const agents = getState().subAgents || [];
 
     const tableContent = agents.length === 0
-      ? `<div class="model-empty"><i data-lucide="bot" class="lucide"></i><span>${t("settings.noSubAgentsYet")}</span></div>`
+      ? `<div class="model-empty"><i data-lucide="sparkles" class="lucide"></i><span>${t("settings.noSubAgentsYet")}</span></div>`
       : `
         <div class="model-table">
           <div class="model-table-header">
@@ -3783,7 +3813,7 @@ private _bindModelSelect(): void {
               return `
             <div class="model-table-row">
               <div class="model-table-cell model-cell-name">
-                <span class="model-name-text">${this.esc(a.name)}</span>
+                <span class="model-name-text"><i data-lucide="sparkles" class="lucide" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>${this.esc(a.name)}</span>
                 <span class="model-active-tag" style="margin-left:8px">${sourceLabel}</span>
               </div>
               <div class="model-table-cell model-cell-provider">
@@ -3961,10 +3991,10 @@ private _bindModelSelect(): void {
         <div class="usage-empty">
           <div class="usage-empty-icon"><i data-lucide="chart-column" class="lucide"></i></div>
           <div class="usage-empty-text">${t("settings.noUsageData")}</div>
-          <button class="btn-empty" id="btn-refresh-usage-empty">${t("settings.refresh")}</button>
+          <button class="btn-secondary" id="btn-refresh-usage-empty">${t("settings.refresh")}</button>
         </div>`;
       document.getElementById("btn-refresh-usage-empty")?.addEventListener("click", () => {
-        send({ type: "get_usage_stats" });
+        refreshAllData();
       });
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: el });
@@ -4028,7 +4058,7 @@ private _bindModelSelect(): void {
       <div class="settings-section-title">
         <i data-lucide="chart-column" class="lucide section-title-icon"></i>
         ${t("settings.usageStats")}
-        <button class="btn-icon" id="btn-refresh-usage" style="margin-left:auto" data-tooltip="${t("settings.refresh")}">
+        <button class="btn-icon" id="btn-refresh-usage-chart" data-tooltip="${t("settings.refresh")}" style="margin-left:auto">
           <i data-lucide="refresh-cw" class="lucide"></i>
         </button>
       </div>
@@ -4139,8 +4169,8 @@ private _bindModelSelect(): void {
 
     canvas?.addEventListener("mouseleave", () => hideTooltip());
 
-    document.getElementById("btn-refresh-usage")?.addEventListener("click", () => {
-      send({ type: "get_usage_stats" });
+    document.getElementById("btn-refresh-usage-chart")?.addEventListener("click", () => {
+      refreshAllData();
     });
 
     // Mode toggle for chart grouping
@@ -4870,7 +4900,7 @@ private _bindModelSelect(): void {
       }
       const confirmed = await Dialog.confirm(t("settings.devRestartTitle"), t("settings.devRestartServerDesc"), "high");
       if (!confirmed) return;
-      const prog = Dialog.progress(t("settings.devRestartProgressTitle"), "");
+      const prog = Dialog.progress(t("settings.devRestartProgressTitle"), "", { cancellable: false });
       const cleanup = (window as any).electronAPI?.onRestartProgress?.((data: { progress: number }) => {
         const p = data.progress;
         let msg: string;
@@ -4900,16 +4930,6 @@ private _bindModelSelect(): void {
       <div class="settings-card">
         <div class="settings-item-row">
           <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.aboutLogs")}</div>
-            <div class="settings-item-desc">${t("settings.aboutLogsDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <button class="btn-icon" id="storage-open-logs" data-tooltip="${t("settings.aboutLogs")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
             <div class="settings-item-title">${t("settings.storageDataDir")}</div>
             <div class="settings-item-desc">${t("settings.aboutOpenDataDir")}</div>
           </div>
@@ -4918,6 +4938,42 @@ private _bindModelSelect(): void {
           </div>
         </div>
         <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.aboutLogs")}</div>
+            <div class="settings-item-desc">${t("settings.aboutLogsDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn-icon" id="storage-open-logs" data-tooltip="${t("settings.aboutLogs")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section-title" style="margin-top:24px"><i data-lucide="package" class="lucide section-title-icon"></i> ${t("settings.storageMigration")}</div>
+      <div class="settings-card">
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.storageExportData")}</div>
+            <div class="settings-item-desc">${t("settings.storageExportDataDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn-icon" id="storage-export-data" data-tooltip="${t("settings.storageExportData")}"><i data-lucide="arrow-up-right" class="lucide"></i></button>
+          </div>
+        </div>
+        <div class="settings-item-divider"></div>
+        <div class="settings-item-row">
+          <div class="settings-item-info">
+            <div class="settings-item-title">${t("settings.storageImportData")}</div>
+            <div class="settings-item-desc">${t("settings.storageImportDataDesc")}</div>
+          </div>
+          <div class="settings-item-control">
+            <button class="btn-icon" id="storage-import-data" data-tooltip="${t("settings.storageImportData")}"><i data-lucide="arrow-down-right" class="lucide"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section-title" style="margin-top:24px"><i data-lucide="alert-triangle" class="lucide section-title-icon"></i> ${t("settings.storageDangerZone")}</div>
+      <div class="settings-card">
         <div class="settings-item-row">
           <div class="settings-item-info">
             <div class="settings-item-title">${t("settings.storageSessions")}</div>
@@ -4947,6 +5003,25 @@ private _bindModelSelect(): void {
       if (ok) {
         send({ type: "clear_all_sessions" } as any);
       }
+    });
+
+    // Export all data
+    document.getElementById("storage-export-data")?.addEventListener("click", async () => {
+      const ok = await Dialog.confirm(t("settings.storageExportTitle"), t("settings.storageExportConfirm"), "high");
+      if (ok) {
+        send({ type: "export_data" } as any);
+      }
+    });
+
+    // Import all data
+    document.getElementById("storage-import-data")?.addEventListener("click", async () => {
+      const api = window.electronAPI;
+      if (!api?.pickFiles) return;
+      const paths = await api.pickFiles();
+      if (!paths || paths.length === 0) return;
+      const mode = await this._chooseImportMode();
+      if (!mode) return;
+      send({ type: "import_data", zip_path: paths[0], mode } as any);
     });
 
     // Clear browser data

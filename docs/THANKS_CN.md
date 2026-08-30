@@ -1,6 +1,6 @@
 # 第三方致谢
 
-Encre 建立在数千位开源维护者、贡献者以及他们所处社区的工作之上。本文档向 Encre 所依赖的项目与人致谢，说明我们使用了哪些许可证以及原因，并告诉你如何在项目演进过程中保持这份清单的准确性。
+Encre Agent 建立在数千位开源维护者、贡献者以及他们所处社区的工作之上。本文档向 Encre Agent 所依赖的项目与人致谢，说明我们使用了哪些许可证以及原因，并告诉你如何在项目演进过程中保持这份清单的准确性。
 
 如果你是下列某个项目的维护者并希望我们更正或移除某条目，请访问 **conduct.dunimd.com** *（pending activation）*。如涉及我们对你方代码处理方式的安全问题，请参见 [SECURITY.md](SECURITY.md)。
 
@@ -32,7 +32,7 @@ Encre 建立在数千位开源维护者、贡献者以及他们所处社区的�
 
 ### 设计灵感
 
-Encre 的设计借鉴了以下相邻项目的思想 —— 通过阅读它们的代码与文档我们获益良多，即使没有直接复制代码，也在此表达感谢：
+Encre Agent 的设计借鉴了以下相邻项目的思想 —— 通过阅读它们的代码与文档我们获益良多，即使没有直接复制代码，也在此表达感谢：
 
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** — 权限模式 UX 与工具循环的交互设计
 - **[OpenCode](https://opencode.ai)** — LSP 工具设计思路与国际化架构
@@ -213,7 +213,7 @@ Encre 的设计借鉴了以下相邻项目的思想 —— 通过阅读它们的
 ## 字体、图标与素材
 
 - **Logo 与品牌标识** —— 灵感来源中的各平台 Logo 归各自所有者所有，此处仅作说明用途
-- **默认 UI 字体** —— 使用各平台的系统字体栈；Encre 不内嵌任何 Web 字体
+- **默认 UI 字体** —— 使用各平台的系统字体栈；Encre Agent 不内嵌任何 Web 字体
 - **代码编辑器图标集** —— 使用 [Monaco Editor 内置图标](https://microsoft.github.io/monaco-editor)
 - **聊天平台品牌图标** —— 使用 [simple-icons](https://simpleicons.org)（CC0 1.0）
 
@@ -274,7 +274,7 @@ Encre 的设计借鉴了以下相邻项目的思想 —— 通过阅读它们的
 
 ### GNU GPL-3.0 / LGPL-3.0
 
-[python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) 以 GPL-3.0 授权。这是一种 copyleft 许可证：如果你发布的二进制动态链接了它，你也必须以兼容许可证发布你的源码。Encre 本身**不是** GPL 授权；Telegram 适配器是动态加载的，只需不安装 `telegram` extra 即可彻底排除。
+[python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) 以 GPL-3.0 授权。这是一种 copyleft 许可证：如果你发布的二进制动态链接了它，你也必须以兼容许可证发布你的源码。Encre Agent 本身**不是** GPL 授权；Telegram 适配器是动态加载的，只需不安装 `telegram` extra 即可彻底排除。
 
 - GPL-3.0：<https://www.gnu.org/licenses/gpl-3.0.html>
 - LGPL-3.0：<https://www.gnu.org/licenses/lgpl-3.0.html>
@@ -326,7 +326,7 @@ Node.js 使用类 MIT 的自定义许可证。完整文本见 <https://github.co
 
 ### 验证脚本
 
-本文件与发布 **0.5.0-pre.1** 的清单一致。编辑后可这样重新核对：
+本文件与发布 **0.4.1** 的清单一致。编辑后可这样重新核对：
 
 ```bash
 # 比较 Python 核心依赖与 pyproject.toml
@@ -376,6 +376,6 @@ PY
 
 ## 致谢
 
-本文件已于 **2026-06-21** 针对 **0.5.0-pre.1** 发布与项目清单完成最后一次核对。上面的依赖列表与该 commit 的 `pyproject.toml`、`desktop/package.json`、`native/crates/*/Cargo.toml` 一致。
+本文件已于 **2026-08-23** 针对 **0.4.1** 发布与项目清单完成最后一次核对。上面的依赖列表与该 commit 的 `pyproject.toml`、`desktop/package.json`、`native/crates/*/Cargo.toml` 一致。
 
 如发现差异，请提交 PR —— 参见 [CONTRIBUTING.md → Development Setup](CONTRIBUTING.md#development-setup)。

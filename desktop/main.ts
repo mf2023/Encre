@@ -65,6 +65,11 @@ const WS_PORT = 7110;
 const DATA_DIR = getDataDir();
 // Set of auxiliary "child" BrowserWindows (e.g. the ESD window).
 const childWindows = new Set<BrowserWindow>();
+// add-tab requests queued while a child window is still loading its page.
+// The renderer cannot receive ipcRenderer events before the preload has run,
+// so sends during that window would be silently dropped. They are flushed
+// once the page finishes loading.
+const childPendingTabs = new WeakMap<BrowserWindow, Array<[string, string]>>();
 // PID file written by the Python service; used to manage its lifecycle.
 const PID_FILE = path.join(DATA_DIR, "yimd.pid");
 // In-memory cache for `git status` results keyed by repository path.
@@ -596,6 +601,25 @@ ipcMain.handle("browser:export-binary", async (_event, options: { base64: string
   try {
     const buf = Buffer.from(options.base64, "base64");
     fs.writeFileSync(result.filePath, buf);
+    return { success: true, filePath: result.filePath };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+// Copies an existing on-disk file to a user-chosen destination (used to save
+// full data-dir backup zips without round-tripping them over base64).
+ipcMain.handle("browser:copy-file-to", async (_event, options: { sourcePath: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }) => {
+  if (!options.sourcePath || !fs.existsSync(options.sourcePath)) {
+    return { success: false, error: "Source file not found" };
+  }
+  const result = await dialog.showSaveDialog({
+    defaultPath: options.defaultName,
+    filters: options.filters,
+  });
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+  try {
+    fs.copyFileSync(options.sourcePath, result.filePath);
     return { success: true, filePath: result.filePath };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -1309,9 +1333,10 @@ let currentTrayMode = "normal";
 // Cache of all sessions shown in the tray popup.
 let traySessionsCache: any[] = [];
 // Cache of normal/iwork sessions shown in the tray popup.
-let traySessionsBothCache: { normal: any[]; iwork: any[] } = { normal: [], iwork: [] };
+let traySessionsBothCache: { normal: any[]; iwork: any[]; workspaces?: any[] } = { normal: [], iwork: [], workspaces: [] };
 // The floating tray popup window (null when not open).
 let trayPopup: BrowserWindow | null = null;
+
 
 // Localized strings for the tray, keyed by locale.
 const TRAY_LABELS: Record<string, { openYim: string; quit: string; tooltip: string }> = {
@@ -1350,6 +1375,7 @@ function sendTrayDataToPopup(): void {
       sessions: traySessionsCache,
       sessionsNormal: traySessionsBothCache.normal,
       sessionsIwork: traySessionsBothCache.iwork,
+      workspaces: traySessionsBothCache.workspaces || [],
       activeMode: currentTrayMode,
       locale: currentTrayLocale,
       theme: currentTrayTheme,
@@ -1532,6 +1558,15 @@ function createWindow(): void {
   });
 
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  // Push maximize-state changes to the renderer so the custom maximize/restore
+  // button icon follows native state changes (Win+Up snap, drag-to-top,
+  // double-click on the drag region), not just in-app button clicks.
+  const pushMaxState = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send("window-maximized-state", mainWindow.isMaximized());
+  };
+  mainWindow.on("maximize", pushMaxState);
+  mainWindow.on("unmaximize", pushMaxState);
   // Force developer tools on startup for debugging
   mainWindow.webContents.openDevTools();
   // Force-reset and lock zoom to 100% to avoid accidental Ctrl+-/Ctrl+wheel shrink.
@@ -1558,8 +1593,12 @@ function createWindow(): void {
 
   // mainWindow.webContents.openDevTools();
 
+  // Show the main window as soon as it can paint; the renderer's in-app
+  // splash screen covers the loading phase, so there is no native splash
+  // window anymore.
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
+    mainWindow?.focus();
   });
 
   // Override close: hide to tray instead of destroying, unless user clicked "Quit"
@@ -2244,10 +2283,11 @@ ipcMain.on("tray-sessions-update", (_event, sessions: any[]) => {
 });
 
 // Receives the split normal/iwork session lists for the tray popup.
-ipcMain.on("tray-sessions-both", (_event, payload: { normal: any[]; iwork: any[] }) => {
+ipcMain.on("tray-sessions-both", (_event, payload: { normal: any[]; iwork: any[]; workspaces?: any[] }) => {
   traySessionsBothCache = {
     normal: payload.normal || [],
     iwork: payload.iwork || [],
+    workspaces: payload.workspaces || [],
   };
   sendTrayDataToPopup();
 });
@@ -2668,34 +2708,111 @@ ipcMain.handle("getLicenseContent", async () => {
   return "License file not found.";
 });
 
-const DOCUMENT_FILES: Record<string, string> = {
-  privacy: "docs/PRIVACY.md",
-  terms: "docs/TERMS.md",
-  thanks: "docs/THANKS.md",
-  "data-rules": "docs/DATA_PROCESSING_RULES.md",
-  minors: "docs/MINORS_PRIVACY.md",
+const LEGAL_DOC_FILES: Record<string, string> = {
+  privacy: "PRIVACY.md",
+  terms: "TERMS.md",
+  minors: "MINORS_PRIVACY.md",
+  "data-rules": "DATA_PROCESSING.md",
 };
 
-// Returns the text of a policy/legal document (with optional CN region variant).
-ipcMain.handle("getDocumentContent", async (_event, docId: string, region: string = "intl") => {
-  const rootDir = path.resolve(__dirname, "..", "..");
-  let fileName = DOCUMENT_FILES[docId];
-  if (!fileName) return `Document "${docId}" not found.`;
+const LEGAL_REGIONS: Record<string, string> = {
+  // Americas
+  us: "docs/legal/americas/us",
+  ca: "docs/legal/americas/ca",
+  mx: "docs/legal/americas/mx",
+  br: "docs/legal/americas/br",
+  // Europe (eu = unified set for EU member states + EEA)
+  eu: "docs/legal/europe/eu",
+  uk: "docs/legal/europe/uk",
+  ch: "docs/legal/europe/ch",
+  tr: "docs/legal/europe/tr",
+  // Asia
+  cn: "docs/legal/asia/cn",
+  jp: "docs/legal/asia/jp",
+  kr: "docs/legal/asia/kr",
+  tw: "docs/legal/asia/tw",
+  hk: "docs/legal/asia/hk",
+  mo: "docs/legal/asia/mo",
+  sg: "docs/legal/asia/sg",
+  in: "docs/legal/asia/in",
+  ae: "docs/legal/asia/ae",
+  sa: "docs/legal/asia/sa",
+  il: "docs/legal/asia/il",
+  // Africa
+  za: "docs/legal/africa/za",
+  ng: "docs/legal/africa/ng",
+  ke: "docs/legal/africa/ke",
+  eg: "docs/legal/africa/eg",
+  // Oceania
+  au: "docs/legal/oceania/au",
+  nz: "docs/legal/oceania/nz",
+};
 
-  if (region === "cn") {
-    const ext = path.extname(fileName);
-    const base = fileName.slice(0, -ext.length);
-    const cnFile = base + "_CN" + ext;
-    if (fs.existsSync(path.join(rootDir, cnFile))) {
-      fileName = cnFile;
+function getDocRegionFilePath(): string {
+  return path.join(app.getPath("userData"), "doc-region.json");
+}
+
+function readDocRegion(): string {
+  try {
+    const raw = fs.readFileSync(getDocRegionFilePath(), "utf-8");
+    const parsed = JSON.parse(raw);
+    const region = typeof parsed === "string" ? parsed : parsed.region;
+    if (typeof region === "string" && LEGAL_REGIONS[region]) return region;
+  } catch {}
+  return "us";
+}
+
+function writeDocRegion(region: string): void {
+  if (!LEGAL_REGIONS[region]) return;
+  try {
+    fs.writeFileSync(getDocRegionFilePath(), JSON.stringify({ region }), "utf-8");
+  } catch {}
+}
+
+// Returns the text of a policy/legal document for a jurisdiction.
+ipcMain.handle("getDocumentContent", async (_event, docId: string, region: string = "us") => {
+  const rootDir = path.resolve(__dirname, "..", "..");
+
+  if (docId === "thanks") {
+    const variants: Record<string, string> = {
+      default: "docs/THANKS.md",
+      cn: "docs/THANKS_CN.md",
+    };
+    const fileName = region === "cn" ? variants.cn : variants.default;
+    const p = path.join(rootDir, fileName);
+    try {
+      return fs.readFileSync(p, "utf-8");
+    } catch {
+      return `Document "${fileName}" not found.`;
     }
   }
 
-  const p = path.join(rootDir, fileName);
-  try {
-    return fs.readFileSync(p, "utf-8");
-  } catch {
-    return `Document "${fileName}" not found.`;
+  const fileName = LEGAL_DOC_FILES[docId];
+  if (!fileName) return `Document "${docId}" not found.`;
+
+  const candidates: string[] = [];
+  if (region && LEGAL_REGIONS[region]) {
+    candidates.push(path.join(rootDir, LEGAL_REGIONS[region], fileName));
+  }
+  // Language-based default: Chinese UI -> China Mainland set, otherwise US set.
+  const defaultRegion = app.getLocale().toLowerCase().startsWith("zh")
+    ? LEGAL_REGIONS.cn
+    : LEGAL_REGIONS.us;
+  candidates.push(path.join(rootDir, defaultRegion, fileName));
+
+  for (const p of candidates) {
+    try {
+      return fs.readFileSync(p, "utf-8");
+    } catch {}
+  }
+  return `Document "${fileName}" not found.`;
+});
+
+ipcMain.handle("getDocRegion", async () => readDocRegion());
+
+ipcMain.handle("setDocRegion", async (_event, region: string) => {
+  if (typeof region === "string" && LEGAL_REGIONS[region]) {
+    writeDocRegion(region);
   }
 });
 
@@ -2729,6 +2846,17 @@ ipcMain.handle("openChildWindow", (_event, view: string, label: string) => {
     child.loadFile(path.join(__dirname, "..", "renderer", "index.html"), {
       query: { child: view, label },
     });
+    // Flush tabs that were queued while this window was still loading
+    // (see childPendingTabs below).
+    child.webContents.on("did-finish-load", () => {
+      const pending = childPendingTabs.get(child!) || [];
+      childPendingTabs.delete(child!);
+      for (const [v, l] of pending) {
+        if (!child!.isDestroyed()) {
+          child!.webContents.send("child-window:add-tab", v, l);
+        }
+      }
+    });
     // Force-reset and lock zoom to 100% to avoid accidental Ctrl+-/Ctrl+wheel shrink.
     child.webContents.setZoomFactor(1);
     child.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
@@ -2748,7 +2876,16 @@ ipcMain.handle("openChildWindow", (_event, view: string, label: string) => {
     child.webContents.openDevTools();
     child.once("ready-to-show", () => createdChild.show());
   } else {
-    child.webContents.send("child-window:add-tab", view, label);
+    // If the page is still loading (first paint not done), the preload has
+    // not registered the add-tab listener yet — queue the tab and flush it
+    // after did-finish-load instead of dropping it silently.
+    if (child.webContents.isLoading() || !child.webContents.getURL()) {
+      const pending = childPendingTabs.get(child) || [];
+      pending.push([view, label]);
+      childPendingTabs.set(child, pending);
+    } else {
+      child.webContents.send("child-window:add-tab", view, label);
+    }
     child.focus();
   }
 });
@@ -2918,9 +3055,6 @@ app.whenReady().then(async () => {
   // (and not the generic electron.exe icon).
   app.setAppUserModelId("com.encre.desktop");
 
-  // Redirect Electron user data to our cache directory
-  app.setPath("userData", path.join(DATA_DIR, ".electron"));
-
   // Register local:// protocol to serve local files (for notification media, etc.)
   protocol.handle("local", (request) => {
     const rawPath = decodeURIComponent(request.url.slice("local://".length)).replace(/^\//, "");
@@ -2952,48 +3086,48 @@ app.whenReady().then(async () => {
   // Set up encrypted browser cookie store
   setupBrowserSession();
 
-  // Show the main window immediately (the splash screen renders right away);
-  // the Python backend boots in parallel below instead of blocking it.
+  // Create the main window directly — no native splash window. The renderer's
+  // in-app splash screen covers the loading phase, so the main window is
+  // shown as soon as it can paint (ready-to-show in createWindow). The
+  // Python backend boots in parallel further down instead of blocking it.
   createWindow();
-  createTray();
+  if (!process.env.ENCRE_NOTRAY) {
+    createTray();
+  }
 
   // Async background boot: free the port, then start or attach to the
   // Python service. The renderer's WebSocket connect() retries until the
   // backend is reachable, so the window never waits on this.
   void (async () => {
-    // Force-free the port before anything else (kills orphaned processes from dead terminals)
-    killProcessOnPort(WS_PORT);
-
-    // Check if service is already running from a previous session
+    if (process.env.ENCRE_NOBACKEND) return;
+    // Fast path first: if the service from a previous run is still alive and
+    // healthy, attach instead of restarting. This skips the slow port-free
+    // step entirely on the common warm-start case.
     const existingPid = readPidFile();
     if (existingPid !== null && isProcessRunning(existingPid)) {
       const healthy = await healthCheck();
       if (healthy) {
         console.log(`Background service already running (PID ${existingPid}), connecting`);
         updateTrayStatus(true);
-      } else {
-        // PID is stale/zombie …kill it and restart fresh
-        console.log(`Server PID ${existingPid} is unresponsive, restarting`);
-        killServiceByPid(existingPid);
-        await new Promise(r => setTimeout(r, 1500));
-        try {
-          await startPythonServer();
-        } catch (err) {
-          console.error("Failed to start background service:", err);
-          serverStartError = String(err);
-          updateTrayStatus(false);
-        }
+        return;
       }
-    } else {
-      try {
-        await startPythonServer();
-        serverStartError = null;
-        console.log(`Background service started on port ${WS_PORT}`);
-      } catch (err) {
-        console.error("Failed to start background service:", err);
-        serverStartError = String(err);
-        updateTrayStatus(false);
-      }
+      // PID is stale/zombie …kill it and restart fresh
+      console.log(`Server PID ${existingPid} is unresponsive, restarting`);
+      killServiceByPid(existingPid);
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    // Force-free the port before boot (kills orphaned processes from dead terminals)
+    killProcessOnPort(WS_PORT);
+
+    try {
+      await startPythonServer();
+      serverStartError = null;
+      console.log(`Background service started on port ${WS_PORT}`);
+    } catch (err) {
+      console.error("Failed to start background service:", err);
+      serverStartError = String(err);
+      updateTrayStatus(false);
     }
   })();
 

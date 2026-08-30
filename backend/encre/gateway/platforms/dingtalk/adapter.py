@@ -101,6 +101,52 @@ from encre.gateway.platforms.base import (
 logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 20000
+
+
+class _SafeLogFormatFilter(logging.Filter):
+    """Protect Encre's log pipeline from malformed third-party log calls.
+
+    dingtalk-stream 0.24.3 (stream.py:89) calls
+    ``logger.exception('unknown exception', e)`` — the message has no
+    %-placeholder but the exception is passed as a format argument.  Logging's
+    own ``getMessage()`` then raises TypeError inside emit(), and every
+    WebSocket connection retry spews a multi-line "--- Logging error ---"
+    traceback that buries the real cause (e.g. TimeoutError reaching
+    DingTalk's wss gateway).  Rewrite such records into a single readable
+    line (keeping the exception traceback) instead of letting logging crash.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            record.getMessage()
+        except Exception:
+            parts = []
+            for arg in record.args or ():
+                parts.append(f"{type(arg).__name__}: {arg}")
+            record.msg = (
+                "<malformed log call, formatting failed> "
+                f"args=({', '.join(parts) or '?'})"
+            )
+            record.args = ()
+        return True
+
+
+def _install_safe_log_filter() -> None:
+    """Attach the malformed-log guard to dingtalk-stream's client logger.
+
+    Idempotent — safe to call from every ``connect()``.  The filter lives on
+    ``dingtalk_stream.client`` (the logger the SDK created via
+    ``setup_default_logger``), so it runs before both the SDK's own
+    StreamHandler and any handlers Encre attaches at the root.
+    """
+    target = logging.getLogger("dingtalk_stream.client")
+    for existing in target.filters:
+        if isinstance(existing, _SafeLogFormatFilter):
+            return
+    target.addFilter(_SafeLogFormatFilter())
+
+
+RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 _SESSION_WEBHOOKS_MAX = 500
 _DINGTALK_WEBHOOK_RE = re.compile(r'^https://(?:api|oapi)\.dingtalk\.com/')
@@ -252,6 +298,14 @@ class DingTalkAdapter(BasePlatformAdapter):
                 "[%s] DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET required", self.name
             )
             return False
+
+        # Guard against dingtalk-stream 0.24.3's malformed logger.exception()
+        # call (stream.py:89: 'unknown exception' without a %s placeholder but
+        # the exception passed as a format argument).  Without this guard,
+        # every WebSocket connection timeout makes logging itself raise
+        # TypeError and spew a large "--- Logging error ---" traceback that
+        # hides the real cause.
+        _install_safe_log_filter()
 
         try:
             # Tighter keepalive so idle CLOSE_WAIT drains promptly (#18451).

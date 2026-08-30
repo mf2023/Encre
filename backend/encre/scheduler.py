@@ -894,12 +894,30 @@ class EncreScheduler:
                 job.session_id = session_id
 
                 final_content = sub_result.get("content") or ""
-                job.last_result = final_content[:2000]
-                job.state = JobState.COMPLETED
-                job.fail_count = 0
-                job.last_fired = time.time()          # ← mark successful execution
-                exec_entry.state = "COMPLETED"
-                exec_entry.result = final_content[:5000]
+                # A sub-agent can finish with an in-band failure
+                # ("Error: Sub-agent failed" from Finish(reason="error")).
+                # Treating that as COMPLETED lied to the history view --
+                # surface it as a real FAILED execution instead.
+                sub_failed = bool(sub_result.get("error")) or final_content.startswith("Error:")
+                if sub_failed:
+                    logger.warning("[scheduler] sub-agent reported failure: job={} name={} result={:.200s}",
+                                   job.id, job.name, final_content)
+                    job.fail_count += 1
+                    job.last_result = final_content[:2000]
+                    exec_entry.state = "FAILED"
+                    exec_entry.result = final_content[:5000]
+                    exec_entry.fail_count = job.fail_count
+                    if job.fail_count >= job.max_failures:
+                        job.state = JobState.FAILED
+                    else:
+                        job.state = JobState.PENDING
+                else:
+                    job.last_result = final_content[:2000]
+                    job.state = JobState.COMPLETED
+                    job.fail_count = 0
+                    job.last_fired = time.time()          # ← mark successful execution
+                    exec_entry.state = "COMPLETED"
+                    exec_entry.result = final_content[:5000]
 
         except Exception as e:
             logger.exception("[scheduler] job execution failed: job={} name={} error={}", job.id, job.name, e)
@@ -918,10 +936,20 @@ class EncreScheduler:
         # Notify frontend that execution has finished
         if self._on_progress:
             try:
+                # Classify the raw result text into the unified error taxonomy
+                # (e.g. rate_limit for a 429, network_timeout for timeouts) so
+                # the UI shows a meaningful code instead of a bare placeholder.
+                err_code = ""
+                if exec_entry.state == "FAILED":
+                    try:
+                        from encre.errors import classify_error_code
+                        err_code = classify_error_code(job.last_result or "").value
+                    except Exception:
+                        err_code = "AUTOMATION_EXECUTION_FAILED"
                 await self._on_progress(job, "finish", {
                     "state": exec_entry.state,
                     "result": (job.last_result or "")[:2000],
-                    "error_code": "AUTOMATION_EXECUTION_FAILED" if exec_entry.state == "FAILED" else "",
+                    "error_code": err_code,
                 })
             except Exception:
                 logger.warning("[scheduler] progress callback failed for 'finish' event", exc_info=True)

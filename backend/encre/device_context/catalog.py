@@ -75,16 +75,42 @@ def build_catalog(provider_data: dict[str, dict[str, Any] | None]) -> str:
         offset = location_.get("utc_offset", "")
         gps = location_.get("gps") or {}
         tz_parts = [p for p in [tz, offset] if p]
+        tz_suffix = f" ({', '.join(tz_parts)})" if tz_parts else ""
         if gps.get("latitude") is not None and gps.get("longitude") is not None:
             lat = gps["latitude"]
             lon = gps["longitude"]
-            coord = f"Latitude: {lat:.4f}, Longitude: {lon:.4f}"
-            if tz_parts:
-                lines.append(f"Location: {coord} ({', '.join(tz_parts)})")
-            else:
-                lines.append(f"Location: {coord}")
+            # Semantic framing is essential: a bare "Latitude: ..., Longitude: ..."
+            # line reads as opaque numbers and models routinely ignore it --
+            # users then hear "I don't know where you are" even though the
+            # coordinates were right there in the prompt.  State explicitly
+            # that this is the user's live physical location, and tell the
+            # model HOW to turn raw coordinates into a usable place name.
+            lines.append(
+                "### User Location (authoritative)\n"
+                f"The user's CURRENT PHYSICAL LOCATION, reported by this device's "
+                f"OS location service: Latitude {lat:.4f}, Longitude {lon:.4f}"
+                f"{tz_suffix}.\n"
+                "This is ground truth about where the user is right now. When asked "
+                "(\"where am I\", \"我的位置\", nearby places, local weather/time), "
+                "answer from these coordinates -- never claim you have no access to "
+                "the user's location while this section exists. You are expected to "
+                "recognise the approximate city/region yourself and say so directly "
+                "(city-level certainty is enough); optionally refine to a more "
+                f"precise place via web_search (\"{lat:.4f} {lon:.4f}\") when a finer "
+                "answer is needed.\n"
+                "IMPORTANT: never determine the user's location from IP addresses "
+                "or network lookups (curl ipinfo, \"my ip location\" searches, "
+                "etc.) -- proxy/VPN egress makes IP geolocation meaningless and it "
+                "WILL contradict these coordinates. When sources conflict, these "
+                "OS-provided coordinates always win."
+            )
         elif tz_parts:
-            lines.append(f"Location: {', '.join(tz_parts)}")
+            lines.append(
+                "Location (user's timezone): " + ", ".join(tz_parts)
+                + " (GPS coordinates unavailable -- OS location permission denied. "
+                "Use the timezone for locale/time questions; never guess the "
+                "user's city from IP addresses -- proxy/VPN egress is unreliable.)"
+            )
 
     have_tools: list[str] = []
     for provider_name, tool_name in _DEVICE_TOOL_MAP.items():

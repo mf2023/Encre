@@ -74,7 +74,6 @@ class Platform(enum.Enum):
     SIMPLEX = "simplex"
     TEAMS = "teams"
     RELAY = "relay"
-    TEST = "test"
 
 
 # ── Per-platform configuration ────────────────────────────────────────────────

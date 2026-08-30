@@ -38,10 +38,10 @@ import { Tools } from "./tools.js";
 import { Permissions } from "./permissions.js";
 import { Settings } from "./settings.js";
 import { t } from "./i18n.js";
+import { Dialog } from "./dialog.js";
 import { handleEngineInstallRequest, handleEngineInstallProgress } from "./engine_install.js";
-import type { AdapterTestResultEvent, WechatScanResultEvent } from "./types.js";
+import type { WechatScanResultEvent } from "./types.js";
 
-let _adapterTestCallback: ((event: AdapterTestResultEvent) => void) | null = null;
 let _wechatScanCallback: ((event: WechatScanResultEvent) => void) | null = null;
 let _automationJobsCallback: ((jobs: any[]) => void) | null = null;
 let _automationHistoryCallback: ((history: any[]) => void) | null = null;
@@ -50,11 +50,8 @@ let _automationJobCancelledCallback: ((jobId: string) => void) | null = null;
 let _automationJobUpdatedCallback: (() => void) | null = null;
 let _automationShowResultCallback: ((data: any) => void) | null = null;
 let _automationStreamCallback: ((event: import("./types.js").AutomationStreamEvent) => void) | null = null;
-/** Registers a callback for adapter-test results. */
-export function onAdapterTestResult(cb: (event: AdapterTestResultEvent) => void): void {
-  _adapterTestCallback = cb;
-}
-
+/** Progress dialog handle for full data-dir export/import. */
+let _migrationProgress: ReturnType<typeof Dialog.progress> | null = null;
 /** Registers a callback for WeChat QR code scan results. */
 export function onWechatScanResult(cb: (event: WechatScanResultEvent) => void): void {
   _wechatScanCallback = cb;
@@ -208,7 +205,7 @@ function _ensureAssistantMessage(sessionId?: string): void {
   if (streamingAsst) return;
   state.startAssistantMessage();
   if (shouldSendRun) {
-    state.setRunning(true);
+    state.setSessionState("running");
     state.shiftQueuedPrompt();
     state.setPendingQueueCount(Math.max(0, st.pendingQueueCount - 1));
     const text = typeof lastAfter.content === "string" ? lastAfter.content : "";
@@ -232,6 +229,34 @@ function _eventSessionId(event: { session_id?: string }): string {
 export function setRequestedSessionId(sid: string, requestId = ""): void {
   _requestedSessionId = sid;
   _requestedSessionRequestId = requestId;
+}
+
+/**
+ * Unified data-refresh entry point.
+ *
+ * Every mode switch / startup / reconnect goes through this single call so
+ * all data planes (config+models, sessions, workspaces) are re-pulled from
+ * the backend at once.  Previously each panel pulled its own slice at its own
+ * time, which is why after a mode switch some data (e.g. the model selector)
+ * stayed stale or half-filled while others refreshed.
+ */
+export function refreshAllData(): void {
+  send({ type: "get_config" });
+  send({ type: "list_sessions" });
+  send({ type: "list_all_sessions" });
+  send({ type: "list_workspaces" });
+  send({ type: "list_models" });
+  // Static snapshot domains: the backend also pushes these in the unified
+  // snapshot, so these requests are a belt-and-suspenders guarantee that no
+  // panel is ever left with stale/empty data after a mode switch.
+  send({ type: "list_global_rules" });
+  send({ type: "get_memory_list" });
+  send({ type: "list_documents" } as any);
+  send({ type: "get_usage_stats" });
+  send({ type: "automation_list_jobs" });
+  send({ type: "list_project_rules" });
+  send({ type: "list_project_hooks" });
+  send({ type: "list_archived_sessions" });
 }
 
 /** Initializes the stream layer with the chat/tools/permissions/settings controllers. */
@@ -259,6 +284,11 @@ export function waitForModelValidation(): Promise<void> {
 
 /** Routes a single server event into the state store and chat view. */
 export function handleEvent(event: ServerEvent): void {
+  const _perfNow = performance.now();
+  const _perfType = (event as any).type;
+  if (_perfType === "config_data" || _perfType === "sessions_list" || _perfType === "sessions_all" || _perfType === "models_list" || _perfType === "workspaces_list" || _perfType === "session_ready") {
+    console.log("[perf] received %s at %dms", _perfType, Math.round(_perfNow - (window as any).__perfStart || _perfNow));
+  }
   if (_requiresExplicitSessionId(event.type) && !_hasSessionId(event as { session_id?: string | null })) {
     return;
   }
@@ -363,14 +393,19 @@ export function handleEvent(event: ServerEvent): void {
         _app.updateChipState();
         _app.updatePlaceholder();
         _app.updateSendButton();
+        // Restore the unsent draft the user left in this session before
+        // switching away.  The input was just cleared above so the draft
+        // content (text/chip) comes back cleanly for the resumed session.
+        _app.restoreDraft?.(event.session_id);
       }
-      if (!(event as any).is_running) {
+      const evState = (event as any).state || "idle";
+      if (evState === "idle") {
         _activeStreamSessionId = "";
       } else {
         _activeStreamSessionId = (event.session_id || "");
       }
       state.setConnected(true);
-      state.setRunning(!!(event as any).is_running, event.session_id);
+      state.setSessionState(evState, event.session_id);
       if (event.messages && event.messages.length > 0) {
         state.loadSessionMessages(event.messages, event.session_id);
         console.log("[stream] loadSessionMessages done, state.messages.length:", state.getState().messages.length);
@@ -405,7 +440,7 @@ export function handleEvent(event: ServerEvent): void {
         const toolCall = {
           ...pendingSubAgent.toolCall,
           subAgentMessages: state.getState().messages,
-          status: (event as any).is_running ? "running" : "done",
+          status: (event as any).state === "running" ? "running" : "done",
         };
         state.setSubAgentView(toolCall);
         (window as any).__activeSubAgentSessionId = event.session_id;
@@ -429,10 +464,6 @@ export function handleEvent(event: ServerEvent): void {
       // Re-render when session changes (skip sub-agent sessions)
       chat?.renderForce?.();
       (window as any).__sessionInner?.render?.();
-      send({ type: "list_sessions" });
-      send({ type: "list_all_sessions" });
-      send({ type: "list_workspaces" });
-      send({ type: "get_config" } as any);
       _requestedSessionId = "";
       _requestedSessionRequestId = "";
       break;
@@ -630,11 +661,11 @@ export function handleEvent(event: ServerEvent): void {
     case "permission_request":
       if (permissionResolve) {
         permissionResolve(false);
-        state.setSessionAwaitingApproval(false, _eventSessionId(event));
+        state.setSessionState("idle", _eventSessionId(event));
       }
       // Pause-like state: the agent loop is blocked awaiting user consent,
       // so flip the session's breathing light to yellow (sidebar + tray).
-      state.setSessionAwaitingApproval(true, _eventSessionId(event));
+      state.setSessionState("awaiting_approval", _eventSessionId(event));
       permissions?.show(
         event.tool_name,
         event.reason,
@@ -646,7 +677,7 @@ export function handleEvent(event: ServerEvent): void {
           });
           permissionResolve = null;
           permissions?.hide();
-          state.setSessionAwaitingApproval(false, _eventSessionId(event));
+          state.setSessionState("idle", _eventSessionId(event));
         }
       );
       // Ensure the main chat area updates immediately so users see the
@@ -693,11 +724,11 @@ export function handleEvent(event: ServerEvent): void {
       // so the state is correct when the user switches back, but don't
       // touch the active session's UI state.
       if (event.session_id && event.session_id !== state.getState().sessionId) {
-        state.setRunning(false, event.session_id);
+        state.setSessionState("idle", event.session_id);
         break;
       }
       _activeStreamSessionId = "";
-      state.setRunning(false, _eventSessionId(event));
+      state.setSessionState("idle", _eventSessionId(event));
       // For error finishes without a streaming assistant (e.g. API failed
       // immediately, no text_delta received), create a placeholder so the
       // error card renders on the correct turn rather than the previous one.
@@ -773,7 +804,6 @@ export function handleEvent(event: ServerEvent): void {
       }
       chat?.render();
       (window as any).__sessionInner?.render?.();
-      send({ type: "list_sessions" });
       break;
     }
 
@@ -787,14 +817,26 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "error":
+      {
+        const _migCode = (event as any).code || "";
+        if (_migCode === "export_data_error" || _migCode === "import_data_error") {
+          const msg = (event as any).message || "";
+          const friendly = /not a valid Encre backup/i.test(msg)
+            ? t("settings.storageImportInvalidZip")
+            : msg;
+          _migrationProgress?.fail(friendly || t("settings.storageFailed"));
+          _migrationProgress = null;
+          break;
+        }
+      }
       if (!_hasSessionId(event)) break;
       _activeStreamSessionId = "";
       // Background session error — update snapshot without touching active UI.
       if (event.session_id && event.session_id !== state.getState().sessionId) {
-        state.setRunning(false, event.session_id);
+        state.setSessionState("idle", event.session_id);
         break;
       }
-      state.setRunning(false, _eventSessionId(event));
+      state.setSessionState("idle", _eventSessionId(event));
       state.clearPendingQueueCount();
       // Session/operation-level errors (rollback, branch, retry, capacity,
       // job/execution lookup, parse, etc.) are NOT tied to any single turn —
@@ -878,13 +920,6 @@ export function handleEvent(event: ServerEvent): void {
 
     case "gateway_status":
       state.setGatewayStatus(event.status);
-      break;
-
-    case "adapter_test_result":
-      // Dispatch to registered callback
-      if (typeof _adapterTestCallback === "function") {
-        _adapterTestCallback(event as any);
-      }
       break;
 
     case "wechat_scan_result":
@@ -979,8 +1014,8 @@ export function handleEvent(event: ServerEvent): void {
         const cur = (event.sessions as any[]).find(
           (s: any) => s.session_id === state.getState().sessionId
         );
-        if (cur && cur.is_running !== state.getState().running) {
-          state.setRunning(cur.is_running);
+        if (cur && cur.state !== state.getState().running) {
+          state.setSessionState(cur.state || "idle");
         }
       }
       break;
@@ -990,6 +1025,17 @@ export function handleEvent(event: ServerEvent): void {
       const normal = (event as any).normal || [];
       const iwork = (event as any).iwork || [];
       state.setTraySessions(normal, iwork);
+      // Authoritative full listing: seed the global search session cache so
+      // session search works in every mode (including iwork, where the
+      // sidebar sessionsList is intentionally emptied).
+      state.setAllSessions([...normal, ...iwork], "replace");
+      break;
+    }
+
+    case "archived_sessions_list": {
+      // Archive manager view (workspace management dialog): replace the
+      // archived session list with the authoritative backend snapshot.
+      state.setArchivedSessions((event as any).sessions || []);
       break;
     }
 
@@ -1079,6 +1125,8 @@ export function handleEvent(event: ServerEvent): void {
           _settingsUpdate[key] = val;
         }
       }
+      // Always ensure startup_session_mode is set so the startup mode subscribe fires
+      _settingsUpdate["startup_session_mode"] = _settingsUpdate["startup_session_mode"] || cfg["startup_session_mode"] || "normal";
       if (Object.keys(_settingsUpdate).length > 0) {
         state.setSettings({ ...state.getState().settings, ..._settingsUpdate });
       }
@@ -1160,7 +1208,9 @@ export function handleEvent(event: ServerEvent): void {
     }
 
     case "search_results":
-      state.setSearchResults(event.results);
+      // `seq` echoes the client's request sequence; stale (out-of-order)
+      // responses are dropped inside applySearchResults.
+      state.applySearchResults(event.seq ?? 0, event.results);
       break;
 
     case "memory_list":
@@ -1181,7 +1231,8 @@ export function handleEvent(event: ServerEvent): void {
 
     case "global_rule_saved":
     case "global_rule_deleted":
-      send({ type: "list_global_rules" });
+      // The backend pushes the refreshed global_rules_list in the same
+      // operation — nothing to fetch here.
       break;
 
     case "global_rule_content":
@@ -1217,20 +1268,14 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "document_added":
-      send({ type: "list_documents" } as any);
-      break;
-
     case "document_updated":
-      send({ type: "list_documents" } as any);
-      break;
-
     case "document_removed":
-      send({ type: "list_documents" } as any);
+      // The backend pushes the refreshed documents_list with each document
+      // operation — nothing to fetch here.
       break;
 
     case "document_error":
       state.showToast(t("common.documentError"), "", "error", "Index");
-      send({ type: "list_documents" } as any);
       break;
 
     case "skill_installed":
@@ -1375,7 +1420,7 @@ export function handleEvent(event: ServerEvent): void {
       if (event.session_id) {
         state.setSessionId(event.session_id);
       }
-      state.setRunning(false, _eventSessionId(event));
+      state.setSessionState("idle", _eventSessionId(event));
       state.loadSessionMessages(state.applyPendingRollbackEdit(event.messages || []), _eventSessionId(event));
       state.setPlanItems(event.plan_items || [], _eventSessionId(event));
       if (event.artifacts) {
@@ -1398,7 +1443,7 @@ export function handleEvent(event: ServerEvent): void {
       if (event.session_id) {
         state.setSessionId(event.session_id);
       }
-      state.setRunning(false, _eventSessionId(event));
+      state.setSessionState("idle", _eventSessionId(event));
       state.loadSessionMessages(state.applyPendingRollbackEdit(event.messages || []), _eventSessionId(event));
       state.setPlanItems(event.plan_items || [], _eventSessionId(event));
       if (event.artifacts) {
@@ -1454,11 +1499,13 @@ export function handleEvent(event: ServerEvent): void {
       // other data sources like the EventRouter).  Rely on the local
       // state filter to keep the UI consistent.
       state.removeSessionById(event.session_id);
+      // The deleted session may also be listed in the archive view.
+      state.removeArchivedSessionById(event.session_id);
       // If the deleted session is currently open, clear chat immediately.
       if (state.getState().sessionId === event.session_id) {
         state.setSessionId("");
         state.clearMessages();
-        state.setRunning(false, "");
+        state.setSessionState("idle", "");
       }
       chat?.render();
       (window as any).__sessionInner?.render?.();
@@ -1486,9 +1533,61 @@ export function handleEvent(event: ServerEvent): void {
       }
       break;
 
+    case "data_exported_zip":
+      {
+        // Copy the on-disk backup zip to a user-chosen location via the native
+        // save dialog (avoids round-tripping a large archive over base64).
+        const api = window.electronAPI;
+        if (api?.copyFileTo) {
+          api.copyFileTo({
+            sourcePath: event.zip_path,
+            defaultName: event.filename || "encre-backup.zip",
+            filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+          }).then(() => {
+            _migrationProgress?.succeed(t("settings.storageExportDone"));
+            _migrationProgress = null;
+          });
+        } else {
+          _migrationProgress?.fail(t("settings.storageExportFailed"));
+          _migrationProgress = null;
+        }
+      }
+      break;
+
+    case "data_export_progress":
+    case "data_import_progress":
+      {
+        if (!_migrationProgress) {
+          const title = event.type === "data_export_progress"
+            ? t("settings.storageExportTitle")
+            : t("settings.storageImportTitle");
+          _migrationProgress = Dialog.progress(title, "", { cancellable: false });
+        }
+        _migrationProgress.update(event.percent, `${event.done} / ${event.total}`);
+        const cur = (event as any).file as string | undefined;
+        if (cur) {
+          _migrationProgress.setSubMessage(`${t("settings.storageCurrentFile")} ${cur}`);
+        }
+      }
+      break;
+
+    case "data_import_done":
+      {
+        const e = event as any;
+        const summary = t("settings.storageImportResult")
+          .replace("{restored}", String(e.restored ?? 0))
+          .replace("{overwritten}", String(e.overwritten ?? 0))
+          .replace("{kept}", String(e.kept ?? 0))
+          .replace("{skipped}", String(e.skipped ?? 0));
+        _migrationProgress?.succeed(summary);
+        _migrationProgress = null;
+        state.showToast(summary, "", "success", "Storage");
+      }
+      break;
+
     case "session_renamed":
-      send({ type: "list_sessions" });
-      send({ type: "list_all_sessions" });
+      // The backend broadcasts the refreshed sessions_list with the rename —
+      // nothing to fetch here.
       (window as any).__sessionInner?.render?.();
       break;
 
@@ -1537,11 +1636,10 @@ export function handleEvent(event: ServerEvent): void {
         chat?.renderForce?.();
         (window as any).__sessionInner?.restoreSidebarVisibility?.();
       }
-      // Refresh tray dual cache + populate sidebar tree immediately.
-      // list_sessions returns sessions from ALL workspace directories on disk,
-      // so the tree is populated without waiting for session_ready.
-      send({ type: "list_sessions" });
-      send({ type: "list_all_sessions" });
+      // Refresh every data plane (sessions, config+models, workspaces) so the
+      // sidebar, model selector and settings all reflect the new workspace
+      // context instead of keeping the previous session's stale data.
+      refreshAllData();
       (window as any).__sessionInner?.render?.();
       break;
 
@@ -1549,8 +1647,10 @@ export function handleEvent(event: ServerEvent): void {
       state.setActiveWorkspace("");
       state.setWorkspaceMode("normal");
       state.setSessionsList([]);
-      send({ type: "list_sessions" });
-      state.setRunning(false);
+      // Back to the global/normal context: pull the full data set again so
+      // the sidebar / model selector / settings show the global state.
+      refreshAllData();
+      state.setSessionState("idle");
       (window as any).__sessionInner?.render?.();
       break;
 
@@ -1559,15 +1659,20 @@ export function handleEvent(event: ServerEvent): void {
       (window as any).__sessionInner?.render?.();
       break;
 
+    case "workspace_config":
+      state.setWorkspaceConfig(event.path, event.config);
+      (window as any).__workspaceMgr?.refresh?.();
+      break;
+
     case "workspace_removed":
       state.setWorkspaces(event.workspaces);
-      // If the deleted workspace was active, clean up state
+      // If the deleted workspace was active, clean up state.  The backend
+      // pushes the unified snapshot after removal — nothing to fetch here.
       if (state.getState().activeWorkspace === (event as any).path) {
         state.setActiveWorkspace("");
         state.setWorkspaceMode("normal");
         state.setSessionsList([]);
-        state.setRunning(false);
-        send({ type: "list_sessions" });
+        state.setSessionState("idle");
       }
       (window as any).__sessionInner?.render?.();
       break;
@@ -1610,7 +1715,7 @@ export function handleEvent(event: ServerEvent): void {
       // Ensure the session is marked as not running and the session ID is
       // synced so the next user message is sent immediately rather than
       // being queued waiting for a "running=false" transition that never comes.
-      state.setRunning(false, ev.session_id);
+      state.setSessionState("idle", ev.session_id);
       state.setSessionId(ev.session_id);
       chat?.render();
       (window as any).__sessionInner?.render?.();
@@ -1626,7 +1731,9 @@ export function handleEvent(event: ServerEvent): void {
     }
 
     case "automation_jobs_list":
-      _automationJobsCallback?.(event.jobs);
+      // Single source of truth: the automation panel reads jobs from state
+      // (same as automationHistory) — no separate callback cache.
+      state.setAutomationJobs(event.jobs);
       break;
 
     case "automation_job_history":
@@ -1795,9 +1902,9 @@ function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getSta
               // receives a new message. We clamp to never go backwards.
               last_active: Math.max(e.last_active ?? 0, derivedLastActive),
               message_count: snapMsgs.length,
-              preview,
-              is_running: isRunning,
-            }
+preview,
+               state: isRunning ? "running" : "idle",
+             }
           : e
       )
     );
@@ -1819,7 +1926,7 @@ function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getSta
     preview,
     created_at: derivedCreatedAt,
     last_active: derivedLastActive,
-    is_running: isRunning,
+    state: isRunning ? "running" : "idle",
     channel,
     metadata: {
       workspace: knownWs || (channel === "iwork" ? st.activeWorkspace : undefined),

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -33,14 +32,15 @@ from encre.backends.openai import OpenAIBackend
 # Construction
 # ===========================================================================
 
+
 class TestOpenAIBackendConstruction:
     """Test OpenAIBackend instantiation with various parameter combinations."""
 
     def test_create_default(self):
-        """Default model is gpt-4.1, default base_url is api.openai.com/v1."""
+        """Default model is gpt-5.6, default base_url is api.openai.com/v1."""
         be = OpenAIBackend(api_key="sk-test")
-        # Verify: be.model == "gpt-4.1"
-        assert be.model == "gpt-4.1"
+        # Verify: be.model == "gpt-5.6"
+        assert be.model == "gpt-5.6"
         # Verify: be.api_key == "sk-test"
         assert be.api_key == "sk-test"
         # Verify: be.api_base_url == "https://api.openai.com/v1"
@@ -84,8 +84,8 @@ class TestOpenAIBackendConstruction:
         be = OpenAIBackend()
         # Verify: be.api_key == ""
         assert be.api_key == ""
-        # Verify: be.model == "gpt-4.1"
-        assert be.model == "gpt-4.1"
+        # Verify: be.model == "gpt-5.6"
+        assert be.model == "gpt-5.6"
 
     def test_create_passes_http_timeout(self):
         """http_timeout kwarg is forwarded to the parent SSE backend."""
@@ -97,6 +97,7 @@ class TestOpenAIBackendConstruction:
 # ===========================================================================
 # Capability checks
 # ===========================================================================
+
 
 class TestOpenAIBackendCapabilities:
     """Test supports_tool_calling, supports_thinking, supports_prompt_caching."""
@@ -116,22 +117,22 @@ class TestOpenAIBackendCapabilities:
             assert be.supports_tool_calling() is True, f"model={m}"
 
     def test_supports_thinking_gpt4_1(self):
-        """GPT-4.1 does NOT emit thinking tokens."""
+        """All 2026 OpenAI backends pass through thinking tokens when present."""
         be = OpenAIBackend(api_key="sk-test", model="gpt-4.1")
-        # Verify: be.supports_thinking() is False
-        assert be.supports_thinking() is False
+        # Verify: be.supports_thinking() is True
+        assert be.supports_thinking() is True
 
     def test_supports_thinking_gpt4_1_mini(self):
-        """GPT-4.1 Mini does NOT emit thinking tokens."""
+        """All 2026 OpenAI backends pass through thinking tokens when present."""
         be = OpenAIBackend(api_key="sk-test", model="gpt-4.1-mini")
-        # Verify: be.supports_thinking() is False
-        assert be.supports_thinking() is False
+        # Verify: be.supports_thinking() is True
+        assert be.supports_thinking() is True
 
     def test_supports_thinking_gpt5(self):
-        """GPT-5.x models do NOT emit thinking tokens."""
+        """All 2026 OpenAI backends pass through thinking tokens when present."""
         be = OpenAIBackend(api_key="sk-test", model="gpt-5.2")
-        # Verify: be.supports_thinking() is False
-        assert be.supports_thinking() is False
+        # Verify: be.supports_thinking() is True
+        assert be.supports_thinking() is True
 
     def test_supports_thinking_o3(self):
         """o3 IS a reasoning model -- emits thinking tokens."""
@@ -156,6 +157,7 @@ class TestOpenAIBackendCapabilities:
 # ===========================================================================
 # Context window size
 # ===========================================================================
+
 
 class TestOpenAIBackendContextWindow:
     """Test context_window_size() for every model variant."""
@@ -185,10 +187,10 @@ class TestOpenAIBackendContextWindow:
         assert be.context_window_size() == 200000
 
     def test_context_o4_mini(self):
-        """o4-mini: 1,048,576 tokens ('mini' substring matches first)."""
+        """o4-mini: 200,000 tokens (o-series check runs first)."""
         be = OpenAIBackend(api_key="sk-test", model="o4-mini")
-        # Verify: be.context_window_size() == 1048576
-        assert be.context_window_size() == 1048576
+        # Verify: be.context_window_size() == 200000
+        assert be.context_window_size() == 200000
 
     def test_context_gpt5_2(self):
         """GPT-5.2: 128,000 tokens (default fallback)."""
@@ -223,6 +225,7 @@ class TestOpenAIBackendContextWindow:
 # Token counting and model attribute
 # ===========================================================================
 
+
 class TestOpenAIBackendTokens:
     """Test count_tokens and model attribute access."""
 
@@ -256,15 +259,16 @@ class TestOpenAIBackendTokens:
         assert isinstance(be.model, str)
 
     def test_model_default(self):
-        """Default model is gpt-4.1."""
+        """Default model is gpt-5.6."""
         be = OpenAIBackend(api_key="sk-test")
-        # Verify: be.model == "gpt-4.1"
-        assert be.model == "gpt-4.1"
+        # Verify: be.model == "gpt-5.6"
+        assert be.model == "gpt-5.6"
 
 
 # ===========================================================================
 # Request data / token parameter construction
 # ===========================================================================
+
 
 class TestOpenAIBackendRequestBuilding:
     """Test _build_request_data and token parameter handling."""
@@ -372,6 +376,7 @@ class TestOpenAIBackendRequestBuilding:
 # ===========================================================================
 # Prompt caching
 # ===========================================================================
+
 
 class TestOpenAIBackendPromptCaching:
     """Test the _apply_prompt_caching_openai static method."""

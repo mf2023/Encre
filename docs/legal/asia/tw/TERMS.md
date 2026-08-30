@@ -6,7 +6,7 @@
 > **Dunimd 臺灣服務文件（六件套）：**
 > [個人資料保護聲明](PRIVACY.md) · 本條款 · [使用者協議](USER_AGREEMENT.md) · [未成年人個人資料保護規則](MINORS_PRIVACY.md) · [內容準則](CONTENT_GUIDELINES.md) · [資料處理規則](DATA_PROCESSING.md)
 >
-> 全球基線國際版：[`docs/TERMS.md`](../../../TERMS.md)；就臺灣法令相關事項，本條款優先適用。
+> 適用版本：本條款為唯一適用版本；如與其他語言譯本不一致，就臺灣法令相關事項，以本條款為準。
 
 ---
 
@@ -35,7 +35,7 @@
 
 | 服務 | 說明 |
 |---|---|
-| **Encre** | 開源 AI Agent 平台（桌面應用、Python 框架、Rust 核心、18 個聊天平台介接）— 本地優先 |
+| **Encre Agent** | 開源 AI Agent 平台（桌面應用、Python 框架、Rust 核心、18 個聊天平台介接）— 本地優先 |
 | **PiscesLx** | 大型語言模型（基礎模型、微調、託管推論 API） |
 | **Dunimd Enterprise** | 企業 AI 部署、MLOps、客製方案 |
 | **StadionOS** | 作業系統產品與 OS 層整合 |
@@ -51,7 +51,7 @@
 
 ## 4. 軟體授權
 
-- Encre 以 Apache License 2.0 授權；就軟體本體，開源授權與本條款牴觸時以開源授權為準。
+- Encre Agent 以 Apache License 2.0 授權；就軟體本體，開源授權與本條款牴觸時以開源授權為準。
 - 其餘閉源元件授予不可轉讓、非專屬之使用權。
 - 不得反向工程（法律允許者除外）、移除權利標識，或利用服務輸出訓練競爭性模型。
 

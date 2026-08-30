@@ -53,6 +53,8 @@ if TYPE_CHECKING:
     from encre.config import EncreConfig
     from encre.server.session_manager import SessionManager
 
+from encre.server.session_manager import SessionState  # noqa: E402
+
 logger = logging.getLogger("encre.channels")
 
 _prompt_loader = PromptLoader()
@@ -219,9 +221,9 @@ class EventRouter:
 
         self._last_session_id = session_id
         self._manager.touch(session_id)
-        logger.info("[router] session %s ready (running=%s)", session_id, info.is_running)
+        logger.info("[router] session %s ready (state=%s)", session_id, info.state.value)
 
-        if info.is_running:
+        if info.state != SessionState.IDLE:
             yield Finish(reason="busy", error="Session already running")
             return
 
@@ -231,7 +233,7 @@ class EventRouter:
             yield Finish(reason="capacity", error="Server at capacity, try later")
             return
 
-        info.is_running = True
+        self._manager.set_session_state(session_id, SessionState.RUNNING)
         stream_key = f"{channel_name}:{session_id}"
 
         # Add user message to session history before running
@@ -325,7 +327,7 @@ class EventRouter:
                          channel_name, session_id, type(e).__name__, e)
             yield Finish(reason="error", error=str(e))
         finally:
-            info.is_running = False
+            self._manager.set_session_state(session_id, SessionState.IDLE)
             self._manager.release_slot()
             self._manager._save_session(info)
             self._manager.notify_session_completed()
@@ -344,12 +346,12 @@ class EventRouter:
     def cancel_session(self, session_id: str) -> bool:
         """Cancel a running session by id. Returns True if a session was found."""
         info = self._manager.get_session(session_id)
-        if info is None or not info.is_running:
+        if info is None or info.state == SessionState.IDLE:
             return False
         if info.agent_task and not info.agent_task.done():
             info.agent.loop.cancel()
             info.agent_task.cancel()
-        info.is_running = False
+        self._manager.set_session_state(session_id, SessionState.IDLE)
         self._manager.release_slot()
         return True
 

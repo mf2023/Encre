@@ -5,7 +5,7 @@
 
 **Legal basis:** Personal Data Protection Act 2012 (as amended by the PDP (Amendment) Act 2020) — PDPC oversight; Model AI Governance Framework & AI Verify (IMDA); Consumer Protection (Fair Trading) Act; Electronic Transactions Act 2010.
 
-**Local-first:** Encre keeps all content on your device; we receive nothing unless you configure cloud features ([Data Processing](DATA_PROCESSING.md)). Otherwise: account/billing data, opt-in telemetry, inference metadata only (**no prompt/response retention by default**).
+**Local-first:** Encre Agent keeps all content on your device; we receive nothing unless you configure cloud features ([Data Processing](DATA_PROCESSING.md)). Otherwise: account/billing data, opt-in telemetry, inference metadata only (**no prompt/response retention by default**).
 
 **Consent & purposes:** notified purposes per PDPA consent obligations + deemed-consent exceptions where applicable; **no model training on your content without separate opt-in**.
 

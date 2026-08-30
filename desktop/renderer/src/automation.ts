@@ -36,7 +36,6 @@ import { getState, subscribe, restoreMessages, setAutomationHistory } from "./st
 import { showSessionContextMenu, showRenameDialog } from "./session.js";
 import { showContextMenu } from "./context-menu.js";
 import {
-  onAutomationJobs,
   onAutomationJobCreated,
   onAutomationJobUpdated,
   onAutomationJobCancelled,
@@ -274,7 +273,6 @@ private createDropdown: HTMLElement;
   private historyDateFrom: string = ""; // YYYY-MM-DD or ""
   private historyDateTo: string = "";   // YYYY-MM-DD or ""
   private historyFiltersBound: boolean = false;
-  private _lastHistoryRef: any = null;
   // Rebind closures + date label elements so labels can be refreshed on locale change
   private _rebindStatus: (() => void) | null = null;
   private _rebindTask: (() => void) | null = null;
@@ -359,7 +357,13 @@ private createDropdown: HTMLElement;
       if (Array.isArray(msgs)) this.activeExecution = { ...this.activeExecution, state: "RUNNING", messages: msgs };
     } else if (eventType === "finish") {
       const failed = eventData.state === "FAILED" || !!eventData.error_code;
-      this.activeExecution = { ...this.activeExecution, state: failed ? "FAILED" : "COMPLETED", messages: failed ? [] : this.activeExecution.messages, result: failed ? "" : String(eventData.result || this.activeExecution.result || ""), error_code: failed ? String(eventData.error_code || "AUTOMATION_EXECUTION_FAILED") : undefined };
+      // Keep the transcript and the raw result even on failure so the detail
+      // view can render the real execution trace (and the actual error text)
+      // instead of a bare "execution failed" placeholder.
+      const keepMsgs = (Array.isArray(eventData.messages) && eventData.messages.length > 0)
+        ? eventData.messages
+        : this.activeExecution.messages;
+      this.activeExecution = { ...this.activeExecution, state: failed ? "FAILED" : "COMPLETED", messages: keepMsgs, result: String(eventData.result || this.activeExecution.result || ""), error_code: failed ? String(eventData.error_code || "AUTOMATION_EXECUTION_FAILED") : undefined };
     } else { return; }
     if (this.isDetailVisible()) this.showDetail(this.activeExecution);
   }
@@ -370,15 +374,23 @@ private createDropdown: HTMLElement;
     const jobId = data.job_id || data.id;
     if (!jobId || jobId !== this.activeExecution.job_id) return;
     const failed = data.state === "FAILED" || data.action === "failed";
-    this.activeExecution = { ...this.activeExecution, ...data, job_id: this.activeExecution.job_id, state: failed ? "FAILED" : (data.state || this.activeExecution.state), messages: failed ? [] : (Array.isArray(data.messages) ? data.messages : this.activeExecution.messages), error_code: failed ? (data.error_code || "AUTOMATION_EXECUTION_FAILED") : undefined };
+    this.activeExecution = { ...this.activeExecution, ...data, job_id: this.activeExecution.job_id, state: failed ? "FAILED" : (data.state || this.activeExecution.state), messages: (Array.isArray(data.messages) && data.messages.length > 0) ? data.messages : this.activeExecution.messages, result: String(data.result || this.activeExecution.result || ""), error_code: failed ? (data.error_code || "AUTOMATION_EXECUTION_FAILED") : undefined };
     if (this.isDetailVisible()) this.showDetail(this.activeExecution);
   }
 
   private showDetail(data: { name: string; prompt?: string; messages?: any[]; state?: string; result?: string; error_code?: string }): void {
     if (data.state === "FAILED") {
-      const errorCode = data.error_code || "AUTOMATION_EXECUTION_FAILED";
-      this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;"><i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i><div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div><div class="si-panel-empty-sub">${this.escapeHtml(errorCode)}</div></div>`;
-      if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
+      if (data.messages && data.messages.length > 0) {
+        // A failed run still carries its transcript: render the full
+        // execution trace (the last assistant message shows the stamped
+        // errorMessage as a red card), matching the main-agent UX.
+        this.renderSubAgentTimeline(data.messages);
+      } else {
+        const errorCode = data.error_code || "AUTOMATION_EXECUTION_FAILED";
+        const errDetail = data.result && data.result.trim() ? data.result.trim().slice(0, 500) : "";
+        this.detailContentEl.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px;"><i data-lucide="ban" class="lucide" style="width:32px;height:32px;color:var(--text-muted);opacity:0.35;"></i><div class="si-panel-empty-title">${this.escapeHtml(t("automation.executionFailed") || "Execution failed")}</div><div class="si-panel-empty-sub">${this.escapeHtml(errorCode)}${errDetail ? `<br><span style="opacity:0.75;word-break:break-word;">${this.escapeHtml(errDetail)}</span>` : ""}</div></div>`;
+        if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.detailContentEl });
+      }
     } else if (data.messages && data.messages.length > 0) {
       this.renderSubAgentTimeline(data.messages);
     } else if (data.prompt) {
@@ -490,20 +502,22 @@ private createDropdown: HTMLElement;
   }
 
   private bindCallbacks(): void {
-    onAutomationJobs((jobs: BackendJob[]) => {
-      this.jobs = jobs;
-      this.renderConfigured();
-      this.onHistoryFiltersRebind?.();
-      this.renderHistory();
-    });
-    // Automation history now flows through global state (automationHistory),
-    // so the delete handler's removeSessionById filters it automatically.
-    // React to state changes to re-render the timeline.
+    // Jobs and history both flow through global state (automationJobs /
+    // automationHistory) via the unified push — no separate callback cache.
+    let lastJobsRef = getState().automationJobs;
+    let lastHistoryRef = getState().automationHistory;
     subscribe(() => {
-      const prev = this._lastHistoryRef;
-      const cur = getState().automationHistory;
-      if (cur !== prev) {
-        this._lastHistoryRef = cur;
+      const jobs = getState().automationJobs;
+      const history = getState().automationHistory;
+      if (jobs !== lastJobsRef) {
+        lastJobsRef = jobs;
+        this.jobs = jobs;
+        this.renderConfigured();
+        this.onHistoryFiltersRebind?.();
+        this.renderHistory();
+      }
+      if (history !== lastHistoryRef) {
+        lastHistoryRef = history;
         this.onHistoryFiltersRebind?.();
         this.renderHistory();
       }
@@ -863,10 +877,14 @@ private createDropdown: HTMLElement;
     overlay.querySelector("#auto-dlg-cancel")?.addEventListener("click", close);
 
     overlay.querySelector("#auto-dlg-ok")?.addEventListener("click", () => {
-      const name = (document.getElementById("auto-dlg-name") as HTMLInputElement)?.value.trim();
+      // Read inputs from THIS dialog only.  These ids are not unique when a
+      // second create/edit dialog is opened before the first is removed; a
+      // global getElementById would then read the first dialog's fields and
+      // create a job from the wrong form.
+      const name = (overlay.querySelector("#auto-dlg-name") as HTMLInputElement)?.value.trim();
       if (!name) return;
 
-      const prompt = (document.getElementById("auto-dlg-prompt") as HTMLTextAreaElement)?.value?.trim() || template.defaultPrompt;
+      const prompt = (overlay.querySelector("#auto-dlg-prompt") as HTMLTextAreaElement)?.value?.trim() || template.defaultPrompt;
 
       const time = timeValue || "09:00";
       const [h, m] = time.split(":").map(s => s.padStart(2, "0"));
@@ -879,9 +897,9 @@ private createDropdown: HTMLElement;
 
       // Read push gateway state before removing overlay (elements become detached)
       let selectedPushGateways: string[] = [];
-      const pushToggleEl = document.getElementById("auto-dlg-push-toggle") as HTMLInputElement | null;
+      const pushToggleEl = overlay.querySelector("#auto-dlg-push-toggle") as HTMLInputElement | null;
       if (pushToggleEl?.checked) {
-        const container = document.getElementById("auto-dlg-push-gateways");
+        const container = overlay.querySelector("#auto-dlg-push-gateways");
         if (container) {
           selectedPushGateways = Array.from(container.querySelectorAll(".auto-push-gw-item.selected"))
             .map(item => (item as HTMLElement).getAttribute("data-gateway-id")!)
@@ -1563,12 +1581,14 @@ private createDropdown: HTMLElement;
         if (sid && !isFailed) {
           // Completed entries with a real sub-agent session: keep export
           // and session delete, but map rename to the execution record.
-          showSessionContextMenu(sid, e.clientX, e.clientY, true, false, undefined, doRename);
+          // Archiving is meaningless for automation history entries.
+          showSessionContextMenu(sid, e.clientX, e.clientY, true, false, undefined, doRename, true);
         } else if (sid && isFailed) {
           // Failed entries: reuse session context menu but hide export
           // (no session data to export) and override delete/remove to the
           // execution record. Rename also targets the execution record.
-          showSessionContextMenu(sid, e.clientX, e.clientY, true, true, doDelete, doRename);
+          // Archiving is meaningless for automation history entries.
+          showSessionContextMenu(sid, e.clientX, e.clientY, true, true, doDelete, doRename, true);
         } else if (entryId) {
           // No sub-agent session — only rename/delete the execution record.
           this.showAutomationHistoryContextMenu(e.clientX, e.clientY, doRename, doDelete);

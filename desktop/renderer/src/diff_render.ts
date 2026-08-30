@@ -41,7 +41,6 @@
  *
  * Optional rendering modes (passed via DiffRenderOptions):
  *   - maxLines:       truncate huge diffs after N content lines
- *   - richText:       summary-card view instead of per-line diff
  *   - wordDiff:       inline <del>/<ins> word-level highlighting
  *   - hideWhitespace: dim whitespace-only change lines
  *   - splitView:      two-column synchronized-scroll layout
@@ -91,6 +90,65 @@ interface DiffLine {
   text: string;
   ln: number;    // new-file line number for add/ctx lines
   oldLn: number; // old-file line number for del/ctx lines (split view)
+}
+
+/**
+ * Measure a string in visual monospace columns. ASCII counts 1 per char,
+ * CJK / full-width chars count 2, so `ch`-based width estimates stay
+ * accurate for locale text. Used by both the inline and split renderers.
+ */
+function visualWidth(s: string): number {
+  let w = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    // Full-width (East Asian) ranges: CJK, kana, hangul, fullwidth punct/forms.
+    const wide =
+      (code >= 0x1100 && code <= 0x115f) ||   // Hangul Jamo
+      (code >= 0x2e80 && code <= 0xa4cf) ||   // CJK Radicals..Yi
+      (code >= 0xac00 && code <= 0xd7a3) ||   // Hangul Syllables
+      (code >= 0xf900 && code <= 0xfaff) ||   // CJK Compat Ideographs
+      (code >= 0xfe30 && code <= 0xfe4f) ||   // CJK Compat Forms
+      (code >= 0xff00 && code <= 0xff60) ||   // Fullwidth Forms (incl. fullwidth ASCII)
+      (code >= 0xffe0 && code <= 0xffe6) ||   // Fullwidth Signs
+      (code >= 0x3000 && code <= 0x303f) ||   // CJK Symbols/Punct
+      (code >= 0x3040 && code <= 0x30ff) ||   // Hiragana/Katakana
+      (code >= 0x3400 && code <= 0x4dbf) ||   // CJK Ext A
+      (code >= 0x4e00 && code <= 0x9fff);     // CJK Unified
+    w += wide ? 2 : 1;
+  }
+  return w;
+}
+
+/**
+ * Expand a compact unified diff into a whole-file diff using the current
+ * file content: unchanged lines between/around hunks are restored as
+ * context so every line of the file is shown (adds/dels stay highlighted).
+ * Returns synthesized unified-diff text consumable by `parseDiff`.
+ */
+export function expandDiffToFullFile(diffText: string, fileContent: string): string {
+  const { fileName, lines } = parseDiff(diffText);
+  const fileLines = fileContent.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n");
+  const rows: Array<{ t: "ctx" | "add" | "del"; text: string }> = [];
+  let expected = 1;
+  for (const dl of lines) {
+    if (dl.kind === "del") { rows.push({ t: "del", text: dl.text }); continue; }
+    if (dl.kind !== "add" && dl.kind !== "ctx") continue;
+    const L = dl.ln;
+    while (expected < L && expected <= fileLines.length) {
+      rows.push({ t: "ctx", text: fileLines[expected - 1] });
+      expected++;
+    }
+    rows.push({ t: dl.kind, text: dl.text });
+    expected = Math.max(expected, L + 1);
+  }
+  for (; expected <= fileLines.length; expected++) {
+    rows.push({ t: "ctx", text: fileLines[expected - 1] });
+  }
+  if (rows.length === 0) return diffText;
+  const body = rows
+    .map((r) => (r.t === "ctx" ? " " : r.t === "add" ? "+" : "-") + r.text)
+    .join("\n");
+  return `--- a/${fileName}\n+++ b/${fileName}\n@@ -1,${fileLines.length} +1,${fileLines.length} @@\n${body}`;
 }
 
 /** Parse raw unified-diff text into logical lines + file metadata. */
@@ -206,8 +264,6 @@ export interface DiffRenderOptions {
   fileNameFallback?: string;
   /** Truncate after this many content lines (default MAX_RENDER_LINES). */
   maxLines?: number;
-  /** Rich-text summary card view instead of per-line diff. */
-  richText?: boolean;
   /** Inline word-level <del>/<ins> highlighting. */
   wordDiff?: boolean;
   /** Dim lines whose change is whitespace-only. */
@@ -244,18 +300,16 @@ export function renderDiffHtml(
   const adds = lines.filter((l) => l.kind === "add").length;
   const dels = lines.filter((l) => l.kind === "del").length;
 
-  // Longest content line (in characters). Used to stretch every add/del row
-  // to the right edge of the widest line so the red/green highlight covers
-  // the entire row, even when a changed line is short or empty.
+  // Longest content line (in visual columns). Used to stretch every add/del
+  // row to the right edge of the widest line so the red/green highlight
+  // covers the entire row, even when a changed line is short or empty.
+  // CJK / full-width chars occupy 2 monospace columns, so counting raw
+  // characters under-estimates the width and leaves highlights and text
+  // misaligned — always measure in visual columns instead.
   const maxTextLen = lines.reduce((m, l) =>
-    (l.kind === "add" || l.kind === "del" || l.kind === "ctx") && l.text.length > m
-      ? l.text.length
+    (l.kind === "add" || l.kind === "del" || l.kind === "ctx") && visualWidth(l.text) > m
+      ? visualWidth(l.text)
       : m, 0);
-
-  // Rich-text summary view: no per-line table.
-  if (opts.richText) {
-    return renderRichText(fileLabel, lines, adds, dels);
-  }
 
   // Split view: two-column (old | new) layout.
   if (opts.splitView) {
@@ -266,6 +320,13 @@ export function renderDiffHtml(
   let contentCount = 0;
   let truncated = 0;
   const bodyRows: string[] = [];
+  // Track the previous rendered line numbers on both sides so hunk gaps
+  // (e.g. jumping from line 64 to line 213) get a visible separator row
+  // instead of silently continuing.
+  let prevNew = 0;
+  let prevOld = 0;
+  const gapRow = (n: number) =>
+    `<div class="diff-row diff-row-gap"><span class="diff-ln">&nbsp;</span><span class="diff-content">${escapeHtml(t("sessionInner.reviewSkippedLines", { n }))}</span></div>`;
   for (const dl of lines) {
     if (dl.kind === "hunk") continue; // skip hunk headers
     if (dl.kind === "add" || dl.kind === "del" || dl.kind === "ctx") {
@@ -275,12 +336,23 @@ export function renderDiffHtml(
       }
       contentCount++;
     }
+    // Hunk-gap separator: when this line starts a new segment, show how
+    // many lines were skipped in between (prefer the new-side numbers).
+    const gap =
+      dl.ln > 0 && prevNew > 0 && dl.ln > prevNew + 1
+        ? dl.ln - prevNew - 1
+        : dl.oldLn > 0 && prevOld > 0 && dl.oldLn > prevOld + 1
+          ? dl.oldLn - prevOld - 1
+          : 0;
+    if (gap > 0) bodyRows.push(gapRow(gap));
     bodyRows.push(renderRow(dl, opts, maxTextLen));
+    if (dl.ln > 0) prevNew = dl.ln;
+    if (dl.oldLn > 0) prevOld = dl.oldLn;
   }
   if (truncated > 0) {
     const notice = opts.truncatedNotice
       ? opts.truncatedNotice(truncated)
-      : `... [diff truncated, ${truncated} more lines]`;
+      : t("sessionInner.reviewTruncated", { n: truncated });
     bodyRows.push(`<div class="diff-row diff-row-truncated"><span class="diff-ln">&nbsp;</span><span class="diff-content">${escapeHtml(notice)}</span></div>`);
   }
 
@@ -295,15 +367,23 @@ export function renderDiffHtml(
 }
 
 /**
- * Stretch a content span so every row shares the widest line's width.
- * `.diff-content` has `padding: 0 10px` and the global reset uses
- * `box-sizing: border-box`, so a `min-width` of `Nch` would leave only
- * `Nch - 20px` for the text and clip the last character of the widest
- * line. Reserve the padding explicitly.
+ * Stretch every diff row to the widest content line so the add/del highlight
+ * covers the whole row — all the way to where the horizontal scrollbar can
+ * reach, not just up to each line's own text.
+ *
+ * Exposes the widest line's visual width (in monospace `ch` columns) as a CSS
+ * custom property on the row. `.diff-content` then uses it as its `min-width`,
+ * so short rows are stretched to the same right edge as the longest row.
+ * CJK / full-width chars count 2 columns (see `visualWidth`).
  */
 function contentWidthStyle(maxTextLen: number): string {
   if (maxTextLen <= 0) return "";
-  return ` style="min-width: calc(${maxTextLen}ch + 20px)"`;
+  // Cap the stretch width. Whole-file diffs can contain pathological outlier
+  // lines (minified bundles, data URIs); letting every row inherit that width
+  // produces multi-megapixel rows whose backgrounds fail to paint at all
+  // (highlights silently disappear). Sane code lines stay far below this.
+  const w = Math.min(maxTextLen, 800);
+  return ` style="--diff-minw:${w}ch"`;
 }
 
 /** Render one logical diff line as an HTML row (inline view). */
@@ -340,40 +420,6 @@ export function renderDiffHtmlWordDiff(
   return renderDiffHtml(diffText, { ...opts, wordDiff: true });
 }
 
-/** Rich-text summary card: file header + per-hunk add/del preview. */
-function renderRichText(
-  fileLabel: string,
-  lines: DiffLine[],
-  adds: number,
-  dels: number,
-): string {
-  const addedPreview = lines.filter((l) => l.kind === "add").slice(0, 3);
-  const delPreview = lines.filter((l) => l.kind === "del").slice(0, 3);
-
-  const previewRow = (dl: DiffLine, cls: string) =>
-    `<div class="rt-preview-line ${cls}">${escapeHtml(dl.text.slice(0, 120)) || " "}</div>`;
-
-  const total = adds + dels;
-  const addPct = total > 0 ? Math.round((adds / total) * 100) : 0;
-
-  return `<div class="diff-container diff-rich-text">
-      <div class="diff-header">
-        <span class="diff-file-icon"><img src="${getFileIcon(fileLabel)}" class="icon" style="width:14px;height:14px"></span>
-        <span class="diff-file-name">${escapeHtml(fileLabel)}</span>
-        <span class="diff-stats"><span class="diff-add-stat">+${adds}</span><span class="diff-del-stat">-${dels}</span></span>
-      </div>
-      <div class="rt-body">
-        <div class="rt-stat-row">
-          <span class="rt-stat-add">+${adds} ${escapeHtml(t("sessionInner.reviewRtAdded"))}</span>
-          <span class="rt-stat-del">-${dels} ${escapeHtml(t("sessionInner.reviewRtDeleted"))}</span>
-          <span class="rt-stat-pct">${escapeHtml(t("sessionInner.reviewRtAddPct", { n: addPct }))}</span>
-        </div>
-        ${addedPreview.length ? `<div class="rt-section"><div class="rt-section-title">${escapeHtml(t("sessionInner.reviewRtAddPreview"))}</div>${addedPreview.map((l) => previewRow(l, "rt-add")).join("")}</div>` : ""}
-        ${delPreview.length ? `<div class="rt-section"><div class="rt-section-title">${escapeHtml(t("sessionInner.reviewRtDelPreview"))}</div>${delPreview.map((l) => previewRow(l, "rt-del")).join("")}</div>` : ""}
-      </div>
-    </div>`;
-}
-
 /**
  * Split (two-column) view: old file on the left, new file on the right.
  * Each side has its own scroll container; scrolling one syncs the other.
@@ -388,9 +434,27 @@ function renderSplitView(
   maxTextLen = 0,
 ): string {
   const maxLines = opts.maxLines ?? MAX_RENDER_LINES;
-  const minW = contentWidthStyle(maxTextLen);
   let contentCount = 0;
   let truncated = 0;
+
+  // Each side stretches its rows to that side's own widest line, so the
+  // highlight always fills the row up to the scrollbar's reach on that side
+  // without padding the other side with blank space.
+  let leftMax = 0;
+  let rightMax = 0;
+  for (const dl of lines) {
+    const w = visualWidth(dl.text);
+    if (dl.kind === "ctx") {
+      if (w > leftMax) leftMax = w;
+      if (w > rightMax) rightMax = w;
+    } else if (dl.kind === "del") {
+      if (w > leftMax) leftMax = w;
+    } else if (dl.kind === "add") {
+      if (w > rightMax) rightMax = w;
+    }
+  }
+  const leftMinW = contentWidthStyle(leftMax);
+  const rightMinW = contentWidthStyle(rightMax);
 
   // Buffer pending dels/adds so they pair up top-to-bottom.
   let delQueue: DiffLine[] = [];
@@ -403,16 +467,15 @@ function renderSplitView(
   function addRow(isDel: boolean, oldLn: number, newLn: number, text: string): void {
     if (contentCount >= maxLines) { truncated++; return; }
     contentCount++;
-    const ln = oldLn || newLn;
     const cls = isDel ? "diff-row-del" : "diff-row-add";
     const side = isDel ? "left" : "right";
     const lineNum = isDel ? oldLn : newLn;
     if (side === "left") {
-      leftRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(text) || " "}</span></div>`);
-      rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
+      leftRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content"${leftMinW}>${escapeHtml(text) || " "}</span></div>`);
+      rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${rightMinW}>&nbsp;</span></div>`);
     } else {
-      leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
-      rightRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(text) || " "}</span></div>`);
+      leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${leftMinW}>&nbsp;</span></div>`);
+      rightRows.push(`<div class="diff-row ${cls}"><span class="diff-ln">${lineNum || "&nbsp;"}</span><span class="diff-content"${rightMinW}>${escapeHtml(text) || " "}</span></div>`);
     }
   }
 
@@ -422,14 +485,14 @@ function renderSplitView(
       const d = delQueue[i];
       const a = addQueue[i];
       if (d) {
-        leftRows.push(`<div class="diff-row diff-row-del"><span class="diff-ln">${d.oldLn || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(d.text) || " "}</span></div>`);
+        leftRows.push(`<div class="diff-row diff-row-del"><span class="diff-ln">${d.oldLn || "&nbsp;"}</span><span class="diff-content"${leftMinW}>${escapeHtml(d.text) || " "}</span></div>`);
       } else {
-        leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
+        leftRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${leftMinW}>&nbsp;</span></div>`);
       }
       if (a) {
-        rightRows.push(`<div class="diff-row diff-row-add"><span class="diff-ln">${a.ln || "&nbsp;"}</span><span class="diff-content"${minW}>${escapeHtml(a.text) || " "}</span></div>`);
+        rightRows.push(`<div class="diff-row diff-row-add"><span class="diff-ln">${a.ln || "&nbsp;"}</span><span class="diff-content"${rightMinW}>${escapeHtml(a.text) || " "}</span></div>`);
       } else {
-        rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${minW}>&nbsp;</span></div>`);
+        rightRows.push(`<div class="diff-row diff-row-empty"><span class="diff-ln">&nbsp;</span><span class="diff-content"${rightMinW}>&nbsp;</span></div>`);
       }
     }
     delQueue = [];
@@ -453,9 +516,10 @@ function renderSplitView(
       // ctx: flush pending changes, then render a paired context row.
       flushQueues();
       contentCount++;
-      const ctxRow = `<div class="diff-row"><span class="diff-ln">${dl.oldLn}</span><span class="diff-content"${minW}>${escapeHtml(dl.text) || " "}</span></div>`;
-      leftRows.push(ctxRow);
-      rightRows.push(ctxRow);
+      const leftCtxRow = `<div class="diff-row"><span class="diff-ln">${dl.oldLn}</span><span class="diff-content"${leftMinW}>${escapeHtml(dl.text) || " "}</span></div>`;
+      const rightCtxRow = `<div class="diff-row"><span class="diff-ln">${dl.ln}</span><span class="diff-content"${rightMinW}>${escapeHtml(dl.text) || " "}</span></div>`;
+      leftRows.push(leftCtxRow);
+      rightRows.push(rightCtxRow);
     }
   }
   flushQueues();
@@ -522,3 +586,5 @@ export function setupSplitViewScrollSync(container: HTMLElement): void {
     }
   }
 }
+
+

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="desktop/renderer/assets/EAb.svg" alt="Encre" width="160"/>
+<img src="desktop/renderer/assets/EAb.svg" alt="Encre Agent" width="160"/>
 
 English | [简体中文](README.zh.md)
 
@@ -30,7 +30,7 @@ English | [简体中文](README.zh.md)
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"/>
 </a>
 
-**Encre** — A powerful AI Agent platform that supports 31 mainstream LLM providers, 84+ built-in tools, and 26+ chat platform integrations. Whether it's coding, desktop automation, cross-platform messaging, or multi-agent collaboration, Encre gets the job done.
+**Encre Agent** — A powerful AI Agent platform that supports 31 mainstream LLM providers, 84+ built-in tools, and 26+ chat platform integrations. Whether it's coding, desktop automation, cross-platform messaging, or multi-agent collaboration, Encre Agent gets the job done.
 
 </div>
 
@@ -38,7 +38,7 @@ English | [简体中文](README.zh.md)
 
 ### One-Liner
 
-Encre is an AI Agent platform — tell it what you want to do, and it will automatically analyze, use tools, execute tasks, and deliver results to you.
+Encre Agent is an AI Agent platform — tell it what you want to do, and it will automatically analyze, use tools, execute tasks, and deliver results to you.
 
 ### Core Capabilities
 
@@ -58,10 +58,10 @@ Encre is an AI Agent platform — tell it what you want to do, and it will autom
 
 ### Use Cases
 
-- **Code Development Assistant** — You find a bug → tell Encre → it reads the code, runs LSP diagnostics, applies a patch, runs tests, and reports the fix
-- **Cross-Platform Research** — Give Encre one prompt like "research the best AI coding tools for me" → it opens a browser, searches Google, clicks articles, reads content, and hands you a comparison table
+- **Code Development Assistant** — You find a bug → tell Encre Agent → it reads the code, runs LSP diagnostics, applies a patch, runs tests, and reports the fix
+- **Cross-Platform Research** — Give Encre Agent one prompt like "research the best AI coding tools for me" → it opens a browser, searches Google, clicks articles, reads content, and hands you a comparison table
 - **Desktop Automation** — Batch file processing, auto-form filling, screenshot archiving
-- **Cross-Platform Chat Bot** — Connect Encre to WeChat, Telegram, Slack, or DingTalk all at once, talk to it from any platform
+- **Cross-Platform Chat Bot** — Connect Encre Agent to WeChat, Telegram, Slack, or DingTalk all at once, talk to it from any platform
 - **Data Analysis** — "Read this PDF/Excel, summarize it, and tell me the key numbers"
 - **Long-term Task Scheduling** — "Check my server every hour and alert me on WeChat if CPU > 80%"
 - **Multi-Agent Collaboration** — Tell an architect Agent to plan a feature, a coder Agent to implement, and a critic Agent to review — they share a blackboard and work together
@@ -80,7 +80,7 @@ Supports **31 mainstream AI models** including OpenAI, Anthropic Claude, Google 
 
 #### 🤖 9 Built-in Agent Roles
 
-Encre comes with specialized roles, each with dedicated prompts and capabilities:
+Encre Agent comes with specialized roles, each with dedicated prompts and capabilities:
 
 - **General Mode**: `coder`, `researcher`, `critic`
 - **Workspace Mode**: `architect`, `planner`
@@ -169,7 +169,7 @@ Performance-critical modules written in Rust for blazing speed and memory safety
 - BM25 code search engine
 - LSP protocol parsing (JSON-RPC 2.0)
 
-#### 🖥️ Encre Desktop App
+#### 🖥️ Encre Agent Desktop App
 
 A full-featured AI chat desktop application built with Electron + React 19:
 
@@ -262,37 +262,37 @@ Configuration sources (lowest to highest priority):
 
 <h2 align="center">❓ Frequently Asked Questions</h2>
 
-**Q: Which AI models does Encre support?**
+**Q: Which AI models does Encre Agent support?**
 
-A: **31 providers** including OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Qwen, Tencent Hunyuan, Xiaomi MiMo, Moonshot Kimi, Zhipu GLM, MiniMax, Ollama, LM Studio, HuggingFace, AWS Bedrock, OpenRouter, and more. Encre is built from scratch — not a fork of Codex or any other project.
+A: **31 providers** including OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Qwen, Tencent Hunyuan, Xiaomi MiMo, Moonshot Kimi, Zhipu GLM, MiniMax, Ollama, LM Studio, HuggingFace, AWS Bedrock, OpenRouter, and more. Encre Agent is built from scratch — not a fork of Codex or any other project.
 
 **Q: What can Encre Agent do?**
 
 A: Everything a skilled assistant can do — read/write/edit code, run shell commands, open a browser to do research, automate your desktop, manage files, schedule tasks, collaborate with other Agents, and much more. It has **84+ built-in tools** and **275+ skills** to handle almost any task.
 
-**Q: Can I use Encre with my favorite chat platform?**
+**Q: Can I use Encre Agent with my favorite chat platform?**
 
-A: Yes! Encre supports **26+ chat platforms** including Telegram, Discord, Slack, Feishu, DingTalk, WeCom, WeChat, WhatsApp, QQ Bot, Email, Matrix, and more. Each platform has a dedicated adapter.
+A: Yes! Encre Agent supports **26+ chat platforms** including Telegram, Discord, Slack, Feishu, DingTalk, WeCom, WeChat, WhatsApp, QQ Bot, Email, Matrix, and more. Each platform has a dedicated adapter.
 
-**Q: Is Encre safe to use?**
+**Q: Is Encre Agent safe to use?**
 
-A: Safety is a top priority. Encre offers **6 permission modes** ranging from fully open to asking for confirmation on every action. Additional protections include SSRF guards, Docker sandboxing, Landlock kernel restrictions, and AI-powered risk classification.
+A: Safety is a top priority. Encre Agent offers **6 permission modes** ranging from fully open to asking for confirmation on every action. Additional protections include SSRF guards, Docker sandboxing, Landlock kernel restrictions, and AI-powered risk classification.
 
-**Q: Does Encre remember things between sessions?**
+**Q: Does Encre Agent remember things between sessions?**
 
-A: Yes. Encre has a **persistent memory system** that stores important information, learns your preferences, and maintains context across conversations. Over time, it gets smarter and more personalized.
+A: Yes. Encre Agent has a **persistent memory system** that stores important information, learns your preferences, and maintains context across conversations. Over time, it gets smarter and more personalized.
 
 **Q: Can multiple Agents work together?**
 
-A: Absolutely. Encre supports **multi-agent collaboration** through its Swarm system. You can spawn multiple Agents with different roles (coder, researcher, critic, etc.) that share information and cooperate on complex tasks.
+A: Absolutely. Encre Agent supports **multi-agent collaboration** through its Swarm system. You can spawn multiple Agents with different roles (coder, researcher, critic, etc.) that share information and cooperate on complex tasks.
 
 **Q: Is there a desktop app?**
 
-A: Yes! **Encre Desktop** is a full-featured Electron + React application with chat interface, code editor (Monaco), embedded terminal, file browser, settings panel, and more. Available for Windows, macOS, and Linux.
+A: Yes! **Encre Agent Desktop** is a full-featured Electron + React application with chat interface, code editor (Monaco), embedded terminal, file browser, settings panel, and more. Available for Windows, macOS, and Linux.
 
 **Q: Can I use my own AI models?**
 
-A: Yes. You can use any OpenAI-compatible API, self-host models via Ollama/LM Studio, or integrate custom backends. Encre is designed to be backend-agnostic.
+A: Yes. You can use any OpenAI-compatible API, self-host models via Ollama/LM Studio, or integrate custom backends. Encre Agent is designed to be backend-agnostic.
 
 <h2 align="center">🌏 Community & License</h2>
 

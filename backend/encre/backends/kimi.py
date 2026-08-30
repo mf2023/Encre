@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -59,7 +58,7 @@ class KimiBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "kimi-k2.7-code",
+        model: str = "kimi-k3",
         **kwargs: Any,
     ) -> None:
         """Initialize the Kimi (Moonshot) backend.
@@ -127,4 +126,13 @@ class KimiBackend(OpenAISSEBackend):
 
     def context_window_size(self) -> int:
         """Return the context window size (in tokens) for Kimi models."""
-        return 262144
+        m = self.model.lower()
+        if "kimi-k3" in m or "-k3" in m:
+            return 1_000_000
+        if "moonshot-v1-128k" in m:
+            return 131_072
+        if "moonshot-v1-32k" in m:
+            return 32_768
+        if "moonshot-v1-8k" in m:
+            return 8_192
+        return 262_144  # Kimi K2.x series (256K)

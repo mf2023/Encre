@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -63,7 +62,7 @@ class AlibabaBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "qwen3.8-max-preview",
+        model: str = "qwen3.8-max",
         thinking_budget: int = 0,
         **kwargs: Any,
     ) -> None:
@@ -112,16 +111,23 @@ class AlibabaBackend(OpenAISSEBackend):
     def context_window_size(self) -> int:
         """Return context window for Qwen models.
 
-        2026: Qwen3.6: 256K, Qwen-Long: 10M, Qwen3: 131K, Qwen-Max: 131K.
+        2026: Qwen3.8/3.7: 1M, Qwen3.6: 1M, Qwen-Long: 10M, Qwen3: 256K.
         """
         m = self.model.lower()
         # Qwen-Long is optimized for extremely long documents (up to 10M).
         if "qwen-long" in m or "qwenlong" in m:
             return 10_000_000
-        # Qwen3.6 / Qwen-Coder generation uses a 256K window.
-        if "qwen3.6" in m or "qwen3-6" in m or "qwen-coder" in m:
+        # Qwen3.7+ / Qwen3.6 expose a 1M window (3.6-max-preview is 256K).
+        if "qwen3.8" in m or "qwen3.7" in m:
+            return 1_000_000
+        if "qwen3.6" in m or "qwen3-6" in m or "qwen3.5" in m:
+            if "preview" in m:
+                return 256_000
+            return 1_000_000
+        # Qwen3 generation uses a 256K window.
+        if "qwen3" in m or "qwen-coder" in m:
             return 256_000
-        # Qwen3.5 / Qwen-Max / Qwen-Plus also expose 256K windows.
-        if "qwen3.5" in m or "qwen-max" in m or "qwen-plus" in m:
-            return 256_000
-        return 256_000  # Qwen3.6 default
+        # Qwen-Max / Qwen-Plus / Qwen-Flash also expose 1M windows.
+        if "qwen-max" in m or "qwen-plus" in m or "qwen-flash" in m:
+            return 1_000_000
+        return 256_000  # Qwen default

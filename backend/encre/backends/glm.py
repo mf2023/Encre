@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -57,7 +56,7 @@ class GLMBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "glm-5.2",
+        model: str = "glm-5.3",
         **kwargs: Any,
     ) -> None:
         """Initialize the GLM (Zhipu AI) backend.
@@ -99,11 +98,17 @@ class GLMBackend(OpenAISSEBackend):
     def context_window_size(self) -> int:
         """Return context window for GLM models.
 
-        2026: GLM-5.x: 200K, GLM-4.x: 128K.
+        2026: GLM-5.3/5.2: 1M, GLM-5.1/5/4.7/4.6: 200K, GLM-4-Long: 1M.
         """
         m = self.model.lower()
-        # GLM-5.x flagships expose a 200K token context window.
-        if "glm-5" in m or "glm5" in m:
+        # GLM-5.3 / GLM-5.2 flagships expose a 1M token context window.
+        if "glm-5.3" in m or "glm-5.2" in m:
+            return 1_000_000
+        # GLM-4-Long is optimized for extremely long documents (up to 1M).
+        if "glm-4-long" in m or "glm-4long" in m:
+            return 1_000_000
+        # GLM-5.1 / GLM-5 / GLM-5-Turbo / GLM-4.7 / GLM-4.6 expose 200K.
+        if "glm-5" in m or "glm-4.6" in m or "glm-4.7" in m:
             return 200_000
         # Older GLM-4.x models default to a 128K (131072) window.
         return 131_072

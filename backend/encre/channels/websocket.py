@@ -46,6 +46,7 @@ from websockets.server import WebSocketServerProtocol
 ServerConnection = WebSocketServerProtocol
 
 from encre.channels.base import Channel, EventRouter  # noqa: E402
+from encre.server.session_manager import SessionState  # noqa: E402
 from encre.utils.types import (  # noqa: E402
     BackendError,
     EngineInstallProgress,
@@ -187,7 +188,7 @@ class WebSocketChannel(Channel):
                 await self._send_error(ws, "Session not found")
                 return
 
-            if info.is_running:
+            if info.state != SessionState.IDLE:
                 await self._send_error(ws, "Session already running")
                 return
 
@@ -196,7 +197,7 @@ class WebSocketChannel(Channel):
                 await self._send_error(ws, "Server at capacity")
                 return
 
-            info.is_running = True
+            router.session_manager.set_session_state(session_id, SessionState.RUNNING)
             router.session_manager.touch(session_id)
 
             # Wire the engine-install requester's IMMEDIATE emit
@@ -228,7 +229,7 @@ class WebSocketChannel(Channel):
                 await self._send_error(ws, str(e))
                 await ws.send(json.dumps({"type": "finish", "reason": "error", "session_id": session_id}, ensure_ascii=False))
             finally:
-                info.is_running = False
+                router.session_manager.set_session_state(session_id, SessionState.IDLE)
                 router.session_manager.release_slot()
                 router.session_manager._save_session(info)
 

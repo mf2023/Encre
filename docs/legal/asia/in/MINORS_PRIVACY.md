@@ -26,7 +26,7 @@ Guardians may exercise access/correction/erasure/stop-processing on a child's be
 
 ## 5. Local-First Note
 
-Encre local mode stores everything on-device only — nothing reaches us. OS-level parental controls recommended. Review any cloud provider's child policy before connecting.
+Encre Agent local mode stores everything on-device only — nothing reaches us. OS-level parental controls recommended. Review any cloud provider's child policy before connecting.
 
 ## 6. Contact
 

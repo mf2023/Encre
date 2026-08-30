@@ -20,7 +20,7 @@
 
 [package]
 name = "encre"
-version = "0.3.0"
+version = "0.4.1"
 edition = "2021"
 description = "Core Rust library for Encre Agent Framework"
 

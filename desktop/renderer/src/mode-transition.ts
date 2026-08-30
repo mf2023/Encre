@@ -49,6 +49,10 @@ export class ModeTransitionManager {
    *  in-panel sub-agent detail (breadcrumb, activeExecution, header buttons)
    *  can be torn down first and not leak into the target mode. */
   private _onLeaveAutomation: () => void;
+  /** Invoked when leaving workspace (iwork) mode — used by the app to close
+   *  the task-overview view *without* restoring #main-content, so the
+   *  automation view's slide transition can take over cleanly. */
+  private _onLeaveWorkspace: () => void;
   private _transitioning = false;
   private _preAutomationMode: AppMode = "normal";
   /** Saved active workspace path so re-entering iWork restores it. */
@@ -59,11 +63,13 @@ export class ModeTransitionManager {
     automationPanel: AutomationPanel;
     onModeChange: () => void;
     onLeaveAutomation?: () => void;
+    onLeaveWorkspace?: () => void;
   }) {
     this._workspace = opts.workspace;
     this._automationPanel = opts.automationPanel;
     this._onModeChange = opts.onModeChange;
     this._onLeaveAutomation = opts.onLeaveAutomation ?? (() => {});
+    this._onLeaveWorkspace = opts.onLeaveWorkspace ?? (() => {});
   }
 
   get isTransitioning(): boolean {
@@ -100,6 +106,12 @@ export class ModeTransitionManager {
         if (current === "iwork") {
           // Save the active workspace so we can restore it when returning.
           this._savedActiveWorkspace = getState().activeWorkspace;
+          // Close the task-overview view WITHOUT restoring #main-content:
+          // the automation slide takes over the main area next, and letting
+          // the chat chrome (input box / welcome title) reappear here would
+          // overlap the slide transition. main-content's inline display is
+          // kept hidden; AutomationPanel restores it when it closes.
+          this._onLeaveWorkspace();
           // Exit workspace AND show automation in parallel.
           // This "releases" the workspace state immediately so that
           // returning to normal mode doesn't replay the workspace
@@ -158,7 +170,39 @@ export class ModeTransitionManager {
     } finally {
       this._workspace.onModeChange = origOnModeChange;
       this._transitioning = false;
+      // Reconcile any layout residue from rapid or interrupted transitions:
+      // leftover absolute positioning from an aborted slide would otherwise
+      // collapse the content area into a sliver ("竖杠"), and a stray visible
+      // automation view would block the chat.
+      this._settleLayout();
     }
+  }
+
+  /**
+   * Clears inline transition residue on the shared main-area elements and
+   * makes sure the automation view's / main-content's hidden classes match
+   * the automation panel's actual active state. Safe to run after every
+   * mode switch; idempotent.
+   */
+  private _settleLayout(): void {
+    const main = document.getElementById("main-content");
+    const autoView = document.getElementById("automation-view");
+    const mainBody = document.getElementById("main-body");
+    if (mainBody) mainBody.style.position = "";
+    for (const el of [main, autoView]) {
+      if (!el) continue;
+      el.style.position = "";
+      el.style.width = "";
+      el.style.height = "";
+      el.style.top = "";
+      el.style.left = "";
+      el.style.transition = "";
+      el.style.transform = "";
+      el.style.opacity = "";
+    }
+    const inAutomation = this._automationPanel.isActive;
+    if (autoView) autoView.classList.toggle("hidden", !inAutomation);
+    if (main) main.classList.toggle("hidden", inAutomation);
   }
 
   async toggleAutomation(): Promise<void> {

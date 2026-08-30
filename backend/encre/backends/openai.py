@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -113,9 +112,7 @@ class OpenAIBackend(OpenAISSEBackend):
         if not base_url:
             # Default to OpenAI's public API when no custom base URL is given.
             base_url = "https://api.openai.com/v1"
-        self.retry_config: RetryConfig = kwargs.pop(
-            "retry_config", DEFAULT_RETRY_CONFIG
-        )
+        self.retry_config: RetryConfig = kwargs.pop("retry_config", DEFAULT_RETRY_CONFIG)
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     # ── Overrides ─────────────────────────────────────────────────────
@@ -164,12 +161,12 @@ class OpenAIBackend(OpenAISSEBackend):
         )
         try:
             _retry_decorator = retry_with_backoff(config=self.retry_config)
-            _retried_request = _retry_decorator(lambda: self._client.send(
-                self._client.build_request(
-                    "POST", self._get_endpoint(), json=body
-                ),
-                stream=True,
-            ))
+            _retried_request = _retry_decorator(
+                lambda: self._client.send(
+                    self._client.build_request("POST", self._get_endpoint(), json=body),
+                    stream=True,
+                )
+            )
             return await _retried_request()
         except Exception:
             logger.error(
@@ -198,18 +195,18 @@ class OpenAIBackend(OpenAISSEBackend):
             return 200000
         if model_lower.startswith("o5"):
             return 400000
+        # GPT-5.6 family (incl. luna/terra) -- 1.05M
+        if "gpt-5.6" in model_lower:
+            return 1050000
         # GPT-4.1 family (nano/mini/4.1) -- 1M context
         if "nano" in model_lower or "mini" in model_lower or "4.1" in model_lower:
             return 1048576
-        if "5.5" in model_lower or "5.6" in model_lower or "6" in model_lower:
+        if "5.5" in model_lower or "6" in model_lower:
             return 1048576
         if "5.4" in model_lower:
             return 400000
         if "5.2" in model_lower or "5.3" in model_lower or "5.1" in model_lower:
             return 128000
-        # GPT-5.6 family -- 1.05M
-        if "gpt-5.6" in model_lower:
-            return 1050000
         # GPT-4o legacy -- 128K
         if "gpt-4o" in model_lower:
             return 128000

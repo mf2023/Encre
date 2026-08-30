@@ -22,8 +22,8 @@ Human verification for professional use; label AI-generated media when publishin
 
 | Setup | Where processed | Responsibility |
 |---|---|---|
-| Encre local mode + local model | Your device | User |
-| Encre + third-party cloud model | Device → provider directly | That provider + user |
+| Encre Agent local mode + local model | Your device | User |
+| Encre Agent + third-party cloud model | Device → provider directly | That provider + user |
 | PiscesLx hosted inference | Dunimd infra | Dunimd |
 
 **You remain directly liable for what you publish.**

@@ -21,12 +21,13 @@
  */
 
 /**
- * Notification center (bell, panel & toasts).
+ * Notification center (encre menu anchor, panel & toasts).
  *
- * Manages the in-app notifications surfaced through the bell button: an
+ * Manages the in-app notifications surfaced through the Encre menu button: an
  * unread-count badge, a slide-out panel grouping unread/read items, and
- * transient toasts for newly-arrived notifications. Reactive to global state
- * via a subscription.
+ * transient toasts for newly-arrived notifications. The panel is opened from
+ * the Encre menu ("Notifications" entry) — there is no dedicated bell button.
+ * Reactive to global state via a subscription.
  */
 
 import {
@@ -103,8 +104,9 @@ function flashCopy(btn: HTMLElement): void {
  * The notifications controller: badge, panel and toast lifecycle.
  */
 export class Notifications {
-  private bell: HTMLElement | null;
-  private panel: HTMLElement | null = null;
+  private anchor: HTMLElement | null;
+  private host: HTMLElement | null = null;
+  private _onBack: (() => void) | null = null;
   private toastContainer: HTMLElement | null = null;
   private lastNotificationIds: Set<string> = new Set();
   private _mediaViewer: MediaViewer | null = null;
@@ -112,21 +114,12 @@ export class Notifications {
   private _listClickHandler: ((e: MouseEvent) => void) | null = null;
 
   /**
-   * Constructor: wires the bell button, outside-click dismissal and state subscription.
+   * Constructor: grabs the Encre menu button for the unread badge, wires the
+   * state subscription. The list itself is rendered into a host container
+   * inside the Encre menu (opened from the "Notifications" entry).
    */
   constructor() {
-    this.bell = document.getElementById("btn-bell");
-    if (this.bell) {
-      this.bell.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.togglePanel();
-      });
-    }
-    document.addEventListener("click", (e) => {
-      if (this.panel && !this.panel.contains(e.target as Node) && e.target !== this.bell) {
-        this.closePanel();
-      }
-    });
+    this.anchor = document.getElementById("btn-encre-menu");
 
     this.ensureToastContainer();
     subscribe(() => this.render());
@@ -168,21 +161,21 @@ export class Notifications {
     }
 
     const count = getUnreadCount();
-    if (this.bell) {
-      let badge = this.bell.querySelector(".notification-badge") as HTMLElement | null;
+    if (this.anchor) {
+      let badge = this.anchor.querySelector(".notification-badge") as HTMLElement | null;
       if (count > 0) {
         if (!badge) {
           badge = document.createElement("span");
           badge.className = "notification-badge";
-          this.bell.style.position = "relative";
-          this.bell.appendChild(badge);
+          this.anchor.style.position = "relative";
+          this.anchor.appendChild(badge);
         }
         badge.textContent = "";
       } else {
         badge?.remove();
       }
     }
-    if (this.panel) this.renderPanel();
+    if (this.host) this.renderPanel();
   }
 
   private ensureToastContainer(): void {
@@ -256,39 +249,33 @@ export class Notifications {
     }
   }
 
-  private togglePanel(): void {
-    if (this.panel) this.closePanel();
-    else this.openPanel();
-  }
-
-  /** Opens the slide-out notification panel anchored to the bell. */
-  openPanel(): void {
-    if (!this.bell) return;
-
+  /** Attaches the notification list to a host container inside the Encre menu.
+ *  @param host   - Container element that receives the list/detail HTML.
+ *  @param onBack - Callback invoked when the user taps the top-left back button. */
+  attach(host: HTMLElement, onBack: () => void): void {
+    this.host = host;
+    this._onBack = onBack;
     this._detailId = null;
-    this.panel = document.createElement("div");
-    this.panel.className = "notification-panel";
     this.renderPanel();
-    document.body.appendChild(this.panel);
-
-    const rect = this.bell.getBoundingClientRect();
-    this.panel.style.top = `${rect.bottom + 6}px`;
-    this.panel.style.right = `${window.innerWidth - rect.right}px`;
   }
 
-  /** Closes the slide-out notification panel. */
-  private closePanel(): void {
+  /** Detaches from the host (destroys media viewer). */
+  detach(): void {
     this._destroyMediaViewer();
-    if (this.panel) {
-      this.panel.remove();
-      this.panel = null;
-      this.render();
-    }
+    this.host = null;
+    this._onBack = null;
+    this._detailId = null;
+  }
+
+  /** Resets the detail drill-down (returns to list). */
+  resetDetail(): void {
+    this._destroyMediaViewer();
+    this._detailId = null;
   }
 
   /** Builds the panel's inner HTML from unread/read notification lists or detail view. */
   private renderPanel(): void {
-    if (!this.panel) return;
+    if (!this.host) return;
 
     // Detail view
     if (this._detailId) {
@@ -304,12 +291,18 @@ export class Notifications {
       ? `<div class="si-empty-center"><i data-lucide="bell" class="lucide"></i><span class="si-empty-title">${t("notifications.empty")}</span></div>`
       : "";
 
-    const header = all.length > 0
-      ? `<div class="notification-panel-header">
-           <span>${t("notifications.title")}</span>
-           <button class="notification-panel-clear">${t("notifications.clearAll")}</button>
-         </div>`
-      : "";
+    const inMenu = this.host.closest(".encre-menu-dropdown") !== null;
+    const header = `<div class="notification-panel-header">
+      <div class="notification-panel-header-left">
+        <button class="notification-panel-back" id="notif-list-back" data-tooltip="${t("notifications.back")}">
+          <i data-lucide="arrow-left" class="lucide"></i>
+        </button>
+        ${inMenu ? "" : `<span class="notification-panel-title">${t("notifications.title")}</span>`}
+      </div>
+      ${all.length > 0 ? `<button class="notification-panel-clear" data-tooltip="${t("notifications.clearAll")}">
+        <i data-lucide="trash-2" class="lucide"></i>
+      </button>` : ""}
+    </div>`;
 
     const unreadSection = unread.length > 0
       ? `<div class="notification-section-label">${t("notifications.new")} (${unread.length})</div>
@@ -321,26 +314,33 @@ export class Notifications {
          ${this.renderItems(read.slice(0, 20))}`
       : "";
 
-    this.panel.innerHTML = `${header}${empty}${unreadSection}${readSection}`;
+    this.host.innerHTML = `${header}${empty}${unreadSection}${readSection}`;
 
     if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.panel });
+      (window as any).lucide.createIcons({ root: this.host });
     }
 
     this._wireListEvents();
   }
 
   private _wireListEvents(): void {
-    if (!this.panel) return;
+    if (!this.host) return;
 
     // Remove previous handler to avoid duplicates
     if (this._listClickHandler) {
-      this.panel.removeEventListener("click", this._listClickHandler);
+      this.host.removeEventListener("click", this._listClickHandler);
     }
 
-    this.panel.querySelector(".notification-panel-clear")?.addEventListener("click", () => {
+    this.host.querySelector("#notif-list-back")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._destroyMediaViewer();
+      this._detailId = null;
+      this._onBack?.();
+    });
+
+    this.host.querySelector(".notification-panel-clear")?.addEventListener("click", () => {
       clearAllNotifications();
-      this.closePanel();
+      this.renderPanel();
     });
 
     this._listClickHandler = (e: MouseEvent) => {
@@ -360,7 +360,7 @@ export class Notifications {
       this.renderPanel();
     };
 
-    this.panel.addEventListener("click", this._listClickHandler);
+    this.host.addEventListener("click", this._listClickHandler);
   }
 
   /** Destroys the current media viewer instance (stops video playback). */
@@ -373,7 +373,7 @@ export class Notifications {
 
   /** Renders the detail view for the currently selected notification. */
   private _renderDetailView(): void {
-    if (!this.panel) return;
+    if (!this.host) return;
     const n = getState().notifications.find((x) => x.id === this._detailId);
     if (!n) {
       this._detailId = null;
@@ -383,12 +383,11 @@ export class Notifications {
 
     const absTime = new Date(n.timestamp).toLocaleString();
 
-    this.panel.innerHTML = `
+    this.host.innerHTML = `
       <div class="notification-detail">
         <div class="notification-detail-header">
-          <button class="notification-detail-back" id="notif-detail-back">
-            <i data-lucide="arrow-left" class="lucide lucide-sm"></i>
-            <span>${t("notifications.back")}</span>
+          <button class="notification-detail-back" id="notif-detail-back" data-tooltip="${t("notifications.back")}">
+            <i data-lucide="arrow-left" class="lucide"></i>
           </button>
           <button class="notification-detail-copy" data-tooltip="${t("notifications.copy")}">
             <i data-lucide="copy" class="lucide lucide-sm"></i>
@@ -407,34 +406,28 @@ export class Notifications {
 
     // Render media via shared MediaViewer component
     if (n.media) {
-      const mediaEl = this.panel.querySelector<HTMLElement>("#notif-detail-media");
+      const mediaEl = this.host.querySelector<HTMLElement>("#notif-detail-media");
       if (mediaEl) {
         this._destroyMediaViewer();
         this._mediaViewer = new MediaViewer(mediaEl, { ...n.media, toolbar: false });
       }
     }
 
-    this.panel.querySelector("#notif-detail-back")?.addEventListener("click", (e) => {
+    this.host.querySelector("#notif-detail-back")?.addEventListener("click", (e) => {
       e.stopPropagation();
       this._destroyMediaViewer();
       this._detailId = null;
       this.renderPanel();
     });
 
-    this.panel.querySelector("#notif-detail-back")?.addEventListener("click", (e) => {
+    this.host.querySelector(".notification-detail-copy")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this._detailId = null;
-      this.renderPanel();
-    });
-
-    this.panel.querySelector(".notification-detail-copy")?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const btn = this.panel!.querySelector(".notification-detail-copy") as HTMLElement;
+      const btn = this.host!.querySelector(".notification-detail-copy") as HTMLElement;
       this.copyNotification(n, btn);
     });
 
     if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.panel });
+      (window as any).lucide.createIcons({ root: this.host });
     }
   }
 

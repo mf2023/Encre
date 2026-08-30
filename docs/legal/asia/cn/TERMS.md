@@ -9,7 +9,7 @@
 > **Dunimd 中国大陆服务文件（本文件夹内六件套）：**
 > [隐私政策](PRIVACY.md) · [服务条款](TERMS.md) · [用户协议](USER_AGREEMENT.md) · [未成年人个人信息保护规则](MINORS_PRIVACY.md) · [内容准则](CONTENT_GUIDELINES.md) · [数据处理规则](DATA_PROCESSING.md)
 >
-> 全球基线国际版见 [`docs/TERMS.md`](../../../TERMS.md)；就中国法律相关事项，**本文件优先适用**。
+> 适用版本：本文件为唯一适用版本；就中国法律相关事项，如与其他语言译本不一致，以本文件为准。
 
 ---
 
@@ -49,7 +49,7 @@
 
 Dunimd 提供一系列产品与服务。本条款适用于 Dunimd 名下全部服务，无论其为免费、付费、托管或自托管。当前服务目录发布于 [dunimd.com/services](https://dunimd.com/services) *(pending activation)*，至少包括：
 
-- **Encre** — AI Agent 平台（桌面应用、Python 框架、Rust 原生核心）
+- **Encre Agent** — AI Agent 平台（桌面应用、Python 框架、Rust 原生核心）
 - **PiscesLx** — 大语言模型（基础模型、微调、托管推理 API）
 - **StadionOS** — 操作系统产品与 OS 层集成
 - **Dunimd Enterprise** — 企业 AI 部署、MLOps、专业服务
@@ -75,7 +75,7 @@ Dunimd 服务大多根据 **Apache 许可证 2.0 版**（"Apache 2.0"）发布�
 
 ### 3.3 第三方组件
 
-服务可能包含受其自身许可证条款约束的第三方库和组件。归属信息见 [`THANKS.md`](THANKS.md)。
+服务可能包含受其自身许可证条款约束的第三方库和组件。归属信息见 [`THANKS.md`](../../../THANKS.md)。
 
 ### 3.4 权利保留
 
@@ -124,7 +124,7 @@ Dunimd 服务大多根据 **Apache 许可证 2.0 版**（"Apache 2.0"）发布�
 
 ## 6. AI 与生成式服务
 
-产出 AI 生成内容的服务（Encre 配合生成式模型使用时、PiscesLx 以及任何其他生成式服务）适用额外规则：
+产出 AI 生成内容的服务（Encre Agent 配合生成式模型使用时、PiscesLx 以及任何其他生成式服务）适用额外规则：
 
 ### 6.1 输出非建议
 
@@ -156,7 +156,7 @@ AI 输出由统计模型生成，可能不准确、带有偏见、过时或不�
 
 当您使用 Dunimd 作为生成式 AI 服务提供者的服务（例如 PiscesLx 托管推理）时，Dunimd 是《生成式人工智能服务管理暂行办法》项下的责任服务提供者，承担相应合规义务。
 
-当您使用 Encre 配合您自行配置的第三方 AI 后端时，**该第三方 AI 提供者**是该办法项下的责任服务提供者，Dunimd 仅作为工具提供者。
+当您使用 Encre Agent 配合您自行配置的第三方 AI 后端时，**该第三方 AI 提供者**是该办法项下的责任服务提供者，Dunimd 仅作为工具提供者。
 
 ---
 
@@ -196,7 +196,7 @@ Dunimd 名称、徽标、品牌标识以及服务本身是我们的知识产权�
 
 ### 8.2 聊天平台集成
 
-Encre 的聊天平台适配器（Telegram、Discord、Slack 等）连接第三方服务。您对这些服务的使用仍受其条款约束。
+Encre Agent 的聊天平台适配器（Telegram、Discord、Slack 等）连接第三方服务。您对这些服务的使用仍受其条款约束。
 
 ### 8.3 外部链接
 
@@ -211,7 +211,6 @@ Encre 的聊天平台适配器（Telegram、Discord、Slack 等）连接第三�
 - **隐私政策**：[`PRIVACY.md`](PRIVACY.md)（中国大陆版，优先适用）
 - **数据处理规则**：[`DATA_PROCESSING.md`](DATA_PROCESSING.md)（本地优先架构下的数据流向）
 - **未成年人个人信息保护规则**：[`MINORS_PRIVACY.md`](MINORS_PRIVACY.md)
-- 全球基线国际版：[`docs/PRIVACY.md`](../../../PRIVACY.md)（补充适用）
 
 ---
 
@@ -260,7 +259,7 @@ Encre 的聊天平台适配器（Telegram、Discord、Slack 等）连接第三�
 - 因您使用或无法使用服务而引起的损害。
 - 因 AI 模型输出、第三方后端或第三方平台而引起的损害。
 
-**对免费提供的服务（包括 Apache 2.0 下的 Encre），Dunimd 的全部累计责任不超过 100 美元或您本币等值金额**。
+**对免费提供的服务（包括 Apache 2.0 下的 Encre Agent），Dunimd 的全部累计责任不超过 100 美元或您本币等值金额**。
 
 **对任何付费服务，Dunimd 的全部累计责任不超过以下两者中的较高者：(A) 您在索赔前 12 个月内就该服务向 Dunimd 支付的金额，或 (B) 1,000 美元**。
 

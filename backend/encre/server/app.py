@@ -167,19 +167,6 @@ class EncreServer:
             logger.error("Failed to start gateway runner: %s", e)
             logger.warning("Gateway not available -- QQ, Telegram, etc. will not connect")
 
-        # Auto-start the test adapter for development (no config needed)
-        try:
-            from encre.gateway.platform_registry import platform_registry
-            test_entry = platform_registry.get("test_adapter")
-            if test_entry is not None:
-                logger.info("[gateway] Auto-starting test adapter for development...")
-                _t = asyncio.ensure_future(
-                    self._adapter_manager.start_adapter("test_adapter", {"enabled": True})
-                )
-                self._background_tasks.add(_t)
-        except Exception as e:
-            logger.warning("Failed to auto-start test adapter: %s", e)
-
         # Sync adapter configs (from saved settings) into EncreConfig so the frontend
         # sees adapter_* keys in config_data immediately -- not "not configured".
         # Only the actual adapter connection (HTTP/WS) is deferred to background.
@@ -229,8 +216,14 @@ class EncreServer:
         the desktop client's 30s timeout doesn't fire. Adapter configs are
         already synced to self.config.adapter_configs synchronously so the
         frontend sees adapter_* keys in config_data right away.
+
+        Delayed ~8s: starting an adapter lazily imports its SDK (feishu's
+        lark_oapi alone is a ~6s CPU-bound import). Running that while the
+        first desktop client is fetching config/session lists starves those
+        requests (GIL) and stretches the splash phase to ~10s.
         """
         try:
+            await asyncio.sleep(8)
             from encre.settings_manager import load_settings
             saved_config = load_settings()
             if saved_config:

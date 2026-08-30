@@ -48,7 +48,6 @@ _PROJECT_RULE_PATTERNS: list[tuple[str, int, str]] = [
     (".cursorrules", 90, "cursor"),
     (".windsurfrules", 85, "windsurf"),
     (".clinerules", 80, "cline"),
-    ("ENCRE.md", 78, "encre"),
     ("CLAUDE.md", 75, "claude"),
     (".github/copilot-instructions.md", 60, "copilot"),
 ]

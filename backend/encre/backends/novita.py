@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -51,7 +50,7 @@ class NovitaBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "mistralai/mistral-large-2",
+        model: str = "deepseek/deepseek-v4-pro",
         **kwargs: Any,
     ) -> None:
         if not base_url:
@@ -60,4 +59,17 @@ class NovitaBackend(OpenAISSEBackend):
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
     def context_window_size(self) -> int:
-        return 128000
+        m = self.model.lower()
+        # DeepSeek V4 / Kimi K3 / GLM 5.x / MiniMax M3 expose ~1M windows.
+        if "deepseek-v4" in m or "kimi-k3" in m or "glm-5" in m or "minimax-m3" in m or "mimo-v2.5" in m:
+            return 1_000_000
+        # Qwen3.8 family uses a ~977K window.
+        if "qwen3.8" in m:
+            return 977_000
+        # Qwen3.5 / Kimi K2.x use a 256K window.
+        if "qwen3.5" in m or "kimi-k2" in m:
+            return 262_000
+        # DeepSeek V3.2 uses a 160K window.
+        if "deepseek-v3" in m:
+            return 160_000
+        return 128_000

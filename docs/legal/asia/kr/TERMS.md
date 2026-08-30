@@ -3,7 +3,7 @@
 **최종 업데이트：2026년 8월 22일**
 
 > **한국 6종 세트：** [개인정보 보호 방침](PRIVACY.md) · 본 약관 · [이용자 계약](USER_AGREEMENT.md) · [미성년자 규칙](MINORS_PRIVACY.md) · [콘텐츠 가이드라인](CONTENT_GUIDELINES.md) · [데이터 처리 규칙](DATA_PROCESSING.md)
-> 글로벌 기준：[`docs/TERMS.md`](../../../TERMS.md). 한국 법령 관련 사항은 본 약관이 우선.
+> 적용 버전：본 약관이 유일한 적용 버전입니다. 다른 언어판과 불일치하는 경우 한국 법령 관련 사항은 본 약관이 우선합니다.
 
 ## 1. 적용 및 계약 성립
 
@@ -11,7 +11,7 @@
 
 ## 2. 서비스 목록
 
-**Encre**(로컬퍼스트 AI Agent 플랫폼) · **PiscesLx**(LLM/파인튜닝/추론 API) · **Dunimd Enterprise**(기업 도입/MLOps) · **StadionOS**(OS) · **Dunimd Cloud**(매니지드 클라우드) · **Dunimd Studio**(IDE/CLI/SDK) · **Dunimd Support**(기술지원). 신규 서비스는 자동으로 본 약관이 적용됩니다.
+**Encre Agent**(로컬퍼스트 AI Agent 플랫폼) · **PiscesLx**(LLM/파인튜닝/추론 API) · **Dunimd Enterprise**(기업 도입/MLOps) · **StadionOS**(OS) · **Dunimd Cloud**(매니지드 클라우드) · **Dunimd Studio**(IDE/CLI/SDK) · **Dunimd Support**(기술지원). 신규 서비스는 자동으로 본 약관이 적용됩니다.
 
 ## 3. 계정
 

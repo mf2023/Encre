@@ -1,3 +1,4 @@
+﻿console.log("[perf] app.js eval start epoch=" + Date.now());
 /**
  * Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
  *
@@ -21,12 +22,12 @@
  */
 
 import { connect, send, sendRetry, sendSwitchBranch, sendRollback } from "./ws.js";
-import { handleEvent, init as streamInit, onAutomationShowResult, setRequestedSessionId, onAutomationStreamEvent } from "./stream.js";
+import { handleEvent, init as streamInit, onAutomationShowResult, setRequestedSessionId, onAutomationStreamEvent, refreshAllData } from "./stream.js";
 import {
   addUserMessage,
   addMessage,
   startAssistantMessage,
-  setRunning,
+  setSessionState,
   setTheme,
   setThemePreference,
   setActiveToolId,
@@ -56,6 +57,7 @@ import {
   removeBranchMessages,
   clearAllNotifications,
   setModelConfigs,
+  getUnreadCount,
 } from "./state.js";
 import { Chat, formatAgentLabel, getAgentName } from "./chat.js";
 import { initTooltip } from "./tooltip.js";
@@ -68,7 +70,7 @@ import { ViewManager } from "./viewmanager.js";
 import { Search, commandActions } from "./search.js";
 import { Agents } from "./agents.js";
 import { Notifications } from "./notifications.js";
-import { Workspace } from "./workspace.js";
+import { Workspace, WorkspaceManager } from "./workspace.js";
 import { Permissions } from "./permissions.js";
 import { AutomationPanel } from "./iclaw.js";
 import { Automation } from "./automation.js";
@@ -106,17 +108,18 @@ class App {
   private splash: SplashScreen;
   private tools: Tools;
   private settings: Settings;
-  private files: Files;
-  private session: Session;
-  private viewManager: ViewManager;
-  private notifications: Notifications;
+  private files!: Files;
+  private session!: Session;
+  private viewManager!: ViewManager;
+  private notifications!: Notifications;
   private permissions: Permissions;
-  private workspace: Workspace;
-  private automationPanel: AutomationPanel;
-  private automation: Automation;
+  private workspace!: Workspace;
+  private workspaceManager!: WorkspaceManager;
+  private automationPanel!: AutomationPanel;
+  private automation!: Automation;
   private modeTransition!: ModeTransitionManager;
-  private sessionInner: SessionInner;
-  private search: Search;
+  private sessionInner!: SessionInner;
+  private search!: Search;
   private input: HTMLTextAreaElement;
   private btnSend: HTMLButtonElement;
   private btnStop: HTMLButtonElement;
@@ -130,6 +133,8 @@ class App {
   private _currentChipMode = "";
   private _persistentMode = "";
   private _summaryDoneCollapsed: boolean | null = null;
+  /** Per-group collapsed state for summary reference groups. */
+  private _refCollapsedState: Map<string, boolean> = new Map();
   /** Active slash *command* (distinct from a mode).  Mirrors the backend
    *  ``session.metadata["active_command"]`` slot: a sticky prompt injection
    *  that stays across turns until cleared.  ``null`` = no command active. */
@@ -139,11 +144,15 @@ class App {
   private _childView = "";
   private _tabs: ChildTab[] = [];
   private _activeTabIndex = -1;
-  private _region = "intl";
+  private _region = getLocale() === "zh" ? "cn" : "us";
   private _activeAutomationJobId = "";
   private _keybindActions: Record<string, () => void> = {};
   private _inputHistory: string[] = [];
   private _inputHistoryIdx: number = -1;
+  /** Per-session unsent input drafts, keyed by session id.  Saved while the
+   *  user types and restored when the session becomes active again so that
+   *  switching away and back does not lose what was being composed. */
+  private _drafts = new Map<string, string>();
   private _shortcutsApplied: boolean = false;
   private _shortcutSub: (() => void) | undefined;
   /** Pending auto-resize animation frame for the composer */
@@ -152,15 +161,29 @@ class App {
   private _inputExpanded = false;
   /** Timer clearing the temporary height-animation class after a toggle. */
   private _inputAnimTimer = 0;
+  /**
+   * Cached height of `#input-area` measured while it sits in the normal
+   * flex flow (i.e. NOT `position: absolute`).  When the composer switches
+   * to its expanded "floating overlay" mode, `#input-area` exits the
+   * document flow and the chat container would suddenly grow to fill the
+   * empty slot, pushing the timeline down to the bottom of the visible
+   * area.  We avoid that jump by mirroring this cached height into
+   * `#main-content-clip`'s `padding-bottom` for the duration of the
+   * overlay so the chat container's geometry stays put.  Updated whenever
+   * `#input-area` resizes (textarea auto-grow, viewport changes, etc.).
+   */
+  private _inputNaturalHeight = 0;
+  /** ResizeObserver used to keep `_inputNaturalHeight` in sync. */
+  private _inputAreaResizeObs: ResizeObserver | null = null;
   private inputExpandBtn: HTMLButtonElement;
-  private inputExpandZone: HTMLElement;
+  private inputArea: HTMLElement;
   /** Cache key of the last queue-card render; skips DOM rebuilds when unchanged. */
   private _queueRenderKey = "";
 
   constructor() {
     this.input = document.getElementById("prompt-input") as HTMLTextAreaElement;
     this.inputExpandBtn = document.getElementById("btn-input-expand") as HTMLButtonElement;
-    this.inputExpandZone = document.getElementById("input-expand-zone") as HTMLElement;
+    this.inputArea = document.getElementById("input-area")!;
     this.btnSend = document.getElementById("btn-send") as HTMLButtonElement;
     this.btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
     this.tokenCountEl = document.getElementById("token-count")!;
@@ -188,111 +211,13 @@ class App {
     // chat blank when returning from settings.
     (window as any).__chatForceRender = () => this.chat.renderForce();
     this.tools = new Tools();
-    this.settings = new Settings();
-    window.addEventListener("open-settings-panel", ((e: CustomEvent) => {
-      const panel = e.detail?.panel;
-      this.automationPanel.hide();
-      this.settings.open();
-      if (panel) this.settings.switchPanel(panel);
-    }) as EventListener);
-    if (window.electronAPI) {
-      window.electronAPI.onChildEvent("open-settings-panel", (panel: string) => {
-        this.automationPanel.hide();
-        this.settings.open();
-        if (panel) this.settings.switchPanel(panel as PanelId);
-      });
-    }
-    this.files = new Files(this.input);
-
-    this.session = new Session();
-    this.viewManager = new ViewManager();
-    this.search = new Search();
-    this.registerCommandActions();
-    new Agents();
-    this.notifications = new Notifications();
-    initNotificationPersistence(() => this.notifications.syncSeenIds());
+this.settings = new Settings();
     this.permissions = new Permissions();
-    this.workspace = new Workspace();
-    this.automationPanel = new AutomationPanel();
-    this.automation = new Automation();
-    this.automation.setChatRenderer(this.chat);
-
-    // Refresh automation data each time the panel opens
-    this.automationPanel.onShow = () => this.automation.render();
-
-    // Update the automation panel's detail view when a job completes.
-    onAutomationShowResult((result: any) => {
-      this.automation.updateExecutionResult(result);
-    });
-
-    // ── Real-time automation execution streaming ─────────────────────
-    onAutomationStreamEvent((event) => {
-      const { job_id, event_type, event_data } = event;
-
-      if (event_type === "start") {
-        this._activeAutomationJobId = job_id;
-        const data = event_data as any;
-        const autoOpen = isEnabled(getState().settings?.automation_auto_open_view);
-        if (!autoOpen) return;
-        this.automationPanel.show();
-        this.automation.openExecution({
-          id: job_id, job_id, name: data.name || t("app.automationDefaultName"),
-          prompt: data.prompt || "", result: "", tag: "", state: "RUNNING",
-          session_id: data.session_id, messages: [],
-        });
-        return;
-      }
-
-      this.automation.updateExecution(job_id, event_type, event_data as Record<string, unknown>);
-      if (event_type === "finish") this._activeAutomationJobId = "";
-    });
-
-    // Mode change callbacks — refresh content, close session sidebar, animate welcome
-    const onAnyModeChange = (): void => {
-      // Hide automation view when switching modes
-      this.automationPanel.hide();
-      this.exitTempChat();
-      // Do NOT call resetChat() here — it destroys the running session's
-      // UI state (sessionId, running flag, messages).  The backend sends
-      // session_ready after open_workspace / close_workspace completes,
-      // which correctly loads the new session's state.  The old session's
-      // snapshot stays intact in the session store so the user can switch
-      // back without losing context.
-      this.closeSessionInnerSidebar();
-      // Nuke EVERY content-area artifact so widgets from the previous mode
-      // do not bleed into the new one (sub-agent view, tool detail panel,
-      // mention dropdown, search overlay, automation flags, etc.).
-      this.cleanupContentArea({ keepAutomationFlag: false });
-      this.chat.render();
-      // 在 updatePlaceholder 之前标记动画进行中，防止 updateWelcomeTitle 预置文字
-      this._welcomeTitleAnimating = true;
-      this.updatePlaceholder();
-      this.animateWelcomeTitle(getState().workspaceMode);
-    };
-    this.workspace.onModeChange = onAnyModeChange;
-    this.modeTransition = new ModeTransitionManager({
-      workspace: this.workspace,
-      automationPanel: this.automationPanel,
-      onModeChange: onAnyModeChange,
-      onLeaveAutomation: () => {
-        if (this.automation.isDetailVisible()) this.automation.hideDetail();
-      },
-    });
-    this.sessionInner = new SessionInner();
-    this.chat.onViewChanges = (path: string) => {
-      const st = getState();
-      const artifact = st.artifacts.find(a => a.path === path);
-      this.sessionInner.showReviewTab(path, artifact || undefined);
-    };
-
-    (window as any).__sessionInner = this.sessionInner;
     streamInit(this.chat, this.tools, this.permissions, this.settings);
     this.bindGlobalLinkInterceptor();
     this.bindInput();
     this.updatePlaceholder();
-    this.bindToolbarButtons();
     this.bindSummaryPanel();
-    this.bindWindowControls();
     this.bindSearchOverlay();
     this.initKeybindActions();
     this.bindKeyboardShortcuts();
@@ -300,50 +225,6 @@ class App {
     this.initTheme();
     initTooltip();
     this.bindResponsiveSidebar();
-
-    // Mirror sidebar collapse state to body so sibling elements can style
-    const appEl = document.getElementById("app");
-    if (appEl) {
-      const observer = new MutationObserver(() => {
-        document.body.classList.toggle("sidebar-collapsed", appEl.classList.contains("sidebar-collapsed"));
-      });
-      observer.observe(appEl, { attributes: true, attributeFilter: ["class"] });
-      // Sync initial state
-      document.body.classList.toggle("sidebar-collapsed", appEl.classList.contains("sidebar-collapsed"));
-    }
-
-    // Forward locale to tray
-    let lastTrayLocale = "";
-    onLocaleChange(() => {
-      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
-    });
-
-    subscribe(() => {
-      const locale = getState().settings.language as string;
-      if (locale && locale !== lastTrayLocale) {
-        lastTrayLocale = locale;
-        if (window.electronAPI) {
-          window.electronAPI.trayLocaleUpdate(locale);
-          window.electronAPI.browserLanguageUpdate(locale);
-        }
-      }
-    });
-
-    // Forward resolved theme to tray popup
-    let lastTrayThemePref = "";
-    onLocaleChange(() => {
-      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
-    });
-
-    subscribe(() => {
-      const pref = getState().themePreference;
-      if (pref && pref !== lastTrayThemePref) {
-        lastTrayThemePref = pref;
-        if (window.electronAPI) {
-          window.electronAPI.trayThemeUpdate(pref);
-        }
-      }
-    });
 
     // Forward workspace mode to tray + refresh dual session list on mode change
     let lastTrayMode = "";
@@ -359,7 +240,8 @@ class App {
         if (window.electronAPI) {
           window.electronAPI.trayModeUpdate(mode);
         }
-        send({ type: "list_all_sessions" });
+        // Tray sessions (normal+iwork) come from the unified sessions_all
+        // push — nothing new to fetch on a tray view switch.
       }
     });
 
@@ -390,89 +272,6 @@ class App {
     this.btnSend.disabled = !hasText && !this.effectiveMode() && !this.hasCommandChip() && getState().attachments.length === 0;
     });
 
-    // Re-fetch models when backend or base_url changes
-    let lastBackend = getState().settings.backend;
-    let lastBaseUrl = getState().settings.base_url;
-    onLocaleChange(() => {
-      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
-    });
-
-    subscribe(() => {
-      const s = getState();
-      if (s.settings.backend !== lastBackend || s.settings.base_url !== lastBaseUrl) {
-        lastBackend = s.settings.backend;
-        lastBaseUrl = s.settings.base_url;
-        if (s.connected) {
-          this.fetchModels();
-        }
-      }
-    });
-
-    // Listen for session switch from tray popup
-    if (window.electronAPI) {
-      window.electronAPI.onSwitchWorkspace((path: string) => {
-        this.settings.close();
-        void this.workspace.open(path);
-      });
-
-      window.electronAPI.onSwitchSession((sessionId: string) => {
-        this.settings.close();
-        const st = getState();
-        if (!sessionId || sessionId === st.sessionId) return;
-        // The tray popup maintains a dual cache (normal + iwork); search both.
-        const tray = getTraySessions();
-        const entry =
-          tray.iwork.find((s: any) => s.session_id === sessionId) ||
-          tray.normal.find((s: any) => s.session_id === sessionId);
-        const isIworkSession = tray.iwork.some((s: any) => s.session_id === sessionId);
-        const wsPath: string =
-          (entry && (entry.metadata?.workspace || (entry.metadata as any)?.workspace_path)) || "";
-        const requestId = crypto.randomUUID();
-
-        // Stash pending resume BEFORE enter() so enterWorkspaceMode()
-        // can detect it and skip its auto-activation of first workspace.
-        if (isIworkSession && wsPath) {
-          (window as any).__pendingTrayResume = { sessionId, requestId };
-        }
-
-        if (isIworkSession && st.workspaceMode !== "iwork") {
-          // Temporarily replace onModeChange to avoid resetChat() clearing the session being loaded
-          const orig = this.workspace.onModeChange;
-          this.workspace.onModeChange = () => {
-            this.closeSessionInnerSidebar();
-            this.cleanupContentArea({ keepAutomationFlag: false });
-            this.chat.renderForce();
-            this.workspace.onModeChange = orig;
-          };
-          this.workspace.enter();
-          // Pre-expand the target workspace so the tree shows its sessions
-          // as soon as workspace_opened renders it.
-          if (wsPath) this.workspace.ensureExpanded(wsPath);
-        } else if (!isIworkSession && st.workspaceMode === "iwork") {
-          this.workspace.forceExit();
-        } else {
-          // Same mode: clear residual widgets from the previous session
-          // (sub-agent view, tool detail panel, mention dropdown, etc.) so
-          // the user does not see stale content flash as the new session loads.
-          this.cleanupContentArea({ keepAutomationFlag: false });
-        }
-        setRequestedSessionId(sessionId, requestId);
-        // Normalize paths for Windows case/slash-insensitive comparison.
-        const _norm = (p: string) => p.replace(/\\/g, "/").toLowerCase();
-        const _trayPath = wsPath ? _norm(wsPath) : "";
-        const _activePath = st.activeWorkspace ? _norm(st.activeWorkspace) : "";
-        if (_trayPath && _trayPath !== _activePath) {
-          setSessionId("");
-          send({ type: "open_workspace", path: wsPath, request_id: requestId });
-        } else {
-          setSessionId(sessionId);
-          send({ type: "resume", session_id: sessionId, request_id: requestId });
-          delete (window as any).__pendingTrayResume;
-          this.chat.render();
-        }
-      });
-    }
-
     // Sync inputMode state changes to the input border / chip via the
     // single updateChipState() path.  Previously this wrote data-input-mode
     // directly from state.inputMode while updateChipState() wrote it from
@@ -484,48 +283,17 @@ class App {
       if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
     });
 
+    let prevTheme = "";
     subscribe(() => {
       const s = getState();
       if (s.inputMode !== prevInputMode) {
         prevInputMode = s.inputMode;
         this.updateChipState();
       }
-    });
-
-    // Re-render everything when locale changes
-    onLocaleChange(() => {
-      applyI18n();
-      this.chat.render();
-      this.session.render();
-      this.tools.render();
-      this.notifications.render();
-      this.sessionInner.renderForce();
-      this.settings.renderAll();
-      this.automation.render();
-      this.updateStats();
-      this.bindInputModelSelector();
-  });
-
-    // Apply startup mode only on initial connection + config_data received.
-    // Wait until startup_session_mode appears in settings (set by config_data
-    // handler in stream.ts) — checking Object.keys won't work because
-    // initTheme() populates settings.theme before the server responds.
-    let _startupModeApplied = false;
-    onLocaleChange(() => {
-      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
-    });
-
-    subscribe(() => {
-      const st = getState();
-      if (!st.connected) return;
-      if (_startupModeApplied) return;
-      if (!("startup_session_mode" in st.settings)) return;
-      _startupModeApplied = true;
-      const mode = st.settings.startup_session_mode as string;
-      if (mode === "iwork") {
-        this.workspace.enter();
-      } else if (mode === "automation") {
-        this.modeTransition.toggleAutomation();
+      const curTheme = s.themePreference;
+      if (curTheme !== prevTheme) {
+        prevTheme = curTheme;
+        this.applyThemeIcons(document.documentElement.getAttribute("data-theme") === "dark");
       }
     });
 
@@ -546,7 +314,278 @@ class App {
       }
     });
 
-    // Session menu toggle — collapse main sidebar when session sidebar opens
+    // Child window mode — detect ?child=VIEW_NAME from URL
+    const params = new URLSearchParams(window.location.search);
+    const childView = params.get("child");
+    if (childView) {
+      this._isChild = true;
+      this._childView = childView;
+      this.initChildMode(childView, params.get("label") || childView);
+    }
+
+    // Defer non-critical module initialization (Files, Session, Workspace,
+    // Automation, etc.) so the constructor returns quickly and the splash
+    // can hide earlier.  Use a double-rAF (NOT a microtask) so the heavy
+    // init runs AFTER the first paint — the splash is visible immediately
+    // and the deferred work happens in the gap while the renderer waits for
+    // the backend WS handshake.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => this.initDeferred());
+    });
+  }
+
+  private initDeferred(): void {
+    // Module initialization (deferred to reduce constructor time)
+    window.addEventListener("open-settings-panel", ((e: CustomEvent) => {
+      const panel = e.detail?.panel;
+      this.automationPanel?.hide();
+      this.settings.open();
+      if (panel) this.settings.switchPanel(panel as PanelId);
+    }) as EventListener);
+    if (window.electronAPI) {
+      window.electronAPI.onChildEvent("open-settings-panel", (panel: string) => {
+        this.automationPanel?.hide();
+        this.settings.open();
+        if (panel) this.settings.switchPanel(panel as PanelId);
+      });
+    }
+    this.files = new Files(this.input);
+
+    this.session = new Session();
+    this.viewManager = new ViewManager();
+    this.search = new Search();
+    this.registerCommandActions();
+    new Agents();
+    this.notifications = new Notifications();
+    initNotificationPersistence(() => this.notifications.syncSeenIds());
+    this.initEncreMenu();
+    this.workspace = new Workspace();
+    this.workspaceManager = new WorkspaceManager(this.workspace);
+    document.getElementById("btn-workspace-nav")?.addEventListener("click", () => this.workspaceManager.open());
+    this.automationPanel = new AutomationPanel();
+    this.automation = new Automation();
+    this.automation.setChatRenderer(this.chat);
+
+    this.automationPanel.onShow = () => this.automation.render();
+    onAutomationShowResult((result: any) => {
+      this.automation.updateExecutionResult(result);
+    });
+    onAutomationStreamEvent((event) => {
+      const { job_id, event_type, event_data } = event;
+      if (event_type === "start") {
+        this._activeAutomationJobId = job_id;
+        const data = event_data as any;
+        const autoOpen = isEnabled(getState().settings?.automation_auto_open_view);
+        if (!autoOpen) return;
+        this.automationPanel.show();
+        this.automation.openExecution({
+          id: job_id, job_id, name: data.name || t("app.automationDefaultName"),
+          prompt: data.prompt || "", result: "", tag: "", state: "RUNNING",
+          session_id: data.session_id, messages: [],
+        });
+        return;
+      }
+      this.automation.updateExecution(job_id, event_type, event_data as Record<string, unknown>);
+      if (event_type === "finish") this._activeAutomationJobId = "";
+    });
+
+    const onAnyModeChange = (): void => {
+      this.automationPanel.hide();
+      this.exitTempChat();
+      this.closeSessionInnerSidebar();
+      this.cleanupContentArea({ keepAutomationFlag: false });
+      // Mode switches (normal ↔ iwork ↔ automation) never trigger session_ready,
+      // so restore the active session's draft here after cleanup saved it.
+      this.restoreDraft();
+      this.chat.render();
+      this._welcomeTitleAnimating = true;
+      this.updatePlaceholder();
+      this.animateWelcomeTitle(getState().workspaceMode);
+    };
+    this.workspace.onModeChange = onAnyModeChange;
+    this.modeTransition = new ModeTransitionManager({
+      workspace: this.workspace,
+      automationPanel: this.automationPanel,
+      onModeChange: onAnyModeChange,
+      onLeaveAutomation: () => {
+        if (this.automation.isDetailVisible()) this.automation.hideDetail();
+      },
+    });
+
+    // Button bindings reference automation/automationPanel/modeTransition/
+    // files, so they must run after those deferred modules exist.
+    this.bindToolbarButtons();
+
+    let _lastWsMode = "";
+    subscribe(() => {
+      const mode = getState().workspaceMode;
+      if (mode === _lastWsMode) return;
+      _lastWsMode = mode;
+      const appEl = document.getElementById("app");
+      if (mode === "iwork") {
+        appEl?.classList.add("workspace-mode");
+      } else {
+        appEl?.classList.remove("workspace-mode");
+      }
+    });
+    this.sessionInner = new SessionInner();
+    this.chat.onViewChanges = (path: string) => {
+      const st = getState();
+      const artifact = st.artifacts.find(a => a.path === path);
+      this.sessionInner.showReviewTab(path, artifact || undefined);
+    };
+    (window as any).__sessionInner = this.sessionInner;
+
+    // Mirror sidebar collapse state to body
+    const appEl = document.getElementById("app");
+    if (appEl) {
+      const observer = new MutationObserver(() => {
+        document.body.classList.toggle("sidebar-collapsed", appEl.classList.contains("sidebar-collapsed"));
+      });
+      observer.observe(appEl, { attributes: true, attributeFilter: ["class"] });
+      document.body.classList.toggle("sidebar-collapsed", appEl.classList.contains("sidebar-collapsed"));
+    }
+
+    // Forward locale to tray
+    let lastTrayLocale = "";
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+    subscribe(() => {
+      const locale = getState().settings.language as string;
+      if (locale && locale !== lastTrayLocale) {
+        lastTrayLocale = locale;
+        if (window.electronAPI) {
+          window.electronAPI.trayLocaleUpdate(locale);
+          window.electronAPI.browserLanguageUpdate(locale);
+        }
+      }
+    });
+
+    // Forward resolved theme to tray popup
+    let lastTrayThemePref = "";
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+    subscribe(() => {
+      const pref = getState().themePreference;
+      if (pref && pref !== lastTrayThemePref) {
+        lastTrayThemePref = pref;
+        if (window.electronAPI) {
+          window.electronAPI.trayThemeUpdate(pref);
+        }
+      }
+    });
+
+    // Re-fetch models when backend or base_url changes
+    let lastBackend = getState().settings.backend;
+    let lastBaseUrl = getState().settings.base_url;
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+    subscribe(() => {
+      const s = getState();
+      if (s.settings.backend !== lastBackend || s.settings.base_url !== lastBaseUrl) {
+        lastBackend = s.settings.backend;
+        lastBaseUrl = s.settings.base_url;
+        if (s.connected) {
+          this.fetchModels();
+        }
+      }
+    });
+
+    // Listen for session switch from tray popup
+    if (window.electronAPI) {
+      window.electronAPI.onSwitchWorkspace((path: string) => {
+        this.settings.close();
+        void this.workspace.open(path);
+      });
+      window.electronAPI.onSwitchSession((sessionId: string) => {
+        this.settings.close();
+        const st = getState();
+        if (!sessionId || sessionId === st.sessionId) return;
+        const tray = getTraySessions();
+        const entry =
+          tray.iwork.find((s: any) => s.session_id === sessionId) ||
+          tray.normal.find((s: any) => s.session_id === sessionId);
+        const isIworkSession = tray.iwork.some((s: any) => s.session_id === sessionId);
+        const wsPath: string =
+          (entry && (entry.metadata?.workspace || (entry.metadata as any)?.workspace_path)) || "";
+        const requestId = crypto.randomUUID();
+        if (isIworkSession && wsPath) {
+          (window as any).__pendingTrayResume = { sessionId, requestId };
+        }
+        if (isIworkSession && st.workspaceMode !== "iwork") {
+          const orig = this.workspace.onModeChange;
+          this.workspace.onModeChange = () => {
+            this.closeSessionInnerSidebar();
+            this.cleanupContentArea({ keepAutomationFlag: false });
+            this.chat.renderForce();
+            this.workspace.onModeChange = orig;
+          };
+          this.workspace.enter();
+        } else if (!isIworkSession && st.workspaceMode === "iwork") {
+          this.workspace.forceExit();
+        } else {
+          this.cleanupContentArea({ keepAutomationFlag: false });
+        }
+        setRequestedSessionId(sessionId, requestId);
+        const _norm = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+        const _trayPath = wsPath ? _norm(wsPath) : "";
+        const _activePath = st.activeWorkspace ? _norm(st.activeWorkspace) : "";
+        if (_trayPath && _trayPath !== _activePath) {
+          setSessionId("");
+          send({ type: "open_workspace", path: wsPath, request_id: requestId });
+        } else {
+          setSessionId(sessionId);
+          send({ type: "resume", session_id: sessionId, request_id: requestId });
+          delete (window as any).__pendingTrayResume;
+          this.chat.render();
+        }
+      });
+    }
+
+    // Re-render everything when locale changes
+    onLocaleChange(() => {
+      applyI18n();
+      this.chat.render();
+      this.session?.render();
+      this.tools.render();
+      this.notifications?.render();
+      this.sessionInner?.renderForce();
+      this.settings.renderAll();
+      this.automation?.render();
+      this.updateStats();
+      this.bindInputModelSelector();
+      this.bindInputWorkspaceSelector();
+    });
+
+    // Apply startup mode
+    let _startupModeApplied = false;
+    onLocaleChange(() => {
+      if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
+    });
+    const _maybeApplyStartupMode = (): void => {
+      const st = getState();
+      if (!st.connected) return;
+      if (_startupModeApplied) return;
+      if (!("startup_session_mode" in st.settings)) return;
+      _startupModeApplied = true;
+      const mode = st.settings.startup_session_mode as string;
+      if (mode === "iwork") {
+        refreshAllData();
+      } else if (mode === "automation") {
+        this.modeTransition.toggleAutomation();
+      } else {
+        refreshAllData();
+      }
+    };
+    // Fire once on registration in case config_data already arrived before
+    // initDeferred() ran; subsequent changes are covered by the subscription.
+    _maybeApplyStartupMode();
+    subscribe(_maybeApplyStartupMode);
+
+    // Session menu toggle
     document.getElementById("btn-session-menu")?.addEventListener("click", () => {
       const panel = document.getElementById("session-inner-sidebar");
       const app = document.getElementById("app");
@@ -560,8 +599,6 @@ class App {
         this.sessionInner.renderForce();
         this.sessionInner.saveSidebarVisibility();
       } else {
-        // Hide the panel but keep tabs/terminals alive (like browser tabs).
-        // Re-opening shows everything exactly where it was.
         this.sessionInner.saveWidth();
         panel.classList.add("hidden");
         mainBody.classList.add("sidebar-hidden");
@@ -571,12 +608,8 @@ class App {
 
     this.renderSlashDropdown();
     applyI18n();
-
-    // Re-render slash dropdown when backend commands arrive
     window.addEventListener("slash-commands-updated", () => {
       this.renderSlashDropdown();
-      // Re-render input mode chip with correct icon/title now that
-      // custom commands are loaded.
       const chipMode = this._currentChipMode;
       if (chipMode) {
         const cmd = SLASH_COMMANDS.find(c => c.id === chipMode);
@@ -594,15 +627,6 @@ class App {
       this.chat.render();
       this.updateChipState();
     });
-
-    // Child window mode — detect ?child=VIEW_NAME from URL
-    const params = new URLSearchParams(window.location.search);
-    const childView = params.get("child");
-    if (childView) {
-      this._isChild = true;
-      this._childView = childView;
-      this.initChildMode(childView, params.get("label") || childView);
-    }
   }
 
   private initChildMode(view: string, label: string): void {
@@ -688,24 +712,20 @@ class App {
       this._showTabContent(tab);
       return;
     }
-    for (const t of this._tabs) {
-      if (t._contentEl) t._contentEl.style.display = "none";
-    }
+    // renderTabContent() creates the tab content and then calls
+    // _showTabContent(tab), which hides every other tab.
     this.renderTabContent(tab);
   }
 
+  // Same tab model as the sidebar (session_inner): every tab container is a
+  // .tab-panel absolutely positioned inside #child-view. Only the active tab
+  // carries .active — browser panels are shown via visibility (see
+  // .tab-panel[data-type="browser"] in styles.css), other panels via
+  // display. Reuses the exact same CSS rules as the sidebar tabs.
   private _showTabContent(tab: ChildTab): void {
     for (const t of this._tabs) {
       if (t._contentEl) {
-        const isBrowser = t.view.startsWith("http://") || t.view.startsWith("https://") || t.view.startsWith("file:") || t.view === "about:blank";
-        if (isBrowser) {
-          t._contentEl.style.visibility = t === tab ? "visible" : "hidden";
-          t._contentEl.style.zIndex = t === tab ? "0" : "-1";
-          t._contentEl.style.pointerEvents = t === tab ? "auto" : "none";
-          t._contentEl.style.display = "flex";
-        } else {
-          t._contentEl.style.display = t === tab ? "flex" : "none";
-        }
+        t._contentEl.classList.toggle("active", t === tab);
       }
     }
   }
@@ -847,12 +867,18 @@ class App {
     }
 
     const container = document.createElement("div");
-    container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;";
+    // Reuse the exact same tab container as the sidebar: .tab-panel is
+    // position:absolute;inset:0 within #child-view (position:relative) and is
+    // shown/hidden via the .active class (browser panels via visibility,
+    // see styles.css .tab-panel / .tab-panel[data-type="browser"]). This is
+    // the identical mechanism session_inner uses for its browser tabs.
+    container.className = "tab-panel";
     tab._contentEl = container;
     childViewEl.appendChild(container);
 
 if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.view.startsWith("file:") || tab.view === "about:blank") {
       const startUrl = tab.view === "about:blank" ? "" : tab.view;
+      container.dataset.type = "browser";
       const bv = new BrowserView(container, {
         startUrl,
         onFaviconChange: (favicon: string) => {
@@ -863,6 +889,9 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           this.addTab(newUrl, newUrl);
         },
       });
+      // BrowserView overwrites container.style.cssText; restore the overflow
+      // the sidebar browser panels use (panel.style.overflow = "hidden").
+      container.style.overflow = "hidden";
       tab.browserView = bv;
       bv.webview.addEventListener("page-title-updated", (e: any) => {
         tab.title = e.title || "";
@@ -882,12 +911,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           <div class="child-doc-toolbar">
             <div class="settings-dropdown-wrap" id="child-region-wrap">
               <button class="settings-dropdown-trigger" id="child-region-trigger" type="button">
-                <span>${t("settings.aboutRegionIntl")}</span>
+                <span>${t("settings.aboutRegionUs")}</span>
                 <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
               </button>
               <div class="settings-dropdown" id="child-region-dropdown">
-                <div class="settings-dropdown-item selected" data-value="intl">${t("settings.aboutRegionIntl")}</div>
-                <div class="settings-dropdown-item" data-value="cn">${t("settings.aboutRegionCn")}</div>
+                ${this.buildRegionDropdownItems()}
               </div>
             </div>
           </div>
@@ -911,10 +939,33 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
       this.bindChildRegionDropdown("child-region", (val) => {
         this._region = val;
+        if (window.electronAPI && window.electronAPI.setDocRegion) {
+          window.electronAPI.setDocRegion(val);
+        }
         loadDoc(val);
       });
 
-      loadDoc(this._region);
+      if (window.electronAPI && window.electronAPI.getDocRegion) {
+        window.electronAPI
+          .getDocRegion()
+          .then((saved: string) => {
+            if (saved && this.isValidDocRegion(saved)) {
+              this._region = saved;
+              const trigger = document.getElementById("child-region-trigger");
+              const dropdown = document.getElementById("child-region-dropdown");
+              const item = dropdown?.querySelector(`.settings-dropdown-item[data-value="${saved}"]`) as HTMLElement | null;
+              if (trigger && item) {
+                trigger.querySelector("span")!.textContent = item.textContent || "";
+                dropdown!.querySelectorAll(".settings-dropdown-item").forEach((el) => el.classList.remove("selected"));
+                item.classList.add("selected");
+              }
+            }
+          })
+          .catch(() => {})
+          .finally(() => loadDoc(this._region));
+      } else {
+        loadDoc(this._region);
+      }
     } else if (tab.view === "easter-egg") {
       container.innerHTML = `<div class="easter-egg-container" style="position:absolute;inset:0;overflow:hidden;background:#000"></div>`;
       const eggEl = container.querySelector(".easter-egg-container") as HTMLElement;
@@ -953,6 +1004,12 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         (window as any).lucide.createIcons({ root: container });
       }
     }
+
+    // Show the newly created tab and hide every other one. Must run AFTER
+    // content creation: BrowserView overwrites container.style.cssText with
+    // display:flex, so this is the single place that normalizes visibility
+    // for all tab types (webview / docs / logs / easter-egg …).
+    this._showTabContent(tab);
   }
 
   private _initLogView(container: HTMLElement): void {
@@ -1087,6 +1144,76 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
   }
 
+  private static readonly DOC_REGION_GROUPS: { labelKey: string; regions: { value: string; labelKey: string }[] }[] = [
+    {
+      labelKey: "settings.aboutRegionGroupAmericas",
+      regions: [
+        { value: "us", labelKey: "settings.aboutRegionUs" },
+        { value: "ca", labelKey: "settings.aboutRegionCa" },
+        { value: "mx", labelKey: "settings.aboutRegionMx" },
+        { value: "br", labelKey: "settings.aboutRegionBr" },
+      ],
+    },
+    {
+      labelKey: "settings.aboutRegionGroupEurope",
+      regions: [
+        { value: "eu", labelKey: "settings.aboutRegionEu" },
+        { value: "uk", labelKey: "settings.aboutRegionUk" },
+        { value: "ch", labelKey: "settings.aboutRegionCh" },
+        { value: "tr", labelKey: "settings.aboutRegionTr" },
+      ],
+    },
+    {
+      labelKey: "settings.aboutRegionGroupAsia",
+      regions: [
+        { value: "cn", labelKey: "settings.aboutRegionCn" },
+        { value: "jp", labelKey: "settings.aboutRegionJp" },
+        { value: "kr", labelKey: "settings.aboutRegionKr" },
+        { value: "tw", labelKey: "settings.aboutRegionTw" },
+        { value: "hk", labelKey: "settings.aboutRegionHk" },
+        { value: "mo", labelKey: "settings.aboutRegionMo" },
+        { value: "sg", labelKey: "settings.aboutRegionSg" },
+        { value: "in", labelKey: "settings.aboutRegionIn" },
+        { value: "ae", labelKey: "settings.aboutRegionAe" },
+        { value: "sa", labelKey: "settings.aboutRegionSa" },
+        { value: "il", labelKey: "settings.aboutRegionIl" },
+      ],
+    },
+    {
+      labelKey: "settings.aboutRegionGroupAfrica",
+      regions: [
+        { value: "za", labelKey: "settings.aboutRegionZa" },
+        { value: "ng", labelKey: "settings.aboutRegionNg" },
+        { value: "ke", labelKey: "settings.aboutRegionKe" },
+        { value: "eg", labelKey: "settings.aboutRegionEg" },
+      ],
+    },
+    {
+      labelKey: "settings.aboutRegionGroupOceania",
+      regions: [
+        { value: "au", labelKey: "settings.aboutRegionAu" },
+        { value: "nz", labelKey: "settings.aboutRegionNz" },
+      ],
+    },
+  ];
+
+  private isValidDocRegion(value: string): boolean {
+    return App.DOC_REGION_GROUPS.some((g) => g.regions.some((r) => r.value === value));
+  }
+
+  private buildRegionDropdownItems(): string {
+    return App.DOC_REGION_GROUPS.map(
+      (group) =>
+        `<div class="settings-dropdown-group">${t(group.labelKey)}</div>` +
+        group.regions
+          .map(
+            (r) =>
+              `<div class="settings-dropdown-item${r.value === this._region ? " selected" : ""}" data-value="${r.value}">${t(r.labelKey)}</div>`
+          )
+          .join("")
+    ).join("");
+  }
+
   private bindChildRegionDropdown(id: string, onChange: (val: string) => void): void {
     const wrap = document.getElementById(`${id}-wrap`);
     const trigger = document.getElementById(`${id}-trigger`);
@@ -1185,7 +1312,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     // detail view. The header shows the Back button + the sidebar Search
     // button (so search is reachable), and the sidebar-toggle stays
     // hidden because the sidebar is force-collapsed in automation.
-    const isAutomationDetail = this.automation.isDetailVisible();
+    const isAutomationDetail = this.automation?.isDetailVisible?.() ?? false;
     const isAutomationSubAgent = (isAutomationView && isSubAgentView) || isAutomationDetail;
     if (autoBackBtn && toggleBtn && searchBtn) {
       if (isAutomationDetail) {
@@ -1396,7 +1523,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
             removeQueuedPromptAt(0);
             addUserMessage(qp.text, qp.mode);
             startAssistantMessage();
-            setRunning(true);
+            setSessionState("running");
             this.updateUIState(true);
             const text = typeof qp.text === "string" ? qp.text : "";
             if (text) {
@@ -1409,34 +1536,71 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
   }
 
   async start(): Promise<void> {
-    this.splash.show();
-    const _splashStart = performance.now();
+    (window as any).__perfStart = performance.now();
 
-    // Yield to browser so the splash actually paints before we block on I/O
+    // The main window is shown immediately by the main process; the in-app
+    // splash screen covers boot while the startup mode's data is filled, then
+    // fades out on reveal. Remaining slices (other modes' data) keep loading
+    // in the background via stream events after reveal.
+    this.splash.show();
+
     await new Promise<void>(r => requestAnimationFrame(() => r()));
 
+    const _connStart = performance.now();
     await connect(handleEvent);
     if (getState().connected) {
-      // Fetch available models from the provider and server config
-      this.fetchModels();
-      send({ type: "get_config" });
-      send({ type: "list_workspaces" });
+      console.log("[perf] ws open after %dms", Math.round(performance.now() - _connStart));
+      // Unified initial data pull: config+models, sessions, workspaces in one
+      // call so every panel starts from the same fresh snapshot.
+      refreshAllData();
     }
 
-    // Ensure splash is visible ≥ 1 s for visual smoothness
-    const _elapsed = performance.now() - _splashStart;
-    if (_elapsed < 1000) {
-      await new Promise(r => setTimeout(r, 1000 - _elapsed));
+    // Wait for the startup mode's priority data so the window opens already
+    // populated for the mode the user chose. Hard-capped so a zero-session
+    // user (or a slow model provider blocking list_models) cannot hold the
+    // reveal forever.
+    const _fillDeadline = performance.now() + 3000;
+    while (performance.now() < _fillDeadline) {
+      if (this._priorityDataReady()) break;
+      await new Promise((r) => setTimeout(r, 80));
     }
+    console.log("[perf] initial data present at %dms", Math.round(performance.now() - (window as any).__perfStart));
 
-    if (!getState().connected) {
+    if (getState().connected) {
+      // Reveal the (now data-filled) main UI.
+      this.splash.hide();
+    } else {
+      // Backend never came up: keep the splash showing the error + retry.
       await this.handleSplashError(t("app.splashNoConnect"));
       return;
     }
-    this.splash.hide();
+  }
+
+  /**
+   * True once the data the *selected startup mode* needs is present, so the
+   * window opens in that mode already populated. Other modes' data (workspace
+   * lists, automation jobs, …) keeps filling in the background afterwards.
+   */
+  private _priorityDataReady(): boolean {
+    const st = getState();
+    if (!st.connected) return false;
+    // config_data has been processed (settings populated from backend).
+    if (!("startup_session_mode" in st.settings)) return false;
+    const mode = st.settings.startup_session_mode as string;
+    if (mode === "automation") {
+      return this.modeTransition.getCurrentMode() === "automation";
+    }
+    if (mode === "iwork") {
+      return st.sessionsList.length > 0 || st.allSessions.length > 0;
+    }
+    // normal (通用): general-mode chat needs the session lists.
+    return st.sessionsList.length > 0 || st.allSessions.length > 0;
   }
 
   private async handleSplashError(message: string): Promise<void> {
+    // Ensure the splash (with the error/retry UI) is actually visible — it is
+    // not shown at boot anymore since the main window reveals the real UI.
+    this.splash.show();
     let detail = "";
     try {
       const status = await window.electronAPI?.getServiceStatus?.();
@@ -1585,6 +1749,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       this.updateInputExpandButton();
       this.updatePlaceholder();
       this.updateSendButton();
+      this.saveCurrentDraft();
     });
 
     // Composer expand/shrink toggle (top-right inside the input box).
@@ -1624,6 +1789,17 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       this.updateInputExpandButton();
     });
     inputContentObserver.observe(this.input, { childList: true, characterData: true, subtree: true });
+
+    // Mirror `#input-area`'s natural height so we can preserve the chat
+    // container's geometry when the composer floats (setInputExpanded).
+    // Updating `padding-bottom` is gated by the expanded state and lives
+    // in syncInputAreaHeight() — this observer only refreshes the cache.
+    this._inputAreaResizeObs = new ResizeObserver(() => this.refreshInputNaturalHeight());
+    this._inputAreaResizeObs.observe(this.inputArea);
+    this.refreshInputNaturalHeight();
+    // Re-apply the overlay padding after viewport changes (the composer
+    // itself is observed, so this is mostly belt-and-braces).
+    window.addEventListener("resize", () => this.refreshInputNaturalHeight());
 
     // ── Toolbar mode-chip close button ────────────────────────────
     const closeBtn = document.getElementById("btn-mode-close");
@@ -1838,6 +2014,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const tempChatBtn = document.getElementById("btn-temp-chat");
     tempChatBtn?.addEventListener("click", () => {
       if (getState().tempChat) return;
+      // Temp chat is a normal-mode feature; ignore in workspace mode.
+      if (getState().workspaceMode === "iwork") return;
       this.automationPanel.hide();
       this.exitTempChat();
       this.cleanupContentArea({ keepAutomationFlag: false });
@@ -1935,6 +2113,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     });
 
     this.bindInputModelSelector();
+    this.bindInputWorkspaceSelector();
   }
 
   private bindSummaryPanel(): void {
@@ -2136,10 +2315,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
 
     const renderItem = (r: any) => {
-      const iconSrc = r.icon || "zap";
       const text = stripRefTypePrefix(r.tool, r.summary);
       return `<div class="sp-ref-item">
-        <i data-lucide="${iconSrc}" class="lucide lucide-sm sp-ref-item-icon"></i>
         <span class="sp-ref-item-text" title="${this.esc(r.summary)}">${this.esc(text)}</span>
       </div>`;
     };
@@ -2148,8 +2325,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     for (const g of groups) {
       if (g.refs.length === 0) continue;
       const allHtml = g.refs.map(renderItem).join("");
-      parts.push(`<div class="collapsed">
-        <div class="sp-ref-header" onclick="this.parentElement.classList.toggle('collapsed')">
+      const groupKey = `${g.label}`;
+      const isCollapsed = this._refCollapsedState.get(groupKey) !== false;
+
+      parts.push(`<div class="${isCollapsed ? "collapsed" : ""}" data-ref-group="${groupKey}">
+        <div class="sp-ref-header" data-ref-group="${groupKey}">
           <i data-lucide="${g.icon}" class="lucide lucide-sm sp-ref-header-icon"></i>
           <span class="sp-ref-header-label">${g.label}</span>
           <i data-lucide="chevron-down" class="lucide lucide-sm sp-ref-chevron"></i>
@@ -2159,6 +2339,19 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
 
     el.innerHTML = parts.join("");
+
+    // Attach event listeners for toggle
+    el.querySelectorAll<HTMLElement>(".sp-ref-header").forEach((header) => {
+      const groupKey = header.dataset.refGroup || "";
+      header.addEventListener("click", () => {
+        const groupEl = header.parentElement as HTMLElement;
+        if (!groupEl) return;
+        const wasCollapsed = groupEl.classList.contains("collapsed");
+        groupEl.classList.toggle("collapsed");
+        this._refCollapsedState.set(groupKey, !wasCollapsed);
+      });
+    });
+
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: el });
     }
@@ -2217,7 +2410,9 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           send({ type: "set_active_model", model_index: activeIdx });
         }
       }
-      selector.textContent = isActiveUsable ? (allModels[activeIdx]?.name || allModels[activeIdx]?.model_id || "NONE") : "NONE";
+      const label = isActiveUsable ? (allModels[activeIdx]?.name || allModels[activeIdx]?.model_id || "NONE") : "NONE";
+      const labelEl = selector.querySelector(".input-selector-label") as HTMLElement | null;
+      if (labelEl) labelEl.textContent = label;
 
       // Thinking level entry -- only if active model supports it
       let thinkingEntry = "";
@@ -2231,7 +2426,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           </button>`;
       }
 
-      // Model list
+      // Model list — only show CONFIGURED models.  The catalog ("available
+      // models") is a settings-side browsing aid for adding new models; it is
+      // NOT a pickable model here, so when nothing is configured the selector
+      // shows a muted hint plus the add-model action instead of a wall of
+      // unconfigured sample models.
       let modelsHtml = "";
       if (models.length === 0) {
         modelsHtml = `<button class="mention-dropdown-item muted" disabled>${t("app.noModelsConfigured")}</button>`;
@@ -2263,7 +2462,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           e.stopPropagation();
           const idx = parseInt((item as HTMLElement).dataset.idx || "0");
           send({ type: "set_active_model", model_index: idx });
-          selector.textContent = allModels[idx]?.name || allModels[idx]?.model_id || t("app.model");
+          const lbl = selector.querySelector(".input-selector-label") as HTMLElement | null;
+          if (lbl) lbl.textContent = allModels[idx]?.name || allModels[idx]?.model_id || t("app.model");
           dropdown.classList.add("hidden");
         });
       });
@@ -2414,6 +2614,95 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         }
       } catch (e) {
         console.error("[model-selector] subscribe render failed:", e);
+      }
+    });
+
+    render();
+  }
+
+  /**
+   * Workspace selector in the input toolbar (left of the model selector).
+   * Mirrors the model selector's UI exactly; only visible in workspace
+   * (iwork) mode. Selecting an entry opens that workspace directly.
+   */
+  private bindInputWorkspaceSelector(): void {
+    const wrap = document.getElementById("input-workspace-selector-wrap");
+    const selector = document.getElementById("input-workspace-selector");
+    const dropdown = document.getElementById("input-workspace-dropdown");
+    if (!wrap || !selector || !dropdown) return;
+
+    const render = () => {
+      const st = getState();
+      const wsList = st.workspaces || [];
+      const activePath = st.activeWorkspace;
+      const active = wsList.find((w) => w.path === activePath);
+
+      // Only visible on the welcome screen (no messages yet) in workspace
+      // mode, for picking which workspace the new session belongs to.
+      // After the first send it disappears and the workspace is auto-matched.
+      const showWsSelector = st.workspaceMode === "iwork" && (st.messages?.length ?? 0) === 0;
+      wrap.classList.toggle("hidden", !showWsSelector);
+
+      const labelEl = selector.querySelector(".input-selector-label") as HTMLElement | null;
+      if (labelEl) labelEl.textContent = active ? active.name : t("workspace.selectWorkspace");
+
+      let html: string;
+      if (wsList.length === 0) {
+        html = `<button class="mention-dropdown-item muted" disabled>${t("workspace.noWorkspaces")}</button>`;
+      } else {
+        html = wsList
+          .map((w) => {
+            const sel = w.path === activePath ? " active" : "";
+            return `<button class="mention-dropdown-item${sel}" data-ws-path="${this.esc(w.path)}">
+              <span>${this.esc(w.name)}</span>
+            </button>`;
+          })
+          .join("");
+      }
+      dropdown.innerHTML = html;
+
+      dropdown.querySelectorAll(".mention-dropdown-item[data-ws-path]").forEach((item) => {
+        item.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const path = (item as HTMLElement).dataset.wsPath || "";
+          dropdown.classList.add("hidden");
+          if (!path || path === getState().activeWorkspace) return;
+          void this.workspace.open(path);
+        });
+      });
+    };
+
+    // Only bind event listeners once
+    if (selector.dataset.wsSelectorBound === "true") {
+      render();
+      return;
+    }
+    selector.dataset.wsSelectorBound = "true";
+
+    selector.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // The model and workspace dropdowns must never be open at the same time.
+      const modelDropdown = document.getElementById("input-model-dropdown");
+      if (modelDropdown) modelDropdown.classList.add("hidden");
+      if (dropdown.classList.contains("hidden")) {
+        render();
+        dropdown.classList.remove("hidden");
+      } else {
+        dropdown.classList.add("hidden");
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!selector.contains(e.target as Node) && !dropdown.contains(e.target as Node)) {
+        dropdown.classList.add("hidden");
+      }
+    });
+
+    subscribe(() => {
+      try {
+        render();
+      } catch (e) {
+        console.error("[workspace-selector] subscribe render failed:", e);
       }
     });
 
@@ -2572,6 +2861,45 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const chip = this.input.querySelector('.mode-chip[data-mode]');
     if (!chip) return "";
     return chip.getAttribute("data-mode") || "";
+  }
+
+  /**
+   * Persist the current composer content (text, line breaks and inline
+   * chips) under the active session id so it survives a session switch.
+   * Called on every input event and right before the input is cleared on
+   * session/mode switches.  Empty drafts are discarded.
+   */
+  private saveCurrentDraft(): void {
+    const sid = getState().sessionId;
+    if (!sid) return;
+    const html = this.input.innerHTML;
+    if (html && html.trim()) {
+      this._drafts.set(sid, html);
+    } else {
+      this._drafts.delete(sid);
+    }
+  }
+
+  /**
+   * Restore the saved draft for the given session (falls back to the active
+   * session id) into the composer.  Used after a session_ready lands so the
+   * text the user was composing before switching away comes back.  Also
+   * restores the inline mode-chip so chip + border stay in sync.
+   */
+  public restoreDraft(sid?: string): void {
+    const target = sid || getState().sessionId;
+    if (!target) return;
+    const html = this._drafts.get(target);
+    if (!html) return;
+    const input = this.input;
+    input.innerHTML = html;
+    const chip = input.querySelector('.mode-chip[data-mode]') as HTMLElement | null;
+    this._currentChipMode = chip ? (chip.getAttribute("data-mode") || "") : "";
+    this.updateChipState();
+    this.updatePlaceholder();
+    this.updateSendButton();
+    this.resizeInput();
+    this.updateInputExpandButton();
   }
 
   private insertModeChip(mode: string, restText?: string): void {
@@ -3004,6 +3332,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
 
     // ── 7. Input area — clear leftover text/chip/attachments ───────
+    // Capture the current composer content against the *outgoing* session
+    // before it is wiped, so restoreDraft() can bring it back when the user
+    // returns to this session.
+    this.saveCurrentDraft();
     if (this.input) {
       this.input.innerHTML = "";
       this.input.style.height = "56px";
@@ -3244,55 +3576,117 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     if (this._inputResizeRaf) return;
     this._inputResizeRaf = requestAnimationFrame(() => {
       this._inputResizeRaf = 0;
+      if (this._inputExpanded) {
+        // Expanded mode: let CSS handle the height via the .expanded class.
+        this.input.style.height = "";
+        this.updateInputExpandButton();
+        return;
+      }
       this.input.style.height = "auto";
-      const minH = this._inputExpanded ? 220 : 56;
-      const maxH = this._inputExpanded ? Math.min(620, Math.round(window.innerHeight * 0.6)) : 320;
-      const h = Math.min(Math.max(this.input.scrollHeight, minH), maxH);
+      this.input.style.maxHeight = "none";
+      const contentH = this.input.scrollHeight;
+      this.input.style.maxHeight = "";
+      const h = Math.min(Math.max(contentH, 56), 320);
       this.input.style.height = `${h}px`;
+      this.updateInputExpandButton();
     });
   }
 
-  /** Shows/hides the top-right expand toggle based on real text content
-   *  (mode chips, @-mentions and file chips are `contenteditable=false`
-   *  and are excluded by getPlainText(), so plain-text-only drives it). */
-  /** The toggle lives behind an invisible hover-zone at the box's top-right
-   *  corner and only reveals on hover (like the app's ghost icons), so it
-   *  never covers the text being typed. It only exists while there is real
-   *  text content (mode chips, @-mentions and file chips are
-   *  `contenteditable=false` and excluded by getPlainText()). */
+  private countLines(): number {
+    const text = this.input.innerText || '';
+    if (!text.trim()) return 0;
+    // innerText already normalises block-level elements to \n in Chromium
+    return text.split('\n').length;
+  }
+
+  /** Shows/hides the expand toggle based on plain-text line count. */
   private updateInputExpandButton(): void {
-    if (!this.inputExpandZone) return;
-    const hasText = this.getPlainText().length > 0;
-    this.inputExpandZone.classList.toggle("hidden", !hasText);
+    const maxLines = 5;
+    const lines = this.countLines();
+    const overflowing = lines > maxLines;
+    const show = this._inputExpanded || overflowing;
+    this.inputExpandBtn.classList.toggle("btn-hidden", !show);
     this.renderExpandIcon();
     const titleKey = this._inputExpanded ? "input.collapse" : "input.expand";
     this.inputExpandBtn.setAttribute("data-i18n-title", titleKey);
     this.inputExpandBtn.title = t(titleKey as any);
   }
 
-  /** Re-renders the toggle icon. lucide replaces the <i> node with an <svg>
-   *  on first pass, so we always rebuild the icon markup instead of trying
-   *  to patch an existing element. */
   private renderExpandIcon(): void {
-    const want = this._inputExpanded ? "minimize-2" : "maximize-2";
-    if (this.inputExpandBtn.dataset.render === want) return;
-    this.inputExpandBtn.dataset.render = want;
-    this.inputExpandBtn.innerHTML = `<i data-lucide="${want}" class="lucide"></i>`;
-    (window as any).lucide?.createIcons?.();
+    const expanded = this._inputExpanded;
+    const expandIcon = this.inputExpandBtn.querySelector(".expand-icon") as HTMLElement;
+    const collapseIcon = this.inputExpandBtn.querySelector(".collapse-icon") as HTMLElement;
+    if (expandIcon) expandIcon.style.display = expanded ? "none" : "";
+    if (collapseIcon) collapseIcon.style.display = expanded ? "" : "none";
   }
 
   private setInputExpanded(v: boolean): void {
     if (this._inputExpanded === v) return;
+    if (v) {
+      // Measure the composer's height while it is STILL in the flex flow,
+      // BEFORE the `input-expanded` class turns it into an absolute overlay.
+      // Reading offsetHeight here forces a synchronous layout, so the value
+      // is exact for the slot being vacated — including any status bar /
+      // queue card that is visible this very instant.  Trusting the
+      // ResizeObserver cache instead is racy: the callback only runs at the
+      // END of a frame, so a status-bar/queue-card that just appeared or
+      // disappeared leaves a stale height there.  A stale value makes the
+      // padding-bottom placeholder larger/smaller than the real slot, the
+      // chat container's height shifts by the difference, and the next
+      // streaming `scrollToBottom()` re-pins to the new (wrong) bottom —
+      // the user sees the whole timeline jump as if the wheel scrolled.
+      const h = this.inputArea.offsetHeight;
+      if (h > 0) this._inputNaturalHeight = h;
+    } else {
+      // Collapsing: settle the editor height synchronously BEFORE the
+      // `.input-expanded` class is removed.  Two traps here:
+      //   1. `.expanded`'s `min-height: 220px` must be dropped first —
+      //      otherwise `scrollHeight` reports >= 220px no matter how short
+      //      the real content is, and the composer re-enters the flex flow
+      //      taller than its natural slot.  That squeezes `#chat-container`
+      //      by the difference and, when scrolled near the bottom, pushes
+      //      the timeline up (scrollTop gets clamped).
+      //   2. The `height` transition must be OFF for the re-flow frame:
+      //      with `input-anim` active the browser renders the previous
+      //      frame's height (220px) on the very frame the composer returns
+      //      to the flow, which causes the same one-frame squeeze.  It is
+      //      re-enabled right after the re-flow below.
+      this.input.classList.remove("expanded");
+      this.input.classList.remove("input-anim");
+      this.input.style.height = "auto";
+      const contentH = this.input.scrollHeight;
+      this.input.style.height = `${Math.min(Math.max(contentH, 56), 320)}px`;
+    }
     this._inputExpanded = v;
-    // Temporarily enable the height transition so the expand/collapse glides
-    // with the app's standard easing; clears once the animation settles so
-    // normal typing auto-resize stays snappy.
-    this.input.classList.add("input-anim");
+    // Temporarily enable the height transition so the expand glides with
+    // the app's standard easing; clears once the animation settles so
+    // normal typing auto-resize stays snappy.  On collapse the transition
+    // is enabled only AFTER the composer has safely re-entered the flex
+    // flow (see the else branch above) — during the re-flow frame itself
+    // it must stay off or the timeline jumps.
+    if (v) this.input.classList.add("input-anim");
     window.clearTimeout(this._inputAnimTimer);
     this._inputAnimTimer = window.setTimeout(() => {
       this.input.classList.remove("input-anim");
     }, 400);
     this.input.classList.toggle("expanded", v);
+    this.inputArea.classList.toggle("input-expanded", v);
+    if (v) this.input.style.height = "";
+    // Collapse: the composer is back in the flex flow — re-enable the
+    // height transition so resizeInput()'s rAF (and the animation window
+    // below) behaves as before, without the re-flow frame squeeze.
+    if (!v) this.input.classList.add("input-anim");
+    // Compensate the vacated slot IMMEDIATELY, before any layout-reading
+    // step below (updateInputExpandButton reads innerText, resizeInput
+    // schedules a rAF, placeCursorAtEnd touches the selection) forces a
+    // reflow.  If the padding-bottom placeholder were applied later, the
+    // browser would lay out the intermediate state — input-area absolute,
+    // no padding-bottom yet — which grows the chat container by the
+    // input's height, shrinks the scrollable range, and clamps scrollTop.
+    // The timeline then jumps up by roughly the input height and never
+    // comes back, even though the placeholder eventually restores the
+    // container's height.
+    this.syncInputAreaHeight();
     this.updateInputExpandButton();
     this.resizeInput();
     this.placeCursorAtEnd();
@@ -3301,6 +3695,37 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
   private toggleInputExpand(): void {
     this.setInputExpanded(!this._inputExpanded);
+  }
+
+  /**
+   * Refresh the cached height of `#input-area` while it sits in the normal
+   * flex flow.  When the composer switches to its expanded overlay state
+   * this is the value pushed into `#main-content-clip`'s `padding-bottom`
+   * to keep the chat container's geometry stable.
+   */
+  private refreshInputNaturalHeight(): void {
+    // Skip while the composer is floating — its `offsetHeight` then
+    // reflects the tall overlay (up to ~700px), which is NOT the slot
+    // size we want to preserve.  The last cache written before the
+    // expand is good enough until the user collapses it again.
+    if (this._inputExpanded) return;
+    const h = this.inputArea.offsetHeight;
+    if (h > 0) this._inputNaturalHeight = h;
+  }
+
+  /**
+   * Apply or clear the `padding-bottom` placeholder on the chat-content
+   * clip column, mirroring the composer's natural height while the
+   * overlay is open.  Called on every expand/collapse toggle.
+   */
+  private syncInputAreaHeight(): void {
+    const clip = document.getElementById("main-content-clip");
+    if (!clip) return;
+    if (this._inputExpanded) {
+      clip.style.paddingBottom = `${this._inputNaturalHeight}px`;
+    } else {
+      clip.style.paddingBottom = "0px";
+    }
   }
 
   private updateSendButton(): void {
@@ -3355,24 +3780,6 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
   private fetchModels(): void {
     send({ type: "list_models" });
-  }
-
-  private bindWindowControls(): void {
-    const btnMinimize = document.getElementById("btn-minimize");
-    const btnMaximize = document.getElementById("btn-maximize");
-    const btnClose = document.getElementById("btn-close");
-
-    btnMinimize?.addEventListener("click", async () => {
-      await window.electronAPI?.windowMinimize();
-    });
-
-    btnMaximize?.addEventListener("click", async () => {
-      await window.electronAPI?.windowMaximize();
-    });
-
-    btnClose?.addEventListener("click", async () => {
-      await window.electronAPI?.windowClose();
-    });
   }
 
   private bindSearchOverlay(): void {
@@ -3501,6 +3908,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     if (isQueued) {
       pushQueuedPrompt(text, sendMode);
       clearAttachments();
+      this._drafts.delete(st.sessionId || "");
       this.input.innerHTML = "";
       this.input.style.height = "56px";
       this.setInputExpanded(false);
@@ -3516,6 +3924,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     if (this._currentChipMode === "steer") {
       if (!text.trim()) return;
       send({ type: "steer", session_id: st.sessionId || undefined, prompt: text } as any);
+      this._drafts.delete(st.sessionId || "");
       this.input.innerHTML = "";
       this.input.style.height = "56px";
       this.setInputExpanded(false);
@@ -3529,7 +3938,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
     addUserMessage(text, sendMode, fileRefs);
     startAssistantMessage();
-    setRunning(true);
+    setSessionState("running");
     this.updateUIState(true);
 
     const activeModel = st.modelConfigs.length > 0 ? st.modelConfigs[Math.min(st.activeModelIndex, st.modelConfigs.length - 1)] : undefined;
@@ -3573,6 +3982,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     // and then is cleared.  Unlike plan/spec it does NOT persist across
     // turns in the input chip (the backend re-injects its instructions
     // every turn until the next message).
+    this._drafts.delete(st.sessionId || "");
     this.input.innerHTML = "";
     this.input.style.height = "56px";
     this.setInputExpanded(false);
@@ -3630,6 +4040,13 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     }
   }
 
+  /** Resume an existing session into the regular chat view. */
+  private resumeSession(sid: string): void {
+    const requestId = crypto.randomUUID();
+    setRequestedSessionId(sid, requestId);
+    send({ type: "resume", session_id: sid, request_id: requestId });
+  }
+
   private initKeybindActions(): void {
     const a = this._keybindActions;
 
@@ -3641,9 +4058,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       (window as any).electronAPI?.toggleDevTools?.();
     };
     a["reload"] = () => {
-      send({ type: "list_sessions" });
-      send({ type: "list_workspaces" });
-      send({ type: "get_config" } as any);
+      refreshAllData();
       this.chat.render();
     };
     a["fullscreen"] = () => {
@@ -3655,11 +4070,6 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     };
 
     // ── Session Management ───────────────────────────────────────────
-    const resumeSession = (sid: string) => {
-      const requestId = crypto.randomUUID();
-      setRequestedSessionId(sid, requestId);
-      send({ type: "resume", session_id: sid, request_id: requestId });
-    };
     a["new_session"] = () => {
       this.automationPanel.hide();
       this.exitTempChat();
@@ -3675,6 +4085,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     };
     a["new_temp_chat"] = () => {
       if (getState().tempChat) return;
+      // Temp chat is a normal-mode feature; ignore in workspace mode.
+      if (getState().workspaceMode === "iwork") return;
       this.automationPanel.hide();
       this.exitTempChat();
       this.cleanupContentArea({ keepAutomationFlag: false });
@@ -3701,7 +4113,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       const currentId = getState().sessionId;
       const idx = sessions.findIndex(s => s.session_id === currentId);
       const next = sessions[(idx + 1) % sessions.length];
-      if (next) resumeSession(next.session_id);
+      if (next) this.resumeSession(next.session_id);
     };
     a["prev_session"] = () => {
       const sessions = getState().sessionsList;
@@ -3709,7 +4121,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       const currentId = getState().sessionId;
       const idx = sessions.findIndex(s => s.session_id === currentId);
       const prev = sessions[(idx - 1 + sessions.length) % sessions.length];
-      if (prev) resumeSession(prev.session_id);
+      if (prev) this.resumeSession(prev.session_id);
     };
     a["delete_session"] = async () => {
       const sid = getState().sessionId;
@@ -3767,7 +4179,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       for (let i = lastAssistantIdx; i < msgs.length; i++) removed.add(msgs[i].id);
       removeBranchMessages(removed);
       startAssistantMessage();
-      setRunning(true);
+      setSessionState("running");
       const branchId = getState().activeBranchId;
       sendRetry(branchId, userMsgIdx, mode);
     };
@@ -3933,7 +4345,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     };
 
     // ── Notifications ────────────────────────────────────────────────
-    a["notifications_open"] = () => this.notifications.openPanel();
+    a["notifications_open"] = () => {
+      if (!document.getElementById("encre-menu-dropdown")) this.openEncreMenu();
+      this.showEncreNotifications();
+    };
     a["notifications_clear"] = () => clearAllNotifications();
     a["show_shortcuts"] = () => this.toggleShortcutsCard();
 
@@ -4095,11 +4510,19 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       // Block native browser handling for any key that's in the keybinds list
       // and for function keys (F1-F12) that are commonly used as shortcuts
       if (mappedKey.match(/^f(1[0-2]|[1-9])$/) || binds.some((kb) => kb.keys && kb.keys.includes(pattern))) {
-        e.preventDefault();
+        // Don't intercept Ctrl+Z when the composer is focused — let the
+        // browser handle the native undo for the contenteditable.
+        if (!(mappedKey === 'z' && mod && this.input.contains(document.activeElement))) {
+          e.preventDefault();
+        }
       }
 
       for (const kb of binds) {
         if (kb.keys && kb.keys.includes(pattern)) {
+          // Skip undo_message when the composer is focused (native browser undo)
+          if (kb.id === "undo_message" && this.input.contains(document.activeElement)) {
+            return;
+          }
           if (kb.id === "search_settings") {
             const app = document.getElementById("app");
             if (!app?.classList.contains("settings-mode")) return;
@@ -4113,6 +4536,131 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         }
       }
     });
+  }
+
+  // ── Encre menu (language / theme / notifications / settings) ──────────
+  private initEncreMenu(): void {
+    const btn = document.getElementById("btn-encre-menu");
+    if (!btn) return;
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.toggleEncreMenu();
+    });
+
+    document.addEventListener("click", () => this.closeEncreMenu());
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") this.closeEncreMenu();
+    });
+  }
+
+  private toggleEncreMenu(): void {
+    if (document.getElementById("encre-menu-dropdown")) {
+      this.closeEncreMenu();
+      return;
+    }
+    this.openEncreMenu();
+  }
+
+  private openEncreMenu(): void {
+    const btn = document.getElementById("btn-encre-menu");
+    if (!btn) return;
+
+    const menu = document.createElement("div");
+    menu.id = "encre-menu-dropdown";
+    menu.className = "encre-menu-dropdown";
+    document.body.appendChild(menu);
+    menu.innerHTML = this.buildMainMenuHtml();
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: menu });
+    }
+
+    const rect = btn.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.left = `${rect.left}px`;
+
+    menu.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = (e.target as HTMLElement).closest<HTMLElement>("[data-action]");
+      if (!row) return;
+      const action = row.getAttribute("data-action");
+      if (action === "notifications") {
+        this.showEncreNotifications();
+      } else if (action === "settings") {
+        this.closeEncreMenu();
+        this.automationPanel?.hide();
+        this.settings.open();
+      }
+    });
+  }
+
+  private refreshEncreMenu(): void {
+    const menu = document.getElementById("encre-menu-dropdown");
+    if (!menu) return;
+    const main = menu.querySelector(".encre-menu-main") as HTMLElement | null;
+    if (!main) return;
+    main.innerHTML = this.buildMainMenuInnerHtml();
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: main });
+    }
+  }
+
+  private closeEncreMenu(): void {
+    const menu = document.getElementById("encre-menu-dropdown");
+    if (!menu) return;
+    this.notifications.detach();
+    menu.remove();
+  }
+
+  /** Switches the menu to the notifications sub-view inside the dropdown. */
+  private showEncreNotifications(): void {
+    const menu = document.getElementById("encre-menu-dropdown");
+    if (!menu) return;
+    const main = menu.querySelector(".encre-menu-main") as HTMLElement | null;
+    const sub = menu.querySelector(".encre-menu-sub") as HTMLElement | null;
+    const content = menu.querySelector(".encre-notif-content") as HTMLElement | null;
+    if (!main || !sub || !content) return;
+    main.classList.add("hidden");
+    sub.classList.remove("hidden");
+    sub.scrollTop = 0;
+    menu.style.width = "480px";
+    this.notifications.attach(content, () => {
+      this.notifications.resetDetail();
+      main.classList.remove("hidden");
+      sub.classList.add("hidden");
+      menu.style.width = "";
+    });
+  }
+
+  private buildMainMenuHtml(): string {
+    return `<div class="encre-menu-main">${this.buildMainMenuInnerHtml()}</div>
+      <div class="encre-menu-sub hidden"><div class="encre-notif-content"></div></div>`;
+  }
+
+  private buildMainMenuInnerHtml(): string {
+    const unread = getUnreadCount();
+    return `
+      <button type="button" class="encre-menu-item-row encre-menu-action-row" data-action="notifications">
+        <div class="encre-menu-item-info">
+          <div class="encre-menu-item-title" style="display:flex;align-items:center;gap:8px">
+            <i data-lucide="bell" class="lucide" style="width:14px;height:14px;color:var(--text-secondary)"></i>
+            ${t("header.notifications")}
+          </div>
+        </div>
+        <div class="encre-menu-item-control">
+          ${unread > 0 ? `<span class="encre-menu-unread">${unread}</span>` : ""}
+        </div>
+      </button>
+      <div class="encre-menu-item-divider"></div>
+      <button type="button" class="encre-menu-item-row encre-menu-action-row" data-action="settings">
+        <div class="encre-menu-item-info">
+          <div class="encre-menu-item-title" style="display:flex;align-items:center;gap:8px">
+            <i data-lucide="settings" class="lucide" style="width:14px;height:14px;color:var(--text-secondary)"></i>
+            ${t("header.settings")}
+          </div>
+        </div>
+      </button>`;
   }
 
   private async initTheme(): Promise<void> {
@@ -4149,11 +4697,17 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
   }
 
   private applyThemeIcons(dark: boolean): void {
+    const encreMenuIcon = document.getElementById(
+      "btn-encre-menu-icon"
+    ) as HTMLImageElement | null;
+    if (encreMenuIcon) {
+      encreMenuIcon.src = dark ? "assets/Encre-dm.svg" : "assets/Encre-lm.svg";
+    }
     const welcomeLogo = document.getElementById(
       "welcome-logo"
     ) as HTMLImageElement | null;
     if (welcomeLogo) {
-      const iconOnly = dark ? "assets/yimiw.svg" : "assets/yimib.svg";
+      const iconOnly = dark ? "assets/Encre-dm.svg" : "assets/Encre-lm.svg";
       welcomeLogo.src = iconOnly;
     }
   }

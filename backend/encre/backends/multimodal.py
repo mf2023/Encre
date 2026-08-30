@@ -58,6 +58,7 @@ The mixin is additive; every multimodal method starts by checking the
 
 import asyncio
 import base64
+import inspect
 import json
 import logging
 import time
@@ -106,6 +107,567 @@ def _b64_to_bytes(value: str) -> bytes:
 def _bytes_to_b64(data: bytes) -> str:
     """Encode bytes to a base64 string with no newlines."""
     return base64.b64encode(data).decode("ascii")
+
+
+# ── Multimodal capability probing ──────────────────────────────────
+
+# Tiny valid 1x1 transparent PNG injected into a probe message to test
+# whether the provider endpoint accepts image (multimodal) content.
+_PROBE_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+)
+
+# Every probe below treats ANY failure (HTTP error, timeout, network, auth)
+# as "unsupported" -- a direct judgement so a non-responsive node never blocks
+# or stalls model configuration.
+
+
+def _probe_wav_bytes() -> bytes:
+    """Build a tiny valid mono PCM WAV used to probe audio endpoints."""
+    import struct
+    samples = b"\x00\x00" * 320
+    fmt_chunk = b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16)
+    data_chunk = b"data" + struct.pack("<I", len(samples)) + samples
+    return b"RIFF" + struct.pack("<I", 4 + len(fmt_chunk) + len(data_chunk)) + b"WAVE" + fmt_chunk + data_chunk
+
+
+def _anthropic_headers(backend: Any) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    auth_manager = getattr(backend, "auth_manager", None)
+    if auth_manager is not None and getattr(auth_manager, "api_key", ""):
+        headers["x-api-key"] = auth_manager.api_key
+    elif getattr(backend, "api_key", ""):
+        headers["x-api-key"] = backend.api_key
+    return headers
+
+
+async def probe_multimodal_support(backend: Any) -> str:
+    """Probe whether a backend endpoint accepts image (multimodal) content.
+
+    Sends a minimal chat message carrying a tiny 1x1 PNG.  Returns:
+
+    * ``"supported"``   -- the endpoint accepted the image block.
+    * ``"unsupported"`` -- the probe failed or the provider rejected the
+      image content (i.e. the endpoint is text-only or not reachable).
+
+    OpenAI-protocol backends are probed with an ``image_url`` content
+    block; Anthropic-protocol backends with a native ``image`` block.
+
+    When a backend *declares* that it cannot take vision input
+    (``supports_vision_input() -> False``), that is treated as authoritative:
+    the live probe is skipped.  Many text-only endpoints (e.g. DeepSeek)
+    silently accept an ``image_url`` content block and still return 200 --
+    the declared flag is the only reliable signal for them.
+    """
+    declared = getattr(backend, "supports_vision_input", None)
+    if callable(declared):
+        try:
+            if not declared():
+                return "unsupported"
+        except Exception:
+            pass
+    if hasattr(backend, "_post_json_async") and hasattr(backend, "_multimodal_base"):
+        # OpenAI / OpenAI-compatible protocol.
+        return await _probe_openai_protocol(backend)
+    try:
+        from encre.backends.anthropic import AnthropicBackend
+        if isinstance(backend, AnthropicBackend):
+            return await _probe_anthropic_protocol(backend)
+    except Exception:
+        pass
+    try:
+        from encre.backends.google import GoogleBackend
+        if isinstance(backend, GoogleBackend):
+            return await _probe_google_protocol(backend)
+    except Exception:
+        pass
+    # Final fallback: probe through the backend's own chat() method so
+    # method-level backends (Bedrock, Local, Failover, Router, ...) are still
+    # verified for multimodal input.
+    return await _probe_common_protocol(backend)
+
+
+async def _probe_openai_protocol(backend: Any) -> str:
+    payload: dict[str, Any] = {
+        "model": backend.model,
+        "max_tokens": 8,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "what is in this image?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{_PROBE_PNG_B64}"
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    try:
+        await backend._post_json_async("/chat/completions", payload)
+        return "supported"
+    except Exception:
+        return "unsupported"
+
+
+async def _probe_anthropic_protocol(backend: Any) -> str:
+    body: dict[str, Any] = {
+        "model": backend.model,
+        "max_tokens": 8,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": _PROBE_PNG_B64,
+                        },
+                    },
+                    {"type": "text", "text": "what is in this image?"},
+                ],
+            }
+        ],
+    }
+    try:
+        resp = await backend._client.post("/messages", json=body, headers=_anthropic_headers(backend))
+        if resp.status_code < 400:
+            return "supported"
+    except Exception:
+        pass
+    return "unsupported"
+
+
+async def _probe_google_protocol(backend: Any) -> str:
+    """Probe Google / Gemini multimodal input with a native 1x1 PNG inline_data part."""
+    model = getattr(backend, "model", "gemini-2.5-pro")
+    base_url = str(getattr(backend, "base_url", "")).rstrip("/")
+    url = f"{base_url}/models/{model}:generateContent"
+    body: dict[str, Any] = {
+        "contents": [{"parts": [
+            {"inline_data": {"mime_type": "image/png", "data": _PROBE_PNG_B64}},
+            {"text": "what is in this image?"},
+        ]}],
+    }
+    try:
+        resp = await backend._client.post(
+            url, params={"key": getattr(backend, "api_key", "")}, json=body
+        )
+        if resp.status_code < 400:
+            return "supported"
+    except Exception:
+        pass
+    return "unsupported"
+
+
+# ── Full node / endpoint probing ─────────────────────────────────────
+
+# Canonical node names recorded per model in ``ModelConfig.capabilities``.
+_NODE_CHAT = "chat"
+_NODE_RESPONSES = "responses"
+_NODE_IMAGES_GENERATION = "images_generation"
+_NODE_IMAGES_EDIT = "images_edit"
+_NODE_IMAGES_VARIATION = "images_variation"
+_NODE_AUDIO_TRANSLATION = "audio_translation"
+_NODE_EMBEDDINGS = "embeddings"
+_NODE_MODERATION = "moderation"
+_NODE_FILES = "files"
+_NODE_BATCHES = "batches"
+_NODE_FINE_TUNING = "fine_tuning"
+_NODE_REALTIME = "realtime"
+_NODE_MODELS = "models"
+_NODE_MULTIMODAL_INPUT = "multimodal_input"
+
+# All probed nodes (multimodal_input is added only when multimodal is enabled).
+_ALL_NODES = (
+    _NODE_CHAT,
+    _NODE_RESPONSES,
+    _NODE_IMAGES_GENERATION,
+    _NODE_IMAGES_EDIT,
+    _NODE_IMAGES_VARIATION,
+    _NODE_AUDIO_TRANSLATION,
+    _NODE_EMBEDDINGS,
+    _NODE_MODERATION,
+    _NODE_FILES,
+    _NODE_BATCHES,
+    _NODE_FINE_TUNING,
+    _NODE_REALTIME,
+    _NODE_MODELS,
+)
+
+
+async def _node_supported(coro: Any) -> bool:
+    try:
+        await coro
+        return True
+    except Exception:
+        return False
+
+
+async def probe_backend_capabilities(
+    backend: Any, include_multimodal: bool = False
+) -> dict[str, str]:
+    """Probe every node/endpoint the backend protocol exposes.
+
+    Returns ``{node_name: "supported" | "unsupported"}``.  Runs entirely
+    in the background (never blocks model configuration) and every failure
+    is recorded as ``"unsupported"``.  The multimodal input probe only runs
+    when ``include_multimodal`` is set -- i.e. the multimodal option was
+    enabled for this model.
+    """
+    if hasattr(backend, "_post_json_async") and hasattr(backend, "_multimodal_base"):
+        # OpenAI / OpenAI-compatible protocol (covers most backends).
+        return await _probe_openai_nodes(backend, include_multimodal)
+    try:
+        from encre.backends.anthropic import AnthropicBackend
+        if isinstance(backend, AnthropicBackend):
+            return await _probe_anthropic_nodes(backend, include_multimodal)
+    except Exception:
+        pass
+    try:
+        from encre.backends.google import GoogleBackend
+        if isinstance(backend, GoogleBackend):
+            return await _probe_google_nodes(backend, include_multimodal)
+    except Exception:
+        pass
+    # Bedrock / Local / Failover / Router / anything else: probe through the
+    # backend's own methods (the SDK / in-process API is the node surface).
+    return await _probe_common_nodes(backend, include_multimodal)
+
+
+async def _probe_openai_nodes(backend: Any, include_multimodal: bool) -> dict[str, str]:
+    out: dict[str, str] = {name: "unsupported" for name in _ALL_NODES}
+    png = base64.b64decode(_PROBE_PNG_B64)
+
+    def _may(flag: str) -> bool:
+        method = getattr(backend, flag, None)
+        if method is None:
+            return True
+        try:
+            return bool(method())
+        except Exception:
+            return True
+
+    if await _node_supported(backend._post_json_async("/chat/completions", {
+            "model": backend.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 8})):
+        out[_NODE_CHAT] = "supported"
+    if await _node_supported(backend._get_json_async("/models")):
+        out[_NODE_MODELS] = "supported"
+    if _may("supports_responses_api") and await _node_supported(
+            backend._post_json_async("/responses", {
+                "model": backend.model, "input": "hi", "max_output_tokens": 8})):
+        out[_NODE_RESPONSES] = "supported"
+    if _may("supports_image_generation") and await _node_supported(
+            backend._post_json_async("/images/generations", {
+                "model": backend.model, "prompt": "a tiny test", "n": 1, "size": "256x256"})):
+        out[_NODE_IMAGES_GENERATION] = "supported"
+    if _may("supports_image_edit") and await _node_supported(
+            backend._post_multipart_async("/images/edits",
+                {"model": backend.model, "prompt": "test", "size": "256x256"},
+                {"image": ("probe.png", png, "image/png")})):
+        out[_NODE_IMAGES_EDIT] = "supported"
+    if _may("supports_image_variation") and await _node_supported(
+            backend._post_multipart_async("/images/variations",
+                {"model": backend.model, "n": 1, "size": "256x256"},
+                {"image": ("probe.png", png, "image/png")})):
+        out[_NODE_IMAGES_VARIATION] = "supported"
+    if await _node_supported(backend._post_multipart_async("/audio/translations",
+            {"model": backend.model},
+            {"file": ("probe.wav", _probe_wav_bytes(), "audio/wav")})):
+        out[_NODE_AUDIO_TRANSLATION] = "supported"
+    if _may("supports_embeddings") and await _node_supported(
+            backend._post_json_async("/embeddings", {
+                "model": backend.model, "input": "hi"})):
+        out[_NODE_EMBEDDINGS] = "supported"
+    if _may("supports_moderation") and await _node_supported(
+            backend._post_json_async("/moderations", {"input": "hi"})):
+        out[_NODE_MODERATION] = "supported"
+
+    async def _files_probe() -> None:
+        data = await backend._post_multipart_async(
+            "/files",
+            {"purpose": "assistants"},
+            {"file": ("probe.txt", b"encre capability probe", "text/plain")},
+        )
+        file_id = (data or {}).get("id")
+        if file_id:
+            await backend._delete_async(f"/files/{file_id}")
+
+    if _may("supports_files") and await _node_supported(_files_probe()):
+        out[_NODE_FILES] = "supported"
+    if _may("supports_batch") and await _node_supported(backend._get_json_async("/batches")):
+        out[_NODE_BATCHES] = "supported"
+    if _may("supports_fine_tuning") and await _node_supported(backend._get_json_async("/fine_tuning/jobs")):
+        out[_NODE_FINE_TUNING] = "supported"
+    if _may("supports_realtime") and await _node_supported(
+            backend._post_json_async("/realtime/sessions", {"model": backend.model})):
+        out[_NODE_REALTIME] = "supported"
+
+    if include_multimodal:
+        out[_NODE_MULTIMODAL_INPUT] = await probe_multimodal_support(backend)
+    return out
+
+
+async def _probe_anthropic_nodes(backend: Any, include_multimodal: bool) -> dict[str, str]:
+    out: dict[str, str] = {name: "unsupported" for name in _ALL_NODES}
+    client = getattr(backend, "_client", None)
+    if client is None:
+        if include_multimodal:
+            out[_NODE_MULTIMODAL_INPUT] = await probe_multimodal_support(backend)
+        return out
+    headers = _anthropic_headers(backend)
+
+    def _may(flag: str) -> bool:
+        method = getattr(backend, flag, None)
+        if method is None:
+            return True
+        try:
+            return bool(method())
+        except Exception:
+            return True
+
+    async def _post(path: str, body: dict[str, Any]) -> None:
+        resp = await client.post(path, json=body, headers=headers)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"HTTP {resp.status_code}")
+
+    async def _get(path: str) -> None:
+        resp = await client.get(path, headers=headers)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"HTTP {resp.status_code}")
+
+    if await _node_supported(_post("/messages", {
+            "model": backend.model, "max_tokens": 8,
+            "messages": [{"role": "user", "content": "hi"}]})):
+        out[_NODE_CHAT] = "supported"
+    if await _node_supported(_get("/models")):
+        out[_NODE_MODELS] = "supported"
+    if _may("supports_files") and await _node_supported(_get("/files")):
+        out[_NODE_FILES] = "supported"
+    if _may("supports_batch") and await _node_supported(_get("/messages/batches")):
+        out[_NODE_BATCHES] = "supported"
+
+    # The OpenAI-style nodes are probed against the Anthropic host too: a
+    # non-2xx (404 / 400) confirm the endpoint is simply not offered.
+    if _may("supports_responses_api") and await _node_supported(_post("/responses", {"model": backend.model, "input": "hi", "max_output_tokens": 8})):
+        out[_NODE_RESPONSES] = "supported"
+    if _may("supports_image_generation") and await _node_supported(_post("/images/generations", {"model": backend.model, "prompt": "test", "n": 1, "size": "256x256"})):
+        out[_NODE_IMAGES_GENERATION] = "supported"
+    if _may("supports_image_edit") and await _node_supported(_post("/images/edits", {"model": backend.model, "prompt": "test"})):
+        out[_NODE_IMAGES_EDIT] = "supported"
+    if _may("supports_image_variation") and await _node_supported(_post("/images/variations", {"model": backend.model, "n": 1})):
+        out[_NODE_IMAGES_VARIATION] = "supported"
+    if await _node_supported(_post("/audio/translations", {"model": backend.model})):
+        out[_NODE_AUDIO_TRANSLATION] = "supported"
+    if _may("supports_embeddings") and await _node_supported(_post("/embeddings", {"model": backend.model, "input": "hi"})):
+        out[_NODE_EMBEDDINGS] = "supported"
+    if _may("supports_moderation") and await _node_supported(_post("/moderations", {"input": "hi"})):
+        out[_NODE_MODERATION] = "supported"
+    if _may("supports_fine_tuning") and await _node_supported(_get("/fine_tuning/jobs")):
+        out[_NODE_FINE_TUNING] = "supported"
+    if _may("supports_realtime") and await _node_supported(_post("/realtime/sessions", {"model": backend.model})):
+        out[_NODE_REALTIME] = "supported"
+
+    if include_multimodal:
+        out[_NODE_MULTIMODAL_INPUT] = await probe_multimodal_support(backend)
+    return out
+
+
+async def _probe_google_nodes(backend: Any, include_multimodal: bool) -> dict[str, str]:
+    """Probe Google / Gemini Generative Language API nodes.
+
+    Follows the exact endpoints :class:`GoogleBackend` uses (chat via
+    ``:generateContent``, read-only checks for models / files / tunedModels,
+    and the batch / embedding nodes).  Every failure is recorded as
+    ``unsupported``.  Nodes Google does not offer through this API
+    (image generation, audio, moderation, responses, realtime, ...) stay
+    seeded as ``unsupported`` without a network round-trip.
+    """
+    out: dict[str, str] = {name: "unsupported" for name in _ALL_NODES}
+    client = getattr(backend, "_client", None)
+    if client is None:
+        if include_multimodal:
+            out[_NODE_MULTIMODAL_INPUT] = await probe_multimodal_support(backend)
+        return out
+    params = {"key": getattr(backend, "api_key", "")}
+    base_url = str(getattr(backend, "base_url", "")).rstrip("/")
+    model = getattr(backend, "model", "gemini-2.5-pro")
+
+    async def _post(path: str, body: dict[str, Any]) -> None:
+        resp = await client.post(f"{base_url}{path}", params=params, json=body)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"HTTP {resp.status_code}")
+
+    async def _get(path: str) -> None:
+        resp = await client.get(f"{base_url}{path}", params=params)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"HTTP {resp.status_code}")
+
+    if await _node_supported(_post(f"/models/{model}:generateContent", {
+            "contents": [{"parts": [{"text": "hi"}]}]})):
+        out[_NODE_CHAT] = "supported"
+    if await _node_supported(_get("/models")):
+        out[_NODE_MODELS] = "supported"
+    if await _node_supported(_post("/models/text-embedding-005:batchEmbedContents", {
+            "requests": [{"content": {"parts": [{"text": "hi"}]}}]})):
+        out[_NODE_EMBEDDINGS] = "supported"
+    if await _node_supported(_get("/files")):
+        out[_NODE_FILES] = "supported"
+    if await _node_supported(_post(f"/models/{model}:batchGenerateContent", {
+            "batch": {
+                "display_name": "encre-probe",
+                "input_config": {"requests": {"requests": [
+                    {"request": {"contents": [{"parts": [{"text": "hi"}]}]},
+                     "metadata": {"custom_id": "probe"}}
+                ]}},
+            }})):
+        out[_NODE_BATCHES] = "supported"
+    if await _node_supported(_get("/tunedModels")):
+        out[_NODE_FINE_TUNING] = "supported"
+
+    if include_multimodal:
+        out[_NODE_MULTIMODAL_INPUT] = await probe_multimodal_support(backend)
+    return out
+
+
+async def _consume_chat_with_data(backend: Any, messages: list[dict[str, Any]]) -> bool:
+    """Run ``backend.chat(...)`` and report whether it produced content.
+
+    Handles async generators (the common case), awaitables and plain sync
+    iterables.  An explicit backend error is treated as a failure.
+    """
+    result = backend.chat(messages=messages, max_tokens=8, stream=False)
+
+    async def _scan_asyncgen(agn: Any) -> bool:
+        saw_success = False
+        saw_error = False
+        async for ev in agn:
+            if getattr(ev, "error", None):
+                saw_error = True
+            elif hasattr(ev, "text") or getattr(ev, "finish_reason", None) is not None:
+                saw_success = True
+        return saw_success and not saw_error
+
+    if inspect.isasyncgen(result):
+        return await _scan_asyncgen(result)
+    if inspect.isawaitable(result):
+        try:
+            result = await result
+        except Exception:
+            return False
+        if inspect.isasyncgen(result):
+            return await _scan_asyncgen(result)
+        return result is not None
+    # Sync generator or list of events.
+    try:
+        saw_success = False
+        saw_error = False
+        for ev in result:
+            if getattr(ev, "error", None):
+                saw_error = True
+            elif hasattr(ev, "text") or getattr(ev, "finish_reason", None) is not None:
+                saw_success = True
+        return saw_success and not saw_error
+    except Exception:
+        return result is not None
+
+
+async def _probe_common_protocol(backend: Any) -> str:
+    """Fallback multimodal probe: pass a 1x1 PNG into the backend's own chat.
+
+    Works for method-level backends with no fixed HTTP protocol surface
+    (Bedrock / Local / Failover / Router, ...).
+    """
+    messages: list[dict[str, Any]] = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "what is in this image?"},
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{_PROBE_PNG_B64}"}},
+        ],
+    }]
+    try:
+        if await _consume_chat_with_data(backend, messages):
+            return "supported"
+    except Exception:
+        pass
+    return "unsupported"
+
+
+async def _probe_common_nodes(backend: Any, include_multimodal: bool) -> dict[str, str]:
+    """Generic method-level prober for backends without a probeable HTTP
+    protocol (Bedrock / Local / Failover / Router / unknown).  Each node is
+    verified by calling the backend's own public method with a minimal
+    payload; any failure (NotImplementedError, auth, timeout) is recorded as
+    ``unsupported``.  Write-heavy endpoints (files / batches / fine-tuning /
+    realtime / responses) are judged from the declared ``supports_*`` flags,
+    which are the authoritative capability signal for SDK-style backends.
+    """
+    out: dict[str, str] = {name: "unsupported" for name in _ALL_NODES}
+
+    def _flag(name: str) -> bool:
+        method = getattr(backend, f"supports_{name}", None)
+        if method is None:
+            return False
+        try:
+            return bool(method())
+        except Exception:
+            return False
+
+    async def _call(name: str, args: tuple[Any, ...], kwargs: dict[str, Any], node: str) -> None:
+        method = getattr(backend, name, None)
+        if method is None:
+            return
+        try:
+            result = method(*args, **kwargs)
+            if inspect.isawaitable(result):
+                await result
+            out[node] = "supported"
+        except Exception:
+            pass
+
+    # Chat exists on every backend and is the core node.
+    if await _consume_chat_with_data(backend, [{
+            "role": "user", "content": "hi"}]):
+        out[_NODE_CHAT] = "supported"
+
+    if hasattr(backend, "list_models"):
+        try:
+            if (await backend.list_models()) is not None:
+                out[_NODE_MODELS] = "supported"
+        except Exception:
+            pass
+
+    # Generation / analysis nodes -- stable signatures, small safe payloads.
+    await _call("generate_image", ("tiny test",), {"n": 1, "size": "256x256"}, _NODE_IMAGES_GENERATION)
+    await _call("edit_image", ("tiny test", _PROBE_PNG_B64), {"size": "256x256"}, _NODE_IMAGES_EDIT)
+    await _call("create_image_variation", (_PROBE_PNG_B64,), {"size": "256x256"}, _NODE_IMAGES_VARIATION)
+    await _call("translate_audio", (base64.b64encode(_probe_wav_bytes()).decode(),), {}, _NODE_AUDIO_TRANSLATION)
+    await _call("create_embeddings", ("hi",), {}, _NODE_EMBEDDINGS)
+    await _call("create_moderation", ("hi",), {}, _NODE_MODERATION)
+
+    # Write-heavy nodes -- judged by the declared capability flags.
+    if _flag("files"):
+        out[_NODE_FILES] = "supported"
+    if _flag("batch"):
+        out[_NODE_BATCHES] = "supported"
+    if _flag("fine_tuning"):
+        out[_NODE_FINE_TUNING] = "supported"
+    if _flag("realtime"):
+        out[_NODE_REALTIME] = "supported"
+    if _flag("responses_api"):
+        out[_NODE_RESPONSES] = "supported"
+
+    if include_multimodal:
+        out[_NODE_MULTIMODAL_INPUT] = await probe_multimodal_support(backend)
+    return out
 
 
 class MultimodalMixin:

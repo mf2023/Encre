@@ -38,12 +38,13 @@
  */
 
 import MiniSearch from "minisearch";
-import { getState, subscribe, setSearchResults, addAttachments } from "./state.js";
+import { getState, subscribe, setSearchResults, addAttachments, getAppliedSearchSeq } from "./state.js";
 import { send } from "./ws.js";
 import { setRequestedSessionId } from "./stream.js";
 import type { SearchResultEntry, SearchFilter, SearchFilterKey } from "./types.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { matchingSlashCommands, SLASH_COMMANDS } from "./slash_commands.js";
+import { getFileIcon } from "./files.js";
 
 /**
  * Registry of app-action callbacks invokable from search results.
@@ -84,12 +85,13 @@ const SECTION_DEFS: Record<string, SectionTemplate> = {
   session_header: {
     getLabel: () => t("search.sectionSessions"),
     icon: `<i data-lucide="message-square" class="lucide lucide-sm"></i>`,
-    kindLabel: () => t("search.resultSession"),
+    // Show the session title (user name or first-message preview), never the id.
+    kindLabel: (r) => r.name || r.preview || t("search.resultSession"),
   },
   conversation: {
     getLabel: () => t("search.sectionConversations"),
     icon: `<i data-lucide="message-square" class="lucide lucide-sm"></i>`,
-    kindLabel: () => t("general.resultConversation"),
+    kindLabel: (r) => r.name || r.preview || t("general.resultConversation"),
   },
   memory: {
     getLabel: () => t("search.sectionMemory"),
@@ -108,12 +110,12 @@ const SECTION_DEFS: Record<string, SectionTemplate> = {
   },
   skill: {
     getLabel: () => t("search.sectionSkills"),
-    icon: `<i data-lucide="wrench" class="lucide lucide-sm"></i>`,
+    icon: `<i data-lucide="wand-2" class="lucide lucide-sm"></i>`,
     kindLabel: (r) => r.name || t("search.resultSkill"),
   },
   workspace: {
     getLabel: () => t("search.sectionWorkspaces"),
-    icon: `<i data-lucide="compass" class="lucide lucide-sm"></i>`,
+    icon: `<i data-lucide="folder" class="lucide lucide-sm"></i>`,
     kindLabel: () => t("search.resultWorkspace"),
   },
   model: {
@@ -128,7 +130,7 @@ const SECTION_DEFS: Record<string, SectionTemplate> = {
   },
   sub_agent: {
     getLabel: () => t("search.sectionSubAgents"),
-    icon: `<i data-lucide="bot" class="lucide lucide-sm"></i>`,
+    icon: `<i data-lucide="sparkles" class="lucide lucide-sm"></i>`,
     kindLabel: (r) => r.name || t("search.resultSubAgent"),
   },
   document: {
@@ -179,10 +181,9 @@ const SECTION_DEFS: Record<string, SectionTemplate> = {
   file: {
     getLabel: () => t("search.sectionFiles"),
     icon: `<i data-lucide="file" class="lucide lucide-sm"></i>`,
-    kindLabel: (r) => {
-      const p = r.path || "";
-      return r.preview ? `${r.preview}: ${p}` : (r.line ? `${p}:${r.line}` : p || r.kind);
-    },
+    // Only the workspace name here — the file path lives in `snippet` so it
+    // keeps its original case (kind label styling must not uppercase it).
+    kindLabel: (r) => r.preview || r.kind,
   },
 };
 
@@ -193,7 +194,7 @@ export const SETTINGS_NAV_ITEMS: { panel: string; nameEn: string; nameZh: string
   { panel: "mcp", nameEn: "MCP", nameZh: "MCP 服务器" },
   { panel: "skills", nameEn: "Skills", nameZh: "技能管理" },
   { panel: "agent", nameEn: "Agent", nameZh: "子代理管理" },
-  { panel: "index", nameEn: "Index", nameZh: "文档管理" },
+  { panel: "index", nameEn: "Index", nameZh: "资料库" },
   { panel: "rules", nameEn: "Rules", nameZh: "规则管理" },
   { panel: "memory", nameEn: "Memory", nameZh: "记忆" },
   { panel: "usage", nameEn: "Usage", nameZh: "使用统计" },
@@ -207,20 +208,26 @@ export const SETTINGS_NAV_ITEMS: { panel: string; nameEn: string; nameZh: string
 ];
 
 /** i18n display names for registered command actions. */
-const APP_ACTION_LABELS: Record<string, { en: string; zh: string }> = {
-  "settings": { en: "Settings", zh: "设置" },
-  "model-management": { en: "Model Management", zh: "模型管理" },
-  "skills-management": { en: "Skills Management", zh: "技能管理" },
-  "mcp-servers": { en: "MCP Servers", zh: "MCP 服务器" },
-  "agent-config": { en: "Agent Config", zh: "子代理配置" },
-  "about": { en: "About", zh: "关于" },
-  "theme-dark": { en: "Dark Theme", zh: "深色主题" },
-  "theme-light": { en: "Light Theme", zh: "浅色主题" },
-  "theme-system": { en: "System Theme", zh: "跟随系统主题" },
-  "language-zh": { en: "Language: Chinese", zh: "语言：中文" },
-  "language-en": { en: "Language: English", zh: "语言：英文" },
-  "new-session": { en: "New Session", zh: "新建对话" },
-  "keyboard-shortcuts": { en: "Keyboard Shortcuts", zh: "键盘快捷键" },
+interface AppActionLabel {
+  en: string;
+  zh: string;
+  /** Extra search keywords (e.g. common colloquial phrasings). */
+  alias?: string[];
+}
+const APP_ACTION_LABELS: Record<string, AppActionLabel> = {
+  "settings": { en: "Settings", zh: "设置", alias: ["打开设置", "进入设置", "偏好设置"] },
+  "model-management": { en: "Model Management", zh: "模型管理", alias: ["配置模型", "模型设置"] },
+  "skills-management": { en: "Skills Management", zh: "技能管理", alias: ["配置技能", "技能设置"] },
+  "mcp-servers": { en: "MCP Servers", zh: "MCP 服务器", alias: ["MCP 配置", "配置 MCP"] },
+  "agent-config": { en: "Agent Config", zh: "子代理配置", alias: ["配置子代理", "子代理"] },
+  "about": { en: "About", zh: "关于", alias: ["关于应用", "版本信息"] },
+  "theme-dark": { en: "Dark Theme", zh: "深色主题", alias: ["暗色主题", "夜间模式"] },
+  "theme-light": { en: "Light Theme", zh: "浅色主题", alias: ["亮色主题", "日间模式"] },
+  "theme-system": { en: "System Theme", zh: "跟随系统主题", alias: ["系统主题", "自动主题"] },
+  "language-zh": { en: "Language: Chinese", zh: "语言：中文", alias: ["中文", "简体中文"] },
+  "language-en": { en: "Language: English", zh: "语言：英文", alias: ["英文", "英语"] },
+  "new-session": { en: "New Session", zh: "新建对话", alias: ["新建会话", "新会话", "新对话", "开始新对话"] },
+  "keyboard-shortcuts": { en: "Keyboard Shortcuts", zh: "键盘快捷键", alias: ["快捷键", "快捷键设置", "按键"] },
 };
 
 /** Action ids exposed as dedicated search categories (not under "Actions"). */
@@ -343,7 +350,7 @@ export const SEARCH_FILTER_META: { key: SearchFilterKey; zh: string; en: string 
   { key: "model", zh: "模型", en: "Models" },
   { key: "mcp_server", zh: "MCP 服务", en: "MCP Servers" },
   { key: "sub_agent", zh: "子代理", en: "Sub Agents" },
-  { key: "document", zh: "文档", en: "Documents" },
+  { key: "document", zh: "资料库", en: "Library" },
   { key: "notification", zh: "通知", en: "Notifications" },
   { key: "settings", zh: "设置项", en: "Settings" },
   { key: "action", zh: "操作", en: "Actions" },
@@ -360,6 +367,27 @@ const SECTION_ORDER = [
   "skill", "workspace", "model", "mcp_server", "sub_agent", "document",
   "notification", "custom_command", "tool", "automation", "workflow", "file",
 ];
+
+/**
+ * Maps local result kinds to the user-facing search-filter key they belong to.
+ * Most kinds share their key with the filter (e.g. `skill` -> `skill`), but
+ * several don't: `session_header` lives under the `session` toggle,
+ * workspace `file` entries under `workspace_file`, `settings_nav` under
+ * `settings`, and `app_action` under `action`. Without this mapping the
+ * `filter[kind]` lookup yields `undefined` (falsy) and those results are
+ * silently dropped even when the toggle is enabled.
+ */
+const KIND_TO_FILTER_KEY: Record<string, SearchFilterKey> = {
+  session_header: "session",
+  file: "workspace_file",
+  settings_nav: "settings",
+  app_action: "action",
+};
+
+/** Resolves the search-filter key for a result kind (defaults to the kind). */
+function filterKeyOf(kind: string): SearchFilterKey {
+  return KIND_TO_FILTER_KEY[kind] ?? (kind as SearchFilterKey);
+}
 
 // ── Workspace file index (frontend only, registered workspaces only) ─────────
 
@@ -384,8 +412,15 @@ async function walkWorkspace(
   wsPath: string,
   out: LocalItem[],
   depth: number,
+  budget: number,
 ): Promise<void> {
-  if (depth > MAX_WS_FILE_DEPTH || out.length >= MAX_WS_FILES_PER_WS) return;
+  // Defensive: never walk outside the workspace root (Windows: case-insensitive).
+  // Guards against junction/symlink quirks and malformed paths so the file
+  // index can never leak files from outside the registered workspace.
+  const root = norm(wsPath).replace(/\/+$/, "");
+  const cur = norm(dir).replace(/\/+$/, "");
+  if (cur !== root && !cur.toLowerCase().startsWith(`${root.toLowerCase()}/`)) return;
+  if (depth > MAX_WS_FILE_DEPTH || out.length >= budget) return;
   const api = window.electronAPI;
   if (!api) return;
   let entries: { name: string; isDirectory: boolean; isFile: boolean }[] = [];
@@ -395,12 +430,12 @@ async function walkWorkspace(
     return;
   }
   for (const e of entries) {
-    if (out.length >= MAX_WS_FILES_PER_WS) return;
+    if (out.length >= budget) return;
     if (e.name.startsWith(".")) continue;
     const abs = norm(`${dir}/${e.name}`);
     if (e.isDirectory) {
       if (WS_FILE_EXCLUDED.has(e.name)) continue;
-      await walkWorkspace(abs, wsName, wsPath, out, depth + 1);
+      await walkWorkspace(abs, wsName, wsPath, out, depth + 1, budget);
     } else if (e.isFile) {
       const baseParts = norm(wsPath).split("/");
       const absParts = abs.split("/");
@@ -417,17 +452,34 @@ async function walkWorkspace(
   }
 }
 
+// Generation guard for buildWorkspaceFileIndex: it walks workspaces through
+// several awaited IPC round-trips, and concurrent builds (app open, workspace
+// register/unregister) could let a SLOW walk based on an older workspace set
+// finish last and overwrite the fresh index with stale paths (including files
+// of a workspace the user just removed).  Only the latest build may publish.
+let _wsIndexGen = 0;
+
 /** Rebuilds `cachedWorkspaceFiles` from all registered workspaces. */
 export async function buildWorkspaceFileIndex(): Promise<void> {
+  const gen = ++_wsIndexGen;
   const out: LocalItem[] = [];
+  // `MAX_WS_FILES_PER_WS` is a *per-workspace* budget; the global cap is
+  // `MAX_WS_FILES_PER_WS * 4`. Passing a per-workspace budget to the walker
+  // ensures every registered workspace contributes files instead of letting
+  // the first workspace (sorted arbitrarily) consume the whole index.
+  const maxTotal = MAX_WS_FILES_PER_WS * 4;
   for (const ws of getState().workspaces) {
-    if (out.length >= MAX_WS_FILES_PER_WS * 4) break;
+    if (out.length >= maxTotal) break;
+    const before = out.length;
     try {
-      await walkWorkspace(norm(ws.path), ws.name, norm(ws.path), out, 0);
+      await walkWorkspace(norm(ws.path), ws.name, norm(ws.path), out, 0, before + MAX_WS_FILES_PER_WS);
     } catch {
       /* ignore unreadable workspace */
     }
+    // A newer build started while we were walking: drop this stale one.
+    if (gen !== _wsIndexGen) return;
   }
+  if (gen !== _wsIndexGen) return;
   cachedWorkspaceFiles = out;
   invalidateSearchIndex();
 }
@@ -452,7 +504,8 @@ export function runLocalSearch(q: string, filter: SearchFilter): SearchResultEnt
   for (const id of Object.keys(commandActions)) {
     if (DEDICATED_ACTION_KINDS.has(id)) continue;
     const label = APP_ACTION_LABELS[id] || { en: id, zh: id };
-    items.push({ kind: "app_action", name: label.en, snippet: label.zh, preview: id, path: id });
+    const aliasText = label.alias ? ` ${label.alias.join(" ")}` : "";
+    items.push({ kind: "app_action", name: label.en, snippet: `${label.zh}${aliasText}`, preview: id, path: id });
   }
 
   for (const sk of st.skillsList) items.push({ kind: "skill", name: sk.name, snippet: sk.name, preview: sk.description });
@@ -467,12 +520,15 @@ export function runLocalSearch(q: string, filter: SearchFilter): SearchResultEnt
   for (const r of st.globalRules) items.push({ kind: "global_rule", name: r.name, snippet: r.path, preview: r.path, path: r.path });
   for (const r of st.projectRules) items.push({ kind: "project_rule", name: r.name, snippet: r.path, preview: `${r.priority}`, path: r.path });
 
-  for (const s of st.sessionsList) {
-    const name = s.name || s.session_id;
+  // Session title/ID search uses the global session cache (kept across mode
+  // switches), falling back to the mode-scoped sidebar list.
+  const sessionPool = st.allSessions.length > 0 ? st.allSessions : st.sessionsList;
+  for (const s of sessionPool) {
+    const title = s.name || s.preview || s.session_id;
     items.push({
       kind: "session_header",
-      name,
-      snippet: s.name ? s.session_id : (s.preview || ""),
+      name: title,
+      snippet: title,
       preview: s.preview,
       session_id: s.session_id,
     });
@@ -511,6 +567,12 @@ export function runLocalSearch(q: string, filter: SearchFilter): SearchResultEnt
     items.push({ kind: "slash_command", name: `/${cmd.name}`, snippet: cmd.title, preview: cmd.description, icon: cmd.icon });
   }
 
+  // Assign stable positional ids to *every* item, regardless of whether
+  // `getIndex` hits its cache. Items are built in a fixed order, so on a
+  // cache hit the ids match the index exactly; without this the recall pass
+  // below would see all-undefined ids and dedupe every result into one.
+  for (let i = 0; i < items.length; i++) items[i].id = i;
+
   const mini = getIndex(items, st);
 
   // Primary pass: MiniSearch ranked results (CJK-aware via Intl.Segmenter).
@@ -527,7 +589,7 @@ export function runLocalSearch(q: string, filter: SearchFilter): SearchResultEnt
       const id = h.id as number;
       if (seenId.has(id)) continue;
       const item = h as unknown as LocalItem;
-      if (!filter[item.kind as SearchFilterKey]) continue;
+      if (!filter[filterKeyOf(item.kind)]) continue;
       seenId.add(id);
       ranked.push(toEntry(item));
     }
@@ -540,7 +602,7 @@ export function runLocalSearch(q: string, filter: SearchFilter): SearchResultEnt
   // miss. MiniSearch remains the primary ranked engine; this is just recall.
   for (const it of items) {
     if (seenId.has(it.id as number)) continue;
-    if (!filter[it.kind as SearchFilterKey]) continue;
+    if (!filter[filterKeyOf(it.kind)]) continue;
     if (haystackOf(it).includes(ql)) {
       seenId.add(it.id as number);
       ranked.push(toEntry(it));
@@ -563,6 +625,18 @@ export function searchSettingsNavItems(q: string): { panel: string; nameEn: stri
 }
 
 /**
+ * Shared monotonic counter for backend search requests. Used by the
+ * ⌘K palette so stale responses are dropped in `applySearchResults` by
+ * seq comparison.
+ */
+export let searchSeqCounter = 0;
+
+/** Returns the next shared backend-search sequence number (monotonic). */
+export function nextSearchSeq(): number {
+  return ++searchSeqCounter;
+}
+
+/**
  * The search command palette controller.
  */
 export class Search {
@@ -572,6 +646,10 @@ export class Search {
   private timer = 0;
   private currentResults: SearchResultEntry[] = [];
   private lastWsRef: unknown = null;
+  /** True while a backend search request is in flight (shows the spinner). */
+  private searching = false;
+  /** Sequence of the newest backend results already applied to state. */
+  private lastAppliedSeq = -1;
 
   /**
    * Constructor: resolves DOM elements, wires input/keys, and kicks off the
@@ -596,6 +674,8 @@ export class Search {
     this.input.value = "";
     this.selectedIdx = -1;
     this.currentResults = [];
+    this.searching = false;
+    this.lastAppliedSeq = searchSeqCounter;
     setSearchResults([]);
     this.resultsEl.innerHTML = "";
     // Rebuild the registered-workspace file index so it's current.
@@ -609,6 +689,7 @@ export class Search {
     this.input.value = "";
     this.selectedIdx = -1;
     this.currentResults = [];
+    this.searching = false;
     setSearchResults([]);
   }
 
@@ -617,12 +698,21 @@ export class Search {
     this.selectedIdx = -1;
     clearTimeout(this.timer);
     if (!q) {
+      this.searching = false;
+      this.lastAppliedSeq = searchSeqCounter;
       setSearchResults([]);
       this.resultsEl.innerHTML = "";
       return;
     }
+    // Treat a request as in flight as soon as the user types: stale backend
+    // results from the previous query are never shown against the new query,
+    // and the loading spinner appears immediately while local results render
+    // synchronously (no more blank palette).
+    this.searching = true;
+    this.lastAppliedSeq = searchSeqCounter;
+    this.renderResults();
     this.timer = window.setTimeout(() => {
-      send({ type: "search", query: q });
+      send({ type: "search", query: q, seq: nextSearchSeq() });
     }, 150);
   }
 
@@ -769,12 +859,7 @@ export class Search {
   }
 
   private openSettingsPanel(panel: string): void {
-    const btn = document.getElementById("btn-settings-trigger") as HTMLElement;
-    btn?.click();
-    setTimeout(() => {
-      const navItem = document.querySelector(`.settings-nav-item[data-panel="${panel}"]`) as HTMLElement;
-      navItem?.click();
-    }, 50);
+    window.dispatchEvent(new CustomEvent("open-settings-panel", { detail: { panel } }));
   }
 
   private insertPromptText(text: string): void {
@@ -816,17 +901,34 @@ export class Search {
   private renderResults(): void {
     const q = this.input.value.trim();
     const filter = getState().searchFilter;
-    let backendResults = getState().searchResults;
-    backendResults = backendResults.filter((r) => {
-      if (r.kind === "conversation") return filter.conversation;
-      if (r.kind === "file") return filter.workspace_file;
-      return true;
-    });
+    // A newer backend result sequence landing ends the in-flight state.
+    const appliedSeq = getAppliedSearchSeq();
+    if (appliedSeq > this.lastAppliedSeq) {
+      this.lastAppliedSeq = appliedSeq;
+      this.searching = false;
+    }
+    // While a request is in flight, ignore stale backend results so they
+    // never mismatch the current query.
+    const backendResults = this.searching
+      ? []
+      : getState().searchResults.filter((r) => {
+          if (r.kind === "conversation") return filter.conversation;
+          if (r.kind === "file") return filter.workspace_file;
+          return true;
+        });
     const localResults = runLocalSearch(q, filter);
     const results = this.mergeResults(backendResults, localResults);
     this.currentResults = results;
 
     if (results.length === 0) {
+      // No hits at all: show either a pure spinner (backend scan in flight)
+      // or the no-results empty state. Never mix text + spinner, and once a
+      // single result exists the spinner is gone entirely.
+      if (q && this.searching) {
+        this.resultsEl.innerHTML = `<div class="search-loading-spinner"><i data-lucide="loader-circle" class="lucide search-loading-spinner-icon"></i></div>`;
+        if (typeof (window as any).lucide !== "undefined") (window as any).lucide.createIcons({ root: this.resultsEl });
+        return;
+      }
       this.resultsEl.innerHTML = q
         ? `<div class="si-empty-center" style="min-height:0;padding:32px 16px"><i data-lucide="search-x" class="lucide"></i><span class="si-empty-title">${t("search.noResultsFor", { query: this.esc(q) })}</span></div>`
         : "";
@@ -846,9 +948,11 @@ export class Search {
         const kindLabel = this.esc(sec.kindLabel(r));
         const snippet = this.esc(r.snippet);
         const preview = r.preview ? `<span class="search-result-preview">${this.esc(r.preview)}</span>` : "";
-        const itemIcon = r.icon
-          ? `<i data-lucide="${this.esc(r.icon)}" class="lucide lucide-sm"></i>`
-          : sec.icon;
+        const itemIcon = r.kind === "file"
+          ? `<img class="search-result-file-icon" src="${getFileIcon(r.name || (r.snippet || "").split("/").pop() || "")}" alt="" draggable="false">`
+          : r.icon
+            ? `<i data-lucide="${this.esc(r.icon)}" class="lucide lucide-sm"></i>`
+            : sec.icon;
         html += `<div class="search-result-item${sel}" data-idx="${idx}">
           ${itemIcon}
           <div class="search-result-body">
@@ -859,6 +963,8 @@ export class Search {
         </div>`;
       }
     }
+    // No spinner/loading row here: as soon as one result exists we render it
+    // cleanly and never keep showing a loading animation on top.
 
     this.resultsEl.innerHTML = html;
     this.bindClicks();

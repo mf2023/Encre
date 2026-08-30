@@ -232,6 +232,44 @@ class SubAgentRunner:
             except Exception:
                 logger.warning("[sub_agent] failed to persist session", exc_info=True)
 
+        def _stamp_error_on_session(err_detail: str, err_code: str = "", err_category: str = "") -> None:
+            """Persist turn-scoped error metadata onto the sub-agent session.
+
+            Mirrors the main-loop behaviour (loop.py): the red/yellow status
+            cards in the UI are driven by ``errorMessage``/``interruptedReason``
+            keys stored on the last assistant message. The main loop stamps
+            these AFTER its ``yield create_finish(...)`` — which never runs for
+            sub-agents because SubAgentRunner stops consuming at Finish — so
+            stamping must happen here before the session is saved.
+            """
+            try:
+                text = (err_detail or "").strip() or "Sub-agent failed"
+                stamp: dict[str, Any] = {
+                    "errorMessage": text,
+                    "errorCode": err_code or "execution_error",
+                }
+                if err_category:
+                    stamp["errorCategory"] = err_category
+                target: dict[str, Any] | None = None
+                for m in reversed(sub_agent.session.messages):
+                    if m.get("role") == "assistant":
+                        target = m
+                        break
+                if target is not None:
+                    target.update(stamp)
+                    c = target.get("content", "")
+                    if isinstance(c, str) and "[Backend API Error]" not in c and (err_detail or "").strip():
+                        target["content"] = c + f"\n\n[Backend API Error]\n{err_detail.strip()}"
+                else:
+                    body = f"[Backend API Error]\n{text}"
+                    sub_agent.add_message(
+                        "assistant", body,
+                        segments=[{"kind": "text", "text": body}],
+                        **stamp,
+                    )
+            except Exception:
+                logger.warning("[sub_agent] failed to stamp error onto session", exc_info=True)
+
         result_parts: list[str] = []
         text_buffer = ""
         sub_refs: list[dict[str, Any]] = []
@@ -389,11 +427,25 @@ class SubAgentRunner:
                         sub_refs.append(event.reference)
                 elif isinstance(event, Finish):
                     _flush_text_buffer()
+                    if event.reason == "error":
+                        _stamp_error_on_session(
+                            str(getattr(event, "error", "") or getattr(event, "message", "") or ""),
+                            str(getattr(event, "error_code", "") or ""),
+                            str(getattr(event, "error_category", "") or ""),
+                        )
                     await _emit_live(force=True)
                     if event.reason == "error":
                         _save()
+                        err_detail = str(
+                            getattr(event, "error", "")
+                            or getattr(event, "message", "")
+                            or ""
+                        ).strip()
                         return {
-                            "content": "Error: Sub-agent failed",
+                            "content": (
+                                f"Error: Sub-agent failed{(' — ' + err_detail) if err_detail else ''}"
+                            ),
+                            "error": True,
                             "messages": sub_agent.session.messages,
                             "session_id": saved_session_id,
                             "references": sub_refs,
@@ -401,6 +453,13 @@ class SubAgentRunner:
         except asyncio.CancelledError:
             cancelled = True
             logger.info("[sub_agent] cancelled by parent, session_id={sid}", sid=saved_session_id)
+            try:
+                for m in reversed(sub_agent.session.messages):
+                    if m.get("role") == "assistant":
+                        m["interruptedReason"] = "cancelled"
+                        break
+            except Exception:
+                pass
         finally:
             _save()
             self._child_loops.discard(sub_agent.loop)

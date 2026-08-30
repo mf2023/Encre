@@ -105,6 +105,8 @@ export interface BrowserViewOptions {
   onUrlChange?: (url: string) => void;
   onFaviconChange?: (favicon: string) => void;
   onNewWindow?: (url: string) => void;
+  onDialog?: (type: string, message: string, defaultPromptText: string, respond: (value: string | null) => void) => void;
+  onPermissionRequest?: (permission: string, origin: string, details: any) => void;
   cdpPort?: number;
   compact?: boolean;
 }
@@ -130,6 +132,8 @@ export class BrowserView {
   private _onUrlChange?: (url: string) => void;
   private _onFaviconChange?: (favicon: string) => void;
   private _onNewWindow?: (url: string) => void;
+  private _onDialog?: (type: string, message: string, defaultPromptText: string, respond: (value: string | null) => void) => void;
+  private _onPermissionRequest?: (permission: string, origin: string, details: any) => void;
   private _settingsBtn: HTMLButtonElement;
   private _mainLoaded = false;
   private _bookmarks: BookmarksData | null = null;
@@ -142,6 +146,8 @@ export class BrowserView {
     this._onUrlChange = options.onUrlChange;
     this._onFaviconChange = options.onFaviconChange;
     this._onNewWindow = options.onNewWindow;
+    this._onDialog = options.onDialog;
+    this._onPermissionRequest = options.onPermissionRequest;
     this._cdpPort = options.cdpPort || 0;
     container.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0;";
 
@@ -176,7 +182,7 @@ export class BrowserView {
               <i data-lucide="triangle-alert" class="lucide"></i>
               <div class="si-empty-title" data-i18n="browserNav.failedToLoad">Failed to load</div>
               <div class="si-empty-sub" data-i18n="browserNav.checkConnection">The page could not be loaded. Please check your connection and try again.</div>
-              <button class="browser-overlay-retry btn-empty" type="button" data-i18n="browserNav.retry">Retry</button>
+              <button class="browser-overlay-retry btn-primary" type="button" data-i18n="browserNav.retry">Retry</button>
             </div>
           </div>
         </div>
@@ -511,6 +517,30 @@ export class BrowserView {
     wv.addEventListener("did-navigate-in-page", (e: any) => {
       this._onUrlChange?.(e.url);
       this._updateStarButton();
+    });
+
+    // Browser dialog events (alert, confirm, prompt, beforeunload)
+    wv.addEventListener("dialog", (e: any) => {
+      if (this._onDialog && e.detail) {
+        e.preventDefault();
+        this._onDialog(
+          e.detail.type || "alert",
+          e.detail.message || "",
+          e.detail.defaultPromptText || "",
+          (value: string | null) => { e.detail.response(value); },
+        );
+      }
+    });
+
+    // Permission request events
+    wv.addEventListener("permission-request", (e: any) => {
+      if (this._onPermissionRequest && e.request) {
+        this._onPermissionRequest(
+          e.request.permission || "",
+          e.request.origin || "",
+          e.request,
+        );
+      }
     });
   }
 

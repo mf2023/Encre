@@ -1,12 +1,12 @@
 # Security Policy
 
-The Encre project takes security seriously — both the security of users running the Agent on their machines, and the security of contributors working on the codebase. This document covers:
+The Encre Agent project takes security seriously — both the security of users running the Agent on their machines, and the security of contributors working on the codebase. This document covers:
 
 1. **Supported versions** — which versions get security fixes
 2. **How to report a vulnerability** — and what to expect
 3. **Built-in security architecture** — the layers already protecting you
 4. **Hardening checklist** — what *you* should configure before running in production
-5. **Threat model** — what Encre defends against and what it does not
+5. **Threat model** — what Encre Agent defends against and what it does not
 6. **For contributors** — how to write code that doesn't introduce security regressions
 
 If you find a vulnerability, **do not file a public issue**. Email the maintainers at the address in [Reporting a Vulnerability](#reporting-a-vulnerability).
@@ -15,15 +15,15 @@ If you find a vulnerability, **do not file a public issue**. Email the maintaine
 
 ## Supported Versions
 
-The following table lists which Encre release lines currently receive security updates. Encre uses [semantic versioning](https://semver.org/); the current version is reflected in [`pyproject.toml`](../pyproject.toml) (Python) and [`desktop/package.json`](../desktop/package.json) (Electron). The two are kept in lockstep.
+The following table lists which Encre Agent release lines currently receive security updates. Encre Agent uses [semantic versioning](https://semver.org/); the current version is reflected in [`pyproject.toml`](../pyproject.toml) (Python) and [`desktop/package.json`](../desktop/package.json) (Electron). The two are kept in lockstep.
 
 | Release line | Status | Security fixes | End-of-life |
 |---|---|---|---|
 | `0.5.x` (current pre-release) | 🟡 Pre-release | Yes — best-effort, fast turnaround | Until `0.6.0` ships |
 | `0.4.x` | ❌ End-of-life | No | Please upgrade |
-| `< 0.4.0` | ❌ End-of-life | No | Please upgrade |
+| `< 0.4.1` | ❌ End-of-life | No | Please upgrade |
 
-Users are encouraged to track `master` or the latest tagged release. Because Encre is distributed primarily as a single repo (cloned and `pip install -e .`-ed) rather than as a PyPI package, "upgrade" means:
+Users are encouraged to track `master` or the latest tagged release. Because Encre Agent is distributed primarily as a single repo (cloned and `pip install -e .`-ed) rather than as a PyPI package, "upgrade" means:
 
 ```bash
 cd encre
@@ -58,7 +58,7 @@ A useful report contains:
 
 - **Description** — what the vulnerability is, in one paragraph
 - **Impact** — what an attacker can achieve (RCE, data exfiltration, sandbox escape, prompt-injection-mediated action, …)
-- **Affected versions** — which Encre release lines are vulnerable
+- **Affected versions** — which Encre Agent release lines are vulnerable
 - **Affected layer** — Python framework / Rust core / Desktop app / Documentation
 - **Steps to reproduce** — numbered, copy-paste runnable
 - **Proof of concept** — script, payload, screenshot, or recording. Especially valuable for: tool injection, prompt injection, sandbox escape, SSRF bypass, credential leakage
@@ -72,7 +72,7 @@ A useful report contains:
 **Title:** `<one-line summary>`
 
 **Layer:** Python / Rust / Desktop / Docs
-**Affected versions:** 0.5.0-pre.1 (commit <hash>)
+**Affected versions:** 0.4.1 (commit <hash>)
 **Severity (your estimate):** Critical / High / Medium / Low
 
 **Description:**
@@ -130,7 +130,7 @@ These are targets, not promises. We will tell you early if we need more time, an
 
 ## Built-in Security Architecture
 
-Encre ships with several layers of defense, **on by default** unless you turn them off. Understanding what is already in place helps you avoid disabling protections you didn't mean to.
+Encre Agent ships with several layers of defense, **on by default** unless you turn them off. Understanding what is already in place helps you avoid disabling protections you didn't mean to.
 
 ### Layer 1: Six-Level Permission System
 
@@ -179,7 +179,7 @@ When multiple Agents run in a Swarm, each gets its own session, memory namespace
 
 ### Layer 7: Hook System for Custom Policy
 
-You can attach a handler to any hook event (e.g. `pre_tool_exec`) and have it block, modify, or log the call. This is the right place to enforce organization-specific policy without forking Encre.
+You can attach a handler to any hook event (e.g. `pre_tool_exec`) and have it block, modify, or log the call. This is the right place to enforce organization-specific policy without forking Encre Agent.
 
 ```python
 from encre.config import EncreConfig, EncreAgent
@@ -211,7 +211,7 @@ See [`encre/hooks/`](../backend/encre/hooks/) for the full event catalog.
 
 ## Hardening Checklist for Production Use
 
-Before you point Encre at anything that isn't your own laptop, run through this list.
+Before you point Encre Agent at anything that isn't your own laptop, run through this list.
 
 ### Pre-deployment
 
@@ -221,7 +221,7 @@ Before you point Encre at anything that isn't your own laptop, run through this 
 - [ ] **Lock `permission_settings`** with explicit per-tool overrides, especially `bash`, `file_write`, and any tool that touches the network.
 - [ ] **Set API keys via environment variables**, never in config files committed to the repo.
 - [ ] **Encrypt the config file** if you must store API keys in it; do not log `EncreConfig` instances at `DEBUG` level.
-- [ ] **Review the workspace path.** Encre will, by default, only operate on the configured `workspace` directory. Verify this is what you intend.
+- [ ] **Review the workspace path.** Encre Agent will, by default, only operate on the configured `workspace` directory. Verify this is what you intend.
 - [ ] **Audit the tool registry.** Run `agent.tool_registry.list_tools()` and confirm you recognize every tool that is enabled.
 - [ ] **Disable telemetry** if your compliance posture forbids outbound calls: `EncreConfig(telemetry_enabled=False)`.
 - [ ] **Disable tracing** unless you intentionally want OpenTelemetry export: `EncreConfig(tracing_enabled=False)`.
@@ -253,7 +253,7 @@ Before you point Encre at anything that isn't your own laptop, run through this 
 ### For multi-agent / server deployments
 
 - [ ] Isolate each Agent's `workspace` directory on its own filesystem mount (or container).
-- [ ] Front the WebSocket server (`encre.channels.websocket.WebSocketServer`) with TLS and an authentication layer — Encre does not implement auth by default.
+- [ ] Front the WebSocket server (`encre.channels.websocket.WebSocketServer`) with TLS and an authentication layer — Encre Agent does not implement auth by default.
 - [ ] Bind admin HTTP APIs (`encre.channels.http_api`) to `127.0.0.1` unless you have a reverse proxy with auth in front.
 - [ ] For Swarm setups, ensure the `EncreMailbox` and `EncreBlackboard` storage is on encrypted, access-controlled storage.
 
@@ -261,7 +261,7 @@ Before you point Encre at anything that isn't your own laptop, run through this 
 
 ## Threat Model
 
-Encre is designed for **single-user, locally-trusted execution**, optionally extended with chat-platform integration. The threat model below tells you where the line is.
+Encre Agent is designed for **single-user, locally-trusted execution**, optionally extended with chat-platform integration. The threat model below tells you where the line is.
 
 ### In scope (we defend against)
 
@@ -274,20 +274,20 @@ Encre is designed for **single-user, locally-trusted execution**, optionally ext
 
 ### Out of scope (we do **not** defend against)
 
-- **A user who runs Encre as root and approves every tool call** — they have explicitly opted out of protection.
-- **A user who puts their API key in a public GitHub repo** — Encre cannot undo social engineering.
+- **A user who runs Encre Agent as root and approves every tool call** — they have explicitly opted out of protection.
+- **A user who puts their API key in a public GitHub repo** — Encre Agent cannot undo social engineering.
 - **A user who turns off all permission modes and gives the Agent a hostile prompt** — you have configured the system to be unsafe; the threat model does not apply.
 - **Supply-chain attacks on transitive dependencies** — we monitor via `cargo audit` and `npm audit` and patch promptly, but we cannot guarantee every dependency is clean at every moment.
 - **LLM-provider compromise or prompt-logging by the provider** — outside our trust boundary. Choose providers whose data-handling policy you have read.
-- **A determined attacker with local code execution on the same machine** — once they can run code as your user, Encre's protections are bypassed; protect the host.
+- **A determined attacker with local code execution on the same machine** — once they can run code as your user, Encre Agent's protections are bypassed; protect the host.
 
-If you need guarantees beyond this threat model, run Encre inside a hardened VM or air-gapped environment — and remember that even there, an LLM with tool access is only as trustworthy as the prompt and the audit trail.
+If you need guarantees beyond this threat model, run Encre Agent inside a hardened VM or air-gapped environment — and remember that even there, an LLM with tool access is only as trustworthy as the prompt and the audit trail.
 
 ---
 
 ## For Contributors: Writing Code That Doesn't Introduce Security Regressions
 
-If you're contributing to Encre itself, this section is for you.
+If you're contributing to Encre Agent itself, this section is for you.
 
 ### Don't
 
@@ -329,7 +329,7 @@ When reviewing a PR, explicitly check:
 
 ## Known Limitations
 
-We document these so you can make informed decisions about where to deploy Encre. None of these is a bug; they are design constraints of the architecture.
+We document these so you can make informed decisions about where to deploy Encre Agent. None of these is a bug; they are design constraints of the architecture.
 
 1. **LLM outputs are non-deterministic.** Even with the same prompt and seed, a model may produce different tool calls. Do not assume idempotency for destructive operations.
 2. **Prompt injection is an unsolved problem.** `EncreAutoSafetyClassifier` mitigates but cannot eliminate it. Treat retrieved content as untrusted; validate tool inputs at the boundary.
@@ -356,5 +356,5 @@ We thank the following researchers who have responsibly disclosed vulnerabilitie
 
 ---
 
-**Last Updated:** 2026-06-21
+**Last Updated:** 2026-08-23
 **Version:** 1.1

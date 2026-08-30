@@ -14,7 +14,7 @@ You confirm you are 18+; minors require guardian consent ([Minors Rules](MINORS_
 
 ## 3. Licence
 
-Encre: Apache 2.0. Other components: non-exclusive, non-transferable. No reverse engineering (except as permitted), no notice removal, no competing-model training.
+Encre Agent: Apache 2.0. Other components: non-exclusive, non-transferable. No reverse engineering (except as permitted), no notice removal, no competing-model training.
 
 ## 4. Conduct
 

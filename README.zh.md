@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="desktop/renderer/assets/EAb.svg" alt="Encre" width="160"/>
+<img src="desktop/renderer/assets/EAb.svg" alt="Encre Agent" width="160"/>
 
 [English](README.md) | 简体中文
 
@@ -30,7 +30,7 @@
     <img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square"/>
 </a>
 
-**Encre** — 强大的 AI Agent 平台，支持 31 个主流 LLM 提供商、84+ 个内置工具以及 26+ 个聊天平台集成。无论是编程开发、桌面自动化、跨平台消息，还是多智能体协作，Encre 都能胜任。
+**Encre Agent** — 强大的 AI Agent 平台，支持 31 个主流 LLM 提供商、84+ 个内置工具以及 26+ 个聊天平台集成。无论是编程开发、桌面自动化、跨平台消息，还是多智能体协作，Encre Agent 都能胜任。
 
 </div>
 
@@ -38,7 +38,7 @@
 
 ### 一句话简介
 
-Encre 是一个 AI Agent 平台 —— 告诉它你想做什么，它会自动分析、调用工具、执行任务并将结果交付给你。
+Encre Agent 是一个 AI Agent 平台 —— 告诉它你想做什么，它会自动分析、调用工具、执行任务并将结果交付给你。
 
 ### 核心能力
 
@@ -58,7 +58,7 @@ Encre 是一个 AI Agent 平台 —— 告诉它你想做什么，它会自动�
 
 ### 应用场景
 
-- **代码开发助手** — 拿到一段代码，发现一个 bug → 告诉 Encre → 它自动读代码、跑 LSP 诊断、打补丁、跑测试，告诉你怎么修好的
+- **代码开发助手** — 拿到一段代码，发现一个 bug → 告诉 Encre Agent → 它自动读代码、跑 LSP 诊断、打补丁、跑测试，告诉你怎么修好的
 - **浏览器调研** — 给它一句提示词 "调研一下现在最好的 AI 编程工具" → 它自己打开浏览器、搜 Google、翻结果、点链接、读文章、最后给你一张对比表
 - **桌面自动化** — 批量文件处理、自动填表、截图归档
 - **跨平台聊天机器人** — 同时接入微信、Telegram、钉钉、Slack，从一个平台跟 Agent 对话
@@ -80,7 +80,7 @@ Encre 是一个 AI Agent 平台 —— 告诉它你想做什么，它会自动�
 
 #### 🤖 9 个内置 Agent 角色
 
-Encre 内置了专用角色，每个角色都配有专属的提示词与能力：
+Encre Agent 内置了专用角色，每个角色都配有专属的提示词与能力：
 
 - **通用模式**：`coder`、`researcher`、`critic`
 - **工作区模式**：`architect`、`planner`
@@ -170,7 +170,7 @@ Agent 提供 11 个可调用的技能：
 - BM25 代码搜索引擎
 - LSP 协议解析（JSON-RPC 2.0）
 
-#### 🖥️ Encre 桌面应用
+#### 🖥️ Encre Agent 桌面应用
 
 基于 Electron + React 19 构建的全功能 AI 聊天桌面应用：
 
@@ -264,37 +264,37 @@ tools:
 
 <h2 align="center">❓ 常见问题</h2>
 
-**问：Encre 支持哪些 AI 模型？**
+**问：Encre Agent 支持哪些 AI 模型？**
 
-答：**31 个提供商**，包括 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里 Qwen、腾讯混元、小米 MiMo、月之暗面 Kimi、智谱 GLM、MiniMax、Ollama、LM Studio、HuggingFace、AWS Bedrock、OpenRouter 等。Encre 是完全原生开发的，不是任何项目的套壳（如 Codex）。
+答：**31 个提供商**，包括 OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里 Qwen、腾讯混元、小米 MiMo、月之暗面 Kimi、智谱 GLM、MiniMax、Ollama、LM Studio、HuggingFace、AWS Bedrock、OpenRouter 等。Encre Agent 是完全原生开发的，不是任何项目的套壳（如 Codex）。
 
 **问：Encre Agent 能做什么？**
 
 答：熟练助手能做的一切 —— 读写编辑代码、运行 shell 命令、打开浏览器做调研、自动化桌面、管理文件、调度任务、与其他 Agent 协作，等等。它内置 **84+ 个工具**和 **275+ 个内置技能**，几乎可以处理任何任务。
 
-**问：能否在喜欢的聊天平台上使用 Encre？**
+**问：能否在喜欢的聊天平台上使用 Encre Agent？**
 
-答：可以！Encre 支持 **26+ 个聊天平台**，包括 Telegram、Discord、Slack、飞书、钉钉、企业微信、微信、WhatsApp、QQ Bot、邮件、Matrix 等。每个平台都有专属的适配器。
+答：可以！Encre Agent 支持 **26+ 个聊天平台**，包括 Telegram、Discord、Slack、飞书、钉钉、企业微信、微信、WhatsApp、QQ Bot、邮件、Matrix 等。每个平台都有专属的适配器。
 
-**问：Encre 使用起来安全吗？**
+**问：Encre Agent 使用起来安全吗？**
 
-答：安全是头等大事。Encre 提供 **6 种权限模式**，从完全开放到每次操作都需要确认。额外保护还包括 SSRF 防护、Docker 沙箱、Landlock 内核限制以及 AI 风险分类。
+答：安全是头等大事。Encre Agent 提供 **6 种权限模式**，从完全开放到每次操作都需要确认。额外保护还包括 SSRF 防护、Docker 沙箱、Landlock 内核限制以及 AI 风险分类。
 
-**问：Encre 会在会话之间记忆信息吗？**
+**问：Encre Agent 会在会话之间记忆信息吗？**
 
-答：是的。Encre 拥有 **持久化记忆系统**，可存储重要信息、学习你的偏好，并在对话间保持上下文。随着时间推移，它会变得更聪明、更个性化。
+答：是的。Encre Agent 拥有 **持久化记忆系统**，可存储重要信息、学习你的偏好，并在对话间保持上下文。随着时间推移，它会变得更聪明、更个性化。
 
 **问：多个 Agent 能否协同工作？**
 
-答：当然。Encre 通过 Swarm 系统支持 **多智能体协作**。你可以派生出多个不同角色的 Agent（coder、researcher、critic 等），它们共享信息并协同完成复杂任务。
+答：当然。Encre Agent 通过 Swarm 系统支持 **多智能体协作**。你可以派生出多个不同角色的 Agent（coder、researcher、critic 等），它们共享信息并协同完成复杂任务。
 
 **问：有桌面应用吗？**
 
-答：有！**Encre Desktop** 是一个全功能的 Electron + React 应用，包含聊天界面、代码编辑器（Monaco）、内嵌终端、文件浏览器、设置面板等。支持 Windows、macOS 和 Linux。
+答：有！**Encre Agent Desktop** 是一个全功能的 Electron + React 应用，包含聊天界面、代码编辑器（Monaco）、内嵌终端、文件浏览器、设置面板等。支持 Windows、macOS 和 Linux。
 
 **问：能使用自己的 AI 模型吗？**
 
-答：可以。你可以使用任何 OpenAI 兼容的 API，通过 Ollama / LM Studio 自托管模型，或接入自定义后端。Encre 设计为后端无关。
+答：可以。你可以使用任何 OpenAI 兼容的 API，通过 Ollama / LM Studio 自托管模型，或接入自定义后端。Encre Agent 设计为后端无关。
 
 <h2 align="center">🌏 社区与许可</h2>
 

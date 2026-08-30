@@ -93,6 +93,7 @@ from encre.server.protocol import (
     ClientDeleteSession,
     ClientEditMessage,
     ClientEngineInstallResponse,
+    ClientExportData,
     ClientExportSession,
     ClientExportSessionsBatch,
     ClientFetchModels,
@@ -104,8 +105,12 @@ from encre.server.protocol import (
     ClientGetProfile,
     ClientGetUsageStats,
     ClientIclawResume,
+    ClientImportData,
     ClientInstallSkill,
     ClientListAllSessions,
+    ClientListArchivedSessions,
+    ClientArchiveSession,
+    ClientUnarchiveSession,
     ClientListDocuments,
     ClientListGlobalRules,
     ClientListModels,
@@ -127,6 +132,8 @@ from encre.server.protocol import (
     ClientResume,
     ClientRetry,
     ClientRollbackBranch,
+    ClientUploadWorkspaceIcon,
+    ClientRenameWorkspace,
     ClientRollbackCheckout,
     ClientRollbackLog,
     ClientRun,
@@ -149,7 +156,6 @@ from encre.server.protocol import (
     ClientTerminalResize,
     ClientTerminalSpawn,
     ClientTerminalWrite,
-    ClientTestAdapter,
     ClientWechatScan,
     ClientUninstallSkill,
     ClientUpdateAgent,
@@ -163,7 +169,7 @@ from encre.server.protocol import (
     encode_sessions_exported_zip,
     parse_client_message,
 )
-from encre.server.session_manager import SessionManager
+from encre.server.session_manager import SessionManager, SessionState
 from encre.spec import EncreSpecEngine
 from encre.tools.builtin._encoding import decode_bytes
 from encre.tools.builtin.browser import set_cdp_url, set_search_engine_url, set_session_id
@@ -526,6 +532,331 @@ class EncreWSHandler:
             self._restore_persisted_command(self._info)
         return self._info
 
+    def _build_config_data(self, info) -> dict[str, Any]:
+        """Build the full config_data payload (CPU-heavy, run in a worker).
+
+        Extracted from the old ClientGetConfig closure so the same snapshot can
+        be pushed by the unified ``_push_all_data`` path — one source of truth
+        for the frontend's model selector, settings and configuration panels.
+        """
+        cd = info.agent.config.to_dict(encrypt_api_keys=False)
+        se_url = cd.get("default_search_engine_url", "")
+        if se_url:
+            set_search_engine_url(se_url)
+        if "models" in cd:
+            cd["models"] = _inject_context_windows(list(cd["models"]))
+        cd["tools_info"] = self._build_tools_info(info)
+        cd["model_catalog"] = catalog_payload()
+        cd["mcp_catalog"] = mcp_catalog_payload()
+        if "sub_agents" in cd:
+            cd["sub_agents"] = [
+                sa for sa in cd["sub_agents"] if not sa.get("hidden", False)
+            ]
+        current_spec = self._spec_engine.current_spec
+        cd["spec"] = current_spec.to_dict() if current_spec else None
+        cd["slash_commands"] = get_slash_command_defs(
+            info.agent.command_registry
+        )
+        cd["custom_slash_commands"] = load_custom_slash_commands()
+        cd["keybinds"] = load_keybinds()
+        # Ship the session's active command (if any) so the frontend can render
+        # the command chip on connect / config refresh.
+        cd["active_command"] = (
+            getattr(info.agent.config, "active_command", None)
+            or info.agent.session.metadata.get("active_command")
+        )
+        return cd
+
+    async def _push_all_data(self, ws) -> None:
+        """Unified full-data push (config+models, sessions, workspaces).
+
+        Called on connect and after every mode / config / session change so the
+        frontend store is refreshed from ONE consistent snapshot — panels never
+        pull their own slices.  Each plane is guarded so a failure in one does
+        not blank the others.
+        """
+        try:
+            info = self._get_or_create_session()
+            self._manager.touch(info.session_id)
+            config_data = await asyncio.to_thread(self._build_config_data, info)
+            available = await self._build_skills_list(info)
+            config_data["available_skills"] = available
+            config_data["workspace_mode"] = "iwork" if self._workspace_path else "normal"
+            config_data["workspace_path"] = self._workspace_path
+            await self._send(ws, "config_data", config=config_data)
+        except Exception as exc:
+            logger.warning("[push_all_data] config_data failed: %s", exc)
+        try:
+            channel = "iwork" if self._workspace_path else "normal"
+            sessions = self._list_all_sessions(channel_filter=channel)
+            await self._send(ws, "sessions_list", sessions=sessions, channel=channel)
+        except Exception as exc:
+            logger.warning("[push_all_data] sessions failed: %s", exc)
+        try:
+            # Dual-channel snapshot feeds the tray popup (and the global
+            # search cache) through the SAME unified push — the tray never
+            # needs a separate list_all_sessions request.
+            normal = self._list_all_sessions(channel_filter="normal")
+            iwork = self._list_all_sessions(channel_filter="iwork")
+            await self._send(ws, "sessions_all", normal=normal, iwork=iwork)
+        except Exception as exc:
+            logger.warning("[push_all_data] sessions_all failed: %s", exc)
+        try:
+            workspaces = _workspaces_with_session_counts(_load_workspaces())
+            await self._send(ws, "workspaces_list", workspaces=workspaces)
+        except Exception as exc:
+            logger.warning("[push_all_data] workspaces failed: %s", exc)
+        try:
+            info = self._get_or_create_session()
+            backend = info.agent.loop.backend
+            models = []
+            if backend is not None:
+                try:
+                    models = await asyncio.wait_for(backend.list_models(), timeout=5)
+                except asyncio.TimeoutError:
+                    models = []
+            await self._send(ws, "models_list", models=models)
+        except Exception as exc:
+            logger.debug("[push_all_data] models skipped: %s", exc)
+        # ── Extended snapshot planes: every static data domain the frontend
+        #    panels subscribe to is pushed in the SAME snapshot, so no panel
+        #    ever has to pull its own slice after a mode switch.  Each plane
+        #    is independently guarded (one failure must not blank the rest).
+        for name, payload in (
+            ("global_rules_list", {"rules": self._build_global_rules_list()}),
+            ("memory_list", {"entries": self._build_memory_list()}),
+            ("documents_list", {"documents": self._build_documents_list()}),
+            ("usage_stats", {"stats": self._build_usage_stats()}),
+            ("project_rules_list", {"rules": self._build_project_rules_list()}),
+            ("project_hooks_list", {"hooks": self._build_project_hooks_list()}),
+            ("automation_jobs_list", {"jobs": self._build_automation_jobs()}),
+        ):
+            try:
+                await self._send(ws, name, **payload)
+            except Exception as exc:
+                logger.debug("[push_all_data] %s skipped: %s", name, exc)
+
+    # ── Unified snapshot builders (single source of truth) ─────────────────
+    # Each *_list builder is shared by the request handlers (ClientList* /
+    # ClientGet*) and the unified _push_all_data snapshot, so the frontend
+    # receives exactly the same data whether it asks or is pushed.
+
+    def _build_global_rules_list(self) -> list[dict[str, Any]]:
+        """All global rules (used by global_rules_list responses/snapshots)."""
+        from encre.config import get_data_dir
+        rules_dir = get_data_dir() / "rules"
+        rules_list: list[dict[str, Any]] = []
+        if rules_dir.is_dir():
+            for fpath in sorted(rules_dir.glob("*.md"), key=lambda p:
+                p.stat().st_mtime, reverse=True):
+                try:
+                    rules_list.append({
+                        "name": fpath.stem,
+                        "path": str(fpath.relative_to(rules_dir)),
+                        "size": fpath.stat().st_size,
+                        "modified": fpath.stat().st_mtime,
+                    })
+                except Exception:
+                    continue
+        return rules_list
+
+    def _build_memory_list(self) -> list[dict[str, Any]]:
+        """All memory entries (used by memory_list responses/snapshots)."""
+        from encre.config import get_data_dir
+        from encre.crypto import decrypt as _decrypt
+        mem_dir = get_data_dir() / "memory"
+        entries: list[dict[str, Any]] = []
+        if mem_dir.is_dir():
+            for fpath in sorted(mem_dir.glob("*.md"), key=lambda p:
+                p.stat().st_mtime, reverse=True):
+                # Hide the internal profile file (_profile.md) from the
+                # settings UI; it is still loaded by the system.
+                if fpath.name == "_profile.md":
+                    continue
+                try:
+                    raw = fpath.read_text("utf-8")
+                    content = raw
+                    if raw.strip() and not raw.strip().startswith("---") and not raw.strip().startswith("#"):
+                        with contextlib.suppress(Exception):
+                            content = _decrypt(raw)
+                    meta = self._parse_memory_frontmatter(raw) if "---" in raw else None
+                    if not meta:
+                        meta = self._parse_memory_frontmatter(content) if "---" in content else None
+                    entry: dict[str, Any] = {
+                        "name": fpath.stem,
+                        "path": str(fpath.relative_to(mem_dir)),
+                        "size": fpath.stat().st_size,
+                        "modified": fpath.stat().st_mtime,
+                        "preview": content[:200].replace("\n", " ").strip(),
+                    }
+                    if meta:
+                        entry["title"] = meta.get("title", "")
+                        entry["tags"] = list(meta.get("tags", [])) if isinstance(meta.get("tags"), list | tuple) else []
+                        entry["type"] = str(meta.get("type", ""))
+                    entries.append(entry)
+                except Exception:
+                    continue
+        return entries
+
+    def _build_documents_list(self) -> list[dict[str, Any]]:
+        """All indexed documents (used by documents_list responses/snapshots)."""
+        from encre.codebase.document_manager import EncreDocumentManager
+        from encre.config import get_data_dir
+        mgr = EncreDocumentManager(str(get_data_dir()))
+        return mgr.list_all()
+
+    def _build_usage_stats(self) -> dict[str, Any]:
+        """Aggregated usage stats with display-name resolution."""
+        try:
+            from encre.telemetry import EncreTelemetry
+            stats = EncreTelemetry.get_all_sessions_usage()
+            model_names: dict[str, str] = {}
+            current_model_ids: set[str] = set()
+            if self._default_config:
+                for mc in self._default_config.models:
+                    mid = (mc.model_id or "").strip()
+                    if mid and mc.name:
+                        model_names[mid] = mc.name
+            if stats.get("sessions"):
+                for s in stats["sessions"]:
+                    raw = (s.get("model", "") or "").strip()
+                    if not raw or raw == "unknown":
+                        s["model"] = "(unknown model)"
+                        s["model_status"] = "unknown"
+                    elif raw in model_names:
+                        s["model"] = model_names[raw]
+                        s["model_status"] = "active"
+                    else:
+                        # Model is no longer in the user's config: keep the
+                        # raw id so the historical record is preserved.
+                        s["model"] = raw
+                        s["model_status"] = "deleted"
+            if stats.get("model_breakdown"):
+                mb: dict[str, dict[str, Any]] = {}
+                for raw, data in stats["model_breakdown"].items():
+                    if not raw or raw == "unknown":
+                        display = "(unknown model)"
+                    elif raw in model_names:
+                        display = model_names[raw]
+                    else:
+                        display = raw
+                    if display in mb:
+                        for k in ("input_tokens", "output_tokens", "total_tokens", "turns"):
+                            mb[display][k] = mb[display].get(k, 0) + data.get(k, 0)
+                    else:
+                        mb[display] = dict(data)
+                stats["model_breakdown"] = mb
+            return stats
+        except Exception:
+            return {
+                "total_sessions": 0, "total_tokens": 0,
+                "total_input_tokens": 0, "total_output_tokens": 0,
+                "total_tool_calls": 0,
+                "tool_call_breakdown": {},
+                "model_breakdown": {},
+                "sessions": [],
+            }
+
+    def _build_project_rules_list(self) -> list[dict[str, Any]]:
+        """Project-level rules for the current workspace context."""
+        ws_path = (self._workspace_path or self._default_config.workspace) if self._default_config else ""
+        rules_list: list[dict[str, Any]] = []
+        if ws_path and os.path.isdir(ws_path):
+            for rel_path, priority, name in [
+                (".encre/rules.md", 100, "encre"),
+                (".cursorrules", 90, "cursor"),
+                (".windsurfrules", 85, "windsurf"),
+                (".clinerules", 80, "cline"),
+                ("CLAUDE.md", 75, "claude"),
+                (".github/copilot-instructions.md", 60, "copilot"),
+            ]:
+                full_path = os.path.join(ws_path, rel_path)
+                if os.path.isfile(full_path):
+                    try:
+                        st = os.stat(full_path)
+                        rules_list.append({
+                            "name": name,
+                            "path": rel_path,
+                            "priority": priority,
+                            "modified": st.st_mtime,
+                        })
+                    except Exception:
+                        continue
+            # Codex instructions: AGENTS.md chain, .codex/config.toml
+            # developer_instructions, and model_instructions_file.
+            try:
+                from encre.codex_compat import build_codex_context
+                ctx = build_codex_context(ws_path)
+                seen_codex: set[str] = set()
+                for path, _ in ctx.instructions:
+                    if path in seen_codex:
+                        continue
+                    seen_codex.add(path)
+                    rel = path
+                    if rel.startswith(ws_path + os.sep):
+                        rel = rel[len(ws_path) + len(os.sep):]
+                    try:
+                        mtime = os.path.getmtime(path)
+                    except OSError:
+                        mtime = 0.0
+                    rules_list.append({
+                        "name": "codex",
+                        "path": rel,
+                        "priority": 65,
+                        "modified": mtime,
+                    })
+            except Exception:
+                pass
+            rules_list.sort(key=lambda r: -r["priority"])
+        return rules_list
+
+    def _build_project_hooks_list(self) -> list[dict[str, Any]]:
+        """Project hooks for the current agent context."""
+        from encre.hooks import EncreHookSystem
+        info = self._info
+        hook_system: EncreHookSystem | None = (
+            getattr(getattr(info, "agent", None), "hook_system", None)
+        )
+        hooks_list: list[dict[str, Any]] = []
+        if hook_system is not None:
+            for h in hook_system.list_handlers():
+                hooks_list.append({
+                    "handler_id": h.get("handler_id", ""),
+                    "event_type": h.get("event_type", ""),
+                    "source_path": h.get("source_path", ""),
+                    "matcher": h.get("matcher", ""),
+                    "command": h.get("command", ""),
+                    "hook_type": h.get("hook_type", "command"),
+                    "timeout_ms": int(h.get("timeout_ms", 0) or 0),
+                })
+        return hooks_list
+
+    def _build_automation_jobs(self) -> list[dict[str, Any]]:
+        """Snapshot of all automation jobs (responses and snapshots share it)."""
+        if self._scheduler is None:
+            return []
+        jobs = self._scheduler.list_jobs()
+        job_list: list[dict[str, Any]] = []
+        for j in jobs:
+            job_list.append({
+                "id": j.id,
+                "name": j.name,
+                "prompt": j.prompt,
+                "cron": j.cron.to_expression() if j.cron else "",
+                "schedule_type": j.schedule_type.name,
+                "state": j.state.name,
+                "suspended": j.suspended,
+                "created_at": j.created_at,
+                "last_fired": j.last_fired,
+                "last_result": j.last_result,
+                "fail_count": j.fail_count,
+                "max_failures": j.max_failures,
+                "tag": j.metadata.get("tag", ""),
+                "model_index": j.model_index,
+                "push_gateways": list(j.push_gateways),
+            })
+        return job_list
+
     def _build_automation_agent_config(self, mc: ModelConfig) -> dict[str, Any]:
         """Build the per-job agent snapshot for an automation model."""
         agent_config = {
@@ -574,44 +905,59 @@ class EncreWSHandler:
         self._current_session_id = None
         self._current_ws_id = ""
         self._index_progress_callback = None
+        t_conn = time.time()
+        logger.info("[perf] backend ws.accept")
 
-        # Respect startup_session_behavior setting: "last" resumes the most recent session
+        # Send a placeholder session_ready immediately so the frontend can
+        # start filling sidebar/tray data without waiting for the session
+        # resume.  The real resume runs in a background task (below) and
+        # sends a second session_ready when the session is fully loaded.
+        placeholder = self._get_or_create_session()
+        self._info = placeholder
+        self._current_session_id = placeholder.session_id
+        await self._send(ws, "session_ready", session_id=placeholder.session_id, plan_items=[])
+        logger.info("[perf] placeholder session_ready sent in %.0fms", (time.time() - t_conn) * 1000)
+
+        # Background: resolve the startup behavior and resume the most recent
+        # session.  This avoids blocking the event loop (and the dispatch
+        # loop below) on potentially slow session loading (large JSONL,
+        # cold index build, etc.).
         startup_behavior = self._resolve_startup_behavior()
-        startup_mode = self._resolve_startup_mode()
-        if startup_behavior == "last":
+
+        async def _background_resume() -> None:
             try:
-                resumed = self._manager.try_resume_most_recent(config=self._default_config)
-                if resumed is not None:
-                    self._info = resumed
-                    self._current_session_id = resumed.session_id
-                    sess = resumed.agent.session
-                    sess.ensure_artifacts_from_messages()
-                    # Re-apply the resumed session's persisted slash-command
-                    # mode so config + derived plan_mode_active agree with
-                    # metadata before the first run (and before _send_session_mode
-                    # broadcasts the chip to the frontend).
-                    self._restore_persisted_mode(self._info)
-                    # Re-apply the persisted slash command (sticky injection)
-                    # alongside the mode, then broadcast its chip too.
-                    self._restore_persisted_command(self._info)
-                    msgs = self._renderer_session_messages(sess)
-                    plan = sess.plan_items
-                    arts = sess.artifacts
-                    branches_list = [b.__dict__ for b in sess.branches.values()]
-                    await self._send(ws, "session_ready", session_id=resumed.session_id,
-                                     messages=msgs, plan_items=plan, artifacts=arts,
-                                     references=sess.references,
-                                     branches=branches_list, active_branch_id=sess.active_branch_id)
-                else:
-                    placeholder = self._get_or_create_session()
-                    await self._send(ws, "session_ready", session_id=placeholder.session_id, plan_items=[])
-            except Exception:
-                placeholder = self._get_or_create_session()
-                await self._send(ws, "session_ready", session_id=placeholder.session_id, plan_items=[])
-        else:
-            # Normal mode: start fresh
-            placeholder = self._get_or_create_session()
-            await self._send(ws, "session_ready", session_id=placeholder.session_id, plan_items=[])
+                if startup_behavior == "last":
+                    t_resume = time.time()
+                    # Heavy session load (agent boot + full JSONL parse) runs
+                    # in a worker thread so it cannot starve the event loop and
+                    # delay the client's own config / session-list requests.
+                    resumed = await asyncio.to_thread(
+                        self._manager.try_resume_most_recent, self._default_config
+                    )
+                    logger.info("[perf] resume load took %.0fms", (time.time() - t_resume) * 1000)
+                    if resumed is not None:
+                        self._info = resumed
+                        self._current_session_id = resumed.session_id
+                        sess = resumed.agent.session
+                        sess.ensure_artifacts_from_messages()
+                        # Re-apply the resumed session's persisted slash-command
+                        # mode so config + derived plan_mode_active agree with
+                        # metadata before the first run.
+                        self._restore_persisted_mode(self._info)
+                        self._restore_persisted_command(self._info)
+                        t_build = time.time()
+                        msgs = self._renderer_session_messages(sess)
+                        branches_list = [b.__dict__ for b in sess.branches.values()]
+                        logger.info("[perf] renderer message build took %.0fms (%d msgs)",
+                                    (time.time() - t_build) * 1000, len(msgs))
+                        await self._send(ws, "session_ready", session_id=resumed.session_id,
+                                         messages=msgs, plan_items=sess.plan_items,
+                                         artifacts=sess.artifacts, references=sess.references,
+                                         branches=branches_list, active_branch_id=sess.active_branch_id)
+            except Exception as exc:
+                logger.warning("[resume] background resume failed: %s", exc)
+
+        self._tasks.add(asyncio.create_task(_background_resume()))
 
         # Track connection for gateway status broadcasting
         self._connections.append(ws)
@@ -621,6 +967,14 @@ class EncreWSHandler:
                 await self._send(ws, "gateway_status", status=status)
             except Exception as e:
                 logger.warning("[gateway_status] send error: %s", e)
+
+        # Unified initial push: config+models, sessions, workspaces in one
+        # consistent snapshot so the frontend (GUI/TUI alike) never has to
+        # piece data together from per-panel requests.
+        try:
+            await self._push_all_data(ws)
+        except Exception as exc:
+            logger.warning("[push_all_data] initial push failed: %s", exc)
 
         try:
             # Main dispatch loop: read each WebSocket frame, parse it into a
@@ -655,18 +1009,31 @@ class EncreWSHandler:
                         # instead of crashing with AttributeError.
                         models = []
                     else:
-                        models = await backend.list_models()
+                        try:
+                            models = await asyncio.wait_for(backend.list_models(), timeout=5)
+                        except asyncio.TimeoutError:
+                            logger.warning("[list_models] provider timed out, returning empty list")
+                            models = []
                     await self._send(ws, "models_list", models=models)
 
                 elif isinstance(msg, ClientListSessions):
-                    sessions = self._list_all_sessions()
+                    # Disk I/O (per-session meta reads + workspace indexes)
+                    # must not block the dispatch loop -- other requests and
+                    # the background resume share this loop.
+                    sessions = await asyncio.to_thread(self._list_all_sessions)
                     channel = "iwork" if self._workspace_path else "normal"
                     await self._send(ws, "sessions_list", sessions=sessions, channel=channel)
 
                 elif isinstance(msg, ClientListAllSessions):
-                    # Tray popup needs both modes' sessions at once.
-                    normal = self._list_all_sessions(channel_filter="normal")
-                    iwork = self._list_all_sessions(channel_filter="iwork")
+                    # Tray popup needs both modes' sessions at once.  Build
+                    # both lists in one worker thread (query_index results are
+                    # memoised, so the second pass is cheap).
+                    def _build_both():
+                        return (
+                            self._list_all_sessions(channel_filter="normal"),
+                            self._list_all_sessions(channel_filter="iwork"),
+                        )
+                    normal, iwork = await asyncio.to_thread(_build_both)
                     await self._send(ws, "sessions_all", normal=normal, iwork=iwork)
 
                 elif isinstance(msg, ClientNewSession):
@@ -803,6 +1170,10 @@ class EncreWSHandler:
                                 logger.info("[configure] applied permission_settings (%d tools, %d capabilities)", len(tools), len(capabilities))
                     self._persist_settings(session)
                     await self._send(ws, "configured", config=msg.config)
+                    # Config changed → unified push so the frontend store
+                    # (model selector, settings, sessions) refreshes from one
+                    # consistent snapshot.
+                    await self._push_all_data(ws)
 
                 elif isinstance(msg, ClientWechatScan):
                     if not self._adapter_manager:
@@ -849,102 +1220,6 @@ class EncreWSHandler:
                         await self._send(ws, "wechat_scan_result",
                             qrcode_url="", success=False,
                             message=str(e))
-
-                elif isinstance(msg, ClientTestAdapter):
-                    if not self._adapter_manager:
-                        await self._send(ws, "adapter_test_result",
-                            adapter_id=msg.adapter_id, success=False,
-                            message="Adapter manager not available")
-                        continue
-                    from encre.gateway.platform_registry import platform_registry
-                    entry = platform_registry.get(msg.adapter_id)
-                    if entry is None:
-                        await self._send(ws, "adapter_test_result",
-                            adapter_id=msg.adapter_id, success=False,
-                            message=f"Unknown adapter: {msg.adapter_id}")
-                        continue
-                    try:
-                        # Use the entry's validate_config or the adapter class's validate_config
-                        if entry.validate_config is not None:
-                            from encre.gateway.config import PlatformConfig
-                            pconfig = PlatformConfig(
-                                enabled=True,
-                                token=str(msg.config.get("token", "") or msg.config.get("bot_token", "") or ""),
-                                extra={k: v for k, v in msg.config.items() if k not in ("enabled", "token")},
-                            )
-                            result = entry.validate_config(pconfig)
-                            if isinstance(result, bool):
-                                success, message = result, "OK" if result else "Validation failed"
-                            else:
-                                success, message = result
-                        else:
-                            # Try adapter class classmethod validate_config
-                            # Create a minimal dummy config to get the class
-                            from encre.gateway.config import PlatformConfig as _PC
-                            _dummy = _PC(enabled=False, token="", extra={})
-                            try:
-                                _inst = entry.adapter_factory(_dummy)
-                                cls = type(_inst)
-                            except Exception:
-                                cls = None
-                            if cls and hasattr(cls, 'validate_config'):
-                                success, message = await cls.validate_config(msg.config)
-                            else:
-                                success, message = True, "No validation available"
-                    except Exception as e:
-                        success, message = False, str(e)
-
-                    # On successful validation, auto-save the config so new credentials
-                    # take effect immediately -- matches user expectation that Test + OK = applied.
-                    if success and self._adapter_manager:
-                        adapter_id = msg.adapter_id
-                        adapter_keys: dict[str, Any] = {}
-                        for k, v in msg.config.items():
-                            if k != "enabled":
-                                adapter_keys[f"adapter_{adapter_id}_{k}"] = v
-                        adapter_keys[f"adapter_{adapter_id}_enabled"] = msg.config.get("enabled", True)
-                        logger.info("[test_adapter] auto-saving config for %s: %s", adapter_id, list(adapter_keys.keys()))
-                        await self._adapter_manager.apply_config(adapter_keys)
-                        # Persist to configs so it survives restart
-                        parsed: dict[str, dict[str, Any]] = {}
-                        for ak, av in adapter_keys.items():
-                            parts = ak.split("_", 2)
-                            if len(parts) >= 3:
-                                parsed.setdefault(parts[1], {})[parts[2]] = av
-                        # Merge into adapter_configs so existing fields (push_chat_id)
-                        # are not lost when the partial test config is saved.
-                        for aid, fields in parsed.items():
-                            if aid in self._default_config.adapter_configs:
-                                self._default_config.adapter_configs[aid].update(fields)
-                            else:
-                                self._default_config.adapter_configs[aid] = fields
-                        # Persist settings to disk
-                        session = (
-                            self._manager.get_session(self._current_session_id)
-                            if self._current_session_id else None
-                        )
-                        if session is None:
-                            session = self._get_or_create_session()
-                        for aid, fields in parsed.items():
-                            if aid in session.agent.config.adapter_configs:
-                                session.agent.config.adapter_configs[aid].update(fields)
-                            else:
-                                session.agent.config.adapter_configs[aid] = fields
-                        self._persist_settings(session)
-                        # Notify frontend so its settings state reflects the new values
-                        await self._send(ws, "configured", config=adapter_keys)
-                        # Verify the adapter actually started -- validate_config only checks
-                        #   the token endpoint, but connect() does more (gateway URL, WS,
-                        # connectivity).
-                        # If start_adapter failed, override the test result with the real error.
-                        if adapter_id not in self._adapter_manager._instances:
-                            err = self._adapter_manager._last_errors.get(adapter_id, "Adapter failed to start")
-                            success = False
-                            message = err
-                            logger.warning("[test_adapter] %s validate OK but connect failed: %s", adapter_id, err)
-
-                    await self._send(ws, "adapter_test_result",
-                        adapter_id=msg.adapter_id, success=success, message=message)
 
                 elif isinstance(msg, ClientRun):
                     #   iClaw mode: route through EventRouter in a task (same session space as
@@ -1053,7 +1328,7 @@ class EncreWSHandler:
                                     type(_bk).__name__, getattr(_bk, "model", "?"),
                                     (getattr(_bk, "api_key", "") or "")[:8])
 
-                    if session.is_running:
+                    if session.state != SessionState.IDLE:
                         await self._send(ws, "error", message="Session already running", code="busy",
                                          session_id=session.session_id)
                         continue
@@ -1065,7 +1340,7 @@ class EncreWSHandler:
                             session_id=session.session_id)
                         continue
 
-                    session.is_running = True
+                    self._manager.set_session_state(session.session_id, SessionState.RUNNING)
                     # If the backend was force-closed during a previous cancel
                     # (to abort an in-flight API request), rebuild it now.
                     with contextlib.suppress(Exception):
@@ -1093,7 +1368,11 @@ class EncreWSHandler:
                     if msg.attachments:
                         # Check if the active model supports multimodal.
                         active_model = session.agent.config.get_active_model()
-                        is_multimodal = active_model and (active_model.multimodal or False)
+                        is_multimodal = active_model and (
+                            active_model.multimodal or False
+                        ) and getattr(
+                            active_model, "multimodal_support", "unknown"
+                        ) != "unsupported"
 
                         if is_multimodal and any(
                             a.get("mime_type", "").startswith("image/") for a in msg.attachments
@@ -1285,10 +1564,10 @@ class EncreWSHandler:
                                     await self._send(ws, "telemetry", data=summary, session_id=session.session_id)
                             # Only release state when this task is still the
                             # current owner -- a new run may have already taken
-                            # over, and we must NOT clear its is_running flag
+                            # over, and we must NOT clear its state
                             # or release its semaphore slot.
                             if session.agent_task is asyncio.current_task():
-                                session.is_running = False
+                                self._manager.set_session_state(session.session_id, SessionState.IDLE)
                                 self._manager.release_slot()
                                 if not session.agent.session.metadata.get("temp_chat"):
                                     await self._manager._save_session_async(session)
@@ -1438,7 +1717,7 @@ class EncreWSHandler:
                         continue
                     self._manager.touch(session.session_id)
                     if session.agent_task and not session.agent_task.done():
-                        session.is_running = False
+                        self._manager.set_session_state(session.session_id, SessionState.IDLE)
                         session.agent.loop.cancel()
                         session.agent_task.cancel()
                         # Force-close the backend HTTP client so any in-flight
@@ -1450,7 +1729,7 @@ class EncreWSHandler:
                         self._manager.release_slot()
                         await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)
                     else:
-                        session.is_running = False
+                        self._manager.set_session_state(session.session_id, SessionState.IDLE)
                         self._manager.release_slot()
                         await self._send(ws, "finish", reason="cancelled", session_id=session.session_id)
 
@@ -1511,38 +1790,15 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientGetConfig):
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
-                    config_data = info.agent.config.to_dict(encrypt_api_keys=False)
-                    # Sync search engine URL to the browser tool module
-                    se_url = config_data.get("default_search_engine_url", "")
-                    if se_url:
-                        set_search_engine_url(se_url)
-                    if "models" in config_data:
-                        config_data["models"] = _inject_context_windows(list(config_data["models"]))
+
+                    try:
+                        config_data = await asyncio.to_thread(self._build_config_data, info)
+                    except Exception:
+                        config_data = info.agent.config.to_dict(encrypt_api_keys=False)
                     available = await self._build_skills_list(info)
                     config_data["available_skills"] = available
-                    config_data["tools_info"] = self._build_tools_info(info)
                     config_data["workspace_mode"] = "iwork" if self._workspace_path else "normal"
                     config_data["workspace_path"] = self._workspace_path
-                    config_data["model_catalog"] = catalog_payload()
-                    config_data["mcp_catalog"] = mcp_catalog_payload()
-                    if "sub_agents" in config_data:
-                        config_data["sub_agents"] = [
-                            sa for sa in config_data["sub_agents"] if not sa.get("hidden", False)
-                        ]
-                    current_spec = self._spec_engine.current_spec
-                    config_data["spec"] = current_spec.to_dict() if current_spec else None
-                    config_data["slash_commands"] = get_slash_command_defs(
-                        info.agent.command_registry
-                    )
-                    config_data["custom_slash_commands"] = load_custom_slash_commands()
-                    config_data["keybinds"] = load_keybinds()
-                    # Ship the session's active command (if any) so the
-                    # frontend can render the command chip on connect /
-                    # config refresh.
-                    config_data["active_command"] = (
-                        getattr(info.agent.config, "active_command", None)
-                        or info.agent.session.metadata.get("active_command")
-                    )
                     await self._send(ws, "config_data", config=config_data)
 
                 elif isinstance(msg, ClientUpdateModels):
@@ -1568,6 +1824,9 @@ class EncreWSHandler:
                     ])
                     await self._send(ws, "models_updated",
                         models=models_dict, active_model_index=msg.active_model_index)
+                    # Models changed → unified push so every panel (selector,
+                    # settings) sees the fresh model set from one snapshot.
+                    await self._push_all_data(ws)
 
                 elif isinstance(msg, ClientSetActiveModel):
                     info = self._get_or_create_session()
@@ -1674,6 +1933,8 @@ class EncreWSHandler:
                             message=f"Unknown backend type: {msg.backend_type}")
                     else:
                         validated = False
+                        caps: dict[str, str] = {}
+                        probe_multimodal = "unknown"
                         try:
                             async for _ in backend.chat(
                                 messages=[{"role": "user", "content": "hi"}],
@@ -1682,10 +1943,25 @@ class EncreWSHandler:
                             ):
                                 pass
                             validated = True
+                            # Full capability probe runs synchronously here so the
+                            # dialog waits for the result before closing.
+                            from encre.backends.multimodal import probe_backend_capabilities
+                            try:
+                                caps = await probe_backend_capabilities(
+                                    backend, include_multimodal=bool(msg.multimodal),
+                                )
+                                if msg.multimodal:
+                                    probe_multimodal = caps.get("multimodal_input", "unknown")
+                            except Exception:
+                                logger.warning(
+                                    "[validate_model] capability probe failed for %s: %s",
+                                    msg.model_id, traceback.format_exc(),
+                                )
+                            if msg.multimodal and probe_multimodal == "unsupported":
+                                await self._send(ws, "model_validation_error",
+                                    message=f'The endpoint for "{msg.model_id}" does not support multimodal content (text-only). The multimodal option cannot be enabled for this model.')
+                                validated = False
                         except Exception as e:
-                            # Validation failed — report it and keep the
-                            # connection alive (do NOT return, which would tear
-                            # down the whole WebSocket and lose this message).
                             await self._send(ws, "model_validation_error",
                                 message=format_backend_error(e, "Validation failed:"))
                         finally:
@@ -1693,11 +1969,6 @@ class EncreWSHandler:
 
                         if validated:
                           try:
-                            # Validation passed — persist the model authoritatively
-                            # in THIS single round-trip and echo the full list via
-                            # models_updated.  The frontend syncs its state from that
-                            # echo, so there is no fragile second update_models
-                            # message that can be lost if the WebSocket goes away.
                             info = self._get_or_create_session()
                             self._manager.touch(info.session_id)
                             cfg = info.agent.config
@@ -1711,17 +1982,14 @@ class EncreWSHandler:
                                 context_window=0,
                                 enabled=True,
                                 multimodal=msg.multimodal,
+                                multimodal_support=probe_multimodal,
+                                capabilities=caps,
                                 thinking_config=_thinking_config_from_dict(msg.thinking_config) if msg.thinking_config else None,
                             )
                             if 0 <= msg.model_index < len(cfg.models):
-                                # Edit: replace the exact entry the user opened and
-                                # keep the current active selection.
                                 cfg.models[msg.model_index] = new_model
                                 active_idx = cfg.active_model_index
                             else:
-                                # Add: collapse onto an existing identical model
-                                # (same backend + model_id + base_url) rather than
-                                # appending a duplicate when re-validated.
                                 existing_idx = next(
                                     (i for i, m in enumerate(cfg.models)
                                      if m.backend_type == msg.backend_type
@@ -1737,7 +2005,6 @@ class EncreWSHandler:
                                     active_idx = len(cfg.models) - 1
                             cfg.active_model_index = active_idx
                             cfg.apply_active_model()
-                            # Sync to _default_config so new sessions pick it up.
                             self._default_config.models = list(cfg.models)
                             self._default_config.active_model_index = active_idx
                             self._default_config.apply_active_model()
@@ -1749,7 +2016,6 @@ class EncreWSHandler:
                                 await self._send(ws, "model_validation_error",
                                     message=f"Validation passed but backend rebuild failed: {exc}")
                                 return
-                            # Verify backend actually got created - if not, surface error.
                             if info.agent.loop.backend is None:
                                 logger.error("[validate_model] backend is None after rebuild - config: type=%s api_key=%s base_url=%s",
                                     cfg.backend_type, bool(cfg.api_key), cfg.base_url)
@@ -1757,7 +2023,6 @@ class EncreWSHandler:
                                     message="Backend failed to initialize. Check backend_type/api_key/base_url.")
                                 return
                             self._persist_config(info)
-
                             models_dict = _inject_context_windows([
                                 m.to_dict(encrypt_api_keys=False) for m in cfg.models
                             ])
@@ -1941,8 +2206,10 @@ class EncreWSHandler:
                     })
 
                 elif isinstance(msg, ClientSearch):
+                    # Echo the client's seq back so the frontend can drop
+                    # stale (out-of-order) responses.
                     results = self._do_search(msg.query)
-                    await self._send(ws, "search_results", results=results)
+                    await self._send(ws, "search_results", results=results, seq=msg.seq)
 
                 elif isinstance(msg, ClientRollbackLog):
                     sid = msg.session_id or self._current_session_id
@@ -1966,7 +2233,7 @@ class EncreWSHandler:
                     # session state corruption (the running task's finally block
                     # could overwrite the rollback's restored state).
                     if session.agent_task and not session.agent_task.done():
-                        session.is_running = False
+                        self._manager.set_session_state(session.session_id, SessionState.IDLE)
                         session.agent.loop.cancel()
                         session.agent_task.cancel()
                         with contextlib.suppress(Exception):
@@ -2023,7 +2290,7 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientDeleteMessage):
                     session = self._get_or_create_session()
                     self._manager.touch(session.session_id)
-                    if session.is_running:
+                    if session.state != SessionState.IDLE:
                         await self._send(ws, "error", message="Session is running, cannot delete messages", code="busy",
                                          session_id=session.session_id)
                         continue
@@ -2085,6 +2352,41 @@ class EncreWSHandler:
                         await self._send(ws, "session_deleted", session_id=msg.session_id)
                     else:
                         await self._send(ws, "error", message="Session not found", code="not_found")
+                    # The deleted session may have been archived; refresh the
+                    # archive view so it disappears from there too.
+                    await self._broadcast_archived_sessions()
+
+                elif isinstance(msg, ClientArchiveSession):
+                    if not msg.session_id:
+                        await self._send(ws, "error", message="No session_id provided", code="invalid_request")
+                        continue
+                    ok = self._manager.archive_session(msg.session_id)
+                    # Keep the EventRouter's manager in sync for adapter sessions.
+                    if self._adapter_manager and self._adapter_manager.router:
+                        self._adapter_manager.router.session_manager.archive_session(msg.session_id)
+                    # Sidebar refreshes (the session drops out of the lists)
+                    # and the archive view refreshes.
+                    self._broadcast_sessions()
+                    await self._broadcast_archived_sessions()
+                    if not ok:
+                        await self._send(ws, "error", message="Session not found", code="not_found")
+
+                elif isinstance(msg, ClientUnarchiveSession):
+                    if not msg.session_id:
+                        await self._send(ws, "error", message="No session_id provided", code="invalid_request")
+                        continue
+                    ok = self._manager.unarchive_session(msg.session_id)
+                    if self._adapter_manager and self._adapter_manager.router:
+                        self._adapter_manager.router.session_manager.unarchive_session(msg.session_id)
+                    # The session returns to the sidebar and leaves the archive view.
+                    self._broadcast_sessions()
+                    await self._broadcast_archived_sessions()
+                    if not ok:
+                        await self._send(ws, "error", message="Session not found", code="not_found")
+
+                elif isinstance(msg, ClientListArchivedSessions):
+                    sessions = await asyncio.to_thread(self._list_archived_sessions)
+                    await self._send(ws, "archived_sessions_list", sessions=sessions)
 
                 elif isinstance(msg, ClientExportSession):
                     if not msg.session_id:
@@ -2109,7 +2411,11 @@ class EncreWSHandler:
                         await self._send(ws, "error", message="No session_ids provided", code="invalid_request")
                         continue
                     from encre.session import EncreSession
-                    import zipfile, io, base64
+                    # NOTE: do not re-import base64 here -- a function-level
+                    # import would shadow the module-level name for the WHOLE
+                    # handle() scope and break earlier branches (e.g. icon
+                    # upload) with UnboundLocalError.
+                    import zipfile, io
                     buf = io.BytesIO()
                     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                         for sid in msg.session_ids:
@@ -2133,6 +2439,82 @@ class EncreWSHandler:
                     fname = f"encre-export-{len(msg.session_ids)}-sessions.zip"
                     await self._send(ws, "sessions_exported_zip", zip_base64=zip_b64, filename=fname)
 
+                elif isinstance(msg, ClientExportData):
+                    # Full data-dir export: decrypt everything into a plaintext
+                    # zip on disk, then hand back its path.  Progress is streamed
+                    # as data_export_progress events so the UI can show a bar.
+                    from encre.migration import export_all
+                    loop = asyncio.get_running_loop()
+                    last_state: dict[str, object] = {"pct": -1, "t": 0.0}
+
+                    def _export_progress(done: int, total: int, cur: str) -> None:
+                        pct = int(done * 100 / max(total, 1))
+                        now = loop.time()
+                        # Throttle to ~150ms so many small files don't flood the
+                        # socket, but always emit the final tick.
+                        if done < total and now - last_state["t"] < 0.15 and pct == last_state["pct"]:
+                            return
+                        last_state["pct"] = pct
+                        last_state["t"] = now
+                        loop.call_soon_threadsafe(
+                            lambda cur=cur: loop.create_task(
+                                self._send(
+                                    ws, "data_export_progress",
+                                    done=done, total=total, percent=pct, file=cur,
+                                )
+                            )
+                        )
+
+                    try:
+                        zpath = await asyncio.to_thread(export_all, None, _export_progress)
+                        await self._send(
+                            ws, "data_exported_zip",
+                            zip_path=str(zpath), filename=zpath.name,
+                            request_id=msg.request_id,
+                        )
+                    except Exception as e:
+                        logger.error("[export_data] failed: %s", e)
+                        await self._send(ws, "error", message=str(e), code="export_data_error")
+
+                elif isinstance(msg, ClientImportData):
+                    # Full data-dir import: read the plaintext zip directly from
+                    # the user-picked path (same machine), re-encrypt with THIS
+                    # machine's fresh key, and write into the data dir.  Progress
+                    # is streamed as data_import_progress events.
+                    from encre.migration import import_all
+                    if not msg.zip_path:
+                        await self._send(ws, "error", message="No zip path provided", code="invalid_request")
+                        continue
+                    loop = asyncio.get_running_loop()
+                    last_state = {"pct": -1, "t": 0.0}
+
+                    def _import_progress(done: int, total: int, cur: str) -> None:
+                        pct = int(done * 100 / max(total, 1))
+                        now = loop.time()
+                        if done < total and now - last_state["t"] < 0.15 and pct == last_state["pct"]:
+                            return
+                        last_state["pct"] = pct
+                        last_state["t"] = now
+                        loop.call_soon_threadsafe(
+                            lambda cur=cur: loop.create_task(
+                                self._send(
+                                    ws, "data_import_progress",
+                                    done=done, total=total, percent=pct, file=cur,
+                                )
+                            )
+                        )
+
+                    try:
+                        result = await asyncio.to_thread(import_all, msg.zip_path, msg.mode, _import_progress)
+                        await self._send(
+                            ws, "data_import_done",
+                            files=result["files"], restored=result["restored"], skipped=result["skipped"],
+                            overwritten=result["overwritten"], kept=result["kept"],
+                        )
+                    except Exception as e:
+                        logger.error("[import_data] failed: %s", e)
+                        await self._send(ws, "error", message=str(e), code="import_data_error")
+
                 elif isinstance(msg, ClientRenameSession):
                     if not msg.session_id or not msg.new_name.strip():
                         await self._send(ws, "error", message="Missing session_id or new_name", code="invalid_request")
@@ -2141,6 +2523,9 @@ class EncreWSHandler:
                     ok = self._manager.rename_session(msg.session_id, new_name)
                     if ok:
                         await self._send(ws, "session_renamed", session_id=msg.session_id, new_name=new_name)
+                        # Sidebar + tray names come from the unified session
+                        # list — broadcast the refreshed snapshot.
+                        self._broadcast_sessions()
                     else:
                         await self._send(ws, "error", message="Session not found", code="not_found")
 
@@ -2240,13 +2625,27 @@ class EncreWSHandler:
                     if existing:
                         existing["opened_at"] = time.time()
                         existing["id"] = ws_id
+                        # Creation time is recorded once and never recomputed
+                        existing.setdefault("created_at", time.time())
                     else:
                         workspaces.append({
                             "id": ws_id,
                             "path": folder_path,
                             "name": os.path.basename(folder_path),
                             "opened_at": time.time(),
+                            "created_at": time.time(),
                         })
+                    # Auto-generate a default letter avatar once for workspaces
+                    # that have no icon file yet (covers legacy records too).
+                    ws_record = existing or workspaces[-1]
+                    if not (os.path.isfile(_get_workspace_icon_file(ws_id, "svg"))
+                            or os.path.isfile(_get_workspace_icon_file(ws_id, "png"))):
+                        try:
+                            svg = await asyncio.to_thread(
+                                _generate_default_workspace_icon, ws_record["name"])
+                            await asyncio.to_thread(_write_workspace_icon_file, ws_id, "svg", svg)
+                        except Exception:
+                            logger.warning("default workspace icon generation failed", exc_info=True)
                     # Keep last 20
                     workspaces = workspaces[-20:]
                     _save_workspaces(workspaces)
@@ -2316,7 +2715,7 @@ class EncreWSHandler:
                                 idx_status = "indexing"
                     await self._send(ws, "workspace_opened",
                         path=folder_path, name=os.path.basename(folder_path),
-                        id=ws_id, workspaces=workspaces,
+                        id=ws_id, workspaces=_workspaces_with_session_counts(workspaces),
                         index_status=idx_status, index_files=idx_files)
 
                     sess = info.agent.session
@@ -2329,12 +2728,21 @@ class EncreWSHandler:
                                      request_id=msg.request_id)
                     await self._send_session_mode(ws, info)
                     await self._send_session_command(ws, info)
+                    # Unified data push: config+models, sessions, workspaces in
+                    # one consistent snapshot so every frontend panel (sidebar,
+                    # model selector, settings) fills for the new workspace
+                    # context.  The frontend also broadcasts to all connections.
+                    await self._push_all_data(ws)
+                    self._broadcast_sessions()
                     _t1 = time.time()
                     logger.info("[workspace] open_workspace done session=%s total=%.2fs",
                                 info.session_id[:8], _t1 - _t_open)
 
                 elif isinstance(msg, ClientListWorkspaces):
-                    workspaces = _load_workspaces()
+                    def _build_ws_list():
+                        wss = _load_workspaces()
+                        return _workspaces_with_session_counts(wss)
+                    workspaces = await asyncio.to_thread(_build_ws_list)
                     await self._send(ws, "workspaces_list", workspaces=workspaces)
 
                 elif isinstance(msg, ClientRemoveWorkspace):
@@ -2351,7 +2759,15 @@ class EncreWSHandler:
                     ws_dir = _get_workspace_dir(ws_id)
                     if os.path.isdir(ws_dir):
                         shutil.rmtree(ws_dir, ignore_errors=True)
-                    await self._send(ws, "workspace_removed", path=msg.path, workspaces=workspaces)
+                    await self._send(ws, "workspace_removed", path=msg.path, workspaces=_workspaces_with_session_counts(workspaces))
+                    # If the removed workspace was active, drop back to the
+                    # normal context and push the unified snapshot; otherwise
+                    # refresh the session list so removed sessions vanish.
+                    if self._workspace_path and os.path.normcase(os.path.normpath(self._workspace_path)) == os.path.normcase(os.path.normpath(msg.path)):
+                        self._workspace_path = ""
+                        await self._push_all_data(ws)
+                    else:
+                        self._broadcast_sessions()
 
                 elif isinstance(msg, ClientCloseWorkspace):
                     # Unsubscribe from index progress but do NOT cancel -- indexing
@@ -2390,46 +2806,67 @@ class EncreWSHandler:
                                      request_id=msg.request_id)
                     await self._send_session_mode(ws, info)
                     await self._send_session_command(ws, info)
+                    # Back to the global/normal context: unified data push so
+                    # the sidebar / model selector / settings fill for normal
+                    # mode again.
+                    await self._push_all_data(ws)
+
+                elif isinstance(msg, ClientUploadWorkspaceIcon):
+                    workspaces = _load_workspaces()
+                    target = next((w for w in workspaces if w["path"] == msg.path), None)
+                    ok = False
+                    if target is None:
+                        await self._send(ws, "error", message="Workspace not found", code="invalid_path")
+                    elif msg.icon_data.startswith("data:image/") and ";base64," in msg.icon_data:
+                        try:
+                            b64 = msg.icon_data.split(";base64,", 1)[1]
+                            raw = base64.b64decode(b64)
+                            if len(raw) <= 8 * 1024 * 1024:  # 8 MB upload cap
+                                png = await asyncio.to_thread(_normalize_workspace_icon, raw)
+                                if png:
+                                    target_ws_id = target.get("id") or _make_workspace_id(target["path"])
+                                    await asyncio.to_thread(_write_workspace_icon_file, target_ws_id, "png", png)
+                                    # A custom upload supersedes the generated default.
+                                    await asyncio.to_thread(_remove_workspace_icon_file, target_ws_id, "svg")
+                                    ok = True
+                        except Exception:
+                            logger.warning("workspace icon upload failed", exc_info=True)
+                    if not ok and target is not None:
+                        await self._send(ws, "error", message="Invalid icon image", code="invalid_icon")
+                    # Always echo the list so the manager re-renders; on failure
+                    # the on-disk icon is untouched so the old one simply stays.
+                    await self._send(ws, "workspaces_list",
+                                     workspaces=await asyncio.to_thread(
+                                         _workspaces_with_session_counts, workspaces))
+
+                elif isinstance(msg, ClientRenameWorkspace):
+                    new_name = msg.name.strip()
+                    workspaces = _load_workspaces()
+                    target = next((w for w in workspaces if w["path"] == msg.path), None)
+                    if target is None:
+                        await self._send(ws, "error", message="Workspace not found", code="invalid_path")
+                    elif not new_name:
+                        await self._send(ws, "error", message="Name cannot be empty", code="invalid_name")
+                    elif new_name != target.get("name"):
+                        target["name"] = new_name
+                        _save_workspaces(workspaces)
+                        # Refresh the generated default letter avatar for the
+                        # new name; custom uploads (icon.png) stay untouched.
+                        ws_id = target.get("id") or _make_workspace_id(msg.path)
+                        if (os.path.isfile(_get_workspace_icon_file(ws_id, "svg"))
+                                and not os.path.isfile(_get_workspace_icon_file(ws_id, "png"))):
+                            try:
+                                svg = await asyncio.to_thread(
+                                    _generate_default_workspace_icon, new_name)
+                                await asyncio.to_thread(_write_workspace_icon_file, ws_id, "svg", svg)
+                            except Exception:
+                                logger.warning("workspace icon regeneration failed", exc_info=True)
+                    await self._send(ws, "workspaces_list",
+                                     workspaces=await asyncio.to_thread(
+                                         _workspaces_with_session_counts, workspaces))
 
                 elif isinstance(msg, ClientGetMemoryList):
-                    from encre.config import get_data_dir
-                    from encre.crypto import decrypt as _decrypt
-                    mem_dir = get_data_dir() / "memory"
-                    entries: list[dict[str, Any]] = []
-                    if mem_dir.is_dir():
-                        for fpath in sorted(mem_dir.glob("*.md"), key=lambda p:
-                            p.stat().st_mtime, reverse=True):
-                            # Hide the internal profile file (_profile.md) from
-                            # the settings UI. It is still loaded by the system;
-                            # just not shown. Match by the fixed filename so
-                            # other files starting with "_" or "." are unaffected.
-                            if fpath.name == "_profile.md":
-                                continue
-                            try:
-                                raw = fpath.read_text("utf-8")
-                                # Decrypt memory files (all encrypted by default)
-                                content = raw
-                                if raw.strip() and not raw.strip().startswith("---") and not raw.strip().startswith("#"):
-                                    with contextlib.suppress(Exception):
-                                        content = _decrypt(raw)
-                                meta = self._parse_memory_frontmatter(raw) if "---" in raw else None
-                                if not meta:
-                                    meta = self._parse_memory_frontmatter(content) if "---" in content else None
-                                entry: dict[str, Any] = {
-                                    "name": fpath.stem,
-                                    "path": str(fpath.relative_to(mem_dir)),
-                                    "size": fpath.stat().st_size,
-                                    "modified": fpath.stat().st_mtime,
-                                    "preview": content[:200].replace("\n", " ").strip(),
-                                }
-                                if meta:
-                                    entry["title"] = meta.get("title", "")
-                                    entry["tags"] = list(meta.get("tags", [])) if isinstance(meta.get("tags"), list | tuple) else []
-                                    entry["type"] = str(meta.get("type", ""))
-                                entries.append(entry)
-                            except Exception:
-                                continue
-                    await self._send(ws, "memory_list", entries=entries)
+                    await self._send(ws, "memory_list", entries=self._build_memory_list())
 
                 elif isinstance(msg, ClientGetMemoryDetail):
                     from encre.config import get_data_dir
@@ -2451,94 +2888,13 @@ class EncreWSHandler:
                         await self._send(ws, "memory_detail", path=msg.path, content=content)
 
                 elif isinstance(msg, ClientListGlobalRules):
-                    from encre.config import get_data_dir
-                    rules_dir = get_data_dir() / "rules"
-                    rules_list: list[dict[str, Any]] = []
-                    if rules_dir.is_dir():
-                        for fpath in sorted(rules_dir.glob("*.md"), key=lambda p:
-                            p.stat().st_mtime, reverse=True):
-                            try:
-                                rules_list.append({
-                                    "name": fpath.stem,
-                                    "path": str(fpath.relative_to(rules_dir)),
-                                    "size": fpath.stat().st_size,
-                                    "modified": fpath.stat().st_mtime,
-                                })
-                            except Exception:
-                                continue
-                    await self._send(ws, "global_rules_list", rules=rules_list)
+                    await self._send(ws, "global_rules_list", rules=self._build_global_rules_list())
 
                 elif isinstance(msg, ClientListProjectRules):
-                    ws_path = self._workspace_path or self._default_config.workspace if self._default_config else ""
-                    rules_list: list[dict[str, Any]] = []
-                    if ws_path and os.path.isdir(ws_path):
-                        for rel_path, priority, name in [
-                            (".encre/rules.md", 100, "encre"),
-                            (".cursorrules", 90, "cursor"),
-                            (".windsurfrules", 85, "windsurf"),
-                            (".clinerules", 80, "cline"),
-                            ("CLAUDE.md", 75, "claude"),
-                            (".github/copilot-instructions.md", 60, "copilot"),
-                        ]:
-                            full_path = os.path.join(ws_path, rel_path)
-                            if os.path.isfile(full_path):
-                                try:
-                                    st = os.stat(full_path)
-                                    rules_list.append({
-                                        "name": name,
-                                        "path": rel_path,
-                                        "priority": priority,
-                                        "modified": st.st_mtime,
-                                    })
-                                except Exception:
-                                    continue
-                        # Codex instructions: AGENTS.md chain, .codex/config.toml
-                        # developer_instructions, and model_instructions_file.
-                        try:
-                            from encre.codex_compat import build_codex_context
-                            ctx = build_codex_context(ws_path)
-                            seen_codex: set[str] = set()
-                            for path, _ in ctx.instructions:
-                                if path in seen_codex:
-                                    continue
-                                seen_codex.add(path)
-                                rel = path
-                                if rel.startswith(ws_path + os.sep):
-                                    rel = rel[len(ws_path) + len(os.sep):]
-                                try:
-                                    mtime = os.path.getmtime(path)
-                                except OSError:
-                                    mtime = 0.0
-                                rules_list.append({
-                                    "name": "codex",
-                                    "path": rel,
-                                    "priority": 65,
-                                    "modified": mtime,
-                                })
-                        except Exception:
-                            pass
-                        rules_list.sort(key=lambda r: -r["priority"])
-                    await self._send(ws, "project_rules_list", rules=rules_list)
+                    await self._send(ws, "project_rules_list", rules=self._build_project_rules_list())
 
                 elif isinstance(msg, ClientListProjectHooks):
-                    from encre.hooks import EncreHookSystem
-                    info = self._info
-                    hook_system: EncreHookSystem | None = (
-                        getattr(getattr(info, "agent", None), "hook_system", None)
-                    )
-                    hooks_list: list[dict[str, Any]] = []
-                    if hook_system is not None:
-                        for h in hook_system.list_handlers():
-                            hooks_list.append({
-                                "handler_id": h.get("handler_id", ""),
-                                "event_type": h.get("event_type", ""),
-                                "source_path": h.get("source_path", ""),
-                                "matcher": h.get("matcher", ""),
-                                "command": h.get("command", ""),
-                                "hook_type": h.get("hook_type", "command"),
-                                "timeout_ms": int(h.get("timeout_ms", 0) or 0),
-                            })
-                    await self._send(ws, "project_hooks_list", hooks=hooks_list)
+                    await self._send(ws, "project_hooks_list", hooks=self._build_project_hooks_list())
 
                 elif isinstance(msg, ClientSaveGlobalRule):
                     from encre.config import get_data_dir
@@ -2548,21 +2904,9 @@ class EncreWSHandler:
                     try:
                         rule_path.write_text(msg.content, encoding="utf-8")
                         await self._send(ws, "global_rule_saved", name=msg.name)
-                        # Immediately push the full list so frontend doesn't need to request it
-                        rules_list: list[dict[str, Any]] = []
-                        if rules_dir.is_dir():
-                            for fpath in sorted(rules_dir.glob("*.md"), key=lambda p:
-                                p.stat().st_mtime, reverse=True):
-                                try:
-                                    rules_list.append({
-                                        "name": fpath.stem,
-                                        "path": str(fpath.relative_to(rules_dir)),
-                                        "size": fpath.stat().st_size,
-                                        "modified": fpath.stat().st_mtime,
-                                    })
-                                except Exception:
-                                    continue
-                        await self._send(ws, "global_rules_list", rules=rules_list)
+                        # Push the full list from the unified builder (single
+                        # source of truth) so the frontend stays in sync.
+                        await self._send(ws, "global_rules_list", rules=self._build_global_rules_list())
                     except Exception as e:
                         await self._send(ws, "error", message=f"Failed to save global rule: {e}")
 
@@ -2665,7 +3009,7 @@ class EncreWSHandler:
                             await self._send(ws, "index_status", files=0, status=f"error: {e}")
 
                 elif isinstance(msg, ClientAddDocument):
-                    from codebase.document_manager import EncreDocumentManager
+                    from encre.codebase.document_manager import EncreDocumentManager
 
                     from encre.config import get_data_dir
                     try:
@@ -2673,9 +3017,11 @@ class EncreWSHandler:
                         if msg.file_path:
                             doc = mgr.add_from_local(msg.name, msg.file_path)
                             await self._send(ws, "document_added", document=doc.to_dict())
+                            await self._send(ws, "documents_list", documents=self._build_documents_list())
                         elif msg.url:
                             doc = mgr.add_pending_url(msg.name, msg.url)
                             await self._send(ws, "document_added", document=doc.to_dict())
+                            await self._send(ws, "documents_list", documents=self._build_documents_list())
                             _t = asyncio.ensure_future(self._crawl_and_update(ws, mgr, doc, msg.url))
                             self._tasks.add(_t)
                         else:
@@ -2684,7 +3030,7 @@ class EncreWSHandler:
                         await self._send(ws, "document_error", message=str(e))
 
                 elif isinstance(msg, ClientRemoveDocument):
-                    from codebase.document_manager import EncreDocumentManager
+                    from encre.codebase.document_manager import EncreDocumentManager
 
                     from encre.config import get_data_dir
                     try:
@@ -2692,19 +3038,15 @@ class EncreWSHandler:
                         removed = mgr.remove(msg.id)
                         if removed:
                             await self._send(ws, "document_removed", id=msg.id)
+                            await self._send(ws, "documents_list", documents=self._build_documents_list())
                         else:
                             await self._send(ws, "document_error", message="Document not found")
                     except Exception as e:
                         await self._send(ws, "document_error", message=str(e))
 
                 elif isinstance(msg, ClientListDocuments):
-                    from codebase.document_manager import EncreDocumentManager
-
-                    from encre.config import get_data_dir
                     try:
-                        mgr = EncreDocumentManager(str(get_data_dir()))
-                        docs = mgr.list_all()
-                        await self._send(ws, "documents_list", documents=docs)
+                        await self._send(ws, "documents_list", documents=self._build_documents_list())
                     except Exception as e:
                         await self._send(ws, "document_error", message=str(e))
 
@@ -2724,20 +3066,21 @@ class EncreWSHandler:
                     self._current_session_id = session.session_id
                     # Tag the resumed session with the correct channel for the current mode
                     session.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"
-                    # Reconcile is_running from the actual task state -- if the
+                    # Reconcile state from the actual task state -- if the
                     # task is still alive, the session is definitely running even
                     # if the finally block has not fired yet.
                     if session.agent_task is not None and not session.agent_task.done():
-                        session.is_running = True
+                        self._manager.set_session_state(session.session_id, SessionState.RUNNING)
                     sess = session.agent.session
                     sess.mark_messages_dirty()
                     sess.ensure_artifacts_from_messages()
                     msgs = self._renderer_session_messages(sess)
                     branches_list = [b.__dict__ for b in sess.branches.values()]
+                    state_value = self._manager.get_session_state(session.session_id)
                     await self._send(ws, "session_ready", session_id=session.session_id, messages=msgs,
                                      plan_items=sess.plan_items, artifacts=sess.artifacts, references=sess.references,
                                      branches=branches_list, active_branch_id=sess.active_branch_id,
-                                     is_running=session.is_running, request_id=msg.request_id)
+                                     state=state_value, request_id=msg.request_id)
                     await self._send_session_mode(ws, session)
                     await self._send_session_command(ws, session)
 
@@ -2927,13 +3270,13 @@ class EncreWSHandler:
                             user_msg += "\n\n(Please provide a concise response, keeping it brief and to the point.)"
                         self._current_session_id = sid
                         self._info = info
-                        info.is_running = True
+                        self._manager.set_session_state(sid, SessionState.RUNNING)
                         acquired = await self._manager.acquire_slot()
                         if not acquired:
                             await self._send(ws, "error",
                                 message="Server at capacity, try later", code="capacity",
                                 session_id=sid)
-                            info.is_running = False
+                            self._manager.set_session_state(sid, SessionState.IDLE)
                             continue
 
                         async def _run_retry(session_id: str, prompt: str, info=info):
@@ -2953,7 +3296,7 @@ class EncreWSHandler:
                                     await self._send(ws, "finish", reason="error", session_id=session_id)
                             finally:
                                 if info.agent_task is asyncio.current_task():
-                                    info.is_running = False
+                                    self._manager.set_session_state(session_id, SessionState.IDLE)
                                     self._manager.release_slot()
                                     await self._manager._save_session_async(info)
                                     info.agent_task = None
@@ -3007,7 +3350,7 @@ class EncreWSHandler:
                     # Cancel any running agent task before rollback to prevent
                     # session state corruption.
                     if info.agent_task and not info.agent_task.done():
-                        info.is_running = False
+                        self._manager.set_session_state(sid, SessionState.IDLE)
                         info.agent.loop.cancel()
                         info.agent_task.cancel()
                         with contextlib.suppress(Exception):
@@ -3071,30 +3414,7 @@ class EncreWSHandler:
                 elif isinstance(msg, ClientAutomationListJobs):
                     info = self._get_or_create_session()
                     self._manager.touch(info.session_id)
-                    if self._scheduler is None:
-                        await self._send(ws, "automation_jobs_list", jobs=[])
-                        continue
-                    jobs = self._scheduler.list_jobs()
-                    job_list = []
-                    for j in jobs:
-                        job_list.append({
-                            "id": j.id,
-                            "name": j.name,
-                            "prompt": j.prompt,
-                            "cron": j.cron.to_expression() if j.cron else "",
-                            "schedule_type": j.schedule_type.name,
-                            "state": j.state.name,
-                            "suspended": j.suspended,
-                            "created_at": j.created_at,
-                            "last_fired": j.last_fired,
-                            "last_result": j.last_result,
-                            "fail_count": j.fail_count,
-                            "max_failures": j.max_failures,
-                            "tag": j.metadata.get("tag", ""),
-                            "model_index": j.model_index,
-                            "push_gateways": list(j.push_gateways),
-                        })
-                    await self._send(ws, "automation_jobs_list", jobs=job_list)
+                    await self._send(ws, "automation_jobs_list", jobs=self._build_automation_jobs())
 
                 elif isinstance(msg, ClientAutomationCreateJob):
                     info = self._get_or_create_session()
@@ -3234,67 +3554,7 @@ class EncreWSHandler:
                     )
 
                 elif isinstance(msg, ClientGetUsageStats):
-                    try:
-                        from encre.telemetry import EncreTelemetry
-                        stats = EncreTelemetry.get_all_sessions_usage()
-                        # Build model_id → display_name mapping from the CURRENT
-                        # config.  Sessions whose model is no longer configured
-                        # keep their raw model_id so historical data is never
-                        # lost -- the frontend can show a "(deleted)" tag.
-                        model_names: dict[str, str] = {}
-                        current_model_ids: set[str] = set()
-                        if self._default_config:
-                            for mc in self._default_config.models:
-                                mid = (mc.model_id or "").strip()
-                                if mid:
-                                    current_model_ids.add(mid)
-                                    if mc.name:
-                                        model_names[mid] = mc.name
-                        # Apply display names & label sessions whose model is no
-                        # longer in the config, so the user can see the model
-                        # was deleted/renamed.  No session is dropped -- every
-                        # historical record is preserved.
-                        if stats.get("sessions"):
-                            for s in stats["sessions"]:
-                                raw = (s.get("model", "") or "").strip()
-                                if not raw or raw == "unknown":
-                                    s["model"] = "(unknown model)"
-                                    s["model_status"] = "unknown"
-                                elif raw in model_names:
-                                    s["model"] = model_names[raw]
-                                    s["model_status"] = "active"
-                                else:
-                                    # Model is no longer in the user's config.
-                                    # Keep the raw id so the historical record
-                                    # is preserved and the user knows which
-                                    # model it was.
-                                    s["model"] = raw
-                                    s["model_status"] = "deleted"
-                        if stats.get("model_breakdown"):
-                            mb: dict[str, dict[str, Any]] = {}
-                            for raw, data in stats["model_breakdown"].items():
-                                if not raw or raw == "unknown":
-                                    display = "(unknown model)"
-                                elif raw in model_names:
-                                    display = model_names[raw]
-                                else:
-                                    display = raw
-                                if display in mb:
-                                    for k in ("input_tokens", "output_tokens", "total_tokens", "turns"):
-                                        mb[display][k] = mb[display].get(k, 0) + data.get(k, 0)
-                                else:
-                                    mb[display] = dict(data)
-                            stats["model_breakdown"] = mb
-                        await self._send(ws, "usage_stats", stats=stats)
-                    except Exception:
-                        await self._send(ws, "usage_stats", stats={
-                            "total_sessions": 0, "total_tokens": 0,
-                            "total_input_tokens": 0, "total_output_tokens": 0,
-                            "total_tool_calls": 0,
-                            "tool_call_breakdown": {},
-                            "model_breakdown": {},
-                            "sessions": [],
-                        })
+                    await self._send(ws, "usage_stats", stats=self._build_usage_stats())
 
                 elif isinstance(msg, ClientReplayGetSession):
                     # Session replay: load the recorded telemetry JSONL and
@@ -3335,13 +3595,35 @@ class EncreWSHandler:
         automatically (``iwork`` in workspace mode, ``normal`` otherwise).
         Pass an explicit channel string to override (used by the tray popup to
         fetch both groups at once).
+
+        The iwork view intentionally lists EVERY un-archived session across
+        ALL registered workspaces (each row carries its owning
+        ``workspace_path`` so the sidebar renders the owning workspace icon).
+        The "new task" welcome wizard's workspace picker only decides where a
+        NEW task is created — it never filters the sidebar history.
         """
-        result = self._manager.list_sessions()
+        channel = channel_filter
+        if channel is None:
+            channel = "iwork" if self._workspace_path else "normal"
+
+        def _matches(s: dict[str, Any]) -> bool:
+            """True when the session belongs to the requested channel view.
+
+            iwork sessions are NOT filtered by workspace: the sidebar shows
+            every un-archived workspace's history at once, each attributed to
+            its own workspace via ``workspace_path``.
+            """
+            sch = s.get("channel", "normal")
+            if sch != channel:
+                return False
+            return True
+
+        result = [s for s in self._manager.list_sessions() if _matches(s)]
         active_ids = {s["session_id"] for s in result}
         for entry in self._manager.query_index():
             if entry["session_id"] in active_ids:
                 continue
-            if entry.get("channel", "normal") == "iwork":
+            if not _matches(entry):
                 continue
             result.append(entry)
             active_ids.add(entry["session_id"])
@@ -3350,16 +3632,22 @@ class EncreWSHandler:
         if self._adapter_manager and self._adapter_manager.router:
             router = self._adapter_manager.router
             for s in router.session_manager.list_sessions():
-                if s["session_id"] not in active_ids:
-                    result.append(s)
-                    active_ids.add(s["session_id"])
+                if s["session_id"] in active_ids:
+                    continue
+                if not _matches(s):
+                    continue
+                result.append(s)
+                active_ids.add(s["session_id"])
             for entry in router.session_manager.query_index():
-                if entry["session_id"] not in active_ids:
-                    result.append(entry)
-                    active_ids.add(entry["session_id"])
+                if entry["session_id"] in active_ids:
+                    continue
+                if not _matches(entry):
+                    continue
+                result.append(entry)
+                active_ids.add(entry["session_id"])
 
-        # include workspace sessions from ALL workspace directories
-        if channel_filter is None or channel_filter == "iwork":
+        # include workspace sessions from workspace directories
+        if channel == "iwork":
             workspaces = _load_workspaces()
             for ws in workspaces:
                 ws_id = ws.get("id") or _make_workspace_id(ws["path"])
@@ -3386,6 +3674,17 @@ class EncreWSHandler:
                     ech = entry.get("channel", "iwork") or "iwork"
                     if ech in ("automation", "sub_agent"):
                         continue
+                    # Skip orphan index entries whose session directory does
+                    # not exist in THIS workspace — a session physically
+                    # belongs to exactly one workspace directory, and an
+                    # orphan entry (written into the wrong workspace's index
+                    # before a fix) would otherwise hijack the session's
+                    # workspace attribution and show the wrong icon.
+                    if not os.path.isdir(os.path.join(sess_dir, sid)):
+                        continue
+                    # Archived sessions only surface in the archive manager.
+                    if entry.get("archived"):
+                        continue
                     active_ids.add(sid)
                     ws_path = ws.get("path", "")
                     # Use meta.json's last_message_at (the canonical "when was
@@ -3402,7 +3701,7 @@ class EncreWSHandler:
                         "session_id": sid,
                         "created_at": entry.get("created_at", 0),
                         "last_active": last_active,
-                        "is_running": self._manager.is_session_running(sid),
+                        "state": self._manager.get_session_state(sid),
                         "metadata": {"workspace": ws_path, "workspace_path": ws_path},
                         "preview": entry.get("preview", ""),
                         "name": entry.get("name", ""),
@@ -3432,6 +3731,14 @@ class EncreWSHandler:
                             ech = entry.get("channel", "normal") or "normal"
                             if ech in ("automation", "sub_agent"):
                                 continue
+                            # Skip orphan entries whose session directory is
+                            # not actually in the global dir (same reasoning as
+                            # the workspace branch).
+                            if not os.path.isdir(os.path.join(global_sess_dir, sid)):
+                                continue
+                            # Archived sessions only surface in the archive manager.
+                            if entry.get("archived"):
+                                continue
                             active_ids.add(sid)
                             # Same reasoning as the workspace branch above:
                             # always read the canonical last_message_at from
@@ -3447,7 +3754,7 @@ class EncreWSHandler:
                                 "session_id": sid,
                                 "created_at": entry.get("created_at", 0),
                                 "last_active": last_active,
-                                "is_running": self._manager.is_session_running(sid),
+                                "state": self._manager.get_session_state(sid),
                                 "metadata": {},
                                 "preview": entry.get("preview", ""),
                                 "name": entry.get("name", ""),
@@ -3465,9 +3772,112 @@ class EncreWSHandler:
         result = [s for s in result if s.get("channel", "normal") == expected_channel]
 
         # ── Exclude temp chats from the sidebar ───────────────────────
-        result = [s for s in result if not s.get("temp_chat")]
+        result = [s for s in result if not s.get("metadata", {}).get("temp_chat")]
+
+        # ── Exclude archived sessions (only visible in the archive view) ──
+        result = [s for s in result if not s.get("archived")]
+
+        # ── Workspace attribution fallback (icon stability) ─────────────
+        # A session's workspace MUST be resolved from its physical directory
+        # — the only authoritative source.  In-memory metadata or meta.json
+        # can miss the workspace on legacy/archived sessions, which made the
+        # sidebar icon flicker between surfaces (the same session resolving
+        # to different workspaces on different list paths).  Fill any iwork
+        # session that still lacks a workspace path by mapping its directory's
+        # ws_id back to the registered workspace path.
+        ws_id_to_path: dict[str, str] = {}
+        try:
+            for _w in _load_workspaces():
+                _wid = _w.get("id") or _make_workspace_id(_w["path"])
+                ws_id_to_path[_wid] = _w["path"]
+        except Exception:
+            pass
+        for _s in result:
+            if _s.get("channel") != "iwork":
+                continue
+            _meta = _s.get("metadata") or {}
+            if _meta.get("workspace_path") or _meta.get("workspace"):
+                continue
+            _p = None
+            try:
+                _d = self._manager._session_dir_path(_s["session_id"])
+                # <data>/iwork/{ws_id}/sessions/{sid} → ws_id = parent.parent.name
+                _p = ws_id_to_path.get(_d.parent.parent.name)
+            except Exception:
+                _p = None
+            if _p:
+                _s["metadata"] = {**_meta, "workspace": _p, "workspace_path": _p}
 
         return result
+
+    def _list_archived_sessions(self) -> list[dict[str, Any]]:
+        """All archived sessions across the local manager and the EventRouter.
+
+        Feeds the archive manager view in the workspace management dialog.
+        Sorted by last activity, newest first.
+        """
+        result = self._manager.list_archived_sessions()
+        seen = {s["session_id"] for s in result}
+        if self._adapter_manager and self._adapter_manager.router:
+            router = self._adapter_manager.router
+            for s in router.session_manager.list_archived_sessions():
+                if s["session_id"] not in seen:
+                    result.append(s)
+                    seen.add(s["session_id"])
+        # Same physical-directory attribution fallback as _list_all_sessions,
+        # so archived rows show the owning workspace's real icon too.
+        ws_id_to_path: dict[str, str] = {}
+        try:
+            for _w in _load_workspaces():
+                _wid = _w.get("id") or _make_workspace_id(_w["path"])
+                ws_id_to_path[_wid] = _w["path"]
+        except Exception:
+            pass
+        for _s in result:
+            _meta = _s.get("metadata") or {}
+            if _meta.get("workspace_path") or _meta.get("workspace"):
+                continue
+            _p = None
+            try:
+                _d = self._manager._session_dir_path(_s["session_id"])
+                _p = ws_id_to_path.get(_d.parent.parent.name)
+            except Exception:
+                _p = None
+            if _p:
+                _s["metadata"] = {**_meta, "workspace": _p, "workspace_path": _p}
+        result.sort(key=lambda s: s.get("last_active", s.get("created_at", 0)), reverse=True)
+        return result
+
+    async def _broadcast_archived_sessions(self) -> None:
+        """Push the latest archived session list to all connected clients.
+
+        Fired after archive / unarchive / delete so the archive manager view
+        stays in sync in real time, mirroring ``_broadcast_sessions``.
+        """
+        if not self._connections:
+            return
+        sessions = await asyncio.to_thread(self._list_archived_sessions)
+
+        async def _try_send(ws_conn: Any, payload_sessions: list) -> None:
+            encrypt = self._client_encrypted if self._client_encrypted is not None else False
+            try:
+                payload = encode_server_message(
+                    "archived_sessions_list",
+                    encrypt=encrypt,
+                    sessions=payload_sessions,
+                )
+                await ws_conn.send(payload)
+            except Exception as exc:
+                logger.warning("[broadcast] archived send failed (will remove connection): %s", exc)
+                with contextlib.suppress(ValueError):
+                    self._connections.remove(ws_conn)
+
+        for ws in list(self._connections):
+            try:
+                _t = asyncio.ensure_future(_try_send(ws, sessions))
+                self._tasks.add(_t)
+            except Exception as exc:
+                logger.warning("[broadcast] archived schedule send failed: %s", exc)
 
     @staticmethod
     def _parse_memory_frontmatter(content: str) -> dict[str, Any] | None:
@@ -3531,37 +3941,64 @@ class EncreWSHandler:
         the backend never walks ``os.getcwd()`` so it can't surface files from
         unregistered directories.
         """
-        results: list[dict[str, Any]] = []
+        import pathlib
+
+        from encre.session import EncreSession
+
         q = query.strip().lower()
         if not q:
-            return results
-        import os
+            return []
 
         sessions_dir = self._manager._get_sessions_dir()
-        from encre.session import EncreSession
-        try:
-            for entry in os.scandir(sessions_dir):
-                if len(results) >= 80:
-                    break
-                if not entry.is_dir() or entry.name.startswith("."):
-                    continue
-                sid = entry.name
-                preview = EncreSession.load_preview(entry.path) or ""
-                turn_matches = EncreSession.search_turns(entry.path, q)
-                for tm in turn_matches:
-                    results.append({
+        entries: list[tuple[float, str, str]] = []
+        for entry in os.scandir(sessions_dir):
+            if entry.is_dir() and not entry.name.startswith("."):
+                last = EncreSession.read_meta_last_active(entry.path, 0.0)
+                entries.append((last, entry.name, entry.path))
+        entries.sort(key=lambda x: x[0], reverse=True)
+
+        results: list[dict[str, Any]] = []
+        for _last, sid, dpath in entries:
+            if len(results) >= 60:
+                break
+            # User-managed session name lives in the manager's session index
+            # (not in turn files), so it must be matched explicitly — this is
+            # what makes "search by session name" work.
+            name = ""
+            try:
+                name = str((self._manager._index.get(sid) or {}).get("name", "") or "")
+            except Exception:
+                name = ""
+            if name and q in name.lower():
+                preview = EncreSession.load_preview(dpath) or "Empty session"
+                results.append({
+                    "kind": "conversation",
+                    "session_id": sid,
+                    "role": "user",
+                    "name": name,
+                    "snippet": preview[:120],
+                    "preview": preview,
+                })
+                continue
+            msgs = _build_search_texts(dpath)
+            hit: dict[str, Any] | None = None
+            for msg in msgs:
+                if q in msg["low"]:
+                    idx = msg["low"].index(q)
+                    text = msg["text"]
+                    start = max(0, idx - 40)
+                    end = min(len(text), idx + len(q) + 80)
+                    hit = {
                         "kind": "conversation",
                         "session_id": sid,
-                        "role": tm["role"],
-                        "snippet": tm["snippet"],
-                        "preview": preview or "Empty session",
-                    })
-                    if len(results) >= 80:
-                        break
-        except Exception:
-            pass
-
-        results.sort(key=lambda r: 0 if r["kind"] == "conversation" else 1)
+                        "role": msg["role"],
+                        "name": name,
+                        "snippet": text[start:end].strip()[:120],
+                    }
+                    break
+            if hit:
+                hit["preview"] = EncreSession.load_preview(dpath) or "Empty session"
+                results.append(hit)
         return results[:60]
 
     def _inject_index_to_session(self, ws_id: str, idx: Any) -> None:
@@ -3728,8 +4165,13 @@ class EncreWSHandler:
             }
             if execution_failed:
                 # Keep raw exception text out of the UI while still providing
-                # a stable code that identifies the failed automation state.
-                result_data["error_code"] = "AUTOMATION_EXECUTION_FAILED"
+                # a stable, classified code (rate_limit / network_timeout / …)
+                # instead of a bare placeholder that hides the real cause.
+                try:
+                    from encre.errors import classify_error_code
+                    result_data["error_code"] = classify_error_code(job.last_result or "").value
+                except Exception:
+                    result_data["error_code"] = "AUTOMATION_EXECUTION_FAILED"
             if getattr(job, "session_id", None):
                 result_data["session_id"] = job.session_id
 
@@ -3786,7 +4228,11 @@ class EncreWSHandler:
                 "messages": [],
             }
             if execution.state == "FAILED":
-                entry["error_code"] = "AUTOMATION_EXECUTION_FAILED"
+                try:
+                    from encre.errors import classify_error_code
+                    entry["error_code"] = classify_error_code(execution.result or "").value
+                except Exception:
+                    entry["error_code"] = "AUTOMATION_EXECUTION_FAILED"
             if execution.session_id:
                 entry["session_id"] = execution.session_id
                 messages = self._load_sub_agent_messages(execution.session_id)
@@ -4003,13 +4449,14 @@ class EncreWSHandler:
             return []
 
     async def _crawl_and_update(self, ws: Any, mgr: Any, doc: Any, url: str) -> None:
-        from codebase.document_manager import crawl_url_to_text
+        from encre.codebase.document_manager import crawl_url_to_text
         try:
             loop = asyncio.get_event_loop()
             full_text = await loop.run_in_executor(None, crawl_url_to_text, doc.name, url)
             updated = mgr.finish_url_crawl(doc.id, full_text)
             if updated:
                 await self._send(ws, "document_updated", document=updated.to_dict())
+                await self._send(ws, "documents_list", documents=self._build_documents_list())
         except Exception as e:
             mgr._documents.pop(doc.id, None)
             mgr._save()
@@ -4129,12 +4576,14 @@ class EncreWSHandler:
             logger.debug("[session] auto-name failed: %s", e, exc_info=True)
 
     async def _broadcast_session_renamed(self, session_id: str, new_name: str) -> None:
-        """Send session_renamed to all connected clients."""
+        """Send session_renamed to all connected clients, then refresh the
+        unified session snapshot (sidebar + tray read the same list)."""
         for ws in list(self._connections):
             try:
                 await self._send(ws, "session_renamed", session_id=session_id, new_name=new_name)
             except Exception:
                 pass
+        self._broadcast_sessions()
 
     @staticmethod
     async def _build_skills_list(info: Any) -> list[dict[str, Any]]:
@@ -4438,6 +4887,7 @@ class EncreWSHandler:
             )
 
         elif isinstance(event, PermissionRequest):
+            self._manager.set_session_state(sid, SessionState.AWAITING_APPROVAL)
             await self._send(ws, "permission_request", tool_name=event.tool_name, reason=event.reason, session_id=sid)
 
         elif isinstance(event, QuestionRequest):
@@ -4700,6 +5150,48 @@ def _ext_to_lang(ext: str) -> str:
     return _LANG_MAP.get(ext, "")
 
 
+def _build_search_texts(dpath: str) -> list[dict[str, Any]]:
+    """Extract user/assistant message texts from a session directory."""
+    import pathlib
+
+    from encre.crypto import decrypt
+
+    msgs: list[dict[str, Any]] = []
+    for fpath in sorted(pathlib.Path(dpath).iterdir()):
+        if not fpath.name.startswith("turn_"):
+            continue
+        try:
+            raw = fpath.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not raw:
+            continue
+        if not raw.startswith("["):
+            with contextlib.suppress(Exception):
+                raw = decrypt(raw)
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(data, list):
+            continue
+        for m in data:
+            role = m.get("role", "")
+            if role not in ("user", "assistant"):
+                continue
+            content = m.get("content")
+            if content is None:
+                continue
+            text = content if isinstance(content, str) else " ".join(
+                b.get("text", "") for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+            if text:
+                msgs.append({"role": role, "text": text, "low": text.lower()})
+    return msgs
+
+
+
 def _find_skill_root(extracted_dir: str) -> str | None:
     """Find the directory containing SKILL.md in an extracted zip tree.
 
@@ -4910,11 +5402,34 @@ def _load_workspaces() -> list[dict[str, Any]]:
             return []
         raw = decrypt(encrypted)
         workspaces: list[dict[str, Any]] = json.loads(raw)
-        # Migrate old records that lack an id field
+        # Migrate old records that lack an id field or a recorded creation time
         migrated = False
         for w in workspaces:
             if "id" not in w:
                 w["id"] = _make_workspace_id(w["path"])
+                migrated = True
+            if "created_at" not in w:
+                # Backfill from the oldest recorded timestamp (opened_at was
+                # previously the only timestamp we kept), never recompute it.
+                w["created_at"] = float(w.get("opened_at") or 0) or time.time()
+                migrated = True
+            if "icon_data" in w:
+                # Icons used to be embedded in the record itself; the on-disk
+                # PNG inside the workspace folder is the source of truth now,
+                # so flush any embedded copy out and drop it from the record.
+                try:
+                    ws_id = w["id"]
+                    payload = w["icon_data"]
+                    ext = "svg" if payload.startswith("data:image/svg") else "png"
+                    icon_path = _get_workspace_icon_file(ws_id, ext)
+                    if ";base64," in payload and not os.path.exists(icon_path):
+                        os.makedirs(os.path.dirname(icon_path), exist_ok=True)
+                        with open(icon_path, "wb") as fh:
+                            fh.write(base64.b64decode(payload.split(";base64,", 1)[1]))
+                except Exception:
+                    logger.warning("legacy workspace icon flush failed", exc_info=True)
+                finally:
+                    w.pop("icon_data", None)
                 migrated = True
         if migrated:
             _save_workspaces(workspaces)
@@ -4937,3 +5452,144 @@ def _save_workspaces(workspaces: list[dict[str, Any]]) -> None:
             f.write(encrypted)
     except Exception:
         logger.warning("Failed to save workspaces", exc_info=True)
+
+
+# ── Workspace icons ─────────────────────────────────────────────────────────
+# Each workspace's icon lives as a real file inside its data folder:
+# ``icon.svg`` (generated default) or ``icon.png`` (a custom upload). Outgoing
+# workspace payloads get the icon attached as a ``data:`` URL by
+# ``_workspaces_with_session_counts`` so the frontend never touches the
+# filesystem. The default icon is generated as SVG — hashed random background
+# colour plus capitalised first character of the workspace name.
+_ICON_SIZE = 128
+
+
+def _get_workspace_icon_file(ws_id: str, ext: str) -> str:
+    """Path of the workspace's on-disk icon file ("svg" or "png")."""
+    return os.path.join(_get_workspace_dir(ws_id), f"icon.{ext}")
+
+
+def _write_workspace_icon_file(ws_id: str, ext: str, data: bytes) -> None:
+    """Persist icon bytes as ``<ws_dir>/icon.<ext>`` (atomic replace)."""
+    path = _get_workspace_icon_file(ws_id, ext)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+
+
+def _remove_workspace_icon_file(ws_id: str, ext: str) -> None:
+    with contextlib.suppress(OSError):
+        os.remove(_get_workspace_icon_file(ws_id, ext))
+
+
+def _read_workspace_icon_data_url(ws_id: str) -> str | None:
+    """Load the workspace icon and return it as a ``data:`` URL.
+
+    Custom uploads (``icon.png``) take precedence over the generated default
+    (``icon.svg``).
+    """
+    for ext, mime in (("png", "image/png"), ("svg", "image/svg+xml")):
+        try:
+            with open(_get_workspace_icon_file(ws_id, ext), "rb") as f:
+                return f"data:{mime};base64," + base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            continue
+    return None
+
+
+_ICON_FONT_STACK = "'Microsoft YaHei','PingFang SC','Noto Sans SC',Arial,sans-serif"
+
+
+def _generate_default_workspace_icon(name: str) -> bytes:
+    """Render the fallback icon for ``name`` as SVG bytes."""
+    import colorsys
+    from xml.sax.saxutils import escape as _escape
+
+    # Hash the name into a hue so the colour is arbitrary-looking but stable
+    # across restarts (a re-rolled colour on every launch would read as a bug).
+    h = 0
+    for ch in name:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+    r, g, b = (int(c * 255) for c in colorsys.hls_to_rgb((h % 360) / 360.0, 0.46, 0.62))
+    ch = _escape(name.strip()[:1] or "?").upper()
+
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{_ICON_SIZE}" height="{_ICON_SIZE}" '
+        f'viewBox="0 0 {_ICON_SIZE} {_ICON_SIZE}">'
+        f'<rect width="{_ICON_SIZE}" height="{_ICON_SIZE}" rx="20" fill="rgb({r},{g},{b})"/>'
+        f'<text x="{_ICON_SIZE // 2}" y="{_ICON_SIZE // 2}" text-anchor="middle" '
+        f'dominant-baseline="central" font-family="{_ICON_FONT_STACK}" '
+        f'font-size="52" font-weight="700" fill="#ffffff">{ch}</text>'
+        "</svg>"
+    )
+    return svg.encode("utf-8")
+
+
+def _normalize_workspace_icon(raw: bytes) -> bytes | None:
+    """Decode uploaded image bytes into square 128px PNG bytes.
+
+    Centre-crops non-square images, composites alpha over white, and returns
+    ``None`` when the bytes cannot be decoded as an image.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        img = Image.open(BytesIO(raw)).convert("RGBA")
+        side = min(img.size)
+        left = (img.width - side) // 2
+        top = (img.height - side) // 2
+        img = img.crop((left, top, left + side, top + side)).resize((_ICON_SIZE, _ICON_SIZE))
+        flat = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), (255, 255, 255, 255))
+        flat.alpha_composite(img)
+        buf = BytesIO()
+        flat.convert("RGB").save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _workspaces_with_session_counts(workspaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return workspace records enriched with live ``session_count`` and icon.
+
+    The count is derived from each workspace's own session index file and
+    excludes automation / sub-agent entries, mirroring the sidebar's
+    workspace session listing. The icon is loaded from the workspace folder
+    (``icon.png``) and attached as a ``data:`` URL. Enriched values are only
+    used when sending records to the frontend; they are never persisted back.
+    """
+    result: list[dict[str, Any]] = []
+    for ws in workspaces:
+        entry = dict(ws)
+        ws_id = entry.get("id") or _make_workspace_id(entry["path"])
+        # Icons live on disk; ignore any legacy in-record copies here (they
+        # are flushed to files by the _load_workspaces migration).
+        entry.pop("icon_data", None)
+        icon_data_url = _read_workspace_icon_data_url(ws_id)
+        if icon_data_url:
+            entry["icon_data"] = icon_data_url
+        idx_file = os.path.join(_get_workspace_dir(ws_id), "sessions", "index.json")
+        count = 0
+        if os.path.isfile(idx_file):
+            try:
+                with open(idx_file, encoding="utf-8") as f:
+                    raw = f.read().strip()
+                if raw and not raw.startswith("{"):
+                    from encre.crypto import decrypt as _decrypt
+                    with contextlib.suppress(Exception):
+                        raw = _decrypt(raw)
+                idx = json.loads(raw)
+                if isinstance(idx, dict):
+                    count = sum(
+                        1
+                        for e in idx.values()
+                        if isinstance(e, dict) and e.get("channel") not in ("automation", "sub_agent")
+                    )
+            except Exception:
+                count = 0
+        entry["session_count"] = count
+        result.append(entry)
+    return result

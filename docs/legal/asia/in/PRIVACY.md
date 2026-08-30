@@ -2,7 +2,7 @@
 
 **Last updated: 22 August 2026**
 **Scope:** All Dunimd Services — for users in the Republic of India
-**Global baseline:** [`docs/PRIVACY.md`](../../../PRIVACY.md); on matters of Indian law this document prevails.
+**Applicable version:** This document is the sole applicable version; where any translation conflicts, this document prevails on matters of Indian law.
 
 > **India six-pack:** [Privacy](PRIVACY.md) · [Terms](TERMS.md) · [User Agreement](USER_AGREEMENT.md) · [Minors Rules](MINORS_PRIVACY.md) · [Content Guidelines](CONTENT_GUIDELINES.md) · [Data Processing](DATA_PROCESSING.md)
 
@@ -23,7 +23,7 @@
 
 ## 3. What We Collect
 
-- **Local-first design:** Encre conversations and settings stay on your device; we never receive them unless you configure cloud features yourself ([Data Processing](DATA_PROCESSING.md)).
+- **Local-first design:** Encre Agent conversations and settings stay on your device; we never receive them unless you configure cloud features yourself ([Data Processing](DATA_PROCESSING.md)).
 - Otherwise: account/billing details, support records, telemetry (**off by default**), hosted-inference metadata only (timestamps, model ID, token counts — **prompt/response content not retained by default**).
 
 ## 4. Purposes & Consent

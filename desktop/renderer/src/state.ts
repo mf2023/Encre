@@ -31,7 +31,7 @@
  * snapshots and notify listeners on a microtask.
  */
 
-import { AppState, createEmptyState, createEmptySessionSnapshot, Message, ToolCallState, TelemetryData, UsageStatsData, TokenUsage, PlanItem, PlanProposal, NotificationItem, AttachmentMeta, TimelineSegment, BranchMeta, SessionSnapshot, SearchFilter, defaultSearchFilter } from "./types.js";
+import { AppState, createEmptyState, createEmptySessionSnapshot, Message, ToolCallState, TelemetryData, UsageStatsData, TokenUsage, PlanItem, PlanProposal, NotificationItem, AttachmentMeta, TimelineSegment, BranchMeta, SessionSnapshot, SearchFilter, defaultSearchFilter, SessionState } from "./types.js";
 import { t } from "./i18n.js";
 import { findSlashCommand } from "./slash_commands.js";
 import { buildTraySessionData, dedupeSessions } from "./session-projection.js";
@@ -359,6 +359,13 @@ export function restoreMessages(rawMessages: Array<{ role: string; content: stri
       taskName: (raw as any).task_name,
       taskStatus: (raw as any).task_status,
       serverId: (raw as any).id,
+      errorMessage: (raw as any).errorMessage,
+      errorCode: (raw as any).errorCode,
+      interruptedReason: (raw as any).interruptedReason,
+      turnStatusText: (raw as any).turnStatusText,
+      cancelledText: (raw as any).cancelledText,
+      hasError: !!(raw as any).hasError,
+      errorCategory: (raw as any).errorCategory,
     };
     messages.push(message);
     if (message.role === "assistant" && toolCalls.length > 0) {
@@ -939,55 +946,25 @@ export function updateToolCall(
 }
 
 /** Sets the running/streaming flag for the (active) session. */
-export function setRunning(v: boolean, sessionId = state.sessionId): void {
+export function setSessionState(state_val: string, sessionId = state.sessionId): void {
   const snapshot = getOrCreateSessionSnapshot(sessionId);
-  snapshot.running = v;
+  snapshot.running = state_val !== "idle";
   syncSessionState(sessionId);
   emit();
-  // Sync the sidebar + tray running indicator so the green dot/breathing
-  // light reflects the actual running state immediately.
   const sid = sessionId;
   if (sid) {
     state.sessionsList = state.sessionsList.map(e =>
-      e.session_id === sid
-        ? { ...e, is_running: v, awaiting_approval: v ? e.awaiting_approval : false }
-        : e
+      e.session_id === sid ? { ...e, state: state_val as SessionState } : e
     );
     window.electronAPI?.traySessionsUpdate?.(state.sessionsList);
-    // Also update the dual-mode tray cache so the popup sees the
-    // real-time is_running indicator (green dot) immediately.
     traySessionsCache.normal = traySessionsCache.normal.map(e =>
-      e.session_id === sid
-        ? { ...e, is_running: v, awaiting_approval: v ? e.awaiting_approval : false }
-        : e
+      e.session_id === sid ? { ...e, state: state_val as SessionState } : e
     );
     traySessionsCache.iwork = traySessionsCache.iwork.map(e =>
-      e.session_id === sid
-        ? { ...e, is_running: v, awaiting_approval: v ? e.awaiting_approval : false }
-        : e
+      e.session_id === sid ? { ...e, state: state_val as SessionState } : e
     );
     window.electronAPI?.traySessionsBothUpdate?.({ normal: traySessionsCache.normal, iwork: traySessionsCache.iwork });
   }
-}
-
-/** Marks a session as waiting for user approval (e.g. a runtime tool
- *  permission prompt).  Flips its sidebar/tray breathing light to yellow
- *  everywhere (main app + tray popup) so all surfaces stay unified. */
-export function setSessionAwaitingApproval(awaiting: boolean, sessionId = state.sessionId): void {
-  const sid = sessionId;
-  if (!sid) return;
-  state.sessionsList = state.sessionsList.map(e =>
-    e.session_id === sid ? { ...e, awaiting_approval: awaiting } : e
-  );
-  emit();
-  window.electronAPI?.traySessionsUpdate?.(state.sessionsList);
-  traySessionsCache.normal = traySessionsCache.normal.map(e =>
-    e.session_id === sid ? { ...e, awaiting_approval: awaiting } : e
-  );
-  traySessionsCache.iwork = traySessionsCache.iwork.map(e =>
-    e.session_id === sid ? { ...e, awaiting_approval: awaiting } : e
-  );
-  publishTraySessions();
 }
 
 /** Sets the currently active (expanded) tool-call id for the detail panel. */
@@ -1504,14 +1481,57 @@ export function restoreInputModeChip(mode: string): void {
   }
 }
 
+/** Global session cache for search. Unlike `sessionsList` it is never cleared
+ *  on mode switches, so session search stays global across all modes.
+ *  `mode` "merge" (default) unions with the existing cache (mode-scoped
+ *  updates must not drop sessions from other modes); "replace" overwrites
+ *  with an authoritative full listing (e.g. the tray `sessions_all` event). */
+export function setAllSessions(
+  sessions: import("./types.js").SessionEntryData[],
+  mode: "merge" | "replace" = "merge",
+): void {
+  // Filter out temp chat sessions from the global cache.
+  const filtered = sessions.filter((s) => !(s.metadata as Record<string, unknown>)?.temp_chat);
+  if (mode === "replace") {
+    update({ allSessions: filtered });
+    return;
+  }
+  const existing = state.allSessions || [];
+  const seen = new Set<string>();
+  const merged = [...filtered, ...existing].filter((s) => {
+    if (!s || !s.session_id || seen.has(s.session_id)) return false;
+    seen.add(s.session_id);
+    return true;
+  });
+  update({ allSessions: merged });
+}
+
 /** Replaces the sidebar session list. */
 export function setSessionsList(sessions: import("./types.js").SessionEntryData[]): void {
-  const visible = dedupeSessions(sessions).filter((session) => (session.message_count || 0) > 0);
+  const visible = dedupeSessions(sessions).filter((session) => {
+    // Temp chat sessions are ephemeral and must never appear in the sidebar.
+    if ((session.metadata as Record<string, unknown>)?.temp_chat) return false;
+    return (session.message_count || 0) > 0;
+  });
   update({ sessionsList: visible });
+  // Keep the global search cache in sync (never cleared by mode switches).
+  setAllSessions(sessions);
   // Note: do NOT update traySessionsCache here — it only has one mode's
   // data and would corrupt the dual-mode cache.  The tray cache is
   // maintained by setTraySessions() which is called from the
   // "sessions_all" response and updates both normal + iwork at once.
+}
+
+/** Replaces the archived session list (workspace manager archive view). */
+export function setArchivedSessions(sessions: import("./types.js").SessionEntryData[]): void {
+  update({ archivedSessions: sessions || [] });
+}
+
+/** Optimistically remove an archived session from the archive view (e.g. on
+ *  delete or after the backend confirms an unarchive). */
+export function removeArchivedSessionById(sessionId: string): void {
+  const sessions = state.archivedSessions.filter((s) => s.session_id !== sessionId);
+  update({ archivedSessions: sessions });
 }
 
 // Dual-channel session cache for the tray popup (normal + iwork).
@@ -1547,7 +1567,33 @@ export function setAutomationHistory(history: any[]): void {
   update({ automationHistory: history });
 }
 
+/** Replaces the configured automation jobs list (unified push). */
+export function setAutomationJobs(jobs: any[]): void {
+  update({ automationJobs: jobs || [] });
+}
+
+/** Monotonic sequence guard for backend search responses (see applySearchResults). */
+let _searchResultsSeq = -1;
+
+/** Sequence of the newest backend search results applied to state. */
+export function getAppliedSearchSeq(): number {
+  return _searchResultsSeq;
+}
+
+/** Clear backend search results (also resets the staleness guard). */
 export function setSearchResults(results: import("./types.js").SearchResultEntry[]): void {
+  _searchResultsSeq = -1;
+  update({ searchResults: results });
+}
+
+/**
+ * Apply backend search results, dropping stale (out-of-order) responses:
+ * the client increments `ClientSearch.seq` on every keystroke and the server
+ * echoes it back; only the newest sequence is applied.
+ */
+export function applySearchResults(seq: number, results: import("./types.js").SearchResultEntry[]): void {
+  if (seq < _searchResultsSeq) return;
+  _searchResultsSeq = seq;
   update({ searchResults: results });
 }
 
@@ -1665,6 +1711,9 @@ export function setAgentConfig(config: {
 export function setWorkspaces(workspaces: import("./types.js").WorkspaceEntry[]): void {
   // Filter out invalid entries
   const valid = workspaces.filter((w) => w.path && w.name);
+  // Sort alphabetically (A→Z) so every list in the UI stays in a stable,
+  // predictable order regardless of the backend's arrival order.
+  valid.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }));
   // Clear orphaned activeWorkspace if no longer in list
   if (state.activeWorkspace && !valid.some((w) => w.path === state.activeWorkspace)) {
     setActiveWorkspace("");
@@ -1678,7 +1727,10 @@ export function setActiveWorkspace(path: string): void {
   update({ activeWorkspace: path });
 }
 
-/** Sets the workspace mode (`iwork`/`normal`). */
+/** Sets the cached config for a workspace (keyed by its path). */
+export function setWorkspaceConfig(path: string, config: import("./types.js").WorkspaceConfig): void {
+  update({ workspaceConfigs: { ...state.workspaceConfigs, [path]: config } });
+}/** Sets the workspace mode (`iwork`/`normal`). */
 export function setWorkspaceMode(mode: "iwork" | "normal"): void {
   update({ workspaceMode: mode });
 }

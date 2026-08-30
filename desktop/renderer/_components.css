@@ -118,12 +118,10 @@
 
 
 /* ── 2. 列表条目（flex 行 + hover/active 状态） ────────────────
-   合并来源: .nav-item (L465)
-   / .ws-tree-node-header (L607) / .settings-nav-item (L4102)
+   合并来源: .nav-item (L465) / .settings-nav-item (L4102)
    / .sidebar-settings-back-btn (L3848)
    ──────────────────────────────────────────────────────────────── */
 .nav-item,
-.ws-tree-node-header,
 .settings-nav-item,
 .sidebar-settings-back-btn {
   display: flex;
@@ -140,17 +138,21 @@
   text-align: left;
   font-family: inherit;
   user-select: none;
+  margin-bottom: 2px;
+}
+.nav-item:last-child,
+.settings-nav-item:last-child,
+.sidebar-settings-back-btn:last-child {
+  margin-bottom: 0;
 }
 
 .nav-item:hover,
-.ws-tree-node-header:hover,
 .settings-nav-item:hover,
 .sidebar-settings-back-btn:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
 }
 [data-theme="light"] .nav-item:hover,
-[data-theme="light"] .ws-tree-node-header:hover,
 [data-theme="light"] .settings-nav-item:hover,
 [data-theme="light"] .sidebar-settings-back-btn:hover {
   background: rgba(0, 0, 0, 0.05);
@@ -158,7 +160,6 @@
 
 /* active 状态 */
 .nav-item.active,
-.ws-tree-node-header.active,
 .settings-nav-item.active {
   background: var(--bg-tertiary);
   color: var(--text-primary);
@@ -166,13 +167,11 @@
 
 /* 特有区别 */
 .nav-item            { font-size: 13.5px; font-weight: 500; }
-.ws-tree-node-header  { font-size: 13px; gap: 5px; padding: 7px 8px; }
 .settings-nav-item    { font-size: 13px; padding: 7px 10px; }
 .sidebar-settings-back-btn { font-size: 12.5px; font-weight: 500; padding: 6px 12px; }
 
 /* 列表条目中的 lucide 图标统一定宽 */
 .nav-item .lucide,
-.ws-tree-node-header .lucide,
 .settings-nav-item .lucide,
 .sidebar-settings-back-btn .lucide {
   width: 16px;
@@ -206,13 +205,11 @@
 
 
 /* ── 4. 空状态 ─────────────────────────────────────────────────
-   合并来源: .sidebar-section-empty (L550) / .workspace-tree-empty (L593)
-   / .session-empty (L851) / .search-empty (L994)
-   / .si-empty (L1315, L1974) / .si-panel-empty (L1432) / .model-empty (L5422)
+   合并来源: .sidebar-section-empty (L550) / .session-empty (L851)
+   / .search-empty (L994) / .si-empty (L1315, L1974)
+   / .si-panel-empty (L1432) / .model-empty (L5422)
    ──────────────────────────────────────────────────────────────── */
 .sidebar-section-empty,
-.workspace-tree-empty,
-.ws-tree-empty-sessions,
 .session-empty,
 .search-empty,
 .si-empty,
@@ -224,8 +221,6 @@
 
 /* 各空状态的特有 padding / font-size */
 .sidebar-section-empty { font-size: 11px; padding: 8px 10px; font-style: italic; }
-.workspace-tree-empty,
-.ws-tree-empty-sessions { font-size: 11.5px; padding: 16px 14px; font-style: italic; }
 .session-empty { font-size: 13px; padding: 16px 12px; }
 .search-empty  { font-size: 13px; padding: 40px 16px; }
 .si-empty      { font-size: 12px; padding: 8px 0; }
@@ -602,17 +597,14 @@
 
 
 /* ── 9. 下拉菜单 / 右键菜单 ───────────────────────────────────
-   合并来源: .context-menu (L3548) / .si-tab-add-dropdown (L1680)
-   / .mention-dropdown / .settings-dropdown (L4663)
-   / .input-model-dropdown (L291)
+   合并来源: .context-menu (L3548) / .mention-dropdown / .settings-dropdown (L4663)
    ──────────────────────────────────────────────────────────────── */
 
 /* 菜单容器 */
 .context-menu,
 .tab-add-dropdown,
 .mention-dropdown,
-.settings-dropdown,
-.input-model-dropdown {
+.settings-dropdown {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -624,12 +616,6 @@
 .context-menu {
   position: fixed;
   min-width: 180px;
-}
-.si-tab-add-dropdown {
-  position: absolute;
-  top: 100%;
-  right: 4px;
-  min-width: 140px;
 }
 .mention-dropdown {
   position: absolute;
@@ -650,15 +636,6 @@
 }
 .settings-dropdown.open { display: block; animation: dropdownIn var(--duration-fast) ease-out; }
 
-.input-model-dropdown {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  min-width: 260px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
 @keyframes dropdownIn {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -668,8 +645,7 @@
 .context-menu-item,
 .tab-add-item,
 .mention-dropdown-item,
-.settings-dropdown-item,
-.model-dropdown-item {
+.settings-dropdown-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -684,19 +660,24 @@
   transition: background var(--transition-fast);
   text-align: left;
   font-family: inherit;
+  margin-bottom: 2px;
+}
+.context-menu-item:last-child,
+.tab-add-item:last-child,
+.mention-dropdown-item:last-child,
+.settings-dropdown-item:last-child {
+  margin-bottom: 0;
 }
 
 .context-menu-item:hover,
-.si-tab-add-item:hover,
+.tab-add-item:hover,
 .mention-dropdown-item:hover,
-.settings-dropdown-item:hover,
-.model-dropdown-item:hover {
+.settings-dropdown-item:hover {
   background: var(--bg-hover);
 }
 
 /* 选中态 */
-.settings-dropdown-item.selected,
-.model-dropdown-item.selected {
+.settings-dropdown-item.selected {
   background: var(--accent-light);
   color: var(--accent);
 }
@@ -734,7 +715,9 @@
 #splash-screen {
   position: fixed;
   inset: 0;
-  z-index: 999;
+  /* Must stay BELOW #header-bar (z-index: 10) so the window controls remain
+     clickable from the very first paint, before any JS runs. */
+  z-index: 5;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -794,7 +777,6 @@
 }
 
 body.splash-mode #header-bar {
-  z-index: 1000;
   justify-content: flex-end;
 }
 

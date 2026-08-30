@@ -210,6 +210,13 @@ class MCPProtocolError(MCPError):
 # ──────────────────────────────────────────────────────────────────────
 
 
+def _strip_surrounding_quotes(token: str) -> str:
+    """Strip a single pair of matching surrounding quote characters."""
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in ('"', "'"):
+        return token[1:-1]
+    return token
+
+
 class StdioTransport(MCPTransport):
     """MCP transport over stdin/stdout of a subprocess.
 
@@ -259,7 +266,13 @@ class StdioTransport(MCPTransport):
 
         if isinstance(self._raw_command, str):
             if sys.platform == "win32":
-                args = self._raw_command
+                # posix=False keeps backslashes literal (needed for
+                # Windows drive-letter paths) but preserves quote
+                # characters around tokens, so strip them afterwards.
+                args = [
+                    _strip_surrounding_quotes(t)
+                    for t in shlex.split(self._raw_command, posix=False)
+                ]
             else:
                 args = shlex.split(self._raw_command)
         else:
@@ -1066,7 +1079,7 @@ class EncreMCPTool(EncreTool):
         "required": ["tool_name"],
     }
 
-    def __init__(self, command: str = "", server_url: str = "",
+    def __init__(self, command: str | list[str] = "", server_url: str = "",
                  env: dict[str, str] | None = None,
                  cwd: str | None = None,
                  http_timeout: float = 60.0,

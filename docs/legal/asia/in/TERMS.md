@@ -10,7 +10,7 @@ Download, installation, registration or use constitutes acceptance. Nothing in t
 
 ## 2. Services
 
-**Encre** (local-first AI Agent platform; desktop app, Python framework, Rust core, 18 chat-platform integrations) · **PiscesLx** (LLM foundation models, fine-tuning, hosted inference API) · **Dunimd Enterprise** · **StadionOS** · **Dunimd Cloud** · **Dunimd Studio** · **Dunimd Support**. New services are covered automatically.
+**Encre Agent** (local-first AI Agent platform; desktop app, Python framework, Rust core, 18 chat-platform integrations) · **PiscesLx** (LLM foundation models, fine-tuning, hosted inference API) · **Dunimd Enterprise** · **StadionOS** · **Dunimd Cloud** · **Dunimd Studio** · **Dunimd Support**. New services are covered automatically.
 
 ## 3. Accounts
 
@@ -18,7 +18,7 @@ Personal use only; safeguard credentials and report unauthorised use immediately
 
 ## 4. Software Licence
 
-Encre is Apache 2.0 (the open-source licence prevails for the software itself). Other components: non-exclusive, non-transferable licence. No reverse engineering (except as permitted by law), no removal of notices, no use of outputs to train competing models.
+Encre Agent is Apache 2.0 (the open-source licence prevails for the software itself). Other components: non-exclusive, non-transferable licence. No reverse engineering (except as permitted by law), no removal of notices, no use of outputs to train competing models.
 
 ## 5. Paid Services
 

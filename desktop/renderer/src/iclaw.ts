@@ -112,6 +112,8 @@ export class AutomationPanel {
     // main-content was hidden by TransitionHelper.slide (it was the exit element)
     if (this._mainContent) {
       this._mainContent.classList.remove("hidden");
+      // Clear any leftover inline `display: none` so main-content actually shows.
+      this._mainContent.style.display = "";
       this._mainContent.style.position = "";
       this._mainContent.style.width = "";
       this._mainContent.style.height = "";
@@ -140,120 +142,130 @@ export class AutomationPanel {
   private async showAutomationView(): Promise<void> {
     if (!this._mainContent || !this._automationView || this._transitioning) return;
     this._transitioning = true;
-
-    // Save sidebar state and collapse it
-    if (this._appEl) {
-      this._sidebarWasCollapsed = this._appEl.classList.contains("sidebar-collapsed");
-      if (!this._sidebarWasCollapsed) {
-        this._appEl.classList.add("sidebar-collapsed");
+    try {
+      // Save sidebar state and collapse it
+      if (this._appEl) {
+        this._sidebarWasCollapsed = this._appEl.classList.contains("sidebar-collapsed");
+        if (!this._sidebarWasCollapsed) {
+          this._appEl.classList.add("sidebar-collapsed");
+        }
       }
+
+      // Smoothly fade+slide the sidebar toggle button instead of instant hide.
+      // The toggle button becomes the "back" button in the detail view, so we
+      // only fade it here for the list view; the search button is never touched
+      // - it stays in place across the automation list and detail views.
+      if (this._toggleBtn) {
+        this._toggleBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
+        this._toggleBtn.style.opacity = "0";
+        this._toggleBtn.style.transform = "translateX(-8px)";
+        this._toggleBtn.style.pointerEvents = "none";
+      }
+
+      if (this._sessionBar) this._sessionBar.classList.add("hidden");
+
+      const mainBody = document.getElementById("main-body");
+
+      await TransitionHelper.slide({
+        exit: [this._mainContent],
+        enter: [this._automationView],
+        setup: () => {
+          // #main-content may still carry an inline `display: none` from a
+          // previous transition. Restore it so the enter slide is actually
+          // visible.
+          if (this._mainContent) this._mainContent.style.display = "";
+          // Make both overlap during transition
+          if (mainBody) mainBody.style.position = "relative";
+          [this._mainContent!, this._automationView!].forEach(el => {
+            el.style.position = "absolute";
+            el.style.width = "100%";
+            el.style.height = "100%";
+            el.style.top = "0";
+            el.style.left = "0";
+          });
+        },
+      });
+
+      // Cleanup absolute positioning
+      [this._mainContent!, this._automationView!].forEach(el => {
+        el.style.position = "";
+        el.style.width = "";
+        el.style.height = "";
+        el.style.top = "";
+        el.style.left = "";
+      });
+      if (mainBody) mainBody.style.position = "";
+
+      // Refresh automation data when panel opens
+      this.onShow?.();
+
+      // Clear button transition after animation
+      if (this._toggleBtn) this._toggleBtn.style.transition = "";
+    } finally {
+      this._transitioning = false;
     }
-
-    // Smoothly fade+slide the sidebar toggle button instead of instant hide.
-    // The toggle button becomes the "back" button in the detail view, so we
-    // only fade it here for the list view; the search button is never touched
-    // - it stays in place across the automation list and detail views.
-    if (this._toggleBtn) {
-      this._toggleBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
-      this._toggleBtn.style.opacity = "0";
-      this._toggleBtn.style.transform = "translateX(-8px)";
-      this._toggleBtn.style.pointerEvents = "none";
-    }
-
-    if (this._sessionBar) this._sessionBar.classList.add("hidden");
-
-    const mainBody = document.getElementById("main-body");
-
-    await TransitionHelper.slide({
-      exit: [this._mainContent],
-      enter: [this._automationView],
-      setup: () => {
-        // Make both overlap during transition
-        if (mainBody) mainBody.style.position = "relative";
-        [this._mainContent!, this._automationView!].forEach(el => {
-          el.style.position = "absolute";
-          el.style.width = "100%";
-          el.style.height = "100%";
-          el.style.top = "0";
-          el.style.left = "0";
-        });
-      },
-    });
-
-    // Cleanup absolute positioning
-    [this._mainContent!, this._automationView!].forEach(el => {
-      el.style.position = "";
-      el.style.width = "";
-      el.style.height = "";
-      el.style.top = "";
-      el.style.left = "";
-    });
-    if (mainBody) mainBody.style.position = "";
-
-    // Refresh automation data when panel opens
-    this.onShow?.();
-
-    // Clear button transition after animation
-    if (this._toggleBtn) this._toggleBtn.style.transition = "";
-
-    this._transitioning = false;
   }
 
   /** Slides the automation view out and restores the main content and sidebar. */
   private async hideAutomationView(): Promise<void> {
     if (!this._mainContent || !this._automationView || this._transitioning) return;
     this._transitioning = true;
+    try {
+      if (this._sessionBar) this._sessionBar.classList.remove("hidden");
 
-    if (this._sessionBar) this._sessionBar.classList.remove("hidden");
+      const mainBody = document.getElementById("main-body");
 
-    const mainBody = document.getElementById("main-body");
-
-    await TransitionHelper.slide({
-      exit: [this._automationView],
-      enter: [this._mainContent],
-      setup: () => {
-        // Make both overlap during transition
-        if (mainBody) mainBody.style.position = "relative";
-        [this._mainContent!, this._automationView!].forEach(el => {
-          el.style.position = "absolute";
-          el.style.width = "100%";
-          el.style.height = "100%";
-          el.style.top = "0";
-          el.style.left = "0";
-        });
-        // Restore sidebar state
-        if (this._appEl && !this._sidebarWasCollapsed) {
-          this._appEl.classList.remove("sidebar-collapsed");
-        }
-        // Restore toggle button with slide-in from right
-        if (this._toggleBtn) {
-          this._toggleBtn.style.transition = "none";
-          this._toggleBtn.style.transform = "translateX(100%)";
-          this._toggleBtn.style.opacity = "0";
-          requestAnimationFrame(() => {
-            this._toggleBtn!.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
-            this._toggleBtn!.style.transform = "translateX(0)";
-            this._toggleBtn!.style.opacity = "";
-            this._toggleBtn!.style.pointerEvents = "";
+      await TransitionHelper.slide({
+        exit: [this._automationView],
+        enter: [this._mainContent],
+        setup: () => {
+          // #main-content may still carry an inline `display: none` from a
+          // previous transition. Restore it so the enter slide is actually
+          // visible.
+          if (this._mainContent) this._mainContent.style.display = "";
+          // Make both overlap during transition
+          if (mainBody) mainBody.style.position = "relative";
+          [this._mainContent!, this._automationView!].forEach(el => {
+            el.style.position = "absolute";
+            el.style.width = "100%";
+            el.style.height = "100%";
+            el.style.top = "0";
+            el.style.left = "0";
           });
-        }
-      },
-    });
+          // Restore sidebar state
+          if (this._appEl && !this._sidebarWasCollapsed) {
+            this._appEl.classList.remove("sidebar-collapsed");
+          }
+          // Restore toggle button with slide-in from right
+          if (this._toggleBtn) {
+            this._toggleBtn.style.transition = "none";
+            this._toggleBtn.style.transform = "translateX(100%)";
+            this._toggleBtn.style.opacity = "0";
+            requestAnimationFrame(() => {
+              this._toggleBtn!.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
+              this._toggleBtn!.style.transform = "translateX(0)";
+              this._toggleBtn!.style.opacity = "";
+              this._toggleBtn!.style.pointerEvents = "";
+            });
+          }
+        },
+      });
 
-    // Cleanup absolute positioning
-    [this._mainContent!, this._automationView!].forEach(el => {
-      el.style.position = "";
-      el.style.width = "";
-      el.style.height = "";
-      el.style.top = "";
-      el.style.left = "";
-    });
-    if (mainBody) mainBody.style.position = "";
+      // Cleanup absolute positioning
+      [this._mainContent!, this._automationView!].forEach(el => {
+        el.style.position = "";
+        el.style.width = "";
+        el.style.height = "";
+        el.style.top = "";
+        el.style.left = "";
+      });
+      if (mainBody) mainBody.style.position = "";
 
-    // Clear button transition after animation
-    if (this._toggleBtn) this._toggleBtn.style.transition = "";
-
-    this._transitioning = false;
+      // Clear button transition after animation
+      if (this._toggleBtn) this._toggleBtn.style.transition = "";
+    } finally {
+      this._transitioning = false;
+    }
     this.onHide?.();
   }
 }

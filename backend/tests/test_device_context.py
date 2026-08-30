@@ -167,7 +167,8 @@ def test_catalog_builds_from_real_data():
     assert "OS:" in catalog, "Should have OS line"
     assert "Windows" in catalog or "Linux" in catalog or "Darwin" in catalog, \
         "Should have real OS name"
-    assert "Location:" in catalog, "Should have location line"
+    assert ("User Location" in catalog) or ("Location" in catalog), \
+        "Should have location section"
     assert "Device tools available:" in catalog, "Should list available tools"
     print(f"[PASS] catalog:\n{catalog}")
 

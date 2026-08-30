@@ -42,7 +42,6 @@
   --error: #ef4444;
   --bg-danger-tab: rgba(239, 68, 68, 0.15);
   --warning: #f59e0b;
-  --ws-tree-line: rgba(255, 255, 255, 0.12);
   --border: #1d1d1f;
   --border-light: #262626;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
@@ -101,7 +100,6 @@
 }
 
 [data-theme="light"] {
-  --ws-tree-line: rgba(0, 0, 0, 0.15);
   --bg-primary: #ffffff;
   --bg-secondary: #f5f5f5;
   --bg-tertiary: #f0f0f0;
@@ -185,9 +183,9 @@
   height: 16px;
   margin: 0;
   padding: 0;
-  border: 1.5px solid var(--border-light);
+  border: 1.5px solid #15a877;
   border-radius: 4px;
-  background: var(--bg-input);
+  background: transparent;
   cursor: pointer;
   flex-shrink: 0;
   vertical-align: middle;
@@ -195,15 +193,15 @@
   transition: background var(--transition-base, 0.15s ease), border-color var(--transition-base, 0.15s ease);
 }
 :where(input[type="checkbox"]):hover {
-  background: var(--bg-hover);
+  background: rgba(21, 168, 119, 0.1);
 }
 :where(input[type="checkbox"]):checked {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: #15a877;
+  border-color: #15a877;
 }
 :where(input[type="checkbox"]):checked:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: #17bd85;
+  border-color: #17bd85;
 }
 :where(input[type="checkbox"])::after {
   content: "";
@@ -425,19 +423,57 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* ── Input-area Model Selector ────────────────────────────────── */
-#input-model-selector-wrap .settings-dropdown-trigger {
-  padding: 4px 10px;
+/* ── Input-area Selector ─────────────────────────────────────────
+   全新「选择器」组件（区别于下拉框 trigger）：
+   去掉边框与默认背景，仅悬浮时显示轻微背景，保留右侧上下箭头。
+   点击交互与下拉框完全一致。 */
+.input-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
-  min-width: 0;
-  background: var(--bg-tertiary);
+  font-family: inherit;
   border-radius: var(--radius-sm);
-  gap: 4px;
+  cursor: pointer;
+  min-width: 0;
+  white-space: nowrap;
+  transition: background var(--transition-fast);
 }
 
-#input-model-selector-wrap .settings-dropdown-trigger:hover {
-  border-color: var(--text-muted);
+.input-selector:hover,
+.input-selector:active {
+  background: transparent;
+}
+
+.input-selector-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.input-selector-chevron {
+  width: 14px;
+  height: 14px;
+  opacity: 0.5;
+  flex-shrink: 0;
+  margin-left: auto;
+  align-self: center;
+  margin-top: auto;
+  margin-bottom: auto;
+  transition: transform var(--transition-base);
+}
+
+/* 展开时箭头旋转 180°，与下拉框一致 */
+#input-model-selector-wrap:has(#input-model-dropdown:not(.hidden)) .input-selector-chevron {
+  transform: rotate(180deg);
 }
 
 #input-model-selector-wrap .mention-dropdown {
@@ -475,6 +511,42 @@ body {
   cursor: default;
 }
 
+/* ── Input-area Workspace Selector (uses the same .input-selector as the model selector) ── */
+#input-workspace-selector-wrap:has(#input-workspace-dropdown:not(.hidden)) .input-selector-chevron {
+  transform: rotate(180deg);
+}
+
+#input-workspace-selector-wrap .mention-dropdown {
+  bottom: calc(100% + 6px);
+  top: auto;
+  left: auto;
+  right: 0;
+  min-width: 220px;
+  display: block; /* override base display:none — controlled by .hidden class */
+}
+
+#input-workspace-dropdown .mention-dropdown-item {
+  font-weight: 500;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+#input-workspace-dropdown .mention-dropdown-item .lucide {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+#input-workspace-dropdown .mention-dropdown-item.active {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+#input-workspace-dropdown .mention-dropdown-item.muted {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ── Merged Thinking Level (page navigation inside model dropdown) ── */
 .model-thinking-entry {
   font-size: 13px;
@@ -503,6 +575,143 @@ body {
 #header-bar .btn-icon .lucide {
   width: 14px;
   height: 14px;
+}
+#header-bar .btn-icon #btn-encre-menu-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+}
+
+/* ── Encre Menu Dropdown (top-left app menu) ───────────────────── */ 
+.encre-menu-dropdown {
+  position: absolute;
+  z-index: 300;
+  width: 240px;
+  padding: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  transform-origin: top left;
+  animation: encre-menu-in var(--duration-base) var(--easing-standard);
+}
+
+@keyframes encre-menu-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.encre-menu-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.encre-menu-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.encre-menu-item-row:hover { background: var(--bg-hover); }
+.encre-menu-item-row:active { background: var(--accent-light); }
+
+.encre-menu-item-info {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.encre-menu-item-title {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.encre-menu-item-title .lucide { color: var(--text-secondary); }
+
+.encre-menu-item-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.encre-menu-unread {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--bg-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.encre-menu-item-divider {
+  height: 1px;
+  margin: 2px 8px;
+  background: var(--border);
+}
+
+.encre-menu-sub {
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+/* 通知面板嵌入 Encre 菜单时：铺满子容器，去掉 固定定位/边框/阴影，复用其余面板样式 */
+.encre-menu-dropdown .notification-panel {
+  position: static;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  max-height: none;
+  overflow-y: visible;
+  border: none;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  background: transparent;
+}
+
+.encre-menu-dropdown .notification-panel-header,
+.encre-menu-dropdown .notification-detail-header {
+  position: static;
+  padding: 4px 4px 6px;
+  background: transparent;
+  border-bottom: none;
+}
+
+.encre-menu-dropdown .notification-panel-title {
+  font-weight: 600;
+}
+
+/* 通知子容器铺满 sub，让 空态(暂无通知) 在 上下左右 居中 */
+.encre-menu-dropdown .encre-notif-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.encre-menu-dropdown .encre-notif-content .si-empty-center {
+  flex: 1;
+  min-height: 0;
 }
 
 .token-count {
@@ -580,10 +789,17 @@ body {
   stroke-width: 2;
 }
 
+/* Maximize button swaps to the restore glyph while the window is maximized
+   (Windows convention). The .maximized class is toggled by the inline script
+   in index.html via IPC events from the main process. */
+.window-btn .icon-restore { display: none; }
+.window-btn.maximized .icon-maximize { display: none; }
+.window-btn.maximized .icon-restore { display: block; }
+
 /* ── Sidebar ─────────────────────────────────────────────────────── */
 #sidebar {
-  width: 240px;
-  min-width: 240px;
+  width: 256px;
+  min-width: 256px;
   display: flex;
   flex-direction: column;
   user-select: none;
@@ -907,6 +1123,42 @@ body {
   font-style: italic;
 }
 
+/* ── Workspace section (iWork mode) ───────────────────────────────
+   Shown only in iWork mode, above the "All tasks" section. Mirrors the
+   regular section UI. The header button always shows a right chevron
+   (">") as a navigation affordance; no semantic/arrow hover swap. */
+#workspace-section {
+  display: none;
+  margin-top: 0;
+}
+#app.workspace-mode #workspace-section {
+  display: block;
+}
+
+/* Temp chat is a normal-mode feature; hide its entry in iWork mode. */
+#app.workspace-mode #btn-temp-chat {
+  display: none;
+}
+
+#workspace-section .sidebar-section-header {
+  padding: 6px 10px 3px;
+}
+
+#btn-workspace-nav .lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--text-secondary);
+}
+
+/* Tighten the gap between the workspace and "All tasks" sections in
+   iWork mode. */
+#app.workspace-mode #session-section {
+  margin-top: 0;
+}
+#app.workspace-mode #session-section .sidebar-section-header {
+  padding: 4px 10px 6px;
+}
+
 /* ── Workspace Tree View ───────────────────────────────────────── */
 
 /* 模式切换过渡变量（引用设计系统令牌） */
@@ -928,191 +1180,18 @@ body {
   gap: 10px;
 }
 
-/* ── 工作区树过渡（用 max-height + opacity 替代 display:none�?── */
-#workspace-tree-section {
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-  max-height: 0;
-  opacity: 0;
-  transition: max-height var(--duration-slow) var(--mode-transition-easing),
-              opacity var(--duration-slow) var(--mode-transition-easing);
-}
-
-#workspace-tree-section.active {
-  max-height: 1000px;
-  opacity: 1;
-}
-
-.workspace-tree-header {
-  display: flex;
-  align-items: center;
-  padding: 8px 10px 4px;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.workspace-tree-actions {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  margin-left: auto;
-}
-
-.workspace-tree-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 6px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.ws-tree-empty-sessions {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  padding: 16px 14px;
-  font-style: italic;
-  text-align: center;
-}
-
-.ws-tree-node {
-  display: flex;
-  flex-direction: column;
-}
-
-.ws-tree-node-header {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  color: var(--accent);
-  font-size: 13px;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  user-select: none;
-}
-
-.ws-tree-node-header:hover {
-  color: var(--accent);
-}
-
-.ws-tree-node-header.active,
-.ws-tree-node-header.context-target {
-  color: var(--accent);
-  background: var(--item-selected-bg);
-}
-
-.ws-expand-button {
-  appearance: none;
-  -webkit-appearance: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin: -4px 0 -4px -4px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  outline: none;
-  box-shadow: none;
-}
-
-.ws-expand-button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.ws-expand-button:focus,
-.ws-expand-button:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
-.ws-chevron {
-  width: 16px !important;
-  height: 16px !important;
-  opacity: 0.6;
-  transition: transform var(--transition-base);
-}
-
-.ws-chevron.open {
-  transform: rotate(90deg);
-}
-
-.ws-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-.ws-session-count {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.ws-index-badge {
-  font-size: 9.5px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  margin-right: 2px;
-}
-
-.ws-index-indexing {
-  background: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
-  animation: ws-index-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes ws-index-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.ws-index-ready {
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
-}
-
-.ws-checkbox {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-.ws-tree-children {
-  display: none;
-  margin-left: 14px;
-  padding-left: 12px;
-}
-
-.ws-tree-children.expanded {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
 .ws-tree-session-item {
   position: relative;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: 9px 12px;
+  padding: 7px 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  margin-bottom: 1px;
+  margin-bottom: 2px;
   color: var(--text-secondary);
   font-size: 13px;
+  line-height: 1.4;
   transition: background var(--transition-fast);
 }
 
@@ -1130,7 +1209,6 @@ body {
 /* While a context menu is open (target highlighted), the current active
    item drops its selection background so only the right-clicked item
    appears selected; it returns when the menu closes. */
-body:has(.context-target) .ws-tree-node-header.active,
 body:has(.context-target) .ws-tree-session-item.active {
   background: transparent;
 }
@@ -1223,7 +1301,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 10px;
 }
 
 .session-preview {
@@ -1232,6 +1310,33 @@ body:has(.context-target) .ws-tree-session-item.active {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+/* Owning-workspace icon shown at the start of each iWork history row.
+   Mirrors the workspace-mgr icon but sized for a sidebar row. */
+.session-ws-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.session-ws-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.session-ws-icon-letter {
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
 }
 
 .session-running,
@@ -1374,6 +1479,10 @@ body:has(.context-target) .ws-tree-session-item.active {
   font-size: 13px;
   color: var(--text-secondary);
   transition: background var(--transition-fast);
+  margin-bottom: 2px;
+}
+.search-result-item:last-child {
+  margin-bottom: 0;
 }
 
 .search-result-item.selected,
@@ -1488,6 +1597,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   overflow: hidden;
   border-radius: inherit;
   min-height: 0;
+  position: relative;
 }
 
 #main-content-clip > .chat-view,
@@ -1794,8 +1904,8 @@ body:has(.context-target) .ws-tree-session-item.active {
   justify-content: center;
   align-items: center;
   gap: 8px;
-  padding: 12px;
   height: 100%;
+  box-sizing: border-box;
 }
 
 .si-home-card {
@@ -2573,35 +2683,56 @@ body:has(.context-target) .ws-tree-session-item.active {
 }
 
 .sp-ref-header-label {
-  flex: 1;
-  font-weight: 500;
-}
+    flex: 1;
+    font-weight: 500;
+  }
 
-.sp-ref-chevron {
-  flex-shrink: 0;
-  width: 12px !important;
-  height: 12px !important;
-  transition: transform 0.2s ease;
-}
+  .sp-ref-chevron {
+    flex-shrink: 0;
+    width: 12px !important;
+    height: 12px !important;
+    transition: transform 0.2s ease;
+    color: var(--text-muted);
+  }
 
-.collapsed .sp-ref-chevron {
-  transform: rotate(-90deg);
-}
+  .collapsed .sp-ref-chevron {
+    transform: rotate(-90deg);
+  }
 
-.collapsed .sp-ref-body {
-  display: none;
-}
+  .collapsed .sp-ref-body {
+    display: none;
+  }
 
-/* ── Summary Panel Todo Items ─────────────────────────────── */
-.sp-todo-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 3px 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
+  /* ── Summary Panel Reference Items ──────────────────────────── */
+  .sp-ref-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 3px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .sp-ref-item-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    color: var(--text-secondary);
+    padding-left: 18px;
+  }
+
+  .sp-todo-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 3px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
 
 .sp-todo-icon {
   width: 12px !important;
@@ -2797,9 +2928,6 @@ body:has(.context-target) .ws-tree-session-item.active {
   background: var(--bg-secondary);
   opacity: 1;
   transform: translateX(-50%) scale(1.05);
-}
-.chat-scroll-bottom-btn:active {
-  transform: translateX(-50%) scale(0.95);
 }
 .chat-scroll-bottom-btn.hidden {
   opacity: 0;
@@ -3514,26 +3642,26 @@ body:has(.context-target) .ws-tree-session-item.active {
 .msg-text input[type="checkbox"] {
   width: 15px;
   height: 15px;
-  border: 1.5px solid var(--border-light);
+  border: 1.5px solid #15a877;
   border-radius: 4px;
-  background: var(--bg-input);
+  background: transparent;
   margin-right: 8px;
   position: relative;
   top: -1px;
 }
 
 .msg-text input[type="checkbox"]:hover {
-  background: var(--bg-hover);
+  background: rgba(21, 168, 119, 0.1);
 }
 
 .msg-text input[type="checkbox"]:checked {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: #15a877;
+  border-color: #15a877;
 }
 
 .msg-text input[type="checkbox"]:checked:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: #17bd85;
+  border-color: #17bd85;
 }
 
 .msg-text input[type="checkbox"]::after {
@@ -3939,43 +4067,11 @@ body:has(.context-target) .ws-tree-session-item.active {
 }
 .file-view-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
 
-/* ── Agent Card (compact, like file card) ─────────────────────── */
-.agent-card {
-  width: 98%;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: var(--bg-tertiary);
-  border-radius: 6px;
-  cursor: pointer;
-  user-select: none;
-  transition: background var(--transition-base);
-}
-.agent-card:hover { background: var(--bg-hover); }
-.agent-card-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
-.agent-card-icon.spinning {
+/* ── Agent card icon spinning + open button ───────────────────── */
+.icon-wrap .semantic.spinning {
   animation: historySpin 1s linear infinite;
 }
-.agent-card-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
-}
-.agent-card-status {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.agent-card-open {
+.open-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3985,9 +4081,10 @@ body:has(.context-target) .ws-tree-session-item.active {
   color: var(--text-tertiary);
   opacity: 0.6;
   transition: opacity var(--transition-base);
+  cursor: pointer;
 }
-.agent-card:hover .agent-card-open { opacity: 1; color: var(--accent); }
-.agent-card-open-icon { width: 14px; height: 14px; }
+.strip:hover .open-btn { opacity: 1; color: var(--accent); }
+.open-btn-icon { width: 14px; height: 14px; }
 
 /* ── Sub-Agent Detail View (full chat area overlay) ───────────── */
 .subagent-thread {
@@ -4216,6 +4313,15 @@ body:has(.context-target) .ws-tree-session-item.active {
   padding: 12px 32px 12px;
   background: var(--bg-primary);
   position: relative;
+}
+#input-area.input-expanded {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding-bottom: 12px;
+  background: transparent;
 }
 
 .input-wrapper {
@@ -4987,10 +5093,6 @@ body:has(.context-target) .ws-tree-session-item.active {
   transform: scale(1.05);
 }
 
-.btn-send:active {
-  transform: scale(0.95);
-}
-
 .btn-send:disabled {
   opacity: 0.3;
   cursor: not-allowed;
@@ -5041,10 +5143,6 @@ body:has(.context-target) .ws-tree-session-item.active {
 .btn-stop:hover {
   opacity: 0.85;
   transform: scale(1.05);
-}
-
-.btn-stop:active {
-  transform: scale(0.95);
 }
 
 .btn-stop .lucide {
@@ -5150,13 +5248,22 @@ body:has(.context-target) .ws-tree-session-item.active {
   background: var(--bg-hover);
 }
 
-/* Rename & Export get a stronger hover to stand out from default items */
+/* Rename & Export get a stronger hover to stand out from default items.
+   Archive / Unarchive items join the same group so their hover feedback
+   matches every other regular item (the plain --bg-hover is nearly
+   invisible on dark menus). */
 #ctx-rename:hover,
-#ctx-export:hover {
+#ctx-export:hover,
+#ctx-archive:hover,
+#ctx-archive-ws:hover,
+#wsmgr-ctx-unarchive:hover {
   background: rgba(255, 255, 255, 0.12);
 }
 [data-theme="light"] #ctx-rename:hover,
-[data-theme="light"] #ctx-export:hover {
+[data-theme="light"] #ctx-export:hover,
+[data-theme="light"] #ctx-archive:hover,
+[data-theme="light"] #ctx-archive-ws:hover,
+[data-theme="light"] #wsmgr-ctx-unarchive:hover {
   background: rgba(0, 0, 0, 0.08);
 }
 
@@ -5194,16 +5301,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   background: var(--bg-hover);
 }
 
-.btn--primary {
-  background: var(--text-primary);
-  color: var(--bg-primary);
-  border-color: var(--text-primary);
-  font-weight: 600;
-}
-.btn--primary:hover {
-  opacity: 0.85;
-  background: var(--text-primary);
-}
+
 
 .btn--danger {
   background: var(--error);
@@ -5518,6 +5616,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 #app.settings-mode .chat-view,
 #app.settings-mode #search-view,
 #app.settings-mode #agents-view,
+#app.settings-mode #automation-view,
 #app.settings-mode #session-bar,
 #app.settings-mode #session-inner-sidebar,
 #app.settings-mode #btn-sidebar-search {
@@ -5843,15 +5942,24 @@ body.child-mode #header-bar {
 }
 
 .child-doc-toolbar {
-  position: sticky;
-  top: 0;
+  position: absolute;
+  top: 10px;
+  right: 14px;
   z-index: 100;
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 16px;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+}
+
+.child-doc-toolbar .settings-dropdown-trigger {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.settings-dropdown-group {
+  padding: 8px 12px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  pointer-events: none;
 }
 
 .child-doc-toolbar .settings-dropdown-wrap {
@@ -5947,7 +6055,6 @@ body.child-mode #header-bar {
   box-shadow: none;
   z-index: 1;
   border: 1px solid var(--border);
-  border-bottom: none;
 }
 .header-tabs .tab.active::after {
   display: none;
@@ -6010,12 +6117,23 @@ body.child-mode #header-bar {
 }
 .header-tabs .tab.dragging {
   opacity: 0.5;
-  border: 1px dashed var(--border);
 }
 
 .header-tabs .tab.drop-target {
-  background: var(--bg-hover) !important;
-  border-left: 2px solid var(--accent);
+  background: transparent;
+}
+.header-tabs .tab.drop-target::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: #00b894;
+}
+.header-tabs .tab.drop-target.drop-after::before {
+  left: auto;
+  right: 0;
 }
 
 .child-view-content {
@@ -6441,7 +6559,7 @@ body.child-mode #header-bar {
 .index-meta-check {
   width: 14px;
   height: 14px;
-  color: #22c55e;
+  color: #15a877;
 }
 
 .index-meta-percent {
@@ -6527,47 +6645,6 @@ body.child-mode #header-bar {
 .btn-index-action .lucide {
   width: 13px;
   height: 13px;
-}
-
-/* ── Document Card (Dropdown) ────────────────────────────────────── */
-.index-card-dropdown {
-  flex-direction: column;
-  padding: 0;
-}
-
-.index-card-dropdown-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.index-card-dropdown-header:hover {
-  background: var(--bg-hover);
-}
-
-.dropdown-chevron {
-  width: 18px;
-  height: 18px;
-  color: var(--text-tertiary);
-  transition: transform var(--transition-base);
-  flex-shrink: 0;
-}
-
-.dropdown-chevron.rotated {
-  transform: rotate(180deg);
-}
-
-.index-card-dropdown-body {
-  display: none;
-  border-top: 1px solid var(--border);
-  padding: 12px 16px;
-}
-
-.index-card-dropdown-body.open {
-  display: block;
 }
 
 /* ── Document Flat Table ─────────────────────────────────────────── */
@@ -6814,16 +6891,17 @@ body.child-mode #header-bar {
   background: var(--bg-hover);
 }
 
-.settings-dropdown-trigger:active {
-  transform: scale(0.98);
-}
-
 .settings-dropdown-chevron {
   width: 14px;
   height: 14px;
   opacity: 0.5;
   flex-shrink: 0;
   margin-left: auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
   transition: transform var(--transition-base);
 }
 
@@ -6868,6 +6946,10 @@ body.child-mode #header-bar {
   font-size: 13px;
   color: var(--text-primary);
   transition: background var(--transition-fast);
+  margin-bottom: 2px;
+}
+.settings-dropdown-item:last-child {
+  margin-bottom: 0;
 }
 
 .settings-dropdown-item-icon {
@@ -7076,10 +7158,6 @@ body.child-mode #header-bar {
   background: var(--accent-light);
 }
 
-.about-info-action:active {
-  transform: scale(0.96);
-}
-
 .about-links-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-light);
@@ -7193,10 +7271,6 @@ body.child-mode #header-bar {
   color: var(--text-primary);
   background: var(--bg-hover);
   transform: translateY(-1px);
-}
-
-.about-action-btn:active {
-  transform: translateY(0);
 }
 
 .about-action-icon {
@@ -7630,18 +7704,18 @@ body.child-mode #header-bar {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  border: 2px solid var(--border-light);
+  border: 2px solid #15a877;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: var(--bg-input);
+  background: transparent;
   transition: all 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
 }
 .auto-push-gw-item:hover .auto-push-gw-check {
-  background: var(--bg-hover);
+  background: rgba(21, 168, 119, 0.1);
 }
 .auto-push-gw-check::after {
   content: "";
@@ -7654,8 +7728,8 @@ body.child-mode #header-bar {
   transition: opacity 0.15s ease;
 }
 .auto-push-gw-item.selected .auto-push-gw-check {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: #15a877;
+  background: #15a877;
 }
 .auto-push-gw-item.selected .auto-push-gw-check::after {
   opacity: 1;
@@ -8316,24 +8390,47 @@ body.child-mode #header-bar {
   letter-spacing: 0.5px;
 }
 
-.notification-panel-clear {
+/* 通知面板 header 工具按钮 — 统一为紧凑 icon 按钮
+   （列表返回 / 清除全部 / 详情返回 / 复制 四种按钮共用同一套样式） */
+.notification-panel-back,
+.notification-panel-clear,
+.notification-detail-back,
+.notification-detail-copy {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  flex-shrink: 0;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
-  font-family: inherit;
-  padding: 3px 8px;
+  padding: 3px;
   border-radius: var(--radius-sm);
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.notification-panel-back .lucide,
+.notification-panel-clear .lucide,
+.notification-detail-back .lucide,
+.notification-detail-copy .lucide {
+  width: 12px;
+  height: 12px;
 }
 
+.notification-panel-back:hover,
+.notification-detail-back:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* 清除全部 — 危险操作，hover 显示红色 */
 .notification-panel-clear:hover {
   color: var(--error);
   background: rgba(239, 68, 68, 0.08);
+}
+
+.notification-detail-copy:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .notification-section-label {
@@ -8465,50 +8562,6 @@ body.child-mode #header-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.notification-detail-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 12px;
-  font-family: inherit;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  transition: all var(--transition-fast);
-}
-
-.notification-detail-back:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.notification-detail-copy {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 3px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-.notification-detail-copy .lucide {
-  width: 12px;
-  height: 12px;
-}
-
-.notification-detail-copy:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .notification-detail-body {
@@ -9321,10 +9374,6 @@ body.child-mode #header-bar {
   border-color: var(--text-muted);
 }
 
-.model-form-dropdown-row .settings-dropdown-trigger:active {
-  transform: none;
-}
-
 .model-form-dropdown-row .settings-dropdown-wrap {
   width: 100%;
 }
@@ -9589,8 +9638,8 @@ input.model-form-input--reveal {
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: var(--success);
-  border-color: var(--success);
+  background: #15a877;
+  border-color: #15a877;
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
@@ -10474,7 +10523,7 @@ input.model-form-input--reveal {
   white-space: pre-wrap;
   max-height: 400px;
   overflow-y: auto;
-  overflow-x: hidden;
+  /* overflow-x removed: was clipping diff row content; diff-body manages its own scroll */
 }
 
 .chat-view .strip-item.expanded .strip-body {
@@ -10483,6 +10532,7 @@ input.model-form-input--reveal {
 
 .chat-view .strip-body .diff-container {
   max-width: 100%;
+  overflow: visible;
   /* The strip-body uses pre-wrap for terminal text, which would render the
      newlines/indentation inside the diff-container template as visible blank
      rows above/below the file name. diff rows keep their own white-space. */
@@ -10492,6 +10542,7 @@ input.model-form-input--reveal {
 .chat-view .strip-body .diff-body {
   max-height: 340px;
   overflow-y: auto;
+  overflow-x: auto;
 }
 
 .chat-view .compact-body {
@@ -11168,6 +11219,13 @@ input.model-form-input--reveal {
   overflow: auto;
   padding: 6px 0;
   background: var(--bg-primary);
+}
+/* Empty-state blocks dropped directly into the diff/tree panes must fill the
+   viewport and center, just like the panel-level .si-panel-empty sibling. */
+.si-review-diff > .si-panel-empty,
+.si-review-tree > .si-panel-empty {
+  min-height: 100%;
+  box-sizing: border-box;
 }
 /* When the panel is narrow, hide the file tree so the diff gets full width. */
 .si-review-body.tree-collapsed .si-review-tree {
@@ -12329,19 +12387,18 @@ input.model-form-input--reveal {
   align-items: stretch;
   white-space: pre;
   min-height: 20px;
+  /* Rows stretch to the widest content line (via --diff-minw on .diff-content)
+     so the add/del highlight covers the full row up to the scrollbar's right
+     edge. max-content lets a long line widen the body; min-width keeps short
+     diffs filling the container. */
+  width: max-content;
   min-width: 100%;
 }
 
 .diff-row-add {
   background: color-mix(in srgb, var(--success) 12%, transparent);
 }
-.diff-row-add .diff-content {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-}
 .diff-row-del {
-  background: color-mix(in srgb, var(--error) 12%, transparent);
-}
-.diff-row-del .diff-content {
   background: color-mix(in srgb, var(--error) 12%, transparent);
 }
 
@@ -12350,13 +12407,7 @@ input.model-form-input--reveal {
   .diff-row-add {
     background: rgba(34, 197, 94, 0.12);
   }
-  .diff-row-add .diff-content {
-    background: rgba(34, 197, 94, 0.12);
-  }
   .diff-row-del {
-    background: rgba(239, 68, 68, 0.12);
-  }
-  .diff-row-del .diff-content {
     background: rgba(239, 68, 68, 0.12);
   }
 }
@@ -12376,11 +12427,17 @@ input.model-form-input--reveal {
 }
 
 .diff-content {
-  flex: 1;
-  min-width: auto;
+  /* Flex-basis auto: the content keeps its natural width instead of being
+     compressed. min-width stretches every row to the widest line's right
+     edge (--diff-minw set by the renderer), so short rows share the same
+     highlight length as the longest row. +20px reserves the 0 10px padding
+     (box-sizing: border-box). */
+  flex: 0 0 auto;
+  min-width: calc(var(--diff-minw, 0ch) + 20px);
   padding: 0 10px;
   overflow: visible;
   line-height: 20px;
+  color: var(--text-primary);
 }
 
 /* Empty row in split view */
@@ -12390,13 +12447,13 @@ input.model-form-input--reveal {
 
 /* ===== Word diff ===== */
 .diff-content ins {
-  background: color-mix(in srgb, var(--success) 30%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
   border-radius: 2px;
   text-decoration: none;
   outline: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
 }
 .diff-content del {
-  background: color-mix(in srgb, var(--error) 30%, transparent);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
   border-radius: 2px;
   text-decoration: none;
   outline: 1px solid color-mix(in srgb, var(--error) 40%, transparent);
@@ -12408,54 +12465,23 @@ input.model-form-input--reveal {
 }
 
 /* ===== Truncated notice ===== */
-.diff-row.diff-row-truncated .diff-content {
+/* ===== Hunk-gap / truncation separators (visually distinct) ===== */
+.diff-row-gap .diff-content,
+.diff-row-truncated .diff-content {
+  flex: 1;
   color: var(--text-tertiary);
   font-style: italic;
   text-align: center;
-}
-
-/* ===== Rich text summary ===== */
-.diff-container.diff-rich-text .rt-body {
-  padding: 10px 12px;
   font-family: var(--font-sans);
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  font-size: 11.5px;
+  background: var(--bg-tertiary);
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  user-select: none;
 }
-.diff-rich-text .rt-stat-row {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-}
-.diff-rich-text .rt-stat-add { color: var(--success); font-weight: 600; }
-.diff-rich-text .rt-stat-del { color: var(--error); font-weight: 600; }
-.diff-rich-text .rt-stat-pct { color: var(--text-muted); font-size: 11px; }
-.diff-rich-text .rt-section {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.diff-rich-text .rt-section-title {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 2px;
-}
-.diff-rich-text .rt-preview-line {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.diff-rich-text .rt-preview-line.rt-add {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
-}
-.diff-rich-text .rt-preview-line.rt-del {
-  background: color-mix(in srgb, var(--error) 12%, transparent);
-  color: var(--error);
+.diff-row-gap:first-child .diff-content,
+.diff-row-truncated:first-child .diff-content {
+  border-top: none;
 }
 
 /* ===== Split view (synchronized scroll) ===== */
@@ -12485,6 +12511,9 @@ input.model-form-input--reveal {
 }
 
 .diff-split-scroll-side .diff-row {
+  /* Same full-row stretch as the inline view: each side's rows reach the
+     widest line within that side so highlights fill the whole row. */
+  width: max-content;
   min-width: 100%;
 }
 
@@ -12506,9 +12535,15 @@ input.model-form-input--reveal {
   white-space: pre-wrap;
   word-break: break-all;
   overflow-wrap: anywhere;
+  /* Wrapped view reflows text instead of scrolling, so no row stretch. */
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.si-review-diff.review-wrap .diff-row {
+  width: 100%;
 }
 .si-review-diff.review-wrap .diff-body {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 /* Collapsed diff */
@@ -12527,23 +12562,17 @@ input.model-form-input--reveal {
 
 /* ===== Light theme overrides for word diff ===== */
 [data-theme="light"] .diff-content ins {
-  background: #abf2bc;
+  background: rgba(46, 160, 67, 0.12);
   outline: 1px solid #7ee787;
 }
 [data-theme="light"] .diff-content del {
-  background: #ffc2c2;
+  background: rgba(248, 81, 73, 0.12);
   outline: 1px solid #ff8182;
 }
 [data-theme="light"] .diff-row-add {
   background: #e6ffed;
 }
-[data-theme="light"] .diff-row-add .diff-content {
-  background: #e6ffed;
-}
 [data-theme="light"] .diff-row-del {
-  background: #ffeef0;
-}
-[data-theme="light"] .diff-row-del .diff-content {
   background: #ffeef0;
 }
 
@@ -12575,7 +12604,7 @@ input.model-form-input--reveal {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  color: var(--accent);
+  color: #15a877;
   opacity: 0;
 }
 .si-review-action-dropdown .review-action-item.checked .review-check {
@@ -12587,23 +12616,29 @@ input.model-form-input--reveal {
   margin: 4px 2px;
 }
 
-/* ── Review toolbar side buttons (collapse, split, git) ──────────── */
+/* ── Review toolbar side buttons (collapse, split) ───────────────── */
 .si-review-toolbar .si-review-collapse-btn,
-.si-review-toolbar .si-review-split-btn,
-.si-review-toolbar .si-review-git-wrap .settings-dropdown-trigger {
+.si-review-toolbar .si-review-split-btn {
   min-width: 0;
   width: 32px;
   height: 30px;
   padding: 0 4px;
   justify-content: center;
 }
+/* Git module uses the same framed container as the filter dropdown
+   (base .settings-dropdown-trigger styles), just slightly more compact. */
 .si-review-toolbar .si-review-git-wrap .settings-dropdown-trigger {
-  width: auto;
-  gap: 2px;
+  min-width: 0;
+  height: 30px;
+  padding: 5px 10px;
+  gap: 6px;
 }
 .si-review-toolbar .si-review-git-wrap .settings-dropdown-trigger i.lucide:first-child {
   width: 14px;
   height: 14px;
+}
+.si-review-git-wrap.dd-open .settings-dropdown-chevron {
+  transform: rotate(180deg);
 }
 .si-review-git-dropdown .settings-dropdown-item.si-review-git-disabled {
   opacity: 0.4;
@@ -13098,4 +13133,285 @@ input.model-form-input--reveal {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
+}
+
+/* ── Workspace Manager Overlay ───────────────────────────────────── */
+/* Reuses the project's standard .toast-dialog sizing and .btn-icon /
+   .btn / .btn--primary / .btn--danger components for a unified look. */
+.workspace-mgr-dialog {
+  width: 420px;
+  min-height: 500px;
+  max-height: 720px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The manager overlay must stack above regular toast-overlays (z-index 9999)
+   so that dialogs opened from within it (e.g. delete confirmation) stay
+   beneath the manager. */
+#workspace-mgr-overlay {
+  z-index: 10000;
+}
+
+/* The manager context menu must float above the toast overlay backdrop
+   (z-index 9999) so right-click actions stay visible and clickable. */
+#workspace-mgr-context-menu {
+  z-index: 10050;
+}
+
+.workspace-mgr-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-mgr-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-mgr-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspace-mgr-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-gutter: stable;
+  /* Flex so empty states (si-empty-center) can stretch to fill the body and
+     center BOTH horizontally and vertically — a plain min-height:100% inside
+     a scroll container can collapse and leave the empty state top-aligned. */
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-mgr-body > .si-empty-center {
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-mgr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Trailing actions on an archived-conversation row (restore + delete).
+   Reuses the sidebar session-row layout (ws-tree-session-item), so only the
+   right-aligned button group needs its own styles. */
+.archive-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.archive-item-actions .btn-icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+}
+/* Hover feedback matches the rest of the app (strong dark/light overlay
+   instead of the near-invisible --bg-hover on dark menus). */
+.archive-item-actions .btn-icon:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+[data-theme="light"] .archive-item-actions .btn-icon:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.archive-item-actions .archive-action-delete:hover {
+  color: var(--error);
+}
+
+/* Plain list item, mirroring the sidebar session list style. */
+.workspace-mgr-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  transition: background var(--transition-fast);
+}
+
+.workspace-mgr-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.workspace-mgr-item.active {
+  color: var(--accent);
+}
+
+.workspace-mgr-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+/* Small square icon at the start of each workspace row in the manager list
+   (reuses the same img/letter content as the settings view, at list size). */
+.workspace-mgr-item-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.workspace-mgr-item-icon .workspace-mgr-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.workspace-mgr-item-icon .workspace-mgr-icon-letter {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+.workspace-mgr-item-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.workspace-mgr-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 6px 4px;
+}
+
+/* Compact square icon (workspace settings view); the small round button
+   pinned to its bottom-right corner opens the image picker. */
+.workspace-mgr-icon-row {
+  display: flex;
+  justify-content: center;
+  padding: 16px 8px 10px;
+}
+
+.workspace-mgr-icon-wrap {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.workspace-mgr-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.workspace-mgr-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.workspace-mgr-icon-letter {
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+.workspace-mgr-icon-upload {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.workspace-mgr-icon-upload .lucide {
+  width: 12px;
+  height: 12px;
+}
+
+.workspace-mgr-icon-upload:hover {
+  filter: brightness(1.1);
+}
+
+.workspace-mgr-form-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.workspace-mgr-form-row:last-of-type {
+  border-bottom: none;
+}
+
+.workspace-mgr-form-label {
+  flex-shrink: 0;
+  width: 90px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding-top: 1px;
+}
+
+.workspace-mgr-form-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.workspace-mgr-form-value-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
 }

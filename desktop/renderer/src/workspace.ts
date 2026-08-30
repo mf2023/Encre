@@ -23,39 +23,32 @@
 /**
  * Workspace (iWork) sidebar & mode management.
  *
- * Implements the "workspace mode" experience: a slide-in tree of workspace
- * folders and their sessions alongside the normal session list. Handles
- * entering/exiting workspace mode (with the shared slide transition), folder
- * open/remove, per-folder expansion state, and batch selection for bulk
- * export/delete. Also exposes `syncFirstNavActive` for sidebar nav state.
+ * The iWork mode reuses the normal session sidebar (#session-section) and
+ * only toggles the backend session context: entering iWork mode opens a
+ * workspace (and lists its sessions via `list_sessions`, channel "iwork"),
+ * exiting restores the normal session list. This module owns the mode state
+ * transitions and the external entry points (tray, mode switch, keyboard
+ * shortcuts). Also exposes `syncFirstNavActive` for sidebar nav state.
  */
 
-import { getState, subscribe, setActiveWorkspace, setSessionId, setWorkspaceMode } from "./state.js";
+import { getState, setActiveWorkspace, setWorkspaceMode, subscribe, removeArchivedSessionById, clearMessages, setSessionId, setSessionState } from "./state.js";
 import { send } from "./ws.js";
-import { setRequestedSessionId } from "./stream.js";
-import { t, onLocaleChange, applyI18n } from "./i18n.js";
+import { setRequestedSessionId, refreshAllData } from "./stream.js";
+import { t } from "./i18n.js";
 import { Dialog } from "./dialog.js";
-import { TransitionHelper } from "./transition-helper.js";
-import type { WorkspaceEntry, SessionEntryData } from "./types.js";
 import { showContextMenu } from "./context-menu.js";
-import { getWorkspaceSessionGroups, normalizeWorkspacePath } from "./session-projection.js";
+import { workspaceIconHtml } from "./session-projection.js";
+import type { WorkspaceEntry, WorkspaceConfig, SessionEntryData } from "./types.js";
 
 /**
- * Manages the workspace tree and iWork mode transitions.
+ * Manages iWork mode transitions (enter / exit / force-exit).
  */
 export class Workspace {
-  private treeSectionEl: HTMLElement | null = null;
-  private treeListEl: HTMLElement | null = null;
   private isInWorkspaceMode = false;
-  private expandedWsPaths: Set<string> = new Set();
-  private batchMode = false;
-  private selectedPaths: Set<string> = new Set();
   private _exiting = false;
-  private _sessionSectionEl: HTMLElement | null = null;
-  private _lastWsTreeJson: string = "";
-  private _lastSid: string = "";
   private _transitioning = false;
   private pendingWorkspacePath = "";
+
   /** Public read-only access to the workspace mode flag. */
   public get isInWorkspaceModePublic(): boolean {
     return this.isInWorkspaceMode;
@@ -64,88 +57,19 @@ export class Workspace {
   /** Callback fired after entering/exiting iWork mode so the app can refresh the content area. */
   public onModeChange: (() => void) | null = null;
 
-  /**
-   * Force-exit workspace mode without any visual transitions.
-   */
-  public forceExit(): void {
-    if (!this.isInWorkspaceMode) return;
-    this._exiting = true;
-    this.isInWorkspaceMode = false;
-    this.batchMode = false;
-    this.selectedPaths.clear();
-    // Persist expanded state so re-entering workspace mode restores it
-    this._saveExpandedState();
-    this.expandedWsPaths.clear();
-    // Restore sidebar visual state: hide tree, show session section
-    if (this.treeSectionEl) {
-      this.treeSectionEl.classList.remove("active");
-      this.treeSectionEl.style.transition = "";
-      this.treeSectionEl.style.transform = "";
-      this.treeSectionEl.style.opacity = "";
-      this.treeSectionEl.style.position = "";
-      this.treeSectionEl.style.top = "";
-      this.treeSectionEl.style.left = "";
-      this.treeSectionEl.style.width = "";
-      this.treeSectionEl.style.height = "";
-      this.treeSectionEl.style.maxHeight = "";
-      this.treeSectionEl.classList.add("hidden");
-    }
-    if (this._sessionSectionEl) {
-      this._sessionSectionEl.style.transition = "";
-      this._sessionSectionEl.style.transform = "";
-      this._sessionSectionEl.style.opacity = "";
-      this._sessionSectionEl.style.position = "";
-      this._sessionSectionEl.style.top = "";
-      this._sessionSectionEl.style.left = "";
-      this._sessionSectionEl.style.width = "";
-      this._sessionSectionEl.style.height = "";
-      this._sessionSectionEl.classList.remove("hidden");
-    }
-    const parentForce = this._sessionSectionEl?.parentElement;
-    if (parentForce) parentForce.style.position = "";
-    const oldWs = getState().activeWorkspace;
-    setActiveWorkspace("");
-    setWorkspaceMode("normal");
-    if (oldWs) {
-      const requestId = crypto.randomUUID();
-      setRequestedSessionId("", requestId);
-      send({ type: "close_workspace", path: oldWs, request_id: requestId });
-    }
-    send({ type: "list_sessions" });
-    // Reset temp chat button inline styles
-    const tempBtnForce = document.getElementById("btn-temp-chat");
-    if (tempBtnForce) {
-      tempBtnForce.style.transition = "";
-      tempBtnForce.style.opacity = "";
-      tempBtnForce.style.transform = "";
-      tempBtnForce.style.pointerEvents = "";
-    }
-    this.syncFirstNavActive();
-    setTimeout(() => { this._exiting = false; }, 100);
-  }
-
-  /**
-   * Constructor: resolves DOM nodes, wires buttons and subscribes to state.
-   */
   constructor() {
-    this._sessionSectionEl = document.getElementById("session-section");
-    // The top-bar #mode-seg switch (wired in app.ts) is now the single
-    // mode entry point. The sidebar iWork button has been removed.
-
-    document.getElementById("btn-open-workspace")?.addEventListener("click", () => this.openFolder());
-    document.getElementById("btn-ws-manage")?.addEventListener("click", () => this.toggleBatchMode());
-    document.getElementById("btn-ws-delete")?.addEventListener("click", () => this.batchDelete());
-
-    subscribe(() => this.onStateChange());
-    onLocaleChange(() => {
-      if (this.isInWorkspaceMode) this.renderTree();
-    });
-    if (getState().connected) {
-      send({ type: "list_workspaces" });
-    }
     this.syncFirstNavActive();
+    // The sidebar workspace section keeps only its header + ">" nav button;
+    // the actual workspace list lives in the WorkspaceManager popup.
   }
 
+  private esc(s: string): string {
+    const el = document.createElement("span");
+    el.textContent = s;
+    return el.innerHTML;
+  }
+
+  /** Toggle between normal and iWork mode. */
   private async toggleWorkspaceMode(): Promise<void> {
     if (this._transitioning) return;
     if (this.isInWorkspaceMode) {
@@ -155,6 +79,7 @@ export class Workspace {
     }
   }
 
+  /** Enter iWork mode (no-op if already in it or mid-transition). */
   async enter(): Promise<void> {
     if (!this.isInWorkspaceMode && !this._transitioning) {
       await this.enterWorkspaceMode();
@@ -164,7 +89,6 @@ export class Workspace {
   /** Opens a workspace from an external entry point, such as the tray. */
   public async open(path: string): Promise<void> {
     if (!path || this._transitioning) return;
-    this.ensureExpanded(path);
     if (!this.isInWorkspaceMode) {
       this.pendingWorkspacePath = path;
       await this.enterWorkspaceMode();
@@ -173,46 +97,34 @@ export class Workspace {
     this.activate(path);
   }
 
-  /** Public exit — used by the header mode switch to leave workspace mode
-   *  with the same animation pipeline as the internal toggle button. */
+  /** Public exit — used by the header mode switch to leave workspace mode. */
   async exit(): Promise<void> {
     if (this.isInWorkspaceMode && !this._transitioning) {
       await this.exitWorkspaceMode();
     }
   }
 
-  /** Ensure a workspace path is expanded in the tree so its sessions are visible. */
-  public ensureExpanded(path: string): void {
-    this.expandedWsPaths.add(path);
-  }
-
-  private _saveExpandedState(): void {
-    try {
-      sessionStorage.setItem("ws_expanded", JSON.stringify([...this.expandedWsPaths]));
-    } catch { /* noop */ }
-  }
-
-  private _restoreExpandedState(): void {
-    try {
-      const raw = sessionStorage.getItem("ws_expanded");
-      if (raw) {
-        const paths: string[] = JSON.parse(raw);
-        for (const p of paths) this.expandedWsPaths.add(p);
-      }
-    } catch { /* noop */ }
-  }
-
-  private onStateChange(): void {
-    if (this._exiting) return;
+  /**
+   * Force-exit workspace mode without any visual transitions.
+   */
+  public forceExit(): void {
     if (!this.isInWorkspaceMode) return;
-    const st = getState();
-    const currentJson = JSON.stringify({ workspaces: st.workspaces, activeWorkspace: st.activeWorkspace, sessions: st.sessionsList });
-    const sidChanged = st.sessionId !== this._lastSid;
-    if (currentJson !== this._lastWsTreeJson || sidChanged) {
-      this._lastWsTreeJson = currentJson;
-      this._lastSid = st.sessionId;
-      this.renderTree();
+    this._exiting = true;
+    this.isInWorkspaceMode = false;
+
+    const oldWs = getState().activeWorkspace;
+    setActiveWorkspace("");
+    setWorkspaceMode("normal");
+    if (oldWs) {
+      const requestId = crypto.randomUUID();
+      setRequestedSessionId("", requestId);
+      send({ type: "close_workspace", path: oldWs, request_id: requestId });
     }
+    // Unified refresh — workspace_closed also triggers it server-side, this
+    // call covers the case where no workspace was open to close.
+    refreshAllData();
+    this.syncFirstNavActive();
+    setTimeout(() => { this._exiting = false; }, 100);
   }
 
   private async enterWorkspaceMode(): Promise<void> {
@@ -221,59 +133,9 @@ export class Workspace {
     this.isInWorkspaceMode = true;
     this._exiting = false;
 
-    // Restore previously expanded workspace folders
-    this._restoreExpandedState();
-    // Pre-create tree section & render content (hidden)
-    this.ensureTreeSection();
-    // Reset any stale batch-mode state left over from a previous session.
-    this.batchMode = false;
-    this.selectedPaths.clear();
-    this.renderTree();
-    this.updateBatchBarVisibility();
-
-    // Unified slide transition:
-    //   - 退出: session 分段向左滑出
-    //   - 进入: workspace tree 从右侧滑入
-    try {
-      await TransitionHelper.slide({
-        exit: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
-        enter: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
-        setup: () => {
-          const parent = this._sessionSectionEl?.parentElement;
-          if (parent) parent.style.position = "relative";
-          [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
-            if (!el) return;
-            el.style.position = "absolute";
-            el.style.top = "0";
-            el.style.left = "0";
-            el.style.width = "100%";
-            el.style.height = "100%";
-          });
-          if (this.treeSectionEl) {
-            this.treeSectionEl.classList.add("active");
-            this.treeSectionEl.style.maxHeight = "1000px";
-          }
-        },
-      });
-    } catch (e) {
-      console.error("[workspace] slide transition failed:", e);
-    }
-
-    // Cleanup absolute positioning
-    const parentEnter = this._sessionSectionEl?.parentElement;
-    [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
-      if (!el) return;
-      el.style.position = "";
-      el.style.top = "";
-      el.style.left = "";
-      el.style.width = "";
-      el.style.height = "";
-    });
-    if (this.treeSectionEl) this.treeSectionEl.style.maxHeight = "";
-    if (parentEnter) parentEnter.style.position = "";
-
-    // Set workspace mode BEFORE sending requests so the sessions_list handler's
-    // channel check (workspaceMode === "iwork") passes when the response arrives.
+    // Set workspace mode BEFORE sending requests so the sessions_list
+    // handler's channel check (workspaceMode === "iwork") passes when the
+    // response arrives.
     setWorkspaceMode("iwork");
 
     const workspaces = getState().workspaces;
@@ -293,22 +155,11 @@ export class Workspace {
       const requestId = crypto.randomUUID();
       setRequestedSessionId("", requestId);
       send({ type: "open_workspace", path: workspaces[0].path, request_id: requestId });
-      // open_workspace triggers session_ready → list_all_sessions, so the tree
-      // will be populated with sessions for all workspaces.
     } else {
-      // Already have an active workspace (or empty); send list_all_sessions
-      // explicitly so the tree picks up any new sessions from other workspaces.
-      send({ type: "list_all_sessions" });
-      if (activeWs) this.expandedWsPaths.add(activeWs);
-    }
-
-    // Slide-hide temp chat button in workspace mode (exit left, consistent with all other transitions)
-    const tempBtn = document.getElementById("btn-temp-chat");
-    if (tempBtn) {
-      tempBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
-      tempBtn.style.opacity = "0";
-      tempBtn.style.transform = "translateX(-20px)";
-      tempBtn.style.pointerEvents = "none";
+      // Already have an active workspace (or empty): refresh the sidebar
+      // session list and the tray cache for the current workspace context.
+      // Full unified pull so the model selector / settings also refresh.
+      refreshAllData();
     }
 
     this.syncFirstNavActive();
@@ -319,52 +170,8 @@ export class Workspace {
   private async exitWorkspaceMode(): Promise<void> {
     if (this._transitioning) return;
     this._transitioning = true;
-
-    // Unified slide transition:
-    //   - 退出: workspace tree 向左滑出
-    //   - 进入: session 分段从右侧滑入
-    try {
-      await TransitionHelper.slide({
-        exit: [this.treeSectionEl!].filter(Boolean) as HTMLElement[],
-        enter: [this._sessionSectionEl!].filter(Boolean) as HTMLElement[],
-        setup: () => {
-          const parent = this._sessionSectionEl?.parentElement;
-          if (parent) parent.style.position = "relative";
-          [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
-            if (!el) return;
-            el.style.position = "absolute";
-            el.style.top = "0";
-            el.style.left = "0";
-            el.style.width = "100%";
-            el.style.height = "100%";
-          });
-          if (this.treeSectionEl) {
-            this.treeSectionEl.classList.remove("active");
-          }
-        },
-      });
-    } catch (e) {
-      console.error("[workspace] exit slide transition failed:", e);
-    }
-
-    // Cleanup absolute positioning
-    const parentExit = this._sessionSectionEl?.parentElement;
-    [this._sessionSectionEl!, this.treeSectionEl!].forEach(el => {
-      if (!el) return;
-      el.style.position = "";
-      el.style.top = "";
-      el.style.left = "";
-      el.style.width = "";
-      el.style.height = "";
-    });
-    if (parentExit) parentExit.style.position = "";
-
     this._exiting = true;
     this.isInWorkspaceMode = false;
-    this.batchMode = false;
-    this.selectedPaths.clear();
-    this._saveExpandedState();
-    this.expandedWsPaths.clear();
 
     const oldWs = getState().activeWorkspace;
     setActiveWorkspace("");
@@ -373,27 +180,13 @@ export class Workspace {
       setRequestedSessionId("", requestId);
       send({ type: "close_workspace", path: oldWs, request_id: requestId });
     }
-    send({ type: "list_sessions" });
+    // Unified refresh — the close_workspace round-trip triggers workspace_closed
+    // (which also runs refreshAllData); this direct call covers edge cases.
+    refreshAllData();
     this.syncFirstNavActive();
     this._transitioning = false;
     setWorkspaceMode("normal");
     this.onModeChange?.();
-
-    // Slide-show temp chat button when exiting workspace mode (enter from right)
-    const tempBtn = document.getElementById("btn-temp-chat");
-    if (tempBtn) {
-      tempBtn.style.transition = "none";
-      tempBtn.style.transform = "translateX(100%)";
-      tempBtn.style.opacity = "0";
-      requestAnimationFrame(() => {
-        tempBtn.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
-        tempBtn.style.transform = "translateX(0)";
-        tempBtn.style.opacity = "";
-        tempBtn.style.pointerEvents = "";
-        setTimeout(() => { if (tempBtn) tempBtn.style.transition = ""; }, 330);
-      });
-    }
-
     setTimeout(() => { this._exiting = false; }, 100);
   }
 
@@ -401,395 +194,13 @@ export class Workspace {
     syncFirstNavActive();
   }
 
-  private ensureTreeSection(): void {
-    if (this.treeSectionEl) return;
-    const sessionSection = document.getElementById("session-section");
-    if (!sessionSection) return;
-
-    // Create a transition wrapper so slide animations position correctly
-    // below the sidebar nav, not overlapping with the "New task" button.
-    let wrapper = document.getElementById("sidebar-section-wrapper");
-    if (!wrapper) {
-      wrapper = document.createElement("div");
-      wrapper.id = "sidebar-section-wrapper";
-      wrapper.style.cssText = "position:relative;flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0";
-      sessionSection.parentNode?.insertBefore(wrapper, sessionSection);
-      wrapper.appendChild(sessionSection);
-    }
-
-    const section = document.createElement("div");
-    section.id = "workspace-tree-section";
-
-    const header = document.createElement("div");
-    header.className = "workspace-tree-header";
-    header.innerHTML = `
-      <span class="sidebar-section-title" data-i18n="search.sectionWorkspaces">Workspaces</span>
-      <div class="workspace-tree-actions">
-        <button class="btn-icon btn-sm" id="btn-open-workspace" data-i18n-title="workspace.openFolder">
-          <i data-lucide="folder-plus" class="lucide"></i>
-        </button>
-        <button class="btn-icon btn-sm" id="btn-ws-manage" data-i18n-title="general.manage">
-          <i data-lucide="sliders-horizontal" class="lucide"></i>
-        </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-cancel" data-i18n-title="session.cancel">
-          <i data-lucide="x" class="lucide"></i>
-        </button>
-        <button class="btn-icon btn-sm hidden" id="btn-ws-select-all" data-i18n-title="session.batchSelectAll">
-          <i data-lucide="check-square" class="lucide"></i>
-        </button>
-        <button class="btn-icon btn-sm hidden batch-color-accent" id="btn-ws-export" data-i18n-title="session.batchExport">
-          <i data-lucide="arrow-up-right" class="lucide"></i>
-        </button>
-        <button class="btn-icon btn-sm hidden batch-color-danger" id="btn-ws-delete" data-i18n-title="session.batchDelete">
-          <i data-lucide="trash-2" class="lucide"></i>
-        </button>
-      </div>`;
-
-    const list = document.createElement("div");
-    list.id = "workspace-tree-list";
-    list.className = "workspace-tree-list";
-
-    section.appendChild(header);
-    section.appendChild(list);
-
-    // Insert workspace tree INTO the wrapper, before session-section
-    wrapper.insertBefore(section, sessionSection);
-
-    this.treeSectionEl = section;
-    this.treeListEl = list;
-
-    // Initially hidden
-    section.classList.add("hidden");
-
-    document.getElementById("btn-open-workspace")?.addEventListener("click", () => this.openFolder());
-    document.getElementById("btn-ws-manage")?.addEventListener("click", () => this.toggleBatchMode());
-    document.getElementById("btn-ws-cancel")?.addEventListener("click", () => this.exitBatchMode());
-    document.getElementById("btn-ws-select-all")?.addEventListener("click", () => this.batchSelectAll());
-    document.getElementById("btn-ws-export")?.addEventListener("click", () => this.batchExport());
-    document.getElementById("btn-ws-delete")?.addEventListener("click", () => this.batchDelete());
-
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: section });
-    }
-    // Translate the freshly-inserted data-i18n* nodes (the section is created
-    // lazily, after the initial applyI18n() pass at startup).
-    applyI18n();
-  }
-
-  private removeTreeSection(): void {
-    // Keep in DOM, just visually hide via CSS transition
-    if (this.treeSectionEl) {
-      this.treeSectionEl.style.opacity = "0";
-      this.treeSectionEl.style.maxHeight = "0";
-    }
-  }
-
-  /** Renders the workspace tree (folders + sessions) for the active mode. */
-  private renderTree(): void {
-    if (!this.isInWorkspaceMode || !this.treeListEl || this._exiting) return;
-
-    const s = getState();
-    const workspaceGroups = getWorkspaceSessionGroups(s.workspaces, s.sessionsList);
-    const activeWs = s.activeWorkspace;
-
-    if (workspaceGroups.length === 0) {
-      this.treeListEl.innerHTML = `<div class="si-empty-center">
-        <i data-lucide="folder-open" class="lucide"></i>
-        <span class="si-empty-title">${t("workspace.empty")}</span>
-      </div>`;
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: this.treeListEl });
-      }
-      return;
-    }
-
-    let html = "";
-    for (const { workspace: ws, sessions: wsSessions } of workspaceGroups) {
-      const isExpanded = this.expandedWsPaths.has(ws.path);
-      const isActive = ws.path === activeWs ? " active" : "";
-      html += `<div class="ws-tree-node" data-ws-path="${this.esc(ws.path)}">
-        <div class="ws-tree-node-header${isActive}" data-ws-path="${this.esc(ws.path)}">
-          ${this.batchMode ? `<input type="checkbox" class="ws-checkbox" data-path="${this.esc(ws.path)}" ${this.selectedPaths.has(ws.path) ? "checked" : ""} />` : ""}
-          <button type="button" class="ws-expand-button"
-            aria-label="${isExpanded ? "Collapse workspace sessions" : "Expand workspace sessions"}"
-            aria-expanded="${isExpanded}">
-            <i data-lucide="chevron-right" class="lucide lucide-xs ws-chevron${isExpanded ? " open" : ""}"></i>
-          </button>
-          <span class="ws-name">${this.esc(ws.name)}</span>
-          <span class="ws-session-count">${wsSessions.length}</span>
-        </div>
-        <div class="ws-tree-children${isExpanded ? " expanded" : ""}">
-          ${isExpanded ? this.renderWorkspaceSessions(wsSessions) : ""}
-        </div>
-      </div>`;
-    }
-
-    this.treeListEl.innerHTML = html;
-    this.bindTreeEvents();
-
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.treeListEl });
-    }
-  }
-
-  private renderWorkspaceSessions(sessions: SessionEntryData[]): string {
-    if (sessions.length === 0) {
-      return `<div class="ws-tree-empty-sessions si-empty-center"><i data-lucide="message-square" class="lucide"></i><span class="si-empty-title">${t("workspace.noSessions")}</span></div>`;
-    }
-    const activeSid = getState().sessionId;
-    let html = "";
-    for (const sess of sessions) {
-      const active = sess.session_id === activeSid ? " active" : "";
-      const displayName = sess.name || sess.preview || t("general.emptySessionName");
-      const runningBadge = (sess.awaiting_approval || sess.is_running)
-        ? `<span class="session-${sess.awaiting_approval ? "waiting" : "running"}"></span>`
-        : "";
-
-      html += `<div class="ws-tree-session-item${active}" data-sid="${sess.session_id}">
-        <div class="session-item-top">
-          ${this.batchMode ? `<input type="checkbox" class="session-checkbox" data-sid="${sess.session_id}" ${this.selectedPaths.has(sess.session_id) ? "checked" : ""} />` : ""}
-          <span class="session-preview">${this.esc(displayName)}</span>
-          ${runningBadge}
-        </div>
-      </div>`;
-    }
-    return html;
-  }
-
-  private bindTreeEvents(): void {
-    if (!this.treeListEl) return;
-
-    this.treeListEl.querySelectorAll(".ws-expand-button").forEach((button) => {
-      button.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (this._exiting || this._transitioning) return;
-        const path = button.closest<HTMLElement>(".ws-tree-node-header")?.dataset.wsPath;
-        if (!path) return;
-        this.toggleExpand(path);
-        if (!this.batchMode && getState().activeWorkspace !== path) {
-          this.activate(path);
-        }
-      });
-    });
-
-    this.treeListEl.querySelectorAll(".ws-tree-node-header").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        if (this._exiting || this._transitioning) return;
-        const path = (el as HTMLElement).getAttribute("data-ws-path");
-        if (!path) return;
-
-        if (this.batchMode) {
-          const cb = (e.target as HTMLElement).closest<HTMLInputElement>(".ws-checkbox");
-          if (!cb) {
-            const checkbox = el.querySelector<HTMLInputElement>(".ws-checkbox");
-            if (checkbox) {
-              checkbox.checked = !checkbox.checked;
-              this.toggleSelect(path);
-            }
-          }
-          return;
-        }
-        if ((e.target as HTMLElement).closest("input")) return;
-
-        this.activate(path);
-      });
-      el.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        if (this._exiting || this._transitioning || this.batchMode) return;
-        const path = (el as HTMLElement).getAttribute("data-ws-path");
-        if (!path) return;
-        this.setContextTarget(el as HTMLElement);
-        this.showWsContextMenu(path, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
-      });
-    });
-
-    this.treeListEl.querySelectorAll(".ws-tree-session-item").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        if (this._exiting || this._transitioning) return;
-        if ((e.target as HTMLElement).tagName === "INPUT") return;
-        const sid = (el as HTMLElement).dataset.sid;
-        if (this.batchMode) {
-          if (sid) {
-            const cb = el.querySelector<HTMLInputElement>(".session-checkbox");
-            if (cb) {
-              cb.checked = !cb.checked;
-              this.toggleSelect(sid);
-            }
-          }
-          return;
-        }
-        if (sid) {
-          const requestId = crypto.randomUUID();
-          setSessionId(sid);
-          setRequestedSessionId(sid, requestId);
-          send({ type: "resume", session_id: sid, request_id: requestId });
-        }
-      });
-      el.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        if (this._exiting || this._transitioning) return;
-        const sid = (el as HTMLElement).dataset.sid;
-        if (!sid) return;
-        this.setContextTarget(el as HTMLElement);
-        import("./session.js").then(({ showSessionContextMenu }) => {
-          showSessionContextMenu(sid, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
-        });
-      });
-    });
-
-    this.treeListEl.querySelectorAll(".ws-checkbox").forEach((cb) => {
-      cb.addEventListener("change", () => {
-        const path = (cb as HTMLElement).getAttribute("data-path");
-        if (path) this.toggleSelect(path);
-      });
-    });
-
-    this.treeListEl.querySelectorAll(".session-checkbox").forEach((cb) => {
-      cb.addEventListener("change", () => {
-        const sid = (cb as HTMLElement).getAttribute("data-sid");
-        if (sid) this.toggleSelect(sid);
-      });
-    });
-  }
-
-  private toggleBatchMode(): void {
-    if (getState().workspaces.length === 0) return;
-    this.batchMode = !this.batchMode;
-    if (!this.batchMode) this.selectedPaths.clear();
-    this.updateBatchBarVisibility();
-    this.renderTree();
-  }
-
-  /** Exit batch mode without performing any bulk action (mirrors session cancel). */
-  private exitBatchMode(): void {
-    if (!this.batchMode) return;
-    this.batchMode = false;
-    this.selectedPaths.clear();
-    this.updateBatchBarVisibility();
-    this.renderTree();
-  }
-
-  /** Show/hide the batch-mode action buttons (mirrors the session batch bar). */
-  private updateBatchBarVisibility(): void {
-    const openBtn = document.getElementById("btn-open-workspace");
-    const manageBtn = document.getElementById("btn-ws-manage");
-    const cancelBtn = document.getElementById("btn-ws-cancel");
-    const selectAllBtn = document.getElementById("btn-ws-select-all");
-    const exportBtn = document.getElementById("btn-ws-export");
-    const deleteBtn = document.getElementById("btn-ws-delete");
-    // In batch mode the "add workspace" and "manage" toggles are replaced by
-    // the cancel / select-all / export / delete actions.
-    if (openBtn) openBtn.classList.toggle("hidden", this.batchMode);
-    if (manageBtn) manageBtn.classList.toggle("hidden", this.batchMode);
-    if (cancelBtn) cancelBtn.classList.toggle("hidden", !this.batchMode);
-    if (selectAllBtn) selectAllBtn.classList.toggle("hidden", !this.batchMode);
-    if (exportBtn) exportBtn.classList.toggle("hidden", !this.batchMode);
-    if (deleteBtn) deleteBtn.classList.toggle("hidden", !this.batchMode);
-  }
-
-  private batchSelectAll(): void {
-    const st = getState();
-    const allPaths = [
-      ...st.workspaces.map((w) => w.path),
-      ...st.sessionsList.map((s) => s.session_id),
-    ];
-    const allSelected = allPaths.length > 0 && allPaths.every((p) => this.selectedPaths.has(p));
-    if (allSelected) {
-      this.selectedPaths.clear();
-    } else {
-      for (const p of allPaths) this.selectedPaths.add(p);
-    }
-    this.renderTree();
-  }
-
-  /**
-   * Sessions whose parent workspace is also selected are covered by that
-   * workspace selection, so they must not be processed a second time.
-   */
-  private coveredSessionIds(): Set<string> {
-    const st = getState();
-    const wsPaths = new Set(st.workspaces.map(w => w.path));
-    const selectedWs = [...this.selectedPaths].filter(p => wsPaths.has(p));
-    const covered = new Set<string>();
-    if (selectedWs.length === 0) return covered;
-    for (const wsPath of selectedWs) {
-      for (const s of st.sessionsList) {
-        if (this.belongsToWorkspace(s, wsPath)) covered.add(s.session_id);
-      }
-    }
-    return covered;
-  }
-
-  private async batchExport(): Promise<void> {
-    const st = getState();
-    const wsPaths = new Set(st.workspaces.map(w => w.path));
-    const covered = this.coveredSessionIds();
-    const toExport: string[] = [];
-    // Individual sessions that are not covered by a selected workspace.
-    for (const p of this.selectedPaths) {
-      if (wsPaths.has(p)) continue;        // a workspace is not a session export
-      if (covered.has(p)) continue;        // already exported via its workspace
-      toExport.push(p);
-    }
-    // Every session that belongs to a selected workspace.
-    for (const sid of covered) toExport.push(sid);
-    if (toExport.length === 0) return;
-    if (toExport.length === 1) {
-      send({ type: "export_session", session_id: toExport[0] });
-    } else {
-      send({ type: "export_sessions_batch", session_ids: toExport });
-    }
-    this.selectedPaths.clear();
-    this.toggleBatchMode();
-  }
-
-  private toggleSelect(path: string): void {
-    const st = getState();
-    const ws = st.workspaces.find((w) => w.path === path);
-    if (ws) {
-      // Selecting a workspace cascades to every session under it (and
-      // deselecting clears them), mirroring parent/child selection.
-      const childSids = st.sessionsList
-        .filter((s) => this.belongsToWorkspace(s, path))
-        .map((s) => s.session_id);
-      const willSelect = !this.selectedPaths.has(path);
-      if (willSelect) {
-        this.selectedPaths.add(path);
-        for (const sid of childSids) this.selectedPaths.add(sid);
-      } else {
-        this.selectedPaths.delete(path);
-        for (const sid of childSids) this.selectedPaths.delete(sid);
-      }
-      this.renderTree();
-      return;
-    }
-    if (this.selectedPaths.has(path)) {
-      this.selectedPaths.delete(path);
-    } else {
-      this.selectedPaths.add(path);
-    }
-  }
-
-  private async batchDelete(): Promise<void> {
-    const st = getState();
-    const wsPaths = new Set(st.workspaces.map(w => w.path));
-    const covered = this.coveredSessionIds();
-    const selectedWs = [...this.selectedPaths].filter(p => wsPaths.has(p));
-    const standaloneSessions = [...this.selectedPaths].filter(p => !wsPaths.has(p) && !covered.has(p));
-    const count = selectedWs.length + standaloneSessions.length;
-    if (count === 0) return;
-    if (!await Dialog.confirm(t("workspace.confirmDeleteTitle", { count }), t("workspace.confirmDelete", { count }))) return;
-    for (const p of this.selectedPaths) {
-      if (wsPaths.has(p)) {
-        send({ type: "remove_workspace", path: p });
-      } else if (!covered.has(p)) {
-        // Sessions under a selected workspace are removed with the workspace.
-        send({ type: "delete_session", session_id: p });
-      }
-    }
-    this.selectedPaths.clear();
-    this.toggleBatchMode();
+  /** Switch the active workspace (used when already in iWork mode). */
+  private activate(path: string): void {
+    if (this._exiting || this._transitioning || !this.isInWorkspaceMode) return;
+    setActiveWorkspace(path);
+    const requestId = crypto.randomUUID();
+    setRequestedSessionId("", requestId);
+    send({ type: "open_workspace", path, request_id: requestId });
   }
 
   /** Opens a folder picker and requests the backend to open it as a workspace. */
@@ -799,83 +210,6 @@ export class Workspace {
     const requestId = crypto.randomUUID();
     setRequestedSessionId("", requestId);
     send({ type: "open_workspace", path: folderPath, request_id: requestId });
-  }
-
-  /** Toggle a workspace's expansion in the tree (works in both normal and batch mode). */
-  private toggleExpand(path: string): void {
-    if (this.expandedWsPaths.has(path)) {
-      this.expandedWsPaths.delete(path);
-    } else {
-      this.expandedWsPaths.add(path);
-    }
-    this._saveExpandedState();
-    this.renderTree();
-  }
-
-  private activate(path: string): void {
-    if (this._exiting || this._transitioning || !this.isInWorkspaceMode) return;
-    setActiveWorkspace(path);
-    const requestId = crypto.randomUUID();
-    setRequestedSessionId("", requestId);
-    send({ type: "open_workspace", path, request_id: requestId });
-  }
-
-  private esc(s: string): string {
-    const el = document.createElement("span");
-    el.textContent = s;
-    return el.innerHTML;
-  }
-
-  /** Check whether a session belongs to a given workspace path. */
-  private belongsToWorkspace(sess: SessionEntryData, wsPath: string): boolean {
-    const owner = String(sess.metadata?.workspace || sess.metadata?.workspace_path || "");
-    return normalizeWorkspacePath(owner) === normalizeWorkspacePath(wsPath);
-  }
-
-  /** Build a short badge label for the session's channel/mode. */
-  private channelBadge(channel?: string): string {
-    if (!channel || channel === "normal") return "";
-    const labels: Record<string, string> = {
-      iwork: "iWork",
-      qqbot: "QQ",
-      telegram: "Telegram",
-      webhook: "Webhook",
-      discord: "Discord",
-      slack: "Slack",
-    };
-    const label = labels[channel] || channel;
-    return `<span class="session-channel-badge" data-channel="${this.esc(channel)}">${this.esc(label)}</span>`;
-  }
-
-  /** Marks an element as the right-click target (temporary highlight). */
-  private setContextTarget(el: HTMLElement): void {
-    document.querySelectorAll(".context-target").forEach((n) => n.classList.remove("context-target"));
-    el.classList.add("context-target");
-  }
-
-  private showWsContextMenu(path: string, x: number, y: number): void {
-    const menuEl = document.getElementById("session-context-menu")!;
-    const wsName = getState().workspaces.find(w => w.path === path)?.name || path;
-    menuEl.innerHTML = `
-      <div class="context-menu-item context-menu-item-danger" id="ctx-ws-delete">
-        <i data-lucide="trash-2" class="lucide lucide-sm"></i>
-        <span>${this.esc(t("workspace.remove"))}</span>
-      </div>`;
-    showContextMenu(menuEl, x, y);
-
-    document.getElementById("ctx-ws-delete")?.addEventListener("click", async () => {
-      menuEl.classList.add("hidden");
-      if (await Dialog.confirm(
-        t("workspace.confirmDeleteTitle", { count: 1 }),
-        t("workspace.confirmDelete", { count: 1 })
-      )) {
-        send({ type: "remove_workspace", path });
-      }
-    });
-
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: menuEl });
-    }
   }
 }
 
@@ -888,4 +222,429 @@ export function syncFirstNavActive(): void {
   nav.querySelectorAll(".nav-item").forEach((el) => el.classList.remove("active"));
   const first = nav.querySelector<HTMLElement>(".nav-item:not(.hidden)");
   first?.classList.add("active");
+}
+
+/** Deterministic hue from the workspace name (mirrors the backend generator). */
+export function nameHue(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (((h * 31) + name.charCodeAt(i)) | 0) >>> 0;
+  }
+  return h % 360;
+}
+
+/**
+ * Workspace management overlay.
+ *
+ * A toast-overlay dialog listing all registered workspaces (real data from
+ * `state.workspaces`). The header carries the "New workspace" and "Archive"
+ * actions; each list item opens a right-click context menu with Settings /
+ * Delete. Settings and Archive render as internal sub-views with a back
+ * button, mirroring the notification panel's drill-down navigation.
+ */
+export class WorkspaceManager {
+  private workspace: Workspace;
+  private overlay: HTMLElement | null = null;
+  private contextMenu: HTMLElement | null = null;
+  private view: "list" | "details" | "settings" | "archive" = "list";
+  private editingPath = "";
+  private unsub: (() => void) | null = null;
+
+  constructor(workspace: Workspace) {
+    this.workspace = workspace;
+    this.contextMenu = document.getElementById("workspace-mgr-context-menu");
+    document.addEventListener("click", () => this.hideContextMenu());
+    // Refresh the overlay whenever workspace state changes so the list
+    // stays in sync with the backend in real time.
+    this.unsub = subscribe(() => {
+      if (!this.overlay) return;
+      try {
+        this.renderBody();
+      } catch (err) {
+        console.error("[workspace-manager] render failed:", err);
+      }
+    });
+  }
+
+  open(): void {
+    this.view = "list";
+    this.editingPath = "";
+    if (!this.overlay) this.buildOverlay();
+    this.overlay!.classList.remove("hidden");
+    this.renderBody();
+    window.addEventListener("keydown", this.onKeyDown);
+  }
+
+  close(): void {
+    this.hideContextMenu();
+    window.removeEventListener("keydown", this.onKeyDown);
+    this.overlay?.classList.add("hidden");
+  }
+
+  /** Re-render the open overlay (used when async config responses arrive). */
+  refresh(): void {
+    if (!this.overlay || this.overlay.classList.contains("hidden")) return;
+    this.renderBody();
+  }
+
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") this.close();
+  };
+
+  private buildOverlay(): void {
+    const overlay = document.createElement("div");
+    overlay.className = "toast-overlay";
+    overlay.id = "workspace-mgr-overlay";
+    overlay.innerHTML = `<div class="toast-dialog workspace-mgr-dialog">
+      <div class="workspace-mgr-header">
+        <button class="btn-icon btn-sm" id="wsmgr-back" title="${t("workspace.back")}"><i data-lucide="arrow-left" class="lucide"></i></button>
+        <span class="workspace-mgr-title" id="wsmgr-title"></span>
+        <div class="workspace-mgr-actions">
+          <button class="btn-icon btn-sm" id="wsmgr-archive" title="${t("workspace.archive")}"><i data-lucide="archive" class="lucide"></i></button>
+          <button class="btn-icon btn-sm" id="wsmgr-new" title="${t("workspace.newWorkspace")}"><i data-lucide="plus" class="lucide"></i></button>
+        </div>
+      </div>
+      <div class="workspace-mgr-body" id="wsmgr-body"></div>
+    </div>`;
+    document.body.appendChild(overlay);
+    this.overlay = overlay;
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) this.close();
+    });
+    overlay.querySelector("#wsmgr-back")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.handleBack();
+    });
+    overlay.querySelector("#wsmgr-new")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.handleNewWorkspace();
+    });
+    overlay.querySelector("#wsmgr-archive")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.view = "archive";
+      this.renderBody();
+      // Pull the latest archived sessions from the backend; the response
+      // (archived_sessions_list) fills state.archivedSessions and the state
+      // subscription re-renders this view.
+      send({ type: "list_archived_sessions" });
+    });
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: overlay });
+    }
+  }
+
+  private handleBack(): void {
+    if (this.view === "list") {
+      this.close();
+    } else {
+      this.view = "list";
+      this.editingPath = "";
+      this.renderBody();
+    }
+  }
+
+  private renderBody(): void {
+    if (!this.overlay) return;
+    const body = this.overlay.querySelector<HTMLElement>("#wsmgr-body");
+    const titleEl = this.overlay.querySelector<HTMLElement>("#wsmgr-title");
+    if (!body || !titleEl) return;
+    // New-workspace / archive actions only belong to the workspace list; hide
+    // them while drilling into a workspace's details/settings view.
+    const showActions = this.view === "list";
+    const archiveBtn = this.overlay.querySelector<HTMLElement>("#wsmgr-archive");
+    const newBtn = this.overlay.querySelector<HTMLElement>("#wsmgr-new");
+    if (archiveBtn) archiveBtn.style.display = showActions ? "" : "none";
+    if (newBtn) newBtn.style.display = showActions ? "" : "none";
+    if (this.view === "details") {
+      const ws = getState().workspaces.find((w) => w.path === this.editingPath);
+      if (!ws) {
+        this.view = "list";
+        this.editingPath = "";
+        this.renderBody();
+        return;
+      }
+      titleEl.textContent = ws.name;
+      body.innerHTML = this.renderDetails(ws);
+    } else if (this.view === "settings") {
+      const ws = getState().workspaces.find((w) => w.path === this.editingPath);
+      if (!ws) {
+        this.view = "list";
+        this.editingPath = "";
+        this.renderBody();
+        return;
+      }
+      titleEl.textContent = t("workspace.settingsTitle");
+      body.innerHTML = this.renderSettings(ws);
+      this.bindSettings(body);
+    } else if (this.view === "archive") {
+      titleEl.textContent = t("workspace.archive");
+      body.innerHTML = this.renderArchive();
+      this.bindArchive(body);
+    } else {
+      titleEl.textContent = t("workspace.manageTitle");
+      body.innerHTML = this.renderList();
+      this.bindList(body);
+    }
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: body });
+    }
+  }
+
+  private renderList(): string {
+    const workspaces = getState().workspaces;
+    if (workspaces.length === 0) {
+      return `<div class="si-empty-center"><i data-lucide="folder-open" class="lucide"></i>
+        <span class="si-empty-title">${t("workspace.noWorkspaces")}</span>
+        <span class="si-empty-sub">${t("workspace.empty")}</span></div>`;
+    }
+    return `<div class="workspace-mgr-list">${workspaces.map((w) => this.renderListItem(w)).join("")}</div>`;
+  }
+
+  private renderListItem(w: WorkspaceEntry): string {
+    const active = w.path === getState().activeWorkspace;
+    const initial = (w.name.trim()[0] || "?").toUpperCase();
+    const iconInner = w.icon_data
+      ? `<img class="workspace-mgr-icon-img" src="${w.icon_data}" alt="" draggable="false">`
+      : `<span class="workspace-mgr-icon-letter">${this.esc(initial)}</span>`;
+    const bgAttr = w.icon_data ? "" : ` style="background:hsl(${nameHue(w.name)}, 62%, 46%)"`;
+    return `<div class="workspace-mgr-item${active ? " active" : ""}" data-path="${this.esc(w.path)}">
+      <div class="workspace-mgr-item-icon"${bgAttr}>${iconInner}</div>
+      <span class="workspace-mgr-item-name">${this.esc(w.name)}</span>
+      <span class="workspace-mgr-item-count">${t("workspace.sessions", { count: w.session_count ?? 0 })}</span>
+    </div>`;
+  }
+
+  private bindList(container: HTMLElement): void {
+    container.querySelectorAll(".workspace-mgr-item").forEach((el) => {
+      const item = el as HTMLElement;
+      const path = item.dataset.path || "";
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!path) return;
+        // Left-click drills into the workspace's details view.
+        this.view = "details";
+        this.editingPath = path;
+        this.renderBody();
+      });
+      item.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showItemMenu(path, e.clientX, e.clientY);
+      });
+    });
+  }
+
+  private showItemMenu(path: string, x: number, y: number): void {
+    if (!this.contextMenu) return;
+    this.contextMenu.innerHTML = `<div class="context-menu-item" id="wsmgr-ctx-settings"><i data-lucide="settings" class="lucide lucide-sm"></i><span>${t("workspace.settingsTitle")}</span></div>
+      <div class="context-menu-item context-menu-item-danger" id="wsmgr-ctx-delete"><i data-lucide="trash-2" class="lucide lucide-sm"></i><span>${t("workspace.delete")}</span></div>`;
+    showContextMenu(this.contextMenu, x, y);
+    this.contextMenu.querySelector("#wsmgr-ctx-settings")?.addEventListener("click", () => {
+      this.hideContextMenu();
+      this.view = "settings";
+      this.editingPath = path;
+      this.renderBody();
+    });
+    this.contextMenu.querySelector("#wsmgr-ctx-delete")?.addEventListener("click", () => {
+      this.hideContextMenu();
+      void this.handleDelete(path);
+    });
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.contextMenu });
+    }
+  }
+
+  private hideContextMenu(): void {
+    this.contextMenu?.classList.add("hidden");
+  }
+
+  private renderDetails(w: WorkspaceEntry): string {
+    const createdAt = w.created_at ? new Date(w.created_at * 1000).toLocaleString() : "";
+    return `<div class="workspace-mgr-settings">
+      <div class="workspace-mgr-form-row"><span class="workspace-mgr-form-label">${t("workspace.workspaceName")}</span><span class="workspace-mgr-form-value">${this.esc(w.name)}</span></div>
+      <div class="workspace-mgr-form-row"><span class="workspace-mgr-form-label">${t("workspace.path")}</span><span class="workspace-mgr-form-value workspace-mgr-form-value-path">${this.esc(w.path)}</span></div>
+      <div class="workspace-mgr-form-row"><span class="workspace-mgr-form-label">${t("workspace.sessionCount")}</span><span class="workspace-mgr-form-value">${w.session_count ?? 0}</span></div>
+      <div class="workspace-mgr-form-row"><span class="workspace-mgr-form-label">${t("workspace.workspaceId")}</span><span class="workspace-mgr-form-value">${this.esc(w.id)}</span></div>
+      ${createdAt ? `<div class="workspace-mgr-form-row"><span class="workspace-mgr-form-label">${t("workspace.createdAt")}</span><span class="workspace-mgr-form-value">${this.esc(createdAt)}</span></div>` : ""}
+    </div>`;
+  }
+
+  private renderSettings(w: WorkspaceEntry): string {
+    const initial = (w.name.trim()[0] || "?").toUpperCase();
+    const iconInner = w.icon_data
+      ? `<img class="workspace-mgr-icon-img" src="${w.icon_data}" alt="" draggable="false">`
+      : `<span class="workspace-mgr-icon-letter">${this.esc(initial)}</span>`;
+    const bgAttr = w.icon_data ? "" : ` style="background:hsl(${nameHue(w.name)}, 62%, 46%)"`;
+    // NOTE: workspace-scoped model configuration has been REMOVED — workspaces
+    // always use the same model set as general mode (every enabled model).
+    return `<div class="workspace-mgr-settings">
+      <div class="workspace-mgr-icon-row">
+        <div class="workspace-mgr-icon-wrap">
+          <div class="workspace-mgr-icon"${bgAttr}>${iconInner}</div>
+          <button class="workspace-mgr-icon-upload" id="wsmgr-icon-upload" title="${t("workspace.uploadIcon")}"><i data-lucide="image-plus" class="lucide"></i></button>
+        </div>
+      </div>
+      <div class="model-form-row">
+        <label class="model-form-label">${t("workspace.workspaceName")}</label>
+        <input type="text" class="model-form-input" id="wsmgr-name-input" value="${this.esc(w.name)}" />
+      </div>
+    </div>`;
+  }
+
+  private bindSettings(container: HTMLElement): void {
+    const nameInput = container.querySelector("#wsmgr-name-input") as HTMLInputElement | null;
+    nameInput?.addEventListener("change", () => {
+      const v = nameInput.value.trim();
+      if (!v || !this.editingPath) return;
+      send({ type: "rename_workspace", path: this.editingPath, name: v });
+    });
+
+    container.querySelector("#wsmgr-icon-upload")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!this.editingPath) return;
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === "string" && reader.result.startsWith("data:image/")) {
+            send({ type: "upload_workspace_icon", path: this.editingPath, icon_data: reader.result });
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+      input.click();
+    });
+  }
+
+  /**
+   * Archive manager view.
+   *
+   * Lists every archived conversation (not workspaces) using the exact same
+   * row UI as the sidebar session list ("全部任务" rows): the same
+   * `ws-tree-session-item` / `session-item-top` / `session-preview` markup
+   * and styles. Each row carries two trailing actions — restore (移出归档)
+   * and delete (identical to deleting a normal conversation) — plus a
+   * right-click context menu offering the same two actions.
+   */
+  private renderArchive(): string {
+    const archived = getState().archivedSessions;
+    if (archived.length === 0) {
+      return `<div class="si-empty-center"><i data-lucide="archive" class="lucide"></i>
+        <span class="si-empty-title">${t("workspace.archiveEmpty")}</span></div>`;
+    }
+    return `<div class="workspace-mgr-list">${archived.map((s) => this.renderArchiveItem(s)).join("")}</div>`;
+  }
+
+  private renderArchiveItem(s: SessionEntryData): string {
+    const preview = s.preview || t("general.emptySessionName");
+    const displayName = s.name || preview;
+    // Archived conversations are workspace sessions — always show the owning
+    // workspace icon (forced, like the sidebar history rows).
+    const wsPath = (s.metadata as any)?.workspace_path || (s.metadata as any)?.workspace || "";
+    const wsIcon = workspaceIconHtml(wsPath, getState().workspaces, true);
+    return `<div class="ws-tree-session-item" data-sid="${this.esc(s.session_id)}">
+      <div class="session-item-top">
+        ${wsIcon}
+        <span class="session-preview">${this.esc(displayName)}</span>
+        <span class="archive-item-actions">
+          <button class="btn-icon btn-sm archive-action-restore" title="${t("workspace.unarchive")}"><i data-lucide="archive-restore" class="lucide"></i></button>
+          <button class="btn-icon btn-sm archive-action-delete" title="${t("workspace.delete")}"><i data-lucide="trash-2" class="lucide"></i></button>
+        </span>
+      </div>
+    </div>`;
+  }
+
+  private bindArchive(container: HTMLElement): void {
+    container.querySelectorAll(".ws-tree-session-item").forEach((el) => {
+      const item = el as HTMLElement;
+      const sid = item.dataset.sid || "";
+      if (!sid) return;
+      item.querySelector(".archive-action-restore")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void this.handleUnarchive(sid);
+      });
+      item.querySelector(".archive-action-delete")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void this.handleArchiveDelete(sid);
+      });
+      item.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showArchiveMenu(sid, e.clientX, e.clientY);
+      });
+    });
+  }
+
+  /** Context menu for an archived conversation: restore + delete. */
+  private showArchiveMenu(sid: string, x: number, y: number): void {
+    if (!this.contextMenu) return;
+    this.contextMenu.innerHTML = `<div class="context-menu-item" id="wsmgr-ctx-unarchive"><i data-lucide="archive-restore" class="lucide lucide-sm"></i><span>${t("workspace.unarchive")}</span></div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-item context-menu-item-danger" id="wsmgr-ctx-delete-archived"><i data-lucide="trash-2" class="lucide lucide-sm"></i><span>${t("workspace.delete")}</span></div>`;
+    showContextMenu(this.contextMenu, x, y);
+    this.contextMenu.querySelector("#wsmgr-ctx-unarchive")?.addEventListener("click", () => {
+      this.hideContextMenu();
+      void this.handleUnarchive(sid);
+    });
+    this.contextMenu.querySelector("#wsmgr-ctx-delete-archived")?.addEventListener("click", () => {
+      this.hideContextMenu();
+      void this.handleArchiveDelete(sid);
+    });
+    if (typeof (window as any).lucide !== "undefined") {
+      (window as any).lucide.createIcons({ root: this.contextMenu });
+    }
+  }
+
+  /** Restore an archived conversation back into the workspace history —
+   *  with the same confirmation UX as archiving/deleting. */
+  private async handleUnarchive(sid: string): Promise<void> {
+    const s = getState().archivedSessions.find((x) => x.session_id === sid);
+    const name = s?.name || s?.preview || sid.slice(0, 8);
+    if (!(await Dialog.confirm(t("workspace.confirmUnarchiveTitle"), t("workspace.confirmUnarchive", { name })))) return;
+    // Optimistically drop the row from the archive view; the backend
+    // broadcast re-inserts the session into the workspace history list.
+    removeArchivedSessionById(sid);
+    send({ type: "unarchive_session", session_id: sid });
+  }
+
+  /** Delete an archived conversation — identical to deleting a normal one:
+   *  same confirmation copy, same delete_session message, optimistic removal. */
+  private async handleArchiveDelete(sid: string): Promise<void> {
+    const s = getState().archivedSessions.find((x) => x.session_id === sid);
+    const name = s?.name || s?.preview || sid.slice(0, 8);
+    if (!(await Dialog.confirm(t("session.confirmDeleteTitle"), t("session.confirmDelete", { name })))) return;
+    // Optimistically drop the row from the archive view.
+    removeArchivedSessionById(sid);
+    // If the deleted session is the one currently being viewed, clear the
+    // chat area to show the "new task" welcome screen immediately.
+    if (getState().sessionId === sid) {
+      clearMessages();
+      setSessionId("");
+      setSessionState("idle", "");
+    }
+    send({ type: "delete_session", session_id: sid });
+  }
+
+  private async handleDelete(path: string): Promise<void> {
+    const ws = getState().workspaces.find((w) => w.path === path);
+    const name = ws?.name || path;
+    const ok = await Dialog.confirm(t("workspace.confirmDeleteOneTitle"), t("workspace.confirmDeleteOne", { name }));
+    if (!ok) return;
+    send({ type: "remove_workspace", path });
+    // Backend replies workspace_removed; the state subscription refreshes the list.
+  }
+
+  private handleNewWorkspace(): void {
+    void this.workspace.openFolder();
+  }
+
+  private esc(s: string): string {
+    const el = document.createElement("span");
+    el.textContent = s;
+    return el.innerHTML;
+  }
 }

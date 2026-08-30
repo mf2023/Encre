@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -39,27 +38,47 @@ from typing import Any
 
 from encre.backends.openai_sse import OpenAISSEBackend
 
-# Context window sizes for known OpenRouter model families
+# Context window sizes for known OpenRouter model families.
+# Keys are checked as prefix or substring (first match wins), so list
+# more-specific families before generic ones.
 _CONTEXT_WINDOW_MAP: dict[str, int] = {
-    "claude-opus-4-7": 1_000_000,
-    "claude-sonnet-4-6": 1_000_000,
+    # Anthropic (current 5.x = 1M; legacy 4.x = 200K).
+    "claude-opus-5": 1_000_000,
+    "claude-fable-5": 1_000_000,
+    "claude-sonnet-5": 1_000_000,
     "claude-opus": 200_000,
     "claude-sonnet": 200_000,
     "claude-haiku": 200_000,
-    "gpt-4.1": 1048576,
-    "gpt-5": 1048576,
-    "deepseek-v4": 1048576,
-    "deepseek-chat": 1048576,
-    "deepseek-reasoner": 1048576,
-    "gemini-2.5": 1048576,
-    "gemini-2.0": 1048576,
-    "gemini-3": 1048576,
-    "llama-4": 1048576,
-    "llama-3.3": 131072,
-    "qwen3": 131072,
-    "qwen-max": 131072,
-    "mistral-large": 131072,
-    "mixtral": 131072,
+    # OpenAI GPT-5.x = 1.05M, GPT-4.1 = 1M.
+    "gpt-5.6": 1_050_000,
+    "gpt-5.5": 1_050_000,
+    "gpt-5": 1_050_000,
+    "gpt-4.1": 1_048_576,
+    # DeepSeek V4 = 1M.
+    "deepseek-v4": 1_048_576,
+    "deepseek-chat": 1_048_576,
+    "deepseek-reasoner": 1_048_576,
+    # Google Gemini 3.x / 2.5 = 1M.
+    "gemini-3": 1_048_576,
+    "gemini-2.5": 1_048_576,
+    # Meta Llama 4 Scout = ~1.31M, Maverick = 1M.
+    "llama-4-scout": 1_310_720,
+    "llama-4": 1_048_576,
+    "llama-3.3": 131_072,
+    # xAI Grok 4.6/4.5 = 500K.
+    "grok-4.6": 500_000,
+    "grok-4.5": 500_000,
+    "grok-4": 256_000,
+    # Qwen 3.5+ = 1M, older Qwen3 = 131K.
+    "qwen3.8": 1_000_000,
+    "qwen3.7": 1_000_000,
+    "qwen3.6": 1_000_000,
+    "qwen3.5": 1_000_000,
+    "qwen3": 131_072,
+    "qwen-max": 131_072,
+    # Mistral.
+    "mistral-large": 128_000,
+    "mixtral": 131_072,
 }
 
 

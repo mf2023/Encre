@@ -64,6 +64,7 @@ interface ElectronAPI {
   windowMaximize(): Promise<void>;
   windowClose(): Promise<void>;
   windowIsMaximized(): Promise<boolean>;
+  onWindowMaximizeChange(cb: (maximized: boolean) => void): void;
   toggleDevTools(): Promise<void>;
   terminalSpawn(shell?: string, shellArgs?: string[]): Promise<{ id?: number; error?: string }>;
   terminalWrite(id: number, data: string): Promise<void>;
@@ -112,6 +113,7 @@ interface ElectronAPI {
   clearHistory(): Promise<{ success: boolean }>;
   exportFile(options: { content: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>;
   exportBinary(options: { base64: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>;
+  copyFileTo(options: { sourcePath: string; defaultName: string; filters: Array<{ name: string; extensions: string[] }> }): Promise<{ success: boolean; canceled?: boolean; filePath?: string; error?: string }>;
 
   // Browser import/export
   detectBrowsers(): Promise<Array<{ id: string; name: string; profilePath: string; hasBookmarks: boolean; hasCookies: boolean; hasHistory: boolean }>>;
@@ -122,6 +124,8 @@ interface ElectronAPI {
   getAppVersions(): Promise<{ desktop: string; agent: string }>;
   getLicenseContent(): Promise<string>;
   getDocumentContent(docId: string, region?: string): Promise<string>;
+  getDocRegion(): Promise<string>;
+  setDocRegion(region: string): Promise<void>;
   openChildWindow(view: string, label: string): Promise<void>;
   openInfoHtml(html: string): Promise<string | null>;
   onChildAddTab(callback: (view: string, label: string) => void): () => void;
@@ -169,6 +173,10 @@ interface ElectronAPI {
 interface Window {
   electronAPI?: ElectronAPI;
   lucide?: any;
+  __initMediaCards?: (scope?: HTMLElement) => void;
+  __initInfoCardMedia?: (elOrId: HTMLElement | string) => void;
+  __openInfoHtmlCards?: (scope?: HTMLElement) => void;
+  __stopAllMedia?: () => void;
 }
 
 declare var monaco: any;

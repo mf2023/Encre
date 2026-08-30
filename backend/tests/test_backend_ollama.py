@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -33,14 +32,15 @@ from encre.backends.ollama import OllamaBackend
 # Construction
 # ===========================================================================
 
+
 class TestOllamaBackendConstruction:
     """Test OllamaBackend instantiation with various parameters."""
 
     def test_create_default(self):
-        """Default model is llama3.2, base URL is localhost:11434/v1."""
+        """Default model is llama4, base URL is localhost:11434/v1."""
         be = OllamaBackend()
-        # Verify: be.model == "llama3.2"
-        assert be.model == "llama3.2"
+        # Verify: be.model == "llama4"
+        assert be.model == "llama4"
         # Verify: be.api_base_url == "http://localhost:11434/v1"
         assert be.api_base_url == "http://localhost:11434/v1"
         # Verify: be.api_key == ""
@@ -101,6 +101,7 @@ class TestOllamaBackendConstruction:
 # Capability checks
 # ===========================================================================
 
+
 class TestOllamaBackendCapabilities:
     """Test supports_tool_calling, supports_thinking, supports_prompt_caching."""
 
@@ -136,6 +137,7 @@ class TestOllamaBackendCapabilities:
 # Context window size
 # ===========================================================================
 
+
 class TestOllamaBackendContextWindow:
     """Test context_window_size() for Ollama models."""
 
@@ -165,6 +167,7 @@ class TestOllamaBackendContextWindow:
 # ===========================================================================
 # Token counting and model attribute
 # ===========================================================================
+
 
 class TestOllamaBackendTokens:
     """Test count_tokens() and model attribute."""
@@ -199,15 +202,16 @@ class TestOllamaBackendTokens:
         assert isinstance(be.model, str)
 
     def test_model_default(self):
-        """Default model is llama3.2."""
+        """Default model is llama4."""
         be = OllamaBackend()
-        # Verify: be.model == "llama3.2"
-        assert be.model == "llama3.2"
+        # Verify: be.model == "llama4"
+        assert be.model == "llama4"
 
 
 # ===========================================================================
 # Request data building
 # ===========================================================================
+
 
 class TestOllamaBackendRequestBuilding:
     """Test _build_request_data inherited from OpenAISSEBackend."""
@@ -288,6 +292,7 @@ class TestOllamaBackendRequestBuilding:
 # ===========================================================================
 # Lifecycle
 # ===========================================================================
+
 
 class TestOllamaBackendLifecycle:
     """Test resource cleanup."""

@@ -381,7 +381,7 @@ export class MediaViewer {
       window.addEventListener("mouseup", u);
     });
     // Wheel on volume adjusts volume
-    const volEl = this.el.querySelector(".media-volume");
+    const volEl = this.el.querySelector<HTMLElement>(".media-volume");
     volEl?.addEventListener("wheel", (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();

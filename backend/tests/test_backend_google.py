@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -34,14 +33,15 @@ from encre.backends.google import GoogleBackend
 # Construction
 # ===========================================================================
 
+
 class TestGoogleBackendConstruction:
     """Test GoogleBackend instantiation with various parameters."""
 
     def test_create_default(self):
-        """Default model is gemini-2.5-pro, default base URL is Google AI Studio."""
+        """Default model is gemini-3.7-flash, default base URL is Google AI Studio."""
         be = GoogleBackend(api_key="fake-key")
-        # Verify: be.model == "gemini-2.5-pro"
-        assert be.model == "gemini-2.5-pro"
+        # Verify: be.model == "gemini-3.7-flash"
+        assert be.model == "gemini-3.7-flash"
         # Verify: be.api_key == "fake-key"
         assert be.api_key == "fake-key"
         # Verify: "generativelanguage.googleapis.com" in be.base_url
@@ -79,8 +79,8 @@ class TestGoogleBackendConstruction:
         be = GoogleBackend()
         # Verify: be.api_key == ""
         assert be.api_key == ""
-        # Verify: be.model == "gemini-2.5-pro"
-        assert be.model == "gemini-2.5-pro"
+        # Verify: be.model == "gemini-3.7-flash"
+        assert be.model == "gemini-3.7-flash"
 
     def test_create_initializes_http_client(self):
         """GoogleBackend creates its own httpx.AsyncClient."""
@@ -92,6 +92,7 @@ class TestGoogleBackendConstruction:
 # ===========================================================================
 # Capability checks
 # ===========================================================================
+
 
 class TestGoogleBackendCapabilities:
     """Test supports_tool_calling, supports_thinking, supports_grounding."""
@@ -134,6 +135,7 @@ class TestGoogleBackendCapabilities:
 # Context window size
 # ===========================================================================
 
+
 class TestGoogleBackendContextWindow:
     """Test context_window_size() for Gemini models."""
 
@@ -161,6 +163,7 @@ class TestGoogleBackendContextWindow:
 # ===========================================================================
 # Token counting and model attribute
 # ===========================================================================
+
 
 class TestGoogleBackendTokens:
     """Test count_tokens() and model attribute."""
@@ -198,6 +201,7 @@ class TestGoogleBackendTokens:
 # ===========================================================================
 # Message conversion (internal protocol mapping)
 # ===========================================================================
+
 
 class TestGoogleBackendMessageConversion:
     """Test _convert_messages and _convert_tools for OpenAI-to-Google format."""
@@ -324,6 +328,7 @@ class TestGoogleBackendMessageConversion:
 # Finish reason mapping
 # ===========================================================================
 
+
 class TestGoogleBackendFinishReason:
     """Test _map_finish_reason for Google-to-unified mapping."""
 
@@ -361,6 +366,7 @@ class TestGoogleBackendFinishReason:
 # ===========================================================================
 # Lifecycle
 # ===========================================================================
+
 
 class TestGoogleBackendLifecycle:
     """Test resource cleanup."""

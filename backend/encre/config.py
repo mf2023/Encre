@@ -166,6 +166,16 @@ class ModelConfig:
     context_window: int = 0  # 0 = auto-detect from model/backend, >0 = explicit override
     enabled: bool = True
     multimodal: bool = False
+    # Records whether the provider endpoint was probed as supporting
+    # multimodal (image/audio/video) content: "supported", "unsupported"
+    # or "unknown". "unknown" means the probe did not run or was
+    # inconclusive (e.g. an unexpected API error).
+    multimodal_support: str = "unknown"
+    # Verified per-endpoint capability map: canonical node name (see
+    # ``encre.backends.multimodal._NODE_*``) -> "supported" / "unsupported".
+    # Results are filled in the background after model validation, never
+    # blocking the user.  Missing / empty means "not probed yet".
+    capabilities: dict[str, str] = field(default_factory=dict)
     thinking_config: ThinkingConfig | None = None
 
     def to_dict(self, encrypt_api_keys: bool = True) -> dict[str, Any]:
@@ -187,6 +197,8 @@ class ModelConfig:
             "context_window": self.context_window,
             "enabled": self.enabled,
             "multimodal": self.multimodal,
+            "multimodal_support": self.multimodal_support,
+            "capabilities": dict(self.capabilities or {}),
         }
         tc = _thinking_config_to_dict(self.thinking_config)
         if tc is not None:
@@ -212,6 +224,9 @@ class ModelConfig:
             context_window=int(d.get("context_window", 0)),
             enabled=bool(d.get("enabled", True)),
             multimodal=bool(d.get("multimodal", False)),
+            multimodal_support=str(d.get("multimodal_support", "unknown")),
+            capabilities={str(k): str(v) for k, v in (d.get("capabilities") or {}).items()}
+            if isinstance(d.get("capabilities"), dict) else {},
             thinking_config=_thinking_config_from_dict(d.get("thinking_config")),
         )
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -100,5 +99,14 @@ class XiaomiBackend(OpenAISSEBackend):
         return param
 
     def context_window_size(self) -> int:
-        # MiMo V2.x models expose a 256K (262144) context window.
-        return 262144
+        m = self.model.lower()
+        # MiMo V2.5 (Pro + base) expose a 1M context window.
+        if "v2.5" in m or "v2-5" in m:
+            return 1_000_000
+        # MiMo V2 Omni/Flash expose a 256K (262144) context window.
+        if "v2" in m:
+            return 262_144
+        # MiMo 7B legacy models expose a 32K context window.
+        if "7b" in m:
+            return 32_768
+        return 262_144

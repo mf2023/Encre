@@ -106,6 +106,7 @@ ClientMessageType = Literal[
     "validate_model",
     "edit_message", "delete_message",
     "delete_session", "export_session", "rename_session",
+    "archive_session", "unarchive_session", "list_archived_sessions",
     "agent_create", "agent_delete", "agent_update", "agent_list", "agent_set_active",
     "update_sub_agents",
     "get_memory_list",
@@ -140,6 +141,8 @@ ClientMessageType = Literal[
     "plan_reject",
     "set_mode",
     "browser_cdp_url",
+    "export_data",
+    "import_data",
 ]
 
 
@@ -298,6 +301,52 @@ class ClientSetMode:
 
 
 @dataclass
+class ClientExportData:
+    """Request a full plaintext zip of the entire data directory.
+
+    The server builds the archive on disk and returns its path (plus progress
+    via ``data_export_progress`` events) through a ``data_exported_zip`` event.
+    ``request_id`` lets the caller correlate the response with the original
+    request.
+    """
+
+    type: str = "export_data"
+    request_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientExportData":
+        return cls(type="export_data", request_id=str(d.get("request_id", "")))
+
+
+@dataclass
+class ClientImportData:
+    """Import a plaintext backup zip into this machine's data directory.
+
+    ``zip_path`` is a local filesystem path to the archive produced by
+    :func:`encre.migration.export_all` (the desktop renderer passes the path
+    the user picked, avoiding a large base64 round-trip over the WebSocket).
+    The server re-encrypts with this machine's key and reports via
+    ``data_import_progress`` events, then ``data_import_done``.
+
+    ``mode`` controls how imported files interact with data already on this
+    machine: ``"overwrite"`` (merge, default), ``"replace"`` (wipe the data dir
+    first for a faithful clone) or ``"skip"`` (never overwrite existing files).
+    """
+
+    type: str = "import_data"
+    zip_path: str = ""
+    mode: str = "overwrite"
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientImportData":
+        return cls(
+            type="import_data",
+            zip_path=str(d.get("zip_path", "")),
+            mode=str(d.get("mode", "overwrite")),
+        )
+
+
+@dataclass
 class ClientSetCdpUrl:
     """Set the CDP WebSocket URL for the embedded browser webview."""
 
@@ -426,20 +475,6 @@ class ClientWechatScan:
         return cls(
             type="wechat_scan",
             adapter_id=d.get("adapter_id", "weixin"),
-        )
-
-
-class ClientTestAdapter:
-    type: str = "test_adapter"
-    adapter_id: str = ""
-    config: dict[str, Any] = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ClientTestAdapter":
-        return cls(
-            type="test_adapter",
-            adapter_id=d.get("adapter_id", ""),
-            config=d.get("config", {}),
         )
 
 
@@ -657,12 +692,14 @@ class ClientUpdateAgent:
 class ClientSearch:
     type: str = "search"
     query: str = ""
+    seq: int = 0
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ClientSearch":
         return cls(
             type="search",
             query=d.get("query", ""),
+            seq=d.get("seq", 0),
         )
 
 
@@ -811,6 +848,47 @@ class ClientRenameSession:
 
 
 @dataclass
+class ClientArchiveSession:
+    """Archive a session: hide it from the normal sidebar (data untouched)."""
+
+    type: str = "archive_session"
+    session_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientArchiveSession":
+        return cls(
+            type="archive_session",
+            session_id=d.get("session_id", ""),
+        )
+
+
+@dataclass
+class ClientUnarchiveSession:
+    """Restore a previously archived session back into the normal lists."""
+
+    type: str = "unarchive_session"
+    session_id: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientUnarchiveSession":
+        return cls(
+            type="unarchive_session",
+            session_id=d.get("session_id", ""),
+        )
+
+
+@dataclass
+class ClientListArchivedSessions:
+    """Request the list of archived sessions for the archive manager view."""
+
+    type: str = "list_archived_sessions"
+
+    @classmethod
+    def from_dict(cls, _d: dict[str, Any]) -> "ClientListArchivedSessions":
+        return cls(type="list_archived_sessions")
+
+
+@dataclass
 class ClientIclawResume:
     type: str = "iclaw_resume"
 
@@ -927,6 +1005,69 @@ class ClientCloseWorkspace:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ClientCloseWorkspace":
         return cls(type="close_workspace", request_id=d.get("request_id", ""))
+
+
+@dataclass
+class ClientUploadWorkspaceIcon:
+    type: str = "upload_workspace_icon"
+    path: str = ""
+    # Full data URL of the picked image: "data:image/png;base64,..."
+    icon_data: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientUploadWorkspaceIcon":
+        return cls(
+            type="upload_workspace_icon",
+            path=d.get("path", ""),
+            icon_data=d.get("icon_data", ""),
+        )
+
+
+@dataclass
+class ClientRenameWorkspace:
+    type: str = "rename_workspace"
+    path: str = ""
+    name: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientRenameWorkspace":
+        return cls(
+            type="rename_workspace",
+            path=d.get("path", ""),
+            name=d.get("name", ""),
+        )
+
+
+@dataclass
+class ClientGetWorkspaceConfig:
+    type: str = "get_workspace_config"
+    path: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientGetWorkspaceConfig":
+        return cls(
+            type="get_workspace_config",
+            path=d.get("path", ""),
+        )
+
+
+@dataclass
+class ClientSaveWorkspaceConfig:
+    type: str = "save_workspace_config"
+    path: str = ""
+    # Partial per-workspace config: {"models": [model_id,...] | null,
+    #                              "permissions": {...} | null,
+    #                              "mcp": {...} | null}
+    # null/absent fields mean "reuse the global config for this key".
+    config: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ClientSaveWorkspaceConfig":
+        return cls(
+            type="save_workspace_config",
+            path=d.get("path", ""),
+            config=d.get("config") or {},
+        )
 
 
 @dataclass
@@ -1415,6 +1556,10 @@ ClientMessage = (
     | ClientListWorkspaces
     | ClientRemoveWorkspace
     | ClientCloseWorkspace
+    | ClientUploadWorkspaceIcon
+    | ClientRenameWorkspace
+    | ClientGetWorkspaceConfig
+    | ClientSaveWorkspaceConfig
     | ClientReindexWorkspace
     | ClientGetGitignore
     | ClientDeleteIndex
@@ -1438,7 +1583,6 @@ ClientMessage = (
     | ClientRollbackBranch
     | ClientGetUsageStats
     | ClientWechatScan
-    | ClientTestAdapter
     | ClientIclawResume
     | ClientAutomationListJobs
     | ClientAutomationCreateJob
@@ -1455,6 +1599,8 @@ ClientMessage = (
     | ClientPlanReject
     | ClientSetMode
     | ClientSetCdpUrl
+    | ClientExportData
+    | ClientImportData
 )
 
 
@@ -1491,7 +1637,6 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "list_all_sessions": ClientListAllSessions,
         "new_session": ClientNewSession,
         "get_config": ClientGetConfig,
-        "test_adapter": ClientTestAdapter,
         "wechat_scan": ClientWechatScan,
         "iclaw_resume": ClientIclawResume,
         "update_models": ClientUpdateModels,
@@ -1514,6 +1659,9 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "export_session": ClientExportSession,
         "export_sessions_batch": ClientExportSessionsBatch,
         "rename_session": ClientRenameSession,
+        "archive_session": ClientArchiveSession,
+        "unarchive_session": ClientUnarchiveSession,
+        "list_archived_sessions": ClientListArchivedSessions,
         "agent_create": ClientAgentCreate,
         "agent_delete": ClientAgentDelete,
         "agent_update": ClientAgentUpdate,
@@ -1524,6 +1672,10 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "list_workspaces": ClientListWorkspaces,
         "remove_workspace": ClientRemoveWorkspace,
         "close_workspace": ClientCloseWorkspace,
+        "upload_workspace_icon": ClientUploadWorkspaceIcon,
+        "rename_workspace": ClientRenameWorkspace,
+        "get_workspace_config": ClientGetWorkspaceConfig,
+        "save_workspace_config": ClientSaveWorkspaceConfig,
         "reindex_workspace": ClientReindexWorkspace,
         "get_gitignore": ClientGetGitignore,
         "delete_index": ClientDeleteIndex,
@@ -1566,6 +1718,8 @@ def parse_client_message(raw: str | bytes) -> ClientMessage | None:
         "plan_reject": ClientPlanReject,
         "set_mode": ClientSetMode,
         "browser_cdp_url": ClientSetCdpUrl,
+        "export_data": ClientExportData,
+        "import_data": ClientImportData,
     }
     cls = parsers.get(msg_type)
     if cls is None:
@@ -1617,6 +1771,7 @@ ServerMessageType = Literal[
     "session_exported",
     "sessions_exported_zip",
     "session_renamed",
+    "archived_sessions_list",
     "memory_list",
     "memory_detail",
     "global_rules_list",
@@ -1653,6 +1808,10 @@ ServerMessageType = Literal[
     "mode_changed",
     "plan_mode_changed",
     "command_changed",
+    "data_exported_zip",
+    "data_export_progress",
+    "data_import_progress",
+    "data_import_done",
 ]
 
 
@@ -1807,6 +1966,10 @@ def encode_sessions_list(sessions: list[dict[str, Any]]) -> str:
     return encode_server_message("sessions_list", sessions=sessions)
 
 
+def encode_archived_sessions_list(sessions: list[dict[str, Any]]) -> str:
+    return encode_server_message("archived_sessions_list", sessions=sessions)
+
+
 def encode_config_data(config: dict[str, Any]) -> str:
     return encode_server_message("config_data", config=config)
 
@@ -1873,6 +2036,34 @@ def encode_session_exported(session_id: str, markdown: str, filename: str) -> st
 
 def encode_sessions_exported_zip(zip_base64: str, filename: str) -> str:
     return encode_server_message("sessions_exported_zip", encrypt=False, zip_base64=zip_base64, filename=filename)
+
+
+def encode_data_exported_zip(zip_path: str, filename: str, request_id: str = "") -> str:
+    return encode_server_message("data_exported_zip", encrypt=False, zip_path=zip_path, filename=filename, request_id=request_id)
+
+
+def encode_data_export_progress(done: int, total: int, percent: int, file: str = "") -> str:
+    return encode_server_message(
+        "data_export_progress", encrypt=False, done=done, total=total, percent=percent, file=file
+    )
+
+
+def encode_data_import_progress(done: int, total: int, percent: int, file: str = "") -> str:
+    return encode_server_message(
+        "data_import_progress", encrypt=False, done=done, total=total, percent=percent, file=file
+    )
+
+
+def encode_data_import_done(files: int, restored: int, skipped: int, overwritten: int = 0, kept: int = 0) -> str:
+    return encode_server_message(
+        "data_import_done",
+        encrypt=False,
+        files=files,
+        restored=restored,
+        skipped=skipped,
+        overwritten=overwritten,
+        kept=kept,
+    )
 
 
 def encode_session_renamed(session_id: str, new_name: str) -> str:

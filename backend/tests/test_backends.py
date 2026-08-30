@@ -529,9 +529,12 @@ class TestConfigBackendIntegration:
         """Test: Config server backend type default."""
         from encre.config import EncreConfig
         cfg = EncreConfig()
-        # Verify: cfg.backend_type == "openai"
-        assert cfg.backend_type == "openai"
-        be = create_backend(cfg.backend_type, api_key="sk-fake")
+        # Verify: cfg.backend_type == "" (empty until derived from an active
+        # ModelConfig; no hardcoded vendor default)
+        assert cfg.backend_type == ""
+        # An empty backend_type yields no backend; an explicit type does.
+        assert create_backend(cfg.backend_type, api_key="sk-fake") is None
+        be = create_backend("openai", api_key="sk-fake")
         # Verify: isinstance(be, BaseBackend)
         assert isinstance(be, BaseBackend)
 

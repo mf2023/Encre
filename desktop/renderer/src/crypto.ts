@@ -173,13 +173,26 @@ export async function decryptRaw(packed: Uint8Array): Promise<Uint8Array> {
 }
 
 /**
+ * Convert bytes to base64 without blowing the call stack on large payloads
+ * (spreading megabytes into String.fromCharCode overflows it).
+ */
+function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
+  }
+  return btoa(bin);
+}
+
+/**
  * Encrypt a UTF‑8 string → base64(nonce || ciphertext || tag).
  */
 export async function encrypt(plaintext: string): Promise<string> {
   if (!_masterKey) return plaintext;
   const plain = new TextEncoder().encode(plaintext);
   const packed = await encryptRaw(plain);
-  return btoa(String.fromCharCode(...packed));
+  return toBase64(packed);
 }
 
 /**

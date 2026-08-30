@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -100,7 +99,7 @@ class GoogleBackend(BaseBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "gemini-3.5-pro",
+        model: str = "gemini-3.7-flash",
         enable_grounding: bool = False,
         enable_thinking: bool = True,
         thinking_budget: int = -1,
@@ -171,9 +170,7 @@ class GoogleBackend(BaseBackend):
             content = msg.get("content", "")
 
             if role == "system":
-                system_instruction = {
-                    "parts": [{"text": content}]
-                }
+                system_instruction = {"parts": [{"text": content}]}
                 continue
 
             parts: list[dict[str, Any]] = []
@@ -187,19 +184,23 @@ class GoogleBackend(BaseBackend):
                     elif item.get("type") == "image_url":
                         image_url = item.get("image_url", {}).get("url", "")
                         if image_url:
-                            parts.append({
-                                "inline_data": {
-                                    "mime_type": "image/jpeg",
-                                    "data": image_url,
-                                },
-                            })
+                            parts.append(
+                                {
+                                    "inline_data": {
+                                        "mime_type": "image/jpeg",
+                                        "data": image_url,
+                                    },
+                                }
+                            )
                     elif item.get("type") == "image" or item.get("type") == "image_data":
-                        parts.append({
-                            "inline_data": {
-                                "mime_type": item.get("mime_type", "image/jpeg"),
-                                "data": item.get("data", ""),
+                        parts.append(
+                            {
+                                "inline_data": {
+                                    "mime_type": item.get("mime_type", "image/jpeg"),
+                                    "data": item.get("data", ""),
+                                }
                             }
-                        })
+                        )
             elif isinstance(content, dict):
                 parts.append({"text": json.dumps(content)})
 
@@ -209,15 +210,14 @@ class GoogleBackend(BaseBackend):
                     for tc in tool_calls:
                         func = tc.get("function", {})
                         func_args = func.get("arguments", "")
-                        parts.append({
-                            "functionCall": {
-                                "name": func.get("name", ""),
-                                "args": (
-                                    json.loads(func_args)
-                                    if func_args else {}
-                                ),
-                            },
-                        })
+                        parts.append(
+                            {
+                                "functionCall": {
+                                    "name": func.get("name", ""),
+                                    "args": (json.loads(func_args) if func_args else {}),
+                                },
+                            }
+                        )
                 else:
                     mapped_role = "model"
                     contents.append({"role": mapped_role, "parts": parts})
@@ -225,16 +225,15 @@ class GoogleBackend(BaseBackend):
 
             elif role == "tool":
                 tool_name = msg.get("name", "")
-                resp_content = (
-                    content if isinstance(content, str)
-                    else json.dumps(content)
-                )
-                mapped_content: list[dict[str, Any]] = [{
-                    "functionResponse": {
-                        "name": tool_name,
-                        "response": {"content": resp_content},
+                resp_content = content if isinstance(content, str) else json.dumps(content)
+                mapped_content: list[dict[str, Any]] = [
+                    {
+                        "functionResponse": {
+                            "name": tool_name,
+                            "response": {"content": resp_content},
+                        }
                     }
-                }]
+                ]
                 mapped_role = "function"
                 contents.append({"role": mapped_role, "parts": mapped_content})
                 continue
@@ -324,17 +323,11 @@ class GoogleBackend(BaseBackend):
         }
 
         if tool_choice == "any":
-            generation_config["toolConfig"] = {
-                "functionCallingConfig": {"mode": "ANY"}
-            }
+            generation_config["toolConfig"] = {"functionCallingConfig": {"mode": "ANY"}}
         elif tool_choice == "none":
-            generation_config["toolConfig"] = {
-                "functionCallingConfig": {"mode": "NONE"}
-            }
+            generation_config["toolConfig"] = {"functionCallingConfig": {"mode": "NONE"}}
         elif tool_choice == "auto":
-            generation_config["toolConfig"] = {
-                "functionCallingConfig": {"mode": "AUTO"}
-            }
+            generation_config["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
 
         thinking_config = self._build_thinking_config()
         if thinking_config is not None:
@@ -389,20 +382,16 @@ class GoogleBackend(BaseBackend):
         """
         contents, system_instruction = self._convert_messages(messages)
         body = self._build_body(
-            contents, system_instruction,
-            tools, tool_choice, temperature, max_tokens,
+            contents,
+            system_instruction,
+            tools,
+            tool_choice,
+            temperature,
+            max_tokens,
         )
 
-        endpoint = (
-            f"/models/{self.model}:streamGenerateContent"
-            if stream
-            else f"/models/{self.model}:generateContent"
-        )
-        url = (
-            f"{self.base_url}{endpoint}?key={self.api_key}&alt=sse"
-            if stream
-            else f"{self.base_url}{endpoint}?key={self.api_key}"
-        )
+        endpoint = f"/models/{self.model}:streamGenerateContent" if stream else f"/models/{self.model}:generateContent"
+        url = f"{self.base_url}{endpoint}?key={self.api_key}&alt=sse" if stream else f"{self.base_url}{endpoint}?key={self.api_key}"
 
         try:
             if stream:
@@ -414,9 +403,7 @@ class GoogleBackend(BaseBackend):
         except Exception as e:
             yield create_backend_error(str(e))
 
-    async def _stream_with_retry(
-        self, url: str, body: dict[str, Any]
-    ) -> AsyncGenerator[BackendEvent, None]:
+    async def _stream_with_retry(self, url: str, body: dict[str, Any]) -> AsyncGenerator[BackendEvent, None]:
         """Stream response with exponential backoff retry.
 
         Retries on 429/502/503/504 status codes, timeouts, and connection
@@ -441,18 +428,15 @@ class GoogleBackend(BaseBackend):
                 if exc.response.status_code != 429 and attempt >= max_retries:
                     yield create_backend_error("Gemini server error retries exhausted")
                     return
-            except (httpx.TimeoutException, httpx.ConnectError,
-                    httpx.RemoteProtocolError, httpx.TransportError):
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError, httpx.TransportError):
                 if attempt >= max_retries:
                     yield create_backend_error("Gemini network error retries exhausted")
                     return
 
-            delay = min(base_delay * (2 ** attempt), max_delay)
+            delay = min(base_delay * (2**attempt), max_delay)
             await asyncio.sleep(random.uniform(0, delay))
 
-    async def _non_stream_with_retry(
-        self, url: str, body: dict[str, Any]
-    ) -> AsyncGenerator[BackendEvent, None]:
+    async def _non_stream_with_retry(self, url: str, body: dict[str, Any]) -> AsyncGenerator[BackendEvent, None]:
         """Non-streaming response with exponential backoff retry."""
         max_retries = 5
         rate_limit_retries = 8
@@ -473,18 +457,15 @@ class GoogleBackend(BaseBackend):
                 if exc.response.status_code != 429 and attempt >= max_retries:
                     yield create_backend_error("Gemini server error retries exhausted")
                     return
-            except (httpx.TimeoutException, httpx.ConnectError,
-                    httpx.RemoteProtocolError, httpx.TransportError):
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError, httpx.TransportError):
                 if attempt >= max_retries:
                     yield create_backend_error("Gemini network error retries exhausted")
                     return
 
-            delay = min(base_delay * (2 ** attempt), max_delay)
+            delay = min(base_delay * (2**attempt), max_delay)
             await asyncio.sleep(random.uniform(0, delay))
 
-    async def _do_stream(
-        self, url: str, body: dict[str, Any]
-    ) -> AsyncGenerator[BackendEvent, None]:
+    async def _do_stream(self, url: str, body: dict[str, Any]) -> AsyncGenerator[BackendEvent, None]:
         """Execute a single streaming request to Gemini API."""
         async with self._client.stream("POST", url, json=body) as resp:
             if resp.status_code != 200:
@@ -553,10 +534,7 @@ class GoogleBackend(BaseBackend):
                             if part_idx not in accumulated_text:
                                 accumulated_text[part_idx] = ""
                             prev = accumulated_text[part_idx]
-                            new_part = (
-                                text[len(prev):] if text.startswith(prev)
-                                else text
-                            )
+                            new_part = text[len(prev) :] if text.startswith(prev) else text
                             accumulated_text[part_idx] = text
                             if new_part:
                                 yield create_backend_text(new_part)
@@ -600,9 +578,7 @@ class GoogleBackend(BaseBackend):
                 }
             yield create_backend_finish(finish_reason, usage=_usage)
 
-    async def _do_non_stream(
-        self, url: str, body: dict[str, Any]
-    ) -> AsyncGenerator[BackendEvent, None]:
+    async def _do_non_stream(self, url: str, body: dict[str, Any]) -> AsyncGenerator[BackendEvent, None]:
         """Execute a single non-streaming request to Gemini API."""
         resp = await self._client.post(url, json=body)
         resp.raise_for_status()
@@ -713,6 +689,7 @@ class GoogleBackend(BaseBackend):
             return 0
         try:
             from encre.utils.tokens import estimate_tokens
+
             return estimate_tokens(text, model="gemini-pro")
         except Exception:
             return len(text) // 4
@@ -724,6 +701,7 @@ class GoogleBackend(BaseBackend):
         Results are cached for 5 minutes.
         """
         import time
+
         now = time.time()
         cache_key = f"google:{self.api_key[:8] if self.api_key else 'noauth'}"
         if (
@@ -800,6 +778,7 @@ class GoogleBackend(BaseBackend):
     ):
         """Generate embedding vectors via ``models/{model}:batchEmbedContents``."""
         from encre.utils.types import EmbeddingResponse, EmbeddingResult
+
         if isinstance(input, str):
             inputs = [{"content": {"parts": [{"text": input}]}}]
         else:
@@ -815,9 +794,7 @@ class GoogleBackend(BaseBackend):
 
         model_name = model or "text-embedding-005"
         url = f"{self.base_url}/models/{model_name}:batchEmbedContents"
-        response = await self._client.post(
-            url, params={"key": self.api_key}, json=payload
-        )
+        response = await self._client.post(url, params={"key": self.api_key}, json=payload)
         response.raise_for_status()
         data = response.json() if response.content else {}
         embeddings_raw = data.get("embeddings", []) or []
@@ -858,6 +835,7 @@ class GoogleBackend(BaseBackend):
         import base64
 
         from encre.utils.types import FileObject
+
         content = base64.b64decode(content_b64)
         num_bytes = len(content)
 
@@ -883,9 +861,7 @@ class GoogleBackend(BaseBackend):
         resp.raise_for_status()
         upload_url = resp.headers.get("X-Goog-Upload-URL")
         if not upload_url:
-            raise RuntimeError(
-                "Google Files API did not return an X-Goog-Upload-URL header"
-            )
+            raise RuntimeError("Google Files API did not return an X-Goog-Upload-URL header")
 
         # Step 2: upload the bytes.
         upload_headers = {
@@ -893,9 +869,7 @@ class GoogleBackend(BaseBackend):
             "X-Goog-Upload-Offset": "0",
             "X-Goog-Upload-Command": "upload, finalize",
         }
-        resp = await self._client.post(
-            upload_url, headers=upload_headers, content=content
-        )
+        resp = await self._client.post(upload_url, headers=upload_headers, content=content)
         resp.raise_for_status()
         payload = resp.json() if resp.content else {}
         file_obj = payload.get("file", payload) if isinstance(payload, dict) else {}
@@ -910,10 +884,18 @@ class GoogleBackend(BaseBackend):
             mime_type=mime_type,
             provider="google",
             metadata={
-                k: v for k, v in file_obj.items() if k not in {
-                    "name", "size_bytes", "display_name", "mime_type",
+                k: v
+                for k, v in file_obj.items()
+                if k
+                not in {
+                    "name",
+                    "size_bytes",
+                    "display_name",
+                    "mime_type",
                 }
-            } if isinstance(file_obj, dict) else {},
+            }
+            if isinstance(file_obj, dict)
+            else {},
         )
 
     async def list_files(
@@ -926,6 +908,7 @@ class GoogleBackend(BaseBackend):
     ):
         """List files via the Gemini Files API."""
         from encre.utils.types import FileListResponse, FileObject
+
         params: dict[str, Any] = {"pageSize": min(int(limit), 100)}
         if extra_params:
             params.update(extra_params)
@@ -948,8 +931,14 @@ class GoogleBackend(BaseBackend):
                     mime_type=str(item.get("mime_type", "")),
                     provider="google",
                     metadata={
-                        k: v for k, v in item.items() if k not in {
-                            "name", "size_bytes", "display_name", "mime_type",
+                        k: v
+                        for k, v in item.items()
+                        if k
+                        not in {
+                            "name",
+                            "size_bytes",
+                            "display_name",
+                            "mime_type",
                         }
                     },
                 )
@@ -962,6 +951,7 @@ class GoogleBackend(BaseBackend):
     ):
         """Fetch a file's metadata."""
         from encre.utils.types import FileObject
+
         url = f"{self.base_url}/{file_id}"
         response = await self._client.get(url, params={"key": self.api_key})
         response.raise_for_status()
@@ -975,10 +965,18 @@ class GoogleBackend(BaseBackend):
             mime_type=str(data.get("mime_type", "")),
             provider="google",
             metadata={
-                k: v for k, v in data.items() if k not in {
-                    "name", "size_bytes", "display_name", "mime_type",
+                k: v
+                for k, v in data.items()
+                if k
+                not in {
+                    "name",
+                    "size_bytes",
+                    "display_name",
+                    "mime_type",
                 }
-            } if isinstance(data, dict) else {},
+            }
+            if isinstance(data, dict)
+            else {},
         )
 
     async def delete_file(
@@ -1031,9 +1029,7 @@ class GoogleBackend(BaseBackend):
             payload["batch"].update(extra_params)
 
         url = f"{self.base_url}/models/{model_name}:batchGenerateContent"
-        response = await self._client.post(
-            url, params={"key": self.api_key}, json=payload
-        )
+        response = await self._client.post(url, params={"key": self.api_key}, json=payload)
         response.raise_for_status()
         data = response.json() if response.content else {}
         metadata_block = data.get("metadata", {}) if isinstance(data, dict) else {}
@@ -1050,9 +1046,17 @@ class GoogleBackend(BaseBackend):
             output_file_id="",
             error_file_id="",
             provider="google",
-            metadata={k: v for k, v in metadata_block.items() if k not in {
-                "name", "state",
-            }} if isinstance(metadata_block, dict) else {},
+            metadata={
+                k: v
+                for k, v in metadata_block.items()
+                if k
+                not in {
+                    "name",
+                    "state",
+                }
+            }
+            if isinstance(metadata_block, dict)
+            else {},
         )
 
     # ── Fine-tuning (tuning) ─────────────────────────────────────────────
@@ -1068,9 +1072,8 @@ class GoogleBackend(BaseBackend):
     ):
         """Create a Gemini supervised fine-tuning job."""
         from encre.utils.types import FineTuneJob
-        tuned_model_name = (
-            f"tunedModels/{suffix or 'encre-tuned'}-{int(__import__('time').time())}"
-        )
+
+        tuned_model_name = f"tunedModels/{suffix or 'encre-tuned'}-{int(__import__('time').time())}"
         payload: dict[str, Any] = {
             "baseModel": f"models/{model}",
             "tunedModelDisplayName": suffix or "encre-tuned-model",
@@ -1086,9 +1089,7 @@ class GoogleBackend(BaseBackend):
             if hyperparameters.batch_size not in (None, "auto"):
                 hparams["batchSize"] = int(hyperparameters.batch_size)
             if hyperparameters.learning_rate_multiplier not in (None, "auto"):
-                hparams["learningRate"] = float(
-                    hyperparameters.learning_rate_multiplier
-                )
+                hparams["learningRate"] = float(hyperparameters.learning_rate_multiplier)
             payload["tuningSpec"]["hyperparameters"] = hparams  # type: ignore[assignment]
         if validation_file:
             payload["validationDataUri"] = validation_file
@@ -1096,9 +1097,7 @@ class GoogleBackend(BaseBackend):
             payload.update(extra_params)
 
         url = f"{self.base_url}/tunedModels"
-        response = await self._client.post(
-            url, params={"key": self.api_key}, json=payload
-        )
+        response = await self._client.post(url, params={"key": self.api_key}, json=payload)
         response.raise_for_status()
         data = response.json() if response.content else {}
         return FineTuneJob(
@@ -1132,9 +1131,11 @@ class GoogleBackend(BaseBackend):
         otherwise the caller must open the websocket themselves.
         """
         from encre.utils.types import RealtimeSession
+
         cfg = config
         if cfg is None:
             from encre.utils.types import RealtimeSessionConfig
+
             cfg = RealtimeSessionConfig(model=self.model)
 
         model_name = cfg.model or self.model or "gemini-2.5-flash"
@@ -1150,6 +1151,7 @@ class GoogleBackend(BaseBackend):
     async def _open_gemini_live_transport(self, _model_name, _cfg, _extra_params):
         ws_url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
         from httpx_ws import aconnect_ws  # type: ignore[import-not-found]
+
         try:
             return await aconnect_ws(
                 ws_url,

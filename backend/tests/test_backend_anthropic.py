@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -34,14 +33,15 @@ from encre.backends.anthropic import AnthropicBackend
 # Construction
 # ===========================================================================
 
+
 class TestAnthropicBackendConstruction:
     """Test AnthropicBackend instantiation with various parameters."""
 
     def test_create_default(self):
-        """Default model is claude-sonnet-4-20250514."""
+        """Default model is claude-sonnet-5."""
         be = AnthropicBackend(api_key="sk-ant-test")
-        # Verify: be.model == "claude-sonnet-4-20250514"
-        assert be.model == "claude-sonnet-4-20250514"
+        # Verify: be.model == "claude-sonnet-5"
+        assert be.model == "claude-sonnet-5"
         # Verify: be.api_key == "sk-ant-test"
         assert be.api_key == "sk-ant-test"
 
@@ -68,8 +68,8 @@ class TestAnthropicBackendConstruction:
         be = AnthropicBackend()
         # Verify: be.api_key == ""
         assert be.api_key == ""
-        # Verify: be.model == "claude-sonnet-4-20250514"
-        assert be.model == "claude-sonnet-4-20250514"
+        # Verify: be.model == "claude-sonnet-5"
+        assert be.model == "claude-sonnet-5"
 
     def test_create_initializes_http_client(self):
         """AnthropicBackend creates its own httpx.AsyncClient."""
@@ -83,6 +83,7 @@ class TestAnthropicBackendConstruction:
 # ===========================================================================
 # Capability checks
 # ===========================================================================
+
 
 class TestAnthropicBackendCapabilities:
     """Test supports_tool_calling, supports_thinking, supports_prompt_caching."""
@@ -146,6 +147,7 @@ class TestAnthropicBackendCapabilities:
 # Context window size
 # ===========================================================================
 
+
 class TestAnthropicBackendContextWindow:
     """Test context_window_size() for Claude models."""
 
@@ -180,6 +182,7 @@ class TestAnthropicBackendContextWindow:
 # Token counting
 # ===========================================================================
 
+
 class TestAnthropicBackendTokens:
     """Test count_tokens() for Anthropic backend."""
 
@@ -208,6 +211,7 @@ class TestAnthropicBackendTokens:
 # ===========================================================================
 # Prompt caching -- _apply_prompt_caching static method
 # ===========================================================================
+
 
 class TestAnthropicBackendPromptCaching:
     """Test the _apply_prompt_caching static method for cache_control injection."""
@@ -286,7 +290,7 @@ class TestAnthropicBackendPromptCaching:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image", "source": {"type": "base64", "data": "abc123", "media_type": "image/png"}},  # noqa: E501
+                    {"type": "image", "source": {"type": "base64", "data": "abc123", "media_type": "image/png"}},
                     {"type": "text", "text": "Describe this image."},
                 ],
             },
@@ -320,19 +324,21 @@ class TestAnthropicBackendPromptCaching:
 # Chat method signature / parameter inspection
 # ===========================================================================
 
+
 class TestAnthropicBackendChatSignature:
     """Test that the chat() method accepts expected parameters."""
 
     def test_chat_is_async_generator(self):
         """Chat method should be an async generator function."""
         import inspect
+
         # Verify: inspect.iscoroutinefunction(AnthropicBackend.chat) or \
-        assert inspect.iscoroutinefunction(AnthropicBackend.chat) or \
-            inspect.isasyncgenfunction(AnthropicBackend.chat)
+        assert inspect.iscoroutinefunction(AnthropicBackend.chat) or inspect.isasyncgenfunction(AnthropicBackend.chat)
 
     def test_chat_accepts_enable_caching(self):
         """Chat method signature includes enable_caching parameter."""
         import inspect
+
         sig = inspect.signature(AnthropicBackend.chat)
         params = sig.parameters
         # Verify: "enable_caching" in params
@@ -341,6 +347,7 @@ class TestAnthropicBackendChatSignature:
     def test_chat_accepts_max_tokens(self):
         """Chat method signature includes max_tokens parameter."""
         import inspect
+
         sig = inspect.signature(AnthropicBackend.chat)
         params = sig.parameters
         # Verify: "max_tokens" in params
@@ -351,6 +358,7 @@ class TestAnthropicBackendChatSignature:
     def test_chat_accepts_tools(self):
         """Chat method accepts optional tool definitions."""
         import inspect
+
         sig = inspect.signature(AnthropicBackend.chat)
         # Verify: "tools" in sig.parameters
         assert "tools" in sig.parameters
@@ -359,6 +367,7 @@ class TestAnthropicBackendChatSignature:
 # ===========================================================================
 # Lifecycle
 # ===========================================================================
+
 
 class TestAnthropicBackendLifecycle:
     """Test resource cleanup."""

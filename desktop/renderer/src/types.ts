@@ -56,6 +56,7 @@ export type ServerEvent =
   | ModelsList
   | SessionsList
   | SessionsAll
+  | ArchivedSessionsList
   | ConfigData
   | ModelsUpdated
   | ModelsFetched
@@ -76,11 +77,16 @@ export type ServerEvent =
   | SessionDeleted
   | SessionExported
   | SessionsExportedZip
+  | DataExportedZip
+  | DataExportProgress
+  | DataImportProgress
+  | DataImportDone
   | SessionRenamed
   | SubAgentsUpdated
   | WorkspaceOpened
   | WorkspacesList
   | WorkspaceRemoved
+  | WorkspaceConfigResponse
   | WorkspaceClosed
   | MemoryList
   | MemoryDetailEvent
@@ -108,7 +114,6 @@ export type ServerEvent =
   | UsageStatsEvent
   | GatewayStatusEvent
   | RunQueued
-  | AdapterTestResultEvent
   | WechatScanResultEvent
   | AutomationJobsList
   | AutomationJobHistory
@@ -233,6 +238,8 @@ export function defaultSearchFilter(): SearchFilter {
 export interface SearchResults {
   type: "search_results";
   results: SearchResultEntry[];
+  /** Echo of the client's `ClientSearch.seq`; undefined for legacy servers. */
+  seq?: number;
 }
 
 /** A streaming delta of assistant text content. */
@@ -328,7 +335,7 @@ export interface SessionReady {
   references?: ReferenceItem[];
   branches?: BranchMeta[];
   active_branch_id?: string;
-  is_running?: boolean;
+  state?: SessionState;
 }
 
 export interface ConfiguredEvent {
@@ -399,13 +406,6 @@ export interface UsageStatsEvent {
 export interface GatewayStatusEvent {
   type: "gateway_status";
   status: GatewayStatusData;
-}
-
-export interface AdapterTestResultEvent {
-  type: "adapter_test_result";
-  adapter_id: string;
-  success: boolean;
-  message: string;
 }
 
 /** Response from a WeChat QR code scan request.
@@ -511,11 +511,20 @@ export type ClientMessage =
   | ClientDeleteSession
   | ClientExportSession
   | ClientExportSessionsBatch
+  | ClientExportData
+  | ClientImportData
   | ClientRenameSession
+  | ClientArchiveSession
+  | ClientUnarchiveSession
+  | ClientListArchivedSessions
   | ClientListWorkspaces
   | ClientOpenWorkspace
   | ClientCloseWorkspace
   | ClientRemoveWorkspace
+  | ClientUploadWorkspaceIcon
+  | ClientRenameWorkspace
+  | ClientGetWorkspaceConfig
+  | ClientSaveWorkspaceConfig
   | ClientUpdateSubAgents
   | ClientGetMemoryList
   | ClientGetMemoryDetail
@@ -540,7 +549,6 @@ export type ClientMessage =
   | ClientReindexWorkspace
   | ClientDeleteIndex
   | ClientGetUsageStats
-  | ClientTestAdapter
   | ClientWechatScan
   | ClientAutomationListJobs
   | ClientAutomationGetHistory
@@ -560,12 +568,6 @@ export interface ClientSteer {
 
 export interface ClientGetUsageStats {
   type: "get_usage_stats";
-}
-
-export interface ClientTestAdapter {
-  type: "test_adapter";
-  adapter_id: string;
-  config: Record<string, unknown>;
 }
 
 export interface ClientWechatScan {
@@ -743,6 +745,8 @@ export interface ClientUpdateAgent {
 export interface ClientSearch {
   type: "search";
   query: string;
+  /** Client-incremented sequence; echoed back so stale responses are droppable. */
+  seq: number;
 }
 
 export interface ClientRollbackLog {
@@ -784,10 +788,36 @@ export interface ClientExportSessionsBatch {
   session_ids: string[];
 }
 
+export interface ClientExportData {
+  type: "export_data";
+  request_id?: string;
+}
+
+export interface ClientImportData {
+  type: "import_data";
+  zip_path: string;
+  mode?: "overwrite" | "replace" | "skip";
+  request_id?: string;
+}
+
 export interface ClientRenameSession {
   type: "rename_session";
   session_id: string;
   new_name: string;
+}
+
+export interface ClientArchiveSession {
+  type: "archive_session";
+  session_id: string;
+}
+
+export interface ClientUnarchiveSession {
+  type: "unarchive_session";
+  session_id: string;
+}
+
+export interface ClientListArchivedSessions {
+  type: "list_archived_sessions";
 }
 
 export interface ClientListWorkspaces {
@@ -809,6 +839,46 @@ export interface ClientCloseWorkspace {
 export interface ClientRemoveWorkspace {
   type: "remove_workspace";
   path: string;
+}
+
+export interface ClientUploadWorkspaceIcon {
+  type: "upload_workspace_icon";
+  path: string;
+  /** Full data URL of the picked image (data:image/...;base64,...). */
+  icon_data: string;
+}
+
+export interface ClientRenameWorkspace {
+  type: "rename_workspace";
+  path: string;
+  name: string;
+}
+
+/** Per-workspace config (mirrors the backend .encre/workspace.config.json).
+ *  null/absent key = reuse the global config for that key (3-layer:
+ *  global -> workspace -> runtime). */
+export interface WorkspaceConfig {
+  // NOTE: workspace-scoped model configuration was removed — workspaces use
+  // the same model set as general mode (every enabled model).
+  permissions?: Record<string, unknown> | null;
+  mcp?: Record<string, unknown> | null;
+}
+
+export interface ClientGetWorkspaceConfig {
+  type: "get_workspace_config";
+  path: string;
+}
+
+export interface ClientSaveWorkspaceConfig {
+  type: "save_workspace_config";
+  path: string;
+  config: WorkspaceConfig;
+}
+
+export interface WorkspaceConfigResponse {
+  type: "workspace_config";
+  path: string;
+  config: WorkspaceConfig;
 }
 
 export interface ClientReindexWorkspace {
@@ -845,6 +915,10 @@ export interface ModelConfigMeta {
   context_window: number;
   enabled: boolean;
   multimodal: boolean;
+  /** Recorded probe result: "supported" | "unsupported" | "unknown". */
+  multimodal_support?: "supported" | "unsupported" | "unknown";
+  /** Verified per-endpoint capability map: node name -> "supported" | "unsupported". */
+  capabilities?: Record<string, string>;
   thinking_config?: ThinkingConfigData;
 }
 
@@ -940,6 +1014,9 @@ export interface WorkspaceEntry {
   path: string;
   name: string;
   opened_at: number;
+  created_at?: number;
+  /** PNG data URL of the workspace icon (uploaded or generated). */
+  icon_data?: string;
   session_count?: number;
   index_status?: string;
   index_files?: number;
@@ -987,15 +1064,13 @@ export interface SessionSource {
   scope_id?: string;
 }
 
+export type SessionState = "idle" | "running" | "awaiting_approval";
+
 export interface SessionEntryData {
   session_id: string;
   created_at: number;
   last_active: number;
-  is_running: boolean;
-  /** True while the session is paused waiting for user approval (e.g. a
-   *  runtime tool-permission prompt). Rendered as a yellow breathing light
-   *  in both the sidebar and the tray. */
-  awaiting_approval?: boolean;
+  state: SessionState;
   preview?: string;
   name?: string;
   channel?: string;
@@ -1020,6 +1095,11 @@ export interface SessionsAll {
   iwork: SessionEntryData[];
 }
 
+export interface ArchivedSessionsList {
+  type: "archived_sessions_list";
+  sessions: SessionEntryData[];
+}
+
 export interface ConfigData {
   type: "config_data";
   config: Record<string, unknown>;
@@ -1038,6 +1118,11 @@ export interface ModelsFetched {
 
 export interface ModelValidated {
   type: "model_validated";
+  backend_type?: string;
+  model_id?: string;
+  model_index?: number;
+  /** Recorded probe result: "supported" | "unsupported" | "unknown". */
+  multimodal_support?: string;
 }
 
 export interface ModelValidationError {
@@ -1131,6 +1216,38 @@ export interface SessionsExportedZip {
   type: "sessions_exported_zip";
   zip_base64: string;
   filename: string;
+}
+
+export interface DataExportedZip {
+  type: "data_exported_zip";
+  zip_path: string;
+  filename: string;
+  request_id?: string;
+}
+
+export interface DataExportProgress {
+  type: "data_export_progress";
+  done: number;
+  total: number;
+  percent: number;
+  file?: string;
+}
+
+export interface DataImportProgress {
+  type: "data_import_progress";
+  done: number;
+  total: number;
+  percent: number;
+  file?: string;
+}
+
+export interface DataImportDone {
+  type: "data_import_done";
+  files: number;
+  restored: number;
+  skipped: number;
+  overwritten: number;
+  kept: number;
 }
 
 export interface SessionRenamed {
@@ -1344,6 +1461,7 @@ export interface PermissionRequest {
   type: "permission_request";
   tool_name: string;
   reason: string;
+  session_id?: string;
 }
 
 export interface PermissionPolicy {
@@ -1634,6 +1752,12 @@ export interface AppState {
   notifications: NotificationItem[];
   availableModels: string[];
   sessionsList: SessionEntryData[];
+  /** Archived sessions shown in the workspace manager's archive view. */
+  archivedSessions: SessionEntryData[];
+  /** Global session cache for search — NOT cleared on mode switches (unlike
+   *  `sessionsList`, which is emptied when entering a workspace), so session
+   *  search stays global across normal/iwork/automation modes. */
+  allSessions: SessionEntryData[];
   modelConfigs: ModelConfigMeta[];
   activeModelIndex: number;
   skillsList: SkillInfo[];
@@ -1648,7 +1772,12 @@ export interface AppState {
   };
   searchResults: SearchResultEntry[];
   automationHistory: any[];
+  /** Configured automation jobs — the single source for the automation panel
+   *  (fed by the unified push, same as automationHistory). */
+  automationJobs: any[];
   workspaces: WorkspaceEntry[];
+  /** Per-workspace config cache, keyed by workspace path. */
+  workspaceConfigs: Record<string, WorkspaceConfig>;
   activeWorkspace: string;
   workspaceMode: "iwork" | "normal";
   indexStatus: "idle" | "ready" | "indexing" | "error" | "no_workspace";
@@ -2065,6 +2194,8 @@ export function createEmptyState(): AppState {
     notifications: [],
     availableModels: [],
     sessionsList: [],
+    archivedSessions: [],
+    allSessions: [],
     modelConfigs: [],
     activeModelIndex: 0,
     skillsList: [],
@@ -2074,6 +2205,7 @@ export function createEmptyState(): AppState {
     artifacts: sessionSnapshot.artifacts,
     references: sessionSnapshot.references,
     compactEvents: sessionSnapshot.compactEvents,
+    compactStartingEvents: sessionSnapshot.compactStartingEvents,
     systemMessages: sessionSnapshot.systemMessages || [],
     spec: null,
     planReview: null,
@@ -2097,7 +2229,9 @@ export function createEmptyState(): AppState {
     },
     searchResults: [],
     automationHistory: [],
+    automationJobs: [],
     workspaces: [],
+    workspaceConfigs: {},
     activeWorkspace: "",
     workspaceMode: "normal",
     indexStatus: "idle",

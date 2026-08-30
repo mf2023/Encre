@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -162,13 +161,16 @@ class AnthropicBackend(BaseBackend):
             self.auth_manager = auth_manager
         elif fallback_keys:
             self.auth_manager = AuthManager(
-                provider="anthropic", api_key=api_key, fallback_keys=fallback_keys,
+                provider="anthropic",
+                api_key=api_key,
+                fallback_keys=fallback_keys,
             )
         else:
             self.auth_manager = None
 
         if self.auth_manager is not None and self.retry_config.on_auth_required is None:
             from dataclasses import replace
+
             self.retry_config = replace(
                 self.retry_config,
                 on_auth_required=self.auth_manager.refresh,
@@ -246,6 +248,7 @@ class AnthropicBackend(BaseBackend):
                     get_pinned,
                     mark_sent_to_api,
                 )
+
                 _pending = consume_pending(cache_edits_state)
                 _pinned = get_pinned(cache_edits_state)
                 if _pending is not None or _pinned:
@@ -298,7 +301,10 @@ class AnthropicBackend(BaseBackend):
                 try:
                     resp = await self._client.send(
                         self._client.build_request(
-                            "POST", "/messages", json=body, headers=_req_headers,
+                            "POST",
+                            "/messages",
+                            json=body,
+                            headers=_req_headers,
                         ),
                         stream=True,
                     )
@@ -310,7 +316,8 @@ class AnthropicBackend(BaseBackend):
                 except Exception as exc:
                     if self.connection_monitor:
                         self.connection_monitor.record_failure(
-                            _url, format_connection_error(exc),
+                            _url,
+                            format_connection_error(exc),
                         )
                     raise
 
@@ -358,6 +365,7 @@ class AnthropicBackend(BaseBackend):
                         if cache_edits_state is not None:
                             try:
                                 from encre.cache_edits import mark_sent_to_api
+
                                 mark_sent_to_api(cache_edits_state)
                             except Exception:
                                 pass
@@ -382,9 +390,7 @@ class AnthropicBackend(BaseBackend):
                                 "arguments": "",
                             }
                             current_tool_index = data.get("index", 0)
-                            yield create_backend_tool_call_delta(
-                                current_tool_index, "name", block.get("name", "")
-                            )
+                            yield create_backend_tool_call_delta(current_tool_index, "name", block.get("name", ""))
 
                     elif event_type == "content_block_delta":
                         # Incremental update to the current block.
@@ -405,9 +411,7 @@ class AnthropicBackend(BaseBackend):
                             partial = delta.get("partial_json", "")
                             if current_tool_use is not None:
                                 current_tool_use["arguments"] += partial
-                            yield create_backend_tool_call_delta(
-                                data.get("index", 0), "arguments", partial
-                            )
+                            yield create_backend_tool_call_delta(data.get("index", 0), "arguments", partial)
 
                     elif event_type == "content_block_stop":
                         # Block finished; flush any pending tool call.
@@ -485,9 +489,7 @@ class AnthropicBackend(BaseBackend):
         if self.thinking_mode == "disabled":
             return None
         # Adaptive mode is only valid for Opus 4.6+ / Sonnet 4.6+ / Claude 5.
-        if self.thinking_mode == "adaptive" and (
-            "opus-4-6" in m or "opus-4-7" in m or "sonnet-4-6" in m or "claude-5" in m
-        ):
+        if self.thinking_mode == "adaptive" and ("opus-4-6" in m or "opus-4-7" in m or "sonnet-4-6" in m or "claude-5" in m):
             effort = (self.thinking_effort or "").lower()
             if effort in {"low", "medium", "high"}:
                 return {"type": "adaptive", "effort": effort}
@@ -502,15 +504,17 @@ class AnthropicBackend(BaseBackend):
         """Return the context window size for Claude models.
 
         2026 reference:
-            - Claude Opus 4.7: 1,000,000 tokens (GA)
-            - Claude Sonnet 4.6: 1,000,000 tokens (GA)
-            - Claude Opus 4.6: 200,000 tokens
-            - Claude Sonnet 4.5: 200,000 tokens
-            - Claude Haiku 4.5: 200,000 tokens
-            - Claude Haiku 4.0: 200,000 tokens
+            - Claude Opus 5 / Fable 5 / Sonnet 5: 1,000,000 tokens
+            - Claude Opus 4.8 / Sonnet 4.6: 1,000,000 tokens
+            - Claude Opus 4.6 / Sonnet 4.5: 200,000 tokens
+            - Claude Haiku 4.5 / 4.0: 200,000 tokens
         """
         model_lower = self.model.lower()
-        if "opus-4-7" in model_lower or "sonnet-4-6" in model_lower:
+        # 5th generation -- 1M context.
+        if "opus-5" in model_lower or "fable-5" in model_lower or "sonnet-5" in model_lower:
+            return 1_000_000
+        # 4.8 / 4.7 / 4.6 (Sonnet) -- 1M context.
+        if "opus-4-8" in model_lower or "opus-4-7" in model_lower or "sonnet-4-6" in model_lower:
             return 1_000_000
         return 200_000
 
@@ -537,6 +541,7 @@ class AnthropicBackend(BaseBackend):
             return 0
         try:
             from encre.utils.tokens import estimate_tokens
+
             return estimate_tokens(text, model="claude-sonnet-5")
         except Exception:
             return len(text) // 4
@@ -548,6 +553,7 @@ class AnthropicBackend(BaseBackend):
         Results are cached for 5 minutes.
         """
         import time
+
         now = time.time()
         cache_key = f"anthropic:{self.api_key[:8] if self.api_key else 'noauth'}"
         if (
@@ -613,10 +619,7 @@ class AnthropicBackend(BaseBackend):
             if should_cache:
                 content = msg_copy.get("content")
                 if isinstance(content, str):
-                    msg_copy["content"] = [
-                        {"type": "text", "text": content,
-                         "cache_control": {"type": "ephemeral"}}
-                    ]
+                    msg_copy["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
                 elif isinstance(content, list):
                     blocks: list[dict[str, Any]] = []
                     cacheable_last_idx: int | None = None
@@ -673,6 +676,7 @@ class AnthropicBackend(BaseBackend):
         import base64
 
         from encre.utils.types import FileObject
+
         content = base64.b64decode(content_b64)
         files = {"file": (filename, content, mime_type)}
         data: dict[str, Any] = {}
@@ -680,9 +684,7 @@ class AnthropicBackend(BaseBackend):
             data["purpose"] = purpose
         if extra_params:
             data.update(extra_params)
-        response = await self._client.post(
-            "/files", files=files, data=data
-        )
+        response = await self._client.post("/files", files=files, data=data)
         response.raise_for_status()
         payload = response.json() if response.content else {}
         return FileObject(
@@ -693,9 +695,19 @@ class AnthropicBackend(BaseBackend):
             filename=str(payload.get("filename", filename)),
             mime_type=str(payload.get("mime_type", mime_type)),
             provider="anthropic",
-            metadata={k: v for k, v in payload.items() if k not in {
-                "id", "type", "size_bytes", "created_at", "filename", "mime_type",
-            }},
+            metadata={
+                k: v
+                for k, v in payload.items()
+                if k
+                not in {
+                    "id",
+                    "type",
+                    "size_bytes",
+                    "created_at",
+                    "filename",
+                    "mime_type",
+                }
+            },
         )
 
     async def list_files(
@@ -708,6 +720,7 @@ class AnthropicBackend(BaseBackend):
     ):
         """List files via the Anthropic ``/v1/files`` endpoint."""
         from encre.utils.types import FileListResponse, FileObject
+
         params: dict[str, Any] = {"limit": min(int(limit), 1000), "order": order}
         if after:
             params["after_id"] = after
@@ -728,9 +741,19 @@ class AnthropicBackend(BaseBackend):
                     filename=str(item.get("filename", "")),
                     mime_type=str(item.get("mime_type", "")),
                     provider="anthropic",
-                    metadata={k: v for k, v in item.items() if k not in {
-                        "id", "type", "size_bytes", "created_at", "filename", "mime_type",
-                    }},
+                    metadata={
+                        k: v
+                        for k, v in item.items()
+                        if k
+                        not in {
+                            "id",
+                            "type",
+                            "size_bytes",
+                            "created_at",
+                            "filename",
+                            "mime_type",
+                        }
+                    },
                 )
             )
         has_more = bool(payload.get("has_more", payload.get("last_id")))
@@ -746,6 +769,7 @@ class AnthropicBackend(BaseBackend):
     ):
         """Fetch metadata for a single uploaded file."""
         from encre.utils.types import FileObject
+
         response = await self._client.get(f"/files/{file_id}")
         response.raise_for_status()
         payload = response.json() if response.content else {}
@@ -757,9 +781,19 @@ class AnthropicBackend(BaseBackend):
             filename=str(payload.get("filename", "")),
             mime_type=str(payload.get("mime_type", "")),
             provider="anthropic",
-            metadata={k: v for k, v in payload.items() if k not in {
-                "id", "type", "size_bytes", "created_at", "filename", "mime_type",
-            }},
+            metadata={
+                k: v
+                for k, v in payload.items()
+                if k
+                not in {
+                    "id",
+                    "type",
+                    "size_bytes",
+                    "created_at",
+                    "filename",
+                    "mime_type",
+                }
+            },
         )
 
     async def delete_file(
@@ -778,6 +812,7 @@ class AnthropicBackend(BaseBackend):
         import base64
 
         from encre.utils.types import FileContent
+
         response = await self._client.get(f"/files/{file_id}/content")
         response.raise_for_status()
         content_b64 = base64.b64encode(response.content).decode("ascii")
@@ -836,9 +871,7 @@ class AnthropicBackend(BaseBackend):
         if extra_params:
             payload.update(extra_params)
 
-        response = await self._client.post(
-            "/messages/batches", json=payload
-        )
+        response = await self._client.post("/messages/batches", json=payload)
         response.raise_for_status()
         data = response.json() if response.content else {}
         return _parse_anthropic_batch(data, provider="anthropic")
@@ -861,6 +894,7 @@ class AnthropicBackend(BaseBackend):
     ):
         """List recent Anthropic Messages Batches."""
         from encre.utils.types import BatchListResponse
+
         params: dict[str, Any] = {"limit": min(int(limit), 1000)}
         if after:
             params["after_id"] = after
@@ -882,9 +916,7 @@ class AnthropicBackend(BaseBackend):
         batch_id: str,
     ):
         """Cancel an in-flight Anthropic Messages Batch."""
-        response = await self._client.post(
-            f"/messages/batches/{batch_id}/cancel"
-        )
+        response = await self._client.post(f"/messages/batches/{batch_id}/cancel")
         response.raise_for_status()
         data = response.json() if response.content else {}
         return _parse_anthropic_batch(data, provider="anthropic")
@@ -893,6 +925,7 @@ class AnthropicBackend(BaseBackend):
 def _parse_anthropic_batch(data: dict[str, Any], provider: str):
     """Convert an Anthropic Messages Batch payload into our shape."""
     from encre.utils.types import BatchObject
+
     counts = data.get("request_counts", {}) or {}
     if not isinstance(counts, dict):
         counts = {}
@@ -904,18 +937,31 @@ def _parse_anthropic_batch(data: dict[str, Any], provider: str):
         input_file_id=str(data.get("input_file_id", "")),
         output_file_id=str(data.get("output_file_id", "")),
         error_file_id=str(data.get("error_file_id", "")),
-        created_at=int(data.get("created_at", "").timestamp() if hasattr(data.get("created_at"), "timestamp") else data.get("created_at", 0) or 0),
-        expires_at=int(data.get("expires_at", "").timestamp() if hasattr(data.get("expires_at"), "timestamp") else data.get("expires_at", 0) or 0),
+        created_at=int(
+            data.get("created_at", "").timestamp() if hasattr(data.get("created_at"), "timestamp") else data.get("created_at", 0) or 0
+        ),
+        expires_at=int(
+            data.get("expires_at", "").timestamp() if hasattr(data.get("expires_at"), "timestamp") else data.get("expires_at", 0) or 0
+        ),
         completed_at=None,
         failed_at=None,
-        request_counts={
-            str(k): int(v) for k, v in counts.items() if isinstance(v, int | float)
-        },
+        request_counts={str(k): int(v) for k, v in counts.items() if isinstance(v, int | float)},
         completion_window="24h",
         provider=provider,
-        metadata={k: v for k, v in data.items() if k not in {
-            "id", "processing_status", "status", "input_file_id",
-            "output_file_id", "error_file_id", "created_at",
-            "expires_at", "request_counts",
-        }},
+        metadata={
+            k: v
+            for k, v in data.items()
+            if k
+            not in {
+                "id",
+                "processing_status",
+                "status",
+                "input_file_id",
+                "output_file_id",
+                "error_file_id",
+                "created_at",
+                "expires_at",
+                "request_counts",
+            }
+        },
     )

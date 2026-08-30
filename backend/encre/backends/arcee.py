@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -47,7 +46,7 @@ class ArceeBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "arcee-v2",
+        model: str = "trinity-large-thinking",
         **kwargs: Any,
     ) -> None:
         """Initialize the Arcee AI backend.

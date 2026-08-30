@@ -2188,15 +2188,6 @@ class EncreLoop:
             except Exception:
                 pass
 
-            # Inject reference document context
-            try:
-                doc_prompt = self._ctx_bldr.build_document_context()
-                if doc_prompt:
-                    self._ctx_renderer.record("Documents", doc_prompt)
-                    system_prompt = system_prompt + "\n\n" + doc_prompt
-            except Exception:
-                pass
-
         stage_prompt = self._build_stage_prompt()
         if stage_prompt:
             self._ctx_renderer.record("Task Stage", stage_prompt)
@@ -2237,6 +2228,22 @@ class EncreLoop:
                 )
                 self._ctx_renderer.record("User Rules", rules_prompt)
                 system_prompt = system_prompt + "\n\n" + rules_block
+                if _skip_enrichment:
+                    # Headless runs (automation jobs / delegated sub-agents)
+                    # have no live user.  Conversational user rules such as
+                    # "answer only" / "no file operations" kept leaking into
+                    # these runs and the model refused to use tools at all
+                    # ("根据当前约束…不能调用搜索工具"), so the job produced
+                    # nothing.  Close with an authoritative override.
+                    system_prompt = system_prompt + (
+                        "\n\n## Headless Execution Override (authoritative)\n"
+                        "This is a background automation / sub-agent run; no live user is waiting."
+                        " Conversational user rules such as \"answer only\" or \"no file operations\""
+                        " govern how you REPORT the result, not whether you may act. They must never"
+                        " stop you from using the tools this task requires (web search, file read/write,"
+                        " terminal, ...). Complete the task with whichever tools are needed -- do not"
+                        " refuse, ask permission, or postpone it because of conversational constraints."
+                    )
         except Exception:
             pass
 
@@ -2270,7 +2277,7 @@ class EncreLoop:
             for _varname in (
                 "codebase_ctx", "skill_prompt", "tool_skills_prompt",
                 "doc_skills_prompt", "memory_prompt", "profile_prompt",
-                "soul_prompt", "doc_prompt", "stage_prompt",
+                "soul_prompt", "stage_prompt",
                 "working_set_prompt", "turn_summary_prompt", "stuck_prompt",
                 "rules_prompt", "ctx_annotation",
             ):

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
@@ -59,7 +58,7 @@ class TencentBackend(OpenAISSEBackend):
         self,
         api_key: str = "",
         base_url: str = "",
-        model: str = "hy3",
+        model: str = "hunyuan-a13b",
         **kwargs: Any,
     ) -> None:
         if not base_url:
@@ -86,4 +85,11 @@ class TencentBackend(OpenAISSEBackend):
         return None
 
     def context_window_size(self) -> int:
-        return 131072
+        m = self.model.lower()
+        if "hy4" in m:
+            return 1_024_000
+        if "a13b" in m:
+            return 224_000
+        if "vision" in m or "role" in m:
+            return 28_000
+        return 131_072

@@ -44,6 +44,7 @@ links a session id, its agent, the running task, and metadata.
 """
 
 import asyncio
+import threading
 import contextlib
 import json
 import logging
@@ -53,14 +54,30 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, ClassVar
+from enum import Enum
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from encre.agent import EncreAgent
 from encre.config import EncreConfig, get_data_dir
 from encre.crypto import decrypt, encrypt
-from encre.session import EncreSession
+from encre.session import EncreSession, _atomic_write_text
 from encre.tools.defaults import register_default_tools
 from encre.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from encre.agent import EncreAgent
+
+
+class SessionState(str, Enum):
+    """Unified session state machine.
+
+    ``IDLE``               — session exists but not running.
+    ``RUNNING``            — agent loop is actively processing.
+    ``AWAITING_APPROVAL``  — agent loop is blocked waiting for user permission.
+    """
+
+    IDLE = "idle"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
 
 
 @dataclass
@@ -77,7 +94,7 @@ class SessionInfo:
     agent_task: asyncio.Task[None] | None = None
     created_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
-    is_running: bool = False
+    state: SessionState = SessionState.IDLE
     pending_runs: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     sessions_dir: str = ""
@@ -120,6 +137,7 @@ class SessionManager:
 
     def __init__(self, max_concurrent: int = 20, idle_timeout: float = 3600.0, sessions_dir: str | None = None) -> None:
         self._sessions: dict[str, SessionInfo] = {}
+        self._lock = threading.RLock()
         self._max_concurrent = max_concurrent
         self._idle_timeout = idle_timeout
         self._semaphore = asyncio.Semaphore(max_concurrent)
@@ -221,12 +239,58 @@ class SessionManager:
         if info is not None and info.sessions_dir:
             sessions_dir = info.sessions_dir
         else:
+            resolved = None
             for sess_dict in self._dir_sessions.values():
                 cached = sess_dict.get(session_id)
                 if cached is not None and cached.sessions_dir:
-                    sessions_dir = cached.sessions_dir
+                    resolved = cached.sessions_dir
                     break
+            if resolved is None:
+                # The session is not tracked in memory, so it may live in a
+                # different workspace's directory (or the global one). iWork
+                # mode shows every workspace's history in one flat list, so
+                # resolve the directory across all of them instead of falling
+                # back to creating a fresh empty session under the active
+                # workspace (which would shadow the real one and make it
+                # vanish from the sidebar).
+                resolved = self._find_session_dir_anywhere(session_id, sessions_dir)
+            if resolved is not None:
+                sessions_dir = resolved
         return pathlib.Path(sessions_dir) / session_id
+
+    def _find_session_dir_anywhere(
+        self, session_id: str, current_sessions_dir: str
+    ) -> str | None:
+        """Locate a session directory across every workspace and the global dir.
+
+        Returns the parent sessions directory that contains *session_id*, or
+        None if the session does not exist anywhere on disk.
+        """
+        candidates: list[str] = []
+        try:
+            iwork_root = get_data_dir() / "iwork"
+            if iwork_root.is_dir():
+                candidates.extend(
+                    str(ws_dir / "sessions")
+                    for ws_dir in iwork_root.iterdir()
+                    if ws_dir.is_dir()
+                )
+        except Exception:
+            pass
+        # iClaw desktop sessions live under their own directory tree.
+        try:
+            iclaw_dir = get_data_dir() / "iclaw" / "sessions"
+            if iclaw_dir.is_dir():
+                candidates.append(str(iclaw_dir))
+        except Exception:
+            pass
+        global_dir = str(get_data_dir() / "sessions")
+        if global_dir != current_sessions_dir:
+            candidates.append(global_dir)
+        for sess_dir in candidates:
+            if (pathlib.Path(sess_dir) / session_id).is_dir():
+                return sess_dir
+        return None
 
     # ── index ───────────────────────────────────────────────────────────────
 
@@ -283,7 +347,7 @@ class SessionManager:
             pass
         # Purge any temp_chat index entries that no longer have a directory.
         stale = [sid for sid, idx in list(self._index.items())
-                 if idx.get("temp_chat")]
+                 if idx.get("metadata", {}).get("temp_chat") or idx.get("temp_chat")]
         for sid in stale:
             self._index.pop(sid, None)
             repaired = True
@@ -291,10 +355,11 @@ class SessionManager:
             self._save_index()
 
     def _save_index(self) -> None:
-        if not self._index_dirty:
-            return
-        self._save_index_for_dir(self._get_sessions_dir(), self._index)
-        self._index_dirty = False
+        with self._lock:
+            if not self._index_dirty:
+                return
+            self._save_index_for_dir(self._get_sessions_dir(), self._index)
+            self._index_dirty = False
 
     def _make_index_entry(self, info: SessionInfo, preview: str = "") -> dict[str, Any]:
         sess = info.agent.session
@@ -303,6 +368,12 @@ class SessionManager:
         channel = sess.metadata.get("channel", info.metadata.get("channel", "normal"))
         # Persist workspace path so iWork sessions can be re-entered from disk.
         workspace = info.metadata.get("workspace") or sess.metadata.get("workspace", "")
+        # Archived flag: hidden from normal lists, visible in the archive view.
+        archived = bool(
+            info.metadata.get("archived")
+            or sess.metadata.get("archived")
+            or existing.get("archived", False)
+        )
         # The sidebar ordering time MUST reflect the real last conversation,
         # not the session creation time or any "touch" on click.  For sessions
         # that actually contain messages we use the session's last_message_at;
@@ -326,6 +397,7 @@ class SessionManager:
             # conversation. Preserve it whenever a normal session save refreshes
             # the rest of this index entry.
             "name": info.metadata.get("name", existing.get("name", "")),
+            "archived": archived,
         }
 
     def _index_add(self, info: SessionInfo, preview: str = "") -> None:
@@ -409,6 +481,7 @@ class SessionManager:
                         "turn_count": 0,
                         "channel": channel,
                         "workspace": "",
+                        "archived": False,
                     }
                     repaired = True
                     continue
@@ -432,12 +505,16 @@ class SessionManager:
                     "turn_count": meta.get("turn_count", 0),
                     "channel": channel,
                     "workspace": ws_path,
+                    # Restore the archived flag from meta.json so an index
+                    # rebuild never resurrects an archived session into the
+                    # normal sidebar.
+                    "archived": bool(meta_metadata.get("archived", False)),
                 }
                 repaired = True
             # Also purge stale temp_chat entries that no longer have a directory.
             stale_temp_sids = [
                 sid for sid in list(self._index.keys())
-                if self._index[sid].get("temp_chat")
+                if self._index[sid].get("metadata", {}).get("temp_chat") or self._index[sid].get("temp_chat")
             ]
             for sid in stale_temp_sids:
                 self._index.pop(sid, None)
@@ -501,6 +578,7 @@ class SessionManager:
             from encre.mode_profiles import AgentMode
             mode = AgentMode.WORKSPACE if (config.workspace or "").strip() else AgentMode.GENERAL
         tool_registry = _clone_tool_registry()
+        from encre.agent import EncreAgent
         agent = EncreAgent(config=config, tool_registry=tool_registry, mode=mode)
         agent.telemetry.session_id = session_id
         info = SessionInfo(session_id=session_id, agent=agent)
@@ -546,6 +624,27 @@ class SessionManager:
     def get_session(self, session_id: str) -> SessionInfo | None:
         return self._sessions.get(session_id)
 
+    def get_session_state(self, session_id: str) -> str:
+        """Return the current state of a session (value of ``SessionState``)."""
+        info = self._sessions.get(session_id)
+        if info is None:
+            for sess_dict in self._dir_sessions.values():
+                info = sess_dict.get(session_id)
+                if info is not None:
+                    break
+        if info is None:
+            return SessionState.IDLE.value
+        task_alive = info.agent_task is not None and not info.agent_task.done()
+        if info.state == SessionState.RUNNING and not task_alive:
+            return SessionState.IDLE.value
+        return info.state.value
+
+    def set_session_state(self, session_id: str, new_state: SessionState) -> None:
+        """Transition a session to a new state (no-op if session not found)."""
+        info = self._sessions.get(session_id)
+        if info is not None:
+            info.state = new_state
+
     def is_session_running(self, session_id: str) -> bool:
         """Return True if the session is in memory and its agent task is alive."""
         info = self._sessions.get(session_id)
@@ -556,7 +655,7 @@ class SessionManager:
                     break
         if info is None:
             return False
-        return info.is_running or (info.agent_task is not None and not info.agent_task.done())
+        return info.state in (SessionState.RUNNING, SessionState.AWAITING_APPROVAL) or (info.agent_task is not None and not info.agent_task.done())
 
     def load_or_create_session(self, session_id: str, config: EncreConfig | None = None, mode: Any = None) -> SessionInfo:
         """Return the live session for *session_id*, loading it from disk if needed.
@@ -598,6 +697,7 @@ class SessionManager:
                 if mode is None:
                     from encre.mode_profiles import AgentMode
                     mode = AgentMode.WORKSPACE if (cfg.workspace or "").strip() else AgentMode.GENERAL
+                from encre.agent import EncreAgent
                 agent = EncreAgent(config=cfg, tool_registry=tool_registry, mode=mode)
                 agent.telemetry.session_id = session_id
                 agent.session = EncreSession.load_from_dir(str(dir_path), cfg)
@@ -609,7 +709,10 @@ class SessionManager:
                 with contextlib.suppress(Exception):
                     agent.telemetry.restore_session_cost_from_jsonl()
                 info = SessionInfo(session_id=session_id, agent=agent)
-                info.sessions_dir = self._get_sessions_dir()
+                # Persist back to the directory the session was actually
+                # loaded from — it may be a different workspace's directory
+                # when resumed from the flat iWork session list.
+                info.sessions_dir = str(dir_path.parent)
                 if meta:
                     info.created_at = meta.get("created_at", time.time())
                     info.last_active = meta.get("updated_at", time.time())
@@ -625,8 +728,19 @@ class SessionManager:
                 # ordering would use a stale value from the previous index
                 # write and clicking the session would appear to "reset" the
                 # timestamp.
-                self._index[session_id] = self._make_index_entry(info)
-                self._save_index()
+                #
+                # CRITICAL: write into the session's OWN directory index, not
+                # the currently-active one.  The session may have been loaded
+                # from a different workspace's directory (flat iWork list), and
+                # writing it into the active workspace's index would leak a
+                # foreign session into that workspace's sidebar (data mismatch).
+                target_dir = info.sessions_dir or self._get_sessions_dir()
+                index = self._load_index_for_dir(target_dir)
+                index[session_id] = self._make_index_entry(info)
+                self._save_index_for_dir(target_dir, index)
+                if target_dir == self._get_sessions_dir():
+                    self._index = index
+                    self._index_dirty = False
                 self._register_user_message_persist_hook(info)
                 return info
             except Exception:
@@ -679,16 +793,21 @@ class SessionManager:
             shutil.rmtree(str(dir_path), ignore_errors=True)
             removed = True
 
-        # Remove from the directory's index.
-        index = self._load_index_for_dir(sessions_dir)
-        had_index = session_id in index
-        if had_index:
+        # Remove from EVERY directory index that carries the session — a
+        # session can appear in multiple workspace indexes (stale entries),
+        # and leaving any behind would resurrect it in that sidebar.
+        active_dir = self._get_sessions_dir()
+        for dir_path in self._all_sessions_dirs():
+            index = self._load_index_for_dir(dir_path)
+            if session_id not in index:
+                continue
             index.pop(session_id, None)
-            self._save_index_for_dir(sessions_dir, index)
-        # Keep the active in-memory index in sync when deleting the active dir.
-        if sessions_dir == self._get_sessions_dir():
-            self._index = index
-            self._index_dirty = False
+            self._save_index_for_dir(dir_path, index)
+            if dir_path == active_dir:
+                self._index = index
+                self._index_dirty = False
+            had_index = True
+            removed = True
 
         self._fire_sessions_changed()
         # If the session existed anywhere (memory, disk, or index), treat as success.
@@ -701,22 +820,233 @@ class SessionManager:
             )
         return removed
 
+    # ── archive / unarchive ────────────────────────────────────────────────
+
+    def archive_session(self, session_id: str) -> bool:
+        """Hide a session from the normal sidebar by flagging it as archived.
+
+        Archiving never touches the session data — it only flips a flag that
+        is persisted in BOTH the session's meta.json metadata (survives index
+        rebuilds and restarts) and the owning directory's index entry (so
+        listing paths can filter cheaply).  Returns True when the session was
+        found and flagged.
+        """
+        return self._set_archived(session_id, True)
+
+    def unarchive_session(self, session_id: str) -> bool:
+        """Restore a previously archived session back into the normal lists."""
+        return self._set_archived(session_id, False)
+
+    def _set_archived(self, session_id: str, archived: bool) -> bool:
+        """Core flag flip shared by archive_session / unarchive_session."""
+        import json as _json
+
+        from encre.crypto import encrypt as _encrypt
+
+        found = False
+        sessions_dir = ""
+        # 1) In-memory session (active or stashed pool): keep the live object
+        #    in sync so a later _save_session() flush preserves the flag.
+        info = self._sessions.get(session_id)
+        if info is None:
+            for sess_dict in self._dir_sessions.values():
+                info = sess_dict.get(session_id)
+                if info is not None:
+                    break
+        if info is not None:
+            found = True
+            sessions_dir = info.sessions_dir or self._get_sessions_dir()
+            info.metadata["archived"] = archived
+            if hasattr(info.agent, "session") and info.agent.session is not None:
+                info.agent.session.metadata["archived"] = archived
+
+        # 2) Resolve the owning directory on disk if not already known.
+        if not sessions_dir:
+            # Check the active directory itself first — a disk-only session in
+            # the global (normal-mode) directory is NOT covered by
+            # _find_session_dir_anywhere, which only scans the *other*
+            # directories (workspaces / iclaw / alternate global).
+            active_dir = self._get_sessions_dir()
+            if (pathlib.Path(active_dir) / session_id).is_dir():
+                sessions_dir = active_dir
+                found = True
+            else:
+                resolved = self._find_session_dir_anywhere(session_id, active_dir)
+                if resolved is None:
+                    return False
+                sessions_dir = resolved
+                found = True
+
+        # 3) Persist the flag into the session's meta.json metadata so the
+        #    index rebuild (bootstrap) can restore it after a restart.
+        dir_path = pathlib.Path(sessions_dir) / session_id
+        if dir_path.is_dir():
+            meta = EncreSession.read_meta(str(dir_path))
+            if meta is not None:
+                meta_metadata = meta.get("metadata") or {}
+                if bool(meta_metadata.get("archived", False)) != archived:
+                    meta_metadata["archived"] = archived
+                    meta["metadata"] = meta_metadata
+                    payload = _json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
+                    with contextlib.suppress(Exception):
+                        payload = _encrypt(payload)
+                    _atomic_write_text(dir_path / "meta.json", payload)
+                found = True
+
+        # 4) Update the flag in EVERY directory index that carries this
+        #    session.  A session can legitimately appear in more than one
+        #    workspace index (stale entries written before a workspace switch),
+        #    so updating only the owning directory leaks the archived session
+        #    back into the normal lists via the other index.
+        active_dir = self._get_sessions_dir()
+        for dir_path in self._all_sessions_dirs():
+            index = self._load_index_for_dir(dir_path)
+            if session_id not in index:
+                continue
+            index[session_id]["archived"] = archived
+            self._save_index_for_dir(dir_path, index)
+            # Keep the active in-memory index in sync when archiving the
+            # active directory.
+            if dir_path == active_dir:
+                self._index = index
+                self._index_dirty = False
+        self._fire_sessions_changed()
+        return found
+
+    def list_archived_sessions(self) -> list[dict[str, Any]]:
+        """Return archived sessions across every session directory.
+
+        Mirrors the cross-directory scan used by the sidebar listing but keeps
+        only entries flagged ``archived`` (in-memory + on-disk), sorted by
+        last activity, newest first.
+        """
+        result: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def _entry(info: SessionInfo | None, idx: dict[str, Any]) -> None:
+            sid = idx.get("session_id", "")
+            if not sid or sid in seen:
+                return
+            seen.add(sid)
+            # Mirror the canonical workspace path into metadata so the archive
+            # manager can render the owning-workspace icon (same shape as the
+            # sidebar session rows).
+            meta = dict(idx.get("metadata", {}) or {})
+            ws = idx.get("workspace") or meta.get("workspace") or meta.get("workspace_path") or ""
+            if ws:
+                meta["workspace"] = ws
+                meta["workspace_path"] = ws
+            result.append({
+                "session_id": sid,
+                "created_at": idx.get("created_at", 0),
+                "last_active": idx.get("last_active", 0),
+                "state": self.get_session_state(sid) if info is not None else SessionState.IDLE.value,
+                "metadata": meta,
+                "preview": idx.get("preview", ""),
+                "name": idx.get("name", ""),
+                "channel": idx.get("channel", "normal"),
+                "message_count": idx.get("message_count", 0),
+            })
+
+        # In-memory archived sessions (active + stashed pools).
+        for pool in [self._sessions, *self._dir_sessions.values()]:
+            for sid, info in pool.items():
+                if not (info.metadata.get("archived") or (
+                    hasattr(info.agent, "session")
+                    and info.agent.session
+                    and info.agent.session.metadata.get("archived")
+                )):
+                    continue
+                idx = self._make_index_entry(info)
+                _entry(info, idx)
+
+        # On-disk archived entries across every directory.
+        for dir_path in self._all_sessions_dirs():
+            index = self._load_index_for_dir(dir_path)
+            for sid, entry in index.items():
+                if not entry.get("archived"):
+                    continue
+                # Skip orphan entries whose session directory does not live
+                # in this directory — a session belongs to exactly one
+                # workspace, and an orphan entry would report the wrong
+                # workspace (wrong icon).
+                if not os.path.isdir(os.path.join(dir_path, sid)):
+                    continue
+                fallback_active = entry.get("last_active", 0)
+                last_active = EncreSession.read_meta_last_active(
+                    os.path.join(dir_path, sid), fallback_active
+                )
+                entry = dict(entry)
+                entry["last_active"] = last_active
+                entry["metadata"] = {"workspace": entry.get("workspace", "")} if entry.get("workspace") else {}
+                _entry(None, entry)
+
+        result.sort(key=lambda e: e.get("last_active", e.get("created_at", 0)), reverse=True)
+        return result
+
+    def _all_sessions_dirs(self) -> list[str]:
+        """Every sessions directory that can hold desktop sessions:
+        the active one, the global one, iClaw, and every registered workspace.
+        """
+        dirs: list[str] = []
+        active = self._get_sessions_dir()
+        for d in (active, str(get_data_dir() / "sessions"), str(get_data_dir() / "iclaw" / "sessions")):
+            if d not in dirs:
+                dirs.append(d)
+        try:
+            iwork_root = get_data_dir() / "iwork"
+            if iwork_root.is_dir():
+                for ws_dir in iwork_root.iterdir():
+                    if not ws_dir.is_dir():
+                        continue
+                    d = str(ws_dir / "sessions")
+                    if d not in dirs:
+                        dirs.append(d)
+        except Exception:
+            pass
+        return dirs
+
     def rename_session(self, session_id: str, new_name: str, *, manual: bool = True) -> bool:
-        """Rename a session by updating its display name in the index."""
-        self._get_sessions_dir()
-        if session_id not in self._index:
-            self._bootstrap_index_from_disk()
-        if session_id not in self._index:
+        """Rename a session by updating its display name in the index.
+
+        The index entry lives in the session's OWN directory (the workspace
+        or global dir it belongs to), so the rename must be written there —
+        never into the currently-active directory, which may be a different
+        workspace and would create a foreign entry (data mismatch in the
+        sidebar).
+        """
+        target_dir = ""
+        info = self._sessions.get(session_id)
+        if info is not None:
+            target_dir = info.sessions_dir or self._get_sessions_dir()
+        else:
+            for sess_dict in self._dir_sessions.values():
+                cached = sess_dict.get(session_id)
+                if cached is not None:
+                    target_dir = cached.sessions_dir or self._get_sessions_dir()
+                    info = cached
+                    break
+        if not target_dir:
+            active_dir = self._get_sessions_dir()
+            if (pathlib.Path(active_dir) / session_id).is_dir():
+                target_dir = active_dir
+            else:
+                resolved = self._find_session_dir_anywhere(session_id, active_dir)
+                if resolved is None:
+                    return False
+                target_dir = resolved
+        index = self._load_index_for_dir(target_dir)
+        if session_id not in index:
             # Session may be in-memory only (not yet persisted to disk index).
             # Create a minimal index entry so the name persists.
-            info = self._sessions.get(session_id)
             if info is None:
                 return False
-            self._index_add(info)
-        self._index[session_id]["name"] = new_name
-        self._index_dirty = True
-        self._save_index()
-        info = self._sessions.get(session_id)
+            index[session_id] = self._make_index_entry(info)
+        index[session_id]["name"] = new_name
+        self._save_index_for_dir(target_dir, index)
+        if target_dir == self._get_sessions_dir():
+            self._index = index
+            self._index_dirty = False
         if info is not None:
             info.metadata["name"] = new_name
             if manual:
@@ -749,17 +1079,65 @@ class SessionManager:
 
     def list_sessions(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
-        for info in self._sessions.values():
+        # Snapshot under the lock: the startup resume runs in a worker thread
+        # and may insert into _sessions while we iterate.
+        with self._lock:
+            infos = list(self._sessions.values())
+        for info in infos:
+            # Skip temp chat sessions — they are ephemeral and must never
+            # appear in the sidebar or any session listing.
+            if hasattr(info.agent, "session") and info.agent.session and info.agent.session.metadata.get("temp_chat"):
+                continue
+            # Archived sessions are hidden from the normal sidebar; they are
+            # only reachable through the archive manager view.
+            if info.metadata.get("archived") or (
+                hasattr(info.agent, "session")
+                and info.agent.session
+                and info.agent.session.metadata.get("archived")
+            ):
+                continue
             msg_count = 0
             preview = ""
             if hasattr(info.agent, "session") and info.agent.session:
                 msg_count, preview = info.agent.session.get_summary()
+            # Mirror the canonical workspace path into `workspace_path` so the
+            # frontend's iWork sidebar filter can attribute this in-memory
+            # session to exactly one workspace.  Some flows set
+            # metadata["workspace"] but not workspace_path; without this,
+            # a still-active session from ANOTHER workspace would be let
+            # through (`!workspace_path` → show) into every workspace list.
+            meta = dict(info.metadata)
+            ws = meta.get("workspace") or (
+                info.agent.session.metadata.get("workspace")
+                if hasattr(info.agent, "session") and info.agent.session
+                else None
+            )
+            if not ws:
+                # Best-effort disk fallback: in-memory metadata can miss the
+                # workspace when the session was loaded with a stale path; the
+                # on-disk meta.json is the canonical record.  Only consulted
+                # for sessions whose workspace is unknown (rare).
+                try:
+                    sid_dir = self._session_dir_path(info.session_id)
+                    if sid_dir.is_dir():
+                        _meta = EncreSession.read_meta(str(sid_dir))
+                        if isinstance(_meta, dict):
+                            ws = (
+                                ((_meta.get("metadata", {}) or {}).get("workspace"))
+                                or _meta.get("workspace")
+                                or ""
+                            )
+                except Exception:
+                    ws = ""
+            if ws and "workspace_path" not in meta:
+                meta["workspace"] = ws
+                meta["workspace_path"] = ws
             result.append({
                 "session_id": info.session_id,
                 "created_at": info.created_at,
                 "last_active": getattr(info.agent.session, "last_message_at", info.agent.session.updated_at) if hasattr(info.agent, "session") and info.agent.session else info.last_active,
-                "is_running": info.is_running,
-                "metadata": info.metadata,
+                "state": info.state.value,
+                "metadata": meta,
                 "preview": preview,
                 "name": info.metadata.get("name", self._index.get(info.session_id, {}).get("name", "")),
                 "channel": (info.agent.session.metadata.get("channel") if hasattr(info.agent, "session") and info.agent.session and info.agent.session.metadata
@@ -773,14 +1151,23 @@ class SessionManager:
             })
         return result
 
-    def query_index(self) -> list[dict[str, Any]]:
-        """Return all sessions known from the on-disk index."""
+    def query_index(self, include_archived: bool = False) -> list[dict[str, Any]]:
+        """Return all sessions known from the on-disk index.
+
+        Archived sessions are excluded by default; pass ``include_archived=True``
+        to receive the full index (used by the archive manager view).
+        """
         self._get_sessions_dir()
         if not self._index:
             self._bootstrap_index_from_disk()
         sessions_dir = self._get_sessions_dir()
         entries: list[dict[str, Any]] = []
-        for sid, entry in self._index.items():
+        # Snapshot under the lock so a concurrent background session load
+        # (startup resume in a worker thread) cannot resize the dict while we
+        # iterate it.
+        with self._lock:
+            index_items = list(self._index.items())
+        for sid, entry in index_items:
             # Always prefer the canonical last_message_at from meta.json so
             # the displayed timestamp does not get rewritten on every click.
             # Fall back to the persisted index value, then to 0.
@@ -792,7 +1179,7 @@ class SessionManager:
                 "session_id": sid,
                 "created_at": entry.get("created_at", 0),
                 "last_active": last_active,
-                "is_running": False,
+                "state": SessionState.IDLE.value,
                 "metadata": (
                     {"workspace": entry.get("workspace", "")}
                     if entry.get("workspace")
@@ -802,8 +1189,11 @@ class SessionManager:
                 "name": entry.get("name", ""),
                 "channel": entry.get("channel", "normal"),
                 "message_count": entry.get("message_count", 0),
+                "archived": entry.get("archived", False),
             })
         entries.sort(key=lambda e: e.get("last_active", e.get("created_at", 0)), reverse=True)
+        if not include_archived:
+            entries = [e for e in entries if not e.get("archived")]
         entries = [e for e in entries if (e.get("message_count") or 0) > 0]
         return entries
 
@@ -816,7 +1206,7 @@ class SessionManager:
         now = time.time()
         to_remove: list[str] = []
         for sid, info in self._sessions.items():
-            if now - info.last_active > self._idle_timeout and not info.is_running:
+            if now - info.last_active > self._idle_timeout and info.state == SessionState.IDLE:
                 to_remove.append(sid)
         for sid in to_remove:
             await self.remove_session(sid)

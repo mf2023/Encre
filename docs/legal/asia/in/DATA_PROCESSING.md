@@ -5,7 +5,7 @@
 
 ## 1. Local-First Declaration
 
-**Encre is local-first:** conversations, prompts, AI outputs, session history, settings, skills, memory and indexes are stored **entirely on your device**. In **pure local mode** (no cloud backend configured), **no data ever passes through Dunimd servers**. Apache-2.0 source lets you audit this.
+**Encre Agent is local-first:** conversations, prompts, AI outputs, session history, settings, skills, memory and indexes are stored **entirely on your device**. In **pure local mode** (no cloud backend configured), **no data ever passes through Dunimd servers**. Apache-2.0 source lets you audit this.
 
 ## 2. Data Flow
 
@@ -20,7 +20,7 @@
 
 ## 3. Per Service
 
-Encre (device) · PiscesLx (our cloud or customer environment) · Enterprise (customer environment) · StadionOS (customer hardware, telemetry off) · Cloud (chosen workloads) · Studio (local, anonymous licence ping) · Support (only what you submit).
+Encre Agent (device) · PiscesLx (our cloud or customer environment) · Enterprise (customer environment) · StadionOS (customer hardware, telemetry off) · Cloud (chosen workloads) · Studio (local, anonymous licence ping) · Support (only what you submit).
 
 ## 4. Telemetry
 
