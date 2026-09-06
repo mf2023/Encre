@@ -36,7 +36,7 @@ import { he } from "./he.js";
 export const LOCALE_REGISTRY = {
   zh: zh,
   en: en,
-  zh-Hant: zhHant,
+  "zh-Hant": zhHant,
   ja: ja,
   ko: ko,
   de: de,
