@@ -394,9 +394,6 @@ def clean():
               DESKTOP/"release"]:
         if p.exists(): shutil.rmtree(p) if p.is_dir() else p.unlink()
     for f in ROOT.glob("Encre*Setup*"): f.unlink()
-    # Remove the generated (locale-filtered) registry file
-    reg = DESKTOP / "renderer" / "src" / "locales" / "registry.ts"
-    if reg.exists(): reg.unlink()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Encre build orchestrator")

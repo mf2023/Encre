@@ -111,7 +111,6 @@ desktop/renderer/xterm.css
 desktop/renderer/_components.css
 desktop/renderer/design-system.css
 desktop/renderer/devicon.css
-desktop/renderer/src/locales/registry.ts
 desktop/release
 
 # TypeScript / esbuild artifacts
