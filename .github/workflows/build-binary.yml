@@ -10,26 +10,71 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
+          # ── All locales (default full build) ──────────────────────────────
           - os: ubuntu-latest
             target: linux-x64
             arch: x64
+            locale: all
           - os: ubuntu-24.04-arm
             target: linux-arm64
             arch: arm64
+            locale: all
           - os: windows-latest
             target: windows-x64
             arch: x64
+            locale: all
           - os: windows-11-arm
             target: windows-arm64
             arch: arm64
+            locale: all
           - os: macos-13
             target: macos-x64
             arch: x64
+            locale: all
           - os: macos-latest
             target: macos-arm64
             arch: arm64
+            locale: all
+          # ── Simplified locales per platform ───────────────────────────────
+          - os: ubuntu-latest
+            target: linux-x64-cn
+            arch: x64
+            locale: cn
+          - os: ubuntu-24.04-arm
+            target: linux-arm64-cn
+            arch: arm64
+            locale: cn
+          - os: windows-latest
+            target: windows-x64-cn
+            arch: x64
+            locale: cn
+          - os: windows-11-arm
+            target: windows-arm64-cn
+            arch: arm64
+            locale: cn
+          - os: macos-13
+            target: macos-x64-cn
+            arch: x64
+            locale: cn
+          - os: macos-latest
+            target: macos-arm64-cn
+            arch: arm64
+            locale: cn
+          - os: ubuntu-latest
+            target: linux-x64-en
+            arch: x64
+            locale: en
+          - os: windows-latest
+            target: windows-x64-en
+            arch: x64
+            locale: en
+          - os: macos-13
+            target: macos-x64-en
+            arch: x64
+            locale: en
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -47,20 +92,12 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install Python dependencies
-        run: |
-          pip install -e .
-          pip install pyinstaller
-
-      - name: Install Node dependencies
-        run: cd desktop && npm ci
-
       - name: Build
-        run: python build.py
+        run: python build.py --locales ${{ matrix.locale }}
         env:
           TARGET_ARCH: ${{ matrix.arch }}
 
-      - name: Upload
+      - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: encre-${{ matrix.target }}
@@ -69,3 +106,15 @@ jobs:
             Encre*.pkg
             encre*.deb
             encre*.rpm
+
+      - name: Upload Python library wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: encre-wheels-${{ matrix.target }}
+          path: dist/wheels/*.whl
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: encre-server-${{ matrix.target }}
+          path: build/server/encre-server/
