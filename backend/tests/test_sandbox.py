@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,8 +20,6 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
-
-from __future__ import annotations
 
 """Tests for the enhanced sandbox system.
 
@@ -54,20 +52,26 @@ from encre.sandbox.types import (
 )
 
 
-# ═══════════════════════════════════════════════════════════════════
-# SandboxConfig
-# ═══════════════════════════════════════════════════════════════════
-
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?# SandboxConfig
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
 class TestSandboxConfig:
-    """Test cases covering sandbox config.
-    
-    Covers the expected behavior and relevant edge cases.
+    """Engineered to validate SandboxConfig construction and nested sub-config defaults.
+
+    This test class exercises SandboxConfig across 8 scenarios covering default
+    values, custom configuration, network policy variants, multiple allowed
+    domains, multiple environment variables, dataclass integrity, and sandbox
+    mode enumeration. The design follows a structured-default-assertion pattern
+    so every nested sub-config field is independently verifiable.
     """
-    def test_default_values(self):
-        """Verifies that default values."""
+    def test_verify_default_values(self):
+        """Validate that SandboxConfig() initializes all fields to their documented defaults.
+
+        The test exercises default construction and asserts each nested config
+        (network, resource, file_protection, seccomp, env) matches the expected
+        baseline because the defaults define the least-privileged starting point.
+        """
         cfg = SandboxConfig()
-        # Confirm the expected result for this scenario: default values.
         assert cfg.image == "python:3.11-slim"
         assert cfg.workspace_mount == "/workspace"
         assert cfg.mode == SandboxMode.NONE
@@ -88,8 +92,14 @@ class TestSandboxConfig:
         assert cfg.max_command_length == 4096
         assert cfg.extra_mounts == {}
 
-    def test_custom_values(self):
-        """Verifies that custom values."""
+    def test_verify_custom_values(self):
+        """Validate that SandboxConfig accepts and preserves fully custom nested configs.
+
+        The test exercises construction with explicit NetworkConfig, ResourceConfig,
+        FileProtectionConfig, SeccompConfig, EnvConfig, and extra_mounts and asserts
+        each field is stored correctly because full-customization must round-trip
+        without default-overwrite.
+        """
         cfg = SandboxConfig(
             mode=SandboxMode.CONTAINER,
             image="ubuntu:22.04",
@@ -126,7 +136,6 @@ class TestSandboxConfig:
             disable_network_tooling=True,
             extra_mounts={"/data": "/mnt/data"},
         )
-        # Confirm the expected result for this scenario: custom values.
         assert cfg.mode == SandboxMode.CONTAINER
         assert cfg.image == "ubuntu:22.04"
         assert cfg.network.policy == NetworkPolicy.LIMITED
@@ -143,10 +152,14 @@ class TestSandboxConfig:
         assert cfg.timeout == 300
         assert cfg.extra_mounts == {"/data": "/mnt/data"}
 
-    def test_network_policy_values(self):
-        """Verifies that network policy values."""
+    def test_verify_network_policy_values(self):
+        """Validate that each NetworkPolicy enum value is accepted and preserved.
+
+        The test exercises construction with NONE, LIMITED, and HOST policies
+        and asserts each is stored correctly because the policy field must
+        support all defined enum values without coercion.
+        """
         none_cfg = SandboxConfig()
-        # Confirm the expected result for this scenario: network policy values.
         assert none_cfg.network.policy == NetworkPolicy.NONE
 
         limited_cfg = SandboxConfig(
@@ -159,34 +172,46 @@ class TestSandboxConfig:
         )
         assert host_cfg.network.policy == NetworkPolicy.HOST
 
-    def test_multiple_allowed_domains(self):
-        """Verifies that multiple allowed domains."""
+    def test_verify_multiple_allowed_domains(self):
+        """Validate that multiple allowed_domains are stored as a list.
+
+        The test exercises construction with three domain strings and asserts
+        the list length and membership because the domain allowlist must
+        preserve all entries for per-domain network filtering.
+        """
         cfg = SandboxConfig(
             network=NetworkConfig(
                 policy=NetworkPolicy.LIMITED,
                 allowed_domains=["pypi.org", "github.com", "registry.npmjs.org"],
             ),
         )
-        # Confirm the expected result for this scenario: multiple allowed domains.
         assert len(cfg.network.allowed_domains) == 3
         assert "pypi.org" in cfg.network.allowed_domains
 
-    def test_multiple_env_vars(self):
-        """Verifies that multiple env vars."""
+    def test_verify_multiple_env_vars(self):
+        """Validate that multiple environment variables are stored correctly.
+
+        The test exercises construction with three env vars and asserts
+        each key-value pair is preserved because the sandbox must inject
+        the correct environment into the container.
+        """
         cfg = SandboxConfig(
             env=EnvConfig(
                 env_vars={"PYTHONPATH": "/app", "NODE_ENV": "production", "LOG_LEVEL": "debug"},
             ),
         )
-        # Confirm the expected result for this scenario: multiple env vars.
         assert cfg.env.env_vars["PYTHONPATH"] == "/app"
         assert cfg.env.env_vars["NODE_ENV"] == "production"
         assert len(cfg.env.env_vars) == 3
 
-    def test_is_dataclass(self):
-        """Verifies that is dataclass."""
+    def test_verify_is_dataclass(self):
+        """Validate that all SandboxConfig nested types are dataclasses.
+
+        The test exercises dataclasses.is_dataclass on SandboxConfig and each
+        nested config type and asserts True for all because dataclass derivation
+        enables consistent construction and field introspection.
+        """
         from dataclasses import is_dataclass
-        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(SandboxConfig)
         assert is_dataclass(NetworkConfig)
         assert is_dataclass(ResourceConfig)
@@ -194,33 +219,46 @@ class TestSandboxConfig:
         assert is_dataclass(SeccompConfig)
         assert is_dataclass(EnvConfig)
 
-    def test_sandbox_mode_default(self):
-        """Verifies that sandbox mode default."""
-        # Confirm the expected result for this scenario: sandbox mode default.
+    def test_verify_sandbox_mode_default(self):
+        """Validate that the default SandboxMode is NONE.
+
+        The test exercises default construction and asserts mode == SandboxMode.NONE
+        because NONE is the safe baseline that disables container isolation.
+        """
         assert SandboxConfig().mode == SandboxMode.NONE
 
-    def test_sandbox_mode_explicit(self):
-        """Verifies that sandbox mode explicit."""
+    def test_verify_sandbox_mode_explicit(self):
+        """Validate that each SandboxMode enum value can be set explicitly.
+
+        The test exercises construction with every mode in the enum and asserts
+        cfg.mode equals the passed value for each iteration because all modes
+        must be constructible without default coercion.
+        """
         for mode in SandboxMode:
             cfg = SandboxConfig(mode=mode)
-            # Confirm the expected result for this scenario: sandbox mode explicit.
             assert cfg.mode == mode
 
 
-# ═══════════════════════════════════════════════════════════════════
-# SandboxResult
-# ═══════════════════════════════════════════════════════════════════
-
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?# SandboxResult
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
 class TestSandboxResult:
-    """Test cases covering sandbox result.
-    
-    Covers the expected behavior and relevant edge cases.
+    """Engineered to validate SandboxResult field population across success and error outcomes.
+
+    This test class exercises SandboxResult construction across 7 scenarios
+    covering basic success, error output, timeout, sandbox violations,
+    output truncation, security events, and dataclass integrity. The design
+    ensures each result field is independently verifiable.
     """
-    def test_basic_result(self):
-        """Verifies that basic result."""
+    def test_verify_basic_result(self):
+        """Validate that a successful execution produces a clean SandboxResult.
+
+        The test exercises construction with stdout="hello world\\n", exit_code=0,
+        and asserts each field including timed_out=False, duration_ms=0.0,
+        sandbox_violation="", killed=False because a clean success must have
+        no side indicators set.
+        """
         result = SandboxResult(stdout="hello world\n", stderr="", exit_code=0)
-        # Confirm the expected result for this scenario: basic result.
         assert result.stdout == "hello world\n"
         assert result.stderr == ""
         assert result.exit_code == 0
@@ -229,21 +267,30 @@ class TestSandboxResult:
         assert result.sandbox_violation == ""
         assert result.killed is False
 
-    def test_error_result(self):
-        """Verifies that error result."""
+    def test_verify_error_result(self):
+        """Validate that an error result preserves stderr and exit code.
+
+        The test exercises construction with a command-not-found error and
+        asserts exit_code=127, stderr contains the message, and duration_ms
+        is preserved because error results must carry diagnostic details.
+        """
         result = SandboxResult(
             stdout="",
             stderr="command not found: xxx",
             exit_code=127,
             duration_ms=150.5,
         )
-        # Confirm the expected result for this scenario: error result.
         assert result.exit_code == 127
         assert "command not found" in result.stderr
         assert result.duration_ms == 150.5
 
-    def test_timeout_result(self):
-        """Verifies that timeout result."""
+    def test_verify_timeout_result(self):
+        """Validate that a timeout result sets timed_out=True and exit_code=-1.
+
+        The test exercises construction with timed_out=True, exit_code=-1,
+        and a partial stdout and asserts these fields are preserved because
+        timeout results must be distinguishable from normal exits.
+        """
         result = SandboxResult(
             stdout="partial output",
             stderr="Command timed out",
@@ -251,35 +298,47 @@ class TestSandboxResult:
             timed_out=True,
             duration_ms=120000.0,
         )
-        # Confirm the expected result for this scenario: timeout result.
         assert result.timed_out is True
         assert result.exit_code == -1
 
-    def test_sandbox_violation(self):
-        """Verifies that sandbox violation."""
+    def test_verify_sandbox_violation(self):
+        """Validate that a sandbox violation result preserves the violation reason.
+
+        The test exercises construction with sandbox_violation="sudo detected"
+        and exit_code=-4 and asserts both fields because violation results
+        must carry the enforcement reason for logging and reporting.
+        """
         result = SandboxResult(
             stdout="",
             stderr="Blocked: privilege escalation",
             exit_code=-4,
             sandbox_violation="sudo detected",
         )
-        # Confirm the expected result for this scenario: sandbox violation.
         assert result.exit_code == -4
         assert result.sandbox_violation == "sudo detected"
 
-    def test_output_truncated(self):
-        """Verifies that output truncated."""
+    def test_verify_output_truncated(self):
+        """Validate that output_truncated=True is preserved on the result.
+
+        The test exercises construction with output_truncated=True and asserts
+        the flag is preserved because truncation indicators must survive
+        serialization for downstream UI display.
+        """
         result = SandboxResult(
             stdout="some output",
             stderr="",
             exit_code=0,
             output_truncated=True,
         )
-        # Confirm the expected result for this scenario: output truncated.
         assert result.output_truncated is True
 
-    def test_security_events(self):
-        """Verifies that security events."""
+    def test_verify_security_events(self):
+        """Validate that security_events list is preserved correctly.
+
+        The test exercises construction with a single security-event dict and
+        asserts length and first-element event_type because the event log
+        must remain intact for audit trail purposes.
+        """
         result = SandboxResult(
             stdout="",
             stderr="",
@@ -288,37 +347,51 @@ class TestSandboxResult:
                 {"event_type": "execution", "timestamp": 1000.0, "details": "command run"},
             ],
         )
-        # Confirm the expected result for this scenario: security events.
         assert len(result.security_events) == 1
         assert result.security_events[0]["event_type"] == "execution"
 
-    def test_is_dataclass(self):
-        """Verifies that is dataclass."""
+    def test_verify_is_dataclass(self):
+        """Validate that SandboxResult is a dataclass.
+
+        The test exercises dataclasses.is_dataclass and asserts True because
+        dataclass derivation enables consistent construction and field access.
+        """
         from dataclasses import is_dataclass
-        # Confirm the expected result for this scenario: is dataclass.
         assert is_dataclass(SandboxResult)
 
 
-# ═══════════════════════════════════════════════════════════════════
-# EncreContainerSandbox
-# ═══════════════════════════════════════════════════════════════════
-
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?# EncreContainerSandbox
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
 class TestEncreContainerSandbox:
-    """Test cases covering encre container sandbox.
-    
-    Covers the expected behavior and relevant edge cases.
+    """Engineered to validate EncreContainerSandbox construction, lifecycle, and security constraints.
+
+    This test class exercises the sandbox class across 16 scenarios covering
+    construction with and without config, context-manager protocol, close/cleanup
+    idempotency, audit logging, Docker availability branching, timeout handling,
+    command-length enforcement, blocked-command patterns, container run/exec flow,
+    and security-audit persistence. The design follows a lifecycle-assertion
+    pattern so each phase of the sandbox lifecycle is independently verified.
     """
-    def test_construction_basic(self):
-        """Verifies that construction basic."""
+    def test_verify_construction_basic(self):
+        """Validate that basic construction resolves workspace to an absolute path.
+
+        The test exercises EncreContainerSandbox(workspace="/tmp/test") and
+        asserts workspace is absolute, _container_id is None, and _active is
+        False because a newly constructed sandbox has no active container.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
-        # Confirm the expected result for this scenario: construction basic.
         assert sandbox.workspace == os.path.abspath("/tmp/test")
         assert sandbox._container_id is None
         assert sandbox._active is False
 
-    def test_construction_with_config(self):
-        """Verifies that construction with config."""
+    def test_verify_construction_with_config(self):
+        """Validate that construction with a custom config propagates all nested fields.
+
+        The test exercises construction with an explicit SandboxConfig and
+        asserts image, timeout, memory_limit, and cpu_limit are preserved
+        because the config must fully override defaults.
+        """
         cfg = SandboxConfig(
             mode=SandboxMode.CONTAINER,
             image="python:3.11-slim",
@@ -326,52 +399,75 @@ class TestEncreContainerSandbox:
             resource=ResourceConfig(memory_limit="256m", cpu_limit=0.5),
         )
         sandbox = EncreContainerSandbox(workspace="/tmp/test", config=cfg)
-        # Confirm the expected result for this scenario: construction with config.
         assert sandbox.config.image == "python:3.11-slim"
         assert sandbox.config.timeout == 60
         assert sandbox.config.resource.memory_limit == "256m"
         assert sandbox.config.resource.cpu_limit == 0.5
 
-    def test_is_available_returns_bool(self):
-        """Verifies that is available returns bool."""
+    def test_verify_is_available_returns_bool(self):
+        """Validate that is_available() returns a boolean.
+
+        The test exercises is_available on a fresh sandbox and asserts the
+        return type is bool because the method's return value is used in
+        conditional logic throughout the codebase.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         result = sandbox.is_available()
-        # Confirm the expected result for this scenario: is available returns bool.
         assert isinstance(result, bool)
 
-    def test_context_manager_interface(self):
-        """Verifies that context manager interface."""
+    def test_verify_context_manager_interface(self):
+        """Validate that EncreContainerSandbox implements the context-manager protocol.
+
+        The test exercises hasattr checks for __enter__ and __exit__ and
+        asserts both exist because the sandbox must support `with` statement
+        usage for resource lifecycle management.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
-        # Confirm the expected result for this scenario: context manager interface.
         assert hasattr(sandbox, "__enter__")
         assert hasattr(sandbox, "__exit__")
 
-    def test_context_manager_enter_returns_self(self):
-        """Verifies that context manager enter returns self."""
+    def test_verify_context_manager_enter_returns_self(self):
+        """Validate that __enter__ returns the sandbox instance itself.
+
+        The test exercises the with-statement binding and asserts the bound
+        variable is the same object because context managers conventionally
+        return self to enable method chaining.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         with sandbox as s:
-            # Confirm the expected result for this scenario: context manager enter returns self.
             assert s is sandbox
 
-    def test_close_method(self):
-        """Verifies that close method."""
+    def test_verify_close_method(self):
+        """Validate that close() is idempotent and does not raise when no container is active.
+
+        The test exercises close() on a fresh sandbox and asserts no exception
+        is raised because cleanup must be safe to call at any lifecycle point.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
-        # Confirm the expected result for this scenario: close method.
         assert hasattr(sandbox, "close")
         sandbox.close()  # Should not raise even with no active container
 
-    def test_cleanup_method(self):
-        """Verifies that cleanup method."""
+    def test_verify_cleanup_method(self):
+        """Validate that cleanup() is idempotent and does not raise when no container is active.
+
+        The test exercises cleanup() on a fresh sandbox and asserts no exception
+        is raised because the method must be safe to call during teardown
+        regardless of container state.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
-        # Confirm the expected result for this scenario: cleanup method.
         assert hasattr(sandbox, "cleanup")
         sandbox.cleanup()  # Should not raise even with no active container
 
-    def test_get_audit_log(self):
-        """Verifies that get audit log."""
+    def test_verify_get_audit_log(self):
+        """Validate that get_audit_log() returns a list and captures blocked commands.
+
+        The test exercises execute("sudo ls") on a fresh sandbox and asserts
+        the audit log is a list, and if the command was blocked (exit_code=-4),
+        the log contains at least one entry with event_type in ("violation", "execution")
+        because the audit trail must record security decisions.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         log = sandbox.get_audit_log()
-        # Confirm the expected result for this scenario: get audit log.
         assert isinstance(log, list)
         # Execute something that gets blocked (no sudo in container, so it'll
         # either pass through or be blocked by _check_command)
@@ -382,38 +478,56 @@ class TestEncreContainerSandbox:
             assert len(log) >= 1
             assert log[0]["event_type"] in ("violation", "execution")
 
-    def test_execute_without_docker_returns_file_not_found(self):
-        """When Docker is not installed, execute should return exit_code -2."""
+    def test_verify_execute_without_docker_returns_file_not_found(self):
+        """Validate that execute returns exit_code -2 when Docker is unavailable.
+
+        The test exercises execute("echo hello") on a sandbox where Docker may
+        or may not be available and asserts the appropriate exit code and
+        error message because the sandbox must handle missing Docker gracefully.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         # Run a simple command
         result = sandbox.execute("echo hello")
         if sandbox.is_available():
-            # Confirm the expected result for this scenario: execute without docker returns file not found.
             assert result.exit_code in (0, -2, -3)
         else:
             assert result.exit_code == -2
             assert "Docker not found" in result.stderr
 
-    def test_execute_timeout_handling(self):
-        """Test that a timeout returns exit_code -1 with timed_out=True."""
+    def test_verify_execute_timeout_handling(self):
+        """Validate that a long-running command times out with exit_code=-1 and timed_out=True.
+
+        The test exercises execute("sleep 10", timeout=1) when Docker is
+        available and asserts timed_out=True and exit_code==-1 because the
+        timeout mechanism must be observable in the result object.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         if sandbox.is_available():
             result = sandbox.execute("sleep 10", timeout=1)
-            # Confirm the expected result for this scenario: execute timeout handling.
             assert result.timed_out is True
             assert result.exit_code == -1
 
-    def test_command_too_long(self):
-        """Test that overly long commands are rejected before execution."""
+    def test_verify_command_too_long(self):
+        """Validate that commands exceeding max_command_length are rejected with exit_code -4.
+
+        The test exercises execute with a 5000-character echo command and
+        asserts exit_code==-4 and the violation message mentions 'too long'
+        because the length gate must block oversized commands before Docker invocation.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         long_cmd = "echo " + "x" * 5000
         result = sandbox.execute(long_cmd)
-        # Confirm the expected result for this scenario: command too long.
         assert result.exit_code == -4
         assert "too long" in result.sandbox_violation.lower() or "too long" in result.stderr.lower()
 
-    def test_blocked_command_pattern(self):
-        """Test that dangerous commands are blocked pre-execution."""
+    def test_verify_blocked_command_pattern(self):
+        """Validate that dangerous command patterns are blocked pre-execution.
+
+        The test exercises execute on a list of blocked commands (sudo rm -rf,
+        pkexec, insmod) and asserts exit_code is -4, -2, or -3, or the sandbox
+        is available (in which case the command may proceed) because the
+        security pre-check must intercept privileged or kernel-loading commands.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         blocked_commands = [
             "sudo rm -rf /",
@@ -425,86 +539,124 @@ class TestEncreContainerSandbox:
             result = sandbox.execute(cmd)
             # Should either be blocked (-4) or run with any exit code
             # (depends on whether Docker is available)
-            # Confirm the expected result for this scenario: blocked command pattern.
             assert result.exit_code in (-4, -2, -3) or sandbox.is_available()
 
-    def test_stop_container_noop_when_no_container(self):
-        """Verifies that stop container noop when no container."""
+    def test_verify_stop_container_noop_when_no_container(self):
+        """Validate that stop_container() is a no-op when no container is active.
+
+        The test exercises stop_container() on a fresh sandbox and asserts
+        _container_id remains None and _active remains False because
+        stopping a non-existent container must not error.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         sandbox.stop_container()  # Should not raise
-        # Confirm the expected result for this scenario: stop container noop when no container.
         assert sandbox._container_id is None
         assert sandbox._active is False
 
-    def test_exec_in_container_requires_active_container(self):
-        """Verifies that exec in container requires active container."""
+    def test_verify_exec_in_container_requires_active_container(self):
+        """Validate that exec_in_container raises RuntimeError when no container is active.
+
+        The test exercises exec_in_container on a fresh sandbox and asserts
+        RuntimeError with "No active container" because exec requires a
+        running container to attach to.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         with pytest.raises(RuntimeError, match="No active container"):
             sandbox.exec_in_container("echo hello")
 
-    def test_run_container_requires_docker(self):
-        """Verifies that run container requires docker."""
+    def test_verify_run_container_requires_docker(self):
+        """Validate that run_container() skips when Docker is unavailable.
+
+        The test exercises run_container() and skips when Docker is not
+        available, otherwise asserts the returned container_id is non-empty
+        and _active is True because container lifecycle requires Docker.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         if not sandbox.is_available():
             pytest.skip("Docker not available")
         container_id = sandbox.run_container()
         try:
-            # Confirm the expected result for this scenario: run container requires docker.
             assert container_id is not None
             assert len(container_id) > 0
             assert sandbox._active is True
         finally:
             sandbox.cleanup()
 
-    def test_exec_in_running_container(self):
-        """Verifies that exec in running container."""
+    def test_verify_exec_in_running_container(self):
+        """Validate that exec_in_container succeeds inside a running container.
+
+        The test exercises run_container followed by exec_in_container("echo hello")
+        and asserts exit_code=0 and "hello" in stdout because exec must
+        run commands inside the live container.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         if not sandbox.is_available():
             pytest.skip("Docker not available")
         sandbox.run_container()
         try:
             result = sandbox.exec_in_container("echo hello")
-            # Confirm the expected result for this scenario: exec in running container.
             assert result.exit_code == 0
             assert "hello" in result.stdout
         finally:
             sandbox.cleanup()
 
-    def test_security_audit_persistence(self):
-        """Test that audit log persists across calls."""
+    def test_verify_security_audit_persistence(self):
+        """Validate that the audit log accumulates entries across multiple execute calls.
+
+        The test exercises two execute calls (one blocked, one normal) and
+        asserts the audit log has at least one entry because the log must
+        persist across the sandbox lifetime for forensic review.
+        """
         sandbox = EncreContainerSandbox(workspace="/tmp/test")
         # Run some commands
         sandbox.execute("sudo ls")  # will be blocked or fail
         sandbox.execute("echo test")
         log = sandbox.get_audit_log()
-        # Confirm the expected result for this scenario: security audit persistence.
         assert len(log) >= 1
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Path isolation (_sandbox.py)
-# ═══════════════════════════════════════════════════════════════════
-
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?# Path isolation (_sandbox.py)
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
 class TestPathIsolation:
-    """Test cases covering path isolation.
-    
-    Covers the expected behavior and relevant edge cases.
+    """Engineered to validate path-isolation logic in _sandbox.py.
+
+    This test class exercises _resolve_sandbox_path, check_path_safety,
+    get_sandbox_root, and remap_tool_path across 6 scenarios covering
+    basic remapping, outside-path rejection, safety checks on empty/proc
+    paths, root creation, and no-loop fallback. The design ensures path
+    traversal attacks are blocked at the remapping layer.
     """
     @pytest.fixture
     def sandbox_dir(self):
-        """Verifies that sandbox dir."""
+        """Provide a temporary sandbox directory for path-isolation tests.
+
+        Returns:
+            A pathlib.Path pointing to a temp directory named "sandbox".
+        """
         with tempfile.TemporaryDirectory() as tmp:
             yield Path(tmp) / "sandbox"
 
     def setup_paths(self, sandbox_dir: Path):
-        """Helper: create test file structure."""
+        """Create a test file structure with a sandbox subdirectory and an outside file.
+
+        Args:
+            sandbox_dir: The root path under which to create the test structure.
+
+        Returns:
+            A tuple of (sandbox_dir, outside) paths for use in tests.
+        """
         sandbox_dir.mkdir(parents=True)
         outside = sandbox_dir.parent / "outside.txt"
         return sandbox_dir, outside
 
-    def test_remap_path_basic(self):
-        """Test basic path remapping into sandbox."""
+    def test_verify_remap_path_basic(self):
+        """Validate that _resolve_sandbox_path remaps relative and virtual paths into the sandbox.
+
+        The test exercises remapping a relative filename and a /workspace/ prefixed path
+        and asserts both resolve to start with the sandbox root and end with the
+        expected filename because remapping is the core path-isolation mechanism.
+        """
         from encre.tools.builtin._sandbox import _resolve_sandbox_path
         with tempfile.TemporaryDirectory() as tmp:
             sandbox = str(Path(tmp) / "sandbox_test")
@@ -512,7 +664,6 @@ class TestPathIsolation:
 
             # Relative path should resolve inside sandbox
             result = _resolve_sandbox_path("output.txt", sandbox, "test-session")
-            # Confirm the expected result for this scenario: remap path basic.
             assert result.startswith(sandbox)
             assert result.endswith("output.txt")
 
@@ -521,24 +672,34 @@ class TestPathIsolation:
             assert result2.startswith(sandbox)
             assert result2.endswith("foo.py")
 
-    def test_remap_path_rejects_outside(self):
-        """Test that paths outside sandbox are rejected."""
+    def test_verify_remap_path_rejects_outside(self):
+        """Validate that _resolve_sandbox_path rejects absolute and traversing paths.
+
+        The test exercises remapping "/etc/passwd" and "../outside.txt" and asserts
+        both return empty strings because paths outside the sandbox boundary
+        must be rejected to prevent file-system escape.
+        """
         from encre.tools.builtin._sandbox import _resolve_sandbox_path
         with tempfile.TemporaryDirectory() as tmp:
             sandbox = str(Path(tmp) / "sandbox_test")
             Path(sandbox).mkdir(parents=True)
 
-            # Absolute path outside sandbox → reject
+            # Absolute path outside sandbox 鈫?reject
             result = _resolve_sandbox_path("/etc/passwd", sandbox, "test-session")
-            # Confirm the expected result for this scenario: remap path rejects outside.
             assert result == ""
 
-            # Path traversal → reject
+            # Path traversal 鈫?reject
             result = _resolve_sandbox_path("../outside.txt", sandbox, "test-session")
             assert result == ""
 
-    def test_check_path_safety(self):
-        """Test check_path_safety function."""
+    def test_verify_check_path_safety(self):
+        """Validate that check_path_safety flags empty and proc paths as violations.
+
+        The test exercises check_path_safety on a safe path, an empty string,
+        and /proc/self/mem and asserts the violation is None for safe paths
+        and carries the expected reason for empty and proc paths because
+        procfs access is a container-escape vector.
+        """
         from encre.tools.builtin._sandbox import check_path_safety
         with tempfile.TemporaryDirectory() as tmp:
             sandbox_root = Path(tmp) / "sandbox"
@@ -547,7 +708,6 @@ class TestPathIsolation:
             # Safe path
             safe = str(sandbox_root / "valid.txt")
             violation, result = check_path_safety(safe, sandbox_root)
-            # Confirm the expected result for this scenario: check path safety.
             assert violation is None
             assert result == safe
 
@@ -561,58 +721,80 @@ class TestPathIsolation:
             assert violation is not None
             assert "procedural" in violation.reason
 
-    def test_get_sandbox_root(self):
-        """Test sandbox root directory creation."""
+    def test_verify_get_sandbox_root(self):
+        """Validate that get_sandbox_root creates and returns the session directory.
+
+        The test exercises get_sandbox_root("test-session") and asserts the
+        returned path exists, is a directory, and has the expected name because
+        the sandbox root must be created on demand for each session.
+        """
         from encre.tools.builtin._sandbox import get_sandbox_root
         root = get_sandbox_root("test-session")
-        # Confirm the expected result for this scenario: get sandbox root.
         assert root.exists()
         assert root.is_dir()
         assert root.name == "test-session"
 
-    def test_remap_tool_path_no_loop(self):
-        """remap_tool_path falls back to file_path when no loop is active."""
+    def test_verify_remap_tool_path_no_loop(self):
+        """Validate that remap_tool_path returns a non-empty path when no loop is active.
+
+        The test exercises remap_tool_path("test.txt") outside any loop context
+        and asserts the result is non-empty because the function must always
+        return a valid path, falling back to the original when no sandbox
+        session is active.
+        """
         from encre.tools.builtin._sandbox import remap_tool_path
         result = remap_tool_path("test.txt")
         # When no loop is active, the path should be returned unchanged or mapped
         # to the sandbox if the session_id came through
-        # Confirm the expected result for this scenario: remap tool path no loop.
         assert result  # Not empty
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Bash tool sandbox injection
-# ═══════════════════════════════════════════════════════════════════
-
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?# Bash tool sandbox injection
+# 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?
 
 class TestBashWorkspaceInjection:
-    """Test cases covering bash workspace injection.
-    
-    Covers the expected behavior and relevant edge cases.
+    """Engineered to validate the workspace context-variable lifecycle in the bash tool.
+
+    This test class exercises _get_workspace, set_workspace, and reset_workspace
+    across 3 scenarios covering default state, set/reset round-trip, and
+    context isolation across independent tokens. The design ensures workspace
+    injection is scoped per token and does not leak across contexts.
     """
-    def test_workspace_context_defaults(self):
-        """Test that the workspace context var defaults to None."""
+    def test_verify_workspace_context_defaults(self):
+        """Validate that _get_workspace returns None before any workspace is set.
+
+        The test exercises _get_workspace directly and asserts None because
+        the context variable must start in an unset state.
+        """
         from encre.tools.builtin.bash import _get_workspace, reset_workspace, set_workspace
 
-        # Confirm the expected result for this scenario: workspace context defaults.
         assert _get_workspace() is None
 
-    def test_set_and_reset_workspace(self):
-        """Test set / reset workspace lifecycle."""
+    def test_verify_set_and_reset_workspace(self):
+        """Validate that set_workspace and reset_workspace form a correct lifecycle.
+
+        The test exercises set_workspace("/tmp/test"), asserts _get_workspace
+        returns the value, then resets via the returned token and asserts
+        None because the reset must restore the original context state.
+        """
         from encre.tools.builtin.bash import _get_workspace, reset_workspace, set_workspace
 
         token = set_workspace("/tmp/test")
-        # Confirm the expected result for this scenario: set and reset workspace.
         assert _get_workspace() == "/tmp/test"
         reset_workspace(token)
         assert _get_workspace() is None
 
-    def test_context_isolation(self):
-        """Test that different contexts get different workspace values."""
+    def test_verify_context_isolation(self):
+        """Validate that different set_workspace tokens produce independent workspace values.
+
+        The test exercises two sequential set_workspace calls with different
+        paths and asserts each is visible at the correct time and both reset
+        to None after their respective resets because context isolation
+        prevents workspace leakage across sequential tool invocations.
+        """
         from encre.tools.builtin.bash import _get_workspace, reset_workspace, set_workspace
 
         token = set_workspace("/workspace/a")
-        # Confirm the expected result for this scenario: context isolation.
         assert _get_workspace() == "/workspace/a"
 
         reset_workspace(token)

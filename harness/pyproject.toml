@@ -1,0 +1,165 @@
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "encre-harness"
+version = "0.4.1"
+description = "Encre Harness — embeddable Python agent harness library"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "httpx>=0.27",
+    "httpx-ws>=0.7",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.0",
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.12",
+    "lxml>=5.1",
+    "tomli>=2.0",
+    "tomli-w>=1.0",
+    "pyyaml>=6.0",
+    "cryptography>=41.0",
+    "zero-api-key-web-search>=23.0",
+    "pathspec>=0.12",
+    "websockets>=12.0,<14",
+    "Pillow>=10.0",
+    "tiktoken>=0.5",
+    "numpy>=1.24",
+    "loguru>=0.7",
+    "mss>=9.0",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.10",
+    "pyautogui>=0.9",
+    "pypdf>=4.0",
+    "PyPDF2>=3.0",
+    "pytesseract>=0.3",
+    "uiautomation>=2.0",
+    "watchfiles>=0.21",
+    "tree-sitter>=0.21",
+    "tree-sitter-language-pack>=0.6",
+    "psutil>=6.0",
+    "openai>=1.0",
+    "requests>=2.31",
+    "certifi>=2024.0",
+    "pyperclip>=1.8",
+    "python-dotenv>=1.0",
+    "markdown>=3.5",
+    "croniter>=2.0",
+    "deep-translator>=1.11",
+    "tqdm>=4.66",
+    "matplotlib>=3.8",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "pyzbar>=0.1",
+    "imageio>=2.34",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    "plyer>=2.1",
+    "aiohttp-socks>=0.8",
+    "youtube-transcript-api>=0.6",
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25",
+    "defusedxml>=0.7",
+    "mutagen>=1.47",
+    "azure-storage-blob>=12.19",
+    "qrcode>=7.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["encre*"]
+
+[tool.setuptools.package-data]
+# Non-Python resources shipped with the package.  Without this, wheels / frozen
+# builds silently drop .prompt and .md files, breaking built-in skills/prompts.
+"encre" = ["*.txt"]
+"encre.prompts" = ["**/*.prompt"]
+"encre.skills.builtin" = ["**/*.md"]
+
+# [tool.setuptools-rust]
+# module = "encre._native"
+# (manual: _native.pyd is copied into harness/encre/ during setup)
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.30"]
+ollama = ["ollama>=0.1"]
+native = ["encre-native==0.4.1"]
+aiohttp = ["aiohttp>=3.9"]
+local = ["torch>=2.0", "transformers>=4.36"]
+aws = ["boto3>=1.34"]
+tracing = ["opentelemetry-api>=1.25", "opentelemetry-sdk>=1.25", "opentelemetry-exporter-otlp-proto-grpc>=1.25"]
+whisper = ["openai-whisper>=20231117"]
+skills = ["playwright>=1.44", "coverage>=7.0"]
+byted = ["ark-sdk>=1.0", "veadk>=1.0", "volcengine-sdk-ark>=1.0", "volcengine-sdk-core>=1.0", "volcengine-tos>=1.0"]
+
+# --- Platform-specific desktop automation extras ---
+# Each group only works on its target OS.
+# Model users pick the one matching their platform:
+#   pip install encre-harness[windows]    # Windows
+#   pip install encre-harness[macos]      # macOS
+windows = [
+    "winrt-runtime>=3.0",                 # WinRT runtime
+    "winrt-Windows.Media.Ocr>=1.0",       # WinRT OCR (Win 10+ built-in)
+    "winrt-Windows.Devices.Geolocation>=1.0",  # Native GPS location
+    "winrt-Windows.Devices.Sensors>=1.0",      # Accelerometer/gyro/light sensors
+    "pywin32>=306",                        # GPU/sensor/display info via WMI
+]
+macos = [
+    "pyobjc-framework-Cocoa>=10",         # Foundation/NSData for Vision OCR
+    "pyobjc-framework-Vision>=10",        # macOS Vision.framework OCR
+    "pyobjc-framework-ApplicationServices>=10",  # Accessibility AX API
+    "pyobjc-framework-CoreLocation>=10",  # Device location
+    "pyobjc-framework-CoreGraphics>=10",  # Display info
+]
+linux = [
+    "dbus-python>=1.3",                  # D-Bus bindings for GeoClue2 location
+    "PyGObject>=3.50",                   # GLib main loop for GeoClue2
+]
+
+# --- Database driver extras (optional) ---
+database-sqlite = ["aiosqlite>=0.20"]
+database-postgresql = ["asyncpg>=0.29"]
+database-mysql = ["aiomysql>=0.2"]
+database-mssql = ["pymssql>=2.2"]
+database-oracle = ["oracledb>=2.0"]
+database-duckdb = ["duckdb>=1.0"]
+database-clickhouse = ["clickhouse-driver>=0.2"]
+database-mongodb = ["motor>=3.0", "pymongo>=4.6"]
+database-redis = ["redis>=5.0"]
+database-all = [
+    "encre-harness[database-sqlite,database-postgresql,database-mysql,database-mssql,database-oracle,database-duckdb,database-clickhouse,database-mongodb,database-redis]",
+]
+
+all = [
+    "encre-harness[anthropic,ollama,native,aiohttp,local,aws,tracing,whisper,byted,skills,windows,macos,database-all]",
+]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "pyinstaller>=6.0",
+]

@@ -88,8 +88,8 @@ const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
   {
     id: "steer",
     name: "steer",
-    title: "Steer",
-    description: "Inject a mid-conversation instruction into the running agent",
+    title: t("slashCommands.steerTitle"),
+    description: t("slashCommands.steerDesc"),
     icon: "navigation",
     kind: "action",
   },

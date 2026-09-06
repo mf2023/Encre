@@ -29,25 +29,25 @@
  * terminal instances. Width is persisted to `localStorage`.
  */
 
-import { getState, subscribe, addAttachments, showToast } from "./state.js";
-import type { ArtifactItem, AttachmentMeta, ReferenceItem } from "./types.js";
-import { getFileIcon } from "./files.js";
-import { t, onLocaleChange } from "./i18n.js";
-import { send } from "./ws.js";
-import { getMonaco, monacoLang, registerEditor, unregisterEditor } from "./monaco.js";
-import { Dialog } from "./dialog.js";
+import { getState, subscribe, addAttachments, showToast } from "../core/state.js";
+import type { ArtifactItem, AttachmentMeta, ReferenceItem } from "../core/types.js";
+import { getFileIcon } from "../features/files.js";
+import { t, onLocaleChange } from "../features/i18n.js";
+import { send } from "../core/ws.js";
+import { getMonaco, monacoLang, registerEditor, unregisterEditor } from "../features/monaco.js";
+import { Dialog } from "../ui/dialog.js";
 
 // Heavy on-demand libraries (xterm, xlsx, mammoth, pptx-to-html) are loaded
 // dynamically at first use so they never block startup parsing of bundle.js:
 //   - xterm            -> setupTerminalPanel()  (terminal tabs)
 //   - mammoth / xlsx   -> _renderOfficeDocx() / _renderOfficeXlsx()
 //   - pptx-to-html     -> _renderOfficePptx()
-import { renderDiffHtml, setupSplitViewScrollSync, expandDiffToFullFile } from "./diff_render.js";
-import { showContextMenu } from "./context-menu.js";
-import { BrowserView } from "./browser.js";
-import { getDefaultHomepage } from "./browser.js";
-import { MarkdownPreviewView } from "./markdown_preview.js";
-import { MediaViewer } from "./media-viewer.js";
+import { renderDiffHtml, setupSplitViewScrollSync, expandDiffToFullFile } from "../chat/diff_render.js";
+import { showContextMenu } from "../ui/context-menu.js";
+import { BrowserView } from "../features/browser.js";
+import { getDefaultHomepage } from "../features/browser.js";
+import { MarkdownPreviewView } from "../chat/markdown_preview.js";
+import { MediaViewer } from "../chat/media-viewer.js";
 
 /** Definition of a sidebar tab. */
 export interface TabDef {
@@ -1108,11 +1108,11 @@ export class SessionInner {
         </button>
         <div class="settings-dropdown"></div>
       </div>
-      <div class="settings-dropdown-wrap si-review-actions" style="margin-left:auto">
+      <div class="settings-dropdown-wrap si-review-actions" style="margin-inline-start:auto">
         <button class="settings-dropdown-trigger si-review-action-trigger" type="button">
           <i data-lucide="more-horizontal" class="lucide lucide-sm"></i>
         </button>
-        <div class="settings-dropdown si-review-action-dropdown" style="right:0;left:auto;min-width:210px"></div>
+        <div class="settings-dropdown si-review-action-dropdown" style="inset-inline-end:0;inset-inline-start:auto;min-width:210px"></div>
       </div>
       <button class="settings-dropdown-trigger si-review-action-trigger si-review-collapse-btn" type="button" data-tooltip="${t("sessionInner.reviewCollapse")}">
         <i data-lucide="minus" class="lucide lucide-sm"></i>
@@ -1125,7 +1125,7 @@ export class SessionInner {
           <i data-lucide="git-commit-horizontal" class="lucide lucide-sm si-review-git-icon"></i>
           <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
         </button>
-        <div class="settings-dropdown si-review-git-dropdown" style="right:0;left:auto;min-width:170px"></div>
+        <div class="settings-dropdown si-review-git-dropdown" style="inset-inline-end:0;inset-inline-start:auto;min-width:170px"></div>
       </div>
 </div>
 <div class="si-review-commit-overlay hidden">
@@ -2354,7 +2354,7 @@ export class SessionInner {
         : "";
       return `<div class="si-review-diff-content">
         <div class="si-review-diff-file-header">
-          <i data-lucide="file-plus" class="lucide lucide-sm" style="margin-right:6px"></i>
+          <i data-lucide="file-plus" class="lucide lucide-sm" style="margin-inline-end:6px"></i>
           ${this.esc(targetPath)}
         </div>
         <div style="padding:16px 20px;color:var(--text-secondary);font-size:13px;line-height:1.6">
@@ -2482,7 +2482,7 @@ export class SessionInner {
           `<div class="context-menu-divider"></div>` +
           `<div class="context-menu-item" data-action="send-file">${t("sessionInner.termSendToChat")}</div>`;
         if (isMd) {
-          menu += `<div class="context-menu-divider"></div><div class="context-menu-item" data-action="preview">预览</div>`;
+          menu += `<div class="context-menu-divider"></div><div class="context-menu-item" data-action="preview">${t("sessionInner.preview")}</div>`;
         }
         menu +=
           `<div class="context-menu-divider"></div>` +

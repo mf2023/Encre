@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import type { LocaleMessages } from "../i18n.js";
+import type { LocaleMessages } from "../features/i18n.js";
 
 export const zh: LocaleMessages = {
   browserNav: {
@@ -38,15 +38,15 @@ export const zh: LocaleMessages = {
   },
   common: {
     saved: "设置已保存",
-    modelUpdated: "Model updated",
-    modelDeleted: "Model deleted",
-    modelCreated: "Model created",
+    modelUpdated: "模型已更新",
+    modelDeleted: "模型已删除",
+    modelCreated: "模型已创建",
     custom: "自定义",
     customModelIdHint: "在下方输入自定义模型 ID",
-    skillsUpdated: "Skills updated",
-    mcpServerRemoved: "MCP server removed",
-    mcpServerAdded: "MCP server added",
-    agentConfigSaved: "Agent config saved",
+    skillsUpdated: "技能已更新",
+    mcpServerRemoved: "MCP 服务器已移除",
+    mcpServerAdded: "MCP 服务器已添加",
+    agentConfigSaved: "智能体配置已保存",
     confirmDelete: '确定要删除模型 "{name}"？',
     confirmDeleteTitle: "删除模型",
     confirmClearSessions: "确定要清除所有会话记录？此操作不可撤销。",
@@ -246,8 +246,17 @@ export const zh: LocaleMessages = {
     selectFolder: "选择文件夹",
   },
   language: {
-    zh: "中文",
+    zh: "简体中文",
     en: "English",
+    "zh-Hant": "繁體中文",
+    ja: "日本語",
+    ko: "한국어",
+    de: "Deutsch",
+    tr: "Türkçe",
+    es: "Español",
+    pt: "Português",
+    ar: "العربية",
+    he: "עברית",
     autoFollow: "跟随应用语言",
     switchTitle: "切换语言",
     switchConfirm: "确定切换到「{label}」？",
@@ -438,11 +447,11 @@ export const zh: LocaleMessages = {
     confirmDeleteMcp: "确定要删除 MCP Server \"{name}\"？",
     addMcpServer: "添加 MCP Server",
     serverName: "服务器名称",
-    filesystemServerExample: "e.g. filesystem-server",
+    filesystemServerExample: "例如：filesystem-server",
     type: "类型",
     command: "命令",
-    npxYExample: "e.g. npx -y @modelcontextprotocol/server-filesystem",
-    removeServer: "Remove server",
+    npxYExample: "例如：npx -y @modelcontextprotocol/server-filesystem",
+    removeServer: "移除服务器",
     transport: "传输方式",
     serverUrl: "Server URL",
     httpTimeout: "HTTP 超时 (秒)",
@@ -532,6 +541,8 @@ export const zh: LocaleMessages = {
     aboutLicense: "开源许可证",
     aboutPrivacy: "隐私政策",
     aboutTerms: "服务条款",
+    aboutAgreement: "用户协议",
+    aboutContentRules: "内容准则",
     aboutThanks: "第三方致谢",
     aboutRegion: "地区",
     aboutRegionGroupAmericas: "美洲",
@@ -722,7 +733,7 @@ export const zh: LocaleMessages = {
     totalOutputTokens: "输出 Token",
     totalToolCalls: "工具调用总数",
     modelBreakdown: "按模型",
-    toolBreakdown: "By Tool",
+    toolBreakdown: "按工具",
     sessionBreakdown: "按会话",
     dailyUsageByModel: "每日用量（按模型堆叠）",
     dailyUsageByChannel: "每日用量（按模式堆叠）",
@@ -746,7 +757,7 @@ export const zh: LocaleMessages = {
     olderDaysHidden: "更早的数据已隐藏",
     chartTotal: "总计",
     tokenTrend: "Token 趋势",
-    noToolData: "No tool calls yet",
+    noToolData: "暂无工具调用",
     tokens: "Tokens",
     turnCount: "轮次",
     toolCallCount: "Tool Calls",
@@ -935,6 +946,20 @@ export const zh: LocaleMessages = {
     abbrFeishu: "飞",
     abbrDingtalk: "钉",
     abbrYuanbao: "元",
+    // MCP 导入预览表头
+    mcpColName: "名称",
+    mcpColCommandUrl: "命令 / URL",
+    mcpColType: "类型",
+    // 用量统计图表
+    usageNoActivity: "无活动",
+    usageTipDate: "日期",
+    usageTipTokens: "Tokens",
+    usageTipModel: "模型",
+    usageTipTurns: "轮次",
+    usageTipToolCalls: "工具调用",
+    // 导出对话框文件类型
+    exportBookmarkFile: "书签文件",
+    exportCsvFile: "CSV 文件",
   },
   child: {
     loadFailed: "无法加载此页面",
@@ -1123,11 +1148,17 @@ export const zh: LocaleMessages = {
     queuedMultiple: "{count} 个提示等待中",
     waitingToSend: "等待发送...",
     sendDirectly: "直接发送",
+    specDocument: "规格文档",
+    planContent: "计划内容",
+    subAgent: "子智能体",
+    maxDepthReached: "已达到最大嵌套深度（{n}）",
   },
   files: {
     attachedFiles: "我已附加以下文件：",
     attached: "已附加",
     skippedMedia: "媒体文件已跳过（模型不支持多模态）",
+    folderSummary: "· 文件夹",
+    lineSummary: "· {count} 行",
   },
   sessionInner: {
     tabTerminal: "终端",
@@ -1135,6 +1166,7 @@ export const zh: LocaleMessages = {
     tabEditor: "编辑器",
     tabBrowser: "浏览器",
     tabMarkdown: "Markdown 预览",
+    preview: "预览",
     tabCode: "代码",
     tabMedia: "媒体预览",
     tabOffice: "文档预览",
@@ -1336,6 +1368,9 @@ export const zh: LocaleMessages = {
     sessionCount: "会话数",
     workspaceId: "ID",
     uploadIcon: "上传图标",
+    modelSelectionTitle: "可用模型",
+    modelSelectionHint: "选择此工作区允许使用的模型，留空则使用全局模型",
+    contextFileHint: "启用后将该文件内容提供给模型；禁用后模型将无法获取其内容",
   },
   header: {
     toggleSidebar: "切换侧边栏",
@@ -1367,6 +1402,8 @@ export const zh: LocaleMessages = {
     clearSessionDesc: "重新开始一段新的空白会话",
     initTitle: "初始化项目",
     initDesc: "扫描项目结构，在项目根目录生成 AGENTS.md 项目洞悉文件",
+    steerTitle: "引导",
+    steerDesc: "在运行中的智能体里注入一条对话中途的指令",
   },
   input: {
     placeholder: "向 Encre 提问...",
@@ -1475,6 +1512,10 @@ export const zh: LocaleMessages = {
   stream: {
     validationTimedOut: "验证超时",
     notificationError: "错误",
+    zipArchive: "ZIP 压缩包",
+  },
+  diff: {
+    truncated: "... [差异过长，还有 {count} 行]",
   },
   compact: {
     summary: "{old} → {new} 条消息 · 节省 {tokens}",
@@ -1602,6 +1643,12 @@ export const zh: LocaleMessages = {
     permNetworkDesc: "沙箱内网络连接（影响 web_fetch、web_search 等）",
     permSandbox: "沙箱隔离",
     permSandboxDesc: "终端命令的沙箱隔离执行",
+    // 历史筛选日期占位与日历
+    dateStart: "开始日期",
+    dateEnd: "结束日期",
+    month1: "1月", month2: "2月", month3: "3月", month4: "4月", month5: "5月", month6: "6月",
+    month7: "7月", month8: "8月", month9: "9月", month10: "10月", month11: "11月", month12: "12月",
+    weekday1: "一", weekday2: "二", weekday3: "三", weekday4: "四", weekday5: "五", weekday6: "六", weekday7: "日",
   },
   mediaViewer: {
     zoomIn: "放大",
@@ -1693,7 +1740,7 @@ export const zh: LocaleMessages = {
     notifications_open: "打开通知",
     notifications_clear: "清除所有通知",
     toggle_theme: "切换主题（深色 / 浅色 / 跟随系统）",
-    toggle_language: "切换语言（zh / en）",
+    toggle_language: "切换语言（循环全部语言）",
     show_shortcuts: "显示快捷键参考",
   },
 };

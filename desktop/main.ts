@@ -1204,10 +1204,13 @@ function startPythonServer(): Promise<void> {
       // Development mode: spawn system Python with in-repo source.
       console.log("[server] bundled exe not found, falling back to system Python");
       const pythonCmd = isWin ? "python" : "python3";
-      const backendDir = path.resolve(rootDir, "backend");
+      // The "encre" package spans harness/encre (library) and core/encre
+      // (server layer); both trees must be on PYTHONPATH.
+      const harnessDir = path.resolve(rootDir, "harness");
+      const coreDir = path.resolve(rootDir, "core");
       const pythonPath = isWin
-        ? `${backendDir};${rootDir};${process.env.PYTHONPATH || ""}`
-        : `${backendDir}:${rootDir}:${process.env.PYTHONPATH || ""}`;
+        ? `${harnessDir};${coreDir};${rootDir};${process.env.PYTHONPATH || ""}`
+        : `${harnessDir}:${coreDir}:${rootDir}:${process.env.PYTHONPATH || ""}`;
       spawnCmd = pythonCmd;
       spawnArgs = ["-m", "encre.server.app", "--port", String(WS_PORT), "--service", "--log-level", "DEBUG"];
       spawnEnv = { ...process.env, PYTHONPATH: pythonPath, ENCRE_DATA_DIR: DATA_DIR };
@@ -1961,7 +1964,7 @@ ipcMain.handle("getDiagnostics", async () => {
   const pkgPath = path.join(__dirname, "..", "package.json");
   const desktopVersion = JSON.parse(fs.readFileSync(pkgPath, "utf-8")).version || "0.0.0";
   const rootDir = path.resolve(__dirname, "..", "..");
-  const pyprojectPath = path.join(rootDir, "pyproject.toml");
+  const pyprojectPath = path.join(rootDir, "harness", "pyproject.toml");
   let agentVersion = "0.0.0";
   try {
     const pyContent = fs.readFileSync(pyprojectPath, "utf-8");
@@ -2711,6 +2714,8 @@ ipcMain.handle("getLicenseContent", async () => {
 const LEGAL_DOC_FILES: Record<string, string> = {
   privacy: "PRIVACY.md",
   terms: "TERMS.md",
+  agreement: "USER_AGREEMENT.md",
+  "content-rules": "CONTENT_GUIDELINES.md",
   minors: "MINORS_PRIVACY.md",
   "data-rules": "DATA_PROCESSING.md",
 };

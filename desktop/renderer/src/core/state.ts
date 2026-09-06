@@ -32,9 +32,9 @@
  */
 
 import { AppState, createEmptyState, createEmptySessionSnapshot, Message, ToolCallState, TelemetryData, UsageStatsData, TokenUsage, PlanItem, PlanProposal, NotificationItem, AttachmentMeta, TimelineSegment, BranchMeta, SessionSnapshot, SearchFilter, defaultSearchFilter, SessionState } from "./types.js";
-import { t } from "./i18n.js";
-import { findSlashCommand } from "./slash_commands.js";
-import { buildTraySessionData, dedupeSessions } from "./session-projection.js";
+import { t } from "../features/i18n.js";
+import { findSlashCommand } from "../features/slash_commands.js";
+import { buildTraySessionData, dedupeSessions } from "../chat/session-projection.js";
 
 type Listener = () => void;
 
@@ -963,7 +963,7 @@ export function setSessionState(state_val: string, sessionId = state.sessionId):
     traySessionsCache.iwork = traySessionsCache.iwork.map(e =>
       e.session_id === sid ? { ...e, state: state_val as SessionState } : e
     );
-    window.electronAPI?.traySessionsBothUpdate?.({ normal: traySessionsCache.normal, iwork: traySessionsCache.iwork });
+    publishTraySessions();
   }
 }
 
@@ -1730,6 +1730,11 @@ export function setActiveWorkspace(path: string): void {
 /** Sets the cached config for a workspace (keyed by its path). */
 export function setWorkspaceConfig(path: string, config: import("./types.js").WorkspaceConfig): void {
   update({ workspaceConfigs: { ...state.workspaceConfigs, [path]: config } });
+}
+
+/** Sets the context-file availability map for a workspace (keyed by its path). */
+export function setWorkspaceFiles(path: string, files: Record<string, boolean>): void {
+  update({ workspaceFiles: { ...state.workspaceFiles, [path]: files } });
 }/** Sets the workspace mode (`iwork`/`normal`). */
 export function setWorkspaceMode(mode: "iwork" | "normal"): void {
   update({ workspaceMode: mode });

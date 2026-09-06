@@ -20,8 +20,8 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { EALoader } from "./ealoader.js";
-import { t } from "./i18n.js";
+import { EALoader } from "../features/ealoader.js";
+import { t } from "../features/i18n.js";
 
 export class SplashScreen {
   private loader: EALoader | null = null;

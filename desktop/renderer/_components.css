@@ -270,6 +270,13 @@
 .settings-card { padding: 0; }  /* 内边距由子元素（.settings-item-row）控制 */
 .model-card    { padding: 10px 14px; transition: border-color var(--transition-base); }
 
+/* 目标模型选择组件的容器：直接套用多模态切换卡片的背景（bg-secondary），
+   深浅色主题无需单独处理。 */
+.model-selection-card {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+
 
 /* ── 7. 徽章 / 计数标签 ────────────────────────────────────────
    合并来源: .si-badge (L1254) / .si-status (L1321)
@@ -549,6 +556,9 @@
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   min-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .encre-dialog-progress-pct {
   color: var(--text-muted);

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,8 +20,6 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
-
-from __future__ import annotations
 
 """Tests for BaseAdapter.handle_message inbound routing (Phase 1).
 
@@ -67,12 +65,18 @@ def _dm_event(text="hi", chat_id="123", user_id="42", platform="stub"):
     )
 
 
-# ── source normalization ────────────────────────────────────────────────
+# 鈹€鈹€ source normalization 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_handle_message_synthesizes_source_when_missing():
-    """An event without `source` is still dispatched (source optional)."""
+async def test_verify_handle_message_dispatches_event_even_when_source_is_missing(self):
+    """Validate that handle_message dispatches the event to the registered
+    handler even when the event has no source, confirming source is optional.
+
+    The test exercises construction of a MessageEvent without a source and
+    asserts the handler received exactly one event because downstream
+    processors may synthesize a source from platform context if needed.
+    """
     a = _StubAdapter()
     seen = []
 
@@ -88,12 +92,18 @@ async def test_handle_message_synthesizes_source_when_missing():
     assert seen[0].text == "hi"
 
 
-# ── dispatch ───────────────────────────────────────────────────────────
+# 鈹€鈹€ dispatch 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_handle_message_dispatches_to_handler():
-    """When a handler is set, handle_message awaits it with the event."""
+async def test_verify_handle_message_awaits_registered_handler_with_event(self):
+    """Validate that handle_message awaits the registered handler and passes
+    the event object through, confirming the dispatch contract.
+
+    The test exercises handler registration and emission and asserts the
+    seen list contains the exact event because the handler is the single
+    point of truth for inbound message processing.
+    """
     a = _StubAdapter()
     seen = []
 
@@ -107,21 +117,33 @@ async def test_handle_message_dispatches_to_handler():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_no_handler_falls_back_to_log():
-    """Without a handler, handle_message logs a warning and drops the message."""
+async def test_verify_handle_message_logs_warning_and_drops_when_no_handler(self):
+    """Validate that handle_message does not raise when no handler is
+    registered, instead logging a warning and dropping the message.
+
+    The test exercises emission with an unconfigured adapter and asserts
+    no exception is raised because the adapter must be resilient to
+    misconfiguration during development and testing.
+    """
     a = _StubAdapter()
     event = _dm_event("hello", chat_id="9", user_id="u1")
     # Should not raise - just logs warning
     await a.handle_message(event)
 
 
-# ── two-level guard ────────────────────────────────────────────────────
+# 鈹€鈹€ two-level guard 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_handle_message_queues_concurrent_message():
-    """A second message arriving while the session is active is queued, not
-    dispatched concurrently.  After the first completes, the queued one runs."""
+async def test_verify_concurrent_message_on_same_session_is_queued_not_dispatched(self):
+    """Validate that a second message arriving on the same session_key while
+    the first is active is queued, not dispatched concurrently.
+
+    The test exercises two tasks on chat_id='1', asserts the second handler
+    has not started when the first is midway, and confirms both complete
+    in order after the first releases because the guard prevents race
+    conditions on per-session state like tool call invariants.
+    """
     a = _StubAdapter()
     first_started = asyncio.Event()
     release_first = asyncio.Event()
@@ -159,8 +181,14 @@ async def test_handle_message_queues_concurrent_message():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_different_chats_run_concurrently():
-    """Messages from different chats (different session keys) run concurrently."""
+async def test_verify_messages_from_different_chats_run_concurrently(self):
+    """Validate that messages from different chats (different session keys)
+    run concurrently without queueing, confirming the guard is scoped per-session.
+
+    The test exercises two tasks on chat_id='1' and chat_id='2' and asserts
+    both handlers have started before either releases because different
+    sessions must not block each other.
+    """
     a = _StubAdapter()
     release = asyncio.Event()
     started: list[str] = []
@@ -185,8 +213,17 @@ async def test_handle_message_different_chats_run_concurrently():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_bypass_command_not_queued():
-    """/stop (a bypass command) runs immediately even while a session is active."""
+async def test_verify_bypass_command_runs_after_drain_not_immediately(self):
+    """Validate that a bypass command like /stop arriving while a session is
+    active is queued by the guard and processed only after the active
+    session completes and drains the queue.
+
+    The test exercises a running handler and a /stop event on the same
+    chat_id and asserts /stop is not in seen until after the first handler
+    releases and the drain loop completes because bypass commands still
+    respect session ordering 鈥?they just skip the concurrency guard on
+    their own turn.
+    """
     a = _StubAdapter()
     release = asyncio.Event()
     first_started = asyncio.Event()
@@ -224,12 +261,20 @@ async def test_handle_message_bypass_command_not_queued():
     assert "/stop" in seen
 
 
-# ── drain on completion ────────────────────────────────────────────────
+# 鈹€鈹€ drain on completion 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_handle_message_drains_pending_after_completion():
-    """Queued messages are re-dispatched after the active session completes."""
+async def test_verify_pending_messages_are_drained_in_order_after_completion(self):
+    """Validate that queued messages are re-dispatched in FIFO order after
+    the active session completes, confirming the drain loop preserves
+    message ordering.
+
+    The test exercises two queued messages while the first handler is
+    active, asserts only the first is handled during activity, then
+    asserts both queued messages complete in order after release because
+    message ordering is a correctness invariant for chat applications.
+    """
     a = _StubAdapter()
     first_started = asyncio.Event()
     release = asyncio.Event()

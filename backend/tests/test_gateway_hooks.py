@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,8 +20,6 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
-
-from __future__ import annotations
 
 """Tests for the gateway lifecycle hook registry (Phase 3).
 
@@ -65,11 +63,18 @@ def _isolated_registry():
     reset_hook_registry(hooks_dir="/tmp/encre_no_hooks_dir")
 
 
-# ── register / emit / emit_collect ─────────────────────────────────────
+# 鈹€鈹€ register / emit / emit_collect 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_emit_fires_registered_handler():
+async def test_verify_emit_fires_registered_handler():
+    """Validate that emit invokes every handler registered for the event.
+
+    The test registers an async handler that records the event type and
+    context tuple, emits AGENT_START, and asserts the observed sequence
+    matches exactly because emit is the primary delivery mechanism for
+    lifecycle notifications.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -82,7 +87,13 @@ async def test_emit_fires_registered_handler():
 
 
 @pytest.mark.asyncio
-async def test_emit_supports_sync_handler():
+async def test_verify_emit_invokes_sync_handler():
+    """Validate that emit wraps sync handlers transparently.
+
+    The test registers a synchronous handler and emits SESSION_START, then
+    asserts the handler received the event because the registry must accept
+    both sync and async callables without requiring the caller to decorate.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -95,7 +106,14 @@ async def test_emit_supports_sync_handler():
 
 
 @pytest.mark.asyncio
-async def test_emit_collect_returns_non_none():
+async def test_verify_emit_collect_returns_non_none_results():
+    """Validate that emit_collect gathers non-None returns from handlers.
+
+    The test registers a handler that returns a decision dict, emits a
+    command-scoped event, and asserts the returned list contains exactly
+    that dict because emit_collect is the contract used by decision hooks
+    to produce deny/allow/rewrite outcomes.
+    """
     reg = get_hook_registry()
 
     async def h(et, ctx):
@@ -107,7 +125,14 @@ async def test_emit_collect_returns_non_none():
 
 
 @pytest.mark.asyncio
-async def test_emit_collect_skips_none_returns():
+async def test_verify_emit_collect_skips_none_returns():
+    """Validate that emit_collect filters out None returns from handlers.
+
+    The test registers one handler returning None and another returning a
+    decision dict, emits AGENT_END, and asserts only the non-None result
+    is collected because handlers that opt out of decision-making must not
+    inject spurious entries into the results list.
+    """
     reg = get_hook_registry()
 
     async def h1(et, ctx):
@@ -122,11 +147,17 @@ async def test_emit_collect_skips_none_returns():
     assert results == [{"ok": True}]
 
 
-# ── wildcard resolution ────────────────────────────────────────────────
+# 鈹€鈹€ wildcard resolution 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_wildcard_base_star_matches():
+async def test_verify_wildcard_base_star_matches_subcommands():
+    """Validate that command:* matches any sub-command event.
+
+    The test registers a handler on the wildcard pattern and emits two
+    distinct command events, then asserts both were observed because the
+    wildcard must expand to every event whose prefix matches base.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -140,8 +171,13 @@ async def test_wildcard_base_star_matches():
 
 
 @pytest.mark.asyncio
-async def test_bare_base_does_not_match():
-    """A bare base (no :*) does NOT match base:sub events (mirrors Hermes)."""
+async def test_verify_bare_base_does_not_match_sub_events():
+    """Validate that a bare base event name does not match sub-events.
+
+    The test registers on the exact string 'agent' and emits AGENT_START,
+    then asserts the handler was not called because the registry mirrors
+    Hermes-style semantics where bare bases require exact matches only.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -154,7 +190,14 @@ async def test_bare_base_does_not_match():
 
 
 @pytest.mark.asyncio
-async def test_exact_and_wildcard_both_fire():
+async def test_verify_exact_and_wildcard_both_fire():
+    """Validate that exact and wildcard handlers both fire for the same event.
+
+    The test registers one exact handler and one wildcard handler for the
+    same base namespace, emits AGENT_START, and asserts both observed both
+    invocations because exact and wildcard registrations are additive, not
+    mutually exclusive.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -170,11 +213,18 @@ async def test_exact_and_wildcard_both_fire():
     assert seen == ["exact:agent:start", "wild:agent:start"]
 
 
-# ── exception isolation ────────────────────────────────────────────────
+# 鈹€鈹€ exception isolation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_failing_handler_does_not_abort_others():
+async def test_verify_failing_handler_does_not_abort_others_on_emit():
+    """Validate that one handler's exception does not prevent other handlers from running.
+
+    The test registers a handler that raises RuntimeError alongside a healthy
+    handler on AGENT_STEP, emits the event, and asserts the healthy handler
+    still observed the event because per-handler exception isolation is
+    essential to prevent a single broken hook from killing the pipeline.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -191,7 +241,14 @@ async def test_failing_handler_does_not_abort_others():
 
 
 @pytest.mark.asyncio
-async def test_failing_collector_does_not_abort_others():
+async def test_verify_failing_handler_does_not_abort_others_on_emit_collect():
+    """Validate that one collector handler's exception does not poison the result list.
+
+    The test registers a handler that raises RuntimeError alongside a healthy
+    collector on AGENT_END, emits the event via emit_collect, and asserts
+    the healthy result is returned unchanged because exception isolation must
+    hold for the decision-collector path as well.
+    """
     reg = get_hook_registry()
 
     async def bad(et, ctx):
@@ -206,11 +263,17 @@ async def test_failing_collector_does_not_abort_others():
     assert results == [{"ok": True}]
 
 
-# ── filesystem discovery ──────────────────────────────────────────────
+# 鈹€鈹€ filesystem discovery 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
-def test_discover_and_load_hook(tmp_path):
-    """A hook directory with HOOK.yaml + handler.py is discovered and loaded."""
+def test_verify_discover_and_load_hook(tmp_path):
+    """Validate that discover_and_load loads a well-formed hook directory.
+
+    The test creates a hook directory containing a valid HOOK.yaml manifest
+    and a handler.py module, calls discover_and_load, and asserts the hook
+    name is returned because the filesystem resolver must pick up conforming
+    directories so users can extend the gateway via the hooks folder.
+    """
     hooks_root = tmp_path / "hooks"
     hook_dir = hooks_root / "myhook"
     hook_dir.mkdir(parents=True)
@@ -226,7 +289,14 @@ def test_discover_and_load_hook(tmp_path):
     assert loaded == ["myhook"]
 
 
-def test_discover_skips_missing_manifest(tmp_path):
+def test_verify_discover_skips_missing_manifest(tmp_path):
+    """Validate that discover_and_load skips directories without HOOK.yaml.
+
+    The test creates a directory containing only handler.py and asserts
+    discover_and_load returns an empty list because the manifest is the
+    authoritative registration document and its absence means the directory
+    is not a valid hook.
+    """
     hooks_root = tmp_path / "hooks"
     hook_dir = hooks_root / "bad"
     hook_dir.mkdir(parents=True)
@@ -237,7 +307,13 @@ def test_discover_skips_missing_manifest(tmp_path):
     assert loaded == []
 
 
-def test_discover_skips_malformed_handler(tmp_path):
+def test_verify_discover_skips_malformed_handler(tmp_path):
+    """Validate that discover_and_load skips directories with invalid Python.
+
+    The test creates a hook directory with a valid manifest but a handler.py
+    containing invalid Python and asserts it is skipped because module-load
+    failures must not crash the registry discovery phase.
+    """
     hooks_root = tmp_path / "hooks"
     hook_dir = hooks_root / "broken"
     hook_dir.mkdir(parents=True)
@@ -248,12 +324,18 @@ def test_discover_skips_malformed_handler(tmp_path):
     assert loaded == []
 
 
-def test_discover_nonexistent_dir_returns_empty():
+def test_verify_discover_nonexistent_dir_returns_empty():
+    """Validate that discover_and_load is safe when the hooks dir is absent.
+
+    The test points at a path that does not exist and asserts an empty list
+    is returned because discovery must be idempotent and tolerant of missing
+    directories during development or when the hooks folder is optional.
+    """
     reg = reset_hook_registry(hooks_dir="/tmp/encre_definitely_missing")
     assert reg.discover_and_load() == []
 
 
-# ── command:* decision hooks via handle_message ───────────────────────
+# 鈹€鈹€ command:* decision hooks via handle_message 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 class _CmdAdapter(BasePlatformAdapter):
@@ -294,7 +376,14 @@ def _cmd_event(text, chat_id="1", user_id="u1"):
 
 
 @pytest.mark.asyncio
-async def test_command_hook_deny_aborts():
+async def test_verify_command_hook_deny_aborts_dispatch():
+    """Validate that a deny decision stops further message dispatch.
+
+    The test registers a handler that returns decision='deny', sends a
+    /secret command through the adapter, and asserts the inner handler was
+    not called while a deny notice was sent back to the chat because
+    deny is the strongest rejection signal in the command-decision contract.
+    """
     reg = get_hook_registry()
 
     async def deny(et, ctx):
@@ -315,7 +404,13 @@ async def test_command_hook_deny_aborts():
 
 
 @pytest.mark.asyncio
-async def test_command_hook_handled_aborts():
+async def test_verify_command_hook_handled_aborts_dispatch():
+    """Validate that a handled decision stops further message dispatch.
+
+    The test registers a handler that returns decision='handled', sends a
+    /wave command, and asserts the inner handler was never reached because
+    handled signals that the hook itself consumed the request.
+    """
     reg = get_hook_registry()
 
     async def handled(et, ctx):
@@ -334,7 +429,14 @@ async def test_command_hook_handled_aborts():
 
 
 @pytest.mark.asyncio
-async def test_command_hook_rewrite_changes_text():
+async def test_verify_command_hook_rewrite_changes_dispatched_text():
+    """Validate that a rewrite decision substitutes the prompt before dispatch.
+
+    The test registers a handler that returns decision='rewrite' with a new
+    text value, sends a /hi command, and asserts the inner handler received
+    the rewritten text rather than the original command because rewrite is
+    the mechanism by which hooks transform user input before the agent sees it.
+    """
     reg = get_hook_registry()
 
     async def rewrite(et, ctx):
@@ -354,7 +456,14 @@ async def test_command_hook_rewrite_changes_text():
 
 
 @pytest.mark.asyncio
-async def test_command_hook_wildcard_fires():
+async def test_verify_command_hook_wildcard_fires_for_any_command():
+    """Validate that command:* fires for every command regardless of name.
+
+    The test registers the COMMAND_WILDCARD handler, sends a synthetic
+    /anything command, and asserts the handler observed the command name
+    because the wildcard is the primary observability hook for command
+    telemetry and rate-limiting decisions.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -374,7 +483,14 @@ async def test_command_hook_wildcard_fires():
 
 
 @pytest.mark.asyncio
-async def test_command_hook_allow_proceeds():
+async def test_verify_command_hook_allow_proceeds_to_dispatch():
+    """Validate that an allow decision lets the normal handler run.
+
+    The test registers a handler that returns decision='allow', sends a
+    /go command, and asserts the inner handler received the original text
+    because allow is the passthrough signal that defers to the default
+    message pipeline.
+    """
     reg = get_hook_registry()
 
     async def allow(et, ctx):
@@ -393,8 +509,14 @@ async def test_command_hook_allow_proceeds():
 
 
 @pytest.mark.asyncio
-async def test_non_command_message_skips_command_hooks():
-    """A plain (non-/) message does not trigger command hooks."""
+async def test_verify_non_command_message_skips_command_hooks():
+    """Validate that plain messages do not trigger command hooks.
+
+    The test registers the COMMAND_WILDCARD handler and sends a non-command
+    message (no leading slash), then asserts the handler was never invoked
+    because command hooks must only fire when the message is syntactically
+    a command to avoid noisy false positives on normal chat.
+    """
     reg = get_hook_registry()
     seen = []
 
@@ -412,16 +534,18 @@ async def test_non_command_message_skips_command_hooks():
     assert seen == []
 
 
-# ── gateway:startup smoke (GatewayRunner) ────────────────────────────
+# 鈹€鈹€ gateway:startup smoke (GatewayRunner) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_gateway_startup_emits(tmp_path):
-    """GatewayRunner.start fires gateway:startup after discovery.
+async def test_verify_gateway_startup_emits_after_discovery(tmp_path):
+    """Validate that GatewayRunner.start emits gateway:startup after hook discovery.
 
-    Uses a real hook file so discover_and_load registers the handler before
-    the emit (start clears the registry on discovery, so a handler
-    must come from the filesystem to survive to the emit).
+    The test constructs a minimal GatewayRunner instance with a real hook
+    directory so discover_and_load registers a handler before start runs,
+    then asserts the hook module recorded the startup event because the
+    gateway lifecycle contract requires a startup notification to be emitted
+    once the adapter graph is assembled.
     """
     from encre.gateway.run import GatewayRunner
 
@@ -455,4 +579,3 @@ async def test_gateway_startup_emits(tmp_path):
     mod = sys.modules.get("encre_hooks.startup_hook")
     assert mod is not None
     assert "gateway:startup" in mod.SEEN
-

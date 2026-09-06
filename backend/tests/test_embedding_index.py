@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from __future__ import annotations
-
 """Test module: unit tests covering the Encre embedding index functionality."""
 
 import tempfile
@@ -30,14 +28,35 @@ from pathlib import Path
 
 
 def _fake_embedding(texts: list[str]) -> list[list[float]]:
-    """Helper: Fake embedding."""
+    """Return a deterministic 2-D embedding for each input text.
+
+    The embedding encodes text length as the first dimension and a constant
+    1.0 as the second so that slice-level tests can inspect raw float vectors
+    without requiring an actual model backend.
+    """
     return [[float(len(text)), 1.0] for text in texts]
 
 
 class TestEncreEmbeddingIndex:
-    """Test suite for EncreEmbeddingIndex."""
-    def test_symbol_slices_do_not_bleed_into_adjacent_function(self):
-        """Test: Symbol slices do not bleed into adjacent function."""
+    """Engineered to validate the embedding index slice isolation and incremental scan.
+
+    This test class exercises :class:`EncreEmbeddingIndex` across a two-function
+    source file scenario and an incremental-update scenario to ensure that:
+    (1) AST-derived symbol slices do not bleed into adjacent functions, and
+    (2) incremental rescans update only the slices belonging to changed files.
+    These invariants are critical because corrupted slices produce noisy
+    vector-store queries and degraded semantic retrieval accuracy.
+    """
+
+    def test_verify_symbol_slices_do_not_bleed_into_adjacent_function(self):
+        """Validate that each function's embedding slice contains only its own source.
+
+        The test writes two adjacent top-level functions (foo and bar) into a
+        temp workspace, runs a full AST scan, and then asserts that foo's slice
+        text contains ``def foo():`` but not ``def bar():`` or ``return foo()``.
+        This guards against AST slice boundaries leaking across function borders,
+        which would corrupt the vector store with mixed-context chunks.
+        """
         from encre.codebase.ast_index import EncreASTIndex
         from encre.codebase.embedding_index import EncreEmbeddingIndex
 
@@ -57,29 +76,39 @@ class TestEncreEmbeddingIndex:
             emb = EncreEmbeddingIndex(str(ws), ast_index=ast_idx, embedding_fn=_fake_embedding)
             emb.scan()
 
-            # Verify: emb.slice_count == 2
+            # Two top-level defs must yield exactly two slices.
             assert emb.slice_count == 2
             by_symbol = {sl.symbol: sl for sl in emb._slices}
-            # Verify: set(by_symbol) == {"foo", "bar"}
+            # Both symbols must be indexed.
             assert set(by_symbol) == {"foo", "bar"}
 
             foo_text = by_symbol["foo"].text
             bar_text = by_symbol["bar"].text
 
-            # Verify: "def foo():" in foo_text
+            # foo's slice must contain its own definition.
             assert "def foo():" in foo_text
-            # Verify: "def bar():" not in foo_text
+            # foo's slice must NOT contain bar's definition (no bleed).
             assert "def bar():" not in foo_text
-            # Verify: "return foo()" not in foo_text
+            # foo's slice must NOT contain bar's call site (no bleed).
             assert "return foo()" not in foo_text
 
-            # Verify: "def bar():" in bar_text
+            # bar's slice must contain its own definition.
             assert "def bar():" in bar_text
-            # Verify: "def foo():" not in bar_text
+            # bar's slice must NOT contain foo's definition (no bleed).
             assert "def foo():" not in bar_text
 
-    def test_incremental_scan_updates_only_changed_file_slices(self):
-        """Test: Incremental scan updates only changed file slices."""
+    def test_verify_incremental_scan_updates_only_changed_file_slices(self):
+        """Validate that incremental scans touch only modified-file slices.
+
+        The test writes two files (a.py, b.py), records the full-scan snapshot,
+        mutates b.py only, runs an incremental AST + embedding scan, and then
+        asserts:
+        - Both slices still exist in the post-scan state.
+        - The untouched a.py slice is byte-identical to the pre-scan snapshot.
+        - The mutated b.py slice differs from the pre-scan snapshot.
+        This guards against incremental rescans incorrectly rewriting unchanged
+        content or failing to update changed content.
+        """
         from encre.codebase.ast_index import EncreASTIndex
         from encre.codebase.embedding_index import EncreEmbeddingIndex
 
@@ -103,11 +132,10 @@ class TestEncreEmbeddingIndex:
 
             after = {(sl.file, sl.symbol): sl.text for sl in emb._slices}
 
-            # Verify: ("a.py", "foo") in after
+            # Both files must still be indexed after the incremental scan.
             assert ("a.py", "foo") in after
-            # Verify: ("b.py", "bar") in after
             assert ("b.py", "bar") in after
-            # Verify: after[("a.py", "foo")] == before[("a.py", "foo")]
+            # Unchanged file's slice text must remain byte-identical.
             assert after[("a.py", "foo")] == before[("a.py", "foo")]
-            # Verify: after[("b.py", "bar")] != before[("b.py", "bar")]
+            # Mutated file's slice text must reflect the new content.
             assert after[("b.py", "bar")] != before[("b.py", "bar")]

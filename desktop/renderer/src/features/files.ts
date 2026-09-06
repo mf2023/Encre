@@ -30,8 +30,9 @@
  */
 
 import { getMaterialFileIcon } from "@baybreezy/file-extension-icon";
-import { AttachmentMeta } from "./types.js";
-import { addAttachments, removeAttachment, getState, subscribe } from "./state.js";
+import { AttachmentMeta } from "../core/types.js";
+import { addAttachments, removeAttachment, getState, subscribe } from "../core/state.js";
+import { t } from "./i18n.js";
 
 const MAX_SINGLE_SIZE = 10 * 1024 * 1024;
 const BATCH_SIZE = 5;
@@ -274,8 +275,8 @@ export class Files {
     const isDir = att.mime_type === "text/x-directory";
     const label = att.name.length > 6 ? att.name.slice(0, 6) + "..." : att.name;
     const icon = isDir ? "folder" : att.mime_type === "text/x-terminal" ? "terminal" : this.fileIcon(att.name);
-    const summary = isDir ? "· folder"
-      : att.mime_type === "text/x-terminal" ? `· ${att.size} line${att.size !== 1 ? "s" : ""}`
+    const summary = isDir ? t("files.folderSummary")
+      : att.mime_type === "text/x-terminal" ? t("files.lineSummary", { count: att.size })
       : `· ${this.fmtSize(att.size)}`;
     const iconHtml = icon.startsWith("data:")
       ? `<img src="${icon}" class="chip-icon" style="width:12px;height:12px;margin:0 2px 0 0">`

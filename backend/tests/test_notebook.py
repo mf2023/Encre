@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from __future__ import annotations
-
 """Tests for encre.notebook.session -- EncreNotebookSession."""
 
 import uuid
@@ -32,73 +30,68 @@ import uuid
 # ===========================================================================
 
 class TestEncreNotebookSessionConstruction:
-    """Test cases covering encre notebook session construction.
-    
-    Covers the expected behavior and relevant edge cases.
-    """
-    """Tests for creating EncreNotebookSession instances."""
+    """Engineered to validate EncreNotebookSession initialisation invariants.
 
-    def test_construction_default_kernel(self):
-        """Verifies that construction default kernel."""
+The class confirms that sessions default to the python3 kernel,
+accept arbitrary kernel names, generate unique UUID session IDs per
+instance, start in a stopped state with an empty cell map, and
+generate a kernel bootstrap script containing the required
+import sys / exec( / __SHUTDOWN__ markers.
+"""
+
+    def test_verify_session_construction_default_kernel(self):
+        """Validate that EncreNotebookSession defaults to the python3 kernel."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
-        # Confirm the expected result for this scenario: construction default kernel.
         assert sess is not None
         assert sess.kernel_name == "python3"
 
-    def test_construction_custom_kernel(self):
-        """Verifies that construction custom kernel."""
+    def test_verify_session_construction_custom_kernel(self):
+        """Validate that EncreNotebookSession accepts custom kernel names."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession(kernel_name="python3.12")
-        # Confirm the expected result for this scenario: construction custom kernel.
         assert sess.kernel_name == "python3.12"
 
-    def test_construction_other_python_versions(self):
-        """Verifies that construction other python versions."""
+    def test_verify_session_construction_other_python_versions(self):
+        """Validate that various python3.X kernel names are accepted verbatim."""
         from encre.notebook.session import EncreNotebookSession
         for kname in ["python3.9", "python3.10", "python3.11", "python3.13"]:
             sess = EncreNotebookSession(kernel_name=kname)
-            # Confirm the expected result for this scenario: construction other python versions.
             assert sess.kernel_name == kname
 
-    def test_session_id_is_uuid_string(self):
-        """Verifies that session id is uuid string."""
+    def test_verify_session_id_is_uuid_string(self):
+        """Validate that session_id is a valid UUID string."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
-        # Confirm the expected result for this scenario: session id is uuid string.
         assert isinstance(sess.session_id, str)
         # Should be a valid UUID
         uuid.UUID(sess.session_id)
 
-    def test_each_session_has_unique_id(self):
-        """Verifies that each session has unique id."""
+    def test_verify_session_each_has_unique_id(self):
+        """Validate that each session instance gets a unique session ID."""
         from encre.notebook.session import EncreNotebookSession
         a = EncreNotebookSession()
         b = EncreNotebookSession()
-        # Confirm the expected result for this scenario: each session has unique id.
         assert a.session_id != b.session_id
 
-    def test_initial_state_not_started(self):
-        """Verifies that initial state not started."""
+    def test_verify_session_initial_state_not_started(self):
+        """Validate that a new session starts in stopped state with no process."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
-        # Confirm the expected result for this scenario: initial state not started.
         assert sess._started is False
         assert sess._process is None
 
-    def test_initial_cells_empty(self):
-        """Verifies that initial cells empty."""
+    def test_verify_session_initial_cells_empty(self):
+        """Validate that a new session starts with an empty cell map and order list."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
-        # Confirm the expected result for this scenario: initial cells empty.
         assert sess._cells == {}
         assert sess._cell_order == []
 
-    def test_kernel_script_is_python_code(self):
-        """Verifies that kernel script is python code."""
+    def test_verify_session_kernel_script_is_python_code(self):
+        """Validate that _kernel_script contains the required bootstrap markers."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
-        # Confirm the expected result for this scenario: kernel script is python code.
         assert "import sys" in sess._kernel_script
         assert "exec(" in sess._kernel_script
         assert "__SHUTDOWN__" in sess._kernel_script
@@ -109,44 +102,44 @@ class TestEncreNotebookSessionConstruction:
 # ===========================================================================
 
 class TestEncreNotebookSessionCells:
-    """Test cases covering encre notebook session cells.
-    
-    Covers the expected behavior and relevant edge cases.
-    """
-    """Tests for cell CRUD operations (no kernel needed)."""
+    """Engineered to validate cell lifecycle operations on EncreNotebookSession.
 
-    def test_create_cell_returns_id(self):
-        """Verifies that create cell returns id."""
+Tests cover cell creation (ID generation, default code type, explicit
+markdown type), ordered multi-cell creation, cell editing (code
+update and status/output reset), cell deletion (including preservation
+of sibling order), and non-existent-cell error handling (return False
+or empty string rather than raising).
+"""
+
+    def test_verify_cell_create_returns_id(self):
+        """Validate that create_cell returns an 8-character string ID."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         cell_id = sess.create_cell(code="print('hello')")
-        # Confirm the expected result for this scenario: create cell returns id.
         assert isinstance(cell_id, str)
         assert len(cell_id) == 8
 
-    def test_create_cell_default_type_code(self):
-        """Verifies that create cell default type code."""
+    def test_verify_cell_create_default_type_code(self):
+        """Validate that create_cell defaults cell_type to 'code'."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         sess.create_cell(code="x = 1")
         state = sess.get_state()
         cells = state["cells"]
-        # Confirm the expected result for this scenario: create cell default type code.
         assert len(cells) == 1
         assert cells[0]["cell_type"] == "code"
 
-    def test_create_cell_markdown_type(self):
-        """Verifies that create cell markdown type."""
+    def test_verify_cell_create_markdown_type(self):
+        """Validate that create_cell accepts explicit 'markdown' cell type."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         sess.create_cell(code="# Title", cell_type="markdown")
         state = sess.get_state()
         cells = state["cells"]
-        # Confirm the expected result for this scenario: create cell markdown type.
         assert cells[0]["cell_type"] == "markdown"
 
-    def test_create_multiple_cells_preserves_order(self):
-        """Verifies that create multiple cells preserves order."""
+    def test_verify_cell_create_multiple_preserves_order(self):
+        """Validate that multiple cells preserve creation order in state."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         id1 = sess.create_cell(code="a = 1")
@@ -154,62 +147,56 @@ class TestEncreNotebookSessionCells:
         id3 = sess.create_cell(code="c = 3")
         state = sess.get_state()
         cell_ids = [c["id"] for c in state["cells"]]
-        # Confirm the expected result for this scenario: create multiple cells preserves order.
         assert cell_ids == [id1, id2, id3]
 
-    def test_edit_cell_changes_code(self):
-        """Verifies that edit cell changes code."""
+    def test_verify_cell_edit_changes_code(self):
+        """Validate that edit_cell updates the code and returns True."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         cell_id = sess.create_cell(code="original")
         result = sess.edit_cell(cell_id, code="modified")
-        # Confirm the expected result for this scenario: edit cell changes code.
         assert result is True
         state = sess.get_state()
         assert state["cells"][0]["code"] == "modified"
 
-    def test_edit_nonexistent_cell_returns_false(self):
-        """Verifies that edit nonexistent cell returns false."""
+    def test_verify_cell_edit_nonexistent_returns_false(self):
+        """Validate that edit_cell returns False for non-existent cell IDs."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         result = sess.edit_cell("nonexistent", code="x = 1")
-        # Confirm the expected result for this scenario: edit nonexistent cell returns false.
         assert result is False
 
-    def test_edit_cell_resets_status_and_outputs(self):
-        """Verifies that edit cell resets status and outputs."""
+    def test_verify_cell_edit_resets_status_and_outputs(self):
+        """Validate that edit_cell resets status to idle and clears output/error."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         cell_id = sess.create_cell(code="print('hi')")
         sess.edit_cell(cell_id, code="print('hello')")
         state = sess.get_state()
         cell = state["cells"][0]
-        # Confirm the expected result for this scenario: edit cell resets status and outputs.
         assert cell["status"] == "idle"
         assert cell["output"] == ""
         assert cell["error"] == ""
 
-    def test_delete_cell_removes_from_state(self):
-        """Verifies that delete cell removes from state."""
+    def test_verify_cell_delete_removes_from_state(self):
+        """Validate that delete_cell removes the cell and updates cell_count."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         cell_id = sess.create_cell(code="x = 1")
-        # Confirm the expected result for this scenario: delete cell removes from state.
         assert sess.delete_cell(cell_id) is True
         state = sess.get_state()
         assert state["cell_count"] == 0
         assert state["cells"] == []
 
-    def test_delete_nonexistent_cell_returns_false(self):
-        """Verifies that delete nonexistent cell returns false."""
+    def test_verify_cell_delete_nonexistent_returns_false(self):
+        """Validate that delete_cell returns False for non-existent cell IDs."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         result = sess.delete_cell("no_such_cell")
-        # Confirm the expected result for this scenario: delete nonexistent cell returns false.
         assert result is False
 
-    def test_delete_cell_preserves_order(self):
-        """Verifies that delete cell preserves order."""
+    def test_verify_cell_delete_preserves_order(self):
+        """Validate that delete_cell preserves the order of remaining cells."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         id1 = sess.create_cell(code="a = 1")
@@ -218,32 +205,28 @@ class TestEncreNotebookSessionCells:
         sess.delete_cell(id2)
         state = sess.get_state()
         cell_ids = [c["id"] for c in state["cells"]]
-        # Confirm the expected result for this scenario: delete cell preserves order.
         assert cell_ids == [id1, id3]
 
-    def test_get_output_nonexistent_returns_empty(self):
-        """Verifies that get output nonexistent returns empty."""
+    def test_verify_cell_get_output_nonexistent_returns_empty(self):
+        """Validate that get_output returns empty string for non-existent cells."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         result = sess.get_output("no_such_cell")
-        # Confirm the expected result for this scenario: get output nonexistent returns empty.
         assert result == ""
 
-    def test_get_error_nonexistent_returns_empty(self):
-        """Verifies that get error nonexistent returns empty."""
+    def test_verify_cell_get_error_nonexistent_returns_empty(self):
+        """Validate that get_error returns empty string for non-existent cells."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         result = sess.get_error("no_such_cell")
-        # Confirm the expected result for this scenario: get error nonexistent returns empty.
         assert result == ""
 
-    def test_get_output_for_existing_cell(self):
-        """Verifies that get output for existing cell."""
+    def test_verify_cell_get_output_for_existing_cell(self):
+        """Validate that get_output returns empty string before execution."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         cell_id = sess.create_cell(code="x = 1")
         # Cell hasn't been executed, so output is empty
-        # Confirm the expected result for this scenario: get output for existing cell.
         assert sess.get_output(cell_id) == ""
 
 
@@ -252,63 +235,61 @@ class TestEncreNotebookSessionCells:
 # ===========================================================================
 
 class TestEncreNotebookSessionState:
-    """Test cases covering encre notebook session state.
-    
-    Covers the expected behavior and relevant edge cases.
-    """
-    """Tests for get_state."""
+    """Engineered to validate the session state serialisation contract.
 
-    def test_get_state_initial(self):
-        """Verifies that get state initial."""
+Tests confirm that get_state returns a dict with the required keys
+(session_id, kernel_name, cells, cell_count), that cell entries
+contain all expected fields (id, code, cell_type, output, error,
+status, execution_time), and that newly-created cells start in idle
+status with zero execution time.
+"""
+
+    def test_verify_state_get_state_initial(self):
+        """Validate that get_state returns correct initial values."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         state = sess.get_state()
-        # Confirm the expected result for this scenario: get state initial.
         assert state["session_id"] == sess.session_id
         assert state["kernel_name"] == "python3"
         assert state["cells"] == []
         assert state["cell_count"] == 0
 
-    def test_get_state_after_creating_cells(self):
-        """Verifies that get state after creating cells."""
+    def test_verify_state_get_state_after_creating_cells(self):
+        """Validate that get_state reflects created cells with correct code."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         sess.create_cell(code="x = 1")
         sess.create_cell(code="y = 2")
         state = sess.get_state()
-        # Confirm the expected result for this scenario: get state after creating cells.
         assert state["cell_count"] == 2
         assert len(state["cells"]) == 2
         assert state["cells"][0]["code"] == "x = 1"
         assert state["cells"][1]["code"] == "y = 2"
 
-    def test_get_state_keys(self):
-        """Verifies that get state keys."""
+    def test_verify_state_get_state_keys(self):
+        """Validate that get_state returns all required top-level keys."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         state = sess.get_state()
         for key in ["session_id", "kernel_name", "cells", "cell_count"]:
-            # Confirm the expected result for this scenario: get state keys.
             assert key in state
 
-    def test_cell_state_keys(self):
-        """Verifies that cell state keys."""
+    def test_verify_state_cell_state_keys(self):
+        """Validate that each cell entry contains all required fields."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         sess.create_cell(code="print('hi')")
         state = sess.get_state()
         cell = state["cells"][0]
         for key in ["id", "code", "cell_type", "output", "error", "status", "execution_time"]:
-            # Confirm the expected result for this scenario: cell state keys.
             assert key in cell
 
-    def test_cell_initial_status_idle(self):
-        """Verifies that cell initial status idle."""
+    def test_verify_state_cell_initial_status_idle(self):
+        """Validate that new cells start in idle status with zero execution time."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         sess.create_cell(code="print('hi')")
         state = sess.get_state()
-        # Confirm the expected result for this scenario: cell initial status idle.
         assert state["cells"][0]["status"] == "idle"
         assert state["cells"][0]["execution_time"] == 0.0
 
@@ -318,26 +299,25 @@ class TestEncreNotebookSessionState:
 # ===========================================================================
 
 class TestEncreNotebookSessionClose:
-    """Test cases covering encre notebook session close.
-    
-    Covers the expected behavior and relevant edge cases.
-    """
-    """Tests for session close behavior."""
+    """Engineered to validate session shutdown behaviour.
 
-    def test_close_before_kernel_started_does_not_raise(self):
-        """Verifies that close before kernel started does not raise."""
+Tests assert that calling close before the kernel is started is safe
+(no exception, state remains stopped), and that repeated calls are
+idempotent -- a second close must not re-raise or corrupt state.
+"""
+
+    def test_verify_close_before_kernel_started_does_not_raise(self):
+        """Validate that close before kernel start is safe and idempotent."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         sess.close()
-        # Confirm the expected result for this scenario: close before kernel started does not raise.
         assert sess._started is False
         assert sess._process is None
 
-    def test_close_is_idempotent(self):
-        """Verifies that close is idempotent."""
+    def test_verify_close_is_idempotent(self):
+        """Validate that repeated close calls do not raise or corrupt state."""
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
         sess.close()
         sess.close()
-        # Confirm the expected result for this scenario: close is idempotent.
         assert sess._started is False

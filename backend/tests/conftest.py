@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,9 +21,13 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from __future__ import annotations
+"""Shared pytest fixtures for the encre test suite.
 
-"""Shared pytest fixtures for the encre test suite."""
+Provides reusable test infrastructure so individual test modules can focus on
+validating behavior rather than boilerplate setup. Fixtures cover a temporary
+filesystem tree, a minimal configuration instance, and a pre-wired tool
+registry populated with every builtin tool type.
+"""
 
 import os
 import tempfile
@@ -48,7 +52,15 @@ from encre.tools.registry import ToolRegistry
 
 @pytest.fixture
 def temp_dir():
-    """Create a temporary directory with known test files, cleaned up after the test."""
+    """Provide an isolated temporary filesystem tree for file-tool tests.
+
+    The fixture constructs a deterministic directory layout containing a README,
+    a Python module, a nested ``src/`` package with utilities, an empty file,
+    a hidden directory, and a binary extension file. Changing into that tree
+    at the start of the test and restoring ``os.getcwd()`` in a finally block
+    means every test sees the same working directory without polluting the
+    repository root.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         base = Path(tmpdir)
 
@@ -89,7 +101,11 @@ def temp_dir():
 
 @pytest.fixture
 def sample_config():
-    """Return a default EncreConfig instance usable in tests."""
+    """Return a minimal :class:`EncreConfig` tuned for fast unit-test runs.
+
+    Using a small token budget and a high log level keeps fixture
+    construction lightweight and avoids noise in test output.
+    """
     return EncreConfig(
         model="gpt-5.6",
         permission_mode="default",
@@ -101,7 +117,11 @@ def sample_config():
 
 @pytest.fixture
 def tool_registry():
-    """Return a ToolRegistry pre-populated with common builtin tools."""
+    """Return a :class:`ToolRegistry` pre-populated with every builtin tool.
+
+    This eliminates per-test registration boilerplate and ensures regression
+    tests operate against a registry that mirrors production wiring.
+    """
     registry = ToolRegistry()
     registry.register_many([
         EncreFileReadTool(),

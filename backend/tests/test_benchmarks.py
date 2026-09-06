@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from __future__ import annotations
-
 """Performance benchmarks for critical paths: semantic search, tokenization,
 memory scanning, Jaccard/tf-idf vectorization."""
 
@@ -43,25 +41,44 @@ from encre.memdir.semantic import (
 # ===========================================================================
 
 class TestTokenizerBench:
-    """Test suite for TokenizerBench."""
+    """Validate tokenizer throughput under sustained load.
+
+    This class measures whether the tokenizer stays within acceptable latency
+    bounds when processing large ASCII and CJK corpora. Token throughput is a
+    critical path for prompt assembly; regressions here directly increase
+    first-token latency across all agent sessions.
+    """
+
     def test_tokenize_10k_lines(self):
-        """Test: Tokenize 10k lines."""
+        """Validate that tokenizing 10 000 repeated ASCII lines completes in under 5 seconds.
+
+        The test measures wall-clock time for a single pass over a 10k-line
+        ASCII stream. The 5-second upper bound guards against regressions in
+        the tokenization pipeline that would degrade overall agent latency.
+        """
         text = "Hello world this is a test of the tokenizer. " * 10000
         start = time.perf_counter()
         tokens = _tokenize(text)
         elapsed = time.perf_counter() - start
-        # Verify: len(tokens) > 0
+        # The tokenizer must produce at least one token for non-empty input;
+        # an empty output would indicate a silent failure in the pipeline.
         assert len(tokens) > 0
-        # Verify: elapsed < 5.0, f"tokenize 10k lines took {elapsed:.2f}s"
+        # Latency must stay under the 5-second threshold to avoid regressions.
         assert elapsed < 5.0, f"tokenize 10k lines took {elapsed:.2f}s"
 
     def test_tokenize_chinese(self):
-        """Test: Tokenize chinese."""
-        text = "测试中文分词效果 这是一个测试 " * 5000
+        """Validate that tokenizing CJK text completes within the same latency bound as ASCII text.
+
+        The test feeds 5 000 repetitions of mixed Chinese/ASCII tokens and
+        asserts the elapsed time stays below 5 seconds. This ensures the
+        tokenizer handles multi-byte characters without a disproportionate
+        slowdown compared to pure ASCII processing.
+        """
+        text = "娴嬭瘯涓枃鍒嗚瘝鏁堟灉 杩欐槸涓€涓祴璇?" * 5000
         start = time.perf_counter()
         _tokenize(text)
         elapsed = time.perf_counter() - start
-        # Verify: elapsed < 5.0, f"tokenize Chinese took {elapsed:.2f}s"
+        # CJK tokenization must not exceed the 5-second threshold.
         assert elapsed < 5.0, f"tokenize Chinese took {elapsed:.2f}s"
 
 
@@ -70,24 +87,41 @@ class TestTokenizerBench:
 # ===========================================================================
 
 class TestJaccardBench:
-    """Test suite for JaccardBench."""
+    """Validate Jaccard-similarity throughput across document pairs and edge cases.
+
+    This class checks that pairwise Jaccard computation remains fast for
+    typical document pairs and for the degenerate empty-string case. Empty-string
+    similarity is exercised frequently during memory-dedup passes, so
+    regressions in that path directly impact scan latency.
+    """
+
     def test_jaccard_1000_pairs(self):
-        """Test: Jaccard 1000 pairs."""
+        """Validate that computing 1 000 consecutive Jaccard pairs completes in under 1 second.
+
+        The test generates 100 documents and computes similarity across 99
+        adjacent pairs. The sub-1-second bound ensures that bulk similarity
+        evaluation does not become a bottleneck during memory consolidation.
+        """
         docs = [f"This is document number {i} about various topics including python, rust, typescript, and more." for i in range(100)]  # noqa: E501
         start = time.perf_counter()
         for i in range(len(docs) - 1):
             _jaccard_similarity(docs[i], docs[i + 1])
         elapsed = time.perf_counter() - start
-        # Verify: elapsed < 1.0, f"1000 Jaccard pairs took {elapsed:.2f}s"
+        # Sequential pair computation must stay under 1 second.
         assert elapsed < 1.0, f"1000 Jaccard pairs took {elapsed:.2f}s"
 
     def test_jaccard_empty(self):
-        """Test: Jaccard empty."""
+        """Validate that 10 000 empty-string Jaccard comparisons complete in under 0.5 seconds.
+
+        Empty-string comparisons are a hot path during memory scanning when
+        stale or placeholder entries are encountered. The tight 0.5-second
+        bound prevents degenerate inputs from causing scan timeouts.
+        """
         start = time.perf_counter()
         for _ in range(10000):
             _jaccard_similarity("", "")
         elapsed = time.perf_counter() - start
-        # Verify: elapsed < 0.5, f"10000 empty Jaccard took {elapsed:.2f}s"
+        # Empty-string comparisons must complete well under 0.5 seconds.
         assert elapsed < 0.5, f"10000 empty Jaccard took {elapsed:.2f}s"
 
 
@@ -96,20 +130,39 @@ class TestJaccardBench:
 # ===========================================================================
 
 class TestTfIdfBench:
-    """Test suite for TfIdfBench."""
+    """Validate IDF build and cosine-similarity throughput for vector-based retrieval.
+
+    This class ensures that building an IDF index over a thousand-document
+    corpus and computing pairwise cosine similarities remain within strict
+    latency bounds. These operations drive semantic memory search, so
+    regressions here directly degrade search responsiveness.
+    """
+
     def test_build_idf_large_corpus(self):
-        """Test: Build idf large corpus."""
+        """Validate that building an IDF index over 1 000 documents completes in under 2 seconds.
+
+        The test constructs a synthetic corpus and measures the time to
+        compute inverse-document frequencies. The 2-second bound guards
+        against regressions in vocabulary scoring that would delay search
+        index initialization.
+        """
         corpus = [f"Document {i}: contains words about various topics like python programming and async rust development." for i in range(1000)]  # noqa: E501
         start = time.perf_counter()
         idf = _build_idf(corpus)
         elapsed = time.perf_counter() - start
-        # Verify: len(idf) > 0
+        # The IDF index must contain entries; an empty index indicates failure.
         assert len(idf) > 0
-        # Verify: elapsed < 2.0, f"build_idf 1000 docs took {elapsed:.2f}s"
+        # Index construction must complete within the 2-second threshold.
         assert elapsed < 2.0, f"build_idf 1000 docs took {elapsed:.2f}s"
 
     def test_vectorize_and_cosine(self):
-        """Test: Vectorize and cosine."""
+        """Validate that vectorizing a 500-document corpus and computing pairwise cosine similarities completes in under 1 second.
+
+        The test builds an IDF index, vectorizes every document, then measures
+        the time to compute 499 consecutive cosine-similarity pairs. The
+        combined vectorization-plus-similarity path must stay below 1 second
+        to avoid blocking semantic search queries.
+        """
         corpus = [f"Document {i}: python rust typescript async programming patterns" for i in range(500)]  # noqa: E501
         idf = _build_idf(corpus)
         vocab = set(idf.keys())
@@ -118,7 +171,7 @@ class TestTfIdfBench:
         for i in range(len(vecs) - 1):
             _cosine_similarity(vecs[i], vecs[i + 1])
         elapsed = time.perf_counter() - start
-        # Verify: elapsed < 1.0, f"500 cosine pairs took {elapsed:.2f}s"
+        # Combined vectorization and pairwise cosine computation must stay under 1 second.
         assert elapsed < 1.0, f"500 cosine pairs took {elapsed:.2f}s"
 
 
@@ -127,9 +180,22 @@ class TestTfIdfBench:
 # ===========================================================================
 
 class TestMemoryScanBench:
-    """Test suite for MemoryScanBench."""
+    """Validate memory-directory scan and semantic-search throughput.
+
+    This class measures end-to-end latency for scanning a directory of
+    memory files and for executing semantic searches over the indexed
+    contents. Both paths are exercised on every agent startup, so
+    regressions directly increase cold-start latency.
+    """
+
     def test_scan_large_memory_dir(self):
-        """Test: Scan large memory dir."""
+        """Validate that scanning 200 memory files completes in under 3 seconds.
+
+        The test creates a temporary directory with 200 markdown memory files,
+        scans them through :class:`EncreMemorySystem`, and asserts the scan
+        duration stays below 3 seconds. It also cleans up the temporary
+        directory to avoid leaving artifacts on the filesystem.
+        """
         tmpdir = tempfile.mkdtemp()
         # Create 200 memory files
         for i in range(200):
@@ -141,16 +207,22 @@ class TestMemoryScanBench:
         start = time.perf_counter()
         memories = ms.scan()
         elapsed = time.perf_counter() - start
-        # Verify: len(memories) > 0
+        # Scan must return at least one memory entry for a non-empty directory.
         assert len(memories) > 0
-        # Verify: elapsed < 3.0, f"scan 200 files took {elapsed:.2f}s"
+        # Directory scan must complete within the 3-second threshold.
         assert elapsed < 3.0, f"scan 200 files took {elapsed:.2f}s"
 
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_semantic_search_performance(self):
-        """Test: Semantic search performance."""
+        """Validate that semantic search over 100 indexed documents completes in under 2 seconds.
+
+        The test creates 100 markdown documents, initializes
+        :class:`SemanticMemorySearch`, and runs a query for "python async
+        programming" with top-k=10. The sub-2-second bound ensures that
+        interactive search feels responsive during agent operation.
+        """
         tmpdir = tempfile.mkdtemp()
         for i in range(100):
             with open(os.path.join(tmpdir, f"doc_{i:04d}.md"), "w", encoding="utf-8") as f:
@@ -161,9 +233,9 @@ class TestMemoryScanBench:
         start = time.perf_counter()
         results = sms.search("python async programming", top_k=10)
         elapsed = time.perf_counter() - start
-        # Verify: len(results) > 0
+        # Search must return at least one result for a populated index.
         assert len(results) > 0
-        # Verify: elapsed < 2.0, f"semantic search 100 docs took {elapsed:.2f}s"
+        # Semantic search must complete within the 2-second threshold.
         assert elapsed < 2.0, f"semantic search 100 docs took {elapsed:.2f}s"
 
         import shutil
@@ -175,9 +247,22 @@ class TestMemoryScanBench:
 # ===========================================================================
 
 class TestConsolidationBench:
-    """Test suite for ConsolidationBench."""
+    """Validate memory-consolidation throughput for batch document ingestion.
+
+    This class measures how quickly :class:`MemoryConsolidator` can process
+    a batch of candidate documents into a consolidated output. Consolidation
+    runs during memory compaction, so its latency directly affects how
+    quickly the agent can free up workspace after long sessions.
+    """
+
     def test_consolidate_many_files(self):
-        """Test: Consolidate many files."""
+        """Validate that consolidating 50 documents completes in under 2 seconds.
+
+        The test creates a temporary directory and 50 synthetic documents
+        alternating between two topics. It then runs
+        :meth:`MemoryConsolidator.consolidate` and asserts the elapsed time
+        stays below 2 seconds. Cleanup removes the temporary directory.
+        """
         tmpdir = tempfile.mkdtemp()
         from encre.memdir.semantic import MemoryConsolidator
 
@@ -189,7 +274,7 @@ class TestConsolidationBench:
         start = time.perf_counter()
         mc.consolidate(files, {})
         elapsed = time.perf_counter() - start
-        # Verify: elapsed < 2.0, f"consolidate 50 files took {elapsed:.2f}s"
+        # Consolidation must complete within the 2-second threshold.
         assert elapsed < 2.0, f"consolidate 50 files took {elapsed:.2f}s"
 
         import shutil

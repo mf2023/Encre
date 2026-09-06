@@ -41,7 +41,7 @@
  *   - light mode: 1px pure-black border, pure-black text
  */
 
-import { t } from "./i18n.js";
+import { t } from "../features/i18n.js";
 
 let tooltipEl: HTMLDivElement | null = null;
 let currentEl: HTMLElement | null = null;

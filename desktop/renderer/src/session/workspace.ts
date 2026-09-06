@@ -31,14 +31,15 @@
  * shortcuts). Also exposes `syncFirstNavActive` for sidebar nav state.
  */
 
-import { getState, setActiveWorkspace, setWorkspaceMode, subscribe, removeArchivedSessionById, clearMessages, setSessionId, setSessionState } from "./state.js";
-import { send } from "./ws.js";
-import { setRequestedSessionId, refreshAllData } from "./stream.js";
-import { t } from "./i18n.js";
-import { Dialog } from "./dialog.js";
-import { showContextMenu } from "./context-menu.js";
-import { workspaceIconHtml } from "./session-projection.js";
-import type { WorkspaceEntry, WorkspaceConfig, SessionEntryData } from "./types.js";
+import { getState, setActiveWorkspace, setWorkspaceMode, subscribe, removeArchivedSessionById, clearMessages, setSessionId, setSessionState } from "../core/state.js";
+import { send } from "../core/ws.js";
+import { setRequestedSessionId, refreshAllData } from "../core/stream.js";
+import { t } from "../features/i18n.js";
+import { Dialog } from "../ui/dialog.js";
+import { showContextMenu } from "../ui/context-menu.js";
+import { workspaceIconHtml } from "../chat/session-projection.js";
+import { bindTargetModelSelection, readTargetModelSelection, readTargetModelSelectionEnabled, renderTargetModelSelection } from "../settings/model-selection.js";
+import type { WorkspaceEntry, WorkspaceConfig, SessionEntryData } from "../core/types.js";
 
 /**
  * Manages iWork mode transitions (enter / exit / force-exit).
@@ -249,6 +250,7 @@ export class WorkspaceManager {
   private view: "list" | "details" | "settings" | "archive" = "list";
   private editingPath = "";
   private unsub: (() => void) | null = null;
+  private wsConfigPending = new Set<string>();
 
   constructor(workspace: Workspace) {
     this.workspace = workspace;
@@ -305,6 +307,7 @@ export class WorkspaceManager {
         </div>
       </div>
       <div class="workspace-mgr-body" id="wsmgr-body"></div>
+      <div class="dialog-footer workspace-mgr-footer" id="wsmgr-footer" style="display:none"></div>
     </div>`;
     document.body.appendChild(overlay);
     this.overlay = overlay;
@@ -355,6 +358,8 @@ export class WorkspaceManager {
     const newBtn = this.overlay.querySelector<HTMLElement>("#wsmgr-new");
     if (archiveBtn) archiveBtn.style.display = showActions ? "" : "none";
     if (newBtn) newBtn.style.display = showActions ? "" : "none";
+    const footer = this.overlay.querySelector<HTMLElement>("#wsmgr-footer");
+    if (footer) footer.style.display = this.view === "settings" ? "" : "none";
     if (this.view === "details") {
       const ws = getState().workspaces.find((w) => w.path === this.editingPath);
       if (!ws) {
@@ -375,7 +380,8 @@ export class WorkspaceManager {
       }
       titleEl.textContent = t("workspace.settingsTitle");
       body.innerHTML = this.renderSettings(ws);
-      this.bindSettings(body);
+      this.bindSettings(body, ws);
+      this.renderSettingsFooter(body, ws);
     } else if (this.view === "archive") {
       titleEl.textContent = t("workspace.archive");
       body.innerHTML = this.renderArchive();
@@ -475,8 +481,39 @@ export class WorkspaceManager {
       ? `<img class="workspace-mgr-icon-img" src="${w.icon_data}" alt="" draggable="false">`
       : `<span class="workspace-mgr-icon-letter">${this.esc(initial)}</span>`;
     const bgAttr = w.icon_data ? "" : ` style="background:hsl(${nameHue(w.name)}, 62%, 46%)"`;
-    // NOTE: workspace-scoped model configuration has been REMOVED — workspaces
-    // always use the same model set as general mode (every enabled model).
+    // Pull the per-workspace config (target models, etc.) once; the
+    // workspace_config response re-renders this view with the saved values.
+    const cached = getState().workspaceConfigs[w.path];
+    if (!cached && !this.wsConfigPending.has(w.path)) {
+      this.wsConfigPending.add(w.path);
+      send({ type: "get_workspace_config", path: w.path });
+    }
+    const selected = Array.isArray(cached?.models) ? (cached.models as string[]) : [];
+    // The enable toggle is persisted separately from the picked model ids so
+    // that switching it on (even before any model is picked) survives the
+    // round-trip re-render instead of snapping back to off.
+    const modelSelEnabled = cached?.models_enabled === true || (cached?.models_enabled == null && selected.length > 0);
+    // Context-file toggles (AGENTS.md / CLAUDE.md), same card style as the
+    // multimodal toggle in model config. A file only shows a toggle when it
+    // exists in the workspace; it is enabled by default.
+    const filesNow = getState().workspaceFiles[w.path] || {};
+    const ctxConfig = (cached?.context_files as Record<string, boolean> | undefined) || {};
+    const ctxToggles = ["AGENTS.md", "CLAUDE.md"]
+      .filter((nm) => filesNow[nm])
+      .map((nm) => {
+        const enabled = ctxConfig[nm] !== false;
+        return `<div class="model-form-thinking-card" data-ctx-card="${this.esc(nm)}">
+      <div class="model-form-thinking-info">
+        <div class="model-form-thinking-title">${this.esc(nm)}</div>
+        <div class="model-form-thinking-desc">${t("workspace.contextFileHint")}</div>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" class="wsmgr-ctx-toggle" data-ctx-file="${this.esc(nm)}" ${enabled ? "checked" : ""} />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>`;
+      })
+      .join("");
     return `<div class="workspace-mgr-settings">
       <div class="workspace-mgr-icon-row">
         <div class="workspace-mgr-icon-wrap">
@@ -488,15 +525,27 @@ export class WorkspaceManager {
         <label class="model-form-label">${t("workspace.workspaceName")}</label>
         <input type="text" class="model-form-input" id="wsmgr-name-input" value="${this.esc(w.name)}" />
       </div>
+      ${ctxToggles}
+      ${renderTargetModelSelection({
+        id: w.id,
+        models: getState().modelConfigs || [],
+        selected,
+        checked: modelSelEnabled,
+        t,
+        titleKey: "workspace.modelSelectionTitle",
+        hintKey: "workspace.modelSelectionHint",
+      })}
     </div>`;
   }
 
-  private bindSettings(container: HTMLElement): void {
+  private bindSettings(container: HTMLElement, w: WorkspaceEntry): void {
+    // Rename-while-editing: Enter in the name field is an implicit save.
     const nameInput = container.querySelector("#wsmgr-name-input") as HTMLInputElement | null;
-    nameInput?.addEventListener("change", () => {
-      const v = nameInput.value.trim();
-      if (!v || !this.editingPath) return;
-      send({ type: "rename_workspace", path: this.editingPath, name: v });
+    nameInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.saveWorkspaceSettings(container, w);
+      }
     });
 
     container.querySelector("#wsmgr-icon-upload")?.addEventListener("click", (e) => {
@@ -518,6 +567,63 @@ export class WorkspaceManager {
       });
       input.click();
     });
+
+    // Target-model selection: wire up the widget, but do NOT persist on
+    // change — the Save button collects the final toggle + selection state.
+    bindTargetModelSelection(container, w.id, () => {});
+  }
+
+  /** Fixed footer for the settings view (mirrors the model-edit dialog). */
+  private renderSettingsFooter(container: HTMLElement, w: WorkspaceEntry): void {
+    const footer = this.overlay?.querySelector<HTMLElement>("#wsmgr-footer");
+    if (!footer) return;
+    footer.style.display = "flex";
+    footer.innerHTML = `
+      <button class="btn" id="wsmgr-settings-cancel">${this.esc(t("common.cancel"))}</button>
+      <button class="btn btn--primary" id="wsmgr-settings-save">${this.esc(t("common.save"))}</button>`;
+    footer.querySelector("#wsmgr-settings-cancel")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.backToWorkspaceList();
+    });
+    footer.querySelector("#wsmgr-settings-save")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.saveWorkspaceSettings(container, w);
+      this.backToWorkspaceList();
+    });
+  }
+
+  /** Persist the staged settings, then return to the workspace home list. */
+  private saveWorkspaceSettings(container: HTMLElement, w: WorkspaceEntry): void {
+    if (!this.editingPath) return;
+    const nameInput = container.querySelector<HTMLInputElement>("#wsmgr-name-input");
+    const newName = nameInput?.value.trim() || "";
+    if (newName && newName !== w.name) {
+      send({ type: "rename_workspace", path: this.editingPath, name: newName });
+    }
+    const on = readTargetModelSelectionEnabled(container, w.id);
+    const selected = readTargetModelSelection(container, w.id);
+    send({
+      type: "save_workspace_config",
+      path: this.editingPath,
+      config: { models: selected.length ? selected : null, models_enabled: on ? true : false },
+    });
+    const current: Record<string, boolean> = {};
+    container.querySelectorAll<HTMLInputElement>(".wsmgr-ctx-toggle").forEach((cb) => {
+      const fname = cb.dataset.ctxFile;
+      if (fname) current[fname] = cb.checked;
+    });
+    send({
+      type: "save_workspace_config",
+      path: this.editingPath,
+      config: { context_files: current },
+    });
+  }
+
+  /** Navigate back from a sub-view (settings/archive/details) to the list. */
+  private backToWorkspaceList(): void {
+    this.view = "list";
+    this.editingPath = "";
+    this.renderBody();
   }
 
   /**

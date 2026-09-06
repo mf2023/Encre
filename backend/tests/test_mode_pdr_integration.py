@@ -1,9 +1,15 @@
+﻿"""Integration tests for per-mode capability profiles and Plan-Do-Review wiring.
+    assert current.status == StepStatus.IN_PROGRESS
+from __future__ import annotations
+
 """Integration tests for per-mode capability profiles and Plan-Do-Review wiring.
 
 Verifies the one-engine/three-profiles design end to end without a real LLM:
 GENERAL stays on historical behaviour, WORKSPACE activates the Plan-Do-Review
 engine and planner delegation, AUTOMATION keeps hard gating disabled and PDR off.
 """
+
+from __future__ import annotations
 
 import os
 import sys
@@ -20,6 +26,7 @@ from encre.session import EncreSession
 
 
 def _make_loop(mode) -> EncreLoop:
+    """Build an EncreLoop for the given AgentMode with a default config."""
     config = EncreConfig()
     from encre.tools.registry import ToolRegistry
     return EncreLoop(
@@ -31,7 +38,14 @@ def _make_loop(mode) -> EncreLoop:
 
 
 @pytest.mark.asyncio
-async def test_workspace_mode_activates_pdr():
+async def test_verify_workspace_mode_activates_pdr_and_delegation():
+    """Validate that WORKSPACE mode activates the Plan-Do-Review engine and
+    enables workspace delegation, confirming the profile wiring is correct.
+
+    The test exercises loop construction with AgentMode.WORKSPACE and asserts
+    the profile flags and PDR plan have at least one step after initialization
+    because WORKSPACE is the only mode that should run the full PDR cycle.
+    """
     loop = _make_loop(AgentMode.WORKSPACE)
     assert loop._profile.workspace_delegation is True
     assert loop._profile.verify_budget_total() > 0
@@ -45,7 +59,15 @@ async def test_workspace_mode_activates_pdr():
 
 
 @pytest.mark.asyncio
-async def test_general_mode_pdr_inactive():
+async def test_verify_general_mode_keeps_pdr_inactive_and_no_delegation(self):
+    """Validate that GENERAL mode leaves the PDR engine inactive and disables
+    workspace delegation, confirming the historical behaviour path is preserved.
+
+    The test exercises loop construction with AgentMode.GENERAL and asserts
+    _pdr_active is False and steps are empty because GENERAL mode must not
+    trigger planning even when the prompt is plan-worthy 鈥?that is the
+    explicit contract of the mode profile.
+    """
     loop = _make_loop(AgentMode.GENERAL)
     assert loop._profile.workspace_delegation is False
     # Even if a plan-worthy prompt arrives, should_plan gates the init;
@@ -55,7 +77,15 @@ async def test_general_mode_pdr_inactive():
 
 
 @pytest.mark.asyncio
-async def test_automation_mode_hard_gate_disabled():
+async def test_verify_automation_mode_has_no_verify_budget_and_no_pdr(self):
+    """Validate that AUTOMATION mode has zero verify budget, no workspace
+    delegation, and PDR inactive, confirming the lightweight automation
+    profile is correctly isolated.
+
+    The test exercises loop construction with AgentMode.AUTOMATION and asserts
+    all three flags are in their minimal state because automation jobs must
+    run fast without planning overhead or verification gating.
+    """
     loop = _make_loop(AgentMode.AUTOMATION)
     assert loop._profile.verify_budget_total() == 0
     assert loop._profile.workspace_delegation is False
@@ -63,13 +93,28 @@ async def test_automation_mode_hard_gate_disabled():
 
 
 @pytest.mark.asyncio
-async def test_mode_profile_fallback_for_unknown():
+async def test_verify_unknown_mode_falls_back_to_general_profile(self):
+    """Validate that get_mode_profile returns the GENERAL profile for both
+    unknown string values and None, confirming the fallback path is safe.
+
+    The test exercises the factory with invalid inputs and asserts the
+    returned mode is GENERAL because an undefined mode must never crash
+    the loop constructor 鈥?it should degrade gracefully to the base profile.
+    """
     assert get_mode_profile("not-a-real-mode").mode == AgentMode.GENERAL
     assert get_mode_profile(None).mode == AgentMode.GENERAL
 
 
 @pytest.mark.asyncio
-async def test_pdr_step_advancement_only_on_completed():
+async def test_verify_pdr_advances_only_on_completed_step(self):
+    """Validate that start_next_step skips IN_PROGRESS steps (even after
+    failure) and only advances when a step has been marked complete.
+
+    The test exercises a three-step plan, fails the current step, asserts
+    the index does not advance, then marks the step complete and asserts
+    the next step is IN_PROGRESS because the PDR engine must retry failed
+    steps before moving forward to avoid losing work.
+    """
     loop = _make_loop(AgentMode.WORKSPACE)
     loop._pdr.initialize(
         "Step one: write file. Step two: run tests. Step three: report."
@@ -89,20 +134,34 @@ async def test_pdr_step_advancement_only_on_completed():
     assert nxt is None or nxt.status == StepStatus.IN_PROGRESS
 
 
-# ── Mode behavior matrix: distinct tool bases + prompt gains ───────────────
+# 鈹€鈹€ Mode behavior matrix: distinct tool bases + prompt gains 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 
 @pytest.mark.asyncio
-async def test_workspace_mode_has_coding_tool_base():
-    """WORKSPACE always carries the coding toolchain, regardless of intents."""
+async def test_verify_workspace_mode_always_includes_coding_tool_base(self):
+    """Validate that WORKSPACE mode always includes 'coding' in its resolved
+    tool set regardless of the declared intents, confirming the profile
+    tool_sets field is applied on top of intent expansion.
+
+    The test exercises tool resolution with a generic intent and asserts
+    'coding' is present because WORKSPACE is the coding mode and must
+    never lose its toolchain even when the intent classifier is ambiguous.
+    """
     loop = _make_loop(AgentMode.WORKSPACE)
     toolset = loop._resolve_tool_set_for_mode(intents=["general"])
     assert "coding" in toolset.split("+")
 
 
 @pytest.mark.asyncio
-async def test_automation_mode_stays_bare_tool_base():
-    """AUTOMATION adds no fixed profile tool base (only intent expansion)."""
+async def test_verify_automation_mode_uses_bare_tool_base_with_intent_expansion(self):
+    """Validate that AUTOMATION mode has no fixed profile tool_sets but
+    still expands by intent, confirming the distinction from WORKSPACE.
+
+    The test exercises resolution with 'general' and 'coding' intents and
+    asserts the bare default for general and the expanded default+coding
+    for coding because AUTOMATION must be lightweight but still responsive
+    to explicit coding signals.
+    """
     loop = _make_loop(AgentMode.AUTOMATION)
     assert get_mode_profile(AgentMode.AUTOMATION).tool_sets == ()
     # With a generic intent, AUTOMATION stays on the bare default.
@@ -113,16 +172,30 @@ async def test_automation_mode_stays_bare_tool_base():
 
 
 @pytest.mark.asyncio
-async def test_general_mode_matches_intent_tool_base():
-    """GENERAL expands only by intent, not by profile tool_sets."""
+async def test_verify_general_mode_expands_only_by_intent_not_by_profile(self):
+    """Validate that GENERAL mode resolves tool sets solely from intents
+    without any fixed profile tool_sets, confirming it has no bias.
+
+    The test exercises resolution with 'general' and 'coding' intents and
+    asserts default and default+coding because GENERAL is the neutral mode
+    and must not inject tools that the intent stream did not request.
+    """
     loop = _make_loop(AgentMode.GENERAL)
     assert loop._resolve_tool_set_for_mode(intents=["general"]) == "default"
     assert loop._resolve_tool_set_for_mode(intents=["coding"]) == "default+coding"
 
 
 @pytest.mark.asyncio
-async def test_mode_prompt_gains_are_distinct():
-    """Each profile carries a distinct, non-empty system-prompt gain."""
+async def test_verify_each_mode_profile_has_distinct_nonempty_prompt_gain(self):
+    """Validate that GENERAL, WORKSPACE, and AUTOMATION each carry a unique,
+    non-empty system-prompt gain string, confirming the profiles are
+    distinguishable by the model.
+
+    The test exercises get_mode_profile for all three modes and asserts
+    each gain is truthy and that WORKSPACE and AUTOMATION contain their
+    mode name because the prompt gain is what tells the model which
+    behavioral constraints to follow.
+    """
     general = get_mode_profile(AgentMode.GENERAL).prompt_gain
     workspace = get_mode_profile(AgentMode.WORKSPACE).prompt_gain
     automation = get_mode_profile(AgentMode.AUTOMATION).prompt_gain
@@ -134,8 +207,16 @@ async def test_mode_prompt_gains_are_distinct():
 
 
 @pytest.mark.asyncio
-async def test_review_phase_rolls_back_bad_step():
-    """lightweight_review wiring: an all-error step rolls back to a retry."""
+async def test_verify_lightweight_review_fails_and_rolls_back_on_all_error_step(self):
+    """Validate that lightweight_review returns ReviewGrade.FAIL when a step
+    has only error outcomes, and that the loop-level wiring converts that
+    grade into mark_step_failed, keeping the step IN_PROGRESS for retry.
+
+    The test exercises a failed bash migration step, asserts the grade is
+    FAIL, then applies mark_step_failed and asserts the step status remains
+    IN_PROGRESS because the rollback path must prevent the plan from
+    advancing past a verified-failed step.
+    """
     from encre.evolution.plan_do_review import ReviewGrade
 
     loop = _make_loop(AgentMode.WORKSPACE)

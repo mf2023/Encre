@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import type { SessionEntryData } from "./types.js";
+import type { SessionEntryData } from "../core/types.js";
 
 /** Deterministic hue from a workspace name (mirrors the backend icon
  *  generator), shared by every icon-rendering surface. */

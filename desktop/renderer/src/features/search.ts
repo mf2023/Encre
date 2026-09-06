@@ -38,10 +38,10 @@
  */
 
 import MiniSearch from "minisearch";
-import { getState, subscribe, setSearchResults, addAttachments, getAppliedSearchSeq } from "./state.js";
-import { send } from "./ws.js";
-import { setRequestedSessionId } from "./stream.js";
-import type { SearchResultEntry, SearchFilter, SearchFilterKey } from "./types.js";
+import { getState, subscribe, setSearchResults, addAttachments, getAppliedSearchSeq } from "../core/state.js";
+import { send } from "../core/ws.js";
+import { setRequestedSessionId } from "../core/stream.js";
+import type { SearchResultEntry, SearchFilter, SearchFilterKey } from "../core/types.js";
 import { t, onLocaleChange } from "./i18n.js";
 import { matchingSlashCommands, SLASH_COMMANDS } from "./slash_commands.js";
 import { getFileIcon } from "./files.js";
@@ -226,6 +226,15 @@ const APP_ACTION_LABELS: Record<string, AppActionLabel> = {
   "theme-system": { en: "System Theme", zh: "跟随系统主题", alias: ["系统主题", "自动主题"] },
   "language-zh": { en: "Language: Chinese", zh: "语言：中文", alias: ["中文", "简体中文"] },
   "language-en": { en: "Language: English", zh: "语言：英文", alias: ["英文", "英语"] },
+  "language-zh-Hant": { en: "繁體中文", zh: "繁體中文", alias: ["繁体", "繁體", "正體中文", "Traditional"] },
+  "language-ja": { en: "日本語", zh: "日本語", alias: ["日语", "日文", "Japanese"] },
+  "language-ko": { en: "한국어", zh: "한국어", alias: ["韩语", "韓語", "Korean"] },
+  "language-de": { en: "Deutsch", zh: "Deutsch", alias: ["德语", "德文", "German"] },
+  "language-tr": { en: "Türkçe", zh: "Türkçe", alias: ["土耳其语", "Turkish"] },
+  "language-es": { en: "Español", zh: "Español", alias: ["西班牙语", "Spanish"] },
+  "language-pt": { en: "Português", zh: "Português", alias: ["葡萄牙语", "Portuguese"] },
+  "language-ar": { en: "العربية", zh: "العربية", alias: ["阿拉伯语", "Arabic"] },
+  "language-he": { en: "עברית", zh: "עברית", alias: ["希伯来语", "Hebrew"] },
   "new-session": { en: "New Session", zh: "新建对话", alias: ["新建会话", "新会话", "新对话", "开始新对话"] },
   "keyboard-shortcuts": { en: "Keyboard Shortcuts", zh: "键盘快捷键", alias: ["快捷键", "快捷键设置", "按键"] },
 };
@@ -360,6 +369,16 @@ export const SEARCH_FILTER_META: { key: SearchFilterKey; zh: string; en: string 
   { key: "automation", zh: "自动化", en: "Automation" },
   { key: "workflow", zh: "工作流", en: "Workflow" },
 ];
+
+/** Returns true when `name` is a known Lucide icon (safe for data-lucide). */
+function isKnownLucideIcon(name: string): boolean {
+  const n = name.trim();
+  if (!n) return false;
+  const lucide = (window as any).lucide;
+  if (!lucide || !lucide.icons) return true;
+  const pascal = n.split("-").map((p) => (p ? p[0].toUpperCase() + p.slice(1) : p)).join("");
+  return n in lucide.icons || pascal in lucide.icons;
+}
 
 const SECTION_ORDER = [
   "session_header", "conversation", "memory", "global_rule", "project_rule",
@@ -950,7 +969,7 @@ export class Search {
         const preview = r.preview ? `<span class="search-result-preview">${this.esc(r.preview)}</span>` : "";
         const itemIcon = r.kind === "file"
           ? `<img class="search-result-file-icon" src="${getFileIcon(r.name || (r.snippet || "").split("/").pop() || "")}" alt="" draggable="false">`
-          : r.icon
+          : r.icon && isKnownLucideIcon(r.icon)
             ? `<i data-lucide="${this.esc(r.icon)}" class="lucide lucide-sm"></i>`
             : sec.icon;
         html += `<div class="search-result-item${sel}" data-idx="${idx}">

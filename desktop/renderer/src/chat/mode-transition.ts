@@ -20,11 +20,11 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { Workspace } from "./workspace.js";
-import { AutomationPanel } from "./iclaw.js";
-import { getState, setActiveWorkspace } from "./state.js";
-import { send } from "./ws.js";
-import { setRequestedSessionId } from "./stream.js";
+import { Workspace } from "../session/workspace.js";
+import { AutomationPanel } from "../session/iclaw.js";
+import { getState, setActiveWorkspace } from "../core/state.js";
+import { send } from "../core/ws.js";
+import { setRequestedSessionId } from "../core/stream.js";
 
 export type AppMode = "normal" | "iwork" | "automation";
 

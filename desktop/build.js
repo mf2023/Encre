@@ -39,7 +39,7 @@ const desktop = __dirname;
 // Locale filter passed from build.py via LOCALES env var (comma-separated).
 // When empty or unset, all locales are included.
 const localeEnv = process.env.LOCALES || "";
-const buildLocales: string[] = localeEnv
+const buildLocales = localeEnv
   ? localeEnv.split(",").map((s) => s.trim()).filter(Boolean)
   : ["zh", "en", "zh-Hant", "ja", "ko", "de", "es", "pt", "tr", "ar", "he"];
 

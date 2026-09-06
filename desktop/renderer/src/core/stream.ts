@@ -33,13 +33,13 @@
 import { ServerEvent, WorkspaceEntry, BranchUpdated, BranchSwitched, BranchRolledBack, UsageStatsEvent } from "./types.js";
 import * as state from "./state.js";
 import { send } from "./ws.js";
-import { Chat } from "./chat.js";
-import { Tools } from "./tools.js";
-import { Permissions } from "./permissions.js";
-import { Settings } from "./settings.js";
-import { t } from "./i18n.js";
-import { Dialog } from "./dialog.js";
-import { handleEngineInstallRequest, handleEngineInstallProgress } from "./engine_install.js";
+import { Chat } from "../chat/chat.js";
+import { Tools } from "../features/tools.js";
+import { Permissions } from "../features/permissions.js";
+import { Settings } from "../settings/settings.js";
+import { t } from "../features/i18n.js";
+import { Dialog } from "../ui/dialog.js";
+import { handleEngineInstallRequest, handleEngineInstallProgress } from "../features/engine_install.js";
 import type { WechatScanResultEvent } from "./types.js";
 
 let _wechatScanCallback: ((event: WechatScanResultEvent) => void) | null = null;
@@ -91,7 +91,7 @@ export function onAutomationJobCancelled(cb: (jobId: string) => void): void {
 export function onAutomationStreamEvent(cb: (event: import("./types.js").AutomationStreamEvent) => void): void {
   _automationStreamCallback = cb;
 }
-import { applyServerCommands, applyProjectCommands } from "./slash_commands.js";
+import { applyServerCommands, applyProjectCommands } from "../features/slash_commands.js";
 
 let chat: Chat | null = null;
 let tools: Tools | null = null;
@@ -255,7 +255,7 @@ export function refreshAllData(): void {
   send({ type: "get_usage_stats" });
   send({ type: "automation_list_jobs" });
   send({ type: "list_project_rules" });
-  send({ type: "list_project_hooks" });
+  send({ type: "list_project_hooks" } as any);
   send({ type: "list_archived_sessions" });
 }
 
@@ -1527,7 +1527,7 @@ export function handleEvent(event: ServerEvent): void {
           api.exportBinary({
             base64: event.zip_base64,
             defaultName: event.filename || "export.zip",
-            filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+            filters: [{ name: t("stream.zipArchive"), extensions: ["zip"] }],
           });
         }
       }
@@ -1542,7 +1542,7 @@ export function handleEvent(event: ServerEvent): void {
           api.copyFileTo({
             sourcePath: event.zip_path,
             defaultName: event.filename || "encre-backup.zip",
-            filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+            filters: [{ name: t("stream.zipArchive"), extensions: ["zip"] }],
           }).then(() => {
             _migrationProgress?.succeed(t("settings.storageExportDone"));
             _migrationProgress = null;
@@ -1661,6 +1661,7 @@ export function handleEvent(event: ServerEvent): void {
 
     case "workspace_config":
       state.setWorkspaceConfig(event.path, event.config);
+      if (event.files) state.setWorkspaceFiles(event.path, event.files);
       (window as any).__workspaceMgr?.refresh?.();
       break;
 

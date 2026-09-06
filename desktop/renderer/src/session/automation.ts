@@ -29,21 +29,21 @@
  * the backend through the stream-layer automation callbacks and the WebSocket.
  */
 
-import { t, getLocale, onLocaleChange } from "./i18n.js";
-import { send } from "./ws.js";
-import { Dialog } from "./dialog.js";
-import { getState, subscribe, restoreMessages, setAutomationHistory } from "./state.js";
+import { t, getLocale, getIntlLocale, onLocaleChange } from "../features/i18n.js";
+import { send } from "../core/ws.js";
+import { Dialog } from "../ui/dialog.js";
+import { getState, subscribe, restoreMessages, setAutomationHistory } from "../core/state.js";
 import { showSessionContextMenu, showRenameDialog } from "./session.js";
-import { showContextMenu } from "./context-menu.js";
+import { showContextMenu } from "../ui/context-menu.js";
 import {
   onAutomationJobCreated,
   onAutomationJobUpdated,
   onAutomationJobCancelled,
   downloadMarkdownFile,
-} from "./stream.js";
-import { renderMarkdown, Chat } from "./chat.js";
-import { platformIconHtml } from "./icons.js";
-import type { Message } from "./types.js";
+} from "../core/stream.js";
+import { renderMarkdown, Chat } from "../chat/chat.js";
+import { platformIconHtml } from "../ui/icons.js";
+import type { Message } from "../core/types.js";
 
 interface TaskTemplate {
   id: string;
@@ -220,25 +220,30 @@ function parseCronForUI(cron: string): { scheduleType: string; time: string } {
 
 function formatDateTime(unixTs: number): string {
   const d = new Date(unixTs * 1000);
-  const locale = getLocale() === "en" ? "en-US" : "zh-CN";
+  const l = getLocale();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
-  return locale === "en-US"
-    ? `${mm}/${dd}/${yyyy} ${hh}:${mi}`
-    : `${yyyy}年${Number(mm)}月${Number(dd)}号 ${hh}:${mi}`;
+  if (l === "en") return `${mm}/${dd}/${yyyy} ${hh}:${mi}`;
+  if (l === "zh") return `${yyyy}年${Number(mm)}月${Number(dd)}号 ${hh}:${mi}`;
+  if (l === "zh-Hant") return `${yyyy}年${Number(mm)}月${Number(dd)}日 ${hh}:${mi}`;
+  return d.toLocaleString(getIntlLocale(), {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
 }
 
 function formatDate(unixTs: number): string {
   const d = new Date(unixTs * 1000);
-  const locale = getLocale() === "en" ? "en-US" : "zh-CN";
+  const l = getLocale();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return locale === "en-US"
-    ? `${mm}/${dd}`
-    : `${Number(mm)}月${Number(dd)}日`;
+  if (l === "en") return `${mm}/${dd}`;
+  if (l === "zh") return `${Number(mm)}月${Number(dd)}日`;
+  if (l === "zh-Hant") return `${Number(mm)}月${Number(dd)}日`;
+  return d.toLocaleDateString(getIntlLocale(), { month: "2-digit", day: "2-digit" });
 }
 
 /**
@@ -408,13 +413,14 @@ private createDropdown: HTMLElement;
     // Reuse the tape's session-crumb breadcrumb structure so the detail
     // header is identical to the sub-agent view: Automation / <name>.
     this.renderDetailBreadcrumb(data.name || "");
-    // Detail view: the Back button takes the sidebar-toggle's slot (toggle
-    // is hidden because the sidebar is force-collapsed in automation). The
-    // sidebar Search button is never touched - it stays in place.
+    // Detail view: show the Back button. The sidebar toggle stays visible but
+    // disabled (greyed out) - the sidebar is force-collapsed in automation and
+    // the disabled state is managed by AutomationPanel. The sidebar Search
+    // button is never touched - it stays in place.
     const autoBack = document.getElementById("btn-automation-back");
     const toggle = document.getElementById("btn-toggle-sidebar");
     if (autoBack) autoBack.classList.remove("hidden");
-    if (toggle) toggle.style.display = "none";
+    if (toggle) toggle.style.display = "";
   }
 
   /**
@@ -441,11 +447,10 @@ private createDropdown: HTMLElement;
     this.detailContentEl.innerHTML = "";
     this.detailBreadcrumbEl.innerHTML = "";
     this.activeExecution = null;
-    // Returning to the automation list view: hide the Back button and restore
-    // the sidebar-toggle to its "occupies space but invisible" state (opacity 0
-    // set by AutomationPanel). This keeps the header layout stable - without it,
-    // showDetail leaves toggle at display:none which removes its width from the
-    // flow, shifting the Search button and mode-switcher left on every return.
+    // Returning to the automation list view: hide the Back button. The
+    // sidebar-toggle keeps styling the AutomationPanel applied on entry
+    // (visible but disabled) - clearing showDetail's inline display keeps the
+    // header layout stable.
     const autoBack = document.getElementById("btn-automation-back");
     const toggle = document.getElementById("btn-toggle-sidebar");
     if (autoBack) autoBack.classList.add("hidden");
@@ -789,7 +794,7 @@ private createDropdown: HTMLElement;
         const origIdx = allModels.indexOf(m);
         return `<div class="settings-dropdown-item${origIdx === selectedModelIndex ? " selected" : ""}" data-index="${origIdx}">
           <span>${escapeHtml(m.name)}</span>
-          <span style="opacity:0.5;margin-left:6px;font-size:11px">${escapeHtml(m.model_id)}</span>
+          <span style="opacity:0.5;margin-inline-start:6px;font-size:11px">${escapeHtml(m.model_id)}</span>
         </div>`;
       }).join("");
       modelDropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
@@ -955,13 +960,13 @@ private createDropdown: HTMLElement;
   private bindCreateButton(): void {
     const renderDropdown = () => {
       const blankHtml = `<div class="settings-dropdown-item" data-template-id="">
-        <i data-lucide="plus" class="lucide" style="width:16px;height:16px;margin-right:6px"></i>
+        <i data-lucide="plus" class="lucide" style="width:16px;height:16px;margin-inline-end:6px"></i>
         <span>${t("automation.customCreate")}</span>
       </div>`;
       this.createDropdown.innerHTML = blankHtml + TEMPLATES.map(
         (tmpl) => `
         <div class="settings-dropdown-item" data-template-id="${tmpl.id}">
-          <i data-lucide="${tmpl.icon}" class="lucide" style="width:16px;height:16px;margin-right:6px"></i>
+          <i data-lucide="${tmpl.icon}" class="lucide" style="width:16px;height:16px;margin-inline-end:6px"></i>
           <span>${t(tmpl.titleKey)}</span>
         </div>
       `).join("");
@@ -1165,17 +1170,20 @@ private createDropdown: HTMLElement;
     const dateToText = document.getElementById("history-date-to-text");
     this._dateFromText = dateFromText;
     this._dateToText = dateToText;
-    // Set locale-aware placeholder text once at bind time (HTML default is zh).
-    if (dateFromText) dateFromText.textContent = getLocale() === "en" ? "Start Date" : "开始日期";
-    if (dateToText) dateToText.textContent = getLocale() === "en" ? "End Date" : "结束日期";
+    // Set locale-aware placeholder text (refreshed on language change via updateHistoryFilterLabels).
+    if (dateFromText) dateFromText.textContent = t("automation.dateStart");
+    if (dateToText) dateToText.textContent = t("automation.dateEnd");
 
-    const MONTHS_SHORT = getLocale() === "en"
-      ? ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-      : ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+    const MONTHS_SHORT = [
+      t("automation.month1"), t("automation.month2"), t("automation.month3"), t("automation.month4"),
+      t("automation.month5"), t("automation.month6"), t("automation.month7"), t("automation.month8"),
+      t("automation.month9"), t("automation.month10"), t("automation.month11"), t("automation.month12"),
+    ];
 
-    const WEEKDAYS_SHORT = getLocale() === "en"
-      ? ["Mo","Tu","We","Th","Fr","Sa","Su"]
-      : ["一","二","三","四","五","六","日"];
+    const WEEKDAYS_SHORT = [
+      t("automation.weekday1"), t("automation.weekday2"), t("automation.weekday3"), t("automation.weekday4"),
+      t("automation.weekday5"), t("automation.weekday6"), t("automation.weekday7"),
+    ];
 
     function renderCalendar(container: HTMLElement, currentDate: { year: number; month: number }, onSelect: (dateStr: string) => void): void {
       const { year, month } = currentDate;
@@ -1273,8 +1281,8 @@ private createDropdown: HTMLElement;
         this.historyDateTo = "";
         if (dateFromHidden) dateFromHidden.value = "";
         if (dateToHidden) dateToHidden.value = "";
-        if (dateFromText) dateFromText.textContent = getLocale() === "en" ? "Start Date" : "开始日期";
-        if (dateToText) dateToText.textContent = getLocale() === "en" ? "End Date" : "结束日期";
+        if (dateFromText) dateFromText.textContent = t("automation.dateStart");
+        if (dateToText) dateToText.textContent = t("automation.dateEnd");
         this.renderHistory();
       });
     }
@@ -1287,10 +1295,10 @@ private createDropdown: HTMLElement;
     this._rebindTask?.();
     // Refresh date placeholders only when no explicit date is selected.
     if (this._dateFromText && !this.historyDateFrom) {
-      this._dateFromText.textContent = getLocale() === "en" ? "Start Date" : "开始日期";
+      this._dateFromText.textContent = t("automation.dateStart");
     }
     if (this._dateToText && !this.historyDateTo) {
-      this._dateToText.textContent = getLocale() === "en" ? "End Date" : "结束日期";
+      this._dateToText.textContent = t("automation.dateEnd");
     }
   }
 

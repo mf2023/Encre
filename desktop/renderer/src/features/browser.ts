@@ -21,8 +21,8 @@
  */
 
 import { EALoader } from "./ealoader.js";
-import { getState } from "./state.js";
-import { sendSetCdpUrl } from "./ws.js";
+import { getState } from "../core/state.js";
+import { sendSetCdpUrl } from "../core/ws.js";
 import { t, onLocaleChange, applyI18n } from "./i18n.js";
 
 interface BookmarkEntry {

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from __future__ import annotations
-
 """Tests for EncreAgent: construction, properties, run, lifecycle."""
 
 import asyncio
@@ -35,18 +33,33 @@ from encre.config import EncreConfig
 
 
 class TestEncreAgentConstruction:
-    """Verify EncreAgent can be constructed with various configurations."""
+    """Engineered to validate :class:`EncreAgent` construction under varied configurations.
 
-    def test_creation_with_no_args(self):
-        """Test: Creation with no args."""
+    The agent accepts an optional EncreConfig and must produce a valid
+    instance with sensible defaults when none is supplied. Tests confirm
+    that default construction yields a non-None agent with a config whose
+    model and backend_type are empty strings 鈥?proving no vendor is
+    implicitly hardcoded at the constructor level.
+    """
+
+    def test_verify_creation_with_no_args_produces_a_valid_agent(self):
+        """Validate that EncreAgent() instantiates without arguments and yields a non-None agent.
+
+        Default construction is the common path; a crash or None return
+        here breaks every test that does not explicitly pass a config.
+        """
         agent = EncreAgent()
         # Verify: agent is not None
         assert agent is not None
         # Verify: isinstance(agent.config, EncreConfig)
         assert isinstance(agent.config, EncreConfig)
 
-    def test_creation_with_explicit_config(self):
-        """Test: Creation with explicit config."""
+    def test_verify_creation_with_explicit_config_stores_that_config(self):
+        """Validate that passing an explicit EncreConfig makes it available as agent.config with the expected model.
+
+        The config reference must be stored, not copied, so runtime changes
+        to the config object propagate to the agent without reassignment.
+        """
         config = EncreConfig(model="gpt-5.6-luna", max_tokens=1000)
         agent = EncreAgent(config=config)
         # Verify: agent.config is config
@@ -54,8 +67,13 @@ class TestEncreAgentConstruction:
         # Verify: agent.config.model == "gpt-5.6-luna"
         assert agent.config.model == "gpt-5.6-luna"
 
-    def test_creation_with_config_defaults(self):
-        """Test: Creation with config defaults."""
+    def test_verify_creation_with_defaults_leaves_model_and_backend_type_empty(self):
+        """Validate that the default config leaves model and backend_type as empty strings.
+
+        Hardcoding a vendor default in the constructor would bias the agent
+        toward one provider; keeping these empty forces the caller to
+        select a backend explicitly before running.
+        """
         agent = EncreAgent()
         # Verify: agent.config.model is empty (no hardcoded vendor default)
         assert agent.config.model == ""
@@ -64,90 +82,154 @@ class TestEncreAgentConstruction:
 
 
 class TestEncreAgentProperties:
-    """Verify EncreAgent exposes expected attributes after construction."""
+    """Engineered to validate that :class:`EncreAgent` exposes all expected subsystem attributes after construction.
 
-    def test_has_config(self):
-        """Test: Has config."""
+    The agent composes several subsystems (config, tool registry, hook
+    system, safety, memory, skill registry, session, telemetry, evolution,
+    recovery, and loop). Tests assert the presence of each attribute so
+    that removing or renaming a subsystem is caught as a regression.
+    """
+
+    def test_verify_agent_has_config_attribute(self):
+        """Validate that the agent exposes a config attribute of type EncreConfig.
+
+        Config is the top-level knob for model, permission, and quota
+        settings; every subsystem reads from it, so its presence is mandatory.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "config")
         assert hasattr(agent, "config")
         # Verify: isinstance(agent.config, EncreConfig)
         assert isinstance(agent.config, EncreConfig)
 
-    def test_has_tool_registry(self):
-        """Test: Has tool registry."""
+    def test_verify_agent_has_tool_registry_attribute(self):
+        """Validate that the agent exposes a tool_registry attribute.
+
+        The tool registry is the dispatch table for all builtin and custom
+        tools; its absence would make tool invocation impossible.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "tool_registry")
         assert hasattr(agent, "tool_registry")
 
-    def test_has_hook_system(self):
-        """Test: Has hook system."""
+    def test_verify_agent_has_hook_system_attribute(self):
+        """Validate that the agent exposes a hook_system attribute.
+
+        Hooks provide lifecycle callbacks (pre-turn, post-tool, on-error);
+        their presence is required for the extensibility layer to function.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "hook_system")
         assert hasattr(agent, "hook_system")
 
-    def test_has_safety(self):
-        """Test: Has safety."""
+    def test_verify_agent_has_safety_attribute(self):
+        """Validate that the agent exposes a safety attribute.
+
+        The safety subsystem enforces permission prompts and action
+        restrictions; its presence is required before any tool can run.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "safety")
         assert hasattr(agent, "safety")
 
-    def test_has_memory_system(self):
-        """Test: Has memory system."""
+    def test_verify_agent_has_memory_system_attribute(self):
+        """Validate that the agent exposes a memory_system attribute.
+
+        Memory provides long-term context across sessions; the subsystem
+        must exist even when unused so callers can attach handlers uniformly.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "memory_system")
         assert hasattr(agent, "memory_system")
 
-    def test_has_skill_registry(self):
-        """Test: Has skill registry."""
+    def test_verify_agent_has_skill_registry_attribute_and_it_is_not_none(self):
+        """Validate that the agent exposes a non-None skill_registry attribute.
+
+        Skills are reusable capability modules; the registry must be
+        instantiated (not None) so the agent can activate skills at runtime.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "skill_registry")
         assert hasattr(agent, "skill_registry")
         # Verify: agent.skill_registry is not None
         assert agent.skill_registry is not None
 
-    def test_has_session(self):
-        """Test: Has session."""
+    def test_verify_agent_has_session_attribute(self):
+        """Validate that the agent exposes a session attribute.
+
+        The session holds the conversation history and is the primary
+        I/O surface between the agent loop and the model backend.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "session")
         assert hasattr(agent, "session")
 
-    def test_has_telemetry(self):
-        """Test: Has telemetry."""
+    def test_verify_agent_has_telemetry_attribute(self):
+        """Validate that the agent exposes a telemetry attribute.
+
+        Telemetry tracks usage, latency, and errors; the attribute must
+        exist so the metrics pipeline can be attached uniformly.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "telemetry")
         assert hasattr(agent, "telemetry")
 
-    def test_has_evolution(self):
-        """Test: Has evolution."""
+    def test_verify_agent_has_evolution_attribute(self):
+        """Validate that the agent exposes an evolution attribute.
+
+        Evolution drives self-improvement loops (reflection, replay); its
+        presence is required even when disabled so the API surface stays stable.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "evolution")
         assert hasattr(agent, "evolution")
 
-    def test_has_recovery(self):
-        """Test: Has recovery."""
+    def test_verify_agent_has_recovery_attribute(self):
+        """Validate that the agent exposes a recovery attribute.
+
+        Recovery handles checkpoint restoration and crash retry; the
+        attribute must exist so the main loop can invoke it on failure.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "recovery")
         assert hasattr(agent, "recovery")
 
-    def test_has_loop(self):
-        """Test: Has loop."""
+    def test_verify_agent_has_loop_attribute(self):
+        """Validate that the agent exposes a loop attribute.
+
+        The loop is the main execution engine; its presence is required
+        for goal-oriented and swarm sub-agent modes that run independently.
+        """
         agent = EncreAgent()
         # Verify: hasattr(agent, "loop")
         assert hasattr(agent, "loop")
 
 
 class TestEncreAgentRun:
-    """Verify run() signature returns an AsyncGenerator."""
+    """Engineered to validate the run() and run_with_tools() signatures and return types.
 
-    def test_run_returns_async_generator(self):
-        """Test: Run returns async generator."""
+    Both methods are async generators that yield event dicts to the
+    caller. Tests use inspect and typing introspection to confirm the
+    shape of the API without needing a live model backend.
+    """
+
+    def test_verify_run_is_an_async_generator_function(self):
+        """Validate that agent.run is an async generator function per inspect.isasyncgenfunction.
+
+        The async generator shape lets the caller iterate events lazily;
+        a regular async def would force the caller to await the full run,
+        defeating real-time streaming.
+        """
         agent = EncreAgent()
         # run() is an async generator function
         assert inspect.isasyncgenfunction(agent.run)
 
-    def test_run_signature(self):
-        """Test: Run signature."""
+    def test_verify_run_signature_contains_prompt_and_system_prompt_parameters(self):
+        """Validate that agent.run's signature includes 'prompt' and 'system_prompt' parameters.
+
+        These two parameters are the primary user-facing inputs; their
+        presence in the signature guarantees the public API contract holds.
+        """
         agent = EncreAgent()
         sig = inspect.signature(agent.run)
         params = list(sig.parameters.keys())
@@ -156,14 +238,23 @@ class TestEncreAgentRun:
         # Verify: "system_prompt" in params
         assert "system_prompt" in params
 
-    def test_run_with_tools_returns_async_generator(self):
-        """Test: Run with tools returns async generator."""
+    def test_verify_run_with_tools_is_an_async_generator_function(self):
+        """Validate that agent.run_with_tools is an async generator function.
+
+        run_with_tools extends run with explicit tool injection; it must
+        retain the async generator shape so streaming works identically.
+        """
         agent = EncreAgent()
         # Verify: inspect.isasyncgenfunction(agent.run_with_tools)
         assert inspect.isasyncgenfunction(agent.run_with_tools)
 
-    def test_run_return_type_is_async_generator(self):
-        """Test: Run return type is async generator."""
+    def test_verify_run_return_type_hint_is_present(self):
+        """Validate that typing.get_type_hints(agent.run) includes a 'return' entry.
+
+        The return hint is consumed by IDE tooling and static checkers; its
+        presence confirms the developer did not drop the annotation when
+        refactoring the async generator body.
+        """
         import typing
         agent = EncreAgent()
         hints = typing.get_type_hints(agent.run)
@@ -172,28 +263,53 @@ class TestEncreAgentRun:
 
 
 class TestEncreAgentLifecycle:
-    """Verify EncreAgent lifecycle methods exist."""
+    """Engineered to validate that lifecycle methods exist and are callable on :class:`EncreAgent`.
 
-    def test_reset_exists(self):
-        """Test: Reset exists."""
+    Lifecycle hooks (reset, aclose, add_message, respond_permission,
+    activate_skill) are called by the loop and by external orchestrators.
+    Tests assert callability so that signature changes do not silently
+    break the call sites that depend on them.
+    """
+
+    def test_verify_reset_is_callable(self):
+        """Validate that agent.reset exists and is callable.
+
+        Reset is invoked between turns to clear transitory state; the test
+        only checks callability because actual reset behavior is covered
+        by session-level tests.
+        """
         agent = EncreAgent()
         # Verify: callable(agent.reset)
         assert callable(agent.reset)
 
-    def test_aclose_exists(self):
-        """Test: Aclose exists."""
+    def test_verify_aclose_is_callable(self):
+        """Validate that agent.aclose exists and is callable.
+
+        Aclose cleans up async resources (event loops, network handles);
+        its presence is required for graceful shutdown.
+        """
         agent = EncreAgent()
         # Verify: callable(agent.aclose)
         assert callable(agent.aclose)
 
-    def test_add_message_exists(self):
-        """Test: Add message exists."""
+    def test_verify_add_message_is_callable(self):
+        """Validate that agent.add_message exists and is callable.
+
+        add_message is the external entry point for injecting messages
+        without going through the run loop; callability is required for
+        programmatic session manipulation.
+        """
         agent = EncreAgent()
         # Verify: callable(agent.add_message)
         assert callable(agent.add_message)
 
-    def test_add_message_adds_to_session(self):
-        """Test: Add message adds to session."""
+    def test_verify_add_message_appends_to_the_session(self):
+        """Validate that calling add_message increases the session message count by one.
+
+        The method must delegate to session.add_message; the test asserts
+        the list grows from 0 to 1 and that the injected message's role
+        and content match what was passed in.
+        """
         agent = EncreAgent()
         # Verify: len(agent.session.messages) == 0
         assert len(agent.session.messages) == 0
@@ -205,24 +321,44 @@ class TestEncreAgentLifecycle:
         # Verify: agent.session.messages[0]["content"] == "hello"
         assert agent.session.messages[0]["content"] == "hello"
 
-    def test_respond_permission_exists(self):
-        """Test: Respond permission exists."""
+    def test_verify_respond_permission_is_callable(self):
+        """Validate that agent.respond_permission exists and is callable.
+
+        respond_permission is the external entry point for answering a
+        pending permission request; callability is required for async
+        callback wiring in the permission handler.
+        """
         agent = EncreAgent()
         # Verify: callable(agent.respond_permission)
         assert callable(agent.respond_permission)
 
-    def test_activate_skill_exists(self):
-        """Test: Activate skill exists."""
+    def test_verify_activate_skill_is_callable(self):
+        """Validate that agent.activate_skill exists and is callable.
+
+        activate_skill is the entry point for the skill subsystem; its
+        presence is required for the skill registry to be invoked at runtime.
+        """
         agent = EncreAgent()
         # Verify: callable(agent.activate_skill)
         assert callable(agent.activate_skill)
 
 
 class TestEncreAgentGoalAndSwarm:
-    """Verify goal() and swarm() factory methods exist."""
+    """Engineered to validate the goal() and swarm() factory methods on :class:`EncreAgent`.
 
-    def test_goal_returns_goal_loop(self):
-        """Test: Goal returns goal loop."""
+    These class methods construct independent execution loops (goal loop
+    for single-objective tasks, swarm session for multi-agent parallelism).
+    Tests assert the returned objects are non-None and expose an execute()
+    method, confirming the factory contract holds.
+    """
+
+    def test_verify_goal_returns_an_executable_goal_loop(self):
+        """Validate that agent.goal() returns an object with an execute method.
+
+        The goal loop is the top-level orchestrator for single-agent goal
+        resolution; execute() is the entry point the caller invokes to
+        start the loop.
+        """
         agent = EncreAgent()
         loop = agent.goal(
             description="Test goal",
@@ -234,8 +370,12 @@ class TestEncreAgentGoalAndSwarm:
         # Verify: hasattr(loop, "execute")
         assert hasattr(loop, "execute")
 
-    def test_swarm_returns_swarm_session(self):
-        """Test: Swarm returns swarm session."""
+    def test_verify_swarm_returns_an_executable_swarm_session(self):
+        """Validate that agent.swarm() returns an object with an execute method.
+
+        The swarm session orchestrates multiple concurrent sub-agents;
+        execute() is the entry point that drives the parallel workflow.
+        """
         agent = EncreAgent()
         session = agent.swarm(
             goal="Build a TODO app",
@@ -246,8 +386,13 @@ class TestEncreAgentGoalAndSwarm:
         # Verify: hasattr(session, "execute")
         assert hasattr(session, "execute")
 
-    def test_set_scheduler_exists(self):
-        """Test: Set scheduler exists."""
+    def test_verify_set_scheduler_is_callable(self):
+        """Validate that agent.set_scheduler exists and is callable.
+
+        set_scheduler wires an external cron/ scheduler into the agent so
+        goal loops can be triggered on a timetable; callability is required
+        for DI wiring in production deployments.
+        """
         agent = EncreAgent()
         # Verify: callable(agent.set_scheduler)
         assert callable(agent.set_scheduler)
@@ -261,7 +406,13 @@ class _FakeConfig:
 
 
 class _FakeParentLoop:
-    """Fake parent loop that records how sub-agents are launched."""
+    """Fake parent loop that records how sub-agents are launched.
+
+    Captures each sub-agent prompt in self.calls and returns a fixed
+    transcript shape so the parallel path can be tested without a real
+    model backend. The progress_callback is invoked with one snapshot
+    message per sub-agent to verify streaming behavior.
+    """
 
     def __init__(self):
         self.sub_agent_depth = 0
@@ -283,15 +434,25 @@ class _FakeParentLoop:
 
 
 class TestAgentToolParallel:
-    """Regression tests for the parallel ``tasks`` path of the agent tool."""
+    """Regression tests for the parallel ``tasks`` path of the agent tool.
+
+    Previously the parallel path passed ``progress_callback=None`` and
+    returned ``messages=[]`` -- the UI never rendered a sub-agent view
+    and the parent only saw a bare "succeeded" placeholder. These tests
+    assert the fixed behavior: real transcripts are aggregated, progress
+    is streamed, and the concurrency cap is respected.
+    """
 
     @pytest.mark.asyncio
-    async def test_parallel_tasks_aggregate_messages_and_stream(self):
-        """Parallel tasks must return real transcripts and stream progress.
+    async def test_verify_parallel_tasks_aggregate_messages_and_stream_progress(self):
+        """Validate that parallel task execution aggregates real transcripts and streams progress callbacks.
 
-        Previously the parallel path passed ``progress_callback=None`` and
-        returned ``messages=[]`` -- the UI never rendered a sub-agent view
-        and the parent only saw a bare "succeeded" placeholder.
+        Two sub-agents ('alpha' and 'beta') are launched concurrently; the
+        test asserts their prompts appear in parent.calls (proving both
+        ran), their final content appears in the aggregated result, and
+        the streamed snapshots appear in the joined message stream. The
+        sub_results list must contain exactly two entries so callers that
+        inspect per-task outcomes do not see a zero-length list.
         """
         from encre.tools.builtin import agent as agent_mod
 
@@ -326,8 +487,13 @@ class TestAgentToolParallel:
         assert streamed, "parallel path must stream combined progress"
 
     @pytest.mark.asyncio
-    async def test_parallel_tasks_rejects_non_list(self):
-        """A non-list ``tasks`` value returns a clear error."""
+    async def test_verify_parallel_tasks_rejects_non_list_tasks_value(self):
+        """Validate that passing a non-list ``tasks`` value returns a clear error message.
+
+        The executor must validate the input shape before spawning any
+        sub-agents; a string like 'nope' should produce a readable error
+        rather than an unhandled TypeError deep in the concurrency code.
+        """
         from encre.tools.builtin import agent as agent_mod
 
         parent = _FakeParentLoop()
@@ -339,11 +505,13 @@ class TestAgentToolParallel:
         assert "must be an array" in result["content"]
 
     @pytest.mark.asyncio
-    async def test_parallel_tasks_concurrency_capped_at_four(self):
-        """At most MAX_PARALLEL_SUB_AGENTS run at once; extras queue.
+    async def test_verify_parallel_tasks_respects_max_parallel_sub_agents_cap(self):
+        """Validate that at most MAX_PARALLEL_SUB_AGENTS run concurrently and all tasks eventually complete.
 
-        Six tasks in one call must all run, but no more than four may be
-        in-flight simultaneously -- the rest wait on the semaphore.
+        Six tasks are submitted; the probe loop records active/peak/total
+        counters. The test asserts total == 6 (no task is dropped), peak ==
+        MAX_PARALLEL_SUB_AGENTS (the semaphore bounds concurrency exactly),
+        and peak <= 4 (a defensive upper bound independent of the constant).
         """
         from encre.tools.builtin import agent as agent_mod
 
@@ -379,4 +547,3 @@ class TestAgentToolParallel:
         assert parent.peak == agent_mod.MAX_PARALLEL_SUB_AGENTS
         assert parent.peak <= 4
         assert len(result["sub_results"]) == 6
-

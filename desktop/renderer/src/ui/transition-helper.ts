@@ -52,6 +52,11 @@ export class TransitionHelper {
     const d = opts.duration ?? TransitionHelper.DEFAULT_DURATION;
     const exitEls = opts.exit ?? [];
     const enterEls = opts.enter ?? [];
+    // Under RTL (ar/he) the slide direction mirrors: new content enters from
+    // the left, outgoing content exits to the right.
+    const rtl = document.documentElement.dir === "rtl";
+    const enterFrom = rtl ? "translateX(-100%)" : "translateX(100%)";
+    const exitTo = rtl ? "translateX(100%)" : "translateX(-100%)";
 
     if (exitEls.length === 0 && enterEls.length === 0) {
       opts.setup?.();
@@ -102,7 +107,7 @@ export class TransitionHelper {
           for (const el of enterEls) {
             el.classList.remove("hidden");
             el.style.transition = "none";
-            el.style.transform = "translateX(100%)";
+            el.style.transform = enterFrom;
             el.style.opacity = "0";
           }
 
@@ -111,7 +116,7 @@ export class TransitionHelper {
 
           // ── 3. 同时触发所有 CSS transition ──
           for (const el of exitEls) {
-            el.style.transform = "translateX(-100%)";
+            el.style.transform = exitTo;
             el.style.opacity = "0";
           }
           for (const el of enterEls) {

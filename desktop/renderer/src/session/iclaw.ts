@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { TransitionHelper } from "./transition-helper.js";
+import { TransitionHelper } from "../ui/transition-helper.js";
 
 /**
  * Automation panel controller.
@@ -130,6 +130,7 @@ export class AutomationPanel {
       this._appEl.classList.remove("sidebar-collapsed");
     }
     if (this._toggleBtn) {
+      (this._toggleBtn as HTMLButtonElement).disabled = false;
       this._toggleBtn.style.transition = "";
       this._toggleBtn.style.opacity = "";
       this._toggleBtn.style.transform = "";
@@ -151,15 +152,12 @@ export class AutomationPanel {
         }
       }
 
-      // Smoothly fade+slide the sidebar toggle button instead of instant hide.
-      // The toggle button becomes the "back" button in the detail view, so we
-      // only fade it here for the list view; the search button is never touched
-      // - it stays in place across the automation list and detail views.
+      // Keep the sidebar toggle visible but disabled (greyed out, no-op) while
+      // automation is active: the sidebar is force-collapsed here, so the button
+      // must not look clickable. The search button is never touched - it stays
+      // in place across the automation list and detail views.
       if (this._toggleBtn) {
-        this._toggleBtn.style.transition = "opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1), transform 0.12s cubic-bezier(0.4, 0, 0.2, 1)";
-        this._toggleBtn.style.opacity = "0";
-        this._toggleBtn.style.transform = "translateX(-8px)";
-        this._toggleBtn.style.pointerEvents = "none";
+        (this._toggleBtn as HTMLButtonElement).disabled = true;
       }
 
       if (this._sessionBar) this._sessionBar.classList.add("hidden");
@@ -236,17 +234,9 @@ export class AutomationPanel {
           if (this._appEl && !this._sidebarWasCollapsed) {
             this._appEl.classList.remove("sidebar-collapsed");
           }
-          // Restore toggle button with slide-in from right
+          // Re-enable the sidebar toggle now that the sidebar is restored.
           if (this._toggleBtn) {
-            this._toggleBtn.style.transition = "none";
-            this._toggleBtn.style.transform = "translateX(100%)";
-            this._toggleBtn.style.opacity = "0";
-            requestAnimationFrame(() => {
-              this._toggleBtn!.style.transition = "opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
-              this._toggleBtn!.style.transform = "translateX(0)";
-              this._toggleBtn!.style.opacity = "";
-              this._toggleBtn!.style.pointerEvents = "";
-            });
+            (this._toggleBtn as HTMLButtonElement).disabled = false;
           }
         },
       });

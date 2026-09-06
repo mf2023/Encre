@@ -39,10 +39,10 @@ import {
   clearAllNotifications,
   getUnreadCount,
   addNotification,
-} from "./state.js";
-import { MediaViewer } from "./media-viewer.js";
-import { t } from "./i18n.js";
-import type { NotificationItem } from "./types.js";
+} from "../core/state.js";
+import { MediaViewer } from "../chat/media-viewer.js";
+import { t } from "../features/i18n.js";
+import type { NotificationItem } from "../core/types.js";
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 

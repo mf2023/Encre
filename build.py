@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,8 +20,6 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
-
-from __future__ import annotations
 
 # ---------------------------------------------------------------------------
 # Module summary
@@ -60,7 +58,7 @@ IS_WIN = platform.system() == "Windows"
 EXT = ".pyd" if IS_WIN else ".dylib" if platform.system() == "Darwin" else ".so"
 SERVER_EXE = "encre-server.exe" if IS_WIN else "encre-server"
 
-# Locale alias map: user-friendly short names → canonical registry keys.
+# Locale alias map: user-friendly short names 鈫?canonical registry keys.
 # "en" is always injected as a mandatory fallback regardless of input.
 LOCALE_ALIASES: dict[str, str] = {
     "cn": "zh",
@@ -123,7 +121,7 @@ def _resolve_locales(cli_input: str) -> list[str]:
     """Resolve a --locales CLI value into a sorted list of canonical locale keys.
 
     Rules:
-      - Aliases in LOCALE_ALIASES are expanded (e.g. "cn" → "zh").
+      - Aliases in LOCALE_ALIASES are expanded (e.g. "cn" 鈫?"zh").
       - "en" is always included as a mandatory fallback.
       - "all" selects every locale in ALL_REGISTRY_LOCALES.
       - Input is comma-separated (e.g. "cn,ja" or "all").
@@ -337,9 +335,9 @@ def build_server():
     output_exe = SERVER_DIST / "encre-server" / SERVER_EXE
     if output_exe.exists():
         size_mb = output_exe.stat().st_size / (1024 * 1024)
-        print(f"  ✔ Backend bundled: {output_exe} ({size_mb:.1f} MB)")
+        print(f"  鉁?Backend bundled: {output_exe} ({size_mb:.1f} MB)")
     else:
-        print(f"  ✖ ERROR: Expected output not found at {output_exe}")
+        print(f"  鉁?ERROR: Expected output not found at {output_exe}")
         sys.exit(1)
 
 

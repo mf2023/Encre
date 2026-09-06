@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { renderMarkdown } from "./chat.js";
+import { renderMarkdown } from "./chat_markdown.js";
 
 export interface MarkdownPreviewOptions {
   onOpenLink?: (url: string) => void;

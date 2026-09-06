@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import type { LocaleMessages } from "../i18n.js";
+import type { LocaleMessages } from "../features/i18n.js";
 
 export const en: LocaleMessages = {
   browserNav: {
@@ -240,8 +240,17 @@ export const en: LocaleMessages = {
     switchConfirm: "Switch to the \"{label}\" theme?",
   },
   language: {
-    zh: "中文",
+    zh: "简体中文",
     en: "English",
+    "zh-Hant": "繁體中文",
+    ja: "日本語",
+    ko: "한국어",
+    de: "Deutsch",
+    tr: "Türkçe",
+    es: "Español",
+    pt: "Português",
+    ar: "العربية",
+    he: "עברית",
     autoFollow: "Follow App Language",
     switchTitle: "Switch Language",
     switchConfirm: "Switch to \"{label}\"?",
@@ -526,6 +535,8 @@ export const en: LocaleMessages = {
     aboutLicense: "Open Source License",
     aboutPrivacy: "Privacy Policy",
     aboutTerms: "Terms of Service",
+    aboutAgreement: "User Agreement",
+    aboutContentRules: "Community Guidelines",
     aboutThanks: "Third-Party Notices",
     aboutRegion: "Region",
     aboutRegionGroupAmericas: "Americas",
@@ -935,6 +946,20 @@ export const en: LocaleMessages = {
     abbrFeishu: "FS",
     abbrDingtalk: "DT",
     abbrYuanbao: "YB",
+    // MCP import preview table headers
+    mcpColName: "Name",
+    mcpColCommandUrl: "Command / URL",
+    mcpColType: "Type",
+    // usage stats chart
+    usageNoActivity: "No activity",
+    usageTipDate: "Date",
+    usageTipTokens: "Tokens",
+    usageTipModel: "Model",
+    usageTipTurns: "Turns",
+    usageTipToolCalls: "Tool calls",
+    // export dialog file types
+    exportBookmarkFile: "Bookmark File",
+    exportCsvFile: "CSV File",
   },
   child: {
     loadFailed: "Can't load this page",
@@ -1129,11 +1154,17 @@ export const en: LocaleMessages = {
     queuedMultiple: "{count} prompts waiting",
     waitingToSend: "Waiting to send...",
     sendDirectly: "Send directly",
+    specDocument: "Spec Document",
+    planContent: "Plan Content",
+    subAgent: "Sub-agent",
+    maxDepthReached: "Max nesting depth ({n}) reached",
   },
   files: {
     attachedFiles: "I've attached the following files:",
     attached: "Attached",
     skippedMedia: "Media file skipped (model not multimodal)",
+    folderSummary: "· folder",
+    lineSummary: "· {count} line(s)",
   },
   sessionInner: {
     tabTerminal: "Terminal",
@@ -1141,6 +1172,7 @@ export const en: LocaleMessages = {
     tabEditor: "Editor",
     tabBrowser: "Browser",
     tabMarkdown: "Markdown Preview",
+    preview: "Preview",
     tabCode: "Code",
     tabMedia: "Media Preview",
     tabOffice: "Document Preview",
@@ -1342,6 +1374,9 @@ export const en: LocaleMessages = {
     sessionCount: "Sessions",
     workspaceId: "ID",
     uploadIcon: "Upload icon",
+    modelSelectionTitle: "Allowed models",
+    modelSelectionHint: "Select the models this workspace may use; leave empty to use the global model set.",
+    contextFileHint: "When enabled, this file's contents are provided to the model; when disabled, the model cannot see them.",
   },
 
   header: {
@@ -1374,6 +1409,8 @@ export const en: LocaleMessages = {
     clearSessionDesc: "Start over in a new empty session",
     initTitle: "Init Project",
     initDesc: "Scan the project and generate an AGENTS.md project insight file at the workspace root",
+    steerTitle: "Steer",
+    steerDesc: "Inject a mid-conversation instruction into the running agent",
   },
   input: {
     placeholder: "Ask Encre anything...",
@@ -1485,8 +1522,12 @@ export const en: LocaleMessages = {
   stream: {
     validationTimedOut: "Validation timed out",
     notificationError: "Error",
+    zipArchive: "ZIP Archive",
   },
 
+  diff: {
+    truncated: "... [diff truncated, {count} more lines]",
+  },
   compact: {
     summary: "{old} → {new} messages · {tokens} saved",
   },
@@ -1618,6 +1659,12 @@ export const en: LocaleMessages = {
     permNetworkDesc: "Network connections inside sandbox (affects web_fetch, web_search, etc.)",
     permSandbox: "Sandbox Isolation",
     permSandboxDesc: "Sandbox isolation for terminal commands",
+    // history filter date placeholders & calendar
+    dateStart: "Start Date",
+    dateEnd: "End Date",
+    month1: "Jan", month2: "Feb", month3: "Mar", month4: "Apr", month5: "May", month6: "Jun",
+    month7: "Jul", month8: "Aug", month9: "Sep", month10: "Oct", month11: "Nov", month12: "Dec",
+    weekday1: "Mo", weekday2: "Tu", weekday3: "We", weekday4: "Th", weekday5: "Fr", weekday6: "Sa", weekday7: "Su",
   },
 
   mediaViewer: {
@@ -1711,7 +1758,7 @@ export const en: LocaleMessages = {
     notifications_open: "Open notifications",
     notifications_clear: "Clear all notifications",
     toggle_theme: "Cycle theme (dark / light / system)",
-    toggle_language: "Toggle language (zh / en)",
+    toggle_language: "Cycle UI language",
     show_shortcuts: "Show keyboard shortcuts reference",
   },
 };

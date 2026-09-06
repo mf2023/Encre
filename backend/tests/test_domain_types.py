@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,10 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from __future__ import annotations
-
 """Tests for codebase indexer, LSP protocol, git, notebook, server types."""
-
 
 
 # ===========================================================================
@@ -32,9 +29,24 @@ from __future__ import annotations
 # ===========================================================================
 
 class TestCodeIndex:
-    """Test suite for CodeIndex."""
-    def test_module_info(self):
-        """Test: Module info."""
+    """Engineered to validate the codebase indexer type system.
+
+    This test class exercises :class:`ModuleInfo`, :class:`EncreCodeIndex` across
+    construction, default-value, and instantiation scenarios to ensure that the
+    indexer data model behaves as a reliable foundation for AST-level code
+    search and cross-reference resolution.  The design verifies field integrity
+    so that downstream consumers (LSP servers, tool plugins) receive consistent
+    module metadata.
+    """
+
+    def test_verify_module_info_field_integrity(self):
+        """Validate that ModuleInfo correctly stores and exposes its fields.
+
+        The test constructs a fully-populated :class:`ModuleInfo` and asserts
+        that each populated field round-trips unchanged because downstream
+        consumers rely on exact name, language, exports, and imports values
+        for symbol resolution and import graph construction.
+        """
         from encre.codebase.indexer import ModuleInfo
         mi = ModuleInfo(
             path="src/my_module.py",
@@ -43,35 +55,46 @@ class TestCodeIndex:
             exports=["func_a", "ClassB"],
             imports=["os", "json"],
         )
-        # Verify: mi.name == "my_module"
+        # Name must match the module identifier used by import-system resolution.
         assert mi.name == "my_module"
-        # Verify: mi.language == "python"
+        # Language field must be preserved so the indexer can route to
+        # language-specific AST parsers.
         assert mi.language == "python"
-        # Verify: "func_a" in mi.exports
+        # Exported symbols must be preserved for symbol-resolution lookups.
         assert "func_a" in mi.exports
-        # Verify: "os" in mi.imports
+        # Imported modules must be preserved for cross-reference analysis.
         assert "os" in mi.imports
 
-    def test_module_info_defaults(self):
-        """Test: Module info defaults."""
+    def test_verify_module_info_defaults(self):
+        """Validate that ModuleInfo applies correct default values.
+
+        The test constructs a minimal :class:`ModuleInfo` with only required
+        fields and asserts default values because the indexer must gracefully
+        handle partial module metadata without raising during downstream
+        iteration over exports, imported_by, language, and loc.
+        """
         from encre.codebase.indexer import ModuleInfo
         mi = ModuleInfo(path="test.py", name="test")
-        # Verify: mi.imports == []
+        # Empty imports list must default so that iteration does not fail.
         assert mi.imports == []
-        # Verify: mi.imported_by == []
+        # imported_by defaults to empty so reverse-dependency lookups are safe.
         assert mi.imported_by == []
-        # Verify: mi.exports == []
+        # exports defaults to empty so symbol sets remain iterable.
         assert mi.exports == []
-        # Verify: mi.language == ""
+        # language defaults to empty string to avoid None comparisons.
         assert mi.language == ""
-        # Verify: mi.loc == 0
+        # loc (line of code) defaults to zero for unanalyzed modules.
         assert mi.loc == 0
 
-    def test_code_index_create(self):
-        """Test: Code index create."""
+    def test_verify_code_index_instantiation(self):
+        """Validate that EncreCodeIndex constructs without error.
+
+        The test creates an :class:`EncreCodeIndex` pointing at the workspace
+        root and asserts it is not None because the index must be instantiable
+        before any scan or query operation begins.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
-        # Verify: ci is not None
         assert ci is not None
 
 
@@ -80,39 +103,67 @@ class TestCodeIndex:
 # ===========================================================================
 
 class TestLSPProtocol:
-    """Test suite for LSPProtocol."""
-    def test_position(self):
-        """Test: Position."""
+    """Engineered to validate the LSP protocol data model.
+
+    This test class exercises :class:`Position`, :class:`Range`, :class:`Location`,
+    :class:`Diagnostic`, :class:`HoverResult`, and :class:`LSPState` across
+    construction and field-exposure scenarios to ensure that the protocol types
+    behave as a reliable inter-process contract between the LSP server and
+    language clients.
+    """
+
+    def test_verify_position_fields(self):
+        """Validate that Position correctly stores line and character offsets.
+
+        The test constructs a :class:`Position` with explicit line and character
+        values and asserts they round-trip because zero-based offset semantics
+        are fundamental to all cursor and selection computations.
+        """
         from encre.lsp.protocol import Position
         p = Position(line=10, character=5)
-        # Verify: p.line == 10
+        # Line must be stored exactly to locate the correct source row.
         assert p.line == 10
-        # Verify: p.character == 5
+        # Character offset must be stored exactly for column-accurate positioning.
         assert p.character == 5
 
-    def test_range(self):
-        """Test: Range."""
+    def test_verify_range_bounds(self):
+        """Validate that Range preserves start and end Position values.
+
+        The test constructs a :class:`Range` spanning lines 0鈥?0 and asserts
+        the boundary positions are unchanged because range equality is used
+        throughout the LSP protocol for highlights, edits, and selections.
+        """
         from encre.lsp.protocol import Position, Range
         start = Position(line=0, character=0)
         end = Position(line=10, character=20)
         r = Range(start=start, end=end)
-        # Verify: r.start.line == 0
+        # Start position must anchor the range at line 0.
         assert r.start.line == 0
-        # Verify: r.end.line == 10
+        # End position must cap the range at line 10.
         assert r.end.line == 10
 
-    def test_location(self):
-        """Test: Location."""
+    def test_verify_location_uri_and_range(self):
+        """Validate that Location carries URI and Range fields intact.
+
+        The test constructs a :class:`Location` referencing a file URI and a
+        single-line range, then asserts both fields survive because locations
+        are the primary unit returned by go-to-definition and reference queries.
+        """
         from encre.lsp.protocol import Location, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         loc = Location(uri="file:///test.py", range=r)
-        # Verify: loc.uri == "file:///test.py"
+        # URI must identify the target document unambiguously.
         assert loc.uri == "file:///test.py"
-        # Verify: loc.range.start.line == 1
+        # Range start line must be preserved for navigation precision.
         assert loc.range.start.line == 1
 
-    def test_diagnostic(self):
-        """Test: Diagnostic."""
+    def test_verify_diagnostic_fields(self):
+        """Validate that Diagnostic carries message, severity, and source.
+
+        The test constructs a :class:`Diagnostic` with a sample error and
+        asserts each field because diagnostics drive the IDE underline and
+        problem-panel display.
+        """
         from encre.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=5, character=0), end=Position(line=5, character=10))
         diag = Diagnostic(
@@ -121,46 +172,67 @@ class TestLSPProtocol:
             severity=2,
             source="pyright",
         )
-        # Verify: diag.message == "Unused variable"
+        # Message text must be preserved for user-facing error display.
         assert diag.message == "Unused variable"
-        # Verify: diag.severity == 2
+        # Severity code must map to the LSP numeric scale (2 = warning).
         assert diag.severity == 2
-        # Verify: diag.source == "pyright"
+        # Source identifies the diagnostic producer for filtering.
         assert diag.source == "pyright"
 
-    def test_hover_result(self):
-        """Test: Hover result."""
+    def test_verify_hover_result_without_range(self):
+        """Validate that HoverResult carries contents when no range is set.
+
+        The test constructs a :class:`HoverResult` with an explicit string and
+        no range, then asserts the content survives because hover popups rely
+        on the contents field being present even when the annotation range is
+        omitted (e.g. full-symbol hover).
+        """
         from encre.lsp.protocol import HoverResult
         hr = HoverResult(contents="def foo(x: int) -> str", range=None)
-        # Verify: hr.contents == "def foo(x: int) -> str"
+        # Contents must be preserved for hover text rendering.
         assert hr.contents == "def foo(x: int) -> str"
-        # Verify: hr.range is None
+        # Range must remain None to signal unbounded hover intent.
         assert hr.range is None
 
-    def test_hover_result_with_range(self):
-        """Test: Hover result with range."""
+    def test_verify_hover_result_with_range(self):
+        """Validate that HoverResult preserves a non-None range.
+
+        The test constructs a :class:`HoverResult` with both contents and a
+        :class:`Range` to ensure the range field is retained because precise
+        highlight ranges are used for semantic token visual feedback.
+        """
         from encre.lsp.protocol import HoverResult, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         hr = HoverResult(contents="def foo()", range=r)
-        # Verify: hr.range is not None
+        # Range must be non-None when explicitly provided.
         assert hr.range is not None
 
-    def test_lsp_state(self):
-        """Test: Lsp state."""
+    def test_verify_lsp_state_running(self):
+        """Validate that LSPState exposes status and optional error cleanly.
+
+        The test constructs a :class:`LSPState` with status 'running' and
+        asserts the status is preserved and error is None because the gateway
+        uses this state to surface connection readiness to the client.
+        """
         from encre.lsp.protocol import LSPState
         state = LSPState(status="running")
-        # Verify: state.status == "running"
+        # Status must reflect the live connection state.
         assert state.status == "running"
-        # Verify: state.error is None
+        # Error must be absent when the state is healthy.
         assert state.error is None
 
-    def test_lsp_state_with_error(self):
-        """Test: Lsp state with error."""
+    def test_verify_lsp_state_with_error(self):
+        """Validate that LSPState exposes an error message when unhealthy.
+
+        The test constructs a :class:`LSPState` with status 'stopped' and an
+        error string, then asserts both fields because error propagation is
+        essential for client-side diagnostic reporting.
+        """
         from encre.lsp.protocol import LSPState
         state = LSPState(status="stopped", error="connection refused")
-        # Verify: state.status == "stopped"
+        # Status must report the terminal failure state.
         assert state.status == "stopped"
-        # Verify: state.error == "connection refused"
+        # Error string must carry the failure reason for display.
         assert state.error == "connection refused"
 
 
@@ -169,22 +241,39 @@ class TestLSPProtocol:
 # ===========================================================================
 
 class TestGitTypes:
-    """Test suite for GitTypes."""
-    def test_git_state_default(self):
-        """Test: Git state default."""
+    """Engineered to validate the Git repository state model.
+
+    This test class exercises :class:`GitState`, :class:`GitDiffResult`, and
+    :class:`EncreGitRepo` across default-state, populated-state, and diff
+    scenarios to ensure that the git integration exposes a consistent snapshot
+    of repository status for change-aware features such as context injection
+    and diff-based retrieval.
+    """
+
+    def test_verify_git_state_defaults(self):
+        """Validate that GitState applies sensible defaults when out of a repo.
+
+        The test constructs a :class:`GitState` with in_repo=False and asserts
+        the default values because codebase-context tools must not crash when
+        the workspace is not a git repository.
+        """
         from encre.git.repo import GitState
         gs = GitState(in_repo=False)
-        # Verify: gs.in_repo is False
+        # in_repo must remain False to signal no git metadata is available.
         assert gs.in_repo is False
-        # Verify: gs.is_clean is True
+        # is_clean defaults to True when there is no repository to poll.
         assert gs.is_clean is True
-        # Verify: gs.changed_files == []
+        # Empty changed-files and untracked-files lists must be safe to iterate.
         assert gs.changed_files == []
-        # Verify: gs.untracked_files == []
         assert gs.untracked_files == []
 
-    def test_git_state_in_repo(self):
-        """Test: Git state in repo."""
+    def test_verify_git_state_populated(self):
+        """Validate that GitState preserves full repository metadata.
+
+        The test constructs a :class:`GitState` with all fields set and asserts
+        they survive because session-level git context injection depends on
+        accurate branch, commit, and worktree information.
+        """
         from encre.git.repo import GitState
         gs = GitState(
             in_repo=True,
@@ -197,38 +286,52 @@ class TestGitTypes:
             has_unpushed=False,
             worktree_count=1,
         )
-        # Verify: gs.in_repo is True
+        # in_repo must be True to gate all downstream git operations.
         assert gs.in_repo is True
-        # Verify: gs.branch == "main"
+        # Branch name must survive for context-aware prompt enrichment.
         assert gs.branch == "main"
-        # Verify: gs.commit_hash == "abc123"
+        # Commit hash must be preserved for traceability.
         assert gs.commit_hash == "abc123"
-        # Verify: gs.worktree_count == 1
+        # Worktree count must reflect multi-worktree setups accurately.
         assert gs.worktree_count == 1
 
-    def test_git_diff_result(self):
-        """Test: Git diff result."""
+    def test_verify_git_diff_result_fields(self):
+        """Validate that GitDiffResult preserves insertion/deletion counts.
+
+        The test constructs a :class:`GitDiffResult` with sample statistics and
+        asserts each field because diff metrics are surfaced to the user and
+        consumed by cost-accounting and summary generators.
+        """
         from encre.git.diff import GitDiffResult
         gdr = GitDiffResult(files=3, insertions=50, deletions=10)
-        # Verify: gdr.files == 3
+        # File count must reflect the number of changed files.
         assert gdr.files == 3
-        # Verify: gdr.insertions == 50
+        # Insertion count must be preserved for delta reporting.
         assert gdr.insertions == 50
-        # Verify: gdr.deletions == 10
+        # Deletion count must be preserved for delta reporting.
         assert gdr.deletions == 10
 
-    def test_git_repo_creation(self):
-        """Test: Git repo creation."""
+    def test_verify_git_repo_instantiation(self):
+        """Validate that EncreGitRepo constructs without error.
+
+        The test creates an :class:`EncreGitRepo` pointing at the current
+        workspace and asserts it is not None because the repo wrapper must be
+        instantiable before any git-metadata query is issued.
+        """
         from encre.git.repo import EncreGitRepo
         repo = EncreGitRepo(workspace=".")
-        # Verify: repo is not None
         assert repo is not None
 
-    def test_git_repo_is_in_repo(self):
-        """Test: Git repo is in repo."""
+    def test_verify_git_repo_is_in_repo_returns_bool(self):
+        """Validate that is_in_repo() returns a strict boolean.
+
+        The test calls :meth:`EncreGitRepo.is_in_repo` and asserts the return
+        type is bool because downstream guards use truthiness to gate all
+        git-dependent context enrichment.
+        """
         from encre.git.repo import EncreGitRepo
         repo = EncreGitRepo(workspace=".")
-        # Verify: isinstance(repo.is_in_repo(), bool)
+        # Return value must be a strict bool to avoid truthy-string bugs.
         assert isinstance(repo.is_in_repo(), bool)
 
 
@@ -237,21 +340,37 @@ class TestGitTypes:
 # ===========================================================================
 
 class TestNotebook:
-    """Test suite for Notebook."""
-    def test_session_create(self):
-        """Test: Session create."""
+    """Engineered to validate the notebook session model.
+
+    This test class exercises :class:`EncreNotebookSession` across default and
+    custom-kernel construction scenarios to ensure the session object exposes
+    a reliable kernel identifier for notebook-based agent interactions.
+    """
+
+    def test_verify_session_default_kernel(self):
+        """Validate that EncreNotebookSession defaults to python3 kernel.
+
+        The test constructs a session with no explicit kernel and asserts
+        kernel_name == 'python3' because the default kernel must match the
+        runtime environment expected by the notebook execution layer.
+        """
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession()
-        # Verify: sess is not None
+        # Session must be instantiable without arguments.
         assert sess is not None
-        # Verify: sess.kernel_name == "python3"
+        # Default kernel must be python3 for standard notebook execution.
         assert sess.kernel_name == "python3"
 
-    def test_session_create_custom_kernel(self):
-        """Test: Session create custom kernel."""
+    def test_verify_session_custom_kernel(self):
+        """Validate that EncreNotebookSession accepts a custom kernel name.
+
+        The test constructs a session with an explicit kernel specifier and
+        asserts it is preserved because multi-version Python environments
+        require per-session kernel targeting.
+        """
         from encre.notebook.session import EncreNotebookSession
         sess = EncreNotebookSession(kernel_name="python3.12")
-        # Verify: sess.kernel_name == "python3.12"
+        # Kernel name must reflect the explicitly requested version.
         assert sess.kernel_name == "python3.12"
 
 
@@ -260,70 +379,105 @@ class TestNotebook:
 # ===========================================================================
 
 class TestServerProtocol:
-    """Test suite for ServerProtocol."""
-    def test_client_run(self):
-        """Test: Client run."""
+    """Engineered to validate the server message protocol types.
+
+    This test class exercises :class:`ClientRun`, :func:`parse_client_message`,
+    and :func:`encode_server_message` across plaintext and encrypted transport
+    paths to ensure the gateway's serialization layer round-trips messages
+    correctly while preserving the encryption contract.
+    """
+
+    def test_verify_client_run_fields(self):
+        """Validate that ClientRun exposes type, prompt, and session_id.
+
+        The test constructs a :class:`ClientRun` message and asserts all three
+        fields because the server dispatches on type, prompt content, and
+        session routing independently.
+        """
         from encre.server.protocol import ClientRun
         msg = ClientRun(prompt="Hello", session_id="s1")
-        # Verify: msg.type == "run"
+        # Type discriminator must identify the message kind for dispatch.
         assert msg.type == "run"
-        # Verify: msg.prompt == "Hello"
+        # Prompt text must be preserved verbatim for agent processing.
         assert msg.prompt == "Hello"
-        # Verify: msg.session_id == "s1"
+        # Session ID must route the message to the correct agent session.
         assert msg.session_id == "s1"
 
-    def test_client_run_from_dict(self):
-        """Test: Client run from dict."""
+    def test_verify_client_run_from_dict(self):
+        """Validate that ClientRun.from_dict reconstructs the message.
+
+        The test deserializes a raw dictionary into a :class:`ClientRun` and
+        asserts the resulting object exposes the expected type and prompt
+        because the server accepts JSON over the wire and must parse reliably.
+        """
         from encre.server.protocol import ClientRun
         msg = ClientRun.from_dict({"prompt": "Hello", "session_id": "s1"})
-        # Verify: msg.type == "run"
+        # Deserialized type must still resolve to 'run'.
         assert msg.type == "run"
-        # Verify: msg.prompt == "Hello"
+        # Deserialized prompt must match the original input.
         assert msg.prompt == "Hello"
 
-    def test_parse_client_message(self):
-        """Test: Parse client message."""
+    def test_verify_parse_client_message_valid_json(self):
+        """Validate that parse_client_message returns a message for valid JSON.
+
+        The test sends a JSON-encoded run message and asserts the parser
+        returns a non-None result because the gateway must handle well-formed
+        client frames without error.
+        """
         import json
 
         from encre.server.protocol import parse_client_message
         raw = json.dumps({"type": "run", "prompt": "Hello", "session_id": "s1"})
         msg = parse_client_message(raw)
-        # Verify: msg is not None
+        # Parser must produce a message object for valid JSON input.
         assert msg is not None
 
-    def test_parse_client_message_invalid(self):
-        """Test: Parse client message invalid."""
+    def test_verify_parse_client_message_invalid_json(self):
+        """Validate that parse_client_message returns None for invalid input.
+
+        The test sends a non-JSON string and asserts None is returned because
+        the gateway must gracefully reject malformed frames rather than crash.
+        """
         from encre.server.protocol import parse_client_message
         msg = parse_client_message("not json")
-        # Verify: msg is None
+        # Parser must return None rather than raise on unparseable input.
         assert msg is None
 
-    def test_parse_client_message_ping(self):
-        """Test: Parse client message ping."""
+    def test_verify_parse_client_message_ping(self):
+        """Validate that ping frames are parsed successfully.
+
+        The test sends a minimal JSON ping and asserts the result is not None
+        because keepalive frames must never be treated as protocol errors.
+        """
         import json
 
         from encre.server.protocol import parse_client_message
         raw = json.dumps({"type": "ping"})
         msg = parse_client_message(raw)
-        # Verify: msg is not None
+        # Ping frames must parse cleanly so the connection stays alive.
         assert msg is not None
 
-    def test_encode_server_message(self):
-        """Test: Encode server message (plaintext path + encrypted round-trip)."""
+    def test_verify_encode_server_message_plaintext_and_encrypted(self):
+        """Validate plaintext and encrypted server-message paths.
+
+        The test exercises both the ``encrypt=False`` path (content readable
+        on the wire) and the default encrypted path (content opaque until
+        decrypted) to guard against regressions where encryption breaks
+        round-trip integrity.
+        """
         import json
 
         from encre.crypto import decrypt
         from encre.server.protocol import encode_server_message
 
-        # Plaintext path (encrypt=False) keeps the content readable on the wire.
+        # Plaintext path: the payload must remain visible without encryption.
         plaintext = encode_server_message("text_delta", text="Hello!", encrypt=False)
         assert isinstance(plaintext, str)
         assert "Hello!" in plaintext
 
-        # Encrypted path (the default) round-trips via decrypt: the ciphertext
-        # is opaque (the content is NOT visible) and decrypting recovers the
-        # exact payload.  This guards against a regression where encryption
-        # produces undecryptable output.
+        # Encrypted path: the ciphertext must hide the content and decrypt
+        # must recover the exact original payload, guarding against
+        # undecryptable-output regressions.
         encrypted = encode_server_message("text_delta", text="Hello!")
         assert isinstance(encrypted, str)
         assert "Hello!" not in encrypted
@@ -336,64 +490,98 @@ class TestServerProtocol:
 # ===========================================================================
 
 class TestSessionManager:
-    """Test suite for SessionManager."""
-    def test_session_info(self):
-        """Test: Session info."""
+    """Engineered to validate the server session lifecycle.
+
+    This test class exercises :class:`SessionInfo` and :class:`SessionManager`
+    across creation, lookup, listing, and async removal scenarios to ensure
+    the session registry maintains accurate active-session state during
+    concurrent and sequential request handling.
+    """
+
+    def test_verify_session_info_fields(self):
+        """Validate that SessionInfo exposes session_id and is_running.
+
+        The test constructs a :class:`SessionInfo` with an agent and asserts
+        the fields because session metadata drives UI indicators and routing.
+        """
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
         from encre.server.session_manager import SessionInfo
         agent = EncreAgent(config=EncreConfig(backend_type="openai", api_key="sk-fake"))
         si = SessionInfo(session_id="s1", agent=agent)
-        # Verify: si.session_id == "s1"
+        # Session ID must identify the session in the registry.
         assert si.session_id == "s1"
-        # Verify: si.is_running is False
+        # is_running must default to False before any agent work begins.
         assert si.is_running is False
 
-    def test_session_manager_create(self):
-        """Test: Session manager create."""
+    def test_verify_session_manager_creation(self):
+        """Validate that SessionManager starts with zero active sessions.
+
+        The test constructs a fresh :class:`SessionManager` and asserts
+        active_count == 0 because the registry must begin in a clean state
+        before any client connects.
+        """
         from encre.server.session_manager import SessionManager
         sm = SessionManager()
-        # Verify: sm is not None
+        # Manager must be instantiable.
         assert sm is not None
-        # Verify: sm.active_count == 0
+        # No sessions should be active on a fresh manager.
         assert sm.active_count == 0
 
-    def test_session_manager_create_session(self):
-        """Test: Session manager create session."""
+    def test_verify_session_manager_create_session(self):
+        """Validate that create_session increments the active count.
+
+        The test creates a session via :meth:`SessionManager.create_session`
+        and asserts the session ID is assigned and the active count rises to
+        one because session allocation is the entry point for all requests.
+        """
         from encre.config import EncreConfig
         from encre.server.session_manager import SessionManager
         sm = SessionManager()
         info = sm.create_session(EncreConfig(backend_type="openai", api_key="sk-fake"))
-        # Verify: info.session_id is not None
+        # A new session must receive a non-empty identifier.
         assert info.session_id is not None
-        # Verify: sm.active_count == 1
+        # Active count must increment to reflect the newly created session.
         assert sm.active_count == 1
 
-    def test_session_manager_get_session(self):
-        """Test: Session manager get session."""
+    def test_verify_session_manager_get_session(self):
+        """Validate that get_session retrieves a previously created session.
+
+        The test creates a session and then fetches it by ID and asserts the
+        retrieved object matches the original because session retrieval is
+        the primary lookup path for every incoming request.
+        """
         from encre.config import EncreConfig
         from encre.server.session_manager import SessionManager
         sm = SessionManager()
         info = sm.create_session(EncreConfig(backend_type="openai", api_key="sk-fake"))
         retrieved = sm.get_session(info.session_id)
-        # Verify: retrieved is not None
+        # Retrieved session must not be None for an existing ID.
         assert retrieved is not None
-        # Verify: retrieved.session_id == info.session_id
+        # Retrieved session ID must match the original allocation.
         assert retrieved.session_id == info.session_id
 
-    def test_session_manager_list_sessions(self):
-        """Test: Session manager list sessions."""
+    def test_verify_session_manager_list_sessions(self):
+        """Validate that list_sessions reflects currently active sessions.
+
+        The test creates one session and asserts the list length equals one
+        because external monitors and admin endpoints rely on accurate counts.
+        """
         from encre.config import EncreConfig
         from encre.server.session_manager import SessionManager
         sm = SessionManager()
         sm.create_session(EncreConfig(backend_type="openai", api_key="sk-fake"))
         sessions = sm.list_sessions()
-        # Verify: len(sessions) == 1
+        # List length must match the number of created sessions.
         assert len(sessions) == 1
 
-    def test_session_manager_remove(self):
-        """Test: Session manager remove (remove_session is async -- awaiting
-        it must drop the session from the active set)."""
+    def test_verify_session_manager_remove_session(self):
+        """Validate that remove_session decrements the active count asynchronously.
+
+        The test creates a session, awaits :meth:`SessionManager.remove_session`,
+        and asserts the active count drops to zero and the session is no longer
+        retrievable because session cleanup must be idempotent and leak-free.
+        """
         import asyncio
 
         from encre.config import EncreConfig
@@ -401,9 +589,9 @@ class TestSessionManager:
         sm = SessionManager()
         info = sm.create_session(EncreConfig(backend_type="openai", api_key="sk-fake"))
         asyncio.run(sm.remove_session(info.session_id))
-        # Verify: sm.active_count == 0
+        # Active count must drop to zero after removal.
         assert sm.active_count == 0
-        # Verify: sm.get_session(info.session_id) is None
+        # Removed session must no longer be retrievable.
         assert sm.get_session(info.session_id) is None
 
 
@@ -412,56 +600,89 @@ class TestSessionManager:
 # ===========================================================================
 
 class TestAgentTypes:
-    """Test suite for AgentTypes."""
-    def test_goal_definition(self):
-        """Test: Goal definition."""
+    """Engineered to validate the agent goal-loop and checkpoint model.
+
+    This test class exercises :class:`GoalDefinition`, :class:`GoalResult`,
+    :class:`GoalStatus`, :class:`GoalEvent`, :class:`SessionCheckpoint`,
+    :class:`EncreGoalLoop`, and :class:`EncreGoalRunner` to ensure the
+    agent's high-level orchestration types behave correctly during goal
+    execution, status tracking, and checkpoint recording.
+    """
+
+    def test_verify_goal_definition_fields(self):
+        """Validate that GoalDefinition stores description and criteria.
+
+        The test constructs a :class:`GoalDefinition` with all key fields and
+        asserts they survive because the goal loop reads these to drive
+        planning and success evaluation.
+        """
         from encre.goal import GoalDefinition
         gd = GoalDefinition(description="Test feature", success_criteria="All tests pass", max_attempts=5)  # noqa: E501
-        # Verify: gd.description == "Test feature"
+        # Description must be preserved for planner visibility.
         assert gd.description == "Test feature"
-        # Verify: gd.success_criteria == "All tests pass"
+        # Success criteria must be preserved for goal-evaluation gating.
         assert gd.success_criteria == "All tests pass"
-        # Verify: gd.max_attempts == 5
+        # Max attempts must constrain retry budget correctly.
         assert gd.max_attempts == 5
 
-    def test_goal_result(self):
-        """Test: Goal result."""
+    def test_verify_goal_result_status(self):
+        """Validate that GoalResult exposes status and attempt count.
+
+        The test constructs a :class:`GoalResult` with SUCCESS status and
+        asserts the fields because the agent loop reads this to decide
+        whether to continue or terminate the goal cycle.
+        """
         from encre.goal import GoalResult, GoalStatus
         gr = GoalResult(status=GoalStatus.SUCCESS, summary="Done", attempts=3)
-        # Verify: gr.status == GoalStatus.SUCCESS
+        # Status must reflect successful completion.
         assert gr.status == GoalStatus.SUCCESS
-        # Verify: gr.attempts == 3
+        # Attempt count must record how many cycles were executed.
         assert gr.attempts == 3
 
-    def test_goal_status(self):
-        """Test: Goal status."""
+    def test_verify_goal_status_constants(self):
+        """Validate that all GoalStatus enum members are defined and non-None.
+
+        The test asserts each status constant exists because the goal loop
+        and result models depend on a complete status alphabet to encode
+        every lifecycle transition.
+        """
         from encre.goal import GoalStatus
-        # Verify: GoalStatus.PENDING is not None
+        # PENDING must be defined to represent the initial unsatisfied state.
         assert GoalStatus.PENDING is not None
-        # Verify: GoalStatus.IN_PROGRESS is not None
+        # IN_PROGRESS must be defined to represent active execution.
         assert GoalStatus.IN_PROGRESS is not None
-        # Verify: GoalStatus.SUCCESS is not None
+        # SUCCESS must be defined to represent completion without failure.
         assert GoalStatus.SUCCESS is not None
-        # Verify: GoalStatus.FAILED is not None
+        # FAILED must be defined to represent an unrecoverable error state.
         assert GoalStatus.FAILED is not None
-        # Verify: GoalStatus.TIMEOUT is not None
+        # TIMEOUT must be defined to represent a time-bound exit condition.
         assert GoalStatus.TIMEOUT is not None
-        # Verify: GoalStatus.MAX_ATTEMPTS is not None
+        # MAX_ATTEMPTS must be defined to represent budget exhaustion.
         assert GoalStatus.MAX_ATTEMPTS is not None
 
-    def test_goal_event(self):
-        """Test: Goal event."""
+    def test_verify_goal_event_fields(self):
+        """Validate that GoalEvent carries status, attempt, and message.
+
+        The test constructs a :class:`GoalEvent` during an in-progress cycle
+        and asserts each field because event streams are consumed by the
+        UI and by checkpoint serializers.
+        """
         from encre.goal import GoalEvent, GoalStatus
         ge = GoalEvent(status=GoalStatus.IN_PROGRESS, attempt=1, message="Working...")
-        # Verify: ge.status == GoalStatus.IN_PROGRESS
+        # Event status must reflect the current goal state.
         assert ge.status == GoalStatus.IN_PROGRESS
-        # Verify: ge.attempt == 1
+        # Attempt number must increment across cycles for auditability.
         assert ge.attempt == 1
-        # Verify: ge.message == "Working..."
+        # Message must carry human-readable progress context.
         assert ge.message == "Working..."
 
-    def test_session_checkpoint(self):
-        """Test: Session checkpoint."""
+    def test_verify_session_checkpoint_fields(self):
+        """Validate that SessionCheckpoint records turn and tool-call counts.
+
+        The test constructs a :class:`SessionCheckpoint` and asserts the
+        counter fields because checkpoints are used to resume sessions and
+        to bound per-cycle resource usage.
+        """
         from encre.session import SessionCheckpoint
         sc = SessionCheckpoint(
             checkpoint_id="ckpt1",
@@ -469,27 +690,38 @@ class TestAgentTypes:
             turn_count=5,
             tool_call_count=10,
         )
-        # Verify: sc.checkpoint_id == "ckpt1"
+        # Checkpoint ID must identify the resume point uniquely.
         assert sc.checkpoint_id == "ckpt1"
-        # Verify: sc.turn_count == 5
+        # Turn count must reflect completed interaction cycles.
         assert sc.turn_count == 5
-        # Verify: sc.tool_call_count == 10
+        # Tool-call count must reflect resource consumption at the checkpoint.
         assert sc.tool_call_count == 10
 
-    def test_goal_loop_create(self):
-        """Test: Goal loop create."""
+    def test_verify_goal_loop_instantiation(self):
+        """Validate that EncreGoalLoop constructs with the provided agent.
+
+        The test creates an :class:`EncreGoalLoop` backed by a fake agent and
+        asserts the internal description field is set because the loop uses
+        this to drive planning and to report progress back to callers.
+        """
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
         from encre.goal import EncreGoalLoop
         agent = EncreAgent(config=EncreConfig(backend_type="openai", api_key="sk-fake"))
         loop = EncreGoalLoop(agent=agent, description="test", success_criteria="works")
-        # Verify: loop is not None
+        # Loop must be instantiable without raising.
         assert loop is not None
-        # Verify: loop._description == "test"
+        # Internal description must match the constructor argument.
         assert loop._description == "test"
 
-    def test_goal_runner_create(self):
-        """Test: Goal runner create."""
+    def test_verify_goal_runner_instantiation(self):
+        """Validate that EncreGoalRunner wires all required subsystems.
+
+        The test constructs an :class:`EncreGoalRunner` with a config, tool
+        registry, hook system, and safety engine, then asserts it is not None
+        because the runner is the central orchestrator that must exist before
+        any goal-execution cycle begins.
+        """
         from encre.config import EncreConfig
         from encre.goal import EncreGoalRunner
         from encre.hooks.system import EncreHookSystem
@@ -505,5 +737,5 @@ class TestAgentTypes:
             hook_system=hooks,
             safety=safety,
         )
-        # Verify: runner is not None
+        # Runner must be instantiable with all dependencies wired.
         assert runner is not None

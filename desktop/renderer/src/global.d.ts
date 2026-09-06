@@ -91,7 +91,7 @@ interface ElectronAPI {
   trayThemeUpdate(themePreference: string): void;
   trayPopupAction(action: string | null, sessionId: string | null): void;
   traySessionsUpdate(sessions: any[]): void;
-  traySessionsBothUpdate(payload: { normal: any[]; iwork: any[] }): void;
+  traySessionsBothUpdate(payload: { normal: any[]; iwork: any[]; workspaces?: any[] }): void;
   trayModeUpdate(mode: string): void;
   onTrayData(callback: (data: {
     sessions: any[];

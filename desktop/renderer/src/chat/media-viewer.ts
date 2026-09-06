@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { t } from "./i18n.js";
+import { t } from "../features/i18n.js";
 
 export interface MediaData {
   type: "image" | "video";

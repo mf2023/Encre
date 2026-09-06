@@ -1,4 +1,4 @@
-﻿console.log("[perf] app.js eval start epoch=" + Date.now());
+console.log("[perf] app.js eval start epoch=" + Date.now());
 /**
  * Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
  *
@@ -21,8 +21,8 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { connect, send, sendRetry, sendSwitchBranch, sendRollback } from "./ws.js";
-import { handleEvent, init as streamInit, onAutomationShowResult, setRequestedSessionId, onAutomationStreamEvent, refreshAllData } from "./stream.js";
+import { connect, send, sendRetry, sendSwitchBranch, sendRollback } from "./core/ws.js";
+import { handleEvent, init as streamInit, onAutomationShowResult, setRequestedSessionId, onAutomationStreamEvent, refreshAllData } from "./core/stream.js";
 import {
   addUserMessage,
   addMessage,
@@ -58,35 +58,35 @@ import {
   clearAllNotifications,
   setModelConfigs,
   getUnreadCount,
-} from "./state.js";
-import { Chat, formatAgentLabel, getAgentName } from "./chat.js";
-import { initTooltip } from "./tooltip.js";
-import { SplashScreen } from "./splash.js";
-import { Tools } from "./tools.js";
-import { Settings, type PanelId } from "./settings.js";
-import { Files, getFileIcon } from "./files.js";
-import { Session, showRenameDialogForSession } from "./session.js";
-import { ViewManager } from "./viewmanager.js";
-import { Search, commandActions } from "./search.js";
-import { Agents } from "./agents.js";
-import { Notifications } from "./notifications.js";
-import { Workspace, WorkspaceManager } from "./workspace.js";
-import { Permissions } from "./permissions.js";
-import { AutomationPanel } from "./iclaw.js";
-import { Automation } from "./automation.js";
-import { TransitionHelper } from "./transition-helper.js";
-import { ModeTransitionManager, type AppMode } from "./mode-transition.js";
-import { SessionInner, TabDef } from "./session_inner.js";
-import { renderMarkdown } from "./chat.js";
-import { EALoader } from "./ealoader.js";
-import { t, getLocale, onLocaleChange, applyI18n, setLocale } from "./i18n.js";
-import { Dialog } from "./dialog.js";
-import { lookupShortcut, augmentTitle, formatShortcut, platformLabel } from "./shortcutDisplay.js";
-import type { Message } from "./types.js";
-import { SLASH_COMMANDS, matchingSlashCommands, parseSlashInput, type SlashCommand } from "./slash_commands.js";
-import { mountNebula } from "./easter-egg.js";
-import { showContextMenu } from "./context-menu.js";
-import { BrowserView } from "./browser.js";
+} from "./core/state.js";
+import { Chat, formatAgentLabel, getAgentName } from "./chat/chat.js";
+import { initTooltip } from "./ui/tooltip.js";
+import { SplashScreen } from "./ui/splash.js";
+import { Tools } from "./features/tools.js";
+import { Settings, type PanelId } from "./settings/settings.js";
+import { Files, getFileIcon } from "./features/files.js";
+import { Session, showRenameDialogForSession } from "./session/session.js";
+import { ViewManager } from "./ui/viewmanager.js";
+import { Search, commandActions } from "./features/search.js";
+import { Agents } from "./features/agents.js";
+import { Notifications } from "./ui/notifications.js";
+import { Workspace, WorkspaceManager } from "./session/workspace.js";
+import { Permissions } from "./features/permissions.js";
+import { AutomationPanel } from "./session/iclaw.js";
+import { Automation } from "./session/automation.js";
+import { TransitionHelper } from "./ui/transition-helper.js";
+import { ModeTransitionManager, type AppMode } from "./chat/mode-transition.js";
+import { SessionInner, TabDef } from "./session/session_inner.js";
+import { renderMarkdown } from "./chat/chat.js";
+import { EALoader } from "./features/ealoader.js";
+import { t, getLocale, onLocaleChange, applyI18n, setLocale, LOCALES } from "./features/i18n.js";
+import { Dialog } from "./ui/dialog.js";
+import { lookupShortcut, augmentTitle, formatShortcut, platformLabel } from "./features/shortcutDisplay.js";
+import type { Message } from "./core/types.js";
+import { SLASH_COMMANDS, matchingSlashCommands, parseSlashInput, type SlashCommand } from "./features/slash_commands.js";
+import { mountNebula } from "./features/easter-egg.js";
+import { showContextMenu } from "./ui/context-menu.js";
+import { BrowserView } from "./features/browser.js";
 
 type ChildTab = {
   view: string;
@@ -97,6 +97,39 @@ type ChildTab = {
   _contentEl?: HTMLElement;
   _nebulaCleanup?: () => void;
 };
+
+/**
+ * Child-window views rendered as an in-app jurisdiction-aware legal document
+ * (markdown fetched over `getDocumentContent`, with the region switcher shown
+ * in the doc toolbar). Must stay in sync with `LEGAL_DOC_FILES` in main.ts —
+ * `thanks` has no per-region variants but reuses the same viewer.
+ */
+const LEGAL_DOC_VIEWS: ReadonlySet<string> = new Set([
+  "privacy",
+  "terms",
+  "agreement",
+  "content-rules",
+  "minors",
+  "data-rules",
+  "thanks",
+]);
+
+/** Default legal-doc region for a UI locale (used before the user picks one). */
+function defaultDocRegion(locale: string): string {
+  switch (locale) {
+    case "zh": return "cn";
+    case "zh-Hant": return "tw";
+    case "ja": return "jp";
+    case "ko": return "kr";
+    case "de": return "ch";
+    case "tr": return "tr";
+    case "es": return "mx";
+    case "pt": return "br";
+    case "ar": return "ae";
+    case "he": return "il";
+    default: return "us";
+  }
+}
 
 (window as any).__state_setActiveToolId = setActiveToolId;
 (window as any).sendRetry = sendRetry;
@@ -144,7 +177,7 @@ class App {
   private _childView = "";
   private _tabs: ChildTab[] = [];
   private _activeTabIndex = -1;
-  private _region = getLocale() === "zh" ? "cn" : "us";
+  private _region = defaultDocRegion(getLocale());
   private _activeAutomationJobId = "";
   private _keybindActions: Record<string, () => void> = {};
   private _inputHistory: string[] = [];
@@ -435,6 +468,7 @@ this.settings = new Settings();
       this.sessionInner.showReviewTab(path, artifact || undefined);
     };
     (window as any).__sessionInner = this.sessionInner;
+    (window as any).__workspaceMgr = this.workspaceManager;
 
     // Mirror sidebar collapse state to body
     const appEl = document.getElementById("app");
@@ -898,14 +932,14 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         this.renderTabBar();
       });
     } else if (tab.view === "license") {
-      container.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">Loading...</pre></div>`;
+      container.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">${t("common.loading")}</pre></div>`;
       if (window.electronAPI) {
         window.electronAPI.getLicenseContent().then((content: string) => {
           const pre = container.querySelector(".child-raw-text");
           if (pre) pre.textContent = content;
         });
       }
-    } else if (tab.view === "privacy" || tab.view === "terms" || tab.view === "thanks" || tab.view === "data-rules" || tab.view === "minors") {
+    } else if (LEGAL_DOC_VIEWS.has(tab.view)) {
       container.innerHTML = `
         <div class="child-doc-container">
           <div class="child-doc-toolbar">
@@ -998,7 +1032,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       container.innerHTML = `<div class="si-panel-empty" style="flex:1;gap:14px">
         <i data-lucide="file-question" class="lucide" style="width:32px;height:32px;color:var(--text-muted)"></i>
         <div class="si-panel-empty-title">${this.esc(tab.label)}</div>
-        <div class="si-panel-empty-sub" style="font-size:12px;color:var(--text-muted)">Coming soon</div>
+        <div class="si-panel-empty-sub" style="font-size:12px;color:var(--text-muted)">${t("app.comingSoon")}</div>
       </div>`;
       if (typeof (window as any).lucide !== "undefined") {
         (window as any).lucide.createIcons({ root: container });
@@ -1310,18 +1344,19 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const searchBtn = document.getElementById("btn-sidebar-search");
     // isDetailVisible(): we're inside an automation execution's sub-agent
     // detail view. The header shows the Back button + the sidebar Search
-    // button (so search is reachable), and the sidebar-toggle stays
-    // hidden because the sidebar is force-collapsed in automation.
+    // button (so search is reachable). The sidebar-toggle stays visible but
+    // disabled (greyed out) since the sidebar is force-collapsed in automation
+    // (disabled state is managed by AutomationPanel).
     const isAutomationDetail = this.automation?.isDetailVisible?.() ?? false;
     const isAutomationSubAgent = (isAutomationView && isSubAgentView) || isAutomationDetail;
     if (autoBackBtn && toggleBtn && searchBtn) {
       if (isAutomationDetail) {
         autoBackBtn.classList.remove("hidden");
-        toggleBtn.style.display = "none";
+        toggleBtn.style.display = "";
         searchBtn.style.display = "";
       } else if (isAutomationSubAgent) {
         autoBackBtn.classList.remove("hidden");
-        toggleBtn.style.display = "none";
+        toggleBtn.style.display = "";
         searchBtn.style.display = "none";
       } else {
         autoBackBtn.classList.add("hidden");
@@ -1436,7 +1471,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           <i data-lucide="grip-vertical" class="lucide"></i>
         </span>
         <span class="queue-item-text">${this.esc(p.text)}</span>
-        <button class="queue-item-send" draggable="false" data-queue-index="${i}" title="直接发送">
+        <button class="queue-item-send" draggable="false" data-queue-index="${i}" title="${t("chat.sendDirectly")}">
           <i data-lucide="send" class="lucide"></i>
         </button>
         <button class="queue-item-remove" draggable="false" data-queue-index="${i}">
@@ -1896,18 +1931,14 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       setTheme(isDark ? "dark" : "light");
       localStorage.setItem("encre-theme", "system");
     };
-    commandActions["language-zh"] = () => {
-      const current = { ...getState().settings, language: "zh" };
-      setSettings(current);
-      setLocale("zh");
-      send({ type: "configure", config: { language: "zh" } });
-    };
-    commandActions["language-en"] = () => {
-      const current = { ...getState().settings, language: "en" };
-      setSettings(current);
-      setLocale("en");
-      send({ type: "configure", config: { language: "en" } });
-    };
+    for (const code of LOCALES) {
+      commandActions[`language-${code}`] = () => {
+        const current = { ...getState().settings, language: code };
+        setSettings(current);
+        setLocale(code);
+        send({ type: "configure", config: { language: code } });
+      };
+    }
     commandActions["new-session"] = () => {
       this.automationPanel.hide();
       this.exitTempChat();
@@ -2121,20 +2152,25 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const panel = document.getElementById("summary-panel");
     if (!btn || !panel) return;
 
-    const toggle = () => {
-      const isHidden = panel!.classList.toggle("hidden");
-      btn!.classList.toggle("active", !isHidden);
-      if (!isHidden) this.renderSummaryPanel();
-    };
-
-    btn.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isHidden = panel.classList.contains("hidden");
+      if (isHidden) {
+        panel.classList.remove("hidden");
+        btn.classList.add("active");
+        this.renderSummaryPanel();
+      } else {
+        panel.classList.add("hidden");
+        btn.classList.remove("active");
+      }
+    });
 
     // Close panel on outside click
     document.addEventListener("click", (e) => {
-      if (panel!.classList.contains("hidden")) return;
-      if (!panel!.contains(e.target as Node) && !btn!.contains(e.target as Node)) {
-        panel!.classList.add("hidden");
-        btn!.classList.remove("active");
+      if (panel.classList.contains("hidden")) return;
+      if (!panel.contains(e.target as Node) && !btn.contains(e.target as Node)) {
+        panel.classList.add("hidden");
+        btn.classList.remove("active");
       }
     });
 
@@ -2144,8 +2180,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       viewAll.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        panel!.classList.add("hidden");
-        btn!.classList.remove("active");
+        panel.classList.add("hidden");
+        btn.classList.remove("active");
         const st = getState();
         const first = st.artifacts?.[0];
         if (st.workspaceMode === "iwork") {
@@ -2164,6 +2200,22 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     subscribe(() => {
       if (!this.summaryPanel.classList.contains("hidden")) this.renderSummaryPanel();
     });
+
+    // Single delegated listener for the done-section collapse toggle.
+    // Set up once during binding so re-renders (which overwrite innerHTML)
+    // never accumulate duplicate handlers.
+    const progressEl = document.getElementById("summary-progress-items");
+    if (progressEl) {
+      progressEl.addEventListener("click", (e) => {
+        const header = (e.target as HTMLElement).closest(".sp-todo-done-header");
+        if (!header) return;
+        e.stopPropagation();
+        const section = header.parentElement as HTMLElement | null;
+        if (!section) return;
+        const nowCollapsed = section.classList.toggle("collapsed");
+        this._summaryDoneCollapsed = nowCollapsed;
+      });
+    }
   }
 
   /** Force-open the summary panel (used when the model first creates todos). */
@@ -2224,14 +2276,6 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       </div>`);
     }
     el.innerHTML = parts.join("");
-    const doneToggle = el.querySelector(".sp-todo-done-header") as HTMLElement | null;
-    if (doneToggle) {
-      doneToggle.addEventListener("click", () => {
-        const section = doneToggle.parentElement as HTMLElement;
-        const nowCollapsed = section.classList.toggle("collapsed");
-        this._summaryDoneCollapsed = nowCollapsed;
-      });
-    }
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: el });
     }
@@ -2377,13 +2421,13 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       return ["low", "medium", "high"];
     };
 
-    const isThinkingSelectable = (m: import("./types.js").ModelConfigMeta | undefined): boolean => {
+    const isThinkingSelectable = (m: import("./core/types.js").ModelConfigMeta | undefined): boolean => {
       if (!m) return false;
       const tc = m.thinking_config;
       return tc ? tc.selectable === true : false;
     };
 
-    const getCurrentLevel = (m: import("./types.js").ModelConfigMeta | undefined): string => {
+    const getCurrentLevel = (m: import("./core/types.js").ModelConfigMeta | undefined): string => {
       if (!m) return "default";
       const tc = m.thinking_config;
       const lvl = tc?.level || "";
@@ -2421,7 +2465,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         thinkingEntry = `
           <button class="mention-dropdown-item" data-action="sub-thinking">
             <span>${t("settings.thinkingLevel")}</span>
-            <span style="margin-left:auto;color:var(--text-muted);font-size:12px">${this.esc(lvlLabel)}</span>
+            <span style="margin-inline-start:auto;color:var(--text-muted);font-size:12px">${this.esc(lvlLabel)}</span>
             <i data-lucide="chevron-right" class="lucide"></i>
           </button>`;
       }
@@ -2537,7 +2581,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           const idx = currentState.activeModelIndex;
           const modelsCopy = [...currentState.modelConfigs];
           if (idx < 0 || idx >= modelsCopy.length) return;
-          const updated: import("./types.js").ModelConfigMeta = {
+          const updated: import("./core/types.js").ModelConfigMeta = {
             ...modelsCopy[idx],
             thinking_config: { type: "enabled", enabled: true, level: lvl, selectable: true },
           };
@@ -3162,17 +3206,21 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
     const d = TransitionHelper.DEFAULT_DURATION;
     const easing = "cubic-bezier(0.4, 0, 0.2, 1)";
+    // Direction-aware slide: LTR exits left / enters from right, rtl mirrors.
+    const rtl = document.documentElement.dir === "rtl";
+    const exitShift = rtl ? "translateX(100%)" : "translateX(-100%)";
+    const enterShift = rtl ? "translateX(-100%)" : "translateX(100%)";
 
     // 滑出（向左 100%）
     title.style.transition = `transform ${d}ms ${easing}, opacity ${d}ms ${easing}`;
-    title.style.transform = "translateX(-100%)";
+    title.style.transform = exitShift;
     title.style.opacity = "0";
 
     setTimeout(() => {
       // 切换文字，定位到右侧起始位置
       title.textContent = newText;
       title.style.transition = "none";
-      title.style.transform = "translateX(100%)";
+      title.style.transform = enterShift;
       title.style.opacity = "0";
 
       requestAnimationFrame(() => {
@@ -3456,8 +3504,9 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     if (sidebarToggle) {
       sidebarToggle.classList.remove("hidden");
       sidebarToggle.style.display = "";
-      // AutomationPanel fades these via opacity on enter; clear it so the
-      // button is fully visible again after leaving automation.
+      (sidebarToggle as HTMLButtonElement).disabled = false;
+      // AutomationPanel may leave inline opacity/transform behind; clear it so
+      // the button is fully visible again after leaving automation.
       sidebarToggle.style.opacity = "";
       sidebarToggle.style.transform = "";
       sidebarToggle.style.transition = "";
@@ -3969,7 +4018,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         payload.mode_prompt = cmd.prompt;
       }
     }
-    send(payload as import("./types.js").ClientMessage);
+    send(payload as import("./core/types.js").ClientMessage);
     clearAttachments();
     this._inputHistory.push(text);
     this._inputHistoryIdx = this._inputHistory.length;
@@ -4307,8 +4356,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       });
     };
     a["toggle_language"] = () => {
-      const current = (getState().settings.language as string) || "zh";
-      const next = current === "zh" ? "en" : "zh";
+      // Cycle through ALL supported locales (matches the picker order in LOCALES).
+      const current = (getState().settings.language as string) || getLocale();
+      const idx = Math.max(0, (LOCALES as readonly string[]).indexOf(current));
+      const next = LOCALES[(idx + 1) % LOCALES.length];
       Dialog.confirm(t("language.switchTitle"), t("language.switchConfirm", { label: t(`language.${next}`) }), "low").then(ok => {
         if (!ok) return;
         const settings = { ...getState().settings, language: next };
@@ -4579,6 +4630,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const rect = btn.getBoundingClientRect();
     menu.style.top = `${rect.bottom + 6}px`;
     menu.style.left = `${rect.left}px`;
+    // Clamp horizontally into the viewport. Under rtl the anchor button
+    // sits at the far right edge and the 240px menu would open mostly
+    // off-window (left is a physical offset, it never mirrors).
+    const maxLeft = window.innerWidth - menu.offsetWidth - 8;
+    if (rect.left > maxLeft) menu.style.left = `${Math.max(8, maxLeft)}px`;
 
     menu.addEventListener("click", (e) => {
       e.stopPropagation();

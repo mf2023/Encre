@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,8 +21,6 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from __future__ import annotations
-
 """Tests for encre.codebase.indexer -- EncreCodeIndex and ModuleInfo."""
 
 import os
@@ -34,10 +32,23 @@ import textwrap
 # ===========================================================================
 
 class TestModuleInfo:
-    """Tests for the ModuleInfo dataclass."""
+    """Engineered to validate the ModuleInfo dataclass contract for codebase metadata storage.
 
-    def test_creation_with_all_fields(self):
-        """Test: Creation with all fields."""
+    This test class exercises ModuleInfo across 5 scenarios to ensure that all
+    fields (path, name, imports, imported_by, exports, language, loc) are
+    correctly stored on construction, that default values are sensible empty
+    containers, and that the class is recognized as a dataclass. The design
+    supports the codebase indexer by providing a structured record for each
+    source file that captures its dependency graph edges and export surface.
+    """
+
+    def test_verify_creation_with_all_fields_populated(self):
+        """Validate that ModuleInfo stores all constructor arguments correctly.
+
+        The test constructs a ModuleInfo with all 7 fields set and asserts
+        each field matches its input because the dataclass must preserve
+        all metadata for accurate dependency graph construction.
+        """
         from encre.codebase.indexer import ModuleInfo
         mi = ModuleInfo(
             path="src/my_module.py",
@@ -48,63 +59,64 @@ class TestModuleInfo:
             language="python",
             loc=150,
         )
-        # Verify: mi.path == "src/my_module.py"
         assert mi.path == "src/my_module.py"
-        # Verify: mi.name == "my_module"
         assert mi.name == "my_module"
-        # Verify: len(mi.imports) == 3
         assert len(mi.imports) == 3
-        # Verify: "os" in mi.imports
         assert "os" in mi.imports
-        # Verify: len(mi.imported_by) == 2
         assert len(mi.imported_by) == 2
-        # Verify: "main.py" in mi.imported_by
         assert "main.py" in mi.imported_by
-        # Verify: len(mi.exports) == 3
         assert len(mi.exports) == 3
-        # Verify: "MyClass" in mi.exports
         assert "MyClass" in mi.exports
-        # Verify: mi.language == "python"
         assert mi.language == "python"
-        # Verify: mi.loc == 150
         assert mi.loc == 150
 
-    def test_default_values(self):
-        """Test: Default values."""
+    def test_verify_default_values_are_empty_containers_and_zeros(self):
+        """Validate that omitted fields default to empty lists, empty strings, and zero.
+
+        The test constructs ModuleInfo with only path and name and asserts
+        imports, imported_by, and exports are [], language is "", and loc
+        is 0 because default values must be safe empty containers.
+        """
         from encre.codebase.indexer import ModuleInfo
         mi = ModuleInfo(path="test.py", name="test")
-        # Verify: mi.imports == []
         assert mi.imports == []
-        # Verify: mi.imported_by == []
         assert mi.imported_by == []
-        # Verify: mi.exports == []
         assert mi.exports == []
-        # Verify: mi.language == ""
         assert mi.language == ""
-        # Verify: mi.loc == 0
         assert mi.loc == 0
 
-    def test_is_dataclass(self):
-        """Test: Is dataclass."""
-        from dataclasses import is_dataclass
+    def test_verify_moduleinfo_is_dataclass(self):
+        """Validate that ModuleInfo is recognized as a dataclass by the standard library.
 
+        The test asserts is_dataclass(ModuleInfo) is True because the class
+        relies on dataclass-generated methods for correct equality, repr,
+        and immutable field semantics.
+        """
+        from dataclasses import is_dataclass
         from encre.codebase.indexer import ModuleInfo
-        # Verify: is_dataclass(ModuleInfo)
         assert is_dataclass(ModuleInfo)
 
-    def test_language_variants(self):
-        """Test: Language variants."""
+    def test_verify_language_variants_are_preserved(self):
+        """Validate that ModuleInfo stores any language string without transformation.
+
+        The test constructs ModuleInfo entries for 6 different language values
+        and asserts each language field matches because the indexer must
+        support polyglot workspaces with Python, Rust, Go, JS, TS, and Java.
+        """
         from encre.codebase.indexer import ModuleInfo
         for lang in ["python", "rust", "go", "javascript", "typescript", "java"]:
             mi = ModuleInfo(path=f"src/module.{lang[:2]}", name="mod", language=lang)
-            # Verify: mi.language == lang
             assert mi.language == lang
 
-    def test_windows_path_normalization(self):
-        """Test: Windows path normalization."""
+    def test_verify_windows_path_slashes_are_preserved(self):
+        """Validate that Windows-style backslash paths are stored without alteration.
+
+        The test constructs ModuleInfo with a backslash path and asserts 'src'
+        is present in the stored path because path normalization must not
+        break Windows absolute paths during index construction.
+        """
         from encre.codebase.indexer import ModuleInfo
         mi = ModuleInfo(path="src\\subdir\\module.py", name="module")
-        # Verify: "src" in mi.path
         assert "src" in mi.path
 
 
@@ -113,58 +125,70 @@ class TestModuleInfo:
 # ===========================================================================
 
 class TestEncreCodeIndexConstruction:
-    """Tests for EncreCodeIndex construction and initial state."""
+    """Engineered to validate EncreCodeIndex construction and initial empty state.
 
-    def test_construction(self):
-        """Test: Construction."""
+    This test class exercises index construction across 4 scenarios to ensure
+    that the workspace path is stored correctly (both relative and absolute),
+    that the internal data structures start empty, and that the known-file
+    extension set covers the expected polyglot languages. The design uses
+    lazy indexing 鈥?_modules, _depgraph, _reverse_depgraph, and _inverted_index
+    are all empty dicts until scan() is called.
+    """
+
+    def test_verify_construction_stores_workspace_path(self):
+        """Validate that EncreCodeIndex stores the workspace path from the constructor.
+
+        The test constructs an index with workspace='.' and asserts the
+        workspace attribute equals '.' and _indexed is False because
+        construction must not auto-trigger scanning.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
-        # Verify: ci is not None
         assert ci is not None
-        # Verify: ci.workspace == "."
         assert ci.workspace == "."
-        # Verify: ci._indexed is False
         assert ci._indexed is False
 
-    def test_construction_absolute_path(self):
-        """Test: Construction absolute path."""
+    def test_verify_construction_with_absolute_path(self):
+        """Validate that EncreCodeIndex resolves and stores an absolute workspace path.
+
+        The test constructs an index with os.path.abspath('.') and asserts
+        the stored workspace matches the absolute path because the index
+        must normalize paths for consistent file resolution.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         abs_path = os.path.abspath(".")
         ci = EncreCodeIndex(workspace=abs_path)
-        # Verify: ci.workspace == abs_path
         assert ci.workspace == abs_path
 
-    def test_initial_state_empty(self):
-        """Test: Initial state empty."""
+    def test_verify_initial_state_has_empty_internal_structures(self):
+        """Validate that all internal indexes are empty before scan() is called.
+
+        The test asserts _modules, _depgraph, _reverse_depgraph, _inverted_index
+        are all {} and _total_docs is 0 and _indexed is False because an
+        unscanned index must not contain stale data from a prior run.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
-        # Verify: ci._modules == {}
         assert ci._modules == {}
-        # Verify: ci._depgraph == {}
         assert ci._depgraph == {}
-        # Verify: ci._reverse_depgraph == {}
         assert ci._reverse_depgraph == {}
-        # Verify: ci._inverted_index == {}
         assert ci._inverted_index == {}
-        # Verify: ci._total_docs == 0
         assert ci._total_docs == 0
-        # Verify: ci._indexed is False
         assert ci._indexed is False
 
-    def test_known_extensions_set(self):
-        """Test: Known extensions set."""
+    def test_verify_known_extensions_set_contains_supported_languages(self):
+        """Validate that _KNOWN_EXTS includes extensions for all supported source languages.
+
+        The test asserts that .py, .rs, .go, .js, .ts, and .java are all
+        present in the known extensions set because the indexer must
+        recognize source files across the supported polyglot workspace.
+        """
         from encre.codebase.indexer import EncreCodeIndex
-        # Verify: ".py" in EncreCodeIndex._KNOWN_EXTS
         assert ".py" in EncreCodeIndex._KNOWN_EXTS
-        # Verify: ".rs" in EncreCodeIndex._KNOWN_EXTS
         assert ".rs" in EncreCodeIndex._KNOWN_EXTS
-        # Verify: ".go" in EncreCodeIndex._KNOWN_EXTS
         assert ".go" in EncreCodeIndex._KNOWN_EXTS
-        # Verify: ".js" in EncreCodeIndex._KNOWN_EXTS
         assert ".js" in EncreCodeIndex._KNOWN_EXTS
-        # Verify: ".ts" in EncreCodeIndex._KNOWN_EXTS
         assert ".ts" in EncreCodeIndex._KNOWN_EXTS
-        # Verify: ".java" in EncreCodeIndex._KNOWN_EXTS
         assert ".java" in EncreCodeIndex._KNOWN_EXTS
 
 
@@ -173,71 +197,110 @@ class TestEncreCodeIndexConstruction:
 # ===========================================================================
 
 class TestEncreCodeIndexScan:
-    """Tests for scanning a real codebase."""
+    """Engineered to validate the EncreCodeIndex scan operation across real and edge-case directories.
 
-    def test_scan_runs_without_error(self):
-        """Test: Scan runs without error."""
+    This test class exercises scanning across 6 scenarios including the current
+    workspace, an empty temporary directory, and a nonexistent path. The design
+    ensures that scan() sets _indexed=True and populates _modules, and that
+    missing or empty directories produce safe empty results rather than exceptions.
+    """
+
+    def test_verify_scan_completes_without_error(self):
+        """Validate that scan() sets _indexed=True when run on the current workspace.
+
+        The test constructs an index and calls scan(), asserting _indexed is
+        True because scanning must mark the index as populated regardless
+        of how many files are found.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
-        # Verify: ci._indexed is True
         assert ci._indexed is True
 
-    def test_scan_indexes_modules(self):
-        """Test: Scan indexes modules."""
+    def test_verify_scan_populates_modules_dict(self):
+        """Validate that scan() discovers at least one module in the workspace.
+
+        The test asserts len(_modules) > 0 because the workspace contains
+        Python source files that must be indexed.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
-        # Verify: len(ci._modules) > 0
         assert len(ci._modules) > 0
 
-    def test_scan_modules_have_paths(self):
-        """Test: Scan modules have paths."""
+    def test_verify_scanned_modules_have_valid_string_paths(self):
+        """Validate that every scanned module has a non-empty string path.
+
+        The test iterates over all modules and asserts each path is a
+        non-empty string because every indexed module must have a valid
+        filesystem path for later retrieval and context building.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         for _path, mod in ci._modules.items():
-            # Verify: isinstance(mod.path, str)
             assert isinstance(mod.path, str)
-            # Verify: len(mod.path) > 0
             assert len(mod.path) > 0
 
-    def test_scan_finds_python_files(self):
-        """Test: Scan finds python files."""
+    def test_verify_scan_discovers_python_modules(self):
+        """Validate that scan() finds at least one Python-language module in the workspace.
+
+        The test filters modules by language=='python' and asserts the count
+        is positive because the workspace must contain Python source files.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         python_modules = [m for m in ci._modules.values() if m.language == "python"]
-        # Verify: len(python_modules) > 0
         assert len(python_modules) > 0
 
-    def test_scan_empty_directory(self):
-        """Test: Scan empty directory."""
+    def test_verify_scan_empty_directory_produces_empty_index(self):
+        """Validate that scan() on an empty temp directory sets _indexed=True with no modules.
+
+        The test creates a temporary empty directory, scans it, and asserts
+        _indexed is True and _modules is empty because scanning an empty
+        tree must succeed without error and produce no module entries.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         with tempfile.TemporaryDirectory() as tmpdir:
             ci = EncreCodeIndex(workspace=tmpdir)
             ci.scan()
-            # Verify: ci._indexed is True
             assert ci._indexed is True
-            # Verify: len(ci._modules) == 0
             assert len(ci._modules) == 0
 
-    def test_scan_nonexistent_directory(self):
-        """Test: Scan nonexistent directory."""
+    def test_verify_scan_nonexistent_directory_produces_empty_index(self):
+        """Validate that scan() on a nonexistent path sets _indexed=True with no modules.
+
+        The test scans a path that does not exist and asserts _indexed is
+        True and _modules is empty because the scanner must handle missing
+        directories gracefully without raising.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace="/nonexistent/path/for/testing")
         ci.scan()
-        # Verify: ci._indexed is True
         assert ci._indexed is True
-        # Verify: len(ci._modules) == 0
         assert len(ci._modules) == 0
 
 
 class TestEncreCodeIndexWithFiles:
-    """Tests that scan a temporary directory with known files."""
+    """Engineered to validate that scan() correctly parses Python source files for imports and exports.
 
-    def test_scan_python_file_parses_imports(self):
-        """Test: Scan python file parses imports."""
+    This test class creates a temporary directory with a known Python module
+    and verifies that the index extracts the correct import list, export list,
+    and language tag. The design ensures the parser handles standard Python
+    import patterns (import X, from Y import Z) and public symbol detection.
+    """
+
+    def test_verify_scan_python_file_parses_imports_and_exports(self):
+        """Validate that scan() extracts imports, exports, and language from a Python source file.
+
+        The test creates a temp directory containing a Python module with
+        known imports (os, json, collections.defaultdict) and exports
+        (public_function, MyClass, CONSTANT), scans it, and asserts the
+        indexed module has language='python', the expected imports, and
+        the expected exports because the parser must accurately capture
+        the module's dependency and export surface.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         with tempfile.TemporaryDirectory() as tmpdir:
             src = os.path.join(tmpdir, "test_mod.py")
@@ -257,23 +320,15 @@ class TestEncreCodeIndexWithFiles:
                 """))
             ci = EncreCodeIndex(workspace=tmpdir)
             ci.scan()
-            # Verify: ci._indexed is True
             assert ci._indexed is True
-            # Verify: len(ci._modules) == 1
             assert len(ci._modules) == 1
             mod_key = next(iter(ci._modules.keys()))
             mod = ci._modules[mod_key]
-            # Verify: mod.language == "python"
             assert mod.language == "python"
-            # Verify: "os" in mod.imports
             assert "os" in mod.imports
-            # Verify: "json" in mod.imports
             assert "json" in mod.imports
-            # Verify: "public_function" in mod.exports
             assert "public_function" in mod.exports
-            # Verify: "MyClass" in mod.exports
             assert "MyClass" in mod.exports
-            # Verify: "CONSTANT" in mod.exports
             assert "CONSTANT" in mod.exports
 
 
@@ -282,143 +337,195 @@ class TestEncreCodeIndexWithFiles:
 # ===========================================================================
 
 class TestEncreCodeIndexQueries:
-    """Tests for the public query methods."""
+    """Engineered to validate the public query API of EncreCodeIndex for dependency and relevance lookups.
 
-    def test_build_dependency_graph(self):
-        """Test: Build dependency graph."""
+    This test class exercises 13 query methods including build_dependency_graph,
+    get_importers, find_relevant, build_context, get_module_info, list_all_modules,
+    and search_by_name. The design ensures each query returns the documented
+    type (dict, list, str, ModuleInfo, or None) and handles missing inputs
+    gracefully without raising exceptions.
+    """
+
+    def test_verify_build_dependency_graph_returns_dict(self):
+        """Validate that build_dependency_graph() returns a dict even on an unscanned index.
+
+        The test asserts isinstance(graph, dict) because the dependency graph
+        is always a dictionary mapping module paths to their imported dependencies.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         graph = ci.build_dependency_graph()
-        # Verify: isinstance(graph, dict)
         assert isinstance(graph, dict)
 
-    def test_get_importers(self):
-        """Test: Get importers."""
+    def test_verify_get_importers_returns_list_for_scanned_module(self):
+        """Validate that get_importers() returns a list for a module present in the index.
+
+        The test scans the index, picks the first module, and asserts the
+        returned importers list is a Python list because get_importers
+        must always return a list (possibly empty) for any queried path.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
-        # Pick any module and query its importers
         if ci._modules:
             first_path = next(iter(ci._modules.keys()))
             importers = ci.get_importers(first_path)
-            # Verify: isinstance(importers, list)
             assert isinstance(importers, list)
 
-    def test_get_importers_nonexistent(self):
-        """Test: Get importers nonexistent."""
+    def test_verify_get_importers_nonexistent_returns_empty_list(self):
+        """Validate that get_importers() returns [] for a path not in the index.
+
+        The test queries a nonexistent file path and asserts the result is
+        [] because missing modules should have zero importers, not raise.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         importers = ci.get_importers("nonexistent_file.py")
-        # Verify: importers == []
         assert importers == []
 
-    def test_find_relevant_returns_list(self):
-        """Test: Find relevant returns list."""
+    def test_verify_find_relevant_returns_a_list(self):
+        """Validate that find_relevant() returns a list for any query string.
+
+        The test asserts isinstance(results, list) because relevance search
+        must always return a list of (path, score) tuples.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("python class")
-        # Verify: isinstance(results, list)
         assert isinstance(results, list)
 
-    def test_find_relevant_empty_query(self):
-        """Test: Find relevant empty query."""
+    def test_verify_find_relevant_empty_query_returns_empty_list(self):
+        """Validate that find_relevant('') returns an empty list with no matches.
+
+        The test asserts results == [] because an empty query string should
+        not match any module and must return an empty list, not raise.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("")
-        # Verify: results == []
         assert results == []
 
-    def test_find_relevant_returns_tuples(self):
-        """Test: Find relevant returns tuples."""
+    def test_verify_find_relevant_returns_tuple_entries(self):
+        """Validate that every entry in find_relevant results is a (str, float) tuple.
+
+        The test iterates over results for the query 'import' and asserts
+        each item is a 2-tuple with str path and float score because the
+        relevance API contracts each result as (module_path, relevance_score).
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("import")
         for item in results:
-            # Verify: isinstance(item, tuple)
             assert isinstance(item, tuple)
-            # Verify: len(item) == 2
             assert len(item) == 2
-            # Verify: isinstance(item[0], str)
             assert isinstance(item[0], str)
-            # Verify: isinstance(item[1], float)
             assert isinstance(item[1], float)
 
-    def test_find_relevant_sorted_descending(self):
-        """Test: Find relevant sorted descending."""
+    def test_verify_find_relevant_results_are_sorted_descending_by_score(self):
+        """Validate that find_relevant results are ordered by descending relevance score.
+
+        The test queries 'def class' and asserts that if at least 2 results
+        are returned, the first score is >= the second score because the
+        relevance engine must sort results from highest to lowest score.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("def class")
         if len(results) >= 2:
-            # Verify: results[0][1] >= results[1][1]
             assert results[0][1] >= results[1][1]
 
-    def test_build_context_returns_str(self):
-        """Test: Build context returns str."""
+    def test_verify_build_context_returns_nonempty_string_for_known_module(self):
+        """Validate that build_context() returns a non-empty string for a module present in the index.
+
+        The test scans the index, picks the first module, and asserts the
+        context string is non-empty because build_context must serialize
+        the module's source and metadata for LLM context injection.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         if ci._modules:
             first_path = next(iter(ci._modules.keys()))
             context = ci.build_context(first_path)
-            # Verify: isinstance(context, str)
             assert isinstance(context, str)
-            # Verify: len(context) > 0
             assert len(context) > 0
 
-    def test_build_context_nonexistent(self):
-        """Test: Build context nonexistent."""
+    def test_verify_build_context_returns_empty_string_for_missing_module(self):
+        """Validate that build_context() returns '' for a path not in the index.
+
+        The test queries a nonexistent file and asserts the result is ''
+        because missing modules must not raise 鈥?they should yield an
+        empty context string so callers can handle absence gracefully.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         context = ci.build_context("no_such_file.py")
-        # Verify: context == ""
         assert context == ""
 
-    def test_get_module_info(self):
-        """Test: Get module info."""
+    def test_verify_get_module_info_returns_ModuleInfo_for_known_path(self):
+        """Validate that get_module_info() returns a ModuleInfo instance for a scanned module.
+
+        The test scans the index, picks the first module path, and asserts
+        the result is an instance of ModuleInfo because get_module_info
+        must return the full structured metadata record.
+        """
         from encre.codebase.indexer import EncreCodeIndex, ModuleInfo
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         if ci._modules:
             first_path = next(iter(ci._modules.keys()))
             mod = ci.get_module_info(first_path)
-            # Verify: isinstance(mod, ModuleInfo)
             assert isinstance(mod, ModuleInfo)
 
-    def test_get_module_info_nonexistent(self):
-        """Test: Get module info nonexistent."""
+    def test_verify_get_module_info_returns_none_for_missing_path(self):
+        """Validate that get_module_info() returns None for a path not in the index.
+
+        The test queries 'nonexistent.py' and asserts None because missing
+        modules must yield None, not raise, so callers can distinguish
+        between found and not-found without exception handling.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         mod = ci.get_module_info("nonexistent.py")
-        # Verify: mod is None
         assert mod is None
 
-    def test_list_all_modules_returns_list(self):
-        """Test: List all modules returns list."""
+    def test_verify_list_all_modules_returns_list_of_ModuleInfo(self):
+        """Validate that list_all_modules() returns a list where every element is a ModuleInfo.
+
+        The test asserts the return type is list and that every element
+        passes isinstance(mod, ModuleInfo) because the method is the
+        primary way to iterate over all indexed modules.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         modules = ci.list_all_modules()
-        # Verify: isinstance(modules, list)
         assert isinstance(modules, list)
         from encre.codebase.indexer import ModuleInfo
         for mod in modules:
-            # Verify: isinstance(mod, ModuleInfo)
             assert isinstance(mod, ModuleInfo)
 
-    def test_search_by_name_returns_list(self):
-        """Test: Search by name returns list."""
+    def test_verify_search_by_name_returns_list(self):
+        """Validate that search_by_name() returns a list for any search term.
+
+        The test queries 'agent' and asserts the result is a list because
+        name search must always return a list of matching ModuleInfo objects.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.search_by_name("agent")
-        # Verify: isinstance(results, list)
         assert isinstance(results, list)
 
-    def test_search_by_name_case_insensitive(self):
-        """Test: Search by name case insensitive."""
+    def test_verify_search_by_name_is_case_insensitive(self):
+        """Validate that search_by_name() returns the same count for upper and lower case queries.
+
+        The test queries 'AGENT' and 'agent' and asserts equal result counts
+        because name search must be case-insensitive to match user intent
+        regardless of capitalization.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         upper = ci.search_by_name("AGENT")
         lower = ci.search_by_name("agent")
-        # Verify: len(upper) == len(lower)
         assert len(upper) == len(lower)
 
 
@@ -427,35 +534,48 @@ class TestEncreCodeIndexQueries:
 # ===========================================================================
 
 class TestEncreCodeIndexIncremental:
-    """Tests for incremental scanning."""
+    """Engineered to validate incremental scanning on top of an existing index.
 
-    def test_scan_incremental_on_fresh_index(self):
-        """Test: Scan incremental on fresh index."""
+    This test class exercises 2 scenarios: incremental scan on a fresh index
+    and incremental scan after adding a new file to an already-scanned directory.
+    The design ensures that scan_incremental() adds new modules without
+    dropping previously indexed entries, enabling efficient re-indexing
+    after file system changes without full re-scan overhead.
+    """
+
+    def test_verify_scan_incremental_on_fresh_index(self):
+        """Validate that scan_incremental() sets _indexed=True on a fresh unscanned index.
+
+        The test calls scan_incremental() without a prior full scan and asserts
+        _indexed is True because the incremental method must also populate
+        the index when no prior scan has occurred.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan_incremental()
-        # Verify: ci._indexed is True
         assert ci._indexed is True
 
-    def test_scan_incremental_after_full_scan(self):
-        """Test: Scan incremental after full scan."""
+    def test_verify_scan_incremental_adds_newly_created_files(self):
+        """Validate that scan_incremental() discovers files created after the initial full scan.
+
+        The test creates a temp directory with one Python file, scans it (1
+        module), creates a second Python file, runs scan_incremental(), and
+        asserts the module count is now 2 because incremental scanning must
+        detect and index new files without re-scanning existing ones.
+        """
         from encre.codebase.indexer import EncreCodeIndex
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a Python file
             src = os.path.join(tmpdir, "hello.py")
             with open(src, "w", encoding="utf-8") as f:
                 f.write("import os\n\ndef greet():\n    return 'hello'\n")
 
             ci = EncreCodeIndex(workspace=tmpdir)
             ci.scan()
-            # Verify: len(ci._modules) == 1
             assert len(ci._modules) == 1
 
-            # Create a new file
             src2 = os.path.join(tmpdir, "world.py")
             with open(src2, "w", encoding="utf-8") as f:
                 f.write("import sys\n\ndef farewell():\n    return 'bye'\n")
 
             ci.scan_incremental()
-            # Verify: len(ci._modules) == 2
             assert len(ci._modules) == 2

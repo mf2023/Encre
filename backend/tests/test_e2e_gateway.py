@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,8 +20,6 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
-
-from __future__ import annotations
 
 """End-to-end test: adapter -> gateway client -> server -> EventRouter -> back.
 
@@ -136,9 +134,15 @@ class _FakeAgent:
 
 
 @pytest.mark.asyncio
-async def test_legacy_path_no_source_returns_response():
-    """QQ-style legacy path: process_with_stream without source.
-    The adapter should receive the response and call send()."""
+async def test_verify_legacy_path_no_source_returns_response():
+    """Validate that the legacy (no-source) flow delivers a response.
+
+    The test exercises the QQ-style path where process_with_stream is called
+    without an explicit source object.  It expects the adapter to receive at
+    least one sent message containing the agent's canned response because the
+    legacy path must remain functional while the newer source-aware path
+    matures.
+    """
     import os
 
     # Pick a unique port to avoid conflicts.
@@ -147,7 +151,7 @@ async def test_legacy_path_no_source_returns_response():
     # 1. Set up the server side.
     sm = SessionManager()
     config = EncreConfig()
-    from encre.channels.base import EventRouter
+    from encre.protocol.session_router import EventRouter
 
     router = EventRouter(sm, config)
     store = SessionStore(db_path=Path("/tmp/encre_test_routing.db"))
@@ -197,16 +201,22 @@ async def test_legacy_path_no_source_returns_response():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_no_handler_fallback_returns_response():
-    """handle_message without _message_handler set: falls back to
-    process_with_stream with source. The adapter should still get the response."""
+async def test_verify_handle_message_no_handler_fallback_returns_response():
+    """Validate that handle_message falls back to process_with_stream cleanly.
+
+    The test calls handle_message without setting a custom _message_handler,
+    which forces the adapter into its fallback path that builds a source from
+    the incoming event and calls process_with_stream.  It expects at least one
+    sent message because the fallback must remain operational when no handler
+    is registered.
+    """
     import os
     from pathlib import Path
 
     port = 18798
     sm = SessionManager()
     config = EncreConfig()
-    from encre.channels.base import EventRouter
+    from encre.protocol.session_router import EventRouter
 
     router = EventRouter(sm, config)
     store = SessionStore(db_path=Path("/tmp/encre_test_routing2.db"))
@@ -264,13 +274,18 @@ async def test_handle_message_no_handler_fallback_returns_response():
 
 
 @pytest.mark.asyncio
-async def test_handle_message_with_handler_returns_response():
-    """handle_message with _message_handler set: the handler should be called
-    and the response should be sent through the normal flow."""
+async def test_verify_handle_message_with_handler_returns_response():
+    """Validate that a registered _message_handler intercepts and processes the event.
+
+    The test registers a handler that delegates to process_with_stream and then
+    asserts the handler flag is set and a response is recorded.  This covers the
+    normal adapter-driven path where custom handlers are used for pre/post
+    processing before the gateway flow begins.
+    """
     port = 18797
     sm = SessionManager()
     config = EncreConfig()
-    from encre.channels.base import EventRouter
+    from encre.protocol.session_router import EventRouter
 
     router = EventRouter(sm, config)
     store = SessionStore(db_path=Path("/tmp/encre_test_routing3.db"))

@@ -35,7 +35,7 @@
  * dialogs without conflict.
  */
 
-import { t } from "./i18n.js";
+import { t } from "../features/i18n.js";
 
 type Resolve<T> = (value: T) => void;
 

@@ -30,14 +30,14 @@
  * overlays for sessions shown inside the workspace tree.
  */
 
-import { getState, subscribe, setSessionId, clearMessages, setSessionState, setSubAgentView, clearSubAgentBreadcrumb, setTempChat, removeSessionById, setActiveWorkspace } from "./state.js";
-import { send } from "./ws.js";
-import { setRequestedSessionId } from "./stream.js";
-import { t, onLocaleChange } from "./i18n.js";
-import { Dialog } from "./dialog.js";
-import { showContextMenu } from "./context-menu.js";
-import { nameHue, workspaceIconHtml } from "./session-projection.js";
-import type { SessionEntryData, SessionSource, WorkspaceEntry } from "./types.js";
+import { getState, subscribe, setSessionId, clearMessages, setSessionState, setSubAgentView, clearSubAgentBreadcrumb, setTempChat, removeSessionById, setActiveWorkspace } from "../core/state.js";
+import { send } from "../core/ws.js";
+import { setRequestedSessionId } from "../core/stream.js";
+import { t, onLocaleChange } from "../features/i18n.js";
+import { Dialog } from "../ui/dialog.js";
+import { showContextMenu } from "../ui/context-menu.js";
+import { nameHue, workspaceIconHtml } from "../chat/session-projection.js";
+import type { SessionEntryData, SessionSource, WorkspaceEntry } from "../core/types.js";
 
 /** Lightweight signature of the workspace list for change detection — avoids
  *  stringifying the full icon base64 blobs on every state emit.  The icon's

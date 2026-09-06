@@ -1,0 +1,889 @@
+/* ============================================================
+   Encre Agent Docs — 自定义主题覆盖
+   本文件复制自 Encre Agent Desktop（desktop/renderer/）的前端设计
+   取值，便于部署到 GitHub Pages 时保持与产品一致的观感。
+   ============================================================ */
+
+:root {
+  /* --- 浅色模式（来自桌面端浅色 Token，原样复刻，非 import）--- */
+  --ln-bg-primary: #ffffff;
+  --ln-bg-secondary: #f5f5f5;
+  --ln-bg-tertiary: #f0f0f0;
+  --ln-bg-hover: #f0f0f0;
+  --ln-text-primary: #1a1a1a;
+  --ln-text-secondary: #5b6066;
+  --ln-text-muted: #b0b4ba;
+  --ln-accent: #666666;
+  --ln-accent-hover: #444444;
+  --ln-accent-light: rgba(102, 102, 102, 0.1);
+  --ln-item-selected-bg: rgba(0, 0, 0, 0.06);
+  --ln-border: #e5e7eb;
+  --ln-border-light: #e5e7eb;
+
+  /* 映射到 VitePress 变量 */
+  --vp-c-bg: var(--ln-bg-primary);
+  --vp-c-bg-alt: var(--ln-bg-secondary);
+  --vp-c-bg-elv: var(--ln-bg-primary);
+  --vp-c-bg-soft: var(--ln-bg-tertiary);
+  --vp-c-border: var(--ln-border);
+  --vp-c-divider: var(--ln-border);
+  --vp-c-gutter: var(--ln-border);
+  --vp-c-text-1: var(--ln-text-primary);
+  --vp-c-text-2: var(--ln-text-secondary);
+  --vp-c-text-3: var(--ln-text-muted);
+  --vp-c-brand-1: var(--ln-accent);
+  --vp-c-brand-2: var(--ln-accent-hover);
+  --vp-c-brand-3: var(--ln-accent-hover);
+  --vp-c-brand-soft: var(--ln-accent-light);
+  --vp-c-brand-active: var(--ln-accent-hover);
+  --vp-nav-bg-color: var(--ln-bg-primary);
+  --vp-sidebar-bg-color: var(--ln-bg-secondary);
+  --vp-sidebar-width: 280px;
+  --vp-input-border-color: var(--ln-border);
+  --vp-input-bg-color: var(--ln-bg-tertiary);
+  --vp-input-switch-bg-color: var(--ln-bg-tertiary);
+  --vp-custom-block-code-bg: var(--ln-bg-tertiary);
+}
+
+html.dark {
+  /* --- 深色模式（来自桌面端深色 Token） --- */
+  --ln-bg-primary: #000000;
+  --ln-bg-secondary: #111111;
+  --ln-bg-tertiary: #1a1a1a;
+  --ln-bg-hover: #222222;
+  --ln-text-primary: #f5f5f7;
+  --ln-text-secondary: #a1a1aa;
+  --ln-text-muted: #555555;
+  --ln-accent: #999999;
+  --ln-accent-hover: #bbbbbb;
+  --ln-accent-light: rgba(153, 153, 153, 0.15);
+  --ln-item-selected-bg: rgba(255, 255, 255, 0.08);
+  --ln-border: #1d1d1f;
+  --ln-border-light: #262626;
+
+  --vp-c-bg: var(--ln-bg-primary);
+  --vp-c-bg-alt: var(--ln-bg-secondary);
+  --vp-c-bg-elv: var(--ln-bg-secondary);
+  --vp-c-bg-soft: var(--ln-bg-tertiary);
+  --vp-c-border: var(--ln-border);
+  --vp-c-divider: var(--ln-border);
+  --vp-c-gutter: var(--ln-border);
+  --vp-c-text-1: var(--ln-text-primary);
+  --vp-c-text-2: var(--ln-text-secondary);
+  --vp-c-text-3: var(--ln-text-muted);
+  --vp-c-brand-1: var(--ln-accent);
+  --vp-c-brand-2: var(--ln-accent-hover);
+  --vp-c-brand-3: var(--ln-accent-hover);
+  --vp-c-brand-soft: var(--ln-accent-light);
+  --vp-c-brand-active: var(--ln-accent-hover);
+  --vp-nav-bg-color: var(--ln-bg-primary);
+  --vp-sidebar-bg-color: var(--ln-bg-secondary);
+  --vp-input-border-color: var(--ln-border);
+  --vp-input-bg-color: var(--ln-bg-tertiary);
+  --vp-input-switch-bg-color: var(--ln-bg-tertiary);
+}
+
+/* ============================================================
+   滚动条 —— 与桌面端一致（4px、无按钮、圆角细条）
+   ============================================================ */
+::-webkit-scrollbar { width: 4px; height: 4px; background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ln-border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ln-text-muted); }
+
+/* ============================================================
+   顶部导航重排：产品标签 → 语言 → 主题 → 搜索，整体靠右
+   ============================================================ */
+.VPNavBar .content-body {
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* 去掉 VitePress 默认在 menu/translations/appearance 之间的分隔线 */
+.VPNavBar .content-body .menu + .translations::before,
+.VPNavBar .content-body .translations + .appearance::before,
+.VPNavBar .content-body .appearance + .social-links::before {
+  display: none;
+}
+
+/* 顺序：menu=1，translations=2，appearance=3，search=4（一行靠右） */
+.VPNavBar .content-body .menu { order: 1; margin-right: 8px; }
+.VPNavBar .content-body .translations { order: 2; }
+.VPNavBar .content-body .appearance { order: 3; }
+.VPNavBar .content-body .search { order: 4; }
+
+/* "⋯"更多按钮(VPNavBarExtra)：彻底不用 —— 窄屏不显示省略号菜单，
+   语言/主题按钮直接留在顶栏，缩到 <960px 时由汉堡(三个横杠)菜单接管 */
+.VPNavBar .content-body .extra,
+.VPNavBarExtra {
+  display: none !important;
+}
+
+/* 语言/主题按钮永远保持顶栏显示（含移动端），不受 VitePress 默认 1280px 断点隐藏，
+   始终不进汉堡包菜单，保持各自位置 */
+.VPNavBarTranslations { display: flex !important; align-items: center; }
+.VPNavBarAppearance { display: flex !important; align-items: center; }
+
+/* 让导航内容贴到最右侧（去掉 VitePress 预设的 80px 右留白） */
+.VPNavBar.has-sidebar .content {
+  padding-right: 8px !important;
+}
+
+/* ============================================================
+   鼠标悬浮 UI —— 与应用定义完全统一
+   应用按钮通用 hover：background:var(--bg-hover); color:var(--text-primary)
+   过渡：all 0.12s cubic-bezier(.4,0,.2,1)（= --transition-fast + --easing-standard）
+   ============================================================ */
+.VPNavBarTranslations .button,
+.VPNavBarAppearance .VPSwitchAppearance,
+.VPNavBarSearch .DocSearch-Button,
+.nav-sidebar-toggle {
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 产品导航链接 hover：与应用导航/列表项一致的悬浮底色 */
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: color 0.12s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.VPNavBarMenu .VPNavBarMenuLink:hover {
+  color: var(--ln-text-primary);
+  background: var(--ln-bg-hover);
+}
+
+/* 隐藏 VitePress 默认语言切换，使用自定义下拉框（复刻应用 settings-dropdown 模式） */
+.VPNavBarTranslations { display: none !important; visibility: hidden !important; }
+
+/* ─── 自定义语言切换触发按钮（nav 栏图标按钮风格，与应用 settings-dropdown-trigger 一致） ─── */
+.encre-lang-trigger {
+  order: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ln-text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s cubic-bezier(0.4, 0, 0.2, 1), color 0.12s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.encre-lang-trigger:hover {
+  background: var(--ln-bg-hover);
+  color: var(--ln-text-primary);
+}
+.encre-lang-trigger.open {
+  background: var(--ln-bg-hover);
+  color: var(--ln-text-primary);
+}
+.encre-lang-globe {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.encre-lang-chevron {
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.encre-lang-trigger.open .encre-lang-chevron {
+  transform: rotate(180deg);
+}
+
+/* ─── 语言下拉浮层（复刻应用 .settings-dropdown，纯 DOM 附着到 body） ─── */
+.encre-lang-dropdown.settings-dropdown {
+  position: fixed;
+  top: 0;
+  right: 0;
+  min-width: 140px;
+  width: max-content;
+  background: var(--ln-bg-tertiary);
+  border: 1px solid var(--ln-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  z-index: 200;
+  display: block;
+  max-height: 280px;
+  overflow-y: auto;
+  animation: encreLangDropdownIn 0.12s ease-out;
+}
+@keyframes encreLangDropdownIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.encre-lang-dropdown .settings-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ln-text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+  margin-bottom: 2px;
+}
+.encre-lang-dropdown .settings-dropdown-item:last-child { margin-bottom: 0; }
+.encre-lang-dropdown .settings-dropdown-item:hover {
+  background: var(--ln-bg-hover);
+}
+.encre-lang-dropdown .settings-dropdown-item.selected {
+  background: var(--ln-accent-light);
+  color: var(--ln-accent);
+}
+
+/* 主题按钮：图标按钮，无边框无背景，独立靠右 */
+.VPNavBarAppearance .VPSwitchAppearance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+}
+.VPNavBarAppearance .VPSwitchAppearance:hover { background: var(--ln-bg-hover); }
+.VPNavBarAppearance .VPSwitchAppearance:focus-visible { outline: 2px solid var(--ln-accent); outline-offset: 1px; }
+.VPNavBarAppearance .VPSwitchAppearance .check {
+  position: static;
+  transform: none !important;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.VPNavBarAppearance .VPSwitchAppearance .icon {
+  position: relative;
+  display: flex;
+  width: 16px;
+  height: 16px;
+}
+.VPNavBarAppearance .VPSwitchAppearance .icon .vpi-sun,
+.VPNavBarAppearance .VPSwitchAppearance .icon .vpi-moon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--ln-text-secondary);
+}
+/* 用同一尺寸标准的 SVG 覆写太阳/月亮图形，保证两者可视大小一致 */
+.VPNavBarAppearance .VPSwitchAppearance .vpi-sun {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4'/%3E%3C/svg%3E");
+}
+.VPNavBarAppearance .VPSwitchAppearance .vpi-moon {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'/%3E%3C/svg%3E");
+}
+
+/* 搜索：仅保留图标按钮，与主题/语言同款 UI */
+.VPNavBarSearch {
+  flex: 0 1 auto;
+  padding-left: 0;
+}
+.VPNavBarSearch .DocSearch-Button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  box-shadow: none;
+  color: var(--ln-text-secondary);
+}
+.VPNavBarSearch .DocSearch-Button:hover {
+  background: var(--ln-bg-hover);
+  color: var(--ln-text-primary);
+  box-shadow: none;
+}
+.VPNavBarSearch .DocSearch-Button .DocSearch-Button-Container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.VPNavBarSearch .DocSearch-Button .DocSearch-Button-Placeholder,
+.VPNavBarSearch .DocSearch-Button .DocSearch-Button-Keys,
+.VPNavBarSearch .DocSearch-Button .DocSearch-Button-Key {
+  display: none;
+}
+.VPNavBarSearch .DocSearch-Button .DocSearch-Search-Icon {
+  width: 16px;
+  height: 16px;
+  margin: 0 !important;
+  flex: 0 0 16px;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-position: center;
+  -webkit-mask-position: center;
+}
+/* ============================================================
+   侧边栏折叠 + 左侧容器：折叠按钮 / EADOCS 图标 / 标题
+   三者同处最左侧的同一容器（顶部应用栏左端），贴最左对齐
+   ============================================================ */
+
+/* 折叠按钮：与主题切换按钮同规格（30x30、无边框、hover 灰底），
+   作为左侧容器最后一个 flex 成员，位于图标与标题文字右侧 */
+.nav-sidebar-toggle {
+  order: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  margin-left: 10px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--ln-text-secondary);
+  cursor: pointer;
+  transition: background 0.12s cubic-bezier(0.4, 0, 0.2, 1), color 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.nav-sidebar-toggle:hover {
+  background: var(--ln-bg-hover);
+  color: var(--ln-text-primary);
+}
+/* 无侧边栏页面（如 harness / core 占位页）：隐藏折叠按钮，避免悬空重叠 */
+.VPNavBar:not(.has-sidebar) .nav-sidebar-toggle { display: none; }
+
+/* 左侧容器（仅在有侧边栏时压缩固定宽度）：折叠按钮 + 图标 + 标题贴最左 */
+@media (min-width: 960px) {
+  .VPNavBar.has-sidebar .container > .title {
+    display: flex;
+    align-items: center;
+    padding: 0 12px !important;
+    width: var(--vp-sidebar-width) !important;
+    background: var(--ln-bg-primary);
+  }
+  .VPNavBarTitle a.title {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100% !important;
+    height: var(--vp-nav-height);
+    padding: 0 !important;
+  }
+  .VPNavBarTitle a.title .logo {
+    height: var(--vp-nav-logo-height);
+    width: auto;
+    display: block;
+    margin-right: 8px;
+  }
+  /* 右侧容器：侧边栏固定 280px，正文区对齐到侧边栏右缘（仅侧边栏页面） */
+  .VPNavBar.has-sidebar .content {
+    padding-left: var(--vp-sidebar-width) !important;
+  }
+}
+
+/* ── 非侧边栏页面（harness / core）：左标题块强制贴最左，右控件强制贴最右，内容居中 ── */
+.VPNavBar:not(.has-sidebar) .container > .title {
+  position: absolute !important;
+  left: 0 !important;
+  width: var(--vp-sidebar-width) !important;
+  padding: 0 12px !important;
+  background: var(--ln-bg-primary);
+  z-index: 10;
+}
+.VPNavBar:not(.has-sidebar) .VPNavBarTitle a.title {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  height: var(--vp-nav-height);
+  padding: 0 !important;
+}
+.VPNavBar:not(.has-sidebar) .VPNavBarTitle a.title .logo {
+  height: var(--vp-nav-logo-height);
+  width: auto;
+  display: block;
+  margin-right: 8px;
+}
+.VPNavBar:not(.has-sidebar) .content {
+  padding-left: var(--vp-sidebar-width) !important;
+  padding-right: 8px !important;
+}
+
+/* 折叠时：仅收起侧边栏目录、内容区左移；
+   顶栏左侧的图标 / EADOCS 标题 / 折叠按钮三者保持完整可见 */
+html.collapse-sidebar .VPNavBar.has-sidebar .content {
+  padding-left: 0 !important;
+}
+html.collapse-sidebar .Layout:has(.VPSidebar) .VPContent {
+  padding-left: 0 !important;
+}
+/* 正文区：始终留出 280px 左侧空间（侧边栏占用），保证内容在剩余空间内居中 */
+.VPContent {
+  padding-left: var(--vp-sidebar-width) !important;
+}
+.collapse-sidebar-init { display: none; }
+
+/* ============================================================
+   顶部栏底部分割线：从左到右整条贯通（含侧边栏区域）
+   VitePress 在 .divider 上加了 padding-left（960px: 侧边栏宽；1440px: +居中 calc），
+   导致线从 x328 才开始。这里把容器 padding 归零 + 线条 100% 铺满。
+   ============================================================ */
+.VPNavBar .divider {
+  padding-left: 0 !important;
+}
+.VPNavBar .divider-line {
+  margin-left: 0 !important;
+  width: 100% !important;
+}
+
+/* ============================================================
+   侧边栏 —— 整体统一容器：固定宽度、上下居中、左右内边距一致，
+   导航项铺满容器宽度（复刻桌面端 settings-nav-item）
+   ============================================================ */
+.VPSidebar {
+  border-right: 1px solid var(--ln-border);
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+/* 折叠：滑出 + 淡出，与展开动画对称 */
+html.collapse-sidebar .VPSidebar {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+
+/* 侧边栏固定 280px：容器从顶部栏下方开始（top=导航高），背景色不延伸到顶栏，
+   滚动条只属于侧边栏目录自身区域；水平内边距对称一致，去除大屏下的偏移与空位 */
+@media (min-width: 960px) {
+  .VPSidebar {
+    top: var(--vp-nav-height) !important;
+    width: var(--vp-sidebar-width) !important;
+    max-width: 100% !important;
+    padding: 16px 12px 24px 12px !important;
+  }
+  /* 侧边栏已从顶栏下方开始，无需 curtain 铺满顶栏下的留白 */
+  .VPSidebar .curtain {
+    display: none !important;
+  }
+  .VPSidebar .nav .group {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
+  }
+}
+@media (min-width: 1440px) {
+  .VPSidebar .nav .group {
+    width: 100%;
+  }
+}
+
+/* 分组标题：11.5px / 600 / 文字弱化 / 字距加宽 */
+.VPSidebarItem.level-0 .text {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ln-text-muted);
+  padding: 0 10px;
+  margin-bottom: 2px;
+}
+
+/* 页面链接：13px，文字次要色，hover/active 换取底色 */
+.VPSidebarItem .items { border-left: none; padding-left: 0; }
+.VPSidebarItem.level-1 { margin: 1px 0; }
+.VPSidebarItem.level-0 .items {
+  padding-left: 0;
+}
+.VPSidebarItem.level-1 .link {
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 6px;
+  margin: 0;
+}
+.VPSidebarItem.level-1 .text {
+  padding: 0;
+  line-height: 20px;
+  font-size: 13px;
+  color: var(--ln-text-secondary);
+}
+.VPSidebarItem.level-1:hover .text { color: var(--ln-text-primary); }
+.VPSidebarItem.level-1:hover { background: var(--ln-bg-hover); }
+.VPSidebarItem.level-1.is-active .text {
+  color: var(--ln-text-primary);
+  font-weight: 500;
+}
+.VPSidebarItem.level-1.is-active { background: var(--ln-bg-tertiary); }
+.VPSidebarItem.level-1 .indicator,
+.VPSidebarItem.level-0 .indicator { display: none; }
+
+/* 分组之间的分隔线弱化 */
+.VPSidebar .group + .group { border-top: 1px solid var(--ln-border); }
+
+/* ============================================================
+   细节：主题切换图标（浅色/深色下太阳月亮可见性）
+   ============================================================ */
+html:not(.dark) .VPNavBarAppearance .vpi-sun { opacity: 1; }
+html:not(.dark) .VPNavBarAppearance .vpi-moon { opacity: 0; }
+html.dark .VPNavBarAppearance .vpi-sun { opacity: 0; }
+html.dark .VPNavBarAppearance .vpi-moon { opacity: 1; }
+
+/* ============================================================
+   搜索弹层 —— 复刻应用内搜索页（#search-view）
+   .search-container: 700px 居中；.search-input: 10px 圆角、
+   focus 边框 accent + 3px accent-light 光环；结果项 6px 圆角 + hover bg-hover
+   ============================================================ */
+.DocSearch-Modal {
+  max-width: 700px;
+  width: 100%;
+  border-radius: 10px;
+  margin: 0 auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+.DocSearch-SearchBar {
+  padding: 12px 16px;
+}
+.DocSearch-Input {
+  font-size: 14px;
+  padding: 12px 16px 12px 42px;
+  border-radius: 10px;
+  border: 1px solid var(--ln-border);
+  background: var(--ln-bg-tertiary);
+  color: var(--ln-text-primary);
+  outline: none;
+  transition: border-color 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.DocSearch-Input:focus {
+  border-color: var(--ln-accent);
+  box-shadow: 0 0 0 3px var(--ln-accent-light);
+}
+.DocSearch-Search-Icon {
+  color: var(--ln-text-muted);
+}
+.DocSearch-Hit {
+  border-radius: 6px;
+}
+.DocSearch-Hit:hover,
+.DocSearch-Hit[aria-selected="true"] {
+  background: var(--ln-bg-hover);
+  box-shadow: none;
+}
+.DocSearch-Hit a {
+  background: transparent;
+  border-radius: 6px;
+}
+.DocSearch-Hit-title {
+  font-size: 13.5px;
+  color: var(--ln-text-primary);
+}
+.DocSearch-Hit-path {
+  font-size: 11.5px;
+  color: var(--ln-text-muted);
+}
+.DocSearch-Hit[aria-selected="true"] .DocSearch-Hit-title,
+.DocSearch-Hit[aria-selected="true"] .DocSearch-Hit-path {
+  color: var(--ln-text-primary);
+}
+.DocSearch-Hit mark {
+  background: var(--ln-accent-light);
+  color: var(--ln-text-primary);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+.DocSearch-Footer {
+  border-top: 1px solid var(--ln-border);
+  background: var(--ln-bg-secondary);
+}
+.DocSearch-Commands li {
+  color: var(--ln-text-muted);
+}
+.DocSearch-Commands kbd {
+  border: 1px solid var(--ln-border);
+  border-radius: 4px;
+  background: var(--ln-bg-tertiary);
+  color: var(--ln-text-secondary);
+}
+.DocSearch-Reset {
+  color: var(--ln-text-muted);
+}
+.DocSearch-Reset:hover {
+  color: var(--ln-text-primary);
+}
+.DocSearch-Cancel {
+  color: var(--ln-text-secondary);
+}
+.DocSearch-Logo {
+  opacity: 0.6;
+}
+
+/* ============================================================
+   窄屏"⋯"更多菜单（VPNavBarExtra 下拉）—— 主题/语言统一样式
+   ============================================================ */
+/* 菜单面板：与应用一致（bg-secondary 底色、圆角、无过度阴影） */
+.VPNavBarExtra .menu {
+  border-radius: 10px;
+  background: var(--ln-bg-secondary);
+  border: 1px solid var(--ln-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  padding: 8px;
+}
+/* 语言条目：trans-title 弱化、English 链接悬停灰底 */
+.VPNavBarExtra .group.translations .trans-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ln-text-muted);
+  padding: 4px 10px;
+}
+.VPNavBarExtra .group.translations .VPMenuLink {
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+.VPNavBarExtra .group.translations .VPMenuLink:hover {
+  background: var(--ln-bg-hover);
+}
+.VPNavBarExtra .group.translations .VPMenuLink .text {
+  color: var(--ln-text-secondary);
+  font-size: 13px;
+}
+.VPNavBarExtra .group.translations .VPMenuLink:hover .text {
+  color: var(--ln-text-primary);
+}
+/* Appearance 分组：标签弱化 */
+.VPNavBarExtra .group .item .label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ln-text-muted);
+}
+/* 主题切换按钮：与应用一致（30x30、无边框、hover 灰底） */
+.VPNavBarExtra .appearance {
+  display: flex;
+  align-items: center;
+}
+.VPNavBarExtra .VPSwitchAppearance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+}
+.VPNavBarExtra .VPSwitchAppearance:hover {
+  background: var(--ln-bg-hover);
+}
+.VPNavBarExtra .VPSwitchAppearance .check {
+  position: static;
+  transform: none;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.VPNavBarExtra .VPSwitchAppearance .icon {
+  position: relative;
+  display: flex;
+  width: 16px;
+  height: 16px;
+}
+.VPNavBarExtra .VPSwitchAppearance .icon .vpi-sun,
+.VPNavBarExtra .VPSwitchAppearance .icon .vpi-moon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--ln-text-secondary);
+}
+/* 复刻顶部同款太阳/月亮图标 */
+.VPNavBarExtra .VPSwitchAppearance .vpi-sun {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4'/%3E%3C/svg%3E");
+}
+.VPNavBarExtra .VPSwitchAppearance .vpi-moon {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'/%3E%3C/svg%3E");
+}
+html:not(.dark) .VPNavBarExtra .vpi-sun { opacity: 1; }
+html:not(.dark) .VPNavBarExtra .vpi-moon { opacity: 0; }
+html.dark .VPNavBarExtra .vpi-sun { opacity: 0; }
+html.dark .VPNavBarExtra .vpi-moon { opacity: 1; }
+/* 分组分隔线弱化 */
+.VPNavBarExtra .menu .group + .group {
+  border-top: 1px solid var(--ln-border);
+}
+
+/* ============================================================
+   汉堡菜单（移动端导航）：按钮与搜索/主题同款 UI + 开合动画
+   ============================================================ */
+/* 汉堡按钮：与应用图标按钮一致（30x30、圆角、hover 灰底），不再 48px 通栏 */
+.VPNavBarHamburger {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--ln-text-secondary);
+  cursor: pointer;
+  transition: background 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.VPNavBarHamburger:hover {
+  background: var(--ln-bg-hover);
+}
+/* 汉堡三条线：与应用图标同套视觉（细线、次要色、hover/active 变主色） */
+.VPNavBarHamburger .container {
+  width: 16px;
+  height: 14px;
+}
+.VPNavBarHamburger .top,
+.VPNavBarHamburger .middle,
+.VPNavBarHamburger .bottom {
+  width: 16px;
+  height: 1.6px;
+  background-color: var(--ln-text-secondary);
+  border-radius: 1px;
+  transition: top 0.25s ease, transform 0.25s ease, background-color 0.25s ease, opacity 0.25s ease;
+}
+.VPNavBarHamburger:hover .top,
+.VPNavBarHamburger:hover .middle,
+.VPNavBarHamburger:hover .bottom {
+  background-color: var(--ln-text-primary);
+}
+/* 开合动画保留 VitePress 的旋转过渡，线色随主题 */
+.VPNavBarHamburger.active .top,
+.VPNavBarHamburger.active .middle,
+.VPNavBarHamburger.active .bottom {
+  background-color: var(--ln-text-primary);
+}
+@media (min-width: 960px) {
+  .VPNavBarHamburger { display: none; }
+}
+/* 窄于 960px 时汉堡按钮接管（产品板块唯一入口），语言/主题/搜索仍常驻顶栏 */
+@media (max-width: 959px) {
+  .VPNavBarHamburger {
+    display: flex;
+    width: 30px !important;
+    height: 30px !important;
+    align-self: center;
+  }
+}
+
+/* 汉堡下拉导航面板（VPNavScreen）：开合过渡动画 + 应用配色 */
+.VPNavScreen {
+  background-color: var(--ln-bg-primary);
+  border-bottom: 1px solid var(--ln-border);
+}
+/* 语言/主题/搜索常驻顶栏，汉堡面板内不再重复渲染它们 */
+.VPNavScreen .VPNavScreenTranslations,
+.VPNavScreen .VPNavScreenAppearance {
+  display: none !important;
+}
+.VPNavScreen .nav-screen-group .menu-link,
+.VPNavScreen .nav-screen-group .item {
+  color: var(--ln-text-secondary);
+  transition: color 0.12s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.VPNavScreen .nav-screen-group .menu-link:hover,
+.VPNavScreen .nav-screen-group .item:hover {
+  color: var(--ln-text-primary);
+  background-color: var(--ln-bg-hover);
+  border-radius: 6px;
+}
+/* 汉堡菜单内语言/主题切换：过渡动画与顶栏一致 */
+.VPNavScreen .VPNavScreenTranslations .title,
+.VPNavScreen .VPNavScreenAppearance .label,
+.VPNavScreen .VPNavScreenTranslations .text {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ln-text-muted);
+}
+.VPNavScreen .VPNavScreenTranslations .menu-link .text,
+.VPNavScreen .VPNavScreenAppearance .VPSwitch {
+  transition: color 0.12s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+}
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance:hover {
+  background: var(--ln-bg-hover);
+}
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance .check {
+  position: static;
+  transform: none;
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance .icon {
+  position: relative;
+  display: flex;
+  width: 16px;
+  height: 16px;
+}
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance .icon .vpi-sun,
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance .icon .vpi-moon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--ln-text-secondary);
+}
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance .vpi-sun {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4'/%3E%3C/svg%3E");
+}
+.VPNavScreen .VPNavScreenAppearance .VPSwitchAppearance .vpi-moon {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z'/%3E%3C/svg%3E");
+}
+html:not(.dark) .VPNavScreen .vpi-sun { opacity: 1; }
+html:not(.dark) .VPNavScreen .vpi-moon { opacity: 0; }
+html.dark .VPNavScreen .vpi-sun { opacity: 0; }
+html.dark .VPNavScreen .vpi-moon { opacity: 1; }
+
+/* ============================================================
+   窄屏：隐藏正文顶部 LocalNav 的 "Menu" 按钮
+   （仅视觉隐藏，保留 DOM 以便折叠按钮程序化触发 open-menu）
+   ============================================================ */
+.VPLocalNav .menu {
+  display: none !important;
+}

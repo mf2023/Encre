@@ -46,8 +46,8 @@
  *   - splitView:      two-column synchronized-scroll layout
  */
 
-import { getFileIcon } from "./files.js";
-import { t } from "./i18n.js";
+import { getFileIcon } from "../features/files.js";
+import { t } from "../features/i18n.js";
 
 const MAX_RENDER_LINES = 4000;
 
@@ -527,7 +527,7 @@ function renderSplitView(
   if (truncated > 0) {
     const notice = opts.truncatedNotice
       ? opts.truncatedNotice(truncated)
-      : `... [diff truncated, ${truncated} more lines]`;
+      : t("diff.truncated", { count: truncated });
     const tr = `<div class="diff-row diff-row-truncated"><span class="diff-ln">&nbsp;</span><span class="diff-content">${escapeHtml(notice)}</span></div>`;
     leftRows.push(tr);
     rightRows.push(tr);

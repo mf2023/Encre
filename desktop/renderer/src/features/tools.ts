@@ -29,7 +29,7 @@
  * the layout, and the panel reacts to state changes through a global subscription.
  */
 
-import { getState, subscribe } from "./state.js";
+import { getState, subscribe } from "../core/state.js";
 import { t } from "./i18n.js";
 
 /**

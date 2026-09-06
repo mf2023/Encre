@@ -20,24 +20,35 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, setPermissionPolicies, subscribe, showToast, isEnabled } from "./state.js";
-import { send } from "./ws.js";
-import { waitForModelValidation, onWechatScanResult, refreshAllData } from "./stream.js";
-import { setModelConfigs, setMcpServers, setSkillsList, setSubAgents } from "./state.js";
-import type { ModelConfigMeta, MCPServerConfig, SkillInfo, ModelCatalog, McpCatalog, McpProviderEntry, ProviderEntry, ProfileData, CustomCommand, UsageStatsSessionEntry } from "./types.js";
-import { defaultSearchFilter } from "./types.js";
-import { Dialog } from "./dialog.js";
-import { t, initLocale, setLocale, getLocale, clearLocaleCache, onLocaleChange, type Locale } from "./i18n.js";
-import { applyServerCommands } from "./slash_commands.js";
-import { renderMarkdown } from "./chat.js";
-import { platformIconHtml, searchEngineIconSrc } from "./icons.js";
-import { formatShortcut } from "./shortcutDisplay.js";
+import { getState, setSettings, setCustomCommands, setTheme, setThemePreference, setPermissionPolicies, subscribe, showToast, isEnabled } from "../core/state.js";
+import { send } from "../core/ws.js";
+import { waitForModelValidation, onWechatScanResult, refreshAllData } from "../core/stream.js";
+import { setModelConfigs, setMcpServers, setSkillsList, setSubAgents } from "../core/state.js";
+import type { ModelConfigMeta, MCPServerConfig, SkillInfo, ModelCatalog, McpCatalog, McpProviderEntry, ProviderEntry, ProfileData, CustomCommand, UsageStatsSessionEntry } from "../core/types.js";
+import { defaultSearchFilter } from "../core/types.js";
+import { Dialog } from "../ui/dialog.js";
+import {
+  bindTargetModelSelection,
+  parseTargetModelSelection,
+  readTargetModelSelection,
+  renderTargetModelSelection,
+  serializeTargetModelSelection,
+} from "./model-selection.js";
+import { t, initLocale, setLocale, getLocale, getIntlLocale, clearLocaleCache, onLocaleChange, LOCALES, type Locale } from "../features/i18n.js";
+import { applyServerCommands } from "../features/slash_commands.js";
+import { renderMarkdown } from "../chat/chat.js";
+import { platformIconHtml, searchEngineIconSrc } from "../ui/icons.js";
+import { formatShortcut } from "../features/shortcutDisplay.js";
+import { initSettingsDomEvents } from "./events_bind.js";
+import { renderModelImpl, renderGatewayImpl } from "./model-panels.js";
+import { renderSearchFilterImpl, renderDropdownImpl, modeHintImpl, bindDropdownImpl, renderGeneralImpl, renderShortcutsImpl, saveSettingImpl, saveThemeImpl, escImpl, _maxTokensDefaultImpl } from "./general.js";
+import { bindVersionTapUnlockImpl, loadVersionsImpl, handleAgentTapImpl, handleDesktopTapImpl, openImpl, openModelCreateImpl, updateSidebarNavImpl, closeImpl, _cleanupTransientOverlaysImpl, focusSearchImpl, onSearchInputImpl, filterNavItemsImpl, _updateDividerVisibilityImpl, highlightInPanelImpl, isHighlightableImpl, clearHighlightsImpl, refreshCurrentPanelImpl, switchPanelImpl, showSkillDetailImpl, showSkillListImpl, showMcpCreateImpl, showMcpListImpl, showAgentCreateImpl, showAgentListImpl, showModelCreateImpl, showModelEditImpl, renderAllImpl } from "./lifecycle.js";
 // Chart.js is lazy-loaded on first render of the usage panel (see
 // _renderUsageSection) so it no longer blocks startup parsing.
-import { showTooltipAt, hideTooltip } from "./tooltip.js";
-import { SEARCH_ENGINES, getDefaultSearchEngine } from "./browser.js";
-import { searchSettingsNavItems, SEARCH_FILTER_META, SETTINGS_NAV_ITEMS } from "./search.js";
-import { setSearchFilter } from "./state.js";
+import { showTooltipAt, hideTooltip } from "../ui/tooltip.js";
+import { SEARCH_ENGINES, getDefaultSearchEngine } from "../features/browser.js";
+import { searchSettingsNavItems, SEARCH_FILTER_META, SETTINGS_NAV_ITEMS } from "../features/search.js";
+import { setSearchFilter } from "../core/state.js";
 
 /** Wraps an async operation with a loading spinner on the button. */
 export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T>): Promise<T> {
@@ -274,1786 +285,60 @@ export class Settings {
       if (panel) this.switchPanel(panel);
     });
 
-    // Close any open dropdowns when clicking outside
-    document.addEventListener("click", (e) => {
-      const target = e.target as Node;
-      document.querySelectorAll(".settings-dropdown.open").forEach((dd) => {
-        const wrap = dd.closest(".settings-dropdown-wrap");
-        if (wrap && !wrap.contains(target)) {
-          dd.classList.remove("open");
-        }
-      });
-    });
-
-    // ── Event delegation on panel containers ─────────────────────────
-    // These survive innerHTML replacement — no need to re-bind after render.
-
-    // Index panel: document add/remove
-    this.panels.index.addEventListener("click", (e) => {
-      console.log("[DEBUG index] click fired, target:", (e.target as HTMLElement).className, "tag:", (e.target as HTMLElement).tagName);
-      const target = e.target as HTMLElement;
-
-      // Add document dropdown trigger
-      const trigger = target.closest("#doc-add-trigger");
-      if (trigger) {
-        e.stopPropagation();
-        const dd = document.getElementById("doc-add-dropdown");
-        if (dd) {
-          const isOpen = dd.classList.contains("open");
-          document.querySelectorAll(".settings-dropdown.open").forEach((d) => d.classList.remove("open"));
-          if (!isOpen) dd.classList.add("open");
-        }
-        return;
-      }
-
-      // Dropdown items (local file / URL)
-      const item = target.closest(".settings-dropdown-item");
-      if (item && document.getElementById("doc-add-dropdown")?.contains(item)) {
-        document.getElementById("doc-add-dropdown")?.classList.remove("open");
-        const action = item.getAttribute("data-action");
-        if (action === "local") {
-          (async () => {
-            const api = (window as any).electronAPI;
-            if (api?.pickFiles) {
-              const paths = await api.pickFiles();
-              if (!paths?.length) return;
-              const filePath = paths[0];
-              const fileName = filePath.split(/[/\\]/).pop() || filePath;
-              this._showDocNameDialog(fileName, (name) => {
-                send({ type: "add_document", name: name || fileName, file_path: filePath } as any);
-              }, t);
-            }
-          })();
-        } else if (action === "url") {
-          this._showDocUrlDialog(t);
-        }
-        return;
-      }
-
-      // Remove document button
-      const removeBtn = target.closest("[data-action='delete-doc']");
-      if (removeBtn) {
-        const id = removeBtn.getAttribute("data-doc-id");
-        const name = removeBtn.getAttribute("data-doc-name");
-        if (id && name) {
-          Dialog.confirm(t("settings.deleteDoc"), t("settings.confirmDeleteDoc", { name })).then((ok) => {
-            if (ok) {
-              send({ type: "remove_document", id } as any);
-            }
-          });
-        }
-        return;
-      }
-    });
-
-    // Skills panel: skill view/edit/delete, command add/edit/delete
-    this.panels.skills.addEventListener("click", (e) => {
-      console.log("[DEBUG skills] click fired, target:", (e.target as HTMLElement).className, "tag:", (e.target as HTMLElement).tagName);
-      const target = e.target as HTMLElement;
-
-      // View skill
-      const viewBtn = target.closest("[data-action='view-skill']");
-      if (viewBtn) {
-        console.log("[DEBUG skills] view-slick matched, name:", viewBtn.getAttribute("data-name"));
-        const name = viewBtn.getAttribute("data-name") || "";
-        if (name) this.showSkillDetail(name);
-        return;
-      }
-
-      // Edit skill
-      const editBtn = target.closest("[data-action='edit-skill']");
-      if (editBtn) {
-        console.log("[DEBUG skills] edit-skill matched, name:", editBtn.getAttribute("data-name"));
-        const name = editBtn.getAttribute("data-name") || "";
-        if (name) this.showSkillDetail(name, true);
-        return;
-      }
-
-      // Delete skill
-      const deleteBtn = target.closest("[data-action='delete-skill']");
-      if (deleteBtn) {
-        const name = deleteBtn.getAttribute("data-name") || "";
-        if (name) {
-          Dialog.confirm(t("settings.delete"), t("settings.skillDeleteConfirm", { name })).then(async (ok) => {
-            if (ok) {
-              const filtered = getState().skillsList.filter(s => s.name !== name);
-              setSkillsList(filtered);
-              send({ type: "uninstall_skill", name });
-              this.renderSkills();
-            }
-          });
-        }
-        return;
-      }
-
-      // Edit command
-      const editCmd = target.closest("[data-action='edit-command']");
-      if (editCmd) {
-        const name = editCmd.getAttribute("data-name") || "";
-        if (name) this.showCommandCreate(name);
-        return;
-      }
-
-      // Delete command
-      const deleteCmd = target.closest("[data-action='delete-command']");
-      if (deleteCmd) {
-        const name = deleteCmd.getAttribute("data-name") || "";
-        if (name) {
-          Dialog.confirm(t("settings.delete"), t("settings.commandRemoveConfirm", { name })).then(async (ok) => {
-            if (ok) {
-              this.removeCustomCommand(name);
-            }
-          });
-        }
-        return;
-      }
-
-      // Install skill button
-      const installBtn = target.closest("#btn-install-skill");
-      if (installBtn) {
-        this.installSkill();
-        return;
-      }
-
-      // Add command button
-      const addCmd = target.closest("#btn-add-command");
-      if (addCmd) {
-        this.showCommandCreate();
-        return;
-      }
-    });
-
-    // Skills panel: toggle switches (change event)
-    this.panels.skills.addEventListener("change", (e) => {
-      const cb = (e.target as HTMLElement).closest(".skill-toggle") as HTMLInputElement | null;
-      if (cb) {
-        const checked = new Set<string>();
-        this.panels.skills.querySelectorAll(".skill-toggle").forEach((el) => {
-          if ((el as HTMLInputElement).checked) {
-            checked.add((el as HTMLInputElement).getAttribute("data-skill") || "");
-          }
-        });
-        send({ type: "update_skills", enabled_skills: Array.from(checked) });
-      }
-
-    });
-
-    // ── Model panel: edit, delete, enable/disable ───────────────────
-    this.panels.model.addEventListener("change", (e) => {
-      const cb = (e.target as HTMLInputElement).closest(".model-enable-toggle") as HTMLInputElement | null;
-      if (!cb) return;
-      const idx = parseInt(cb.getAttribute("data-idx") || "0");
-      const currentModels = [...getState().modelConfigs];
-      if (idx < 0 || idx >= currentModels.length) return;
-
-      const isMultimodal = cb.classList.contains("model-multimodal-toggle");
-      if (isMultimodal) {
-        currentModels[idx] = { ...currentModels[idx], multimodal: cb.checked };
-      } else {
-const newEnabled = cb.checked;
-        currentModels[idx] = { ...currentModels[idx], enabled: newEnabled };
-        let activeIdx = getState().activeModelIndex;
-        if (!newEnabled && idx === activeIdx) {
-          const nextIdx = currentModels.findIndex((m, i) => i !== idx && m.enabled !== false);
-          if (nextIdx >= 0) activeIdx = nextIdx;
-        }
-setModelConfigs(currentModels, activeIdx);
-        send({ type: "update_models", models: currentModels, active_model_index: activeIdx });
-      }
-    });
-
-    this.panels.model.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement;
-
-      const deleteBtn = target.closest("[data-action='delete']");
-      if (deleteBtn) {
-        const idx = parseInt(deleteBtn.getAttribute("data-idx") || "0");
-        const m = getState().modelConfigs[idx];
-        Dialog.confirm(t("common.confirmDeleteTitle"), t("common.confirmDelete", { name: m?.name || t("common.unnamed") })).then((ok) => {
-          if (ok) {
-            const currentModels = [...getState().modelConfigs];
-            currentModels.splice(idx, 1);
-            let activeIdx = getState().activeModelIndex;
-            if (idx < activeIdx) activeIdx--;
-            if (activeIdx >= currentModels.length) activeIdx = Math.max(0, currentModels.length - 1);
-            setModelConfigs(currentModels, activeIdx);
-            send({ type: "delete_model", model_index: idx });
-          }
-        });
-        return;
-      }
-
-      const editBtn = target.closest("[data-action='edit']");
-      if (editBtn) {
-        const idx = parseInt(editBtn.getAttribute("data-idx") || "0");
-        this.showModelEdit(idx);
-        return;
-      }
-
-      const createBtn = target.closest("#btn-goto-create-model");
-      if (createBtn) {
-        this.showModelCreate();
-        return;
-      }
-    });
-
-    // ── MCP panel: create, edit, delete, toggle ─────────────────────
-    this.panels.mcp.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement;
-
-      const deleteBtn = target.closest("[data-action='delete-mcp']");
-      if (deleteBtn) {
-        const idx = parseInt(deleteBtn.getAttribute("data-idx") || "0");
-        const current = [...(getState().mcpServers || [])];
-        const srv = current[idx];
-        const name = srv?.name || t("settings.mcpServer");
-        Dialog.confirm(t("settings.confirmDeleteMcpTitle"), t("settings.confirmDeleteMcp", { name })).then((ok) => {
-          if (ok) {
-            current.splice(idx, 1);
-            setMcpServers(current);
-            send({ type: "update_mcp", mcp_servers: current });
-          }
-        });
-        return;
-      }
-
-      const editBtn = target.closest("[data-action='edit-mcp']");
-      if (editBtn) {
-        const idx = parseInt(editBtn.getAttribute("data-idx") || "0");
-        this._renderMcpImportDialog(idx);
-        return;
-      }
-
-      const createBtn = target.closest("#btn-goto-create-mcp");
-      if (createBtn) {
-        this._renderMcpImportDialog();
-        return;
-      }
-    });
-
-    this.panels.mcp.addEventListener("change", (e) => {
-      const cb = (e.target as HTMLInputElement).closest(".mcp-enable-toggle") as HTMLInputElement | null;
-      if (cb) {
-        const idx = parseInt(cb.getAttribute("data-idx") || "0");
-        const current = [...(getState().mcpServers || [])];
-        if (idx >= 0 && idx < current.length) {
-          current[idx] = { ...current[idx], disabled: !cb.checked };
-          send({ type: "update_mcp", mcp_servers: current });
-        }
-      }
-    });
-
-    // ── Agent panel: create, edit, delete ────────────────────────────
-    this.panels.agent.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement;
-
-      const createBtn = target.closest("#btn-create-agent");
-      if (createBtn) {
-        this.showAgentCreate();
-        return;
-      }
-
-      const editBtn = target.closest("[data-action='edit']");
-      if (editBtn && this.panels.agent.contains(editBtn)) {
-        const idx = parseInt(editBtn.getAttribute("data-index") || "0");
-        const agents = getState().subAgents || [];
-        if (idx >= 0 && idx < agents.length) {
-          this.showAgentCreate(agents[idx]);
-        }
-        return;
-      }
-
-      const deleteBtn = target.closest("[data-action='delete']");
-      if (deleteBtn && this.panels.agent.contains(deleteBtn)) {
-        const idx = parseInt(deleteBtn.getAttribute("data-index") || "0");
-        const agents = getState().subAgents || [];
-        if (idx < 0 || idx >= agents.length) return;
-        const name = agents[idx].name;
-        Dialog.confirm(t("settings.confirmDeleteSubAgent", { name }), t("settings.confirmDeleteSubAgentTitle")).then((confirmed) => {
-          if (!confirmed) return;
-          const updated = agents.filter((_, i) => i !== idx);
-          setSubAgents(updated);
-          send({ type: "update_sub_agents", agents: updated });
-        });
-        return;
-      }
-    });
-
-    // ── Memory panel: refresh, view ──────────────────────────────────
-    this.panels.memory.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement;
-
-      const refreshBtn = target.closest("#btn-refresh-memory");
-      if (refreshBtn) {
-        refreshAllData();
-        return;
-      }
-
-      const viewBtn = target.closest("[data-action='view-memory']");
-      if (viewBtn) {
-        const path = viewBtn.getAttribute("data-path") || "";
-        if (path) this._showMemoryDetailDialog(path);
-        return;
-      }
-    });
-
-    onLocaleChange(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      this.refreshCurrentPanel();
-    });
-
-    // Auto-refresh skills panel when skillsList changes (install/uninstall)
-    let lastSkillsLen = getState().skillsList.length;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const currentLen = getState().skillsList.length;
-      if (currentLen !== lastSkillsLen) {
-        lastSkillsLen = currentLen;
-        // Always re-render skills list in case user navigates there
-        if (this.panels.skills) this.renderSkills();
-      }
-    });
-
-    // Auto-refresh model panel when modelConfigs or activeModelIndex change
-    let lastModelIdx = getState().activeModelIndex;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const st = getState();
-      const idxChanged = st.activeModelIndex !== lastModelIdx;
-      if (idxChanged) {
-        lastModelIdx = st.activeModelIndex;
-        if (this.currentPanel === "model" && this.panels.model) this.renderModel();
-      }
-    });
-
-    // Auto-refresh MCP panel when mcpServers change
-    let lastMcpLen = getState().mcpServers.length;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const cur = getState().mcpServers.length;
-      if (cur !== lastMcpLen) {
-        lastMcpLen = cur;
-        if (this.currentPanel === "mcp" && this.panels.mcp) this.renderMcpList();
-      }
-    });
-
-    // Auto-refresh agent panel when subAgents change
-    let lastAgentLen = getState().subAgents.length;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const cur = getState().subAgents.length;
-      if (cur !== lastAgentLen) {
-        lastAgentLen = cur;
-        if (this.currentPanel === "agent" && this.panels.agent) this.renderAgent();
-      }
-    });
-
-    // Auto-refresh memory panel when memoryList or profile changes
-    let lastMemoryLen = getState().memoryList.length;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      if (getState().memoryList.length !== lastMemoryLen) {
-        lastMemoryLen = getState().memoryList.length;
-        if (this.currentPanel === "memory" && this.panels.memory) this.renderMemory();
-      }
-    });
-    let lastProfileUpd = getState().profile?.update_count ?? -1;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const currUpd = getState().profile?.update_count ?? -1;
-      if (currUpd !== lastProfileUpd) {
-        lastProfileUpd = currUpd;
-        if (this.currentPanel === "memory" && this.panels.memory) this.renderMemory();
-      }
-    });
-
-    // Auto-refresh index panel when docsList changes
-    let lastDocsLen = getState().docsList.length;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      if (getState().docsList.length !== lastDocsLen) {
-        lastDocsLen = getState().docsList.length;
-        if (this.panels.index) this.renderIndex();
-      }
-    });
-
-    // Auto-refresh rules panel when globalRules / projectRules changes
-    let lastRulesLen = getState().globalRules.length;
-    let lastProjectRulesLen = getState().projectRules.length;
-    let lastViewingRule = getState().viewingGlobalRule;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const st = getState();
-      if (st.globalRules.length !== lastRulesLen) {
-        lastRulesLen = st.globalRules.length;
-        if (this.currentPanel === "rules" && this.panels.rules) {
-          this.renderRules();
-        }
-      }
-      if (st.projectRules.length !== lastProjectRulesLen) {
-        lastProjectRulesLen = st.projectRules.length;
-        if (this.currentPanel === "rules" && this.panels.rules) {
-          this.renderRules();
-        }
-      }
-      if (st.viewingGlobalRule !== lastViewingRule && st.viewingGlobalRule) {
-        const prev = lastViewingRule;
-        lastViewingRule = st.viewingGlobalRule;
-        if (this.currentPanel === "rules" && !st.viewingGlobalRule.error) {
-          this._showRuleFormDialog(
-            st.viewingGlobalRule.name,
-            st.viewingGlobalRule.content,
-            true
-          );
-        }
-      }
-    });
-
-    // Auto-refresh permissions panel when policies change
-    let lastPermissionPolicies = JSON.stringify(getState().permissionPolicies);
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const current = JSON.stringify(getState().permissionPolicies);
-      if (current !== lastPermissionPolicies) {
-        lastPermissionPolicies = current;
-        if (this.currentPanel === "permissions" && this.panels.permissions) {
-          this.renderPermissions();
-        }
-      }
-    });
-
-    // Auto-refresh usage panel when usageStats changes
-    let lastUsageStats = getState().usageStats;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const cur = getState().usageStats;
-      if (cur !== lastUsageStats) {
-        lastUsageStats = cur;
-        if (this.currentPanel === "usage") void this._renderUsageSection();
-      }
-    });
-
-    // Auto-refresh gateway panel when gatewayStatus changes
-    let lastGatewayStatus = getState().gatewayStatus;
-    subscribe(() => {
-      const app = document.getElementById("app");
-      if (!app?.classList.contains("settings-mode")) return;
-      const cur = getState().gatewayStatus;
-      if (cur !== lastGatewayStatus) {
-        lastGatewayStatus = cur;
-        if (this.currentPanel === "gateway" && this.panels.gateway) requestAnimationFrame(() => this.renderGateway());
-      }
-    });
-
-    // Fill memory detail dialog when content arrives
-    let lastMemoryDetail = getState().memoryDetail;
-    subscribe(() => {
-      const curr = getState().memoryDetail;
-      if (curr !== lastMemoryDetail) {
-        lastMemoryDetail = curr;
-        const contentEl = document.getElementById("memory-detail-content");
-        if (contentEl) {
-          if (curr?.error) {
-            contentEl.innerHTML = `<span class="error-text">Error: ${this.esc(curr.error)}</span>`;
-          } else if (curr?.content) {
-            contentEl.innerHTML = renderMarkdown(curr.content);
-          } else {
-            contentEl.textContent = t("settings.loading");
-          }
-        }
-      }
-    });
-
-    // Handle WeChat QR code scan results
-    onWechatScanResult((event) => {
-      if (!(this as any)._wechatDialogOpen) return;
-      const img = document.getElementById("wechat-qr-img") as HTMLImageElement | null;
-      const statusEl = document.getElementById("wechat-qr-status");
-      const countdownEl = document.getElementById("wechat-qr-countdown");
-      const scanBtn = document.getElementById("wechat-scan-btn");
-      if (scanBtn) scanBtn.removeAttribute("disabled");
-      if (event.scan_confirmed) {
-        if ((this as any)._qrCountdown) clearInterval((this as any)._qrCountdown);
-        if (countdownEl) { countdownEl.style.display = "none"; countdownEl.textContent = ""; }
-        if (statusEl) {
-          statusEl.textContent = t("settings.wechatScanSuccess");
-          statusEl.style.padding = "12px 0 0";
-          statusEl.style.display = "block";
-        }
-        const successOverlay = document.getElementById("wechat-qr-success-overlay");
-        if (successOverlay) {
-          successOverlay.style.display = "flex";
-          successOverlay.style.animation = "fade-in 0.3s ease";
-        }
-        // Save credentials to local state so the card shows correct status
-        if (event.credentials) {
-          const current = { ...getState().settings,
-            adapter_weixin_enabled: true,
-            adapter_weixin_app_id: event.credentials.ilink_bot_id || "",
-            adapter_weixin_token: event.credentials.bot_token || "",
-            adapter_weixin_api_url: event.credentials.baseurl || "",
-          };
-          setSettings(current as any);
-        }
-        // Auto-close dialog after 1.5s and refresh the card
-        setTimeout(() => {
-          (this as any)._wechatDialogOpen = false;
-          document.getElementById("wechat-qr-overlay")?.remove();
-          if (this.currentPanel === "gateway") this.renderGateway();
-        }, 1500);
-        return;
-      }
-      if (event.success && event.qrcode_url) {
-        if ((this as any)._qrResultReceived) return;
-        (this as any)._qrResultReceived = true;
-        if (statusEl) { statusEl.style.display = "none"; statusEl.style.padding = "60px 0 0"; }
-        if (img) {
-          img.src = event.qrcode_url;
-          img.style.display = "block";
-        }
-        if (countdownEl) {
-          countdownEl.style.display = "block";
-          countdownEl.textContent = t("settings.wechatRemainingTime").replace("{seconds}", "120");
-          let remain = 120;
-          if ((this as any)._qrCountdown) clearInterval((this as any)._qrCountdown);
-          (this as any)._qrCountdown = setInterval(() => {
-            remain -= 1;
-            const el = document.getElementById("wechat-qr-countdown");
-            if (!el) {
-              clearInterval((this as any)._qrCountdown);
-              return;
-            }
-            if (remain <= 0) {
-              el.textContent = "";
-              el.style.display = "none";
-              const statusEl = document.getElementById("wechat-qr-status");
-              if (statusEl) {
-                statusEl.textContent = t("settings.wechatQrExpired");
-                statusEl.style.padding = "12px 0 0";
-                statusEl.style.display = "block";
-              }
-              const refreshOverlay = document.getElementById("wechat-qr-refresh-overlay");
-              if (refreshOverlay) refreshOverlay.style.display = "flex";
-              clearInterval((this as any)._qrCountdown);
-              return;
-            }
-            el.textContent = t("settings.wechatRemainingTime").replace("{seconds}", String(remain));
-          }, 1000);
-        }
-      } else {
-        if (img) img.style.display = "none";
-        if (countdownEl) { countdownEl.style.display = "none"; countdownEl.textContent = ""; }
-        if (statusEl) {
-          statusEl.style.display = "flex";
-          statusEl.style.flexDirection = "column";
-          statusEl.style.alignItems = "center";
-          statusEl.style.justifyContent = "center";
-          statusEl.style.gap = "8px";
-          statusEl.style.padding = "40px 0";
-          statusEl.style.color = "var(--text-muted)";
-          statusEl.innerHTML = `
-            <i data-lucide="scan-line" style="width:32px;height:32px;opacity:0.3"></i>
-            <span style="font-size:13px;opacity:0.7">${event.message || t("settings.wechatScanning")}</span>`;
-          if (typeof (window as any).lucide !== "undefined") {
-            (window as any).lucide.createIcons({ root: statusEl });
-          }
-        }
-      }
-    });
+    initSettingsDomEvents.call(this);
   }
 
-  private bindVersionTapUnlock(): void {
-    this.panels.about.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement;
-      const row = target.closest('.about-info-row[data-key="version"]') as HTMLElement | null;
-      if (!row) return;
-      const ver = row.getAttribute("data-version");
-      if (ver === "agent") {
-        this.handleAgentTap();
-      } else if (ver === "desktop") {
-        this.handleDesktopTap();
-      }
-    });
-  }
-
-  private async loadVersions(): Promise<void> {
-    const api = (window as any).electronAPI;
-    if (api?.getAppVersions) {
-      try {
-        this._versions = await api.getAppVersions();
-      } catch {}
-    }
-  }
-
-  private handleAgentTap(): void {
-    if (isDevModeEnabled()) return;
-
-    _devTapCount += 1;
-    if (_devTapTimer) {
-      clearTimeout(_devTapTimer);
-    }
-    _devTapTimer = window.setTimeout(() => {
-      _devTapCount = 0;
-    }, DEV_TAP_RESET_MS);
-
-    if (_devTapCount >= DEV_TAP_THRESHOLD) {
-      _devTapCount = 0;
-      if (_devTapTimer) {
-        clearTimeout(_devTapTimer);
-        _devTapTimer = 0;
-      }
-      setDevModeEnabled(true);
-      const devNav = document.getElementById("settings-nav-developer");
-      if (devNav) devNav.classList.remove("hidden");
-      this.updateSidebarNav();
-      if (devNav && typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: devNav });
-      }
-    }
-  }
-
-  private handleDesktopTap(): void {
-    _eeTapCount += 1;
-    if (_eeTapTimer) {
-      clearTimeout(_eeTapTimer);
-    }
-    _eeTapTimer = window.setTimeout(() => {
-      _eeTapCount = 0;
-    }, EE_TAP_RESET_MS);
-
-    if (_eeTapCount >= EE_TAP_THRESHOLD) {
-      _eeTapCount = 0;
-      if (_eeTapTimer) {
-        clearTimeout(_eeTapTimer);
-        _eeTapTimer = 0;
-      }
-      window.electronAPI?.openChildWindow("easter-egg", "✦ Nebula");
-    }
-  }
-
-  open(): void {
-    this.modelCreateActive = false;
-    if (this.searchInput) this.searchInput.value = "";
-    this.filterNavItems("");
-    // Unified entry: one snapshot refresh covers every settings panel.
-    refreshAllData();
-    this.renderAll();
-    this.updateSidebarNav();
-    this.switchPanel(this.currentPanel);
-    // Don't highlight any nav item on initial open — only when user clicks one
-    this.nav.querySelectorAll(".settings-nav-item").forEach(item => item.classList.remove("active"));
-    document.getElementById("app")?.classList.add("settings-mode");
-    const sidebarNav = document.querySelector(".sidebar-settings-nav");
-    if (sidebarNav && typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: sidebarNav });
-    }
-  }
-
-  public openModelCreate(): void {
-    this.open();
-    this.switchPanel("model");
-    this.showModelCreate();
-  }
-
-  private updateSidebarNav(): void {
-    const labelMap: Record<string, string> = {
-      general: t("sidebar.general"),
-      usage: t("sidebar.usage"),
-      shortcuts: t("sidebar.shortcuts"),
-      storage: t("sidebar.storage"),
-      model: t("sidebar.models"),
-      gateway: t("sidebar.gateway"),
-      browser: t("sidebar.browser"),
-      agent: t("sidebar.agent"),
-      mcp: t("sidebar.mcp"),
-      index: t("sidebar.document"),
-      skills: t("sidebar.skills"),
-      rules: t("sidebar.rules"),
-      memory: t("sidebar.memory"),
-      developer: t("sidebar.developer"),
-      about: t("sidebar.about"),
-    };
-    this.nav.querySelectorAll<HTMLElement>(".settings-nav-item").forEach((item) => {
-      const panel = item.getAttribute("data-panel");
-      if (panel && labelMap[panel]) {
-        const span = item.querySelector("span");
-        if (span) span.textContent = labelMap[panel];
-      }
-    });
-    const devBtn = document.getElementById("settings-nav-developer");
-    if (devBtn) {
-      devBtn.style.display = isDevModeEnabled() ? "" : "none";
-    }
-  }
-
-  close(): void {
-    document.getElementById("app")?.classList.remove("settings-mode");
-    delete document.documentElement.dataset.shortcutPanelActive;
-    delete document.documentElement.dataset.shortcutRecording;
-    (window as any).electronAPI?.setWinKeyCapture?.(false);
-    this._recordingShortcutId = null;
-    this._cleanupTransientOverlays();
-    if (typeof (window as any).__appCleanupContentArea === "function") {
-      (window as any).__appCleanupContentArea();
-    }
-    // Force a full chat re-render after cleanup emptied the DOM.  A plain
-    // render() would hit the render-key cache, see "messages unchanged", and
-    // skip fullRender -- leaving the chat blank. renderForce() resets the
-    // key so the message list is repainted from current state.
-    if (typeof (window as any).__chatForceRender === "function") {
-      (window as any).__chatForceRender();
-    } else if (typeof (window as any).__chatRender === "function") {
-      (window as any).__chatRender();
-    }
-    (window as any).__sessionInner?.restoreSidebarVisibility?.();
-  }
-
-  /**
-   * Best-effort teardown of every transient overlay a settings panel may
-   * have created.  We only target overlays that are unconditionally safe
-   * to remove (the settings view is already hidden at this point).
-   */
-  private _cleanupTransientOverlays(): void {
-    // Floating dialogs/overlays created by settings panels:
-    //   - skill-detail overlay
-    //   - command-create overlay
-    //   - doc-name / doc-url dialog
-    //   - rule-edit overlay
-    //   - agent-edit overlay
-    //   - memory-edit overlay
-    // Each is appended to document.body with a unique class.
-    const transientClasses = [
-      "skill-detail-overlay",
-      "command-create-overlay",
-      "doc-name-dialog",
-      "doc-url-dialog",
-      "rule-edit-overlay",
-      "agent-edit-overlay",
-      "memory-edit-overlay",
-    ];
-    for (const cls of transientClasses) {
-      document.querySelectorAll(`.${cls}`).forEach((el) => el.remove());
-    }
-    // Close any still-open dropdown menus so they don't pop up the
-    // moment the user moves the mouse.
-    document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
-    // Drop inline form nodes that were inserted into #settings-content-wrap
-    // by a settings panel's edit-mode flow (rare but possible).
-    document.querySelectorAll("#settings-content-wrap .inline-form, #settings-content-wrap .edit-form").forEach((el) => el.remove());
-  }
-
-  focusSearch(): void {
-    if (!document.getElementById("app")?.classList.contains("settings-mode")) {
-      this.open();
-    }
-    setTimeout(() => this.searchInput?.focus(), 50);
-  }
-
-  private onSearchInput(): void {
-    if (!this.searchInput) return;
-    clearTimeout(this.searchTimer);
-    const q = this.searchInput.value.trim().toLowerCase();
-    this.searchTimer = window.setTimeout(() => {
-      this.filterNavItems(q);
-    }, 100);
-  }
-
-  private filterNavItems(q: string): void {
-    const matchedPanels = new Set(
-      q ? searchSettingsNavItems(q).map((n) => n.panel) : SETTINGS_NAV_ITEMS.map((n) => n.panel),
-    );
-    const lower = q.toLowerCase();
-    let firstMatch: HTMLElement | null = null;
-    let firstPanelId: string | null = null;
-
-    this.nav.querySelectorAll<HTMLElement>(".settings-nav-item").forEach((item) => {
-      const panel = item.getAttribute("data-panel") as string;
-      let matches = matchedPanels.has(panel);
-      // Never reveal the developer nav item unless dev mode is on.
-      if (panel === "developer" && !isDevModeEnabled()) matches = false;
-      item.style.display = matches ? "" : "none";
-
-      if (matches && !firstMatch) {
-        firstMatch = item;
-        firstPanelId = panel;
-      }
-    });
-
-    if (lower && firstMatch && firstPanelId) {
-      if (firstPanelId !== this.currentPanel) {
-        this.switchPanel(firstPanelId as PanelId);
-      }
-      setTimeout(() => this.highlightInPanel(firstPanelId as PanelId, lower), 150);
-    }
-
-    this._updateDividerVisibility();
-  }
-
-  /** Hide dividers that separate groups where all items are hidden by search. */
-  private _updateDividerVisibility(): void {
-    const children = this.nav.children;
-    let lastVisibleIdx = -1;
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i] as HTMLElement;
-      if (child.classList.contains("settings-nav-item")) {
-        if (child.style.display !== "none") {
-          lastVisibleIdx = i;
-        }
-      } else if (child.classList.contains("settings-nav-divider")) {
-        let hasVisibleAfter = false;
-        for (let j = i + 1; j < children.length; j++) {
-          const next = children[j] as HTMLElement;
-          if (next.classList.contains("settings-nav-divider")) break;
-          if (next.classList.contains("settings-nav-item") && next.style.display !== "none") {
-            hasVisibleAfter = true;
-            break;
-          }
-        }
-        const hasVisibleBefore = lastVisibleIdx >= 0;
-        child.style.display = hasVisibleBefore && hasVisibleAfter ? "" : "none";
-      }
-    }
-  }
-
-  private highlightInPanel(panelId: PanelId, query: string): void {
-    const panel = this.panels[panelId];
-    if (!panel) return;
-
-    this.clearHighlights();
-
-    const walker = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) => {
-        if (!node.textContent || !node.textContent.toLowerCase().includes(query)) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        let parent = node.parentElement;
-        while (parent && parent !== panel) {
-          const style = window.getComputedStyle(parent);
-          if (style.display === "none" || style.visibility === "hidden") return NodeFilter.FILTER_REJECT;
-          parent = parent.parentElement;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-
-    const firstNode = walker.nextNode();
-    if (!firstNode) return;
-
-    let target: HTMLElement | null = firstNode.parentElement;
-    while (target && !this.isHighlightable(target, panel)) {
-      target = target.parentElement;
-    }
-    if (!target) return;
-
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
-    target.classList.add("settings-search-flash");
-    setTimeout(() => target?.classList.remove("settings-search-flash"), 1600);
-  }
-
-  private isHighlightable(el: HTMLElement, panel: HTMLElement): boolean {
-    if (el === panel) return false;
-    const tag = el.tagName.toLowerCase();
-    if (tag === "span" || tag === "p" || tag === "div" || tag === "h3" || tag === "h4" ||
-        tag === "label" || tag === "button" || tag === "pre" || tag === "code" ||
-        tag === "td" || tag === "th") {
-      return true;
-    }
-    return false;
-  }
-
-  private clearHighlights(): void {
-    document.querySelectorAll(".settings-search-flash").forEach((el) => {
-      el.classList.remove("settings-search-flash");
-    });
-  }
+  private bindVersionTapUnlock(): void { bindVersionTapUnlockImpl.call(this); }
+  private async loadVersions(): Promise<void> { return loadVersionsImpl.call(this); }
+  private handleAgentTap(): void { handleAgentTapImpl.call(this); }
+  private handleDesktopTap(): void { handleDesktopTapImpl.call(this); }
+  open(): void { openImpl.call(this); }
+  public openModelCreate(): void { openModelCreateImpl.call(this); }
+  private updateSidebarNav(): void { updateSidebarNavImpl.call(this); }
+  close(): void { closeImpl.call(this); }
+  private _cleanupTransientOverlays(): void { _cleanupTransientOverlaysImpl.call(this); }
+  focusSearch(): void { focusSearchImpl.call(this); }
+  private onSearchInput(): void { onSearchInputImpl.call(this); }
+  private filterNavItems(q: string): void { filterNavItemsImpl.call(this, q); }
+  private _updateDividerVisibility(): void { _updateDividerVisibilityImpl.call(this); }
+  private highlightInPanel(panelId: PanelId, query: string): void { highlightInPanelImpl.call(this, panelId, query); }
+  private isHighlightable(el: HTMLElement, panel: HTMLElement): boolean { return isHighlightableImpl(el, panel); }
+  private clearHighlights(): void { clearHighlightsImpl(); }
 
   private modelCreateActive = false;
 
-  private refreshCurrentPanel(): void {
-    this.switchPanel(this.currentPanel);
-  }
+  private refreshCurrentPanel(): void { refreshCurrentPanelImpl.call(this); }
+  switchPanel(id: PanelId): void { switchPanelImpl.call(this, id); }
+  private showSkillDetail(skillName: string, isEdit = false): void { showSkillDetailImpl.call(this, skillName, isEdit); }
+  private showSkillList(): void { showSkillListImpl.call(this); }
+  private showMcpCreate(editIdx?: number): void { showMcpCreateImpl.call(this, editIdx); }
+  private showMcpList(): void { showMcpListImpl.call(this); }
+  private showAgentCreate(existing?: import("../core/types.js").SubAgentConfig): void { showAgentCreateImpl.call(this, existing); }
+  private showAgentList(): void { showAgentListImpl.call(this); }
+  private showModelCreate(): void { showModelCreateImpl.call(this); }
+  private showModelEdit(idx: number): void { showModelEditImpl.call(this, idx); }
+  renderAll(): void { renderAllImpl.call(this); }
 
-  switchPanel(id: PanelId): void {
-    this.currentPanel = id;
-    this.modelCreateActive = false;
-    delete document.documentElement.dataset.shortcutPanelActive;
-    (window as any).electronAPI?.setWinKeyCapture?.(false);
+  private renderSearchFilter(): void { renderSearchFilterImpl.call(this); }
+  private renderDropdown(id: string, options: DropdownOption[], currentId: string, onChange: (val: string) => void): string { return renderDropdownImpl.call(this, id, options, currentId, onChange); }
+  private modeHint(modeKey: string): string { return modeHintImpl.call(this, modeKey); }
+  private bindDropdown(id: string, onChange: (val: string) => void): void { bindDropdownImpl.call(this, id, onChange); }
 
-    this.nav.querySelectorAll(".settings-nav-item").forEach((item) => {
-      item.classList.toggle("active", item.getAttribute("data-panel") === id);
-    });
+  private renderGeneral(): void { renderGeneralImpl.call(this); }
 
-    Object.entries(this.panels).forEach(([key, el]) => {
-      el.classList.toggle("active", false);
-    });
+  private renderShortcuts(): void { renderShortcutsImpl.call(this); }
 
-    if (id === "skills") {
-      console.log("[DEBUG switchPanel] skills panel, skillsList:", getState().skillsList.length, "items");
-      this.panels.skills.classList.add("active");
-      this.renderSkills();
-    } else if (id === "model") {
-      this.panels.model.classList.add("active");
-      this.renderModel();
-    } else if (id === "gateway") {
-      this.panels.gateway.classList.add("active");
-      this.renderGateway();
-    } else if (id === "browser") {
-      this.panels.browser.classList.add("active");
-      this.renderBrowser();
-    } else if (id === "mcp") {
-      this.panels.mcp.classList.add("active");
-      this.renderMcpList();
-    } else if (id === "agent") {
-      this.panels.agent.classList.add("active");
-      this.renderAgent();
-    } else if (id === "memory") {
-      this.panels.memory.classList.add("active");
-      this.renderMemory();
-    } else if (id === "usage") {
-      this.panels.usage.classList.add("active");
-      void this._renderUsageSection();
-    } else if (id === "shortcuts") {
-      this.panels.shortcuts.classList.add("active");
-      this.renderShortcuts();
-      document.documentElement.dataset.shortcutPanelActive = "true";
-      (window as any).electronAPI?.setWinKeyCapture?.(true);
-    } else if (id === "storage") {
-      this.panels.storage.classList.add("active");
-      this.renderStorage();
-    } else if (id === "index") {
-      console.log("[DEBUG switchPanel] index panel, docsList:", getState().docsList.length, "items");
-      this.panels.index.classList.add("active");
-      this.renderIndex();
-    } else if (id === "rules") {
-      this.panels.rules.classList.add("active");
-      this.renderRules();
-    } else if (id === "permissions") {
-      this.panels.permissions.classList.add("active");
-      this.renderPermissions();
-    } else if (id === "developer") {
-      this.panels.developer.classList.add("active");
-      this.renderDeveloper();
-    } else if (id === "search") {
-      this.panels.search.classList.add("active");
-      this.renderSearchFilter();
-    } else {
-      this.panels[id].classList.add("active");
-    }
-  }
+  private saveSetting(key: string, value: string): void { saveSettingImpl.call(this, key, value); }
 
-  private showSkillDetail(skillName: string, isEdit = false): void {
-    console.log("[DEBUG showSkillDetail] called with:", skillName, "isEdit:", isEdit);
-    this._renderSkillDetailDialog(skillName, isEdit);
-  }
+  private saveTheme(value: string): void { saveThemeImpl.call(this, value); }
 
-  private showSkillList(): void {
-    this.panels.skills.classList.add("active");
-    this.renderSkills();
-  }
+  private esc(s: string): string { return escImpl(s); }
 
-  private showMcpCreate(editIdx?: number): void {
-    this._renderMcpImportDialog(editIdx);
-  }
+  private _maxTokensDefault(backendType: string, context?: number): number { return _maxTokensDefaultImpl(backendType, context); }
 
-  private showMcpList(): void {
-    this.panels.mcp.classList.add("active");
-    this.renderMcpList();
-  }
+  private renderModel(): void { renderModelImpl.call(this); }
 
-  private showAgentCreate(existing?: import("./types.js").SubAgentConfig): void {
-    this._renderAgentCreateDialog(existing);
-  }
-
-  private showAgentList(): void {
-    this.panels.agent.classList.add("active");
-    this.renderAgent();
-  }
-
-  private showModelCreate(): void {
-    this.modelCreateActive = true;
-    this._renderModelCreateDialog();
-  }
-
-  private showModelEdit(idx: number): void {
-    this.modelCreateActive = true;
-    this._renderModelCreateDialog(idx);
-  }
-
-  renderAll(): void {
-    this.renderGeneral();
-    void this._renderUsageSection();
-    this.renderShortcuts();
-    this.renderModel();
-    this.renderGateway();
-    this.renderBrowser();
-    this.renderIndex();
-    this.renderSkills();
-    this.renderRules();
-    this.renderPermissions();
-    this.renderMcp();
-    this.renderAgent();
-    this.renderAbout();
-    this.renderSearchFilter();
-    if (isDevModeEnabled()) this.renderDeveloper();
-  }
-
-  /** Renders the shared search-filter checkboxes (used by both searches). */
-  private renderSearchFilter(): void {
-    const el = this.panels.search;
-    if (!el) return;
-    const filter = getState().searchFilter;
-    const locale = getLocale();
-    const lang = locale === "zh" ? "zh" : "en";
-
-    const rows = SEARCH_FILTER_META.map((m) => {
-      const key = m.key;
-      const checked = filter[key] ? "checked" : "";
-      const label = lang === "zh" ? m.zh : m.en;
-      return `
-        <label class="search-filter-row">
-          <input type="checkbox" class="search-filter-checkbox" data-key="${key}" ${checked} />
-          <span class="search-filter-label">${this.esc(label)}</span>
-        </label>`;
-    }).join("");
-
-    el.innerHTML = `
-      <div class="settings-panel-header">
-        <h2>${this.esc(t("search.filterTitle"))}</h2>
-        <p class="settings-panel-desc">${this.esc(t("search.filterDesc"))}</p>
-      </div>
-      <div class="settings-row" style="gap:8px;margin-bottom:12px">
-        <button class="btn btn-sm" id="search-filter-all">${this.esc(t("search.filterAll"))}</button>
-        <button class="btn btn-sm" id="search-filter-reset">${this.esc(t("search.filterReset"))}</button>
-      </div>
-      <div class="search-filter-grid">${rows}</div>
-    `;
-
-    el.querySelectorAll<HTMLInputElement>(".search-filter-checkbox").forEach((cb) => {
-      cb.addEventListener("change", () => {
-        const key = cb.getAttribute("data-key") as keyof typeof filter;
-        const next = { ...getState().searchFilter, [key]: cb.checked };
-        setSearchFilter(next);
-      });
-    });
-
-    el.querySelector("#search-filter-all")?.addEventListener("click", () => {
-      const all = {} as typeof filter;
-      for (const m of SEARCH_FILTER_META) (all as Record<string, boolean>)[m.key] = true;
-      setSearchFilter(all);
-      this.renderSearchFilter();
-    });
-    el.querySelector("#search-filter-reset")?.addEventListener("click", () => {
-      setSearchFilter(defaultSearchFilter());
-      this.renderSearchFilter();
-    });
-  }
-
-  private renderDropdown(id: string, options: DropdownOption[], currentId: string, onChange: (val: string) => void): string {
-    const current = options.find(o => o.id === currentId) || options[0];
-    const itemHtml = (o: DropdownOption) => `${o.icon ? `<img class="settings-dropdown-item-icon" src="${o.icon}" alt="" draggable="false" />` : ""}${o.label}`;
-    const items = options.map(o =>
-      `<div class="settings-dropdown-item${o.id === currentId ? " selected" : ""}" data-value="${o.id}"${o.icon ? ` data-icon="${o.icon}"` : ""}>${itemHtml(o)}</div>`
-    ).join("");
-    const curHtml = current.icon ? `<img class="settings-dropdown-item-icon" src="${current.icon}" alt="" draggable="false" />` : "";
-    return `
-      <div class="settings-dropdown-wrap" id="${id}-wrap">
-        <button class="settings-dropdown-trigger" id="${id}-trigger" type="button">
-          <span>${curHtml}${current.label}</span>
-          <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
-        </button>
-        <div class="settings-dropdown" id="${id}-dropdown">${items}</div>
-      </div>`;
-  }
-
-  private modeHint(modeKey: string): string {
-    return `<span class="mode-hint-icon" data-tooltip="${this.esc(t(modeKey))}">
-      <i data-lucide="circle-alert" class="lucide"></i>
-    </span>`;
-  }
-
-  private bindDropdown(id: string, onChange: (val: string) => void): void {
-    const wrap = document.getElementById(`${id}-wrap`);
-    const trigger = document.getElementById(`${id}-trigger`);
-    const dropdown = document.getElementById(`${id}-dropdown`);
-    if (!wrap || !trigger || !dropdown) return;
-    if (wrap.classList.contains("is-disabled")) return;
-
-    trigger.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const isOpen = dropdown.classList.contains("open");
-      // Close all other dropdowns
-      document.querySelectorAll(".settings-dropdown.open").forEach((dd) => dd.classList.remove("open"));
-      if (!isOpen) dropdown.classList.add("open");
-    });
-
-    dropdown.querySelectorAll(".settings-dropdown-item").forEach((item) => {
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const val = (item as HTMLElement).getAttribute("data-value") || "";
-        const label = (item as HTMLElement).textContent || "";
-        const icon = (item as HTMLElement).getAttribute("data-icon") || "";
-        const span = trigger.querySelector("span");
-        if (span) {
-          span.innerHTML = (icon ? `<img class="settings-dropdown-item-icon" src="${icon}" alt="" draggable="false" />` : "") + label;
-        }
-        dropdown.classList.remove("open");
-        dropdown.querySelectorAll(".settings-dropdown-item").forEach((el) => el.classList.remove("selected"));
-        (item as HTMLElement).classList.add("selected");
-        onChange(val);
-      });
-    });
-  }
-
-  private renderGeneral(): void {
-    const st = getState();
-    const currentTheme = st.themePreference;
-    const s = st.settings;
-
-    const currentLang = getLocale();
-    this.updateSidebarNav();
-    const currentLinkBehavior = (s.default_link_behavior as string) || "system";
-    const currentSendMode = (s.shortcut_send_mode as string) || "enter";
-    const currentStartupMode = (s.startup_session_mode as string) || "normal";
-    const currentStartupBehavior = (s.startup_session_behavior as string) || "new";
-    const currentLangPref = (s.language_preference as string) || "auto";
-
-    const themeOptions: DropdownOption[] = [
-      { id: "system", label: t("theme.system") },
-      { id: "light", label: t("theme.light") },
-      { id: "dark", label: t("theme.dark") },
-    ];
-
-    const langOptions: DropdownOption[] = [
-      { id: "zh", label: t("language.zh") },
-      { id: "en", label: t("language.en") },
-    ];
-
-    const behaviorOptions: DropdownOption[] = [
-      { id: "system", label: t("settings.systemBrowser") },
-      { id: "in_app", label: t("settings.inApp") },
-    ];
-
-    const sendModes: DropdownOption[] = [
-      { id: "enter", label: t("settings.enterSend") },
-      { id: "ctrl_enter", label: t("settings.ctrlEnterSend") },
-    ];
-
-    const startupModes: DropdownOption[] = [
-      { id: "normal", label: t("settings.normalMode") },
-      { id: "iwork", label: t("settings.iworkMode") },
-      { id: "automation", label: t("settings.automationMode") },
-    ];
-
-    const startupBehaviors: DropdownOption[] = [
-      { id: "new", label: t("settings.startupNew") },
-      { id: "last", label: t("settings.startupLast") },
-    ];
-    const currentBehavior = startupBehaviors.find(o => o.id === currentStartupBehavior) || startupBehaviors[0];
-    const behaviorItems = startupBehaviors.map(o =>
-      `<div class="settings-dropdown-item${o.id === currentStartupBehavior ? " selected" : ""}" data-value="${o.id}">${o.label}</div>`
-    ).join("");
-
-    const langPrefOptions: DropdownOption[] = [
-      { id: "auto", label: t("language.autoFollow") },
-      { id: "zh", label: t("language.zh") },
-      { id: "en", label: t("language.en") },
-    ];
-
-    this.panels.general.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="settings" class="lucide section-title-icon"></i> ${t("settings.basicSettings")}</div>
-      <div class="settings-card">
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.theme")}</div>
-            <div class="settings-item-desc">${t("settings.themeDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            ${this.renderDropdown("dd-theme", themeOptions, currentTheme, (v) => this.saveTheme(v))}
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.language")}</div>
-            <div class="settings-item-desc">${t("settings.languageDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            ${this.renderDropdown("dd-lang", langOptions, currentLang, (v) => { this.saveSetting("language", v); this.renderGeneral(); })}
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section-title"><i data-lucide="pencil" class="lucide section-title-icon"></i> ${t("settings.preferences")}</div>
-      <div class="settings-card">
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.shortcutSendMode")}</div>
-            <div class="settings-item-desc">${t("settings.shortcutSendModeDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            ${this.renderDropdown("dd-send", sendModes, currentSendMode, (v) => { this.saveSetting("shortcut_send_mode", v); this.renderGeneral(); })}
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.startupSessionMode")}</div>
-            <div class="settings-item-desc">${t("settings.startupSessionModeDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            ${this.renderDropdown("dd-startup", startupModes, currentStartupMode, (v) => { this.saveSetting("startup_session_mode", v); this.renderGeneral(); })}
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.startupSessionBehavior")}</div>
-            <div class="settings-item-desc">${t("settings.startupSessionBehaviorDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <div class="settings-dropdown-wrap${currentStartupMode === "automation" ? " is-disabled" : ""}" id="dd-startup-behavior-wrap">
-              <button class="settings-dropdown-trigger" id="dd-startup-behavior-trigger" type="button">
-                <span>${currentBehavior.label}</span>
-                <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
-              </button>
-              <div class="settings-dropdown" id="dd-startup-behavior-dropdown">${behaviorItems}</div>
-            </div>
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.localLinkBehavior")}</div>
-            <div class="settings-item-desc">${t("settings.localLinkBehaviorDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            ${this.renderDropdown("dd-link", behaviorOptions, currentLinkBehavior, (v) => { this.saveSetting("default_link_behavior", v); this.renderGeneral(); })}
-          </div>
-        </div>
-          <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.languagePreference")}</div>
-            <div class="settings-item-desc">${t("settings.languagePreferenceDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            ${this.renderDropdown("dd-lang-pref", langPrefOptions, currentLangPref, (v) => { this.saveSetting("language_preference", v); this.renderGeneral(); })}
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.autoExpandTitle")}</div>
-            <div class="settings-item-desc">${t("settings.autoExpandDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <label class="toggle-switch">
-              <input type="checkbox" id="auto-expand-toggle" ${isEnabled(s.auto_expand) ? "checked" : ""} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.subAgentAutoOpenTitle")}</div>
-            <div class="settings-item-desc">${t("settings.subAgentAutoOpenDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <label class="toggle-switch">
-              <input type="checkbox" id="sub-agent-auto-open-toggle" ${s.sub_agent_auto_open_view === undefined || isEnabled(s.sub_agent_auto_open_view) ? "checked" : ""} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-        <div class="settings-item-divider"></div>
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.automationAutoOpenTitle")}</div>
-            <div class="settings-item-desc">${t("settings.automationAutoOpenDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <label class="toggle-switch">
-              <input type="checkbox" id="automation-auto-open-toggle" ${isEnabled(s.automation_auto_open_view) ? "checked" : ""} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <!-- Service section -->
-      <div class="settings-section-title"><i data-lucide="server" class="lucide section-title-icon"></i> ${t("settings.service")}</div>
-      <div class="settings-card" id="service-settings-card">
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${t("settings.autoStart")}</div>
-            <div class="settings-item-desc">${t("settings.autoStartDesc")}</div>
-          </div>
-          <div class="settings-item-control">
-            <label class="toggle-switch">
-              <input type="checkbox" id="auto-start-checkbox" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-      </div>`;
-
-    // Bind dropdowns
-    this.bindDropdown("dd-theme", (v) => this.saveTheme(v));
-    this.bindDropdown("dd-lang", (v) => { this.saveSetting("language", v); this.renderGeneral(); });
-    this.bindDropdown("dd-send", (v) => { this.saveSetting("shortcut_send_mode", v); this.renderGeneral(); });
-    this.bindDropdown("dd-startup", (v) => { this.saveSetting("startup_session_mode", v); this.renderGeneral(); });
-    this.bindDropdown("dd-startup-behavior", (v) => { this.saveSetting("startup_session_behavior", v); this.renderGeneral(); });
-    this.bindDropdown("dd-link", (v) => { this.saveSetting("default_link_behavior", v); this.renderGeneral(); });
-    this.bindDropdown("dd-lang-pref", (v) => { this.saveSetting("language_preference", v); this.renderGeneral(); });
-
-    // Auto-expand toggle
-    document.getElementById("auto-expand-toggle")?.addEventListener("change", (e) => {
-      const checked = (e.target as HTMLInputElement).checked;
-      this.saveSetting("auto_expand", checked ? "true" : "false");
-    });
-
-    // Sub-agent auto-open toggle (default ON)
-    document.getElementById("sub-agent-auto-open-toggle")?.addEventListener("change", (e) => {
-      const checked = (e.target as HTMLInputElement).checked;
-      this.saveSetting("sub_agent_auto_open_view", checked ? "true" : "false");
-    });
-
-    // Automation auto-open toggle (default OFF)
-    document.getElementById("automation-auto-open-toggle")?.addEventListener("change", (e) => {
-      const checked = (e.target as HTMLInputElement).checked;
-      this.saveSetting("automation_auto_open_view", checked ? "true" : "false");
-    });
-
-    // Auto-start toggle
-    const electronAPI = window.electronAPI;
-    if (electronAPI) {
-      (async () => {
-        try {
-          const autoStart = await electronAPI.getAutoStart();
-          const checkbox = document.getElementById("auto-start-checkbox") as HTMLInputElement;
-          if (checkbox) {
-            checkbox.checked = autoStart;
-            checkbox.addEventListener("change", async () => {
-              const enabled = checkbox.checked;
-              const result = await window.electronAPI!.setAutoStart(enabled);
-              if (!result.success) {
-                if (typeof showToast === "function") {
-                  showToast("Error", result.error || "", "error", "Settings");
-                }
-                checkbox.checked = !enabled;
-              }
-            });
-          }
-        } catch (err) {
-          console.error("Failed to get auto-start setting:", err);
-        }
-      })();
-    }
-
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.panels.general });
-    }
-  }
-
-  private renderShortcuts(): void {
-    const keybindsCfg = (getState().settings.keybinds as any);
-    const binds: any[] = keybindsCfg?.keybinds || [];
-
-    const categories = new Map<string, Array<{ id: string; keys: string[]; desc: string }>>();
-    for (const b of binds) {
-      const cat = b.category || "general";
-      if (!categories.has(cat)) categories.set(cat, []);
-      categories.get(cat)!.push({ id: b.id, keys: b.keys, desc: b.description || b.id });
-    }
-
-    const CAT_LABELS: Record<string, string> = {
-      application: t("settings.shortcutCategoryApplication"),
-      session: t("settings.shortcutCategorySession"),
-      messages: t("settings.shortcutCategoryMessages"),
-      input: t("settings.shortcutCategoryInput"),
-      modes: t("settings.shortcutCategoryModes"),
-      navigation: t("settings.shortcutCategoryNavigation"),
-      search: t("settings.shortcutCategorySearch"),
-      settings: t("settings.shortcutCategorySettings"),
-      panels: t("settings.shortcutCategoryPanels"),
-      automation: t("settings.shortcutCategoryAutomation"),
-      workspace: t("settings.shortcutCategoryWorkspace"),
-      notifications: t("settings.shortcutCategoryNotifications"),
-      appearance: t("settings.shortcutCategoryAppearance"),
-      general: t("settings.shortcutCategoryGeneral"),
-    };
-
-    let rowsHtml = "";
-    for (const [cat, items] of categories) {
-      rowsHtml += `<div class="shortcut-category-label">${this.esc(CAT_LABELS[cat] || cat)}</div>`;
-      for (const item of items) {
-        const displayKeys = item.keys && item.keys.length > 0 ? formatShortcut(item.keys[0]) : "—";
-        const desc = t("shortcuts." + item.id) || item.desc;
-        const isRecording = this._recordingShortcutId === item.id;
-        rowsHtml += `
-        <div class="settings-item-row shortcut-row" data-id="${item.id}">
-          <div class="settings-item-info">
-            <div class="settings-item-title">${this.esc(desc)}</div>
-          </div>
-          <div class="settings-item-control">
-            <button class="shortcut-key-btn${isRecording ? " recording" : ""}" data-id="${item.id}">${isRecording ? "..." : this.esc(displayKeys)}</button>
-          </div>
-        </div>`;
-      }
-    }
-
-    this.panels.shortcuts.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="keyboard" class="lucide section-title-icon"></i> ${t("settings.keyboardShortcuts")}</div>
-      <div class="settings-item-desc" style="margin: -8px 0 16px; padding: 0 2px;">${t("settings.shortcutsDisabledDesc")}</div>
-      <div class="settings-card" id="shortcuts-card">${rowsHtml}</div>`;
-
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.panels.shortcuts });
-    }
-
-    // Bind key capture
-    const card = document.getElementById("shortcuts-card");
-    if (!card) return;
-
-    card.querySelectorAll<HTMLButtonElement>(".shortcut-key-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const id = btn.getAttribute("data-id");
-        if (!id) return;
-
-        // Cancel current recording and start new one
-        if (this._recordingShortcutId) {
-          document.removeEventListener("keydown", this._captureHandler as any, true);
-        }
-
-        this._recordingShortcutId = id;
-        document.documentElement.dataset.shortcutRecording = "true";
-        const allBtns = card.querySelectorAll<HTMLButtonElement>(".shortcut-key-btn");
-        allBtns.forEach((b) => b.classList.remove("recording"));
-        btn.classList.add("recording");
-        btn.textContent = "...";
-
-        const stopRecording = () => {
-          this._recordingShortcutId = null;
-          delete document.documentElement.dataset.shortcutRecording;
-        };
-
-        this._captureHandler = async (ev: KeyboardEvent) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-
-          if (ev.repeat) return;
-
-          // Ignore modifier-only key presses
-          if (ev.key === "Control" || ev.key === "Meta" || ev.key === "Alt" || ev.key === "Shift") {
-            return;
-          }
-
-          const parts: string[] = [];
-          if (ev.ctrlKey || ev.metaKey) parts.push("ctrlcmd");
-          if (ev.altKey) parts.push("alt");
-          if (ev.shiftKey) parts.push("shift");
-
-          const key = ev.key;
-          const mappedKey = key === "Escape" ? "escape"
-            : key === " " ? "space"
-            : key === "," ? ","
-            : key === "." ? "."
-            : key === "`" ? "`"
-            : key === "=" ? "="
-            : key === "-" ? "-"
-            : key === "[" ? "["
-            : key === "]" ? "]"
-            : key === ";" ? ";"
-            : key === "'" ? "'"
-            : key === "\\" ? "\\"
-            : key === "/" ? "/"
-            : key.toLowerCase();
-          parts.push(mappedKey);
-          const pattern = parts.join("+");
-
-          stopRecording();
-
-          const cfg = (getState().settings.keybinds as any);
-          const allBinds: any[] = cfg?.keybinds ? [...cfg.keybinds] : [];
-          const target = allBinds.find((b: any) => b.id === id);
-
-          // Conflict detection — check if another shortcut already uses this key combo
-          if (target) {
-            const conflict = allBinds.find((b: any) => b.id !== id && b.keys && b.keys.includes(pattern));
-            if (conflict) {
-              const conflictName = t(`shortcuts.${conflict.id}` as any) || conflict.description || conflict.id;
-              const msg = t("settings.shortcutConflict").replace("{0}", conflictName);
-              const ok = await Dialog.confirm(t("settings.shortcutConflictTitle"), msg);
-              if (!ok) {
-this.renderShortcuts();
-    this.renderStorage();
-                document.removeEventListener("keydown", this._captureHandler!, true);
-                return;
-              }
-              // Remove the conflicting key from the other shortcut
-              conflict.keys = conflict.keys.filter((k: string) => k !== pattern);
-            }
-
-            const existingIdx = target.keys.indexOf(pattern);
-            if (existingIdx >= 0) target.keys.splice(existingIdx, 1);
-            if (target.keys.length === 0) target.keys = [pattern];
-            else target.keys[0] = pattern;
-          }
-
-          const updated = { ...cfg, keybinds: allBinds };
-          setSettings({ ...getState().settings, keybinds: updated });
-          send({ type: "configure", config: { keybinds: updated } });
-          // localStorage fallback — survive backend crypto failure across restarts
-          try { localStorage.setItem("encre_keybinds", JSON.stringify(updated)); } catch { /* ignore */ }
-          this.renderShortcuts();
-
-          document.removeEventListener("keydown", this._captureHandler!, true);
-        };
-
-        document.addEventListener("keydown", this._captureHandler, true);
-      });
-    });
-  }
-
-  private saveSetting(key: string, value: string): void {
-    const current = { ...getState().settings, [key]: value };
-    setSettings(current);
-    if (key === "language") {
-      const locale = value as Locale;
-      if (locale === "en" || locale === "zh") {
-        setLocale(locale);
-        this.updateSidebarNav();
-      }
-    }
-    send({ type: "configure", config: { [key]: value } });
-  }
-
-  private saveTheme(value: string): void {
-    const current = { ...getState().settings, theme: value };
-    setSettings(current);
-    setThemePreference(value as "system" | "dark" | "light");
-    if (value === "dark") setTheme("dark");
-    else if (value === "light") setTheme("light");
-    else {
-      const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      setTheme(isDark ? "dark" : "light");
-    }
-    localStorage.setItem("encre-theme", value);
-    send({ type: "configure", config: { theme: value } });
-    this.renderGeneral();
-  }
-
-  private esc(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-
-  private _maxTokensDefault(backendType: string, context?: number): number {
-    const catalog = getState().modelCatalog;
-    const defOutput = catalog.default_output_tokens[backendType] || 8192;
-    if (context && context > 0) {
-      return Math.min(context, defOutput);
-    }
-    return defOutput;
-  }
-
-  private renderModel(): void {
-    const st = getState();
-    const models = st.modelConfigs;
-    const activeIdx = st.activeModelIndex;
-
-    let rowsHtml = "";
-    for (let i = 0; i < models.length; i++) {
-      const m = models[i];
-      const isActive = i === activeIdx && m.enabled !== false;
-      rowsHtml += `
-        <div class="model-table-row" data-model-idx="${i}">
-          <div class="model-table-cell model-cell-name">
-            <span class="model-name-text">${this.esc(m.name || t("common.unnamed"))}</span>
-            ${isActive ? `<span class="model-active-tag">${t("settings.inUse")}</span>` : ''}
-          </div>
-          <div class="model-table-cell model-cell-provider">${this.esc(m.backend_type)}</div>
-          <div class="model-table-cell model-cell-actions">
-            <button class="btn-icon" data-action="edit" data-idx="${i}" data-tooltip="${t("settings.edit")}">
-              <i data-lucide="pencil" class="lucide"></i>
-            </button>
-            <button class="btn-icon btn-icon--danger" data-action="delete" data-idx="${i}" data-tooltip="${t("settings.delete")}">
-              <i data-lucide="trash-2" class="lucide"></i>
-            </button>
-            <label class="toggle-switch toggle-sm">
-              <input type="checkbox" class="model-enable-toggle" data-idx="${i}" ${m.enabled !== false ? "checked" : ""} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>`;
-    }
-
-    const tableHtml = models.length === 0
-      ? `<div class="model-empty"><i data-lucide="cpu" class="lucide"></i><span>${t("settings.noModelsYet")}</span></div>`
-      : `
-        <div class="model-table">
-          <div class="model-table-header">
-            <div class="model-table-cell model-cell-name">${t("settings.model")}</div>
-            <div class="model-table-cell model-cell-provider">${t("settings.provider")}</div>
-            <div class="model-table-cell model-cell-actions">${t("settings.actions")}</div>
-          </div>
-          ${rowsHtml}
-        </div>`;
-
-    this.panels.model.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="cpu" class="lucide section-title-icon"></i> ${t("settings.modelManagement")}</div>
-      <div class="settings-card">
-        <div class="model-manage-header">
-          <div class="model-manage-desc">${t("settings.modelManagementDesc")}</div>
-          <button class="btn-add-model-top" id="btn-goto-create-model">
-            <i data-lucide="plus" class="lucide"></i>
-            <span>${t("settings.addModel")}</span>
-          </button>
-        </div>
-        ${tableHtml}
-      </div>`;
-
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.panels.model });
-    }
-  }
-
-  private renderGateway(): void {
-    const st = getState();
-    const s = st.settings;
-    const gs = st.gatewayStatus;
-    const adapters = gs?.adapters ?? [];
-
-    let cardsHtml = "";
-    for (const def of ADAPTER_DEFS) {
-      const adapterNameKey = `settings.adapterName${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`;
-      const displayName = t(adapterNameKey);
-      const enabled = !!(s[`adapter_${def.id}_enabled` as keyof typeof s]);
-      const statusInfo = adapters.find(a => a.name === def.id);
-      const connected = statusInfo?.connected ?? false;
-
-      const fieldCount = def.fields.length;
-      const allConfigured = def.fields.every(f => {
-        const val = s[`adapter_${def.id}_${f.key}` as keyof typeof s];
-        return val && String(val).length > 0;
-      });
-
-      // Unified status: only ONE state shown at a time
-      let statusLabel: string;
-      let statusStyle: string;
-      if (!enabled) {
-        statusLabel = `○ ${t("settings.adapterDisabled")}`;
-        statusStyle = "color:var(--text-muted)";
-      } else if (!allConfigured) {
-        statusLabel = `○ ${t("settings.adapterNotConfigured")}`;
-        statusStyle = "color:var(--text-muted)";
-      } else if (connected) {
-        statusLabel = `● ${t("settings.adapterStatusConnected")}`;
-        statusStyle = "color:var(--text-success)";
-      } else {
-        statusLabel = `● ${t("settings.adapterStatusDisconnected")}`;
-        statusStyle = "color:var(--text-warning)";
-      }
-
-      // Description shows connection error, adapter description, or config hint
-      const connErr = statusInfo?.error || null;
-      let descHtml: string;
-      if (connErr && enabled && allConfigured) {
-        descHtml = `<span style="color:var(--text-danger);font-size:11px"><i data-lucide="alert-circle" style="width:11px;height:11px;display:inline-block;vertical-align:middle;margin-right:3px"></i> ${this.esc(connErr)}</span>`;
-      } else if (!enabled) {
-        descHtml = `<span style="color:var(--text-muted);font-size:11px">${t("settings.adapterDisabled")} · ${this.esc(t(`settings.adapterDesc${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`))}</span>`;
-      } else if (!allConfigured) {
-        descHtml = `<span style="color:var(--text-muted);font-size:11px">${this.esc(t(`settings.adapterDesc${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`))}</span>`;
-      } else {
-        descHtml = `<span style="color:var(--text-muted);font-size:11px">${this.esc(t(`settings.adapterDesc${def.id.charAt(0).toUpperCase() + def.id.slice(1)}`))}</span>`;
-      }
-
-      const iconHtml = platformIconHtml(def.id, 22, "", "margin-right:10px");
-
-      cardsHtml += `
-        <div class="settings-card" style="margin-bottom:12px">
-          <div class="settings-item-row" data-adapter-toggle="${def.id}">
-            <div class="settings-item-info">
-              <div class="settings-item-title" style="display:flex;align-items:center">
-                ${iconHtml}
-                 ${this.esc(displayName)}
-                <span style="margin-left:8px;font-size:11px;font-weight:400">${statusLabel}</span>
-              </div>
-              <div class="settings-item-desc">${descHtml}</div>
-            </div>
-            <div class="settings-item-control" style="gap:8px">
-              <label class="toggle-switch" onclick="event.stopPropagation()">
-                <input type="checkbox" id="adapter-enable-${def.id}" ${enabled ? "checked" : ""} />
-                <span class="toggle-slider"></span>
-              </label>
-              <button class="btn-icon" id="adapter-expand-${def.id}" data-adapter-expand="${def.id}" data-tooltip="${t("settings.adapterConfig")}">
-                <i data-lucide="arrow-up-right" style="width:16px;height:16px"></i>
-              </button>
-            </div>
-          </div>
-        </div>`;
-    }
-
-    this.panels.gateway.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="network" class="lucide section-title-icon"></i> ${t("settings.gatewayManagement")}</div>
-      ${cardsHtml}`;
-
-    // Bind event listeners
-    for (const def of ADAPTER_DEFS) {
-      const enableToggle = document.getElementById(`adapter-enable-${def.id}`) as HTMLInputElement;
-      if (enableToggle) {
-        enableToggle.addEventListener("change", () => {
-          const enabled = enableToggle.checked;
-          const current = { ...getState().settings, [`adapter_${def.id}_enabled`]: enabled };
-          setSettings(current as any);
-          send({ type: "configure", config: { [`adapter_${def.id}_enabled`]: enabled } });
-          this.renderGateway();
-        });
-      }
-
-      const expandBtn = document.getElementById(`adapter-expand-${def.id}`);
-      if (expandBtn) {
-        expandBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this._showAdapterConfigDialog(def.id);
-        });
-      }
-
-      const docsLink = document.querySelector(`[data-adapter-docs="${def.id}"]`) as HTMLAnchorElement;
-      if (docsLink) {
-        docsLink.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const behavior = (getState().settings.default_link_behavior as string) || "system";
-          const url = def.docs || "";
-          if (behavior === "in_app") {
-            const api = (window as any).electronAPI;
-            if (api?.openChildWindow) { api.openChildWindow(url, url); return; }
-          } else {
-            const api = (window as any).electronAPI;
-            if (api?.openExternal) { api.openExternal(url); return; }
-          }
-          window.open(url, "_blank");
-});
-  }
-
-}
-    if (typeof (window as any).lucide !== "undefined") {
-      (window as any).lucide.createIcons({ root: this.panels.gateway });
-    }
-  }
+  private renderGateway(): void { renderGatewayImpl.call(this); }
 
   /** Open a modal dialog (model-config style) for any adapter. */
   private _showAdapterConfigDialog(defId: string): void {
@@ -2144,47 +429,8 @@ this.renderShortcuts();
 
     // ── Model selection section (reuse push-gateway card style) ──
     const models = getState().modelConfigs || [];
-    const enabledModels = models.filter(m => m.enabled !== false);
-    const rawSelected = (s[`adapter_${defId}_models` as keyof typeof s] as string) || "";
-    let selectedModels: string[];
-    try { selectedModels = JSON.parse(rawSelected); } catch { selectedModels = []; }
-    if (!Array.isArray(selectedModels)) selectedModels = [];
-
-    bodyHtml += `
-      <div class="settings-card" style="margin-top:12px;margin-bottom:0;overflow:hidden">
-        <div class="settings-item-row">
-          <div class="settings-item-info">
-            <div class="settings-item-title">
-              <span>${tFn("settings.adapterTargetModel")}</span>
-            </div>
-            <div class="settings-item-desc">${tFn("settings.adapterTargetModelHint")}</div>
-          </div>
-          <div class="settings-item-control">
-            <label class="toggle-switch" title="${tFn("settings.adapterTargetModel")}">
-              <input type="checkbox" id="adapter-model-toggle-${defId}" ${selectedModels.length ? "checked" : ""} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-        <div id="adapter-models-row-${defId}" style="${selectedModels.length ? "" : "display:none"}">
-          <div class="auto-push-gateways">
-            <div class="auto-push-gateways-label">${tFn("settings.adapterTargetModel")}</div>
-            <div id="dlg-models-${defId}">` +
-      (enabledModels.length === 0
-        ? `<span style="color:var(--text-muted);font-size:13px">${t("settings.noModelConfigured")}</span>`
-        : enabledModels.map(m => {
-            const isSel = selectedModels.includes(m.model_id);
-            return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-model-id="${this.esc(m.model_id)}">
-              <span class="auto-push-gw-name">${this.esc(m.name || m.model_id)}</span>
-              <span class="auto-push-gw-dot" title="${this.esc(m.model_id)}"></span>
-              <span class="auto-push-gw-check"></span>
-            </div>`;
-          }).join("")
-      ) + `
-            </div>
-          </div>
-        </div>
-      </div>`;
+    const selectedModels = parseTargetModelSelection(s[`adapter_${defId}_models` as keyof typeof s] as string);
+    bodyHtml += renderTargetModelSelection({ id: defId, models, selected: selectedModels, t: tFn });
 
     const titleKey = `settings.adapterName${defId.charAt(0).toUpperCase() + defId.slice(1)}`;
     const title = tFn(titleKey);
@@ -2193,7 +439,7 @@ this.renderShortcuts();
     // Bind reveal-eye toggles for every password field in this dialog.
     this._bindEyeToggles(overlay);
     // Bind model selection click events
-    this._bindAdapterModelSelect(overlay, defId);
+    bindTargetModelSelection(overlay, defId);
 
     // Inject docs link into title bar
     if (def.docs) {
@@ -2297,13 +543,8 @@ this.renderShortcuts();
           config[`adapter_${defId}_enabled`] = enableInput.checked;
         }
         // Read model selection
-        const modelContainer = document.getElementById(`dlg-models-${defId}`);
-        const selectedModels = modelContainer
-          ? Array.from(modelContainer.querySelectorAll(".auto-push-gw-item.selected"))
-              .map(item => (item as HTMLElement).getAttribute("data-model-id")!)
-              .filter(Boolean)
-          : [];
-        const modelsJson = JSON.stringify(selectedModels);
+        const selectedModels = readTargetModelSelection(overlay, defId);
+        const modelsJson = serializeTargetModelSelection(selectedModels);
         (current as any)[`adapter_${defId}_models`] = modelsJson;
         config[`adapter_${defId}_models`] = modelsJson;
         setSettings(current as any);
@@ -2734,7 +975,7 @@ private _bindModelSelect(): void {
     }
   }
 
-  private _renderDocList(docs: import("./types.js").DocumentEntry[], tFn: any): string {
+  private _renderDocList(docs: import("../core/types.js").DocumentEntry[], tFn: any): string {
     if (docs.length === 0) {
       return `<div class="model-empty"><i data-lucide="file-text" class="lucide"></i><span>${tFn("settings.noDocuments")}</span></div>`;
     }
@@ -3535,7 +1776,7 @@ private _bindModelSelect(): void {
       let html = `<div style="font-size:12px;color:var(--text-success);margin-bottom:8px">${t("settings.importMcpJsonParsed", { count: servers.length })}</div>`;
       html += `<div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">`;
       html += `<div style="display:grid;grid-template-columns:1fr 2fr 1fr;font-size:11px;font-weight:600;background:var(--bg-secondary);padding:6px 10px;border-bottom:1px solid var(--border)">`;
-      html += `<div>Name</div><div>Command / URL</div><div>Type</div></div>`;
+      html += `<div>${t("settings.mcpColName")}</div><div>${t("settings.mcpColCommandUrl")}</div><div>${t("settings.mcpColType")}</div></div>`;
       for (const srv of servers) {
         const detail = srv.type === "http"
           ? (srv.url || "")
@@ -3728,13 +1969,13 @@ private _bindModelSelect(): void {
 
     const toolKeys = Object.keys(dangerousTools);
 
-    const ensureEntries = (keys: string[], existing: Record<string, import("./types.js").PermissionPolicy>) => {
-      return keys.map((key) => [key, existing[key] || { value: "allow", source: "default" }] as [string, import("./types.js").PermissionPolicy]);
+    const ensureEntries = (keys: string[], existing: Record<string, import("../core/types.js").PermissionPolicy>) => {
+      return keys.map((key) => [key, existing[key] || { value: "allow", source: "default" }] as [string, import("../core/types.js").PermissionPolicy]);
     };
 
     const toolEntries = ensureEntries(toolKeys, policies.tools);
 
-    const renderRows = (entries: Array<[string, import("./types.js").PermissionPolicy]>) => {
+    const renderRows = (entries: Array<[string, import("../core/types.js").PermissionPolicy]>) => {
       if (entries.length === 0) {
         return `<div class="empty-state">${t("permissions.settings.noItems")}</div>`;
       }
@@ -3779,7 +2020,7 @@ private _bindModelSelect(): void {
         }
         payload[name] = val;
         send({ type: "configure", config: { permission_settings: payload } });
-        const next: import("./types.js").PermissionPolicies = { tools: {}, capabilities: {} };
+        const next: import("../core/types.js").PermissionPolicies = { tools: {}, capabilities: {} };
         for (const [n] of toolEntries) {
           next.tools[n] = { value: (payload[n] as any) || "allow", source: "user" };
         }
@@ -3848,7 +2089,7 @@ private _bindModelSelect(): void {
     }
   }
 
-  private _renderAgentCreateDialog(existing?: import("./types.js").SubAgentConfig): void {
+  private _renderAgentCreateDialog(existing?: import("../core/types.js").SubAgentConfig): void {
     const isEdit = !!existing;
 
     const bodyHtml = `
@@ -4299,26 +2540,6 @@ private _bindModelSelect(): void {
     };
   }
 
-  /** Bind click events on the model selection checkbox items inside a dialog. */
-  private _bindAdapterModelSelect(root: HTMLElement, defId: string): void {
-    const container = root.querySelector<HTMLElement>(`#dlg-models-${defId}`);
-    const row = root.querySelector<HTMLElement>(`#adapter-models-row-${defId}`);
-    const toggle = root.querySelector<HTMLInputElement>(`#adapter-model-toggle-${defId}`);
-    if (toggle && row) {
-      toggle.addEventListener("change", () => {
-        row.style.display = toggle.checked ? "" : "none";
-      });
-    }
-    if (!container) return;
-    container.querySelectorAll(".auto-push-gw-item").forEach(item => {
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const wasSel = item.classList.contains("selected");
-        item.classList.toggle("selected", !wasSel);
-      });
-    });
-  }
-
   /** YYYY-MM-DD key for grouping sessions by calendar day (local time). */
   private _formatDayKey(timestamp: number): string {
     if (!timestamp || timestamp <= 0) return "";
@@ -4413,7 +2634,7 @@ private _bindModelSelect(): void {
     if (parts.length !== 3) return iso;
     const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString(getLocale() === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" });
+    return d.toLocaleDateString(getIntlLocale(), { month: "short", day: "numeric" });
   }
 
   /**
@@ -4435,7 +2656,7 @@ private _bindModelSelect(): void {
    */
    private _renderUsageHeatmap(sessions: UsageStatsSessionEntry[], muted: string): string {
     if (!sessions || sessions.length === 0) return "";
-    const loc = getLocale() === "zh" ? "zh-CN" : "en-US";
+    const loc = getIntlLocale();
 
     // Aggregate sessions by (day, 4-hour block).  Each day is one column
     // with BLOCKS rows; every row spans 4 hours of the day so the chart
@@ -4588,7 +2809,7 @@ private _bindModelSelect(): void {
         const endH = startH + BLOCK_HOURS;
         const tooltip = v > 0
           ? `${dayKey} ${String(startH).padStart(2, "0")}:00–${String(endH).padStart(2, "0")}:00\n${this._formatNumber(v)} tokens`
-          : `${dayKey} ${String(startH).padStart(2, "0")}:00–${String(endH).padStart(2, "0")}:00\nNo activity`;
+          : `${dayKey} ${String(startH).padStart(2, "0")}:00–${String(endH).padStart(2, "0")}:00\n${t("settings.usageNoActivity")}`;
         // Empty cells get a hairline border so the grid is visible
         // even on a fully-empty day.  Today's column gets a slightly
         // thicker green ring on the topmost block (b=0) to anchor the
@@ -4718,11 +2939,11 @@ private _bindModelSelect(): void {
         const dateStr = this._formatSessionDate(p.s.first_active);
         const modelName = p.s.model && p.s.model !== "unknown" ? p.s.model : "";
         const tooltipLines = [
-          dateStr ? `Date: ${dateStr}` : "",
-          `Tokens: ${p.v.toLocaleString()}`,
-          modelName ? `Model: ${modelName}` : "",
-          `Turns: ${p.s.turns}`,
-          `Tool calls: ${p.s.tool_calls}`,
+          dateStr ? `${t("settings.usageTipDate")}: ${dateStr}` : "",
+          `${t("settings.usageTipTokens")}: ${p.v.toLocaleString()}`,
+          modelName ? `${t("settings.usageTipModel")}: ${modelName}` : "",
+          `${t("settings.usageTipTurns")}: ${p.s.turns}`,
+          `${t("settings.usageTipToolCalls")}: ${p.s.tool_calls}`,
         ].filter(Boolean).join("  |  ");
         return `<g style="cursor:pointer">
           <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="10" fill="transparent" stroke="transparent" stroke-width="10">
@@ -4810,7 +3031,7 @@ private _bindModelSelect(): void {
   private _formatSessionDate(timestamp: number): string {
     if (!timestamp || timestamp <= 0) return "";
     const d = new Date(timestamp * 1000);
-    const loc = getLocale() === "zh" ? "zh-CN" : "en-US";
+    const loc = getIntlLocale();
     const now = Date.now();
     if (now - timestamp * 1000 < 86400000) {
       return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
@@ -5238,7 +3459,7 @@ private _bindModelSelect(): void {
       }
       html += `  </DL><p>
 </DL><p>`;
-      api.exportFile({ content: html, defaultName: "bookmarks.html", filters: [{ name: "Bookmark File", extensions: ["html"] }] });
+      api.exportFile({ content: html, defaultName: "bookmarks.html", filters: [{ name: t("settings.exportBookmarkFile"), extensions: ["html"] }] });
     }).catch(() => {});
   }
 
@@ -5254,7 +3475,7 @@ private _bindModelSelect(): void {
         const count = entry.visit_count || 1;
         csv += `"${url}","${title}","${time}",${count}\n`;
       }
-      api.exportFile({ content: csv, defaultName: "history.csv", filters: [{ name: "CSV File", extensions: ["csv"] }] });
+      api.exportFile({ content: csv, defaultName: "history.csv", filters: [{ name: t("settings.exportCsvFile"), extensions: ["csv"] }] });
     }).catch(() => {});
   }
 
@@ -5395,6 +3616,8 @@ private _bindModelSelect(): void {
       { icon: "file-text", label: tFn("settings.aboutLicense"), key: "license" },
       { icon: "shield", label: tFn("settings.aboutPrivacy"), key: "privacy" },
       { icon: "scroll", label: tFn("settings.aboutTerms"), key: "terms" },
+      { icon: "file-signature", label: tFn("settings.aboutAgreement"), key: "agreement" },
+      { icon: "book-open-check", label: tFn("settings.aboutContentRules"), key: "content-rules" },
       { icon: "heart", label: tFn("settings.aboutThanks"), key: "thanks" },
       { icon: "database", label: tFn("settings.aboutDataRules"), key: "data-rules" },
       { icon: "shield", label: tFn("settings.aboutMinors"), key: "minors" },

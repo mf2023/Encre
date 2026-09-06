@@ -30,9 +30,9 @@
  * decision back into the backend policy table so later calls are silent.
  */
 
-import { setPendingPermission } from "./state.js";
+import { setPendingPermission } from "../core/state.js";
 import { t } from "./i18n.js";
-import { Dialog } from "./dialog.js";
+import { Dialog } from "../ui/dialog.js";
 
 /**
  * Unified permission prompt.

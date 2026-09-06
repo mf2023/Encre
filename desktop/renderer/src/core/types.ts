@@ -854,12 +854,18 @@ export interface ClientRenameWorkspace {
   name: string;
 }
 
-/** Per-workspace config (mirrors the backend .encre/workspace.config.json).
+/** Per-workspace config (mirrors the backend .encre/config.json).
  *  null/absent key = reuse the global config for that key (3-layer:
  *  global -> workspace -> runtime). */
 export interface WorkspaceConfig {
-  // NOTE: workspace-scoped model configuration was removed — workspaces use
-  // the same model set as general mode (every enabled model).
+  /** Model ids this workspace may use; null/absent = reuse the global set. */
+  models?: string[] | null;
+  /** Persisted enable toggle for the model selection, independent of `models`
+   *  so "enabled but nothing picked yet" survives a reload. */
+  models_enabled?: boolean | null;
+  /** Per-file enable toggles for workspace context files. Absent key = enabled;
+   *  `{ "CLAUDE.md": false }` disables a file so its contents never reach the model. */
+  context_files?: Record<string, boolean> | null;
   permissions?: Record<string, unknown> | null;
   mcp?: Record<string, unknown> | null;
 }
@@ -879,6 +885,8 @@ export interface WorkspaceConfigResponse {
   type: "workspace_config";
   path: string;
   config: WorkspaceConfig;
+  /** Which context files (AGENTS.md / CLAUDE.md) exist in this workspace. */
+  files?: Record<string, boolean>;
 }
 
 export interface ClientReindexWorkspace {
@@ -1778,6 +1786,9 @@ export interface AppState {
   workspaces: WorkspaceEntry[];
   /** Per-workspace config cache, keyed by workspace path. */
   workspaceConfigs: Record<string, WorkspaceConfig>;
+  /** Per-workspace context-file availability (which of AGENTS.md / CLAUDE.md
+   *  exist in the workspace), keyed by workspace path. */
+  workspaceFiles: Record<string, Record<string, boolean>>;
   activeWorkspace: string;
   workspaceMode: "iwork" | "normal";
   indexStatus: "idle" | "ready" | "indexing" | "error" | "no_workspace";
@@ -2232,6 +2243,7 @@ export function createEmptyState(): AppState {
     automationJobs: [],
     workspaces: [],
     workspaceConfigs: {},
+    workspaceFiles: {},
     activeWorkspace: "",
     workspaceMode: "normal",
     indexStatus: "idle",

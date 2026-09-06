@@ -30,8 +30,8 @@
  * downloads — all in one unified visual language.
  */
 
-import { Dialog } from "./dialog.js";
-import { send } from "./ws.js";
+import { Dialog } from "../ui/dialog.js";
+import { send } from "../core/ws.js";
 import { t } from "./i18n.js";
 
 /** A single selectable engine option presented in the install dialog. */

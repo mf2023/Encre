@@ -1,0 +1,78 @@
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
+#
+# This file is part of Encre.
+# The Encre project belongs to the Dunimd Team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# DISCLAIMER: Users must comply with applicable AI regulations.
+# Non-compliance may result in service termination or legal liability.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "encre-core"
+version = "0.4.1"
+description = "Encre Core — server layer of the Encre agent (wire protocol, transports, gateway platform adapters)"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "encre-harness==0.4.1",
+    # Gateway platform SDKs (owned by the core layer only).
+    "discord.py>=2.3",
+    "slack_bolt>=1.18",
+    "slack_sdk>=3.27",
+    "python-telegram-bot>=20.0",
+    "dingtalk-stream>=0.15",
+    "alibabacloud-dingtalk>=1.0",
+    "alibabacloud-tea-openapi>=0.4",
+    "alibabacloud-tea-util>=0.3",
+    "mautrix>=0.20",
+    "lark-oapi>=1.0",
+    "google-api-python-client>=2.0",
+    "google-auth-httplib2>=0.2",
+    "google-auth-oauthlib>=1.0",
+    "httplib2>=0.22",
+    "google-cloud-pubsub>=2.0",
+    "microsoft-teams-apps>=2.0",
+    "twilio>=8.0",
+    "aioimaplib>=1.1",
+    "aiosmtplib>=1.0",
+    # Transport / media dependencies used only by core-owned modules.
+    "aiohttp>=3.9",
+    "pilk>=0.2",
+    "PyNaCl>=1.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["encre*"]
+
+[project.optional-dependencies]
+discord = ["discord.py>=2.3", "PyNaCl>=1.5"]
+slack = ["slack_bolt>=1.18", "slack_sdk>=3.27"]
+telegram = ["python-telegram-bot>=20.0"]
+dingtalk = ["dingtalk-stream>=0.15", "alibabacloud-dingtalk>=1.0", "alibabacloud-tea-openapi>=0.4", "alibabacloud-tea-util>=0.3"]
+qqbot = ["aiohttp>=3.9", "httpx>=0.27", "cryptography>=41.0", "qrcode>=7.0", "pilk>=0.2"]
+email = ["aioimaplib>=1.1", "aiosmtplib>=1.0"]
+matrix = ["mautrix>=0.20"]
+feishu = ["lark-oapi>=1.0"]
+google_chat = ["google-api-python-client>=2.0", "google-auth-httplib2>=0.2", "google-auth-oauthlib>=1.0", "httplib2>=0.22", "google-cloud-pubsub>=2.0"]
+teams = ["microsoft-teams-apps>=2.0"]
+sms = ["twilio>=8.0"]
+
+all = [
+    "encre-core[discord,slack,telegram,dingtalk,qqbot,email,matrix,feishu,google_chat,teams,sms]",
+]

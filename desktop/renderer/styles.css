@@ -44,6 +44,8 @@
   --warning: #f59e0b;
   --border: #1d1d1f;
   --border-light: #262626;
+  --checkbox-border: #3f3f46;
+  --checkbox-hover-bg: rgba(255, 255, 255, 0.08);
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.15);
   --shadow-lg: 0 8px 30px rgba(0,0,0,0.25);
@@ -120,6 +122,8 @@
   --warning: #f59e0b;
   --border: #e5e7eb;
   --border-light: #e5e7eb;
+  --checkbox-border: #c7cbd1;
+  --checkbox-hover-bg: rgba(0, 0, 0, 0.06);
   /* Light-theme seg overrides — same numeric values as the tray's light
      palette so the two surfaces look pixel-identical. */
   --seg-bg: #eeeeee;
@@ -183,7 +187,7 @@
   height: 16px;
   margin: 0;
   padding: 0;
-  border: 1.5px solid #15a877;
+  border: 1.5px solid var(--checkbox-border);
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
@@ -193,7 +197,7 @@
   transition: background var(--transition-base, 0.15s ease), border-color var(--transition-base, 0.15s ease);
 }
 :where(input[type="checkbox"]):hover {
-  background: rgba(21, 168, 119, 0.1);
+  background: var(--checkbox-hover-bg);
 }
 :where(input[type="checkbox"]):checked {
   background: #15a877;
@@ -207,8 +211,8 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   bottom: 0;
   margin: auto;
   width: 5px;
@@ -276,7 +280,7 @@ body {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   border-radius: 2px;
   object-fit: contain;
 }
@@ -419,7 +423,7 @@ body {
   align-items: center;
   gap: 2px;
   height: 100%;
-  padding-left: 12px;
+  padding-inline-start: 12px;
   -webkit-app-region: no-drag;
 }
 
@@ -464,7 +468,7 @@ body {
   height: 14px;
   opacity: 0.5;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   align-self: center;
   margin-top: auto;
   margin-bottom: auto;
@@ -479,15 +483,15 @@ body {
 #input-model-selector-wrap .mention-dropdown {
   bottom: calc(100% + 6px);
   top: auto;
-  left: auto;
-  right: 0;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
   min-width: 220px;
   display: block; /* override base display:none — controlled by .hidden class */
 }
 
 #input-model-dropdown .mention-dropdown-item {
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   justify-content: flex-start;
 }
 
@@ -519,15 +523,15 @@ body {
 #input-workspace-selector-wrap .mention-dropdown {
   bottom: calc(100% + 6px);
   top: auto;
-  left: auto;
-  right: 0;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
   min-width: 220px;
   display: block; /* override base display:none — controlled by .hidden class */
 }
 
 #input-workspace-dropdown .mention-dropdown-item {
   font-weight: 500;
-  text-align: left;
+  text-align: start;
   justify-content: flex-start;
 }
 
@@ -621,7 +625,7 @@ body {
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
@@ -752,7 +756,7 @@ body {
   display: flex;
   align-items: center;
   height: 100%;
-  margin-left: 4px;
+  margin-inline-start: 4px;
 }
 
 .window-btn {
@@ -830,7 +834,7 @@ body {
   gap: 8px;
   flex: 1;
   justify-content: flex-start;
-  padding-left: 4px;
+  padding-inline-start: 4px;
   -webkit-app-region: no-drag;
 }
 
@@ -865,7 +869,7 @@ body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
-  text-align: left;
+  text-align: start;
   width: 100%;
 }
 
@@ -997,7 +1001,7 @@ body {
 .sc-col-desc { }
 .sc-col-key {
   justify-content: flex-end;
-  text-align: right;
+  text-align: end;
 }
 
 .sc-divider {
@@ -1029,7 +1033,7 @@ body {
   font-family: var(--font-mono, monospace);
   color: var(--text-secondary);
   justify-content: flex-end;
-  text-align: right;
+  text-align: end;
   white-space: nowrap;
 }
 
@@ -1364,7 +1368,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   border-radius: 8px;
   background: rgba(128, 128, 128, 0.18);
   color: var(--text-muted);
-  margin-left: 6px;
+  margin-inline-start: 6px;
   vertical-align: middle;
   flex-shrink: 0;
   white-space: nowrap;
@@ -1496,6 +1500,16 @@ body:has(.context-target) .ws-tree-session-item.active {
   flex-shrink: 0;
 }
 
+.search-result-file-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  margin-top: 1px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .search-result-body {
   display: flex;
   flex-direction: column;
@@ -1587,7 +1601,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   background: var(--bg-primary);
   border-radius: var(--radius-md);
   position: relative;
-  transition: margin-right var(--transition-slow);
+  transition: margin-inline-end var(--transition-slow);
 }
 
 #main-content-clip {
@@ -1633,7 +1647,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   overflow: hidden;
   flex: 1;
   min-width: 0;
-  padding-left: 0;
+  padding-inline-start: 0;
   letter-spacing: 0.01em;
 }
 
@@ -1739,9 +1753,11 @@ body:has(.context-target) .ws-tree-session-item.active {
   display: flex !important;
 }
 
-/* Main content expands when session sidebar is hidden */
+/* Main content expands when session sidebar is hidden.
+   inline-end (not physical right) so the negative margin mirrors with
+   dir=rtl: the sidebar is always at the inline-end side of #main-content. */
 #main-body.sidebar-hidden #main-content {
-  margin-right: calc(-1 * var(--sidebar-w, 280px));
+  margin-inline-end: calc(-1 * var(--sidebar-w, 280px));
 }
 
 #main-body.sidebar-hidden #session-inner-sidebar {
@@ -1836,7 +1852,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .tab-add-dropdown {
   position: absolute;
   top: 100%;
-  right: 4px;
+  inset-inline-end: 4px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -2108,7 +2124,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .si-value {
   font-size: 12px;
   color: var(--text-primary);
-  text-align: right;
+  text-align: end;
   word-break: break-all;
   min-width: 0;
 }
@@ -2392,7 +2408,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   display: none;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 10px;
   color: var(--editor-tab-text);
   text-decoration: none;
@@ -2482,7 +2498,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 /* ── Session Inner — Resize Handle ───────────────────────────────── */
 .si-resize-handle {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   bottom: 0;
   width: 1px;
@@ -2599,7 +2615,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .summary-panel {
   position: absolute;
   top: 52px;
-  right: 16px;
+  inset-inline-end: 16px;
   width: 320px;
   max-height: calc(100% - 80px);
   background: var(--bg-primary);
@@ -2721,7 +2737,7 @@ body:has(.context-target) .ws-tree-session-item.active {
     white-space: nowrap;
     min-width: 0;
     color: var(--text-secondary);
-    padding-left: 18px;
+    padding-inline-start: 18px;
   }
 
   .sp-todo-item {
@@ -2907,7 +2923,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .chat-scroll-bottom-btn {
   position: absolute;
   bottom: 20px;
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translateX(-50%);
   width: 36px;
   height: 36px;
@@ -2938,7 +2954,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .chat-scroll-indicator {
   position: absolute;
   top: 50%;
-  right: 6px;
+  inset-inline-end: 6px;
   transform: translateY(-50%);
   height: 150px;
   width: 14px;
@@ -2961,7 +2977,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 .chat-scroll-track {
   position: absolute;
-  left: 50%;
+  inset-inline-start: 50%;
   width: 1px;
   transform: translateX(-50%);
   pointer-events: none;
@@ -2972,7 +2988,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
+  inset-inline-start: 50%;
   width: 1px;
   transform: translateX(-50%);
   background: var(--border);
@@ -2981,7 +2997,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 .chat-scroll-tick {
   position: absolute;
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translateX(-50%);
   width: 14px;
   pointer-events: auto;
@@ -2993,7 +3009,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   content: "";
   position: absolute;
   top: 50%;
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translate(-50%, -50%);
   width: 9px;
   height: 1px;
@@ -3017,7 +3033,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 .chat-scroll-thumb {
   position: absolute;
-  left: 50%;
+  inset-inline-start: 50%;
   width: 14px;
   height: 3px;
   margin-top: -1.5px;
@@ -3103,7 +3119,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   color: var(--text-primary);
   padding: 10px 16px;
   border-radius: 18px;
-  border-bottom-right-radius: 4px;
+  border-end-end-radius: 4px;
   white-space: pre-wrap;
   line-height: 1.65;
   font-size: 14px;
@@ -3225,7 +3241,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   letter-spacing: 0.04em;
 }
 .turn-status-card.status-error .status-header .status-toggle {
-  margin-left: auto;
+  margin-inline-start: auto;
   width: 14px;
   height: 14px;
   color: var(--text-muted);
@@ -3294,7 +3310,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   letter-spacing: 0.04em;
 }
 .turn-status-card.status-warning .status-detail {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 11.5px;
   color: var(--text-muted);
   font-family: var(--font-mono);
@@ -3365,7 +3381,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 13px;
   color: var(--text-secondary);
   user-select: none;
@@ -3616,7 +3632,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .msg-text ul,
 .msg-text ol {
   margin: 10px 0;
-  padding-left: 22px;
+  padding-inline-start: 22px;
 }
 
 .msg-text li {
@@ -3642,16 +3658,16 @@ body:has(.context-target) .ws-tree-session-item.active {
 .msg-text input[type="checkbox"] {
   width: 15px;
   height: 15px;
-  border: 1.5px solid #15a877;
+  border: 1.5px solid var(--checkbox-border);
   border-radius: 4px;
   background: transparent;
-  margin-right: 8px;
+  margin-inline-end: 8px;
   position: relative;
   top: -1px;
 }
 
 .msg-text input[type="checkbox"]:hover {
-  background: rgba(21, 168, 119, 0.1);
+  background: var(--checkbox-hover-bg);
 }
 
 .msg-text input[type="checkbox"]:checked {
@@ -3668,8 +3684,8 @@ body:has(.context-target) .ws-tree-session-item.active {
   content: "";
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   bottom: 0;
   margin: auto;
   width: 5px;
@@ -3688,7 +3704,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   display: flex;
   align-items: flex-start;
   list-style: none;
-  padding-left: 0;
+  padding-inline-start: 0;
 }
 
 /* Blockquote */
@@ -3726,7 +3742,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .msg-text th,
 .msg-text td {
   padding: 9px 14px;
-  text-align: left;
+  text-align: start;
   border-bottom: 1px solid var(--border);
 }
 
@@ -3922,7 +3938,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   display: none;
   position: absolute;
   top: 0;
-  left: 0;
+  inset-inline-start: 0;
 }
 .icon-wrap.hover .semantic { display: none; }
 .icon-wrap.hover .arrow { display: block; }
@@ -3952,8 +3968,8 @@ body:has(.context-target) .ws-tree-session-item.active {
 /* ── Tool Status Indicator ────────────────────────────────────── */
 .detail-status {
   font-size: 14px;
-  margin-left: auto;
-  margin-right: 8px;
+  margin-inline-start: auto;
+  margin-inline-end: 8px;
   line-height: 1;
 }
 .detail-status.done { color: var(--success); }
@@ -4177,7 +4193,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   height: 14px;
   flex-shrink: 0;
   color: var(--text-tertiary);
-  margin-left: auto;
+  margin-inline-start: auto;
   cursor: pointer;
   transition: transform var(--transition-slow);
 }
@@ -4317,8 +4333,8 @@ body:has(.context-target) .ws-tree-session-item.active {
 #input-area.input-expanded {
   position: absolute;
   bottom: 0;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   z-index: 20;
   padding-bottom: 12px;
   background: transparent;
@@ -4358,7 +4374,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .mention-dropdown {
   position: absolute;
   bottom: 100%;
-  left: 0;
+  inset-inline-start: 0;
   margin-bottom: 8px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -4406,7 +4422,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   font-size: 13px;
   cursor: pointer;
   transition: background var(--transition-fast);
-  text-align: left;
+  text-align: start;
 }
 
 .mention-dropdown-item:hover {
@@ -4451,7 +4467,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .mention-hint {
   color: var(--text-muted, #999);
   font-size: 11px;
-  margin-left: 6px;
+  margin-inline-start: 6px;
 }
 
 /* ── Input Disclaimer ──────────────────────────────────────── */
@@ -4491,7 +4507,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   border-radius: 4px;
   font-size: 13px;
   font-weight: 600;
@@ -4531,7 +4547,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   align-items: center;
   gap: 4px;
   padding: 0 6px 0 8px;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
@@ -4560,7 +4576,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 }
 
 .toolbar-mode-label {
-  margin-right: 2px;
+  margin-inline-end: 2px;
 }
 
 .toolbar-mode-close {
@@ -4586,7 +4602,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   border-radius: 4px;
   font-size: 13px;
   font-weight: 600;
@@ -4615,7 +4631,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   align-items: center;
   gap: 4px;
   padding: 0 6px 0 8px;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
@@ -4639,7 +4655,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 }
 
 .toolbar-command-label {
-  margin-right: 2px;
+  margin-inline-end: 2px;
 }
 
 .toolbar-command-close {
@@ -4704,7 +4720,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .input-expand-zone {
   position: absolute;
   top: 5px;
-  right: 5px;
+  inset-inline-end: 5px;
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
@@ -4807,14 +4823,14 @@ body:has(.context-target) .ws-tree-session-item.active {
   padding: 2px 0;
 }
 .input-wrapper--dialog .prompt-placeholder {
-  left: 14px;
+  inset-inline-start: 14px;
   top: 10px;
   font-size: 13px;
 }
 
 .prompt-placeholder {
   position: absolute;
-  left: 4px;
+  inset-inline-start: 4px;
   top: 4px;
   color: var(--text-muted);
   font-size: 14.5px;
@@ -4843,7 +4859,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   line-height: 1.5;
   max-width: 220px;
   vertical-align: middle;
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 
 .mode-card-icon {
@@ -4876,7 +4892,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   color: var(--text-muted);
   border-radius: 3px;
   flex-shrink: 0;
-  margin-left: 2px;
+  margin-inline-start: 2px;
 }
 
 .mode-card-remove:hover {
@@ -5497,7 +5513,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
-  text-align: left;
+  text-align: start;
   font-family: inherit;
 }
 
@@ -5539,7 +5555,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
-  text-align: left;
+  text-align: start;
   font-family: inherit;
 }
 
@@ -5633,7 +5649,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 /* Prevent sidebar-hidden margin from affecting settings mode */
 #app.settings-mode #main-content {
-  margin-right: 0 !important;
+  margin-inline-end: 0 !important;
 }
 
 /* ── Log Viewer (ESD: Logs) ──────────────────────────────────────── */
@@ -5895,7 +5911,7 @@ body.child-mode:not(.settings-mode) #sidebar,
 
 body.child-mode:not(.settings-mode) #main-body,
 #app.child-mode:not(.settings-mode) #main-body {
-  margin-left: 0 !important;
+  margin-inline-start: 0 !important;
 }
 
 body.child-mode #child-view,
@@ -5944,7 +5960,7 @@ body.child-mode #header-bar {
 .child-doc-toolbar {
   position: absolute;
   top: 10px;
-  right: 14px;
+  inset-inline-end: 14px;
   z-index: 100;
 }
 
@@ -5976,8 +5992,8 @@ body.child-mode #header-bar {
 }
 
 .child-doc-toolbar .settings-dropdown {
-  right: 0;
-  left: auto;
+  inset-inline-end: 0;
+  inset-inline-start: auto;
 }
 
 .header-brand {
@@ -6039,7 +6055,7 @@ body.child-mode #header-bar {
   text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
-  text-align: left;
+  text-align: start;
 }
 
 .header-tabs 
@@ -6081,7 +6097,7 @@ body.child-mode #header-bar {
   justify-content: center;
   width: 14px;
   height: 14px;
-  margin-left: 4px;
+  margin-inline-start: 4px;
   border-radius: 2px;
   cursor: pointer;
   flex-shrink: 0;
@@ -6125,15 +6141,15 @@ body.child-mode #header-bar {
 .header-tabs .tab.drop-target::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 8px;
   bottom: 8px;
   width: 2px;
   background: #00b894;
 }
 .header-tabs .tab.drop-target.drop-after::before {
-  left: auto;
-  right: 0;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
 }
 
 .child-view-content {
@@ -6187,7 +6203,7 @@ body.child-mode #header-bar {
 .child-view-body.msg-text ul,
 .child-view-body.msg-text ol {
   margin: 0 0 10px;
-  padding-left: 20px;
+  padding-inline-start: 20px;
 }
 
 .child-view-body.msg-text li {
@@ -6210,7 +6226,7 @@ body.child-mode #header-bar {
 .child-view-body.msg-text td {
   padding: 8px 12px;
   border: 1px solid var(--border);
-  text-align: left;
+  text-align: start;
 }
 
 .child-view-body.msg-text th {
@@ -6257,7 +6273,7 @@ body.child-mode #header-bar {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 .dev-status-dot.online {
   background: #22c55e;
@@ -6317,9 +6333,9 @@ body.child-mode #header-bar {
 .child-webview-status {
   position: absolute;
   top: 0;
-  right: 0;
+  inset-inline-end: 0;
   bottom: 0;
-  left: 0;
+  inset-inline-start: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6407,7 +6423,7 @@ body.child-mode #header-bar {
   color: var(--text-primary);
   font-size: 12px;
   outline: none;
-  margin-left: 4px;
+  margin-inline-start: 4px;
   -webkit-app-region: no-drag;
 }
 
@@ -6459,12 +6475,12 @@ body.child-mode #header-bar {
 
 .doc-add-dropdown {
   position: relative;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .doc-add-dropdown .settings-dropdown {
-  right: 0;
-  left: auto;
+  inset-inline-end: 0;
+  inset-inline-start: auto;
   min-width: 160px;
 }
 
@@ -6655,7 +6671,7 @@ body.child-mode #header-bar {
 .doc-ext {
   color: var(--text-tertiary);
   font-size: 11px;
-  margin-left: 2px;
+  margin-inline-start: 2px;
 }
 
 .doc-row-loading {
@@ -6896,7 +6912,7 @@ body.child-mode #header-bar {
   height: 14px;
   opacity: 0.5;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-inline-start: auto;
   align-self: center;
   display: inline-flex;
   align-items: center;
@@ -6912,7 +6928,7 @@ body.child-mode #header-bar {
 .settings-dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
+  inset-inline-end: 0;
   min-width: 100%;
   width: max-content;
   background: var(--bg-tertiary);
@@ -7054,7 +7070,7 @@ body.child-mode #header-bar {
 .about-banner-glow {
   position: absolute;
   top: -60%;
-  left: -20%;
+  inset-inline-start: -20%;
   width: 140%;
   height: 220%;
   pointer-events: none;
@@ -7120,7 +7136,7 @@ body.child-mode #header-bar {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12.5px;
-  text-align: right;
+  text-align: end;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7191,7 +7207,7 @@ body.child-mode #header-bar {
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   gap: 12px;
   transition: background var(--transition-fast);
@@ -7333,7 +7349,7 @@ body.child-mode #header-bar {
   top: 0;
   background: var(--bg-secondary);
   padding: 4px 8px;
-  text-align: left;
+  text-align: start;
   border-bottom: 1px solid var(--border-light);
   color: var(--text-muted);
   font-weight: 600;
@@ -7351,7 +7367,7 @@ body.child-mode #header-bar {
 .diag-line-num {
   width: 36px;
   min-width: 36px;
-  text-align: right;
+  text-align: end;
   color: var(--text-muted);
   user-select: none;
 }
@@ -7543,11 +7559,11 @@ body.child-mode #header-bar {
   margin-bottom: 0;
 }
 .automation-tab + .automation-tab {
-  margin-left: 24px;
+  margin-inline-start: 24px;
 }
 
 .automation-create-wrap {
-  margin-left: auto;
+  margin-inline-start: auto;
   position: relative;
 }
 
@@ -7576,8 +7592,8 @@ body.child-mode #header-bar {
   content: "";
   position: absolute;
   bottom: -1px;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   height: 2px;
   background: var(--text-primary);
   border-radius: 1px;
@@ -7632,7 +7648,7 @@ body.child-mode #header-bar {
   min-width: 0;
   overflow: hidden;
   flex: 1;
-  padding-left: 0;
+  padding-inline-start: 0;
   letter-spacing: 0.01em;
 }
 .automation-detail-content {
@@ -7704,7 +7720,7 @@ body.child-mode #header-bar {
   width: 18px;
   height: 18px;
   border-radius: 4px;
-  border: 2px solid #15a877;
+  border: 2px solid var(--checkbox-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7715,7 +7731,7 @@ body.child-mode #header-bar {
   -webkit-user-select: none;
 }
 .auto-push-gw-item:hover .auto-push-gw-check {
-  background: rgba(21, 168, 119, 0.1);
+  background: var(--checkbox-hover-bg);
 }
 .auto-push-gw-check::after {
   content: "";
@@ -7743,6 +7759,14 @@ body.child-mode #header-bar {
   font-weight: 500;
   color: var(--text-muted);
   margin-bottom: 8px;
+}
+/* Reusable target-model selection widget list: keep a gap between the
+   selectable model rows so adjacent items do not touch (matches the
+   chat-input model selector's spacing). */
+.model-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .auto-push-gw-item {
   display: flex;
@@ -7940,7 +7964,7 @@ body.child-mode #header-bar {
 .history-calendar-dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
+  inset-inline-start: 0;
   width: 260px;
   padding: 12px;
   background: var(--bg-tertiary);
@@ -8076,7 +8100,7 @@ body.child-mode #header-bar {
 .history-timeline-item::before {
   content: "";
   position: absolute;
-  left: 11px;
+  inset-inline-start: 11px;
   top: 22px;
   bottom: 0;
   width: 1px;
@@ -8187,7 +8211,7 @@ body.child-mode #header-bar {
 
 .search-input-icon {
   position: absolute;
-  left: 14px;
+  inset-inline-start: 14px;
   top: 50%;
   transform: translateY(-50%);
   width: 18px;
@@ -8269,7 +8293,7 @@ body.child-mode #header-bar {
 .notification-toast-container {
   position: fixed;
   bottom: 12px;
-  right: 12px;
+  inset-inline-end: 12px;
   display: flex;
   flex-direction: column-reverse;
   gap: 10px;
@@ -8307,7 +8331,7 @@ body.child-mode #header-bar {
 .notification-toast-actions {
   position: absolute;
   top: 10px;
-  right: 10px;
+  inset-inline-end: 10px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -8342,7 +8366,7 @@ body.child-mode #header-bar {
   line-height: 1.5;
   margin: 0;
   flex: 1;
-  padding-right: 60px;
+  padding-inline-end: 60px;
 }
 
 .notification-toast-source {
@@ -8604,7 +8628,7 @@ body.child-mode #header-bar {
 .media-viewer-toolbar {
   position: absolute;
   bottom: 10px;
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -8697,7 +8721,7 @@ body.child-mode #header-bar {
 }
 .media-progress-fill {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0;
   height: 100%;
   border-radius: 2px;
@@ -8727,7 +8751,7 @@ body.child-mode #header-bar {
 .media-volume-slider {
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translateX(-50%);
   height: 96px;
   width: 30px;
@@ -8753,7 +8777,7 @@ body.child-mode #header-bar {
   content: "";
   position: absolute;
   bottom: 100%;
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translateX(-50%);
   width: 40px;
   height: 104px;
@@ -8775,15 +8799,15 @@ body.child-mode #header-bar {
 }
 .volume-fill {
   position: absolute;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   bottom: 0;
   border-radius: 2px;
   background: var(--accent);
 }
 .volume-thumb {
   position: absolute;
-  left: 50%;
+  inset-inline-start: 50%;
   transform: translate(-50%, 50%);
   width: 12px;
   height: 12px;
@@ -8923,7 +8947,7 @@ body.child-mode #header-bar {
   padding: 3px 10px;
   background: var(--bg-hover);
   border-radius: var(--radius-sm);
-  margin-left: 8px;
+  margin-inline-start: 8px;
 }
 
 .required-star {
@@ -9276,7 +9300,7 @@ body.child-mode #header-bar {
 
 .model-form-spinners {
   position: absolute;
-  right: 2px;
+  inset-inline-end: 2px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -9321,7 +9345,7 @@ body.child-mode #header-bar {
  * model API keys). */
 .model-form-eye-btn {
   position: absolute;
-  right: 4px;
+  inset-inline-end: 4px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -9381,14 +9405,14 @@ body.child-mode #header-bar {
 .model-form-dropdown-row .auto-trigger-icon {
   width: 14px;
   height: 14px;
-  margin-right: 6px;
+  margin-inline-end: 6px;
   flex-shrink: 0;
   color: var(--text-secondary);
 }
 
 .model-form-dropdown-row .settings-dropdown {
-  left: 0;
-  right: auto;
+  inset-inline-start: 0;
+  inset-inline-end: auto;
   animation: none;
 }
 
@@ -9403,7 +9427,7 @@ body.child-mode #header-bar {
 .model-docs-link {
   display: inline-flex;
   align-items: center;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   color: var(--text-muted);
   opacity: 0.6;
   transition: opacity var(--transition-base);
@@ -9416,7 +9440,7 @@ body.child-mode #header-bar {
 }
 
 .model-get-apikey-link {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 12px;
   color: var(--accent);
   text-decoration: none;
@@ -9429,7 +9453,7 @@ body.child-mode #header-bar {
 
 .model-form-required {
   color: var(--error);
-  margin-right: 2px;
+  margin-inline-end: 2px;
 }
 
 .model-form-input,
@@ -9461,7 +9485,7 @@ body.child-mode #header-bar {
    The eye button floats absolutely above the text, so we drop the
    default 28px right padding the spinner layout reserves. */
 input.model-form-input--reveal {
-  padding-right: 12px;
+  padding-inline-end: 12px;
 }
 
 .model-form-actions {
@@ -9531,7 +9555,7 @@ input.model-form-input--reveal {
   border-radius: 4px;
   background: var(--bg-tertiary);
   color: var(--text-secondary);
-  margin-right: 6px;
+  margin-inline-end: 6px;
   vertical-align: middle;
   letter-spacing: 0.3px;
 }
@@ -9616,8 +9640,8 @@ input.model-form-input--reveal {
   position: absolute;
   cursor: pointer;
   top: 0;
-  left: 0;
-  right: 0;
+  inset-inline-start: 0;
+  inset-inline-end: 0;
   bottom: 0;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -9630,7 +9654,7 @@ input.model-form-input--reveal {
   position: absolute;
   height: 16px;
   width: 16px;
-  left: 2px;
+  inset-inline-start: 2px;
   bottom: 2px;
   background: var(--text-secondary);
   border-radius: 50%;
@@ -9765,7 +9789,7 @@ input.model-form-input--reveal {
   border-radius: var(--radius-sm);
   background: var(--accent-light);
   color: var(--text-secondary);
-  margin-left: 6px;
+  margin-inline-start: 6px;
 }
 
 .memory-meta {
@@ -9872,7 +9896,7 @@ input.model-form-input--reveal {
   font-size: 10px;
   color: var(--text-muted);
   min-width: 28px;
-  text-align: right;
+  text-align: end;
 }
 
 .profile-meta {
@@ -9903,7 +9927,7 @@ input.model-form-input--reveal {
 .user-bubble {
   max-width: 640px;
   border-radius: 18px;
-  border-bottom-right-radius: 4px;
+  border-end-end-radius: 4px;
   background: var(--bg-tertiary);
   padding: 10px 16px;
   line-height: 1.65;
@@ -10042,7 +10066,7 @@ input.model-form-input--reveal {
   color: var(--text-primary);
 }
 .question-card-badge {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 10.5px;
   padding: 1px 6px;
   border-radius: 10px;
@@ -10078,7 +10102,7 @@ input.model-form-input--reveal {
   border: 1px solid var(--border);
   border-radius: 5px;
   background: transparent;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   font-family: inherit;
   transition: background var(--transition-fast), border-color var(--transition-fast);
@@ -10202,7 +10226,7 @@ input.model-form-input--reveal {
   background: rgba(245, 158, 11, 0.12);
   padding: 1px 5px;
   border-radius: 4px;
-  margin-left: 4px;
+  margin-inline-start: 4px;
   flex-shrink: 0;
 }
 .info-card-actions {
@@ -10382,7 +10406,7 @@ input.model-form-input--reveal {
   padding: 10px 16px;
   border: 0;
   border-radius: 18px;
-  border-bottom-right-radius: 4px;
+  border-end-end-radius: 4px;
   box-shadow: none;
   font-size: 14px;
   line-height: 1.65;
@@ -10898,7 +10922,7 @@ input.model-form-input--reveal {
   line-height: 22px;
   cursor: pointer;
   white-space: nowrap;
-  padding-right: 8px;
+  padding-inline-end: 8px;
   transition: background var(--transition-fast);
 }
 
@@ -10946,7 +10970,7 @@ input.model-form-input--reveal {
   width: 16px;
   height: 22px;
   flex-shrink: 0;
-  margin-right: 4px;
+  margin-inline-end: 4px;
 }
 
 .si-tree-icon svg,
@@ -11560,7 +11584,7 @@ input.model-form-input--reveal {
 .si-office-ppt-stage-inner {
   position: absolute;
   top: 0;
-  left: 0;
+  inset-inline-start: 0;
   width: 960px;
   height: 540px;
   transform-origin: 0 0;
@@ -11687,7 +11711,7 @@ input.model-form-input--reveal {
   color: var(--text-text-secondary, #9599a6);
 }
 .usage-chart-title .usage-groupby-seg {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .usage-chart-row {
   display: flex;
@@ -11739,7 +11763,7 @@ input.model-form-input--reveal {
 .usage-legend-tokens {
   color: var(--text-text-tertiary, #666b75);
   font-variant-numeric: tabular-nums;
-  margin-left: var(--spacers-spacer-4, 4px);
+  margin-inline-start: var(--spacers-spacer-4, 4px);
 }
 .usage-model-tag {
   font-size: var(--heading-3xs-font-size, 10px);
@@ -12415,7 +12439,7 @@ input.model-form-input--reveal {
 .diff-ln {
   width: 36px;
   min-width: 36px;
-  text-align: right;
+  text-align: end;
   padding: 0 8px;
   color: var(--text-tertiary);
   user-select: none;
@@ -12862,9 +12886,9 @@ input.model-form-input--reveal {
 .browser-webview-status {
   position: absolute;
   top: 0;
-  right: 0;
+  inset-inline-end: 0;
   bottom: 0;
-  left: 0;
+  inset-inline-start: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -13030,7 +13054,7 @@ input.model-form-input--reveal {
 .markdown-preview-body h2 { font-size: 1.3em; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
 .markdown-preview-body h3 { font-size: 1.15em; }
 .markdown-preview-body p { margin: 0.6em 0; line-height: 1.65; color: var(--text-primary); }
-.markdown-preview-body ul, .markdown-preview-body ol { margin: 0.5em 0; padding-left: 1.8em; color: var(--text-primary); }
+.markdown-preview-body ul, .markdown-preview-body ol { margin: 0.5em 0; padding-inline-start: 1.8em; color: var(--text-primary); }
 .markdown-preview-body li { margin: 0.2em 0; line-height: 1.6; }
 .markdown-preview-body code {
   font-family: var(--font-mono, "Cascadia Code", "Fira Code", "JetBrains Mono", monospace);
@@ -13077,7 +13101,7 @@ input.model-form-input--reveal {
 .markdown-preview-body th, .markdown-preview-body td {
   border: 1px solid var(--border);
   padding: 6px 10px;
-  text-align: left;
+  text-align: start;
 }
 .markdown-preview-body th {
   background: var(--bg-secondary);
@@ -13200,6 +13224,16 @@ input.model-form-input--reveal {
   flex-direction: column;
 }
 
+/* Fixed footer for the workspace settings view. Mirrors the model-edit
+   dialog's button bar: right-aligned, no top separator. */
+.workspace-mgr-footer {
+  flex-shrink: 0;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 16px;
+}
+
 .workspace-mgr-body > .si-empty-center {
   flex: 1;
   min-height: 0;
@@ -13260,7 +13294,8 @@ input.model-form-input--reveal {
 }
 
 .workspace-mgr-item.active {
-  color: var(--accent);
+  background: var(--item-selected-bg);
+  color: var(--text-primary);
 }
 
 .workspace-mgr-item-name {
@@ -13394,6 +13429,15 @@ input.model-form-input--reveal {
   border-bottom: none;
 }
 
+.workspace-mgr-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
 .workspace-mgr-form-label {
   flex-shrink: 0;
   width: 90px;
@@ -13414,4 +13458,40 @@ input.model-form-input--reveal {
 .workspace-mgr-form-value-path {
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+/* ── RTL overrides (html[dir="rtl"] for ar / he) ──────────────────
+   The shell (#app flex row → sidebar mirrors to the right) and most
+   panels now use logical properties, so dir="rtl" mirrors them with no
+   further work. Physical-direction spots that need explicit fixes here:
+   the toggle knob travel, toast slide-in, the session-inner sidebar
+   hide/slide transform (slides to the inline-end side, which is LEFT
+   under rtl), and the session-inner editor workspace staying LTR
+   (code, terminals). */
+html[dir="rtl"] .toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(-18px);
+}
+
+html[dir="rtl"] .notification-toast,
+html[dir="rtl"] .notification-toast.removing {
+  transform: translateX(-20px);
+}
+
+/* Sidebar hide/slide transforms are authored for LTR (sidebar on the
+   right slides right). Under rtl the sidebar sits on the left, so it
+   must slide LEFT — otherwise it lands on top of the chat content. */
+html[dir="rtl"] #main-body.sidebar-hidden #session-inner-sidebar,
+html[dir="rtl"] #automation-view:not(.hidden) ~ #session-inner-sidebar {
+  transform: translateX(-100%);
+}
+
+html[dir="rtl"] #session-inner-sidebar {
+  direction: ltr;
+}
+
+/* The Encre menu opens from a physical left offset computed in JS; when
+   clamped near the right edge (rtl) its grow animation should anchor to
+   the top-right corner instead of sliding from the wrong side. */
+html[dir="rtl"] .encre-menu-dropdown {
+  transform-origin: top right;
 }

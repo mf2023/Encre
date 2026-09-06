@@ -2,6 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <script>
+    // Apply the persisted UI locale/direction before first paint so an
+    // ar/he session does not flash a left-to-right layout (or wrong font
+    // stack) for a frame. setLocale() in i18n.ts keeps it in sync later.
+    try {
+      var l = localStorage.getItem("encre-locale");
+      if (l === "ar" || l === "he") {
+        document.documentElement.dir = "rtl";
+        document.documentElement.lang = l;
+      } else if (l) {
+        document.documentElement.lang = l === "zh-Hant" ? "zh-TW" : l;
+      }
+      if (l) document.documentElement.setAttribute("data-locale", l);
+    } catch (e) {}
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Encre</title>
   <script>console.log("[perf] html-head executed epoch=" + Date.now());</script>

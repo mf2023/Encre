@@ -20,7 +20,7 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { getState } from "./state.js";
+import { getState } from "../core/state.js";
 
 let _isMac: boolean | null = null;
 function isMac(): boolean {
