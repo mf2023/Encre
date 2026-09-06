@@ -36,6 +36,13 @@ const fs = require("fs");
 // Absolute path of this script's directory (the desktop package root).
 const desktop = __dirname;
 
+// Locale filter passed from build.py via LOCALES env var (comma-separated).
+// When empty or unset, all locales are included.
+const localeEnv = process.env.LOCALES || "";
+const buildLocales: string[] = localeEnv
+  ? localeEnv.split(",").map((s) => s.trim()).filter(Boolean)
+  : ["zh", "en", "zh-Hant", "ja", "ko", "de", "es", "pt", "tr", "ar", "he"];
+
 // Bundle the Electron main process (keeps electron/node-pty external).
 // Main process
 esbuild.buildSync({
@@ -64,7 +71,8 @@ esbuild.buildSync({
 //   that are only fetched when the feature is first used.
 // - minify: shrinks the entry bundle by ~55% (6.7MB -> ~3MB before
 //   splitting; much smaller after heavy libs move to lazy chunks).
-// Renderer
+// - define:BUILD_LOCALES — compile-time locale list; only matched locales
+//   are kept in the bundle via tree-shaking.
 esbuild.buildSync({
   entryPoints: [path.join(desktop, "renderer", "src", "app.ts")],
   bundle: true,
@@ -79,6 +87,9 @@ esbuild.buildSync({
   splitting: true,
   minify: true,
   legalComments: "inline",
+  define: {
+    BUILD_LOCALES_LIST: JSON.stringify(buildLocales),
+  },
 });
 
 // Copy xterm CSS

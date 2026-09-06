@@ -30,14 +30,21 @@
  */
 
 import { getState, subscribe, setSettings } from "../core/state.js";
-import { LOCALE_REGISTRY, ALL_LOCALES } from "../locales/registry.js";
+import { LOCALE_REGISTRY } from "../locales/registry.js";
+
+// esbuild --define:BUILD_LOCALES=["zh","en",...] — set at build time.
+// Falls back to ALL registry locales when undefined (local dev / no flag).
+const BUILD_LOCALES: readonly string[] =
+  (typeof BUILD_LOCALES_LIST !== "undefined" ? BUILD_LOCALES_LIST : [
+    "zh", "en", "zh-Hant", "ja", "ko", "de", "es", "pt", "tr", "ar", "he",
+  ]) as readonly string[];
 
 /** All UI locales supported by the renderer. */
 export type Locale = "zh" | "en" | "zh-Hant" | "ja" | "ko" | "de" | "es" | "pt" | "tr" | "ar" | "he";
 
 /** Stable list of supported locales (display order in the language picker).
  *  Grouped: CJK first, then Latin-script European, then RTL. */
-export const LOCALES = ALL_LOCALES as readonly Locale[];
+export const LOCALES = BUILD_LOCALES as readonly Locale[];
 
 export interface LocaleMessages {
   [key: string]: string | LocaleMessages;
