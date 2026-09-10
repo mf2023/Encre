@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Skills domain handlers: enable / install / uninstall / update.
 
 Owns the user-skill lifecycle plus the encrypted skills index and the zip

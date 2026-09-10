@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for encre.telemetry -- agent event recording and session summaries.
 
 Note: test_security_config.py already covers basic ToolCallRecord, TurnRecord,

@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Response filters for the gateway delivery pipeline.
 
 Detects intentional-silence responses, partial markers, and other patterns

@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 # Built-in sub-agent role templates for Encre's multi-agent workflows.
 #
 # Each entry is an ``encre.config.SubAgentConfig`` that pairs a name and a
@@ -46,7 +48,6 @@ def get_builtin_sub_agents() -> list[SubAgentConfig]:
     deep enough to be handed straight to ``EncreAgent`` construction.
     """
     return [
-        # 鈹€鈹€ General mode 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         SubAgentConfig(
             name="coder",
             description="Focused implementation agent for writing code",

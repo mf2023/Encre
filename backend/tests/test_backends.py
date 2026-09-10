@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,9 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-"""Tests for backends: model registry, backend factory, BaseBackend ABC,
-and retry configuration.
-"""
+from __future__ import annotations
 
 import asyncio
 
@@ -621,7 +619,7 @@ class TestBackendCapabilities:
         """Validate Anthropic backend reports all extended capabilities.
 
         The test asserts tool calling, a positive context window, extended thinking enabled,
-        and prompt caching enabled 鈥?the four capabilities that distinguish Anthropic from
+        and prompt caching enabled — the four capabilities that distinguish Anthropic from
         generic OpenAI-compatible backends.
         """
         be = create_backend("anthropic", api_key="sk-ant-fake")

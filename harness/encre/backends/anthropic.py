@@ -1,6 +1,7 @@
 ﻿#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-# Copyright 漏 2025-2026 Wenze Wei. All Rights Reserved.
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
 # This file is part of Encre.
 # The Encre project belongs to the Dunimd Team.
@@ -344,6 +345,8 @@ class AnthropicBackend(BaseBackend):
                 _input_tokens: int = 0
                 _output_tokens: int = 0
                 _cache_deleted: int = 0
+                _cache_read: int = 0
+                _cache_creation: int = 0
 
                 # Anthropic SSE emits paired lines: "event: <type>" followed
                 # by "data: <json>". Parse them into BackendEvent objects.
@@ -360,6 +363,12 @@ class AnthropicBackend(BaseBackend):
                         msg = data.get("message", {})
                         msg_usage = msg.get("usage", {})
                         _input_tokens = msg_usage.get("input_tokens", 0)
+                        # Anthropic reports prompt-cache hits separately:
+                        # cache_read_input_tokens = tokens served from cache,
+                        # cache_creation_input_tokens = tokens written to
+                        # cache this request (billed at a write premium).
+                        _cache_read = msg_usage.get("cache_read_input_tokens", 0) or 0
+                        _cache_creation = msg_usage.get("cache_creation_input_tokens", 0) or 0
                         # Mark every registered tool_result as "sent to API" so
                         # the next turn's deletion candidates are eligible.
                         # This is safe to do here because message_start fires
@@ -448,9 +457,13 @@ class AnthropicBackend(BaseBackend):
                         logger.error(f"Anthropic stream error: {err_msg}")
                         yield create_backend_error(err_msg)
 
-                _usage = {"input_tokens": _input_tokens, "output_tokens": _output_tokens} if _input_tokens or _output_tokens else None
+                _usage = {"input_tokens": _input_tokens, "output_tokens": _output_tokens} if _input_tokens or _output_tokens or _cache_read or _cache_creation else None
                 if _usage and _cache_deleted:
                     _usage["cache_deleted_input_tokens"] = _cache_deleted
+                if _usage and _cache_read:
+                    _usage["cache_read_input_tokens"] = _cache_read
+                if _usage and _cache_creation:
+                    _usage["cache_creation_input_tokens"] = _cache_creation
                 yield create_backend_finish(finish_reason, usage=_usage)
 
         except Exception as e:

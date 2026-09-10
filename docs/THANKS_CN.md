@@ -326,7 +326,7 @@ Node.js 使用类 MIT 的自定义许可证。完整文本见 <https://github.co
 
 ### 验证脚本
 
-本文件与发布 **0.4.1** 的清单一致。编辑后可这样重新核对：
+本文件与发布 **0.4.3** 的清单一致。编辑后可这样重新核对：
 
 ```bash
 # 比较 Python 核心依赖与 pyproject.toml
@@ -376,6 +376,6 @@ PY
 
 ## 致谢
 
-本文件已于 **2026-08-23** 针对 **0.4.1** 发布与项目清单完成最后一次核对。上面的依赖列表与该 commit 的 `pyproject.toml`、`desktop/package.json`、`native/crates/*/Cargo.toml` 一致。
+本文件已于 **2026-08-23** 针对 **0.4.3** 发布与项目清单完成最后一次核对。上面的依赖列表与该 commit 的 `pyproject.toml`、`desktop/package.json`、`native/crates/*/Cargo.toml` 一致。
 
 如发现差异，请提交 PR —— 参见 [CONTRIBUTING.md → Development Setup](CONTRIBUTING.md#development-setup)。

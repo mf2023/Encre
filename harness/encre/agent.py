@@ -21,10 +21,14 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+import asyncio
 import contextlib
 import json
 import logging
 import os
+import threading
 import time
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
@@ -58,7 +62,6 @@ from encre.skills.bundled import create_bundled_skills
 from encre.skills.registry import EncreSkillRegistry, parse_yaml_frontmatter
 from encre.soul.system import EncreSoulSystem
 from encre.telemetry import EncreTelemetry
-from encre.tools.defaults import register_default_tools
 from encre.tools.registry import ToolRegistry
 from encre.utils.types import AgentEvent, ToolCallStart, ToolProgress
 
@@ -69,6 +72,7 @@ _USER_SKILLS_LOADED_DIRS: set[str] = set()
 _PROJECT_SKILLS_LOADED_DIRS: set[str] = set()
 _PROJECT_SUB_AGENT_LOADED_DIRS: set[str] = set()
 _PLUGINS_DISCOVERED = False
+_PLUGIN_DISCOVERY_LOCK = threading.Lock()
 _SHARED_SKILL_REGISTRY: EncreSkillRegistry | None = None
 _SHARED_PLUGIN_REGISTRY: PluginRegistry | None = None
 
@@ -96,12 +100,32 @@ def _ensure_bundled_skills_loaded(registry: EncreSkillRegistry) -> None:
     if _BUNDLED_SKILLS_LOADED and registry.list_all():
         return
     create_bundled_skills(registry)
-    # Load static built-in skills (one SKILL.md per sub-directory).  These are
-    # pure markdown - adding a built-in skill is just dropping a folder.
-    from encre.skills.builtin import builtin_skills_dir
     from encre.skills.types import SkillSource
-    registry.load_from_dir(builtin_skills_dir(), source=SkillSource.BUNDLED)
+    # Load skills bundled inside EA packages (ea_tool_* / ea_skill_*).  Resolves
+    # via the directory scan so it works both in editable installs and inside
+    # PyInstaller frozen bundles (where packages live under _internal/).
+    _ensure_ea_package_skills_loaded(registry, SkillSource.BUNDLED)
     _BUNDLED_SKILLS_LOADED = True
+
+
+def _ensure_ea_package_skills_loaded(
+    registry: EncreSkillRegistry, source: "SkillSource"
+) -> None:
+    """Register skills shipped in each EA package's ``skills/`` directory.
+
+    Packages are located by the automatic directory scan in
+    :mod:`encre.plugins.ea_scan` — dropping a new package into ``ea_tools/``
+    is enough, no hardcoded module list.
+    """
+    from encre.plugins.ea_scan import iter_ea_packages
+
+    for pkg in iter_ea_packages():
+        if pkg.skills_dir is None:
+            continue
+        try:
+            registry.load_from_dir(str(pkg.skills_dir), source=source)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"Failed to load EA package skills from {pkg.name}: {e}")
 
 
 def _ensure_user_skills_loaded(registry: EncreSkillRegistry, skills_dir: str) -> None:
@@ -249,11 +273,26 @@ def _ensure_project_sub_agents_loaded(
 def _get_shared_skill_registry() -> EncreSkillRegistry:
     global _SHARED_SKILL_REGISTRY
     if _SHARED_SKILL_REGISTRY is None:
-        registry = EncreSkillRegistry()
-        _ensure_bundled_skills_loaded(registry)
-        from encre.config import get_data_dir
-        _ensure_user_skills_loaded(registry, str(get_data_dir() / "skills"))
-        _SHARED_SKILL_REGISTRY = registry
+        _SHARED_SKILL_REGISTRY = EncreSkillRegistry()
+    # Always (re)ensure: the loaders are idempotent, and this keeps the shared
+    # registry populated even when it was first handed out via the ``_raw``
+    # accessor (deferred construction) before skills had been loaded.
+    _ensure_bundled_skills_loaded(_SHARED_SKILL_REGISTRY)
+    from encre.config import get_data_dir
+    _ensure_user_skills_loaded(_SHARED_SKILL_REGISTRY, str(get_data_dir() / "skills"))
+    return _SHARED_SKILL_REGISTRY
+
+
+def _get_shared_skill_registry_raw() -> EncreSkillRegistry:
+    """Return the shared skill registry **without** loading any skills.
+
+    Mirrors :func:`_get_shared_plugin_registry_raw`: lets a deferred agent
+    construct cheaply; :func:`_get_shared_skill_registry` populates the same
+    object later (off the event loop).
+    """
+    global _SHARED_SKILL_REGISTRY
+    if _SHARED_SKILL_REGISTRY is None:
+        _SHARED_SKILL_REGISTRY = EncreSkillRegistry()
     return _SHARED_SKILL_REGISTRY
 
 
@@ -262,8 +301,22 @@ def _get_shared_plugin_registry() -> PluginRegistry:
     if _SHARED_PLUGIN_REGISTRY is None:
         _SHARED_PLUGIN_REGISTRY = PluginRegistry()
     if not _PLUGINS_DISCOVERED:
-        _SHARED_PLUGIN_REGISTRY.discover_all()
-        _PLUGINS_DISCOVERED = True
+        with _PLUGIN_DISCOVERY_LOCK:
+            if not _PLUGINS_DISCOVERED:
+                _SHARED_PLUGIN_REGISTRY.discover_all()
+                _PLUGINS_DISCOVERED = True
+    return _SHARED_PLUGIN_REGISTRY
+
+
+def _get_shared_plugin_registry_raw() -> PluginRegistry:
+    """Return the shared registry **without** triggering discovery.
+
+    Used when plugin loading is deferred so constructing an agent never blocks
+    the caller (or the event loop) on hundreds of plugin imports.
+    """
+    global _SHARED_PLUGIN_REGISTRY
+    if _SHARED_PLUGIN_REGISTRY is None:
+        _SHARED_PLUGIN_REGISTRY = PluginRegistry()
     return _SHARED_PLUGIN_REGISTRY
 
 
@@ -284,12 +337,11 @@ class EncreAgent:
         feedback: EncreFeedbackLearner | None = None,
         code_index: EncreCodeIndex | None = None,
         mode: Any = None,
+        defer_plugins: bool = False,
     ) -> None:
         from encre.config import get_data_dir
         self.config = config or EncreConfig()
         self.tool_registry = tool_registry or ToolRegistry()
-        if not self.tool_registry.list_tools():
-            register_default_tools(self.tool_registry)
         self.hook_system = hook_system or EncreHookSystem()
         if memory_system is not None:
             self.memory_system = memory_system
@@ -326,8 +378,17 @@ class EncreAgent:
         # Capability profile: one engine, distinct per-mode behaviour.
         # Defaults to GENERAL when unset so existing callers are unchanged.
         self.mode = mode or AgentMode.GENERAL
-        self.plugin_registry = plugin_registry or _get_shared_plugin_registry()
-        self.skill_registry = skill_registry or _get_shared_skill_registry()
+        if plugin_registry is not None:
+            self.plugin_registry = plugin_registry
+        elif defer_plugins:
+            # Do not trigger discovery here: the caller wants construction to
+            # return immediately and will await ``ensure_plugins_loaded`` later.
+            self.plugin_registry = _get_shared_plugin_registry_raw()
+        else:
+            self.plugin_registry = _get_shared_plugin_registry()
+        self.skill_registry = skill_registry or (
+            _get_shared_skill_registry_raw() if defer_plugins else _get_shared_skill_registry()
+        )
         # Load project-level skills for the active workspace.  This is a
         # no-op when no workspace is configured or when neither
         # .encre/skills nor .claude/skills exists in the workspace root.
@@ -372,7 +433,9 @@ class EncreAgent:
             mode=self.mode,
         )
         self._wire_tools()
-        self._load_plugins()
+        self._plugins_loaded = False
+        if not defer_plugins:
+            self._load_plugins()
         # MCP lifecycle (lazy init on first run)
         self._mcp_tools: list[Any] = []
         self._mcp_initialized = False
@@ -401,23 +464,9 @@ class EncreAgent:
         desktop action routes the install prompt through the requester
         instead of returning an error to the LLM.
         """
-        for mod_name in ("computer_use", "browser"):
-            try:
-                mod = __import__(
-                    f"encre.tools.builtin.{mod_name}",
-                    fromlist=["set_engine_requester"],
-                )
-            except Exception:
-                continue
-            setter = getattr(mod, "set_engine_requester", None)
-            if callable(setter):
-                try:
-                    setter(self._engine_requester)
-                except Exception:  # pragma: no cover - defensive
-                    logger.warning(
-                        "set_engine_requester(%s) failed", mod_name,
-                        exc_info=True,
-                    )
+        from encre.tools.runtime import configure_browser_engine_requester
+
+        configure_browser_engine_requester(self._engine_requester)
 
     def set_engine_emit(self, emit: Any) -> None:
         """Install the immediate-emit hook on the engine requester.
@@ -444,6 +493,9 @@ class EncreAgent:
         system_prompt: str | None = None,
         custom_instructions: str = "",
     ) -> AsyncGenerator[AgentEvent, None]:
+        # Ensure deferred plugin loading has completed before the first turn,
+        # so the full tool/skill set is registered without blocking construction.
+        await self.ensure_plugins_loaded()
         # Lazy-init MCP connections on first run
         if not self._mcp_initialized:
             await self._init_mcp()
@@ -588,14 +640,13 @@ class EncreAgent:
         If discover=True, scans entry points and plugin directories first.
         """
         global _PLUGINS_DISCOVERED
-        if discover:
-            if self.plugin_registry is _SHARED_PLUGIN_REGISTRY:
+        if discover and not _PLUGINS_DISCOVERED:
+            # Serialise discovery so concurrent (deferred, threaded) loads run
+            # it exactly once across the process.
+            with _PLUGIN_DISCOVERY_LOCK:
                 if not _PLUGINS_DISCOVERED:
                     self.plugin_registry.discover_all()
                     _PLUGINS_DISCOVERED = True
-            elif not _PLUGINS_DISCOVERED:
-                self.plugin_registry.discover_all()
-                _PLUGINS_DISCOVERED = True
         self.plugin_registry.activate_all()
 
         # Inject plugin tools
@@ -625,14 +676,45 @@ class EncreAgent:
         self.load_plugins(discover=True)
         self._plugins_loaded = True
 
+    async def aload_plugins(self, discover: bool = True) -> int:
+        """Load and activate plugins without blocking the event loop.
+
+        The synchronous work (module imports, activation, tool/skill/hook
+        injection) is executed in a worker thread.
+        """
+        return await asyncio.to_thread(self.load_plugins, discover)
+
+    async def ensure_plugins_loaded(self) -> None:
+        """Ensure plugins (and bundled skills) are loaded once, off the loop.
+
+        Safe to call from any async entry point.  Concurrent callers are
+        serialised by an ``asyncio.Lock``; once loading has completed every
+        later call returns immediately.  This is what allows an agent created
+        with ``defer_plugins=True`` to stay cheap to construct while still
+        having the full tool set available before the first run.
+
+        The shared skill registry is populated in the same worker thread so
+        that deferred construction never pays the (disk + YAML) cost on the
+        event loop.
+        """
+        if getattr(self, "_plugins_loaded", False):
+            return
+        lock = getattr(self, "_plugins_async_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._plugins_async_lock = lock
+        async with lock:
+            if getattr(self, "_plugins_loaded", False):
+                return
+            await self.aload_plugins(discover=True)
+            await asyncio.to_thread(_get_shared_skill_registry)
+            self._plugins_loaded = True
+
     def _wire_tools(self) -> None:
         """Wire parent loop reference to tools that need it."""
-        from encre.tools.builtin.agent import set_parent_loop as _agent_set_parent
-        from encre.tools.builtin.codebase import set_parent_loop as _codebase_set_parent
-        from encre.tools.builtin.find_tool import set_parent_loop as _find_set_parent
-        _agent_set_parent(self.loop)
-        _codebase_set_parent(self.loop)
-        _find_set_parent(self.loop)
+        from encre.tools.runtime import set_parent_loop
+
+        set_parent_loop(self.loop)
 
     # ------------------------------------------------------------------
     # MCP lifecycle
@@ -709,13 +791,10 @@ class EncreAgent:
         await self._init_mcp()
 
     def set_scheduler(self, scheduler: Any) -> None:
-        """Wire a scheduler instance to cron tools."""
-        from encre.tools.builtin.cron_create import EncreCronCreateTool
-        from encre.tools.builtin.cron_delete import EncreCronDeleteTool
-        from encre.tools.builtin.cron_list import EncreCronListTool
-        EncreCronCreateTool.set_scheduler(scheduler)
-        EncreCronDeleteTool.set_scheduler(scheduler)
-        EncreCronListTool.set_scheduler(scheduler)
+        """Wire a scheduler instance to the cron tools."""
+        from encre.tools.runtime import set_scheduler as _set_scheduler
+
+        _set_scheduler(scheduler)
 
     def reset(self) -> None:
         self.session = EncreSession(self.config)

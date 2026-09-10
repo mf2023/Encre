@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """
 Yuanbao sticker (TIMFaceElem) support.
@@ -46,320 +48,319 @@ import unicodedata
 from typing import Optional
 
 # ---------------------------------------------------------------------------
-# Sticker catalogue 鈥?ported from builtin-stickers.json
+# Sticker catalogue ?ported from builtin-stickers.json
 # Key   : canonical name (Chinese)
 # Value : {sticker_id, package_id, name, description, width, height, formats}
 # ---------------------------------------------------------------------------
 STICKER_MAP: dict[str, dict] = {
-    "鍏叚鍏?: {
-        "sticker_id": "278", "package_id": "1003", "name": "鍏叚鍏?,
-        "description": "666 鍘夊 鐗?妫?缁濅簡 濂藉己 awesome",
+    "充?": {
+        "sticker_id": "278", "package_id": "1003", "name": "充?",
+        "description": "666 厉 ??绝了 好强 awesome",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎴戞兂寮€浜?: {
-        "sticker_id": "262", "package_id": "1003", "name": "鎴戞兂寮€浜?,
-        "description": "鎯冲紑 浣涚郴 閲婃€€ 椤挎偀 鐪嬫贰浜?鏃犳墍璋?,
+    "我想?": {
+        "sticker_id": "262", "package_id": "1003", "name": "我想?",
+        "description": "想开 佛系 释 顿悟 看淡?无所?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "瀹崇緸": {
-        "sticker_id": "130", "package_id": "1003", "name": "瀹崇緸",
-        "description": "鑵艰厗 涓嶅ソ鎰忔€?鑴哥孩 濞囩緸 缇炴订 鎹傝劯",
+    "害羞": {
+        "sticker_id": "130", "package_id": "1003", "name": "害羞",
+        "description": "腼腆 不好意?脸红 娇羞 羞涩 捂脸",
         "width": 128, "height": 128, "formats": "png",
     },
-    "姣斿績": {
-        "sticker_id": "252", "package_id": "1003", "name": "姣斿績",
-        "description": "绗旇姱 鐖变綘 鐖卞績鎵嬪娍 love heart 鍠滄浣?,
+    "比心": {
+        "sticker_id": "252", "package_id": "1003", "name": "比心",
+        "description": "笔芯 爱你 爱心手势 love heart 喜?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "濮斿眻": {
-        "sticker_id": "125", "package_id": "1003", "name": "濮斿眻",
-        "description": "闅捐繃 鎯冲摥 鍙€滃反宸?鐦槾 鍙椾激 琚璐?,
+    "委屈": {
+        "sticker_id": "125", "package_id": "1003", "name": "委屈",
+        "description": "难过 想哭 叜巴?瘘 受伤 ?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "浜蹭翰": {
-        "sticker_id": "146", "package_id": "1003", "name": "浜蹭翰",
-        "description": "涔堜箞 mua 浜蹭竴涓?kiss 椋炲惢 鍟?,
+    "亲亲": {
+        "sticker_id": "146", "package_id": "1003", "name": "亲亲",
+        "description": "么么 mua 亲一?kiss 飞吻 ?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "閰?: {
-        "sticker_id": "131", "package_id": "1003", "name": "閰?,
-        "description": "甯?澧ㄩ暅 cool 楂樺喎 鏈夊瀷 swagger",
+    "131": {
+        "sticker_id": "131", "package_id": "1003", "name": "131",
+        "description": "?墨镜 cool 高冷 有型 swagger",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐫?: {
-        "sticker_id": "145", "package_id": "1003", "name": "鐫?,
-        "description": "鐫¤ 鍥?zzZ 鎵撶浌 韬哄钩 浼戠湢 sleepy",
+    "145": {
+        "sticker_id": "145", "package_id": "1003", "name": "145",
+        "description": "睡 ?zzZ 打盹 躺平 休眠 sleepy",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍙戝憜": {
-        "sticker_id": "152", "package_id": "1003", "name": "鍙戝憜",
-        "description": "鎳?鎰ｄ綇 鏀剧┖ 鍛嗘粸 鍑虹 鑴戝瓙绌虹櫧",
+    "发呆": {
+        "sticker_id": "152", "package_id": "1003", "name": "发呆",
+        "description": "?愣住 放空 呆滞 出 脑子空白",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍙€?: {
-        "sticker_id": "157", "package_id": "1003", "name": "鍙€?,
-        "description": "鍗栬悓 姹傞ザ 濮斿眻宸村反 寮卞皬 鎷滄墭 鐪煎反宸?,
+    "157": {
+        "sticker_id": "157", "package_id": "1003", "name": "157",
+        "description": "卖萌 求饶 委屈巴巴 弱小 拜托 眼巴?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎽婃墜": {
-        "sticker_id": "200", "package_id": "1003", "name": "鎽婃墜",
-        "description": "鏃犲 娌″姙娉?鑰歌偐 闅忎究 閭ｅ拫鏁?whatever",
+    "摊手": {
+        "sticker_id": "200", "package_id": "1003", "name": "摊手",
+        "description": "无 没办?耸肩 随便 那咋?whatever",
         "width": 128, "height": 128, "formats": "png",
     },
-    "澶村ぇ": {
-        "sticker_id": "213", "package_id": "1003", "name": "澶村ぇ",
-        "description": "澶寸柤 鐑︽伡 閮侀椃 闅炬悶 宕╂簝 涓€鍥贡",
+    "头大": {
+        "sticker_id": "213", "package_id": "1003", "name": "头大",
+        "description": "头疼 烦恼 郁闷 难搞 崩溃 囹",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍚?: {
-        "sticker_id": "256", "package_id": "1003", "name": "鍚?,
-        "description": "瀹虫€?鎯婃亹 闇囨儕 鍚撲竴璺?鎭愭€?鎬?,
+    "256": {
+        "sticker_id": "256", "package_id": "1003", "name": "256",
+        "description": "害?惊恐 震惊 吓一?恐??",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍚愯": {
-        "sticker_id": "203", "package_id": "1003", "name": "鍚愯",
-        "description": "鏃犺 宕╂簝 琚浄 鍐呬激 涓€鍙ｈ€佽 灞?,
+    "吐": {
+        "sticker_id": "203", "package_id": "1003", "name": "吐",
+        "description": "无 崩溃 袛 内伤 口 ?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍝?: {
-        "sticker_id": "185", "package_id": "1003", "name": "鍝?,
-        "description": "鍌插▏ 鐢熸皵 涓嶆弧 鎾囧槾 涓嶇悊 璧屾皵",
+    "185": {
+        "sticker_id": "185", "package_id": "1003", "name": "185",
+        "description": "傲娇 生气 不满 撇嘴 不理 赌气",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍢垮樋": {
-        "sticker_id": "220", "package_id": "1003", "name": "鍢垮樋",
-        "description": "鍧忕瑧 鐚ョ悙绗?鍋风瑧 鎲ㄧ瑧 寰楁剰 浣犳噦鐨?,
+    "嘿嘿": {
+        "sticker_id": "220", "package_id": "1003", "name": "嘿嘿",
+        "description": "坏笑 猥琐?偷笑 憨笑 得意 你懂?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "澶寸": {
-        "sticker_id": "218", "package_id": "1003", "name": "澶寸",
-        "description": "绋嬪簭鍛?鍔犵彮 鐒﹁檻 娌″ご鍙?绉冧簡 鑲濈垎",
+    "头": {
+        "sticker_id": "218", "package_id": "1003", "name": "头",
+        "description": "程序?加班 焦虑 没头?秃了 肝爆",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鏆椾腑瑙傚療": {
-        "sticker_id": "221", "package_id": "1003", "name": "鏆椾腑瑙傚療",
-        "description": "绐ュ睆 娼滄按 鍋峰伔鐪?瑙掕惤 鍥磋 灞忎綇鍛煎惛",
+    "暗中观察": {
+        "sticker_id": "221", "package_id": "1003", "name": "暗中观察",
+        "description": "窥屏 潜水 偷偷?角落 围 屏住呼吸",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎴戦吀浜?: {
-        "sticker_id": "224", "package_id": "1003", "name": "鎴戦吀浜?,
-        "description": "瀚夊 鏌犳绮?缇℃厱 鍚冩煚妾?鐪肩孩 鎭版煚妾?,
+    "我酸?": {
+        "sticker_id": "224", "package_id": "1003", "name": "我酸?",
+        "description": "嫉 柠?羡慕 吃柠?眼红 恰柠?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎵揷all": {
-        "sticker_id": "246", "package_id": "1003", "name": "鎵揷all",
-        "description": "搴旀彺 鍔犳补 鏀寔 鍠濆僵 鍔╁▉ call",
+    "打call": {
+        "sticker_id": "246", "package_id": "1003", "name": "打call",
+        "description": "应援 加油 攌 喝彩 助威 call",
         "width": 128, "height": 128, "formats": "png",
     },
-    "搴嗙": {
-        "sticker_id": "251", "package_id": "1003", "name": "搴嗙",
-        "description": "绁濊春 寮€蹇?鑰?party 鑳滃埄 骞叉澂",
+    "庆": {
+        "sticker_id": "251", "package_id": "1003", "name": "庆",
+        "description": "祝贺 ??party 胜利 干杯",
         "width": 128, "height": 128, "formats": "png",
     },
-    "濂嬫枟": {
-        "sticker_id": "151", "package_id": "1003", "name": "濂嬫枟",
-        "description": "鍔姏 鍔犳补 鎷兼悘 鍐?骞插姴 鍗疯捣鏉?,
+    "奋斗": {
+        "sticker_id": "151", "package_id": "1003", "name": "奋斗",
+        "description": "劊 加油 拼搏 ?干劲 卷起?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎯婅": {
-        "sticker_id": "143", "package_id": "1003", "name": "鎯婅",
-        "description": "闇囨儕 鍝?涓嶆暍鐩镐俊 OMG 灞呯劧 杩欎箞绂昏氨",
+    "惊": {
+        "sticker_id": "143", "package_id": "1003", "name": "惊",
+        "description": "震惊 ?不敢相信 OMG 居然 这么离谱",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐤戦棶": {
-        "sticker_id": "144", "package_id": "1003", "name": "鐤戦棶",
-        "description": "闂彿 涓嶆噦 鍟?涓轰粈涔?鍟ユ儏鍐?鎳甸€奸棶",
+    "疑问": {
+        "sticker_id": "144", "package_id": "1003", "name": "疑问",
+        "description": "闏 不懂 ?为什?啥情?懵问",
         "width": 128, "height": 128, "formats": "png",
     },
-    "浠旂粏鍒嗘瀽": {
-        "sticker_id": "248", "package_id": "1003", "name": "浠旂粏鍒嗘瀽",
-        "description": "鎬濊€?鎺ㄦ暡 璁ょ湡 鐮旂┒ 鐞㈢（ 璁╂垜鎯虫兂",
+    "仔细分析": {
+        "sticker_id": "248", "package_id": "1003", "name": "仔细分析",
+        "description": "思?推敲 认真 研究 琢磨 让我想想",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎾呭槾": {
-        "sticker_id": "184", "package_id": "1003", "name": "鎾呭槾",
-        "description": "鍢熷槾 鍗栬悓 涓嶉珮鍏?鎾掑▏ 鍢寸繕",
+    "撅嘴": {
+        "sticker_id": "184", "package_id": "1003", "name": "撅嘴",
+        "description": "嘟嘴 卖萌 不高?撒娇 嘴翘",
         "width": 128, "height": 128, "formats": "png",
     },
-    "娉": {
-        "sticker_id": "199", "package_id": "1003", "name": "娉",
-        "description": "澶у摥 浼ゅ績 鐮撮槻 鎰熷姩鍝?娉祦婊￠潰 鍛滃憸",
+    "199": {
+        "sticker_id": "199", "package_id": "1003", "name": "199",
+        "description": "大哭 伤心 破防 感动?泵满面 呜呜",
         "width": 128, "height": 128, "formats": "png",
     },
-    "灏婂槦鍋囧槦": {
-        "sticker_id": "276", "package_id": "1003", "name": "灏婂槦鍋囧槦",
-        "description": "鐪熺殑鍋囩殑 鐪熷亣 鍙埍闂?浣犻獥鎴?鏄笉鏄?,
+    "尊嘟假嘟": {
+        "sticker_id": "276", "package_id": "1003", "name": "尊嘟假嘟",
+        "description": "真的假的 真假 又?你骗?昸?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐣ョ暐鐣?: {
-        "sticker_id": "113", "package_id": "1003", "name": "鐣ョ暐鐣?,
-        "description": "璋冪毊 鍚愯垖 涓嶆湇 鐣?姘旀浣?楝艰劯",
+    "略略?": {
+        "sticker_id": "113", "package_id": "1003", "name": "略略?",
+        "description": "调皮 吐舌 不服 ?气?鬼脸",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍥?: {
-        "sticker_id": "180", "package_id": "1003", "name": "鍥?,
-        "description": "鎯崇潯 鍊?鎵撳搱娆?鐫佷笉寮€鐪?濂藉洶鍟?sleepy",
+    "180": {
+        "sticker_id": "180", "package_id": "1003", "name": "180",
+        "description": "想睡 ?打哈?睁不?好困?sleepy",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎶樼（": {
-        "sticker_id": "181", "package_id": "1003", "name": "鎶樼（",
-        "description": "闅惧彈 鐥涜嫤 鐓庣啲 铓屽煚浣忎簡 鍙椾笉浜?瑕佸懡",
+    "折磨": {
+        "sticker_id": "181", "package_id": "1003", "name": "折磨",
+        "description": "难受 痛苦 煎熬 蚌埠住了 受不?要命",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎶犻蓟": {
-        "sticker_id": "182", "package_id": "1003", "name": "鎶犻蓟",
-        "description": "涓嶅睉 鏃犺亰 娣″畾 鏃犳墍璋?閯欒 鎸栭蓟",
+    "抠鼻": {
+        "sticker_id": "182", "package_id": "1003", "name": "抠鼻",
+        "description": "不屑 无聊 淡定 无所?鄙 挖鼻",
         "width": 128, "height": 128, "formats": "png",
     },
-    "榧撴帉": {
-        "sticker_id": "183", "package_id": "1003", "name": "榧撴帉",
-        "description": "鎷嶆墜 鍙ソ 璧炲悓 666 鍠濆僵 鎺屽０",
+    "鼓掌": {
+        "sticker_id": "183", "package_id": "1003", "name": "鼓掌",
+        "description": "拍手 句 赞同 666 喝彩 掌声",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鏂滅溂绗?: {
-        "sticker_id": "204", "package_id": "1003", "name": "鏂滅溂绗?,
-        "description": "婊戠ń 鍧忕瑧 doge 鎰忓懗娣遍暱 闃撮槼鎬皵 鍢垮樋鍢?,
+    "斜眼?": {
+        "sticker_id": "204", "package_id": "1003", "name": "斜眼?",
+        "description": "滑稽 坏笑 doge 意味深长 阴阳怰 嘿嘿?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "杈ｇ溂鐫?: {
-        "sticker_id": "216", "package_id": "1003", "name": "杈ｇ溂鐫?,
-        "description": "鐪嬩笉涓嬪幓 cringe 姣佷笁瑙?澶笐浜?鐬庝簡",
+    "辣眼?": {
+        "sticker_id": "216", "package_id": "1003", "name": "辣眼?",
+        "description": "看不下去 cringe 毁三?夸?瞎了",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍝﹀摕": {
-        "sticker_id": "217", "package_id": "1003", "name": "鍝﹀摕",
-        "description": "鎯婅 璧峰搫 鍝囧摝 鏈夋垙 涓嶇畝鍗?鍝?,
+    "哦哟": {
+        "sticker_id": "217", "package_id": "1003", "name": "哦哟",
+        "description": "惊 起哄 哇哦 有戏 不简??",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍚冪摐": {
-        "sticker_id": "222", "package_id": "1003", "name": "鍚冪摐",
-        "description": "鍥磋 鐪嬫垙 鍏崷 璺汉 鐪嬬儹闂?鏉垮嚦",
+    "吃瓜": {
+        "sticker_id": "222", "package_id": "1003", "name": "吃瓜",
+        "description": "围 看戏 免 跺 看热?板凳",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐙楀ご": {
-        "sticker_id": "225", "package_id": "1003", "name": "鐙楀ご",
-        "description": "doge 淇濆懡 寮€鐜╃瑧 婊戠ń 鍙嶈 鎳傜殑閮芥噦",
+    "狗头": {
+        "sticker_id": "225", "package_id": "1003", "name": "狗头",
+        "description": "doge 保命 玩笑 滑稽 反 懂的都懂",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鏁ぜ": {
-        "sticker_id": "227", "package_id": "1003", "name": "鏁ぜ",
-        "description": "salute 灏婇噸 鏀跺埌 閬靛懡 鑷存暚 鎶ュ憡",
+    "敤": {
+        "sticker_id": "227", "package_id": "1003", "name": "敤",
+        "description": "salute 尊重 收到 遵命 致敬 报告",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍝?: {
-        "sticker_id": "231", "package_id": "1003", "name": "鍝?,
-        "description": "鐭ラ亾浜?鏄庣櫧 鏁疯 鍡?杩欐牱鍟?鏀跺埌",
+    "231": {
+        "sticker_id": "231", "package_id": "1003", "name": "231",
+        "description": "知道?明白 敷 ?这样?收到",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎷垮埌绾㈠寘": {
-        "sticker_id": "236", "package_id": "1003", "name": "鎷垮埌绾㈠寘",
-        "description": "绾㈠寘 璋㈣阿鑰佹澘 鍙戣储 寮€蹇?鎶㈠埌浜?娆ф皵",
+    "拿到红包": {
+        "sticker_id": "236", "package_id": "1003", "name": "拿到红包",
+        "description": "红包 谢谢老板 发财 ?抢到?欧气",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐗涘悥": {
-        "sticker_id": "239", "package_id": "1003", "name": "鐗涘悥",
-        "description": "鐗?鍘夊 寮?666 浣╂湇 澶т浆",
+    "牛吖": {
+        "sticker_id": "239", "package_id": "1003", "name": "牛吖",
+        "description": "?厉 ?666 佩服 大佬",
         "width": 128, "height": 128, "formats": "png",
     },
-    "璐磋创": {
-        "sticker_id": "272", "package_id": "1003", "name": "璐磋创",
-        "description": "鎶辨姳 浜叉樀 韫弓 浜插瘑 闈犻潬 鎾掑▏璐?,
+    "贴贴": {
+        "sticker_id": "272", "package_id": "1003", "name": "贴贴",
+        "description": "抱抱 亲昵 蹹 亲密 靠靠 撒娇?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐖卞績": {
-        "sticker_id": "138", "package_id": "1003", "name": "鐖卞績",
-        "description": "蹇?love 鍠滄浣?绾㈠績 绀虹埍 涔堜箞鍝?,
+    "爱心": {
+        "sticker_id": "138", "package_id": "1003", "name": "爱心",
+        "description": "?love 喜?红心 示爱 么么?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鏅氬畨": {
-        "sticker_id": "170", "package_id": "1003", "name": "鏅氬畨",
-        "description": "濂芥ⅵ 鐫′簡 night 鏃╃偣浼戞伅 瀹夊暒 moon",
+    "晚安": {
+        "sticker_id": "170", "package_id": "1003", "name": "晚安",
+        "description": "好梦 睡了 night 早点休息 安啦 moon",
         "width": 128, "height": 128, "formats": "png",
     },
-    "澶槼": {
-        "sticker_id": "176", "package_id": "1003", "name": "澶槼",
-        "description": "鏅村ぉ 鏃╀笂濂?闃冲厜 morning 濂藉ぉ姘?鏃?,
+    "夘": {
+        "sticker_id": "176", "package_id": "1003", "name": "夘",
+        "description": "晴天 早上?阳光 morning 好天??",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鏌犳": {
-        "sticker_id": "266", "package_id": "1003", "name": "鏌犳",
-        "description": "閰?瀚夊 鏌犳绮?缇℃厱 鎴戦吀 鎭版煚妾?,
+    "柠": {
+        "sticker_id": "266", "package_id": "1003", "name": "柠",
+        "description": "?嫉 柠?羡慕 我酸 恰柠?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "澶у啢绉?: {
-        "sticker_id": "267", "package_id": "1003", "name": "澶у啢绉?,
-        "description": "鍊掗湁 鍚冧簭 鑷槻 濂藉績娌″ソ鎶?鑳岄攨 宸ュ叿浜?,
+    "大冤?": {
+        "sticker_id": "267", "package_id": "1003", "name": "大冤?",
+        "description": "倒霉 吃亏 臘 好心没好?背锅 工具?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍚愪簡": {
-        "sticker_id": "132", "package_id": "1003", "name": "鍚愪簡",
-        "description": "鎭跺績 yue 鍙椾笉浜?瀚屽純 鎯冲悙 鐢熺悊涓嶉€?,
+    "吐了": {
+        "sticker_id": "132", "package_id": "1003", "name": "吐了",
+        "description": "恶心 yue 受不?嫌弃 想吐 生理不?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎬?: {
-        "sticker_id": "134", "package_id": "1003", "name": "鎬?,
-        "description": "鐢熸皵 鎰ゆ€?鐏ぇ 鏆磋簛 姘旂偢 鎬?,
+    "134": {
+        "sticker_id": "134", "package_id": "1003", "name": "134",
+        "description": "生气 愤?灤 暴躁 气炸 ?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐜懓": {
-        "sticker_id": "165", "package_id": "1003", "name": "鐜懓",
-        "description": "鑺?绀虹埍 琛ㄧ櫧 娴极 閫佷綘鑺?鎯呬汉鑺?,
+    "玑": {
+        "sticker_id": "165", "package_id": "1003", "name": "玑",
+        "description": "?示爱 表白 浼 送你?情人?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鍑嬭阿": {
-        "sticker_id": "119", "package_id": "1003", "name": "鍑嬭阿",
-        "description": "鑺辫阿 澶辨亱 闅捐繃 鏋悗 蹇冪 鍑変簡",
+    "凋谢": {
+        "sticker_id": "119", "package_id": "1003", "name": "凋谢",
+        "description": "花谢 失恋 难过 析 心 凉了",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐐硅禐": {
-        "sticker_id": "159", "package_id": "1003", "name": "鐐硅禐",
-        "description": "璧?璁ゅ悓 濂芥 good like 澶ф媷鎸?椤?,
+    "点赞": {
+        "sticker_id": "159", "package_id": "1003", "name": "点赞",
+        "description": "?认同 好 good like 大拇??",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎻℃墜": {
-        "sticker_id": "164", "package_id": "1003", "name": "鎻℃墜",
-        "description": "鍚堜綔 浣犲ソ 鍟嗗姟 hello deal 鎴愪氦 鍙嬪ソ",
+    "握手": {
+        "sticker_id": "164", "package_id": "1003", "name": "握手",
+        "description": "合作 你好 商务 hello deal 成交 友好",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎶辨嫵": {
-        "sticker_id": "163", "package_id": "1003", "name": "鎶辨嫵",
-        "description": "璋㈣阿 澶辨暚 姹熸箹 鎵胯 鎷滄墭 鏈夌ぜ",
+    "抱拳": {
+        "sticker_id": "163", "package_id": "1003", "name": "抱拳",
+        "description": "谢谢 失敬 江湖 承 拜托 有礼",
         "width": 128, "height": 128, "formats": "png",
     },
     "ok": {
         "sticker_id": "169", "package_id": "1003", "name": "ok",
-        "description": "濂界殑 鏀跺埌 娌￠棶棰?okay 琛?鍙互 鎳備簡",
+        "description": "好的 收到 没问?okay ?叻 懂了",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鎷冲ご": {
-        "sticker_id": "174", "package_id": "1003", "name": "鎷冲ご",
-        "description": "鍔犳补 骞?鍐?fight 鍔涢噺 鍑绘嫵 纭皵",
+    "拳头": {
+        "sticker_id": "174", "package_id": "1003", "name": "拳头",
+        "description": "加油 ??fight 力量 击拳 硰",
         "width": 128, "height": 128, "formats": "png",
     },
-    "闉偖": {
-        "sticker_id": "191", "package_id": "1003", "name": "闉偖",
-        "description": "杩囧勾 鍠滃簡 鐖嗙 鏄ヨ妭 鍣奸噷鍟暒 绾?,
+    "鞂": {
+        "sticker_id": "191", "package_id": "1003", "name": "鞂",
+        "description": "过年 喜庆 爆 春节 噼里啕 ?",
         "width": 128, "height": 128, "formats": "png",
     },
-    "鐑熻姳": {
-        "sticker_id": "258", "package_id": "1003", "name": "鐑熻姳",
-        "description": "搴嗗吀 婕備寒 鏂板勾 鍢?缁芥斁 鑺傛棩蹇箰",
+    "烟花": {
+        "sticker_id": "258", "package_id": "1003", "name": "烟花",
+        "description": "庆典 漂亮 新年 ?绽放 节日忹",
         "width": 128, "height": 128, "formats": "png",
     },
 }
 
-
 def get_sticker_by_name(name: str) -> Optional[dict]:
     """
-    鎸夊悕绉版煡鎵捐创绾革紝鏀寔妯＄硦鍖归厤銆?
+    按名称查找贴纸，攌模糊匹配?
 
-    鍖归厤浼樺厛绾э細
-      1. 瀹屽叏鐩哥瓑锛坣ame锛?
-      2. name 鍖呭惈鏌ヨ璇嶏紙鍓嶇紑/瀛愪覆锛?
-      3. description 鍖呭惈鏌ヨ璇嶏紙鍚屼箟璇嶆悳绱級
-      4. 閫氱敤妯＄硦璇勫垎锛堜笌 sticker-search 鍚岀畻娉曪級锛屽懡涓嵆杩斿洖寰楀垎鏈€楂樼殑涓€鏉?
+    匹配优先级：
+      1. 完全相等（name?
+      2. name 包含查词（前缀/子串?
+      3. description 包含查词（同义词搜紼
+      4. 通用模糊评分（与 sticker-search 同算法），命不返回得分高的?
 
-    杩斿洖 sticker dict锛屾壘涓嶅埌杩斿洖 None銆?
+    返回 sticker dict，找不到返回 None?
     """
     if not name:
         return None
@@ -384,10 +385,10 @@ def get_sticker_by_name(name: str) -> Optional[dict]:
 
 def get_random_sticker(category: str = None) -> dict:
     """
-    闅忔満杩斿洖涓€涓创绾搞€?
+    随机返回临纸?
 
-    鑻ユ寚瀹?category锛屽垯鍦?description 涓惈鏈夎鍏抽敭璇嶇殑璐寸焊閲岄殢鏈洪€夊彇锛?
-    category 涓?None 鏃朵粠鍏ㄨ〃闅忔満銆?
+    若指?category，则?description 丐有关键词的贴纸里随机取?
+    category ?None 时从全表随机?
     """
     if category:
         candidates = [
@@ -400,7 +401,7 @@ def get_random_sticker(category: str = None) -> dict:
 
 
 def get_sticker_by_id(sticker_id: str) -> Optional[dict]:
-    """鎸?sticker_id 绮剧‘鏌ユ壘璐寸焊銆?""
+    """按 sticker_id 精确查找贴纸。"""
     if not sticker_id:
         return None
     sid = str(sticker_id).strip()
@@ -411,10 +412,10 @@ def get_sticker_by_id(sticker_id: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 妯＄硦鎼滅储锛堝榻?chatbot-web yuanbao-openclaw-plugin/sticker-cache.ts.searchStickers锛?
+# 模糊搜索（?chatbot-web yuanbao-openclaw-plugin/sticker-cache.ts.searchStickers?
 # ---------------------------------------------------------------------------
 
-_PUNCT_RE = re.compile(r"[\s\u3000\-_路.,锛屻€?锛?锛焅"鈥溾€?鈥樷€欍€?\\]+")
+_PUNCT_RE = re.compile(r"[\s\u3000\-_·.,，??？\"“?‘?\\]+")
 
 
 def _normalize_text(raw: str) -> str:
@@ -488,10 +489,10 @@ def _score_field(haystack: str, query: str) -> float:
 
 def search_stickers(query: str, limit: int = 10) -> list[dict]:
     """
-    鍦ㄥ唴缃创绾歌〃涓寜妯＄硦鍖归厤鎺掑簭杩斿洖鍓?N 鏉＄粨鏋溿€?
+    在内罴纸表丌模糊匹配排序返回?N 条结果?
 
-    璇勫垎缁煎悎 name/description 瀛楁鐨勫瓙涓层€佸瓧绗﹀閲嶉泦瑕嗙洊銆乥igram Jaccard銆佸瓙搴忓垪姣斾緥銆?
-    name 鏉冮噸鐣ラ珮浜?description锛埫?.88锛夈€傜┖ query 鏃舵寜瀛楀吀椤哄簭杩斿洖鍓?N 鏉°€?
+    评分综合 name/description 字的子串字符重集覆盖、bigram Jaccard、子序列比例?
+    name 权重略高?description（?.88）空 query 时按字典顺序返回?N 条?
     """
     safe_limit = max(1, min(500, int(limit) if limit else 10))
     if not query or not _normalize_text(query):
@@ -535,20 +536,20 @@ def build_face_msg_body(
     data: Optional[str] = None,
 ) -> list:
     """
-    鏋勯€?TIMFaceElem 娑堟伅浣撱€?
+    构?TIMFaceElem 消息体?
 
-    Yuanbao 绾﹀畾锛?
-      - index 鍥哄畾浼?0锛堟湇鍔＄閫氳繃 data 瀛楁璇嗗埆鍏蜂綋琛ㄦ儏锛?
-      - data 涓?JSON 瀛楃涓诧紝鍖呭惈 sticker_id / package_id 绛夊瓧娈?
+    Yuanbao 约定?
+      - index 固定?0（服务通过 data 字识别具体表情?
+      - data ?JSON 字串，包含 sticker_id / package_id 等字?
 
     Args:
-        face_index: 淇濈暀瀛楁锛屾殏鏃朵笉褰卞搷 wire format锛圷uanbao 鍥哄畾 index=0锛夈€?
-                    褰?face_index > 0 鏃惰涓烘棫鐗?QQ 琛ㄦ儏 ID锛岀洿鎺ユ斁鍏?index銆?
-        face_type:  淇濈暀瀛楁锛堝吋瀹规棫鎺ュ彛锛屽綋鍓嶆湭浣跨敤锛夈€?
-        data:       宸插簭鍒楀寲鐨?JSON 瀛楃涓诧紱涓?None 鏃朵粎浼?index銆?
+        face_index: 保留字，暂时不影响 wire format（Yuanbao 固定 index=0）?
+                    ?face_index > 0 时为旧?QQ 表情 ID，直接放?index?
+        face_type:  保留字（兼容旧接口，当前未使用）?
+        data:       已序列化?JSON 字串；?None 时仅?index?
 
     Returns:
-        绗﹀悎 Yuanbao TIM 鍗忚鐨?msg_body list锛屽::
+        符合 Yuanbao TIM 协?msg_body list，::
 
             [{"msg_type": "TIMFaceElem", "msg_content": {"index": 0, "data": "..."}}]
     """
@@ -560,9 +561,9 @@ def build_face_msg_body(
 
 def build_sticker_msg_body(sticker: dict) -> list:
     """
-    浠?STICKER_MAP 涓殑 sticker dict 鐩存帴鏋勯€?TIMFaceElem 娑堟伅浣撱€?
+    ?STICKER_MAP 业 sticker dict 直接构?TIMFaceElem 消息体?
 
-    杩欐槸 send_sticker() 鐨勫唴閮ㄨ緟鍔╋紝纭繚 data 瀛楁涓庡師濮?JS 鎻掍欢涓€鑷淬€?
+    这是 send_sticker() 的内部辅助，硿 data 字与原?JS 插件致?
     """
     data_payload = json.dumps(
         {

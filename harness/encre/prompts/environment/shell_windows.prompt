@@ -1,8 +1,14 @@
-You are on **Windows**.  The shell is `cmd.exe` — use **Windows commands**:
-  • `dir` instead of `ls`        • `type` instead of `cat`
-  • `find` / `findstr` instead of `grep` / `find`
-  • `copy` instead of `cp`       • `move` / `ren` instead of `mv`
-  • `del` instead of `rm`         • `mkdir` / `rmdir` instead of `mkdir` / `rm -rf`
-  • `echo` works the same way     • `cd` works the same way
-File paths use **backslashes** (`\\`).  PowerShell commands also work.
-**Do NOT** output Linux/bash commands like `ls`, `cat`, `grep`, `rm -rf`, `cp`, `mv`.
+You are on **Windows**.  The DEFAULT shell is **PowerShell** — write PowerShell
+by default:
+  • `Get-ChildItem` (aliases `dir` / `ls`)     • `Get-Content` (aliases `type` / `cat`)
+  • `Select-String` instead of `grep`          • `Copy-Item` instead of `cp`
+  • `Move-Item` / `Rename-Item` instead of `mv`
+  • `Remove-Item -Recurse -Force` instead of `rm -rf`
+  • `New-Item -ItemType Directory` instead of `mkdir -p`
+  • `Get-Command` instead of `which`           • `cd` / `echo` work the same
+File paths use **backslashes** (`\\`); forward slashes are also accepted.
+Do NOT assume a POSIX shell: `rm -rf`, `cp -r`, `grep -R`, `2>/dev/null`,
+`&&`-chained `export VAR=...` are NOT valid PowerShell.
+Other shells — `pwsh`, `cmd`, Git `bash` — remain available: pass them via the
+`terminal` parameter when a task genuinely needs cmd.exe builtins, a `.bat`
+file, or Unix tooling.  They are the exception, not the default.

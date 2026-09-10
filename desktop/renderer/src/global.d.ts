@@ -48,6 +48,7 @@ interface ElectronAPI {
   pickFiles(): Promise<string[]>;
   pickDirectory(): Promise<string | null>;
   readFile(filePath: string): Promise<FileReadResult>;
+  statFile(filePath: string): Promise<{ size: number; mtime: number; isDirectory: boolean } | null>;
   readFileBase64(filePath: string): Promise<{ data: string; mime_type: string } | null>;
   readDirectory(dirPath: string): Promise<{ path: string; name: string } | null>;
   writeFile(filePath: string, data: string): Promise<boolean>;

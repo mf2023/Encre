@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for EncreSession and SessionCheckpoint.
 
 Session is the mutable conversation context that the agent accumulates

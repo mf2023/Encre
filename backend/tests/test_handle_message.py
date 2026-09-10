@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for BaseAdapter.handle_message inbound routing (Phase 1).
 
 Covers the canonical inbound entry: source normalization, the two-level

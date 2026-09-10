@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Relay capability descriptor (handshake payload).
 
 The descriptor is the immutable capability profile the connector returns at

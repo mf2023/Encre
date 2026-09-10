@@ -418,15 +418,19 @@ def _environment_block(workspace_root: str = "") -> PromptBlock:
 
 
 def _current_datetime_block() -> PromptBlock:
-    """Inject current date and time so the model has temporal awareness.
+    """Inject current date so the model has temporal awareness.
     The model's training data has a knowledge cutoff; this block explicitly
-    overrides it with the real current date."""
+    overrides it with the real current date.
+
+    Deliberately omits the clock time: a seconds-resolution timestamp inside
+    the static prompt prefix would invalidate the provider-side prompt cache
+    on every turn.  Date resolution is cache-friendly for a full day; exact
+    time should be obtained via tools when it matters."""
     from datetime import datetime as _dt
     now = _dt.now()
     block = _block_from_file("datetime")
     return block.with_context(dict(
         date=now.strftime("%A, %B %d, %Y"),
-        time=now.strftime("%H:%M:%S"),
         year=str(now.year),
     ))
 

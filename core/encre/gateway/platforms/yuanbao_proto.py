@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 yuanbao_proto.py - Yuanbao WebSocket protocol encoder/decoder (pure Python implementation).
 
@@ -209,7 +211,8 @@ def _encode_message(b: bytes) -> bytes:
 
 
 def _parse_fields(data: bytes) -> list[tuple[int, int, bytes | int]]:
-    """Parse all fields of a protobuf message, returning [(field_number, wire_type, raw_value), ...]"""
+    """Parse all fields of a protobuf message, returning [(field_number, wire_type, raw_value), ...]
+
     raw_value:
       - WT_VARINT: int
       - WT_LEN: bytes

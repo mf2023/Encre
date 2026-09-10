@@ -151,8 +151,8 @@ class SubAgentRunner:
 
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
-        from encre.tools.builtin.agent import MAX_SUB_AGENT_DEPTH
-        from encre.tools.builtin.agent import (
+        from encre.tools.runtime import MAX_SUB_AGENT_DEPTH
+        from encre.tools.runtime import (
             _enforce_tool_policy as _agent_enforce_policy,
         )
         from encre.tools.registry import ToolRegistry

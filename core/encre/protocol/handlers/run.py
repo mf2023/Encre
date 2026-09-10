@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Agent-run domain handlers: run / retry / resume.
 
 The streaming execution paths that drive the agent loop.  Extracted
@@ -40,12 +42,39 @@ from dataclasses import replace
 from typing import Any
 
 from encre.protocol.handlers.workspace_store import _apply_workspace_config
+from encre.protocol.handlers.base import _inject_context_windows
 from encre.server.protocol import ClientResume, ClientRetry, ClientRun
 from encre.server.session_manager import SessionState
 from encre.utils.tokens import count_message_tokens
 from encre.utils.types import AssistantBoundary, ToolResult
+from encre.config import ModelConfig
 
 logger = logging.getLogger("encre.transport.ws")
+
+
+def _sync_model_from_fallback(handler, session, ws):
+    """Sync model changes from fallback to _default_config and notify frontend."""
+    if session is None:
+        return
+    try:
+        cfg = session.agent.config
+        # Check if active_model_index changed (fallback occurred)
+        if hasattr(handler, '_default_config') and handler._default_config is not None:
+            if cfg.active_model_index != handler._default_config.active_model_index:
+                handler._default_config.active_model_index = cfg.active_model_index
+                handler._default_config.apply_active_model()
+                models_dict = _inject_context_windows([
+                    m.to_dict(encrypt_api_keys=False) if isinstance(m, ModelConfig) else m
+                    for m in cfg.models
+                ])
+                import asyncio
+                asyncio.ensure_future(handler._send(
+                    ws, "models_updated",
+                    models=models_dict,
+                    active_model_index=cfg.active_model_index,
+                ))
+    except Exception:
+        pass
 
 
 def _format_attachments(attachments: list[dict]) -> str:
@@ -177,6 +206,8 @@ class RunHandlers:
                                     await self._send(ws, "telemetry",
                                         data=_iclaw_session.agent.telemetry.get_summary(),
                                         session_id=sid)
+                            # Sync model changes from fallback to _default_config and notify frontend
+                            _sync_model_from_fallback(self, _iclaw_session, ws)
                     except Exception as e:
                         logger.error("[iclaw] setup error: %s", e, exc_info=True)
                         from encre.backends.base import format_backend_error
@@ -299,9 +330,11 @@ class RunHandlers:
 
         if msg.specialty and msg.specialty != "general":
             session.agent.loop.prompt_builder._specialty = msg.specialty
-        # Wire the spec engine into the loop so spec mode can
-        # parse specs and enforce the approval gate.
-        session.agent.loop.spec_engine = self._spec_engine
+        # Wire the session's OWN spec engine into the loop so spec mode can
+        # parse specs and enforce the approval gate.  Each session owns its
+        # engine (see _spec_engine_for) -- a connection-wide singleton let
+        # one session's spec state bleed into the next conversation.
+        session.agent.loop.spec_engine = self._spec_engine_for(session)
 
         active_agent = session.agent.config.get_active_agent()
         if active_agent is not None:
@@ -360,7 +393,13 @@ class RunHandlers:
         # Auto-name: fire-and-forget so conversation is not delayed.
         sess = session.agent.session
         current_name = session.metadata.get("name", "") or sess.metadata.get("name", "")
-        if current_name.startswith("Unnamed") and sess.turn_count <= 1:
+        # Temp chats must never be auto-named: rename would leak them
+        # into the on-disk index and thus the sidebar.
+        if (
+            current_name.startswith("New Session")
+            and sess.turn_count <= 1
+            and not sess.metadata.get("temp_chat")
+        ):
             _sid = session.session_id
             _p = prompt
             _t = asyncio.ensure_future(self._auto_name_and_rename(session, _p))
@@ -453,6 +492,8 @@ class RunHandlers:
                     with contextlib.suppress(Exception):
                         summary = session.agent.telemetry.get_summary()
                         await self._send(ws, "telemetry", data=summary, session_id=session.session_id)
+                # Sync model changes from fallback to _default_config and notify frontend
+                _sync_model_from_fallback(self, session, ws)
                 # Only release state when this task is still the
                 # current owner -- a new run may have already taken
                 # over, and we must NOT clear its state
@@ -606,6 +647,8 @@ class RunHandlers:
                         self._manager.set_session_state(session_id, SessionState.IDLE)
                         self._manager.release_slot()
                         await self._manager._save_session_async(info)
+                        # Sync model changes from fallback to _default_config and notify frontend
+                        _sync_model_from_fallback(self, info, ws)
                         info.agent_task = None
 
             # Ensure previous task is done before starting retry

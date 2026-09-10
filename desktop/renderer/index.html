@@ -18,7 +18,7 @@
     } catch (e) {}
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Encre</title>
+  <title>Encre Agent Desktop</title>
   <script>console.log("[perf] html-head executed epoch=" + Date.now());</script>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="design-system.css" />
@@ -116,21 +116,15 @@
             <button class="nav-item-square" id="btn-temp-chat" data-i18n-title="sidebar.tempChat" title="Temporary chat" data-shortcut="new_temp_chat">
               <i data-lucide="message-square-dashed" class="lucide"></i>
             </button>
+            <!-- Workspace entry — iWork-mode counterpart of the temp-chat
+                 button. It sits in the same nav row (temp chat is hidden in
+                 iWork mode) and opens the workspace manager. -->
+            <button class="nav-item-square" id="btn-workspace-nav" data-i18n-title="sidebar.workspace" title="Workspace">
+              <i data-lucide="folder" class="lucide"></i>
+            </button>
           </div>
           <!-- iWork entry removed: the top-bar .seg switch is the single
                entry point for normal ↔ iwork ↔ automation mode. -->
-        </div>
-
-        <!-- Workspace section — visible only in iWork mode; mirrors the
-             "All tasks" section UI. Its header shows a right chevron (">")
-             as the navigation affordance. -->
-        <div class="sidebar-section" id="workspace-section">
-          <div class="sidebar-section-header">
-            <span class="sidebar-section-title" data-i18n="sidebar.workspace">Workspace</span>
-            <button class="btn-icon btn-sm" id="btn-workspace-nav" data-i18n-title="sidebar.workspace" title="Workspace">
-              <i data-lucide="chevron-right" class="lucide"></i>
-            </button>
-          </div>
         </div>
 
         <div class="sidebar-section" id="session-section">

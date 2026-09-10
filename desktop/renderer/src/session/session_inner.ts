@@ -32,7 +32,8 @@
 import { getState, subscribe, addAttachments, showToast } from "../core/state.js";
 import type { ArtifactItem, AttachmentMeta, ReferenceItem } from "../core/types.js";
 import { getFileIcon } from "../features/files.js";
-import { t, onLocaleChange } from "../features/i18n.js";
+import { applyTabTooltip, baseName } from "../ui/tab-tooltip.js";
+import { t, onLocaleChange, getIntlLocale } from "../features/i18n.js";
 import { send } from "../core/ws.js";
 import { getMonaco, monacoLang, registerEditor, unregisterEditor } from "../features/monaco.js";
 import { Dialog } from "../ui/dialog.js";
@@ -43,7 +44,7 @@ import { Dialog } from "../ui/dialog.js";
 //   - mammoth / xlsx   -> _renderOfficeDocx() / _renderOfficeXlsx()
 //   - pptx-to-html     -> _renderOfficePptx()
 import { renderDiffHtml, setupSplitViewScrollSync, expandDiffToFullFile } from "../chat/diff_render.js";
-import { showContextMenu } from "../ui/context-menu.js";
+import { clampElLeft, clampElRight, showContextMenu } from "../ui/context-menu.js";
 import { BrowserView } from "../features/browser.js";
 import { getDefaultHomepage } from "../features/browser.js";
 import { MarkdownPreviewView } from "../chat/markdown_preview.js";
@@ -156,6 +157,10 @@ export class SessionInner {
   private tabAddDocClickHandler: ((e: MouseEvent) => void) | null = null;
   private tabs: TabDef[] = [];
   private activeTab: string = "";
+  /** Short-lived cache for "size · last modified" strings, keyed by path. */
+  private _fileMetaCache = new Map<string, { size: number; mtime: number; at: number } | null>();
+  /** Origin → permissions the page asked for, refreshed on a short TTL. */
+  private _permCache = new Map<string, { list: Array<{ name: string; granted: boolean }>; at: number }>();
   private _sessionTabs = new Map<string, TabDef[]>();
   private _sessionTerminals = new Map<string, Map<string, Array<{ ptyId: number; term: any; cleanup: () => void; resizeObs: ResizeObserver }>>>();
   private _sessionTermActiveIdx = new Map<string, Map<string, number>>();
@@ -413,7 +418,7 @@ export class SessionInner {
         : "";
       let iconHtml: string;
       if (tab.type === "browser" && tab.favicon) {
-        iconHtml = `<img class="tab-favicon" src="${this.esc(tab.favicon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''"/><i data-lucide="globe" class="lucide lucide-xs" style="flex-shrink:0;display:none"></i>`;
+        iconHtml = `<img class="tab-favicon" src="${this.esc(tab.favicon)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display=''"/><i data-lucide="globe" class="lucide lucide-sm" style="flex-shrink:0;display:none"></i>`;
       } else if (tab.type === "code" || tab.type === "markdown") {
         iconHtml = `<img src="${getFileIcon(tab.label)}" class="icon" style="width:14px;height:14px;flex-shrink:0">`;
       } else {
@@ -439,6 +444,7 @@ export class SessionInner {
       await this.renderPanels();
     }
     this.refreshLucide();
+    void this.refreshTabTooltips();
   }
 
   /**
@@ -525,7 +531,10 @@ export class SessionInner {
         rebuildDropdown();
         const rect = btn.getBoundingClientRect();
         dropdown.style.top = (rect.bottom + 4) + "px";
-        dropdown.style.right = (window.innerWidth - rect.right + 4) + "px";
+        // `right` is a physical offset and never mirrors: clamp it so the
+        // menu cannot be pushed out of the window (rtl anchor at the far
+        // inline-start edge, or a narrow window).
+        dropdown.style.right = clampElRight(dropdown, window.innerWidth - rect.right + 4) + "px";
         if (typeof (window as any).lucide !== "undefined") {
           (window as any).lucide.createIcons({ root: dropdown });
         }
@@ -594,6 +603,10 @@ export class SessionInner {
       });
     });
     shellDropdown.classList.remove("hidden");
+    // It was hidden while the position above was computed, so its width was
+    // not measurable then. Now that it is visible, clamp the physical `right`
+    // offset so the menu stays inside the window under rtl / narrow windows.
+    shellDropdown.style.right = clampElRight(shellDropdown, window.innerWidth - rect.right + 4) + "px";
 
     const closeHandler = (e: MouseEvent) => {
       if (!shellDropdown.contains(e.target as Node)) {
@@ -1734,7 +1747,9 @@ export class SessionInner {
       dd.style.top = `${r.bottom + 4}px`;
       dd.style.left = "auto";
       const right = window.innerWidth - r.right;
-      dd.style.right = `${Math.max(8, right)}px`;
+      // Clamp instead of only flooring at 8: a physical `right` offset also
+      // has to keep the dropdown's inline-start edge on screen.
+      dd.style.right = `${clampElRight(dd, right)}px`;
     };
     // Git trigger: clicking anywhere on the trigger opens/closes the action
     // dropdown (same interaction as the filter dropdown). The action only
@@ -1779,10 +1794,10 @@ export class SessionInner {
       if (!api) return;
       if (this._reviewGitAction === "push") {
         const res = await api.gitPush(ws);
-        if (res.error) { showToast(res.error, "error", undefined, "Review"); }
+        if (res.error) { showToast(res.error, "", "error", "Review"); }
       } else if (this._reviewGitAction === "pull") {
         const res = await api.gitPull(ws);
-        if (res.error) { showToast(res.error, "error", undefined, "Review"); }
+        if (res.error) { showToast(res.error, "", "error", "Review"); }
       }
       if (currentReviewPath) load(currentReviewPath, true);
       else load(undefined, true);
@@ -1796,7 +1811,7 @@ export class SessionInner {
       const api = (window as any).electronAPI;
       if (!api) return;
       api.gitCommit(ws, message).then((res: any) => {
-        if (res.error) { showToast(res.error, "error", undefined, "Review"); return; }
+        if (res.error) { showToast(res.error, "", "error", "Review"); return; }
         commitWrap.classList.add("hidden");
         currentReviewPath = undefined;
         cachedEntries = null;
@@ -2115,6 +2130,8 @@ export class SessionInner {
       const labelEl = el.querySelector(".tab-label");
       if (labelEl) labelEl.textContent = tab.label;
     });
+
+    void this.refreshTabTooltips();
   }
 
   private renderTabIcons(): void {
@@ -2131,7 +2148,9 @@ export class SessionInner {
           img.className = "tab-favicon";
           img.src = tab.favicon;
           img.alt = "";
-          img.style.cssText = "width:14px;height:14px;flex-shrink:0;margin-right:4px;";
+          // Size / spacing / alignment all come from `.tab-favicon` now — the
+          // old inline box here hard-coded 14px and a physical margin-right
+          // (wrong direction under RTL), and fought the baseline alignment.
           img.onerror = () => { img.style.display = "none"; if (existingIcon) (existingIcon as HTMLElement).style.display = ""; };
           existingIcon.replaceWith(img);
           if (typeof (window as any).lucide !== "undefined") {
@@ -2140,6 +2159,92 @@ export class SessionInner {
         }
       }
     });
+
+    void this.refreshTabTooltips();
+  }
+
+  /**
+   * Refresh the hover tooltip of every tab.
+   *
+   * Browser tabs resolve their live title/URL from the BrowserView; file tabs
+   * resolve "size · last modified" through the `statFile` bridge (cached for a
+   * few seconds so hovering never hammers the main process).
+   */
+  private async refreshTabTooltips(): Promise<void> {
+    await Promise.all(this.tabs.map((tab) => this.refreshTabTooltip(tab)));
+  }
+
+  private async refreshTabTooltip(tab: TabDef): Promise<void> {
+    const el = this.tabList.querySelector<HTMLElement>(`.tab[data-tab="${tab.id}"]`);
+    if (!el) return;
+    if (tab.type === "browser") {
+      const bv = this.panelBrowsers.get(tab.id);
+      const url = (bv?.getUrl() || tab.startUrl || "").trim();
+      const title = (bv?.getTitle() || tab.title || tab.label || "").trim();
+      applyTabTooltip(el, {
+        title: title || url || tab.label,
+        icon: tab.favicon,
+        location: url,
+        isUrl: true,
+        permissions: await this.pagePermissions(url),
+      }, getIntlLocale());
+      return;
+    }
+    if ((tab.type === "code" || tab.type === "markdown") && tab.filePath) {
+      const meta = await this.fileMeta(tab.filePath);
+      // The file name, never the tab's generic label — hovering an editor tab
+      // and being told it is "Editor" is useless. The path line carries the
+      // rest of the location.
+      const name = baseName(tab.filePath) || tab.label;
+      applyTabTooltip(el, {
+        title: name,
+        icon: getFileIcon(name),
+        location: tab.filePath,
+        size: meta?.size,
+        mtime: meta?.mtime,
+      }, getIntlLocale());
+      return;
+    }
+    applyTabTooltip(el, { title: tab.label, icon: tab.favicon });
+  }
+
+  /** Size + mtime for a path; null when it cannot be stat'ed. TTL 5 s. */
+  private async fileMeta(filePath: string): Promise<{ size: number; mtime: number } | null> {
+    const hit = this._fileMetaCache.get(filePath);
+    if (hit !== undefined && Date.now() - hit!.at < 5000) {
+      return hit ? { size: hit.size, mtime: hit.mtime } : null;
+    }
+    let meta: { size: number; mtime: number } | null = null;
+    try {
+      const st = await window.electronAPI?.statFile(filePath);
+      if (st && !st.isDirectory) meta = { size: st.size, mtime: st.mtime };
+    } catch {
+      meta = null;
+    }
+    this._fileMetaCache.set(filePath, meta ? { ...meta, at: Date.now() } : null);
+    return meta;
+  }
+
+  /**
+   * Permissions the page actually asked for. The main process records every
+   * `setPermissionRequestHandler` call per origin, so this is the real list —
+   * camera / microphone / location / … — not a static guess. TTL 5 s.
+   */
+  private async pagePermissions(url: string): Promise<Array<{ name: string; granted: boolean }>> {
+    if (!url || !/^https?:/i.test(url)) return [];
+    let origin = "";
+    try { origin = new URL(url).origin; } catch { return []; }
+    const hit = this._permCache.get(origin);
+    if (hit && Date.now() - hit.at < 5000) return hit.list;
+    let list: Array<{ name: string; granted: boolean }> = [];
+    try {
+      const info = await window.electronAPI?.getSiteInfo(url);
+      list = info?.permissions || [];
+    } catch {
+      list = [];
+    }
+    this._permCache.set(origin, { list, at: Date.now() });
+    return list;
   }
 
   private setupAgentPanel(panel: HTMLElement): void {
@@ -3526,7 +3631,7 @@ export class SessionInner {
       const newW = Math.min(800, Math.max(200, this.resizeStartW + dx));
       this.el.style.setProperty("--sidebar-w", newW + "px");
       document.getElementById("main-body")?.style.setProperty("--sidebar-w", newW + "px");
-      this.el.style.transition = "none";
+      this.el.classList.add("is-resizing");
     });
 
     document.addEventListener("mouseup", () => {
@@ -3537,7 +3642,7 @@ export class SessionInner {
       this._hideDragOverlay();
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      this.el.style.transition = "";
+      this.el.classList.remove("is-resizing");
       this.sidebarWidth = this.el.offsetWidth;
       try { localStorage.setItem("session-sidebar-width", String(this.sidebarWidth)); } catch {}
     });
@@ -3686,10 +3791,12 @@ export class SessionInner {
         if (shown) {
           menu!.style.display = "none";
         } else {
-          const rect = btn.getBoundingClientRect();
-          menu!.style.left = Math.max(8, rect.right - 160) + "px";
-          menu!.style.top = (rect.bottom + 4) + "px";
+          // Show first: a display:none menu has no measurable width, so the
+          // clamp below would be a no-op.
           menu!.style.display = "block";
+          const rect = btn.getBoundingClientRect();
+          menu!.style.left = clampElLeft(menu!, rect.right - 160) + "px";
+          menu!.style.top = (rect.bottom + 4) + "px";
           setTimeout(() => {
             document.addEventListener("click", function _closeMenu() {
               menu!.style.display = "none";

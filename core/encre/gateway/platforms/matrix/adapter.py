@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Matrix gateway adapter.
 
@@ -2019,21 +2021,13 @@ class MatrixAdapter(BasePlatformAdapter):
         # Matrix reaction-based dangerous command approvals.
 
         self._approval_reaction_map = {
-
-            "鉁?: "once",
-
-            "鈾撅笍": "always",
-
-            "鈾?: "always",
-
-            "\u267e\ufe0f": "always",
-
-            "\u267e": "always",
-
-            "鉂?: "deny",
-
-            "鉂?: "deny",
-
+            "\u2705": "once",            # ✅ approve this single prompt
+            "\U0001f501": "always",      # 🔁 repeat forever
+            "\U0001f502": "always",      # 🔂 repeat once-always
+            "\u267e\ufe0f": "always",    # ♾️ infinite approval
+            "\u267e": "always",          # ♾
+            "\u274c": "deny",            # ❌
+            "\U0001f6ab": "deny",        # 🚫
         }
 
         self._approval_prompts_by_event: Dict[str, _MatrixApprovalPrompt] = {}
@@ -4240,7 +4234,7 @@ class MatrixAdapter(BasePlatformAdapter):
 
 
 
-        reactions = ("鉁?, "鉂?) if smart_denied or not allow_permanent else ("鉁?, "鈾撅笍", "鉂?)
+        reactions = ("\u2705", "\u274c") if smart_denied or not allow_permanent else ("\u2705", "\U0001f501", "\u274c")
 
         for emoji in reactions:
 

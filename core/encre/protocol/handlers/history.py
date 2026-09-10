@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """History domain handlers: search / rollback log+checkout / branches / replay.
 
 Extracted verbatim from ``encre.transport.ws`` (architecture refactor

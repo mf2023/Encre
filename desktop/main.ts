@@ -1178,15 +1178,15 @@ function startPythonServer(): Promise<void> {
     const isWin = process.platform === "win32";
     const rootDir = path.resolve(__dirname, "..", "..");
 
-    // --- Detect bundled server executable (release mode) ---
-    // In a packaged app, resources are under process.resourcesPath;
-    // in dev mode, check the build/server output directory.
+    // --- Detect bundled server executable (packaged builds only) ---
+    // `npm start` runs the unpackaged app (app.isPackaged === false) and is
+    // always treated as a development environment: it must run the in-repo
+    // Python source backend, never a stale PyInstaller bundle that happens to
+    // sit in build/server. Only a real packaged build uses the bundled exe.
     const bundledExeName = isWin ? "encre-server.exe" : "encre-server";
-    const candidatePaths = [
-      path.join(process.resourcesPath || "", "encre-server", bundledExeName),
-      path.join(rootDir, "build", "server", "encre-server", bundledExeName),
-    ];
-    const bundledExe = candidatePaths.find((p) => fs.existsSync(p));
+    const bundledExe = app.isPackaged
+      ? [path.join(process.resourcesPath || "", "encre-server", bundledExeName)].find((p) => fs.existsSync(p))
+      : undefined;
 
     let spawnCmd: string;
     let spawnArgs: string[];
@@ -1201,8 +1201,8 @@ function startPythonServer(): Promise<void> {
       spawnEnv = { ...process.env, ENCRE_DATA_DIR: DATA_DIR };
       spawnCwd = path.dirname(bundledExe);
     } else {
-      // Development mode: spawn system Python with in-repo source.
-      console.log("[server] bundled exe not found, falling back to system Python");
+      // Development mode: always run the in-repo Python source backend.
+      console.log("[server] development mode (unpackaged) -> using system Python source backend");
       const pythonCmd = isWin ? "python" : "python3";
       // The "encre" package spans harness/encre (library) and core/encre
       // (server layer); both trees must be on PYTHONPATH.
@@ -1343,8 +1343,8 @@ let trayPopup: BrowserWindow | null = null;
 
 // Localized strings for the tray, keyed by locale.
 const TRAY_LABELS: Record<string, { openYim: string; quit: string; tooltip: string }> = {
-  en: { openYim: "Open Encre", quit: "Quit", tooltip: "Encre Server" },
-  zh: { openYim: "打开 Encre", quit: "退出", tooltip: "Encre Server" },
+  en: { openYim: "Open Encre Agent", quit: "Quit", tooltip: "Encre Agent" },
+  zh: { openYim: "打开 Encre Agent", quit: "退出", tooltip: "Encre Agent" },
 };
 
 /**
@@ -1366,7 +1366,7 @@ function updateTrayStatus(running: boolean): void {
  */
 function resolveTrayTheme(themePreference: string): "dark" | "light" {
   if (themePreference === "light" || themePreference === "dark") return themePreference;
-  return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+   return "light"; // "system" defaults to light
 }
 
 /**
@@ -1549,7 +1549,7 @@ function createWindow(): void {
     titleBarStyle: "hidden",
     titleBarOverlay: false,
     backgroundColor: "#0f0f0f",
-    title: "Encre",
+    title: "Encre Agent Desktop",
     icon: resolveAppIconPath(),
     show: false,
     webPreferences: {
@@ -1663,6 +1663,22 @@ ipcMain.handle("readFile", async (_event, filePath: string) => {
       size: buf.length,
       mime_type: mime,
       is_binary: isBinary,
+    };
+  } catch {
+    return null;
+  }
+});
+
+// Reads filesystem metadata for a single path — used by the tab hover
+// tooltip (size + last-modified) so the renderer never has to read the file
+// contents just to stat it.
+ipcMain.handle("statFile", async (_event, filePath: string) => {
+  try {
+    const st = fs.statSync(filePath);
+    return {
+      size: st.size,
+      mtime: st.mtimeMs,
+      isDirectory: st.isDirectory(),
     };
   } catch {
     return null;
@@ -2210,7 +2226,7 @@ ipcMain.on("browser-language", (_event, locale: string) => {
 ipcMain.on("tray-theme", (_event, themePreference: string) => {
   currentTrayTheme = resolveTrayTheme(themePreference);
   // Sync native theme so DevTools follows the app's theme
-  nativeTheme.themeSource = themePreference === "system" ? "system" : currentTrayTheme;
+  nativeTheme.themeSource = currentTrayTheme;
   // Update existing popup background color
   if (trayPopup && !trayPopup.isDestroyed()) {
     trayPopup.setBackgroundColor(
@@ -2698,9 +2714,16 @@ ipcMain.handle("getAppVersions", () => {
   return { desktop: desktopVersion, agent: agentVersion };
 });
 
+// Directory that holds license/legal docs.  In dev this is the repo root;
+// in a packaged build the docs are bundled via extraResources under the
+// Electron resources directory.
+function docsRepoRoot(): string {
+  return app.isPackaged ? process.resourcesPath : path.resolve(__dirname, "..", "..");
+}
+
 // Returns the license text from the repository docs.
 ipcMain.handle("getLicenseContent", async () => {
-  const rootDir = path.resolve(__dirname, "..", "..");
+  const rootDir = docsRepoRoot();
   const candidates = ["docs/LICENSE", "docs/LICENSE.txt", "docs/LICENSE.md", "LICENSE", "LICENSE.txt", "LICENSE.md"];
   for (const name of candidates) {
     const p = path.join(rootDir, name);
@@ -2753,6 +2776,65 @@ const LEGAL_REGIONS: Record<string, string> = {
   nz: "docs/legal/oceania/nz",
 };
 
+// Maps an ISO 3166-1 alpha-2 country code (as returned by
+// `app.getLocaleCountryCode()`) to the matching legal region folder key in
+// `LEGAL_REGIONS`. Countries without a dedicated jurisdiction fall back to
+// their regional grouping (EU member states -> "eu"), and any unknown code
+// falls back to "us". This makes the default legal jurisdiction track the
+// real OS-reported country instead of being guessed from the UI language.
+const COUNTRY_TO_LEGAL_REGION: Record<string, string> = {
+  // Americas
+  US: "us", CA: "ca", MX: "mx", BR: "br",
+  AG: "us", AR: "us", BB: "us", BO: "us", CL: "us", CO: "us", CR: "us",
+  CU: "us", DO: "us", EC: "us", GT: "us", HN: "us", JM: "us", NI: "us",
+  PA: "us", PE: "us", PY: "us", SV: "us", TT: "us", UY: "us", VE: "us",
+  // Europe (non-EU dedicated jurisdictions)
+  GB: "uk", UK: "uk", CH: "ch", TR: "tr",
+  // Asia
+  CN: "cn", JP: "jp", KR: "kr", HK: "hk", MO: "mo", SG: "sg", IN: "in",
+  AE: "ae", SA: "sa", IL: "il",
+  // Africa
+  ZA: "za", NG: "ng", KE: "ke", EG: "eg",
+  // Oceania
+  AU: "au", NZ: "nz",
+  // Taiwan is exposed by some systems as "TW"
+  TW: "tw",
+};
+
+// EU member states (+ EEA) whose legal set is covered by the unified "eu"
+// folder. Anything in this list maps to "eu"; excluded from stay dedicated.
+const EU_COUNTRY_CODES: ReadonlySet<string> = new Set([
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR",
+  "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK",
+  "SI", "ES", "SE", "IS", "LI", "NO",
+]);
+
+/** Returns the legal region key matching the OS-reported country, or "us". */
+function systemLegalRegion(): string {
+  let cc = "";
+  try {
+    cc = (app.getLocaleCountryCode() || "").toUpperCase();
+  } catch {
+    cc = "";
+  }
+  if (!cc) {
+    // Fall back to the system locale tag (e.g. "en-US", "zh-CN") and take
+    // the region subtag, then try the language subtag as a weak fallback.
+    let tag = "";
+    try {
+      tag = app.getSystemLocale() || "";
+    } catch {
+      tag = "";
+    }
+    const parts = tag.toUpperCase().split(/[-_]/);
+    if (parts.length >= 2) cc = parts[1] || "";
+    if (!cc && parts.length >= 1) cc = parts[0] || "";
+  }
+  if (COUNTRY_TO_LEGAL_REGION[cc]) return COUNTRY_TO_LEGAL_REGION[cc];
+  if (EU_COUNTRY_CODES.has(cc)) return "eu";
+  return "us";
+}
+
 function getDocRegionFilePath(): string {
   return path.join(app.getPath("userData"), "doc-region.json");
 }
@@ -2764,7 +2846,7 @@ function readDocRegion(): string {
     const region = typeof parsed === "string" ? parsed : parsed.region;
     if (typeof region === "string" && LEGAL_REGIONS[region]) return region;
   } catch {}
-  return "us";
+  return systemLegalRegion();
 }
 
 function writeDocRegion(region: string): void {
@@ -2776,7 +2858,7 @@ function writeDocRegion(region: string): void {
 
 // Returns the text of a policy/legal document for a jurisdiction.
 ipcMain.handle("getDocumentContent", async (_event, docId: string, region: string = "us") => {
-  const rootDir = path.resolve(__dirname, "..", "..");
+  const rootDir = docsRepoRoot();
 
   if (docId === "thanks") {
     const variants: Record<string, string> = {
@@ -2799,11 +2881,13 @@ ipcMain.handle("getDocumentContent", async (_event, docId: string, region: strin
   if (region && LEGAL_REGIONS[region]) {
     candidates.push(path.join(rootDir, LEGAL_REGIONS[region], fileName));
   }
-  // Language-based default: Chinese UI -> China Mainland set, otherwise US set.
-  const defaultRegion = app.getLocale().toLowerCase().startsWith("zh")
-    ? LEGAL_REGIONS.cn
-    : LEGAL_REGIONS.us;
-  candidates.push(path.join(rootDir, defaultRegion, fileName));
+  // Fall back to the OS-reported country jurisdiction so the document always
+  // matches the user's real region rather than being inferred from the UI
+  // language (which previously produced mismatched language/country combos).
+  const systemRegion = systemLegalRegion();
+  if (systemRegion && !candidates.some((c) => c.includes(LEGAL_REGIONS[systemRegion]))) {
+    candidates.push(path.join(rootDir, LEGAL_REGIONS[systemRegion], fileName));
+  }
 
   for (const p of candidates) {
     try {
@@ -3054,7 +3138,7 @@ app.whenReady().then(async () => {
   // Force the app's theme to dark so native browser widgets (e.g. the
   // <input type="date"> calendar popup) render with dark colors regardless
   // of the OS-level light/dark setting.
-  nativeTheme.themeSource = "dark";
+   nativeTheme.themeSource = "light";
 
   // Pin the AppUserModelID so Windows taskbar/notification icons attach to Encre
   // (and not the generic electron.exe icon).

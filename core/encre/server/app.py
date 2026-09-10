@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Encre server orchestrator.
 
 Defines :class:`EncreServer`, the top-level object that wires together the
@@ -87,6 +89,7 @@ class EncreServer:
             scheduler=self._scheduler,
         )
         self._cleanup_task: asyncio.Task[None] | None = None
+        self._plugin_warmup_task: asyncio.Task[None] | None = None
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     @property
@@ -167,6 +170,10 @@ class EncreServer:
             actual_port = self._ws_server.sockets[0].getsockname()[1]
 
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+
+        # Warm up the shared plugin registry in the background so the first
+        # session creation never blocks the event loop on hundreds of imports.
+        self._plugin_warmup_task = asyncio.create_task(self._warmup_plugins())
 
         # Start gateway runner (adapter lifecycle manager)
         try:
@@ -269,7 +276,7 @@ class EncreServer:
 
         def _factory(job_config: dict[str, Any] | None = None) -> EncreAgent:
             from encre.modes.mode_profiles import AgentMode
-            agent = EncreAgent(config=self.config, mode=AgentMode.AUTOMATION)
+            agent = EncreAgent(config=self.config, mode=AgentMode.AUTOMATION, defer_plugins=True)
             agent.config.permission_mode = "bypass"
             if job_config:
                 if self._automation_model_enabled(job_config):
@@ -300,6 +307,23 @@ class EncreServer:
             if removed:
                 logger.debug(f"Cleaned up {removed} idle sessions")
 
+    async def _warmup_plugins(self) -> None:
+        """Discover/activate plugins and load skills off the event loop.
+
+        Discovery imports every bundled EA package (hundreds of modules) and
+        loading skills reads hundreds of ``SKILL.md`` files; doing both in a
+        worker thread keeps the server responsive and makes the first session
+        creation cheap because the shared registries are already primed.
+        """
+        try:
+            from encre.agent import _get_shared_plugin_registry, _get_shared_skill_registry
+
+            registry = await asyncio.to_thread(_get_shared_plugin_registry)
+            await asyncio.to_thread(_get_shared_skill_registry)
+            logger.info(f"Plugin registry warmed up ({len(registry._plugins)} plugins)")
+        except Exception as e:  # noqa: BLE001 - warmup is best-effort
+            logger.warning(f"Plugin warmup failed: {e}")
+
     async def serve_forever(self) -> None:
         await self.start()
         try:
@@ -322,12 +346,16 @@ class EncreServer:
             self._cleanup_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
+        if self._plugin_warmup_task:
+            self._plugin_warmup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._plugin_warmup_task
         if hasattr(self, '_ws_server') and self._ws_server:
             self._ws_server.close()
             await self._ws_server.wait_closed()
         await self._manager.shutdown()
         try:
-            from encre.tools.builtin.web_search import _get_manager
+            from encre.tools.runtime import get_search_manager as _get_manager
             mgr = _get_manager()
             if mgr is not None:
                 await mgr.close()

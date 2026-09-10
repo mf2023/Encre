@@ -25,20 +25,26 @@
 
 Defines the dataclasses that describe an Encre session -- the top-level
 :class:`EncreConfig`, per-model :class:`ModelConfig`, sub-agent and
-agent configs, and the serialisation helpers that read/write the
-encrypted ``config.toml`` under the data directory. Also provides the
-``ThinkingConfig`` union (de)serialisation shared with other modules.
+agent configs, and the serialisation helpers that read/write the encrypted
+configuration under the data directory. Also provides the ``ThinkingConfig``
+union (de)serialisation shared with other modules.
+
+Persistence is delegated to :mod:`encre.config_store`, which splits the
+configuration across one file per responsibility (models / agents /
+adapters / mcp / ui / runtime) instead of dumping the whole blob into what
+used to be called the "model config file".  The public API here --
+:meth:`EncreConfig.from_file` and :meth:`EncreConfig.save` -- is unchanged.
 """
 
 import contextlib
-import os
 import random
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from encre import config_store
 from encre.crypto import decrypt, encrypt
+from encre.paths import get_data_dir
 from encre.utils.types import (
     AdaptiveThinking,
     DisabledThinking,
@@ -46,6 +52,14 @@ from encre.utils.types import (
     PermissionMode,
     ThinkingConfig,
 )
+
+__all__ = [
+    "AgentConfig",
+    "EncreConfig",
+    "ModelConfig",
+    "SubAgentConfig",
+    "get_data_dir",
+]
 
 
 def _thinking_config_to_dict(config: ThinkingConfig | None) -> dict[str, Any] | None:
@@ -289,33 +303,22 @@ class ModelConfig:
             thinking_config=_thinking_config_from_dict(d.get("thinking_config")),
         )
 
-    # Data directory root -- all Encre user data (sessions, config, skills)
-    # lives under this single tree.  Override via ENCRE_DATA_DIR env var.
-    _DATA_DIR = Path("~/.dunimd/encre").expanduser()
-    _DATA_DIR_ENV_VAR = "ENCRE_DATA_DIR"
+
+# The data root now lives in :mod:`encre.paths` so that
+# :mod:`encre.config_store` can resolve paths without importing this module
+# (which would be an import cycle).  ``get_data_dir`` is re-exported above so
+# every existing ``from encre.config import get_data_dir`` keeps working.
 
 
-def get_data_dir() -> Path:
-    """Return the Encre data directory (``~/.dunimd/encre`` by default).
-
-    The directory is created lazily on first call if it does not exist.
-    Set the ``ENCRE_DATA_DIR`` environment variable to place the data
-    tree elsewhere (useful for containers or CI).
-
-    Returns:
-        The resolved :class:`pathlib.Path` for the data directory.
-    """
-    env = os.environ.get(_DATA_DIR_ENV_VAR)
-    p = Path(env).expanduser() if env else _DATA_DIR
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-# Single canonical path for the encrypted model/provider config file.
 def _get_config_path() -> Path:
-    p = get_data_dir() / "model" / "config.toml"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+    """Return the path of the legacy monolithic config file.
+
+    The canonical configuration now lives in
+    :mod:`encre.config_store` (``<data_dir>/config/*.json``); this shim is
+    retained for the few callers that still reference the old location, and
+    deliberately no longer creates the ``model/`` directory.
+    """
+    return config_store.legacy_config_path()
 
 
 def _find_config_file(explicit_path: str | None = None) -> Path | None:
@@ -326,51 +329,6 @@ def _find_config_file(explicit_path: str | None = None) -> Path | None:
     if p.exists():
         return p
     return None
-
-
-def _load_yaml(path: str) -> dict[str, Any]:
-    content: dict[str, Any] = {}
-    try:
-        import yaml  # type: ignore[import-untyped]
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        if isinstance(data, dict):
-            content = data
-    except ImportError:
-        raise ImportError("PyYAML is required for YAML config files: pip install pyyaml") from None
-    return content
-
-
-def _load_toml(path: str) -> dict[str, Any]:
-    content: dict[str, Any] = {}
-    suffix = Path(path).suffix.lower()
-    if suffix in (".toml",):
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-        if isinstance(data, dict):
-            content = _flatten_toml(data)
-    return content
-
-
-def _flatten_toml(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-    """Flatten a nested TOML dict to dot-separated top-level keys.
-
-    Recursively descends into nested dicts, joining each level with
-    ``.`` so the result can be indexed by a flat string key (e.g.
-    ``"models.0.name"``).  The sole exception is the ``backend_kwargs``
-    subtree, which is intentionally left nested because the caller
-    interprets those keys as opaque key-value pairs.
-    """
-    result: dict[str, Any] = {}
-    for key, value in data.items():
-        full_key = f"{prefix}.{key}" if prefix else key
-        if isinstance(value, dict) and not any(k in full_key for k in ("backend_kwargs",)):
-            result.update(_flatten_toml(value, full_key))
-        else:
-            result[full_key] = value
-    return result
-
-
 
 
 @dataclass
@@ -492,6 +450,8 @@ class EncreConfig:
     default_search_engine_url: str = "https://www.bing.com/search?q={query}"
     startup_session_mode: str = "normal"
     startup_session_behavior: str = "new"
+    model_pool_fallback_enabled: bool = False
+    model_pool_enabled: bool = True
     agents: list[AgentConfig] = field(default_factory=list)
     active_agent_index: int = -1
     sub_agents: list[SubAgentConfig] = field(default_factory=list)
@@ -661,31 +621,34 @@ class EncreConfig:
 
     @classmethod
     def from_file(cls, path: str | None = None) -> "EncreConfig":
-        """Load an :class:`EncreConfig` from the encrypted TOML file.
+        """Load an :class:`EncreConfig`.
 
-        Reads the file at *path* (or the default data-dir path), decrypts
-        its contents, and maps every recognised key onto the dataclass
-        fields.  Adapter configs stored as flat ``adapter_<id>_<key>``
-        keys are reassembled into ``self.adapter_configs``; similarly
-        ``backend_kwargs.<key>`` keys are collected under
-        ``self.backend_kwargs``.
+        With no *path* the split layout under ``<data_dir>/config/`` is read
+        (splitting the legacy ``model/config.toml`` on first run); an explicit
+        *path* is still read as a single self-contained encrypted file, which
+        keeps the ``--config`` CLI flag working for one-off runs.
+
+        Every recognised key is mapped onto the dataclass fields.  Adapter
+        configs stored as flat ``adapter_<id>_<key>`` keys are reassembled
+        into ``self.adapter_configs``; similarly ``backend_kwargs.<key>``
+        keys are collected under ``self.backend_kwargs``.
         """
         config_dict: dict[str, Any] = {}
 
-        found = _find_config_file(path)
-        if found is None:
-            found = _get_config_path()
-        if found.exists():
-            raw_text = found.read_text(encoding="utf-8").strip()
-            if raw_text:
-                try:
-                    decrypted = decrypt(raw_text)
-                    import json as _json
-                    config_dict = _json.loads(decrypted)
-                except Exception:
-                    # Corrupted or stale encrypted config (e.g. key changed) -
-                    # start fresh instead of crashing the whole service.
-                    config_dict = {}
+        if path is None:
+            config_dict = config_store.load_config()
+        else:
+            found = _find_config_file(path)
+            if found is not None and found.exists():
+                raw_text = found.read_text(encoding="utf-8").strip()
+                if raw_text:
+                    try:
+                        import json as _json
+                        config_dict = _json.loads(decrypt(raw_text))
+                    except Exception:
+                        # Corrupted or stale encrypted config (e.g. key changed) -
+                        # start fresh instead of crashing the whole service.
+                        config_dict = {}
 
         valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
         kwargs: dict[str, Any] = {}
@@ -773,18 +736,25 @@ class EncreConfig:
 
         return result
 
-    def save(self, path: str) -> None:
-        """Persist *self* as encrypted JSON to *path*.
+    def save(self, path: str | None = None) -> None:
+        """Persist *self* to disk.
 
-        Serialises the config via :meth:`to_dict`, encrypts the result
-        with :func:`encre.crypto.encrypt`, and writes it atomically via
-        a temp-file + rename so a crash mid-write never leaves a
-        truncated config on disk.
+        With no *path* (or when *path* is the legacy ``model/config.toml``,
+        which is what the ``configure`` handler passes) the configuration is
+        split by responsibility across ``<data_dir>/config/*.json`` and each
+        file is encrypted and replaced atomically -- so "the model config
+        file" no longer receives agents, adapters and UI preferences.
+
+        An explicit *path* that is **not** the legacy path keeps the old
+        single-file behaviour, so ``save(custom_path)`` still produces one
+        self-contained encrypted config (used by tests and tooling).
         """
         data = {k: v for k, v in self.to_dict().items() if v is not None}
+        if path is None or config_store.is_legacy_config_path(path):
+            config_store.save_config(data)
+            return
         import json
         raw = json.dumps(data, ensure_ascii=False, indent=2)
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        encrypted = encrypt(raw)
-        p.write_text(encrypted, encoding="utf-8")
+        p.write_text(encrypt(raw), encoding="utf-8")

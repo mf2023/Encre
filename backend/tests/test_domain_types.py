@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for codebase indexer, LSP protocol, git, notebook, server types."""
 
@@ -47,7 +49,7 @@ class TestCodeIndex:
         consumers rely on exact name, language, exports, and imports values
         for symbol resolution and import graph construction.
         """
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         mi = ModuleInfo(
             path="src/my_module.py",
             name="my_module",
@@ -73,7 +75,7 @@ class TestCodeIndex:
         handle partial module metadata without raising during downstream
         iteration over exports, imported_by, language, and loc.
         """
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         mi = ModuleInfo(path="test.py", name="test")
         # Empty imports list must default so that iteration does not fail.
         assert mi.imports == []
@@ -93,7 +95,7 @@ class TestCodeIndex:
         root and asserts it is not None because the index must be instantiable
         before any scan or query operation begins.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         assert ci is not None
 
@@ -119,7 +121,7 @@ class TestLSPProtocol:
         values and asserts they round-trip because zero-based offset semantics
         are fundamental to all cursor and selection computations.
         """
-        from encre.lsp.protocol import Position
+        from encre.capabilities.search.lsp.protocol import Position
         p = Position(line=10, character=5)
         # Line must be stored exactly to locate the correct source row.
         assert p.line == 10
@@ -129,11 +131,11 @@ class TestLSPProtocol:
     def test_verify_range_bounds(self):
         """Validate that Range preserves start and end Position values.
 
-        The test constructs a :class:`Range` spanning lines 0鈥?0 and asserts
+        The test constructs a :class:`Range` spanning lines 0 — 0 and asserts
         the boundary positions are unchanged because range equality is used
         throughout the LSP protocol for highlights, edits, and selections.
         """
-        from encre.lsp.protocol import Position, Range
+        from encre.capabilities.search.lsp.protocol import Position, Range
         start = Position(line=0, character=0)
         end = Position(line=10, character=20)
         r = Range(start=start, end=end)
@@ -149,7 +151,7 @@ class TestLSPProtocol:
         single-line range, then asserts both fields survive because locations
         are the primary unit returned by go-to-definition and reference queries.
         """
-        from encre.lsp.protocol import Location, Position, Range
+        from encre.capabilities.search.lsp.protocol import Location, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         loc = Location(uri="file:///test.py", range=r)
         # URI must identify the target document unambiguously.
@@ -164,7 +166,7 @@ class TestLSPProtocol:
         asserts each field because diagnostics drive the IDE underline and
         problem-panel display.
         """
-        from encre.lsp.protocol import Diagnostic, Position, Range
+        from encre.capabilities.search.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=5, character=0), end=Position(line=5, character=10))
         diag = Diagnostic(
             range=r,
@@ -187,7 +189,7 @@ class TestLSPProtocol:
         on the contents field being present even when the annotation range is
         omitted (e.g. full-symbol hover).
         """
-        from encre.lsp.protocol import HoverResult
+        from encre.capabilities.search.lsp.protocol import HoverResult
         hr = HoverResult(contents="def foo(x: int) -> str", range=None)
         # Contents must be preserved for hover text rendering.
         assert hr.contents == "def foo(x: int) -> str"
@@ -201,7 +203,7 @@ class TestLSPProtocol:
         :class:`Range` to ensure the range field is retained because precise
         highlight ranges are used for semantic token visual feedback.
         """
-        from encre.lsp.protocol import HoverResult, Position, Range
+        from encre.capabilities.search.lsp.protocol import HoverResult, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         hr = HoverResult(contents="def foo()", range=r)
         # Range must be non-None when explicitly provided.
@@ -214,7 +216,7 @@ class TestLSPProtocol:
         asserts the status is preserved and error is None because the gateway
         uses this state to surface connection readiness to the client.
         """
-        from encre.lsp.protocol import LSPState
+        from encre.capabilities.search.lsp.protocol import LSPState
         state = LSPState(status="running")
         # Status must reflect the live connection state.
         assert state.status == "running"
@@ -228,7 +230,7 @@ class TestLSPProtocol:
         error string, then asserts both fields because error propagation is
         essential for client-side diagnostic reporting.
         """
-        from encre.lsp.protocol import LSPState
+        from encre.capabilities.search.lsp.protocol import LSPState
         state = LSPState(status="stopped", error="connection refused")
         # Status must report the terminal failure state.
         assert state.status == "stopped"
@@ -499,20 +501,20 @@ class TestSessionManager:
     """
 
     def test_verify_session_info_fields(self):
-        """Validate that SessionInfo exposes session_id and is_running.
+        """Validate that SessionInfo exposes session_id and state.
 
         The test constructs a :class:`SessionInfo` with an agent and asserts
         the fields because session metadata drives UI indicators and routing.
         """
         from encre.agent import EncreAgent
         from encre.config import EncreConfig
-        from encre.server.session_manager import SessionInfo
+        from encre.server.session_manager import SessionInfo, SessionState
         agent = EncreAgent(config=EncreConfig(backend_type="openai", api_key="sk-fake"))
         si = SessionInfo(session_id="s1", agent=agent)
         # Session ID must identify the session in the registry.
         assert si.session_id == "s1"
-        # is_running must default to False before any agent work begins.
-        assert si.is_running is False
+        # state must default to IDLE before any agent work begins.
+        assert si.state is SessionState.IDLE
 
     def test_verify_session_manager_creation(self):
         """Validate that SessionManager starts with zero active sessions.

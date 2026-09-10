@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Signal messenger platform adapter.
 
 Connects to a signal-cli daemon running in HTTP mode.
@@ -54,7 +56,7 @@ from urllib.parse import quote, unquote
 import httpx
 
 from encre.gateway.config import Platform, PlatformConfig
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 from encre.gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -1686,9 +1688,9 @@ class SignalAdapter(BasePlatformAdapter):
         # Remove the in-progress reaction, then add the final one
         await self.remove_reaction(chat_id, *target)
         if outcome == ProcessingOutcome.SUCCESS:
-            await self.send_reaction(chat_id, "鉁?, *target)
+            await self.send_reaction(chat_id, "✅", *target)
         elif outcome == ProcessingOutcome.FAILURE:
-            await self.send_reaction(chat_id, "鉂?, *target)
+            await self.send_reaction(chat_id, "❌", *target)
 
     # ------------------------------------------------------------------
     # Chat Info

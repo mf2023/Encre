@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Shared Signal formatting helpers.
 
 This module centralises the conversion from Markdown-flavoured text into the

@@ -34,7 +34,7 @@ import { send } from "../core/ws.js";
 import { Dialog } from "../ui/dialog.js";
 import { getState, subscribe, restoreMessages, setAutomationHistory } from "../core/state.js";
 import { showSessionContextMenu, showRenameDialog } from "./session.js";
-import { showContextMenu } from "../ui/context-menu.js";
+import { clampIntoViewport, showContextMenu } from "../ui/context-menu.js";
 import {
   onAutomationJobCreated,
   onAutomationJobUpdated,
@@ -999,6 +999,9 @@ private createDropdown: HTMLElement;
       } else {
         renderDropdown();
         this.createDropdown.classList.add("open");
+        // CSS anchors this dropdown with `inset-inline-end: 0`, so under rtl
+        // it grows towards the window edge. Pull it back if it overflows.
+        clampIntoViewport(this.createDropdown);
       }
     });
 

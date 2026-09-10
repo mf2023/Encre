@@ -33,7 +33,8 @@ rust-project.json
 *.dll
 *.dll.manifest
 *.lib
-Cargo.lock
+# Cargo.lock is deliberately NOT ignored: native/ is a binary application
+# crate, so the lockfile must be committed for reproducible Rust builds.
 
 # =============================================================================
 # Python
@@ -48,13 +49,12 @@ __pycache__/
 .Python
 .pytest_cache/
 build/
-build.py
+# build.py is the release build script (source) — deliberately NOT ignored.
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -71,6 +71,17 @@ MANIFEST
 *.profraw
 coverage.xml
 .pyre/
+# Python tool caches / artifacts — none present today, but produced by
+# pytest-cov, coverage.py, tox, nox, hypothesis, PDM and Jupyter.
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytype/
+__pypackages__/
+.ipynb_checkpoints/
 .pytest_cache/
 
 # =============================================================================
@@ -97,21 +108,25 @@ tsconfig.tsbuildinfo
 .turbo/
 *.next.js
 *.next.css
-static/
 desktop/dist/
 desktop/dev/
 desktop/renderer/bundle.js
 desktop/renderer/chunks/
 desktop/renderer/tmp/
-desktop/renderer/monaco/
-desktop/renderer/fonts/
-desktop/renderer/assets/
-desktop/renderer/codicon.*
-desktop/renderer/xterm.css
-desktop/renderer/_components.css
-desktop/renderer/design-system.css
-desktop/renderer/devicon.css
 desktop/release
+# Deliberately NOT ignored — tracked source / vendored resources:
+#   desktop/renderer/assets/     (SVG/ICO image resources, incl. platforms/, search-engines/)
+#   desktop/renderer/fonts/      (webfonts)
+#   desktop/renderer/monaco/     (vendored Monaco editor)
+#   desktop/renderer/vendor/     (vendored lucide, etc.)
+#   desktop/renderer/codicon.*   (vendored icon font)
+#   desktop/renderer/xterm.css   (vendored terminal styles)
+#   desktop/renderer/devicon.css
+#   desktop/renderer/_components.css
+#   desktop/renderer/design-system.css  (single source of truth for design tokens)
+# Ignoring these silently drops any NEW image/font/CSS file from `git add .`.
+# Electron main-process build output (compiled from main.ts)
+desktop/main.js
 
 # TypeScript / esbuild artifacts
 *.d.ts.map
@@ -123,15 +138,13 @@ desktop/release
 .parcel-cache/
 .nyc_output/
 nyc_output/
-lib/
-desktop/release
 
 # =============================================================================
 # IDE / Editor
 # =============================================================================
 .idea/
 .vscode/
-CLAUDE.md
+/CLAUDE.md
 .claude/
 .trae/
 .qoder/
@@ -158,7 +171,9 @@ ehthumbs.db
 *.bak
 *.backup
 *.orig
+*.rej
 *.tmp
+.tmp/
 *.temp
 .cache/
 *.log
@@ -186,8 +201,33 @@ lcov.info
 *.profraw
 docs/_build/
 docs/target/
+# VitePress (docs/help) build cache — its output lives in .vitepress/dist
+**/.vitepress/cache/
+# ad-hoc screenshots captured while previewing the help site
+docs/help/screenshot-nav.png
 
 # =============================================================================
 # Release
 # =============================================================================
 /release/
+# Electron Builder installers & update artifacts (produced by build.py)
+/EA Setup*.exe
+/Encre Setup*.exe
+*.blockmap
+
+# =============================================================================
+# Runtime data (must NEVER live in the project root)
+# =============================================================================
+# The single data root is ~/.dunimd/encre (see harness/encre/paths.py).
+# A project-local ./data tree only shows up when the server is run with
+# ENCRE_DATA_DIR pointing here — stale dev state, not source.
+/data/
+
+# =============================================================================
+# Local AI assistant rule files — ROOT ONLY, never **/AGENTS.md
+# =============================================================================
+# Root-scoped on purpose: a bare "AGENTS.md" also matches, case-insensitively
+# on Windows, the tracked docs pages docs/help/agents.md + docs/help/en/agents.md
+# and every skill's own AGENTS.md (harness/encre/skills/builtin/*/AGENTS.md).
+# Those are committed content and must stay visible to `git add`.
+/AGENTS.md

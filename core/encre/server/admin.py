@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Lightweight HTTP admin endpoints for the Encre server.
 
 These endpoints are served alongside the WebSocket upgrade by
@@ -61,18 +63,12 @@ def handle_admin(path: str, manager: SessionManager) -> tuple[int, str, list[tup
         })
 
     if base_path == "/config":
-        from encre.config import _get_config_path
-        config_path = str(_get_config_path())
-        if os.path.exists(config_path):
-            try:
-                import tomllib
-                with open(config_path, "rb") as f:
-                    config_data = tomllib.load(f)
-            except (ImportError, Exception):
-                config_data = {}
-        else:
-            config_data = {}
-        return _json_response(config_data)
+        # The configuration is split across encrypted JSON files under
+        # <data_dir>/config/ -- read it through the store.  This endpoint
+        # used to ``tomllib.load`` the monolithic encrypted blob, which
+        # always raised and returned "{}" no matter what was configured.
+        from encre import config_store
+        return _json_response(config_store.load_config())
 
     if base_path == "/sessions":
         return _json_response({

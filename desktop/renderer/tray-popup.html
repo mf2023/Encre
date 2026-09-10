@@ -16,6 +16,14 @@ html,body{height:100%}
      (defined in _components.css). Both surfaces now resolve through
      the same CSS component, ensuring identical UI + animations. */
   --seg-bg:#eeeeee;--seg-active-bg:#ffffff;--seg-text:#666;--seg-text-hover:#1f1f1f;--seg-active-text:#1f1f1f;
+  /* Unified motion tokens (mirror design-system.css) so the tray shares the
+     exact same durations/easings as the main window. */
+  --duration-fast:0.12s;--duration-base:0.18s;--duration-slow:0.28s;
+  --easing-standard:cubic-bezier(0.4,0,0.2,1);--easing-emphasized:cubic-bezier(0.16,1,0.3,1);
+  --transition-fast:var(--duration-fast) var(--easing-standard);
+  --transition-base:var(--duration-base) var(--easing-standard);
+  --transition-emphasized:var(--duration-slow) var(--easing-emphasized);
+  --motion-slide:var(--duration-slow) var(--easing-standard);
 }
 [data-theme="dark"]{
   --tp-bg:#1a1a1a;--tp-color:#e5e5e5;--tp-hover:#262626;--tp-border:#333333;
@@ -27,10 +35,19 @@ html,body{height:100%}
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--tp-bg);color:var(--tp-color);overflow:hidden;-webkit-font-smoothing:antialiased;user-select:none;font-size:13px;display:flex;flex-direction:column}
 #sessions-container{flex:1;overflow-y:auto;overflow-x:hidden;position:relative}
-.slide-exit{animation:slideOut 0.18s cubic-bezier(0.4,0,0.2,1) forwards}
-.slide-enter{animation:slideIn 0.18s cubic-bezier(0.4,0,0.2,1) forwards}
-@keyframes slideOut{to{transform:translateX(-100%);opacity:0}}
-@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+/* ── Mode-switch slide (unified with the main window's motion system) ──
+   A mode switch slides the whole session list in as a full-width push:
+   entering Work arrives from the inline-end edge (forward), returning to
+   General from the inline-start edge (back). Same duration/easing tokens
+   as the main window — no fade, no separate exit phase. */
+#sessions-container.mode-in-forward{animation:mode-in-forward var(--motion-slide)}
+#sessions-container.mode-in-back{animation:mode-in-back var(--motion-slide)}
+@keyframes mode-in-forward{from{transform:translateX(100%)}}
+@keyframes mode-in-back{from{transform:translateX(-100%)}}
+@media (prefers-reduced-motion: reduce){
+  #sessions-container.mode-in-forward,
+  #sessions-container.mode-in-back{animation-duration:0.01ms}
+}
 #sessions-container::-webkit-scrollbar{width:4px}
 #sessions-container::-webkit-scrollbar-track{background:transparent}
 #sessions-container::-webkit-scrollbar-thumb{background:var(--tp-scrollbar);border-radius:2px}
@@ -215,18 +232,15 @@ function setMode(mode) {
     segs[i].setAttribute("aria-selected", match ? "true" : "false");
   }
   var container = document.getElementById("sessions-container");
-  if (prevMode !== null && prevMode !== mode && container) {
-    container.classList.add("slide-exit");
-    setTimeout(function() {
-      container.classList.remove("slide-exit");
-      render();
-      container.classList.add("slide-enter");
-      setTimeout(function() {
-        container.classList.remove("slide-enter");
-      }, 200);
-    }, 180);
-  } else {
-    render();
+  if (!container) { render(); return; }
+  // Rebuild the list, then replay the unified full-width slide so the new
+  // mode's rows travel in from the correct edge (forward = inline-end,
+  // back = inline-start). One phase only — no separate exit animation.
+  container.classList.remove("mode-in-forward", "mode-in-back");
+  render();
+  if (prevMode !== null && prevMode !== mode) {
+    void container.offsetWidth; // restart even when the direction repeats
+    container.classList.add(mode === "iwork" ? "mode-in-forward" : "mode-in-back");
   }
 }
 
@@ -312,6 +326,12 @@ document.getElementById("sessions-container").addEventListener("click", function
 document.getElementById("mode-seg").addEventListener("click", function(e) {
   var seg = e.target.closest ? e.target.closest("[data-mode]") : null;
   if (seg) setMode(seg.getAttribute("data-mode"));
+});
+/* Drop the slide class once the entrance finishes so it never lingers. */
+document.getElementById("sessions-container").addEventListener("animationend", function(e) {
+  if (e.animationName === "mode-in-forward" || e.animationName === "mode-in-back") {
+    e.currentTarget.classList.remove("mode-in-forward", "mode-in-back");
+  }
 });
 
 if (window.electronAPI && window.electronAPI.onTrayData) {

@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Discord platform adapter.
 
@@ -127,10 +129,11 @@ from encre.gateway.config import Platform, PlatformConfig
 from encre.gateway.platforms.helpers import MessageDeduplicator, ThreadParticipationTracker, convert_table_to_bullets
 import os as _os
 import json as _json
-from pathlib import Path as _P
-def atomic_json_write(path, data):
-    _P(path).parent.mkdir(parents=True, exist_ok=True)
-    _P(path).write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+def atomic_json_write(path, data, **kwargs):
+    """Persist *data* as encrypted JSON at *path* (single write channel)."""
+    from encre.secure_io import write_json
+
+    write_json(path, data)
 env_float = lambda n, d: float(_os.environ.get(n, d))
 env_int = lambda n, d: int(_os.environ.get(n, d))
 
@@ -263,7 +266,9 @@ class _DiscordNonConversationalMessageTracker:
         if not path.exists():
             return []
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            from encre.secure_io import read_json
+
+            data = read_json(path, default=None)
             if isinstance(data, list):
                 return [str(message_id) for message_id in data if str(message_id).strip()]
         except Exception:
@@ -1679,7 +1684,9 @@ class DiscordAdapter(BasePlatformAdapter):
             path = self._command_sync_state_path()
             if not path.exists():
                 return {}
-            data = json.loads(path.read_text(encoding="utf-8"))
+            from encre.secure_io import read_json
+
+            data = read_json(path, default=None)
         except Exception:
             return {}
         return data if isinstance(data, dict) else {}

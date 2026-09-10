@@ -1,5 +1,6 @@
 appId: com.encre.desktop
-productName: Encre
+productName: Encre Agent Desktop
+artifactName: "EA Setup ${version}.${ext}"
 copyright: "Copyright © 2025-2026 Dunimd Team"
 
 directories:
@@ -25,12 +26,26 @@ extraResources:
     to: encre-server
     filter:
       - "**/*"
+  # Legal/policy docs (privacy, terms, agreements) plus the license and
+  # thanks text. The interactive VitePress help site (docs/help) is an
+  # external deliverable and intentionally NOT packaged.
+  - from: ../docs/legal
+    to: docs/legal
+    filter:
+      - "**/*.md"
+  - from: ../docs/THANKS.md
+    to: docs/THANKS.md
+  - from: ../docs/THANKS_CN.md
+    to: docs/THANKS_CN.md
+  - from: ../LICENSE
+    to: LICENSE
 
 win:
   target:
     - target: nsis
-      arch: [x64, arm64]
-  signAndEditExecutable: false
+      arch: [x64]
+  icon: renderer/assets/Encre.ico
+  signAndEditExecutable: true
 
 nsis:
   oneClick: false

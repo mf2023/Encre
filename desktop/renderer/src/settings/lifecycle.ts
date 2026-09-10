@@ -219,6 +219,11 @@ export function closeImpl(this: any): void {
   } else if (typeof (window as any).__chatRender === "function") {
     (window as any).__chatRender();
   }
+  // Returning from settings is a reveal, not a mode switch: the content
+  // surface (with its own background) is a permanent fixture, so it must
+  // appear in place immediately. Replaying the mode-switch entrance here
+  // would slide the whole content area in, which reads as the container
+  // itself moving — exactly what we don't want.
   (window as any).__sessionInner?.restoreSidebarVisibility?.();
 }
 

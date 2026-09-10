@@ -43,7 +43,7 @@ from encre.capabilities.process.spawn import (
     hidden_subprocess_kwargs,
     kill_process_tree,
 )
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 
 @dataclass

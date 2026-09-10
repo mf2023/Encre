@@ -1,27 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
-#
-# This file is part of Encre.
-# The Encre project belongs to the Dunimd Team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# You may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-# DISCLAIMER: Users must comply with applicable AI regulations.
-# Non-compliance may result in service termination or legal liability.
-
 from __future__ import annotations
+
 
 import json
 import os
@@ -33,50 +11,37 @@ from typing import Any, Callable
 
 @dataclass
 class StoredEvent:
-    """A single event in the append-only event store."""
+    """A single evolution-domain event persisted to the event log."""
 
     event_type: str
-    data: dict[str, Any]
+    payload: dict[str, Any] = field(default_factory=dict)
     session_id: str = ""
-    turn_number: int = 0
-    timestamp: float = field(default_factory=time.time)
-    sequence: int = 0
+    created_at: float = field(default_factory=time.time)
 
 
 EventHandler = Callable[[StoredEvent], None]
 
 
 class EventStore:
-    """Append-only event store for agent lifecycle events.
+    """Append-only JSONL event store with in-process pub/sub handlers.
 
-    Provides publish / replay / projection semantics on top of a persistent
-    JSONL file.  Integrates with the existing ``EncreHookSystem`` to capture
-    agent lifecycle events automatically.
-
-    Usage::
-
-        store = EventStore()
-        store.register_handler("pre_tool_exec", my_handler)
-        store.publish(StoredEvent("pre_tool_exec", {...}))
-        store.replay("pre_tool_exec", limit=10)
-        store.project("tool_usage", projector_fn)
+    Events are serialized one JSON object per line to ``path``.  Subscribers
+    registered via :meth:`register_handler` are invoked synchronously on
+    publish, and ``replay`` / ``project`` provide read access to history.
     """
 
     def __init__(self, path: str | None = None) -> None:
         self._path = path or self._default_path()
         self._handlers: dict[str, list[EventHandler]] = {}
-        self._sequence: int = 0
         self._ensure_file()
 
     def publish(self, event: StoredEvent) -> None:
-        event.sequence = self._sequence
-        self._sequence += 1
-        self._append_to_file(event)
         for handler in self._handlers.get(event.event_type, []):
             try:
                 handler(event)
             except Exception:
                 pass
+        self._append_to_file(event)
 
     def register_handler(self, event_type: str, handler: EventHandler) -> None:
         self._handlers.setdefault(event_type, []).append(handler)
@@ -90,10 +55,10 @@ class EventStore:
         self,
         event_type: str | None = None,
         session_id: str | None = None,
-        limit: int = 0,
+        limit: int | None = None,
     ) -> list[StoredEvent]:
-        """Replay events from the store, optionally filtered by type or session."""
-        events: list[StoredEvent] = []
+        """Return stored events, newest first, optionally filtered."""
+        events = []
         for event in self._iterate():
             if event_type and event.event_type != event_type:
                 continue
@@ -102,85 +67,48 @@ class EventStore:
             events.append(event)
             if limit and len(events) >= limit:
                 break
+        events.reverse()
         return events
 
-    def project(
-        self,
-        projector: Callable[[list[StoredEvent]], dict[str, Any]],
-        event_type: str | None = None,
-    ) -> dict[str, Any]:
-        """Run a projector function over the event stream.
-
-        ``projector`` receives all matching events and returns a summary dict.
-        """
-        events = self.replay(event_type=event_type)
-        return projector(events)
+    def project(self, state: dict[str, Any], event: StoredEvent) -> dict[str, Any]:
+        """Fold *event* into an accumulator state (reduce-style projection)."""
+        state = dict(state)
+        state[event.event_type] = event.payload
+        return state
 
     def wire_hooks(self, hook_system: Any) -> None:
-        """Connect the event store to an ``EncreHookSystem`` instance.
-
-        Subscribes to all hook events and publishes them as ``StoredEvent``
-        records.
-        """
-        event_types = [
-            "pre_tool_exec", "post_tool_exec", "on_turn_start", "on_turn_end",
-            "pre_model_request", "post_model_response", "on_error",
-            "on_backend_error", "on_rate_limit", "pre_compact", "post_compact",
-            "pre_sub_agent", "post_sub_agent",
-        ]
-        for et in event_types:
-            handler_id = f"event_store_{et}"
-
-            def _make_handler(_et: str = et):
-                async def _handler(name: str, context: dict[str, Any], extra: Any = None) -> None:
-                    self.publish(StoredEvent(
-                        event_type=_et,
-                        data={"name": name, "context": context, "extra": extra},
-                    ))
-                return _handler
-
-            hook_system.register_handler(et, _make_handler(), handler_id=handler_id)
+        """Bridge registered handlers onto an external hook bus."""
+        for et in list(self._handlers.keys()):
+            def _handler(event, _et: str = et) -> None:
+                self.publish(event)
+            try:
+                hook_system.on(et, _handler)
+            except Exception:
+                pass
 
     def _append_to_file(self, event: StoredEvent) -> None:
         try:
-            with open(self._path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "event_type": event.event_type,
-                    "data": event.data,
-                    "session_id": event.session_id,
-                    "turn_number": event.turn_number,
-                    "timestamp": event.timestamp,
-                    "sequence": event.sequence,
-                }, ensure_ascii=False) + "\n")
+            from encre.secure_io import append_jsonl
+
+            append_jsonl(self._path, event.__dict__)
         except (OSError, IOError):
             pass
 
     def _iterate(self) -> list[StoredEvent]:
-        events: list[StoredEvent] = []
+        result: list[StoredEvent] = []
         try:
-            with open(self._path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        d = json.loads(line)
-                        events.append(StoredEvent(
-                            event_type=d["event_type"],
-                            data=d.get("data", {}),
-                            session_id=d.get("session_id", ""),
-                            turn_number=d.get("turn_number", 0),
-                            timestamp=d.get("timestamp", 0.0),
-                            sequence=d.get("sequence", 0),
-                        ))
-                    except (json.JSONDecodeError, KeyError):
-                        continue
+            from encre.secure_io import read_jsonl
+
+            for data in read_jsonl(self._path):
+                try:
+                    result.append(StoredEvent(**data))
+                except (KeyError, TypeError):
+                    continue
         except (OSError, IOError):
             pass
-        return events
+        return result
 
     def _ensure_file(self) -> None:
-        Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         if not os.path.isfile(self._path):
             try:
                 with open(self._path, "w", encoding="utf-8") as f:
@@ -189,5 +117,13 @@ class EventStore:
                 pass
 
     def _default_path(self) -> str:
-        from encre.config import get_data_dir
-        return str(get_data_dir() / "events" / "event_store.jsonl")
+        # Keep the event log beside ``evolution/state.json`` instead of in the
+        # separate ``~/.encre`` root -- same data, previously two locations.
+        try:
+            from encre.paths import get_data_dir
+
+            return str(get_data_dir("evolution", ensure=False) / "events.jsonl")
+        except Exception:  # pragma: no cover - defensive
+            return str(
+                Path.home() / ".dunimd" / "encre" / "evolution" / "events.jsonl"
+            )

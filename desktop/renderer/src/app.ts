@@ -50,6 +50,7 @@ import {
   clearQueuedPrompts,
   removeLastMessage,
   setTempChat,
+  markTempChatSession,
   setSubAgentView,
   clearSubAgentBreadcrumb,
   restoreMessages,
@@ -74,18 +75,18 @@ import { Workspace, WorkspaceManager } from "./session/workspace.js";
 import { Permissions } from "./features/permissions.js";
 import { AutomationPanel } from "./session/iclaw.js";
 import { Automation } from "./session/automation.js";
-import { TransitionHelper } from "./ui/transition-helper.js";
 import { ModeTransitionManager, type AppMode } from "./chat/mode-transition.js";
 import { SessionInner, TabDef } from "./session/session_inner.js";
 import { renderMarkdown } from "./chat/chat.js";
 import { EALoader } from "./features/ealoader.js";
-import { t, getLocale, onLocaleChange, applyI18n, setLocale, LOCALES } from "./features/i18n.js";
+import { t, getLocale, onLocaleChange, applyI18n, setLocale, LOCALES, getIntlLocale } from "./features/i18n.js";
 import { Dialog } from "./ui/dialog.js";
+import { applyTabTooltip } from "./ui/tab-tooltip.js";
 import { lookupShortcut, augmentTitle, formatShortcut, platformLabel } from "./features/shortcutDisplay.js";
 import type { Message } from "./core/types.js";
 import { SLASH_COMMANDS, matchingSlashCommands, parseSlashInput, type SlashCommand } from "./features/slash_commands.js";
 import { mountNebula } from "./features/easter-egg.js";
-import { showContextMenu } from "./ui/context-menu.js";
+import { clampElLeft, clampIntoViewport, FLOAT_MARGIN, showContextMenu } from "./ui/context-menu.js";
 import { BrowserView } from "./features/browser.js";
 
 type ChildTab = {
@@ -131,6 +132,39 @@ function defaultDocRegion(locale: string): string {
   }
 }
 
+/** Maps a legal region value to its translation-key label. */
+const DOC_REGION_LABEL_KEYS: Record<string, string> = {
+  us: "settings.aboutRegionUs",
+  ca: "settings.aboutRegionCa",
+  mx: "settings.aboutRegionMx",
+  br: "settings.aboutRegionBr",
+  eu: "settings.aboutRegionEu",
+  uk: "settings.aboutRegionUk",
+  ch: "settings.aboutRegionCh",
+  tr: "settings.aboutRegionTr",
+  cn: "settings.aboutRegionCn",
+  jp: "settings.aboutRegionJp",
+  kr: "settings.aboutRegionKr",
+  tw: "settings.aboutRegionTw",
+  hk: "settings.aboutRegionHk",
+  mo: "settings.aboutRegionMo",
+  sg: "settings.aboutRegionSg",
+  in: "settings.aboutRegionIn",
+  ae: "settings.aboutRegionAe",
+  sa: "settings.aboutRegionSa",
+  il: "settings.aboutRegionIl",
+  za: "settings.aboutRegionZa",
+  ng: "settings.aboutRegionNg",
+  ke: "settings.aboutRegionKe",
+  eg: "settings.aboutRegionEg",
+  au: "settings.aboutRegionAu",
+  nz: "settings.aboutRegionNz",
+};
+
+function regionLabelKey(region: string): string {
+  return DOC_REGION_LABEL_KEYS[region] || "settings.aboutRegionUs";
+}
+
 (window as any).__state_setActiveToolId = setActiveToolId;
 (window as any).sendRetry = sendRetry;
 (window as any).sendSwitchBranch = sendSwitchBranch;
@@ -173,9 +207,15 @@ class App {
    *  that stays across turns until cleared.  ``null`` = no command active. */
   private _activeCommand: { name: string; prompt?: string; icon?: string; title?: string } | null = null;
   private _welcomeTitleAnimating = false;
+  /** True once the <-> iwork content-entrance listener is attached. */
+  private _modeEnterBound = false;
+  /** True once the sidebar mode-entrance listener is attached. */
+  private _sidebarEnterBound = false;
   private _isChild = false;
   private _childView = "";
   private _tabs: ChildTab[] = [];
+  /** Origin → permissions the page asked for, refreshed on a short TTL. */
+  private _permCache = new Map<string, { list: Array<{ name: string; granted: boolean }>; at: number }>();
   private _activeTabIndex = -1;
   private _region = defaultDocRegion(getLocale());
   private _activeAutomationJobId = "";
@@ -194,6 +234,13 @@ class App {
   private _inputExpanded = false;
   /** Timer clearing the temporary height-animation class after a toggle. */
   private _inputAnimTimer = 0;
+  /**
+   * Pending rAF that lands the expanded editor's viewport on the last line.
+   * Deferred on purpose — see `scheduleInputScrollToEnd()`.
+   */
+  private _inputScrollEndRaf = 0;
+  /** Timer that hands the composer slot back after an animated collapse. */
+  private _inputCollapseTimer = 0;
   /**
    * Cached height of `#input-area` measured while it sits in the normal
    * flex flow (i.e. NOT `position: absolute`).  When the composer switches
@@ -243,6 +290,10 @@ class App {
     // would see the unchanged render key and skip fullRender, leaving the
     // chat blank when returning from settings.
     (window as any).__chatForceRender = () => this.chat.renderForce();
+    // Replay the content-area entrance. Exposed for the same reason as the
+    // two hooks above: returning from settings rebuilds the chat DOM, and
+    // without this the content simply snaps back into place.
+    (window as any).__appContentEnter = () => this.replayContentEnter();
     this.tools = new Tools();
 this.settings = new Settings();
     this.permissions = new Permissions();
@@ -390,6 +441,8 @@ this.settings = new Settings();
     this.registerCommandActions();
     new Agents();
     this.notifications = new Notifications();
+    // Keep the Encre menu's unread counter in sync (viewing/dismissing changes it).
+    this.notifications.onUnreadCountChange = () => this.refreshEncreMenu();
     initNotificationPersistence(() => this.notifications.syncSeenIds());
     this.initEncreMenu();
     this.workspace = new Workspace();
@@ -423,6 +476,11 @@ this.settings = new Settings();
     });
 
     const onAnyModeChange = (): void => {
+      // Was this switch already carried by the automation panel's own
+      // slide? If so the area-level move is the transition, and stacking a
+      // second entrance on the content underneath it would just fight the
+      // slide. Only the chat-side switch (normal ⇄ iwork) needs one.
+      const viaAutomation = this.automationPanel.isActive;
       this.automationPanel.hide();
       this.exitTempChat();
       this.closeSessionInnerSidebar();
@@ -434,6 +492,7 @@ this.settings = new Settings();
       this._welcomeTitleAnimating = true;
       this.updatePlaceholder();
       this.animateWelcomeTitle(getState().workspaceMode);
+      if (!viaAutomation) this.replayContentEnter();
     };
     this.workspace.onModeChange = onAnyModeChange;
     this.modeTransition = new ModeTransitionManager({
@@ -792,20 +851,21 @@ this.settings = new Settings();
   private renderTabBar(): void {
     const tabsEl = document.getElementById("child-header-tabs");
     if (!tabsEl) return;
-    tabsEl.innerHTML = this._tabs.map((t, i) => {
-      const displayLabel = t.title || t.label;
-      const faviconHtml = t.favicon
-        ? `<img class="tab-favicon" src="${this.esc(t.favicon)}" onerror="this.style.display='none';this.nextElementSibling.style.display=''"><i data-lucide="globe" class="lucide lucide-sm" style="display:none"></i>`
+    tabsEl.innerHTML = this._tabs.map((tab, i) => {
+      const displayLabel = tab.title || tab.label;
+      const faviconHtml = tab.favicon
+        ? `<img class="tab-favicon" src="${this.esc(tab.favicon)}" onerror="this.style.display='none';this.nextElementSibling.style.display=''"><i data-lucide="globe" class="lucide lucide-sm" style="display:none"></i>`
         : `<i data-lucide="globe" class="lucide lucide-sm"></i>`;
       return `<button class="tab${i === this._activeTabIndex ? " active" : ""}" data-index="${i}" draggable="true">
         ${faviconHtml}
         <span class="tab-label">${this.esc(displayLabel)}</span>
-        <span class="tab-close" data-index="${i}"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
+        <span class="tab-close" data-index="${i}" data-tooltip="${t("sessionInner.closeTab")}"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
       </button>`;
     }).join("");
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: tabsEl });
     }
+    this.refreshTabTooltips();
 
     let dragSrcIdx: number | null = null;
     tabsEl.querySelectorAll("button[data-index]").forEach(btn => {
@@ -890,6 +950,73 @@ this.settings = new Settings();
     }, { passive: false });
   }
 
+  /**
+   * Keep the tab hover tooltips in sync. Deliberately the same shape as the
+   * session-sidebar tooltips (see ui/tab-tooltip.ts): page title, then the
+   * full URL, with the page favicon as the leading icon.
+   */
+  private refreshTabTooltips(): void {
+    const tabsEl = document.getElementById("child-header-tabs");
+    if (!tabsEl) return;
+    this._tabs.forEach((tab, i) => {
+      const el = tabsEl.querySelector<HTMLElement>(`.tab[data-index="${i}"]`);
+      if (!el) return;
+      const bv = tab.browserView;
+      const liveUrl = (bv?.getUrl() || "").trim();
+      const liveTitle = (bv?.getTitle() || "").trim();
+      const isNavigable = /^(https?|file):/i.test(tab.view || "");
+      const url = liveUrl || (isNavigable ? tab.view : "");
+      const title = liveTitle || tab.title || tab.label;
+      applyTabTooltip(el, {
+        title: title || url || tab.label,
+        icon: tab.favicon,
+        location: url,
+        isUrl: /^https?:/i.test(url),
+      }, getIntlLocale());
+      // Permissions arrive asynchronously; the tooltip is repainted once known.
+      void this.attachPermissions(el, url);
+    });
+  }
+
+  /**
+   * Resolve the permissions the page asked for and write them onto the tab
+   * tooltip. Reads `browser:get-site-info`, whose data comes from the main
+   * process permission-request handler — i.e. what the page really used.
+   */
+  private async attachPermissions(el: HTMLElement, url: string): Promise<void> {
+    if (!url || !/^https?:/i.test(url)) return;
+    let origin = "";
+    try { origin = new URL(url).origin; } catch { return; }
+    const hit = this._permCache.get(origin);
+    let list: Array<{ name: string; granted: boolean }>;
+    if (hit && Date.now() - hit.at < 5000) {
+      list = hit.list;
+    } else {
+      try {
+        const info = await window.electronAPI?.getSiteInfo(url);
+        list = info?.permissions || [];
+      } catch {
+        list = [];
+      }
+      this._permCache.set(origin, { list, at: Date.now() });
+      this._permCache.set(url, { list, at: Date.now() });
+    }
+    if (!list.length) return;
+    const idx = Number(el.dataset.index);
+    const tab = this._tabs[idx];
+    if (!tab) return;
+    const bv = tab.browserView;
+    const liveUrl = (bv?.getUrl() || "").trim();
+    const title = (bv?.getTitle() || "").trim() || tab.title || tab.label;
+    applyTabTooltip(el, {
+      title: title || url || tab.label,
+      icon: tab.favicon,
+      location: liveUrl || url,
+      isUrl: /^https?:/i.test(liveUrl || url),
+      permissions: list,
+    }, getIntlLocale());
+  }
+
   private renderTabContent(tab: ChildTab): void {
     const childViewEl = document.getElementById("child-view");
     if (!childViewEl) return;
@@ -931,6 +1058,9 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
         tab.title = e.title || "";
         this.renderTabBar();
       });
+      // Keep the hover URL fresh across in-page and hard navigations.
+      bv.webview.addEventListener("did-navigate", () => this.refreshTabTooltips());
+      bv.webview.addEventListener("did-navigate-in-page", () => this.refreshTabTooltips());
     } else if (tab.view === "license") {
       container.innerHTML = `<div class="child-view-content"><pre class="child-raw-text">${t("common.loading")}</pre></div>`;
       if (window.electronAPI) {
@@ -945,7 +1075,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
           <div class="child-doc-toolbar">
             <div class="settings-dropdown-wrap" id="child-region-wrap">
               <button class="settings-dropdown-trigger" id="child-region-trigger" type="button">
-                <span>${t("settings.aboutRegionUs")}</span>
+                <span>${t(regionLabelKey(this._region))}</span>
                 <i data-lucide="chevron-down" class="lucide settings-dropdown-chevron"></i>
               </button>
               <div class="settings-dropdown" id="child-region-dropdown">
@@ -2003,11 +2133,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       items.forEach((item) => {
         item.addEventListener("click", () => {
           const mode = item.getAttribute("data-mode");
-          if (mode === "automation") {
-            this.modeTransition.toggleAutomation();
-          } else {
-            this.modeTransition.switchMode(mode as AppMode);
-          }
+          // Every seg tab switches straight to its own mode — clicking the
+          // already-active automation tab is a no-op, never a hop back to a
+          // previously-visited mode. (Keyboard/tray keep the toggle.)
+          this.modeTransition.switchMode(mode as AppMode);
         });
       });
       const syncSegFromState = () => {
@@ -2439,19 +2568,31 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       const allModels = st.modelConfigs || [];
       let activeIdx = st.activeModelIndex;
       const active = allModels[activeIdx];
-      const models = allModels.filter((m) => m.enabled !== false);
+      const enabledModels = allModels.filter((m) => m.enabled !== false);
+      // Apply workspace model pool restriction when in iwork mode:
+      // only show models that the active workspace has explicitly allowed.
+      let models = enabledModels;
+      if (st.workspaceMode === "iwork" && st.activeWorkspace) {
+        const wsConfig = st.workspaceConfigs[st.activeWorkspace];
+        if (wsConfig?.models_enabled !== false && wsConfig?.models && wsConfig.models.length > 0) {
+          const allowedSet = new Set(wsConfig.models);
+          models = enabledModels.filter((m) => allowedSet.has(m.model_id));
+        }
+      }
       let isActiveUsable = active && active.enabled !== false;
 
-      // Auto-fallback: if the active model is disabled but other enabled models exist,
-      // pick the first enabled model and update the backend
-      if (!isActiveUsable && models.length > 0) {
+      // Auto-fallback: if the active model is disabled or not in the model pool,
+      // pick the first available model and update the backend
+      if (!isActiveUsable || (models.length > 0 && !models.some(m => m.model_id === active?.model_id))) {
         const fallback = models[0];
-        const fallbackIdx = allModels.indexOf(fallback);
-        if (fallbackIdx >= 0 && fallbackIdx !== activeIdx) {
-          activeIdx = fallbackIdx;
-          isActiveUsable = true;
-          setModelConfigs(allModels, activeIdx);
-          send({ type: "set_active_model", model_index: activeIdx });
+        if (fallback) {
+          const fallbackIdx = allModels.indexOf(fallback);
+          if (fallbackIdx >= 0 && fallbackIdx !== activeIdx) {
+            activeIdx = fallbackIdx;
+            isActiveUsable = true;
+            setModelConfigs(allModels, activeIdx);
+            send({ type: "set_active_model", model_index: activeIdx });
+          }
         }
       }
       const label = isActiveUsable ? (allModels[activeIdx]?.name || allModels[activeIdx]?.model_id || "NONE") : "NONE";
@@ -2635,6 +2776,9 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       if (dropdown.classList.contains("hidden")) {
         render();
         dropdown.classList.remove("hidden");
+        // CSS anchors it with `inset-inline-end: 0`, so under rtl it grows
+        // towards the window edge — pull it back when it would overflow.
+        clampIntoViewport(dropdown);
       } else {
         dropdown.classList.add("hidden");
       }
@@ -2850,8 +2994,12 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
   }
 
   private deactivateModeChip(): void {
-    if (!this.hasModeChip()) return;
-    const mode = this._currentChipMode;
+    // A mode can be active without an inline chip: after a restart the
+    // backend-confirmed persistent mode only shows the toolbar chip (the
+    // inline chip is intentionally not auto-restored).  Close must work in
+    // one click in both cases, so guard on effective mode — not the chip.
+    if (!this.hasModeChip() && !this._persistentMode) return;
+    const mode = this._currentChipMode || this.getCurrentMode() || this._persistentMode;
     this.removeModeChip();
     this._currentChipMode = "";
     this._persistentMode = "";
@@ -3191,52 +3339,66 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     title.textContent = newText;
   }
 
-  /** Animate welcome title text change with a slide transition */
-  private animateWelcomeTitle(mode: string): void {
-    const title = document.querySelector(".welcome-title") as HTMLElement | null;
-    if (!title) return;
-
-    const newText = mode === "iwork" ? t("welcome.iwork") :
-                    t("welcome.title");
-
-    if (title.textContent === newText) {
-      this._welcomeTitleAnimating = false;
-      return;
+  /**
+   * Replay the content entrance after an iwork ⇄ normal switch.
+   *
+   * The move lives entirely in CSS (`#chat-container.mode-in-forward/back`
+   * and `#session-list.mode-in-forward/back`); this only picks the class.
+   * Only the changing content moves — the nav row, "All tasks" heading,
+   * batch button, input area and disclaimer stay static. The direction is a
+   * real full-width push: entering iWork slides in from the inline-end edge
+   * (forward), returning to normal from the inline-start edge (back). The two
+   * class names carry distinct animation-names because re-adding the one
+   * already running would be a no-op — the browser sees no change and never
+   * restarts. The class is dropped on animationend, so an interrupted or
+   * rapid second switch cannot strand it, and nothing inline is ever written.
+   */
+  private replayContentEnter(): void {
+    const content = document.getElementById("chat-container");
+    if (content) {
+      if (!this._modeEnterBound) {
+        content.addEventListener("animationend", (e) => {
+          if (e.animationName.startsWith("mode-in-")) {
+            content.classList.remove("mode-in-forward", "mode-in-back");
+          }
+        });
+        this._modeEnterBound = true;
+      }
+      const next = getState().workspaceMode === "iwork" ? "mode-in-forward" : "mode-in-back";
+      content.classList.remove("mode-in-forward", "mode-in-back");
+      content.classList.add(next);
     }
 
-    const d = TransitionHelper.DEFAULT_DURATION;
-    const easing = "cubic-bezier(0.4, 0, 0.2, 1)";
-    // Direction-aware slide: LTR exits left / enters from right, rtl mirrors.
-    const rtl = document.documentElement.dir === "rtl";
-    const exitShift = rtl ? "translateX(100%)" : "translateX(-100%)";
-    const enterShift = rtl ? "translateX(-100%)" : "translateX(100%)";
+    // Only the history rows travel — the nav row (New task / temp-chat /
+    // workspace), the "All tasks" heading and the batch button stay put, so
+    // the chrome never appears to shift while the list content changes.
+    const list = document.getElementById("session-list");
+    if (list) {
+      if (!this._sidebarEnterBound) {
+        list.addEventListener("animationend", (e) => {
+          if (e.animationName.startsWith("mode-in-")) {
+            list.classList.remove("mode-in-forward", "mode-in-back");
+          }
+        });
+        this._sidebarEnterBound = true;
+      }
+      const next = getState().workspaceMode === "iwork" ? "mode-in-forward" : "mode-in-back";
+      list.classList.remove("mode-in-forward", "mode-in-back");
+      list.classList.add(next);
+    }
+  }
 
-    // 滑出（向左 100%）
-    title.style.transition = `transform ${d}ms ${easing}, opacity ${d}ms ${easing}`;
-    title.style.transform = exitShift;
-    title.style.opacity = "0";
-
-    setTimeout(() => {
-      // 切换文字，定位到右侧起始位置
-      title.textContent = newText;
-      title.style.transition = "none";
-      title.style.transform = enterShift;
-      title.style.opacity = "0";
-
-      requestAnimationFrame(() => {
-        // 滑入（从右到左）
-        title.style.transition = `transform ${d}ms ${easing}, opacity ${d}ms ${easing}`;
-        title.style.transform = "translateX(0)";
-        title.style.opacity = "1";
-
-        setTimeout(() => {
-          title.style.transition = "";
-          title.style.transform = "";
-          title.style.opacity = "";
-          this._welcomeTitleAnimating = false;
-        }, d + 50);
-      });
-    }, d + 30);
+  /** Set the welcome title text for the current mode.
+   *
+   *  The motion is already carried by the chat-container slide
+   *  (`#chat-container.mode-in-forward/back`), so no separate title swap runs
+   *  here — stacking a second animation on the title made it look like it
+   *  moved twice. */
+  private animateWelcomeTitle(mode: string): void {
+    this._welcomeTitleAnimating = false;
+    const title = document.querySelector(".welcome-title") as HTMLElement | null;
+    if (!title) return;
+    title.textContent = mode === "iwork" ? t("welcome.iwork") : t("welcome.title");
   }
 
   /** Programmatically close the session inner sidebar if it's open */
@@ -3274,9 +3436,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const title = document.querySelector(".welcome-title") as HTMLElement | null;
     if (title) {
       title.textContent = t("welcome.title");
-      title.style.transition = "";
-      title.style.transform = "";
-      title.style.opacity = "";
+      // Drop a swap left mid-flight so the next one starts from rest.
+      title.classList.remove("is-swapping");
     }
     // Show placeholder, hide mode chip.
     const placeholder = document.getElementById("prompt-placeholder");
@@ -3471,9 +3632,9 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       const title = this.welcomeScreen.querySelector(".welcome-title") as HTMLElement | null;
       if (title) {
         title.textContent = "";
-        title.style.transition = "";
-        title.style.transform = "";
-        title.style.opacity = "";
+        // Drop a swap left mid-flight so animateWelcomeTitle() always sees a
+        // text change and can play a clean entrance.
+        title.classList.remove("is-swapping");
       }
     }
 
@@ -3484,19 +3645,14 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const placeholder = document.getElementById("prompt-placeholder");
     if (placeholder) placeholder.classList.remove("hidden");
 
-    // ── 16. Force-hide #automation-view + clear its children ───────
-    // AutomationPanel.hide() also does this, but doing it here makes
-    // the cleanup robust to races where the user's mode change happens
-    // before the panel has time to slide away.
+    // ── 16. Force-hide #automation-view ────────────────────────────
+    // AutomationPanel.hide() also does this, but doing it here makes the
+    // cleanup robust to races where a mode change lands before the panel
+    // has reacted. There are no inline styles to unwind any more: the
+    // panel's visibility is a single class, and the move itself is CSS.
     const automationView = document.getElementById("automation-view");
     if (automationView) {
       automationView.classList.add("hidden");
-      // Clear any inline-positioning styles set by TransitionHelper.slide.
-      automationView.style.position = "";
-      automationView.style.width = "";
-      automationView.style.height = "";
-      automationView.style.top = "";
-      automationView.style.left = "";
     }
     const sidebarToggle = document.getElementById("btn-toggle-sidebar");
     const searchBtn = document.getElementById("btn-sidebar-search");
@@ -3505,19 +3661,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       sidebarToggle.classList.remove("hidden");
       sidebarToggle.style.display = "";
       (sidebarToggle as HTMLButtonElement).disabled = false;
-      // AutomationPanel may leave inline opacity/transform behind; clear it so
-      // the button is fully visible again after leaving automation.
-      sidebarToggle.style.opacity = "";
-      sidebarToggle.style.transform = "";
-      sidebarToggle.style.transition = "";
-      sidebarToggle.style.pointerEvents = "";
     }
     if (searchBtn) {
+      // The search button's display is still toggled inline on tab changes;
+      // its opacity/transform are no longer touched by anything.
       searchBtn.style.display = "";
-      searchBtn.style.opacity = "";
-      searchBtn.style.transform = "";
-      searchBtn.style.transition = "";
-      searchBtn.style.pointerEvents = "";
     }
     if (autoBackBtn) autoBackBtn.classList.add("hidden");
 
@@ -3549,20 +3697,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       sessionBar.style.display = "";
     }
 
-    // ── 20. Reset main-area inline styles set by TransitionHelper ─
-    // The slide transitions on automation / workspace swap can leave
-    // absolute-positioning styles behind if the animation is interrupted
-    // (e.g. the user clicks again mid-transition).  Clear them here.
-    if (mainBody) {
-      mainBody.style.position = "";
-    }
-    if (mainContent) {
-      mainContent.style.position = "";
-      mainContent.style.width = "";
-      mainContent.style.height = "";
-      mainContent.style.top = "";
-      mainContent.style.left = "";
-    }
+    // ── 20. (removed) main-area inline-style reset ─────────────────
+    // Mode switching no longer writes inline positioning onto #main-body,
+    // #main-content or #automation-view — the slide is pure CSS. There is
+    // consequently no residue to clear when a switch is interrupted, which
+    // is what this step used to exist for.
 
     // ── 21. Scroll position reset for chat-container ───────────────
     // The chat container keeps its scrollTop across renders.  If the user
@@ -3610,6 +3749,8 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     const sid = getState().sessionId;
     setTempChat(false);
     if (sid) {
+      // Poison the id first so in-flight events can never re-show it.
+      markTempChatSession(sid);
       send({ type: "delete_session", session_id: sid });
     }
   }
@@ -3669,9 +3810,22 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     if (collapseIcon) collapseIcon.style.display = expanded ? "" : "none";
   }
 
-  private setInputExpanded(v: boolean): void {
-    if (this._inputExpanded === v) return;
+  /**
+   * @param animate Play the height transition.  Only the user-facing toggle
+   *   animates; the programmatic collapses after send / queue / steer must
+   *   snap back instantly (the draft is already cleared there, so animating
+   *   would just hold the reserved slot open for another frame or two).
+   */
+  private setInputExpanded(v: boolean, animate = false): void {
+    // Collapsing is not a no-op while an animated collapse is still pending:
+    // the send paths need the slot handed back right away, not 340ms later.
+    if (this._inputExpanded === v && this._inputCollapseTimer === 0) return;
+
     if (v) {
+      // A collapse animation may still be mid-flight with `#input-area` still
+      // absolute.  Settle it first — otherwise `offsetHeight` below would
+      // measure the floating overlay instead of the real flex slot.
+      this.finishCollapseHandoff();
       // Measure the composer's height while it is STILL in the flex flow,
       // BEFORE the `input-expanded` class turns it into an absolute overlay.
       // Reading offsetHeight here forces a synchronous layout, so the value
@@ -3686,64 +3840,164 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       // the user sees the whole timeline jump as if the wheel scrolled.
       const h = this.inputArea.offsetHeight;
       if (h > 0) this._inputNaturalHeight = h;
-    } else {
-      // Collapsing: settle the editor height synchronously BEFORE the
-      // `.input-expanded` class is removed.  Two traps here:
-      //   1. `.expanded`'s `min-height: 220px` must be dropped first —
-      //      otherwise `scrollHeight` reports >= 220px no matter how short
-      //      the real content is, and the composer re-enters the flex flow
-      //      taller than its natural slot.  That squeezes `#chat-container`
-      //      by the difference and, when scrolled near the bottom, pushes
-      //      the timeline up (scrollTop gets clamped).
-      //   2. The `height` transition must be OFF for the re-flow frame:
-      //      with `input-anim` active the browser renders the previous
-      //      frame's height (220px) on the very frame the composer returns
-      //      to the flow, which causes the same one-frame squeeze.  It is
-      //      re-enabled right after the re-flow below.
-      this.input.classList.remove("expanded");
-      this.input.classList.remove("input-anim");
-      this.input.style.height = "auto";
-      const contentH = this.input.scrollHeight;
-      this.input.style.height = `${Math.min(Math.max(contentH, 56), 320)}px`;
+      this._inputExpanded = true;
+      // Temporarily enable the height transition so the expand glides with
+      // the app's standard easing; clears once the animation settles so
+      // normal typing auto-resize stays snappy.
+      this.input.classList.add("input-anim");
+      this.armInputAnimTimer();
+      this.input.classList.add("expanded");
+      this.inputArea.classList.add("input-expanded");
+      this.input.style.height = "";
+      // Compensate the vacated slot IMMEDIATELY, before any layout-reading
+      // step below (updateInputExpandButton reads innerText, resizeInput
+      // schedules a rAF, placeCursorAtEnd touches the selection) forces a
+      // reflow.  If the padding-bottom placeholder were applied later, the
+      // browser would lay out the intermediate state — input-area absolute,
+      // no padding-bottom yet — which grows the chat container by the
+      // input's height, shrinks the scrollable range, and clamps scrollTop.
+      // The timeline then jumps up by roughly the input height and never
+      // comes back, even though the placeholder eventually restores the
+      // container's height.
+      this.syncInputAreaHeight();
+      this.updateInputExpandButton();
+      this.resizeInput();
+      this.placeCursorAtEnd();
+      this.input.focus();
+      // Safe to touch the editor's scroll offset only now: the vacated slot
+      // has already been compensated, so reading `scrollHeight` no longer
+      // reflows the chat container (see `scheduleInputScrollToEnd`).
+      this.scheduleInputScrollToEnd();
+      return;
     }
-    this._inputExpanded = v;
-    // Temporarily enable the height transition so the expand glides with
-    // the app's standard easing; clears once the animation settles so
-    // normal typing auto-resize stays snappy.  On collapse the transition
-    // is enabled only AFTER the composer has safely re-entered the flex
-    // flow (see the else branch above) — during the re-flow frame itself
-    // it must stay off or the timeline jumps.
-    if (v) this.input.classList.add("input-anim");
-    window.clearTimeout(this._inputAnimTimer);
-    this._inputAnimTimer = window.setTimeout(() => {
+
+    const collapsed = this.collapsedInputHeight();
+
+    if (animate) {
+      // Keep `#input-area` as an absolute overlay for the WHOLE shrink
+      // animation.  While it is out of the flex flow, the chat container keeps
+      // the geometry granted by the padding-bottom placeholder, so animating
+      // the height can never squeeze the timeline — which is exactly why the
+      // collapse used to be instant: settling the height first (the old
+      // approach) left nothing left to animate.  The slot is handed back in a
+      // single synchronous block once the height has settled.
+      const startH = this.input.getBoundingClientRect().height;
+      this._inputExpanded = false;
       this.input.classList.remove("input-anim");
-    }, 400);
-    this.input.classList.toggle("expanded", v);
-    this.inputArea.classList.toggle("input-expanded", v);
-    if (v) this.input.style.height = "";
-    // Collapse: the composer is back in the flex flow — re-enable the
-    // height transition so resizeInput()'s rAF (and the animation window
-    // below) behaves as before, without the re-flow frame squeeze.
-    if (!v) this.input.classList.add("input-anim");
-    // Compensate the vacated slot IMMEDIATELY, before any layout-reading
-    // step below (updateInputExpandButton reads innerText, resizeInput
-    // schedules a rAF, placeCursorAtEnd touches the selection) forces a
-    // reflow.  If the padding-bottom placeholder were applied later, the
-    // browser would lay out the intermediate state — input-area absolute,
-    // no padding-bottom yet — which grows the chat container by the
-    // input's height, shrinks the scrollable range, and clamps scrollTop.
-    // The timeline then jumps up by roughly the input height and never
-    // comes back, even though the placeholder eventually restores the
-    // container's height.
-    this.syncInputAreaHeight();
+      this.input.classList.remove("expanded");
+      this.input.style.height = `${startH}px`;
+      void this.input.offsetHeight; // commit the start height without easing
+      this.input.classList.add("input-anim");
+      this.input.style.height = `${collapsed}px`;
+      this.armInputAnimTimer();
+      window.clearTimeout(this._inputCollapseTimer);
+      // `--transition-emphasized` is 0.28s; hand back slightly after it ends.
+      this._inputCollapseTimer = window.setTimeout(
+        () => this.finishCollapseHandoff(),
+        340
+      );
+      this.updateInputExpandButton();
+      this.placeCursorAtEnd();
+      this.input.focus();
+      return;
+    }
+
+    // Instant collapse (programmatic): settle the editor height synchronously
+    // BEFORE the `.input-expanded` class is removed, so the composer re-enters
+    // the flex flow at its collapsed size.  Two traps here:
+    //   1. `.expanded`'s fixed `height` must be dropped first — otherwise the
+    //      composer re-enters the flow taller than its natural slot, which
+    //      squeezes `#chat-container` by the difference and, when scrolled
+    //      near the bottom, pushes the timeline up (scrollTop gets clamped).
+    //   2. The `height` transition must be OFF for the re-flow frame:
+    //      with `input-anim` active the browser renders the previous frame's
+    //      expanded height on the very frame the composer returns to the
+    //      flow, which causes the same one-frame squeeze.
+    this._inputExpanded = false;
+    this.input.classList.remove("expanded");
+    this.input.classList.remove("input-anim");
+    this.input.style.height = `${collapsed}px`;
+    this.finishCollapseHandoff();
     this.updateInputExpandButton();
     this.resizeInput();
     this.placeCursorAtEnd();
     this.input.focus();
+    // Composer is back in the flex flow — re-enable the height transition so
+    // resizeInput()'s rAF behaves as before, without the re-flow squeeze.
+    this.input.classList.add("input-anim");
+    this.armInputAnimTimer();
+  }
+
+  /** Re-arms the timer that drops the temporary height-transition class. */
+  private armInputAnimTimer(): void {
+    window.clearTimeout(this._inputAnimTimer);
+    this._inputAnimTimer = window.setTimeout(() => {
+      this.input.classList.remove("input-anim");
+    }, 400);
+  }
+
+  /**
+   * Height the composer collapses back to — the content height clamped to the
+   * same `[56, 320]` window `resizeInput()` uses for the non-expanded state.
+   * Measured with the transition OFF so the probe height never animates.
+   */
+  private collapsedInputHeight(): number {
+    const hadAnim = this.input.classList.contains("input-anim");
+    if (hadAnim) this.input.classList.remove("input-anim");
+    const prevH = this.input.style.height;
+    const prevMax = this.input.style.maxHeight;
+    this.input.style.height = "auto";
+    this.input.style.maxHeight = "none";
+    const contentH = this.input.scrollHeight;
+    this.input.style.height = prevH;
+    this.input.style.maxHeight = prevMax;
+    if (hadAnim) this.input.classList.add("input-anim");
+    return Math.min(Math.max(contentH, 56), 320);
+  }
+
+  /**
+   * Final step of a collapse: hand the composer slot back to the flex flow.
+   * Removing the overlay class and clearing the compensating padding-bottom
+   * MUST happen in ONE synchronous block — split across tasks, the browser
+   * would lay out the in-between state (`#chat-container` resizes, its
+   * scrollable range shifts, `scrollTop` gets clamped) and the timeline would
+   * visibly jump.  Idempotent: safe to call when no collapse is pending.
+   */
+  private finishCollapseHandoff(): void {
+    window.clearTimeout(this._inputCollapseTimer);
+    this._inputCollapseTimer = 0;
+    if (!this.inputArea.classList.contains("input-expanded")) return;
+    this.input.classList.remove("input-anim");
+    this.inputArea.classList.remove("input-expanded");
+    this.syncInputAreaHeight();
+    this.refreshInputNaturalHeight();
+  }
+
+  /**
+   * The expanded editor has a FIXED height, so a draft longer than that
+   * overflows inside the box. Land its viewport on the last line instead of
+   * the first — otherwise expanding looks like the tail of the text vanished.
+   *
+   * MUST be deferred past the current frame. Doing it synchronously inside
+   * `setInputExpanded()` reads `scrollHeight` (i.e. forces a layout) at the
+   * exact moment `#input-area` has just gone absolute but the compensating
+   * `padding-bottom` has not been written yet. The browser then lays out that
+   * intermediate state: `#chat-container` grows into the vacated slot, its
+   * scrollable range shrinks, and `scrollTop` gets clamped — the timeline
+   * visibly jumps up a couple of lines and never comes back.
+   */
+  private scheduleInputScrollToEnd(): void {
+    if (this._inputScrollEndRaf) return;
+    this._inputScrollEndRaf = requestAnimationFrame(() => {
+      this._inputScrollEndRaf = 0;
+      if (!this._inputExpanded) return;
+      this.input.scrollTop = this.input.scrollHeight;
+    });
   }
 
   private toggleInputExpand(): void {
-    this.setInputExpanded(!this._inputExpanded);
+    // The user-facing toggle animates both ways; programmatic collapses snap.
+    this.setInputExpanded(!this._inputExpanded, true);
   }
 
   /**
@@ -3757,7 +4011,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     // reflects the tall overlay (up to ~700px), which is NOT the slot
     // size we want to preserve.  The last cache written before the
     // expand is good enough until the user collapses it again.
+    // NB: check the CLASS, not `_inputExpanded` — during an animated
+    // collapse the flag is already false while the overlay is still up.
     if (this._inputExpanded) return;
+    if (this.inputArea.classList.contains("input-expanded")) return;
     const h = this.inputArea.offsetHeight;
     if (h > 0) this._inputNaturalHeight = h;
   }
@@ -4010,6 +4267,11 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
       attachments: attachments as any,
       temp_chat: st.tempChat || undefined,
     };
+    // Poison the session id the moment a temp-chat run starts, so no
+    // late rename/broadcast/stream event can ever surface it in the sidebar.
+    if (st.tempChat && st.sessionId) {
+      markTempChatSession(st.sessionId);
+    }
     if (sendMode) {
       payload.mode = sendMode;
       // Include the command's custom prompt if defined
@@ -4629,12 +4891,10 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
 
     const rect = btn.getBoundingClientRect();
     menu.style.top = `${rect.bottom + 6}px`;
-    menu.style.left = `${rect.left}px`;
     // Clamp horizontally into the viewport. Under rtl the anchor button
     // sits at the far right edge and the 240px menu would open mostly
     // off-window (left is a physical offset, it never mirrors).
-    const maxLeft = window.innerWidth - menu.offsetWidth - 8;
-    if (rect.left > maxLeft) menu.style.left = `${Math.max(8, maxLeft)}px`;
+    menu.style.left = `${clampElLeft(menu, rect.left)}px`;
 
     menu.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4683,6 +4943,7 @@ if (tab.view.startsWith("http://") || tab.view.startsWith("https://") || tab.vie
     menu.style.width = "480px";
     this.notifications.attach(content, () => {
       this.notifications.resetDetail();
+      this.refreshEncreMenu();
       main.classList.remove("hidden");
       sub.classList.add("hidden");
       menu.style.width = "";

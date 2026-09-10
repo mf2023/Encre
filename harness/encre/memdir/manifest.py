@@ -21,17 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from encre.memdir.system import MemoryHeader
-
 """Render the Markdown manifest that summarises all memory files.
 
 The manifest is a Markdown table shown to the model so it can discover
 which memories exist, their age, description, type, and tags before
 deciding to read a specific ``.md`` file.
 """
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from encre.memdir.system import MemoryHeader
 
 
 def format_memory_manifest(memories: list[MemoryHeader]) -> str:

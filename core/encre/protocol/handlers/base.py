@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Connection lifecycle and transport shared by every domain handler.
 
@@ -48,7 +50,7 @@ from encre.server.session_manager import SessionManager
 from encre.settings_manager import load_custom_slash_commands
 from encre.slash_commands import get_slash_command_defs
 from encre.spec import EncreSpecEngine
-from encre.tools.builtin.browser import set_search_engine_url
+from encre.tools.runtime import set_search_engine_url
 
 from encre.protocol.handlers.workspace_store import (
     _load_workspaces,
@@ -97,7 +99,11 @@ class HandlerBase:
         self._index_progress_callback = None
         self._client_encrypted: bool | None = None  # detected from first client message
         self._protocol_version: int | None = None  # declared by client handshake, else PROTOCOL_VERSION
-        self._spec_engine = EncreSpecEngine()
+        # Per-session spec engines.  A single connection-wide singleton let
+        # one session's spec (parsed document, approve/reject state) bleed
+        # into another session's approval gate, so the state "carried over"
+        # when switching conversations.
+        self._spec_engines: dict[str, EncreSpecEngine] = {}
         self._term_sessions: dict[int, dict] = {}  # terminal_id -> {proc, reader_task}
         self._term_seq = 0
         self._connections: list[Any] = []
@@ -126,16 +132,30 @@ class HandlerBase:
             # WebSocket disconnected -- cancel any running agent
             self._cancel_current_task()
 
+    def _spec_engine_for(self, session_or_sid: Any) -> EncreSpecEngine:
+        """Return the spec engine owned by *session_or_sid* (created on first use).
+
+        Spec state (parsed document, approve/reject decisions) must never leak
+        across sessions, so every session owns its engine instead of the old
+        connection-wide singleton.
+        """
+        sid = getattr(session_or_sid, "session_id", None) or session_or_sid or ""
+        engine = self._spec_engines.get(sid)
+        if engine is None:
+            engine = EncreSpecEngine()
+            self._spec_engines[sid] = engine
+        return engine
+
     def _resolve_spec_engine(self, session_id: str | None):
         """Resolve the spec engine bound to *session_id*.
 
         The spec engine is a per-loop collaborator; sharing one singleton
         across sessions let one session's approve/reject bleed into another
         session's approval gate.  Prefer the loop's own engine (wired at run
-        time from :attr:`_spec_engine`) so approvals stay scoped; fall back to
-        the shared singleton only when no live session/loop is available.
+        time from the per-session registry) so approvals stay scoped; fall
+        back to the session's registry entry (creating it if needed) when no
+        live session/loop is available.
         """
-        engine = getattr(self, "_spec_engine", None)
         sid = session_id or self._current_session_id
         if sid:
             info = None
@@ -147,7 +167,7 @@ class HandlerBase:
             loop = getattr(loop, "loop", None)
             if loop is not None and getattr(loop, "spec_engine", None) is not None:
                 return loop.spec_engine
-        return engine
+        return self._spec_engine_for(sid or "")
 
     async def _send_session_mode(self, ws, session) -> None:
         """Send mode_changed for the session's persisted mode (if any).
@@ -397,8 +417,15 @@ class HandlerBase:
             cd["sub_agents"] = [
                 sa for sa in cd["sub_agents"] if not sa.get("hidden", False)
             ]
-        current_spec = self._spec_engine.current_spec
+        # Spec state is per-session: read the owning session's engine, never
+        # a shared one (the old singleton leaked spec approve/reject state
+        # into every other session's config snapshot).
+        current_spec = self._spec_engine_for(info).current_spec
         cd["spec"] = current_spec.to_dict() if current_spec else None
+        # Tag the snapshot with the session it was built from so the frontend
+        # can scope session-bound fields (active_command) instead of applying
+        # them globally (which resurrected stale chips across sessions).
+        cd["session_id"] = info.session_id
         cd["slash_commands"] = get_slash_command_defs(
             info.agent.command_registry
         )
@@ -553,7 +580,7 @@ class HandlerBase:
                                 "base_url": baseurl,
                                 "enabled": True,
                             }
-                        self._persist_settings(info)
+                        self._persist_config(info)
                 return
         except Exception as e:
             logger.warning("[wechat_scan] poll error: %s", e)
@@ -563,50 +590,18 @@ class HandlerBase:
                 self._tasks.discard(task)
 
     def _persist_config(self, info: Any) -> None:
+        """Persist the whole configuration through the single writer.
+
+        ``workspace`` is deliberately cleared: it is a per-session runtime
+        value, not persisted state.
+        """
         try:
-            from encre.config import _get_config_path
-            config_path = _get_config_path()
+            from encre import config_store
             config_to_save = replace(info.agent.config, workspace="")
-            config_to_save.save(str(config_path))
-            logger.info("[persist_config] saved to %s", config_path)
+            config_to_save.save()
+            logger.info("[persist_config] saved to %s", config_store.config_dir())
         except Exception as exc:
             logger.error("[persist_config] Failed to persist config: %s\n%s", exc, traceback.format_exc())
-
-    @staticmethod
-    def _persist_settings(info: Any) -> None:
-        try:
-            from encre.settings_manager import (
-                _GENERAL_SETTINGS_KEYS,
-                load_settings,
-                save_settings,
-            )
-            cfg = info.agent.config
-            # Merge: load existing settings, update general keys, keep everything else
-            existing = load_settings()
-            for key in _GENERAL_SETTINGS_KEYS:
-                val = getattr(cfg, key, None)
-                if val is not None and val != "":
-                    existing[key] = str(val)
-            # Also persist adapter configs from EncreConfig for auto-start on restart
-            # First, remove stale adapter keys that are no longer in config
-            adapter_ids_in_config = set()
-            if cfg.adapter_configs:
-                adapter_ids_in_config = set(cfg.adapter_configs.keys())
-                for adapter_id, fields in cfg.adapter_configs.items():
-                    for fk, fv in fields.items():
-                        existing[f"adapter_{adapter_id}_{fk}"] = fv
-            # Remove keys for adapters no longer in config (e.g. unbound weixin)
-            stale_keys = [k for k in existing if k.startswith("adapter_") and k.split("_", 2)[1] not in adapter_ids_in_config]
-            for k in stale_keys:
-                existing.pop(k, None)
-            if hasattr(cfg, "permission_settings") and cfg.permission_settings:
-                existing["permission_settings"] = dict(cfg.permission_settings)
-            logger.info("[persist_settings] saving keys: %s", list(existing.keys()))
-            if existing:
-                save_settings(existing)
-                logger.info("[persist_settings] saved successfully")
-        except Exception as exc:
-            logger.warning("Failed to persist settings: %s", exc)
 
     @staticmethod
     def _persist_mcp_json(_info: Any, servers: list[dict[str, Any]]) -> None:
@@ -644,15 +639,17 @@ class HandlerBase:
 
             payload: dict[str, Any] = {"mcpServers": mcp_data}
 
-            # Canonical encre location (used by mcp_manager.py)
+            # Canonical encre location (used by mcp_manager.py).  Encrypted at
+            # rest: mcp.json carries server env / credentials.  Readers go
+            # through encre.secure_io, which also accepts legacy plaintext.
             from encre.tools.mcp_manager import default_mcp_config_path
+            from encre.secure_io import write_json
             yim_path = default_mcp_config_path()
-            os.makedirs(os.path.dirname(yim_path), exist_ok=True)
-            with open(yim_path, "w", encoding="utf-8") as f:
-                _json.dump(payload, f, ensure_ascii=False, indent=2)
+            write_json(yim_path, payload)
             logger.info("[persist_mcp_json] saved %d servers to %s", len(mcp_data), yim_path)
 
-            # Claude Code compat location
+            # Claude Code compat location -- must stay plaintext: Claude Code
+            # parses this file itself and knows nothing about our crypto.
             claude_dir = os.path.expanduser("~/.claude")
             os.makedirs(claude_dir, exist_ok=True)
             claude_path = os.path.join(claude_dir, "mcp.json")
@@ -668,12 +665,14 @@ class HandlerBase:
 
         Returns a list of server dicts compatible with EncreConfig.mcp_servers.
         """
-        import json as _json
+        from encre.secure_io import read_json
+
         try:
             if not os.path.exists(path):
                 return []
-            with open(path, encoding="utf-8") as f:
-                data = _json.load(f)
+            data = read_json(path, default=None)
+            if data is None:
+                return []
             raw = data.get("mcpServers") or data
             if isinstance(raw, dict):
                 servers = []

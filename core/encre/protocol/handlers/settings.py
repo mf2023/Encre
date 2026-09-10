@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Settings-domain handlers.
 
 Backend/model configuration, agent profiles, MCP servers, permission
@@ -73,7 +75,7 @@ from encre.settings_manager import (
     _GENERAL_SETTINGS_KEYS,
     save_custom_slash_commands,
 )
-from encre.tools.builtin.browser import set_search_engine_url
+from encre.tools.runtime import set_search_engine_url
 
 logger = logging.getLogger("encre.transport.ws")
 
@@ -181,8 +183,6 @@ class SettingsHandlers:
                     else:
                         self._default_config.adapter_configs[aid] = fields
                 logger.info("[configure] applied %d adapter config keys and persisted", len(adapter_keys))
-        self._persist_config(session)
-        self._persist_settings(session)
         if "custom_slash_commands" in msg.config:
             custom_cmds = msg.config["custom_slash_commands"]
             if isinstance(custom_cmds, list):
@@ -216,7 +216,12 @@ class SettingsHandlers:
                     session.agent.safety.set_policies(tools, capabilities)
                     session.agent.config.permission_settings = {**session.agent.config.permission_settings, **raw}
                     logger.info("[configure] applied permission_settings (%d tools, %d capabilities)", len(tools), len(capabilities))
-        self._persist_settings(session)
+        # Single write at the very end: models, adapters, UI settings and
+        # permission_settings are all persisted in one pass, so a partially
+        # updated configuration can never reach disk.  (Previously this ran
+        # twice -- once here and once before permission_settings was merged --
+        # through two different stores that could disagree.)
+        self._persist_config(session)
         await self._send(ws, "configured", config=msg.config)
         # Config changed 鈫?unified push so the frontend store
         # (model selector, settings, sessions) refreshes from one

@@ -42,8 +42,11 @@ class DeviceContextCache:
         if not os.path.isfile(self._path):
             return None
         try:
-            with open(self._path, encoding="utf-8") as f:
-                data = json.load(f)
+            from encre.secure_io import read_json
+
+            data = read_json(self._path, default=None)
+            if not isinstance(data, dict):
+                return None
             ts = data.get("_timestamp", 0)
             if time.time() - ts > self._ttl:
                 return None
@@ -53,11 +56,11 @@ class DeviceContextCache:
 
     def save(self, data: dict[str, dict[str, Any] | None]) -> None:
         try:
+            from encre.secure_io import write_json
+
             payload = dict(data)
             payload["_timestamp"] = time.time()
-            os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            with open(self._path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
+            write_json(self._path, payload)
         except Exception:
             pass
 

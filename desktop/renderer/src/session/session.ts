@@ -30,7 +30,7 @@
  * overlays for sessions shown inside the workspace tree.
  */
 
-import { getState, subscribe, setSessionId, clearMessages, setSessionState, setSubAgentView, clearSubAgentBreadcrumb, setTempChat, removeSessionById, setActiveWorkspace } from "../core/state.js";
+import { getState, subscribe, setSessionId, clearMessages, setSessionState, setSubAgentView, clearSubAgentBreadcrumb, setTempChat, markTempChatSession, removeSessionById, setActiveWorkspace } from "../core/state.js";
 import { send } from "../core/ws.js";
 import { setRequestedSessionId } from "../core/stream.js";
 import { t, onLocaleChange } from "../features/i18n.js";
@@ -403,6 +403,8 @@ export class Session {
         if (getState().tempChat && getState().sessionId) {
           const oldSid = getState().sessionId;
           setTempChat(false);
+          markTempChatSession(oldSid);
+          removeSessionById(oldSid);
           send({ type: "delete_session", session_id: oldSid });
         }
         // In iWork mode the flat list mixes every workspace's sessions, so

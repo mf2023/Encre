@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for resolve_thinking_config and get_thinking_budget_tokens from encre.thinking."""
 
 import inspect

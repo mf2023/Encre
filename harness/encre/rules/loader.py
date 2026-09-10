@@ -63,6 +63,34 @@ _PROJECT_SOURCE_TO_FILE = {
 }
 
 
+def read_global_rule_text(path: str) -> str:
+    """Read a global rule file, decrypting it at rest.
+
+    Global rules live beside ``soul/`` and ``memory/`` and are encrypted with
+    the same AES-256-GCM master key.  Rule files written before that migration
+    are still plain Markdown, so a failed decrypt falls back to the raw text.
+
+    Args:
+        path: Path of the rule file to read.
+
+    Returns:
+        The rule text, or ``""`` when the file cannot be read.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = f.read().strip()
+    except (FileNotFoundError, IsADirectoryError, PermissionError, OSError):
+        return ""
+    if not raw:
+        return ""
+    try:
+        from encre.crypto import decrypt
+        return decrypt(raw).strip()
+    except Exception:
+        # Legacy plaintext rule, or a master key we cannot reach: use as-is.
+        return raw
+
+
 def _rule_file_name(rule: "RuleFile") -> str:
     """Return the filename a rule was loaded from (used for exclusion)."""
     if rule.source.startswith("codex:"):
@@ -169,7 +197,7 @@ class RulesLoader:
         try:
             for entry in sorted(rules_dir.iterdir()):
                 if entry.suffix.lower() == ".md" and entry.is_file():
-                    content = self._read_file(str(entry))
+                    content = read_global_rule_text(str(entry))
                     if content:
                         name = entry.stem
                         rules.append(RuleFile(source=f"global:{name}", content=content, priority=50))
@@ -258,7 +286,13 @@ class RulesLoader:
         return joined
 
     def _read_file(self, path: str) -> str:
-        """Read and strip a rule file, returning "" on any I/O error."""
+        """Read and strip a project rule file, returning "" on any I/O error.
+
+        Project rules live inside user workspaces (``CLAUDE.md``, ``.cursorrules``,
+        ``.encre/rules.md``, …) and are plain Markdown by contract — unlike the
+        global rules under the data dir, which are encrypted (see
+        :func:`read_global_rule_text`).
+        """
         # Swallow common I/O errors so a missing/unreadable rule is simply empty.
         try:
             with open(path, encoding="utf-8") as f:

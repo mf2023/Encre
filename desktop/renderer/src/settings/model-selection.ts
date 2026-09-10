@@ -59,6 +59,11 @@ export interface TargetModelSelectionOptions {
    * state (e.g. per-workspace model restriction).
    */
   checked?: boolean;
+  /**
+   * Global master-switch off: disables the toggle and greys out the card.
+   * Clicks are ignored; the UI reflects that the pool is disabled globally.
+   */
+  disabled?: boolean;
   /** i18n lookup; defaults to the settings-page keys. */
   t: (key: string) => string;
   /** Optional i18n keys overriding the defaults. */
@@ -102,6 +107,7 @@ export function renderTargetModelSelection(opts: TargetModelSelectionOptions): s
 
   const title = t(titleKey);
   const hint = t(hintKey);
+  const disabled = !!opts.disabled;
   const enabledModels = (opts.models ?? []).filter(m => m.enabled !== false);
   const selected = opts.selected ?? [];
   const on = opts.checked !== undefined ? !!opts.checked : selected.length > 0;
@@ -110,30 +116,33 @@ export function renderTargetModelSelection(opts: TargetModelSelectionOptions): s
     ? `<span style="color:var(--text-muted);font-size:13px">${t(emptyKey)}</span>`
     : enabledModels.map(m => {
         const isSel = selected.includes(m.model_id);
-        return `<div class="auto-push-gw-item${isSel ? " selected" : ""}" data-model-id="${escapeHtml(m.model_id)}">
+        return `<div class="auto-push-gw-item${isSel ? " selected" : ""} ${disabled ? "disabled" : ""}" data-model-id="${escapeHtml(m.model_id)}">
               <span class="auto-push-gw-name">${escapeHtml(m.name || m.model_id)}</span>
               <span class="auto-push-gw-dot" title="${escapeHtml(m.model_id)}"></span>
               <span class="auto-push-gw-check"></span>
             </div>`;
       }).join("");
 
+  const disabledAttr = disabled ? "disabled" : "";
+  const disabledClass = disabled ? " model-selection-card--disabled" : "";
+
   return `
-      <div class="settings-card model-selection-card" style="margin-top:12px;margin-bottom:0;overflow:hidden">
+      <div class="settings-card model-selection-card${disabledClass}" style="overflow:hidden">
         <div class="settings-item-row">
           <div class="settings-item-info">
             <div class="settings-item-title">
               <span>${title}</span>
             </div>
-            <div class="settings-item-desc">${hint}</div>
+            <div class="settings-item-desc">${disabled ? t("settings.modelPoolGlobalDisabled") : hint}</div>
           </div>
           <div class="settings-item-control">
             <label class="toggle-switch" title="${title}">
-              <input type="checkbox" id="adapter-model-toggle-${id}" ${on ? "checked" : ""} />
+              <input type="checkbox" id="adapter-model-toggle-${id}" ${on ? "checked" : ""} ${disabledAttr} />
               <span class="toggle-slider"></span>
             </label>
           </div>
         </div>
-        <div id="adapter-models-row-${id}" style="${on ? "" : "display:none"}">
+        <div id="adapter-models-row-${id}" style="${on && !disabled ? "" : "display:none"}">
           <div class="auto-push-gateways">
             <div class="auto-push-gateways-label">${title}</div>
             <div id="dlg-models-${id}" class="model-selection-list">${listHtml}</div>
@@ -142,19 +151,25 @@ export function renderTargetModelSelection(opts: TargetModelSelectionOptions): s
       </div>`;
 }
 
-/** Bind the toggle switch and model item clicks inside the dialog. */
+/** Bind the toggle switch and model item clicks inside the dialog.
+ *  Skips binding when the parent card has class model-selection-card--disabled
+ *  (global pool master switch is off). */
 export function bindTargetModelSelection(
   root: HTMLElement,
   id: string,
   onChange?: (selected: string[]) => void,
 ): void {
+  const toggle = root.querySelector<HTMLInputElement>(`#adapter-model-toggle-${id}`);
+  if (!toggle) return;
+  const card = toggle.closest<HTMLElement>(".settings-card.model-selection-card");
+  const disabled = card ? card.classList.contains("model-selection-card--disabled") : false;
   const container = root.querySelector<HTMLElement>(`#dlg-models-${id}`);
   const row = root.querySelector<HTMLElement>(`#adapter-models-row-${id}`);
-  const toggle = root.querySelector<HTMLInputElement>(`#adapter-model-toggle-${id}`);
   const emit = (): void => {
     if (onChange) onChange(readTargetModelSelection(root, id));
   };
-  if (toggle && row) {
+  if (disabled) return;
+  if (row) {
     toggle.addEventListener("change", () => {
       row.style.display = toggle.checked ? "" : "none";
       emit();

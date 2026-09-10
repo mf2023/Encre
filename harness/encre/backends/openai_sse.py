@@ -90,6 +90,17 @@ def _normalize_usage(raw: dict[str, Any] | None) -> dict[str, Any]:
     while Anthropic uses ``input_tokens`` / ``output_tokens``.  This function
     maps both conventions to the standard ``input_tokens`` / ``output_tokens`` /
     ``total_tokens`` triplet.
+
+    Cache hit tokens are also normalized to the standard
+    ``cache_read_input_tokens`` key so the router's cost tracker can compute
+    cache hit ratios and savings:
+
+    * OpenAI reports ``prompt_tokens_details.cached_tokens`` (a subset of
+      ``prompt_tokens``).
+    * DeepSeek reports ``prompt_cache_hit_tokens`` (a subset of
+      ``prompt_tokens``).
+    * Anthropic-style payloads already use ``cache_read_input_tokens``
+      (reported separately from ``input_tokens``).
     """
     if not isinstance(raw, dict):
         return {}
@@ -100,9 +111,19 @@ def _normalize_usage(raw: dict[str, Any] | None) -> dict[str, Any]:
         ("total_tokens", "total_tokens"),
         ("input_tokens", "input_tokens"),
         ("output_tokens", "output_tokens"),
+        ("cache_read_input_tokens", "cache_read_input_tokens"),
     ]:
         if src in raw:
             out[dst] = raw[src]
+    cached = 0
+    # OpenAI: prompt_tokens_details.cached_tokens
+    details = raw.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached += details.get("cached_tokens", 0) or 0
+    # DeepSeek: prompt_cache_hit_tokens
+    cached += raw.get("prompt_cache_hit_tokens", 0) or 0
+    if cached > 0:
+        out["cache_read_input_tokens"] = cached + (out.get("cache_read_input_tokens", 0) or 0)
     return out
 
 

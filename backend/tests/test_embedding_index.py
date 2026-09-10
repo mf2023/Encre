@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,8 +21,11 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Test module: unit tests covering the Encre embedding index functionality."""
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -57,8 +60,8 @@ class TestEncreEmbeddingIndex:
         This guards against AST slice boundaries leaking across function borders,
         which would corrupt the vector store with mixed-context chunks.
         """
-        from encre.codebase.ast_index import EncreASTIndex
-        from encre.codebase.embedding_index import EncreEmbeddingIndex
+        from encre.capabilities.search.codebase.ast_index import EncreASTIndex
+        from encre.capabilities.search.codebase.embedding_index import EncreEmbeddingIndex
 
         with tempfile.TemporaryDirectory() as td:
             ws = Path(td)
@@ -109,8 +112,8 @@ class TestEncreEmbeddingIndex:
         This guards against incremental rescans incorrectly rewriting unchanged
         content or failing to update changed content.
         """
-        from encre.codebase.ast_index import EncreASTIndex
-        from encre.codebase.embedding_index import EncreEmbeddingIndex
+        from encre.capabilities.search.codebase.ast_index import EncreASTIndex
+        from encre.capabilities.search.codebase.embedding_index import EncreEmbeddingIndex
 
         with tempfile.TemporaryDirectory() as td:
             ws = Path(td)
@@ -127,6 +130,10 @@ class TestEncreEmbeddingIndex:
             before = {(sl.file, sl.symbol): sl.text for sl in emb._slices}
 
             path_b.write_text("def bar():\n    return 22\n", encoding="utf-8")
+            # Nudge mtime forward: on filesystems with coarse mtime resolution
+            # a same-second write can be missed by the incremental scan.
+            st = path_b.stat()
+            os.utime(path_b, (st.st_atime, st.st_mtime + 10))
             ast_idx.scan_incremental()
             emb.scan_incremental()
 

@@ -1,10 +1,12 @@
 ---
 name: checkpoint_message
+version: 1
+name: checkpoint_message
 priority: 100
 condition: ~
 ---
 
-=== Checkpoint — Hand Control Back to the User ===
+=== Checkpoint 鈥?Hand Control Back to the User ===
 
 You have now run {{steps}} consecutive tool-call steps without a fresh message from the user.
 

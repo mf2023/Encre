@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Google Chat platform adapter.
 
@@ -578,8 +580,9 @@ class _ThreadCountStore:
             self._counts = {}
             return
         try:
-            raw = self._path.read_text()
-            data = json.loads(raw) if raw.strip() else {}
+            from encre.secure_io import read_json
+
+            data = read_json(self._path, default={})
         except json.JSONDecodeError as exc:
             logger.warning(
                 "[GoogleChat] thread-count store at %s is corrupt; "
@@ -631,10 +634,9 @@ class _ThreadCountStore:
         recovery is affected.
         """
         try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-            tmp.write_text(json.dumps(self._counts, separators=(",", ":")))
-            os.replace(tmp, self._path)
+            from encre.secure_io import write_json
+
+            write_json(self._path, self._counts, indent=None)
         except OSError as exc:
             logger.warning(
                 "[GoogleChat] could not persist thread-count store to %s: %s",
@@ -933,27 +935,35 @@ class GoogleChatAdapter(BasePlatformAdapter):
     # ------------------------------------------------------------------
     def _bot_id_cache_path(self) -> _Path:
         """Location where the resolved bot user_id is cached across restarts."""
-        base = os.getenv("ENCRE_HOME", str(_Path.home() / ".encre"))
-        return _Path(base) / "google_chat_bot_id.json"
+        override = os.getenv("ENCRE_HOME")
+        if override:
+            return _Path(override) / "google_chat_bot_id.json"
+        try:
+            from encre.config import get_data_dir
+
+            return get_data_dir(ensure=False) / "google_chat_bot_id.json"
+        except Exception:  # pragma: no cover - defensive
+            return _Path.home() / ".dunimd" / "encre" / "google_chat_bot_id.json"
 
     def _load_cached_bot_id(self) -> Optional[str]:
         path = self._bot_id_cache_path()
         if not path.exists():
             return None
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            from encre.secure_io import read_json
+
+            data = read_json(path, default=None)
+            if not isinstance(data, dict):
+                return None
             return data.get("bot_user_id") or None
         except (OSError, json.JSONDecodeError):
             return None
 
     def _save_cached_bot_id(self, bot_user_id: str) -> None:
         try:
-            path = self._bot_id_cache_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps({"bot_user_id": bot_user_id}),
-                encoding="utf-8",
-            )
+            from encre.secure_io import write_json
+
+            write_json(self._bot_id_cache_path(), {"bot_user_id": bot_user_id})
         except OSError:
             logger.debug("[GoogleChat] Could not persist bot_user_id cache", exc_info=True)
 
@@ -2295,7 +2305,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="missing message_id")
         # Google Chat caps message text at 4096; we use 4000 elsewhere.
         if len(content) > _MAX_TEXT_LENGTH:
-            content = content[: _MAX_TEXT_LENGTH - 1] + "鈥?
+            content = content[: _MAX_TEXT_LENGTH - 1] + "…"
         try:
             return await self._patch_message(message_id, {"text": content})
         except HttpError as exc:
@@ -2402,13 +2412,13 @@ class GoogleChatAdapter(BasePlatformAdapter):
     # often shows a blank box. Pattern lifted from PR #14965.
     _INVISIBLE_RE = re.compile(
         "["
-        "鈥?          # Zero-Width Space
-        "鈥?          # Zero-Width Non-Joiner
-        "鈥?          # Zero-Width Joiner (ZWJ)
-        "鈥庘€?    # LTR / RTL marks
-        "鈦?          # Word Joiner
-        "锘?          # BOM / Zero-Width No-Break Space
-        "锔€-锔?   # Variation Selectors 1-16 (VS1鈥揤S16)
+        "\u200b"          # Zero-Width Space
+        "\u200c"          # Zero-Width Non-Joiner
+        "\u200d"          # Zero-Width Joiner (ZWJ)
+        "\u200e\u200f"    # LTR / RTL marks
+        "\u2060"          # Word Joiner
+        "\ufeff"          # BOM / Zero-Width No-Break Space
+        "\ufe00-\ufe0f"   # Variation Selectors 1-16 (VS1-VS16)
         "\U000e0100-\U000e01ef"  # Variation Selectors 17-256
         "]"
     )
@@ -2692,7 +2702,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
         )
         body: Dict[str, Any] = {
             "text": getattr(self.config, "typing_status_text", None)
-            or "Encre is thinking鈥?
+            or "Encre is thinking…"
         }
         if thread_id:
             body["thread"] = {"name": thread_id}

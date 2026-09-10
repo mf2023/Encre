@@ -51,6 +51,7 @@ EMPTY_RESPONSE_RETRY_LIMIT = 2
 TRUNCATED_TOOL_CALL_RETRY_LIMIT = 2
 UNKNOWN_ERROR_RETRY_LIMIT = 1
 NETWORK_RETRY_LIMIT = 2
+SERVER_RETRY_LIMIT = 2
 MAX_TOTAL_RECOVERIES_PER_TURN = 6
 ESCALATED_MAX_TOKENS = 64_000
 
@@ -144,6 +145,9 @@ class ErrorOrchestrator:
         # Network error recovery
         self._network_retry_count = 0
 
+        # Server error recovery (502/503/504 — transient, retry before fallback)
+        self._server_retry_count = 0
+
         # Per-turn recovery counter (global cap)
         self._recoveries_this_turn = 0
 
@@ -159,6 +163,7 @@ class ErrorOrchestrator:
         self._truncated_tool_call_retry_count = 0
         self._unknown_error_retry_count = 0
         self._network_retry_count = 0
+        self._server_retry_count = 0
         self._recoveries_this_turn = 0
         self._attempt_fallback = False
 
@@ -213,7 +218,9 @@ class ErrorOrchestrator:
         # 2. Model fallback
         if (is_rate_limit or error_category == "model") and config is not None:
             from encre.recovery_loop import can_fallback
-            if can_fallback(config):
+            _pool_on = getattr(config, "model_pool_enabled", True)
+            _fallback_on = getattr(config, "model_pool_fallback_enabled", False)
+            if _pool_on and _fallback_on and can_fallback(config):
                 self._recoveries_this_turn += 1
                 self._attempt_fallback = True
                 return RecoveryDecision(
@@ -235,6 +242,34 @@ class ErrorOrchestrator:
                 error_category=error_category,
                 detail=f"network retry {self._network_retry_count}/{NETWORK_RETRY_LIMIT}",
             )
+
+        # 3.5. Server error retry (502/503/504 — transient, retry with backoff before fallback)
+        if error_category == "server" and self._server_retry_count < SERVER_RETRY_LIMIT:
+            self._server_retry_count += 1
+            self._recoveries_this_turn += 1
+            delay = min(0.5 * (2 ** (self._server_retry_count - 1)), 10.0) + random.uniform(0, 0.25)
+            return RecoveryDecision(
+                RecoveryAction.RETRY,
+                delay=delay,
+                error_code=error_code,
+                error_category=error_category,
+                detail=f"server retry {self._server_retry_count}/{SERVER_RETRY_LIMIT}",
+            )
+
+        # 3.6. Server error fallback (retries exhausted — switch to next model in pool)
+        if error_category == "server" and config is not None:
+            from encre.recovery_loop import can_fallback
+            _pool_on = getattr(config, "model_pool_enabled", True)
+            _fallback_on = getattr(config, "model_pool_fallback_enabled", False)
+            if _pool_on and _fallback_on and can_fallback(config):
+                self._recoveries_this_turn += 1
+                self._attempt_fallback = True
+                return RecoveryDecision(
+                    RecoveryAction.FALLBACK_CONTINUE,
+                    error_code=error_code,
+                    error_category=error_category,
+                    detail="server fallback",
+                )
 
         # 4. Auth 鈫?surface
         if error_category == "auth":
@@ -335,6 +370,7 @@ class ErrorOrchestrator:
             "truncated_tool_call_count": self._truncated_tool_call_retry_count,
             "unknown_error_count": self._unknown_error_retry_count,
             "network_retry_count": self._network_retry_count,
+            "server_retry_count": self._server_retry_count,
             "recoveries_this_turn": self._recoveries_this_turn,
             "attempt_fallback": self._attempt_fallback,
         }

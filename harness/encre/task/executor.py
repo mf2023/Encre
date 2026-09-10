@@ -85,7 +85,7 @@ class EncreTaskExecutor:
         import asyncio
         import subprocess
 
-        from encre.tools.builtin._encoding import decode_bytes
+        from encre.tools._encoding import decode_bytes
         from encre.capabilities.process import hidden_subprocess_kwargs
         kwargs = dict(
             stdout=subprocess.PIPE,

@@ -31,12 +31,12 @@
  * shortcuts). Also exposes `syncFirstNavActive` for sidebar nav state.
  */
 
-import { getState, setActiveWorkspace, setWorkspaceMode, subscribe, removeArchivedSessionById, clearMessages, setSessionId, setSessionState } from "../core/state.js";
+import { getState, setActiveWorkspace, setWorkspaceMode, subscribe, removeArchivedSessionById, clearMessages, setSessionId, setSessionState, getTraySessions, setSessionsList } from "../core/state.js";
 import { send } from "../core/ws.js";
 import { setRequestedSessionId, refreshAllData } from "../core/stream.js";
 import { t } from "../features/i18n.js";
 import { Dialog } from "../ui/dialog.js";
-import { showContextMenu } from "../ui/context-menu.js";
+import { showContextMenu, clampElLeft } from "../ui/context-menu.js";
 import { workspaceIconHtml } from "../chat/session-projection.js";
 import { bindTargetModelSelection, readTargetModelSelection, readTargetModelSelectionEnabled, renderTargetModelSelection } from "../settings/model-selection.js";
 import type { WorkspaceEntry, WorkspaceConfig, SessionEntryData } from "../core/types.js";
@@ -62,6 +62,21 @@ export class Workspace {
     this.syncFirstNavActive();
     // The sidebar workspace section keeps only its header + ">" nav button;
     // the actual workspace list lives in the WorkspaceManager popup.
+    // Reconcile the internal mode flag with the shared state: some entry
+    // points (e.g. WorkspaceManager "new workspace" -> openFolder) send
+    // open_workspace directly, and the shared workspaceMode is only flipped
+    // to "iwork" when the backend's workspace_opened confirmation arrives.
+    // Without this reconciliation the internal flag would stay false, which
+    // broke exit() and toggleWorkspaceMode() afterwards.
+    subscribe(() => {
+      if (this._transitioning || this._exiting) return;
+      const mode = getState().workspaceMode;
+      if (mode === "iwork" && !this.isInWorkspaceMode) {
+        this.isInWorkspaceMode = true;
+      } else if (mode !== "iwork" && this.isInWorkspaceMode) {
+        this.isInWorkspaceMode = false;
+      }
+    });
   }
 
   private esc(s: string): string {
@@ -82,8 +97,17 @@ export class Workspace {
 
   /** Enter iWork mode (no-op if already in it or mid-transition). */
   async enter(): Promise<void> {
-    if (!this.isInWorkspaceMode && !this._transitioning) {
+    if (this._transitioning) return;
+    if (!this.isInWorkspaceMode) {
       await this.enterWorkspaceMode();
+    } else if (getState().workspaceMode !== "iwork") {
+      // Reconcile a desync: the internal flag says we are in workspace mode
+      // but the shared state was reset to normal (e.g. a late config/close
+      // snapshot). Without this the tab click would silently no-op and leave
+      // the user stuck in normal mode. Re-assert the mode so the seg and the
+      // content agree again.
+      setWorkspaceMode("iwork");
+      this.onModeChange?.();
     }
   }
 
@@ -139,6 +163,16 @@ export class Workspace {
     // response arrives.
     setWorkspaceMode("iwork");
 
+    // Drop the outgoing (normal) session right away. onModeChange() clears
+    // the DOM but then calls chat.render(), which is RAF-throttled and could
+    // fire before this function finishes — re-reading the normal session's
+    // messages from state and leaving them on screen until workspace_opened
+    // lands. Force an immediate render here so the welcome screen shows
+    // straight away. Clearing just the messages (but not the sessionId)
+    // keeps the draft / channel tracking intact.
+    clearMessages();
+    (window as any).__chatForceRender?.();
+
     const workspaces = getState().workspaces;
     const activeWs = getState().activeWorkspace;
     const pendingWorkspacePath = this.pendingWorkspacePath;
@@ -163,6 +197,17 @@ export class Workspace {
       refreshAllData();
     }
 
+    // Seed the sidebar with the cached iWork sessions for this workspace
+    // immediately, so the list never keeps showing the previous (normal)
+    // scope's rows while the async open_workspace round-trip is in flight.
+    // The authoritative sessions_list response replaces this a beat later.
+    const targetWs = getState().activeWorkspace;
+    const cachedIwork = getTraySessions().iwork.filter((s: any) => {
+      const wsPath = s?.metadata?.workspace_path || s?.metadata?.workspace || "";
+      return wsPath === targetWs;
+    });
+    setSessionsList(cachedIwork);
+
     this.syncFirstNavActive();
     this._transitioning = false;
     this.onModeChange?.();
@@ -184,8 +229,15 @@ export class Workspace {
     // Unified refresh — the close_workspace round-trip triggers workspace_closed
     // (which also runs refreshAllData); this direct call covers edge cases.
     refreshAllData();
+    // Symmetric seed: show the cached normal sessions right away instead of
+    // keeping the workspace's rows until the close_workspace round-trip lands.
+    setSessionsList(getTraySessions().normal);
     this.syncFirstNavActive();
     this._transitioning = false;
+    // Symmetric to enterWorkspaceMode(): drop the outgoing workspace session's
+    // messages so its conversation cannot linger while normal mode is re-entered.
+    clearMessages();
+    (window as any).__chatForceRender?.();
     setWorkspaceMode("normal");
     this.onModeChange?.();
     setTimeout(() => { this._exiting = false; }, 100);
@@ -243,6 +295,14 @@ export function nameHue(name: string): number {
  * Delete. Settings and Archive render as internal sub-views with a back
  * button, mirroring the notification panel's drill-down navigation.
  */
+/** Unsaved form state captured from the settings DOM before a re-render. */
+interface SettingsFormState {
+  name: string;
+  ctx: Record<string, boolean>;
+  modelToggle: boolean;
+  models: string[];
+}
+
 export class WorkspaceManager {
   private workspace: Workspace;
   private overlay: HTMLElement | null = null;
@@ -251,6 +311,9 @@ export class WorkspaceManager {
   private editingPath = "";
   private unsub: (() => void) | null = null;
   private wsConfigPending = new Set<string>();
+  /** Signature of the state slices the settings view renders; used to skip
+   *  needless re-renders that would wipe the user's unsaved edits. */
+  private settingsSig = "";
 
   constructor(workspace: Workspace) {
     this.workspace = workspace;
@@ -259,7 +322,12 @@ export class WorkspaceManager {
     // Refresh the overlay whenever workspace state changes so the list
     // stays in sync with the backend in real time.
     this.unsub = subscribe(() => {
-      if (!this.overlay) return;
+      if (!this.overlay || this.overlay.classList.contains("hidden")) return;
+      // While editing settings, only re-render when the data this view
+      // actually shows changes. Unrelated background updates (usage stats,
+      // session lists, a late workspace_config response, …) would otherwise
+      // rebuild the form and snap unsaved toggles back to their saved value.
+      if (this.view === "settings" && this.computeSettingsSig() === this.settingsSig) return;
       try {
         this.renderBody();
       } catch (err) {
@@ -286,6 +354,10 @@ export class WorkspaceManager {
   /** Re-render the open overlay (used when async config responses arrive). */
   refresh(): void {
     if (!this.overlay || this.overlay.classList.contains("hidden")) return;
+    // Same guard as the state subscription: don't rebuild the settings form
+    // when nothing it displays changed (the edits are preserved anyway, but
+    // skipping avoids needless focus loss while typing).
+    if (this.view === "settings" && this.computeSettingsSig() === this.settingsSig) return;
     this.renderBody();
   }
 
@@ -379,9 +451,15 @@ export class WorkspaceManager {
         return;
       }
       titleEl.textContent = t("workspace.settingsTitle");
-      body.innerHTML = this.renderSettings(ws);
-      this.bindSettings(body, ws);
-      this.renderSettingsFooter(body, ws);
+      // Preserve the user's unsaved edits (name, context-file toggles, model
+      // selection) across async re-renders, so a late workspace_config
+      // response or any background state update cannot reset the form.
+       const prior = this.captureSettingsFormState(body, ws);
+       body.innerHTML = this.renderSettings(ws, prior);
+       this.bindSettings(body, ws);
+       this.bindIndexCard(body);
+       this.renderSettingsFooter(body, ws);
+       this.settingsSig = this.computeSettingsSig();
     } else if (this.view === "archive") {
       titleEl.textContent = t("workspace.archive");
       body.innerHTML = this.renderArchive();
@@ -475,7 +553,7 @@ export class WorkspaceManager {
     </div>`;
   }
 
-  private renderSettings(w: WorkspaceEntry): string {
+  private renderSettings(w: WorkspaceEntry, prior?: SettingsFormState | null): string {
     const initial = (w.name.trim()[0] || "?").toUpperCase();
     const iconInner = w.icon_data
       ? `<img class="workspace-mgr-icon-img" src="${w.icon_data}" alt="" draggable="false">`
@@ -488,11 +566,15 @@ export class WorkspaceManager {
       this.wsConfigPending.add(w.path);
       send({ type: "get_workspace_config", path: w.path });
     }
-    const selected = Array.isArray(cached?.models) ? (cached.models as string[]) : [];
+    const savedSelected = Array.isArray(cached?.models) ? (cached.models as string[]) : [];
     // The enable toggle is persisted separately from the picked model ids so
     // that switching it on (even before any model is picked) survives the
     // round-trip re-render instead of snapping back to off.
-    const modelSelEnabled = cached?.models_enabled === true || (cached?.models_enabled == null && selected.length > 0);
+    const savedEnabled = cached?.models_enabled === true || (cached?.models_enabled == null && savedSelected.length > 0);
+    // Prefer the user's in-progress edits over the saved values when the view
+    // is being re-rendered underneath them.
+    const selected = prior ? prior.models : savedSelected;
+    const modelSelEnabled = prior ? prior.modelToggle : savedEnabled;
     // Context-file toggles (AGENTS.md / CLAUDE.md), same card style as the
     // multimodal toggle in model config. A file only shows a toggle when it
     // exists in the workspace; it is enabled by default.
@@ -501,7 +583,7 @@ export class WorkspaceManager {
     const ctxToggles = ["AGENTS.md", "CLAUDE.md"]
       .filter((nm) => filesNow[nm])
       .map((nm) => {
-        const enabled = ctxConfig[nm] !== false;
+        const enabled = prior && nm in prior.ctx ? prior.ctx[nm] : ctxConfig[nm] !== false;
         return `<div class="model-form-thinking-card" data-ctx-card="${this.esc(nm)}">
       <div class="model-form-thinking-info">
         <div class="model-form-thinking-title">${this.esc(nm)}</div>
@@ -523,19 +605,168 @@ export class WorkspaceManager {
       </div>
       <div class="model-form-row">
         <label class="model-form-label">${t("workspace.workspaceName")}</label>
-        <input type="text" class="model-form-input" id="wsmgr-name-input" value="${this.esc(w.name)}" />
+        <input type="text" class="model-form-input" id="wsmgr-name-input" value="${this.esc(prior ? prior.name : w.name)}" />
       </div>
       ${ctxToggles}
+      ${this.indexCard(w)}
       ${renderTargetModelSelection({
         id: w.id,
         models: getState().modelConfigs || [],
         selected,
         checked: modelSelEnabled,
+        disabled: !getState().settings.model_pool_enabled,
         t,
         titleKey: "workspace.modelSelectionTitle",
         hintKey: "workspace.modelSelectionHint",
       })}
     </div>`;
+  }
+
+  /** Workspace index card: a title row (icon + name) with a control button on
+   *  the right, followed by a real progress bar and its percentage.  The bar is
+   *  always rendered — ready is 100%, indexing shows the live value, and an
+   *  unindexed workspace shows 0%. */
+  private indexCard(w: WorkspaceEntry): string {
+    const progress = w.index_progress ?? 0;
+    const files = w.index_files ?? 0;
+    const status = w.index_status ?? "idle";
+    const hasIndex = status === "ready" || status === "error" || (progress || 0) > 0;
+    const isIndexing = status === "indexing";
+    const pct = status === "ready" ? 100 : Math.min(100, Math.max(0, progress));
+    const fillColor = status === "error"
+      ? "var(--error)"
+      : (hasIndex ? "var(--color-success, #22c55e)" : "var(--accent)");
+    const btnIcon = isIndexing ? "pause" : (hasIndex ? "settings" : "play");
+    const btnTitle = isIndexing ? "" : (hasIndex ? t("settings.indexActions") : t("settings.startIndex"));
+    return `<div class="model-form-thinking-card" data-index-card="${this.esc(w.id)}" style="padding:8px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+          <i data-lucide="file-search" style="width:14px;height:14px;flex-shrink:0;color:var(--text-secondary)"></i>
+          <span class="model-form-thinking-title" style="margin:0">${t("workspace.index")}</span>
+        </div>
+        <button class="index-mgmt-btn" title="${btnTitle}" data-has-index="${hasIndex}" data-indexing="${isIndexing}" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);border-radius:4px;transition:background 0.15s">
+          <i data-lucide="${btnIcon}" style="width:14px;height:14px;display:block"></i>
+        </button>
+      </div>
+      <div class="workflow-progress-bar" style="margin:8px 0 4px"><div class="workflow-progress-fill" style="width:${pct}%;background:${fillColor}"></div></div>
+      <div class="workflow-progress-text" style="margin:0">${pct}%${files > 0 ? ` · ${files} ${t("settings.indexFilesCount")}` : ""}</div>
+    </div>`;
+  }
+
+  /** Bind the index-management button inside the card (dropdown for
+   *  reindex/delete, or direct start when no index exists yet). */
+  private bindIndexCard(container: HTMLElement): void {
+    const card = container.querySelector<HTMLElement>('[data-index-card]');
+    if (!card) return;
+    const btn = card.querySelector<HTMLButtonElement>(".index-mgmt-btn");
+    if (!btn) return;
+    const wId = card.dataset.indexCard || "";
+    const hasIndex = btn.dataset.hasIndex === "true";
+    const isIndexing = btn.dataset.indexing === "true";
+    const ws = getState().workspaces.find((x) => x.id === wId);
+    if (!ws) return;
+
+    // Use a single-shot click handler (remove on first call to avoid stack-up)
+    if ((btn as any)._bound) return;
+    (btn as any)._bound = true;
+
+    if (hasIndex || isIndexing) {
+      // Show dropdown with reindex / delete-index
+      let menu = document.getElementById("index-mgmt-menu") as HTMLElement | null;
+      if (!menu) {
+        menu = document.createElement("div");
+        menu.id = "index-mgmt-menu";
+        menu.className = "context-menu";
+        menu.style.cssText = "display:none;position:fixed;z-index:10000";
+        document.body.appendChild(menu);
+      }
+      menu.innerHTML = `
+        <div class="context-menu-item" data-action="reindex">${t("settings.reindex")}</div>
+        <div class="context-menu-item" data-action="delete-index">${t("settings.deleteIndex")}</div>`;
+
+      btn.addEventListener("click", function _onSettingsClick(e: Event) {
+        e.stopPropagation();
+        document.querySelectorAll(".context-menu").forEach(m => (m as HTMLElement).style.display = "none");
+        const shown = menu!.style.display !== "none";
+        if (shown) {
+          menu!.style.display = "none";
+        } else {
+          menu!.style.display = "block";
+          const rect = btn.getBoundingClientRect();
+          menu!.style.left = clampElLeft(menu!, rect.right - 160) + "px";
+          menu!.style.top = (rect.bottom + 4) + "px";
+          setTimeout(() => {
+            document.addEventListener("click", function _closeMenu() {
+              menu!.style.display = "none";
+              document.removeEventListener("click", _closeMenu);
+            });
+          }, 0);
+        }
+      });
+
+      menu.querySelectorAll(".context-menu-item").forEach((item) => {
+        (item as HTMLElement).onclick = (e) => {
+          e.stopPropagation();
+          menu!.style.display = "none";
+          const action = (item as HTMLElement).dataset.action!;
+          send({ type: action === "reindex" ? "reindex_workspace" : "delete_index", path: ws.path });
+        };
+      });
+    } else {
+      // No index: clicking button directly starts indexing
+      btn.innerHTML = `<i data-lucide="play" style="width:14px;height:14px;display:block;color:var(--text-secondary)"></i>`;
+      btn.addEventListener("click", function _onStartClick(e: Event) {
+        e.stopPropagation();
+        send({ type: "reindex_workspace", path: ws.path });
+      });
+      if (typeof (window as any).lucide !== "undefined") {
+        requestAnimationFrame(() => (window as any).lucide.createIcons());
+      }
+    }
+  }
+
+  /**
+   * Snapshot the user's live, unsaved settings-form values from the DOM.
+   * Returns null when the settings form is not currently on screen (first
+   * render after navigating in), so the fresh render can use saved values.
+   */
+  private captureSettingsFormState(body: HTMLElement, w: WorkspaceEntry): SettingsFormState | null {
+    const nameInput = body.querySelector<HTMLInputElement>("#wsmgr-name-input");
+    if (!nameInput) return null;
+    const ctx: Record<string, boolean> = {};
+    body.querySelectorAll<HTMLInputElement>(".wsmgr-ctx-toggle").forEach((cb) => {
+      const fname = cb.dataset.ctxFile;
+      if (fname) ctx[fname] = cb.checked;
+    });
+    return {
+      name: nameInput.value,
+      ctx,
+      modelToggle: readTargetModelSelectionEnabled(body, w.id),
+      models: readTargetModelSelection(body, w.id),
+    };
+  }
+
+  /**
+   * Signature of the state slices the settings view depends on. When it is
+   * unchanged, a state update is irrelevant to the open form and the view is
+   * left untouched (preserving focus and unsaved edits).
+   */
+  private computeSettingsSig(): string {
+    const st = getState();
+    const ws = st.workspaces.find((x) => x.path === this.editingPath);
+    const models = (st.modelConfigs || [])
+      .map((m) => `${m.model_id}:${m.enabled === false ? 0 : 1}`)
+      .join(",");
+    return JSON.stringify([
+      ws ? ws.name : "",
+      ws ? (ws.icon_data || "").length : 0,
+      st.workspaceConfigs[this.editingPath] ?? null,
+      st.workspaceFiles[this.editingPath] ?? null,
+      models,
+      ws?.index_status ?? "",
+      ws?.index_progress ?? 0,
+      ws?.index_files ?? 0,
+    ]);
   }
 
   private bindSettings(container: HTMLElement, w: WorkspaceEntry): void {

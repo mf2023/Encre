@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Encre channel-adapter gateway: wire protocol.
 
 Defines the :class:`GatewayOp` operation enum and the :class:`GatewayMessage`

@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 漏 2025-2026 Wenze Wei. All Rights Reserved.
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
 # This file is part of Encre.
 # The Encre project belongs to the Dunimd Team.
@@ -175,8 +175,7 @@ class EncreContainerSandbox:
         cmd = self._build_docker_command(command)
         effective_timeout = timeout or self.config.timeout
         try:
-            from encre.tools.builtin._suppress_window import hidden_subprocess_kwargs
-            kwargs = hidden_subprocess_kwargs()
+            kwargs: dict = {}
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,

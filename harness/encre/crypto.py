@@ -31,9 +31,10 @@ All encryption uses **AES-256-GCM** (32鈥慴yte key, 12鈥慴yte random nonce,
 
 Master key
     On first use a 256鈥慴it master key is generated from ``os.urandom(32)`` and
-    stored in ``~/.encre/keyfile`` (mode ``0o600``).  The on鈥慸isk representation
-    is the master key itself wrapped with a *machine鈥慴inding* key derived via
-    HKDF鈥慡HA256 from the host's ``/etc/machine鈥慽d`` content + hostname.
+    stored in ``<data_dir>/keys/keyfile`` (mode ``0o600``).  The on鈥慸isk
+    representation is the master key itself wrapped with a *machine鈥慴inding*
+    key derived via HKDF鈥慡HA256 from the host's ``/etc/machine鈥慽d`` content +
+    hostname.
 
     This means even if ``keyfile`` is exfiltrated it cannot be unwrapped on
     any other machine.
@@ -46,22 +47,40 @@ Master key
 No environment variables are consulted for key material.
 """
 
+from __future__ import annotations
+
 import base64
+import contextlib
 import hashlib
 import os
 import pathlib
 import platform
 import secrets
+import shutil
 import stat
 import typing as _t
 
-__all__ = ["decrypt", "decrypt_bytes", "encrypt", "encrypt_bytes", "ensure_keyfile"]
+__all__ = [
+    "decrypt",
+    "decrypt_bytes",
+    "encrypt",
+    "encrypt_bytes",
+    "ensure_keyfile",
+    "keyfile_path",
+    "migrate_keyfile",
+]
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_KEYFILE_PATH = pathlib.Path("~/.encre/keyfile").expanduser()
+#: The keyfile lives **inside the data tree** (``<data_dir>/keys/keyfile``).
+#: It used to sit in a second root (``~/.encre``), which quietly broke the
+#: promise that "backing up the data directory" is enough to restore: the
+#: ciphertexts travelled but the key did not.  New keys are written to the
+#: data tree; the legacy path is still *read* so existing installs keep
+#: working, and :func:`migrate_keyfile` moves it over.
+_LEGACY_KEYFILE_PATH = pathlib.Path("~/.encre/keyfile").expanduser()
 _KEYFILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600 -- owner read/write only
 
 _KEY_LENGTH = 32       # AES-256
@@ -156,22 +175,65 @@ def _unwrap_master_key(data: bytes) -> bytes:
 # Keyfile persistence
 # ---------------------------------------------------------------------------
 
+def keyfile_path() -> pathlib.Path:
+    """Return the canonical keyfile location: ``<data_dir>/keys/keyfile``.
+
+    Falls back to the legacy ``~/.encre/keyfile`` only if the data root
+    cannot be resolved (e.g. a partially installed interpreter).
+    """
+    try:
+        from encre.paths import get_data_dir
+
+        return get_data_dir("keys", ensure=False) / "keyfile"
+    except Exception:  # pragma: no cover - defensive
+        return _LEGACY_KEYFILE_PATH
+
+
+def _candidate_keyfiles() -> list[pathlib.Path]:
+    """Keyfile locations to try, in priority order (new, then legacy)."""
+    new = keyfile_path()
+    return [new] if new == _LEGACY_KEYFILE_PATH else [new, _LEGACY_KEYFILE_PATH]
+
+
+def migrate_keyfile() -> pathlib.Path:
+    """Move a legacy ``~/.encre/keyfile`` into the data tree.  Idempotent.
+
+    The master key itself is untouched -- only the file moves -- so every
+    existing ciphertext stays decryptable.  Returns the canonical path.
+    """
+    target = keyfile_path()
+    if target.exists():
+        return target
+    legacy = _LEGACY_KEYFILE_PATH
+    if legacy.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            target.parent.chmod(stat.S_IRWXU)
+        shutil.move(str(legacy), str(target))
+        with contextlib.suppress(OSError):
+            os.chmod(target, _KEYFILE_MODE)
+    return target
+
+
 def _create_keyfile() -> bytes:
     """Generate a new master key, wrap it, write the keyfile and return the key."""
-    keyfile_dir = _KEYFILE_PATH.parent
+    path = keyfile_path()
+    keyfile_dir = path.parent
     keyfile_dir.mkdir(parents=True, exist_ok=True)
     # Only the owner of this directory should have access
-    keyfile_dir.chmod(stat.S_IRWXU)
+    with contextlib.suppress(OSError):
+        keyfile_dir.chmod(stat.S_IRWXU)
 
     master_key = _generate_master_key()
     wrapped = _wrap_master_key(master_key)
 
     # Atomic write via temp file + rename
-    tmp = _KEYFILE_PATH.with_suffix(".tmp")
+    tmp = path.with_suffix(".tmp")
     with open(tmp, "wb") as f:
         f.write(wrapped)
-    os.chmod(tmp, _KEYFILE_MODE)
-    os.replace(tmp, _KEYFILE_PATH)
+    with contextlib.suppress(OSError):
+        os.chmod(tmp, _KEYFILE_MODE)
+    os.replace(tmp, path)
 
     return master_key
 
@@ -179,17 +241,22 @@ def _create_keyfile() -> bytes:
 def _load_keyfile() -> bytes | None:
     """Read the wrapped master key from disk and unwrap it.
 
-    Returns None if the keyfile does not exist or cannot be decrypted.
+    Tries the canonical location first, then the legacy ``~/.encre`` one so
+    an install that has not been migrated yet still starts.
+
+    Returns None if no keyfile exists or it cannot be decrypted.
     """
-    if not _KEYFILE_PATH.exists():
-        return None
-    try:
-        raw = _KEYFILE_PATH.read_bytes()
-        if len(raw) < _NONCE_LENGTH + _KEY_LENGTH + _TAG_LENGTH:
-            return None
-        return _unwrap_master_key(raw)
-    except Exception:
-        return None
+    for path in _candidate_keyfiles():
+        if not path.exists():
+            continue
+        try:
+            raw = path.read_bytes()
+            if len(raw) < _NONCE_LENGTH + _KEY_LENGTH + _TAG_LENGTH:
+                continue
+            return _unwrap_master_key(raw)
+        except Exception:
+            continue
+    return None
 
 
 def ensure_keyfile() -> bytes:

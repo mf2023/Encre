@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Encre gateway package.
 
 The gateway manages platform adapters (Telegram, Discord, QQ, etc.) and routes

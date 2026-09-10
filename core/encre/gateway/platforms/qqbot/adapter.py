@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Inspired by the Hermes Agent project (https://github.com/NousResearch/hermes-agent.git).
 Thanks to Hermes Agent for the inspiration on this module.
@@ -375,7 +377,7 @@ class QQAdapter(BasePlatformAdapter):
 
         # Default interaction dispatcher: routes approval-button clicks to
         # tools.approval.resolve_gateway_approval() and update-prompt clicks
-        # to ~/.encre/.update_response. Set here so the cross-adapter gateway
+        # to <data_dir>/.update_response. Set here so the cross-adapter gateway
         # contract (send_exec_approval / send_update_prompt) works out of the
         # box; callers can override with set_interaction_callback(None) or
         # register a custom handler.
@@ -1356,7 +1358,7 @@ class QQAdapter(BasePlatformAdapter):
 
         - ``approve:<session_key>:<decision>`` 鈫?          :func:`tools.approval.resolve_gateway_approval`
           (unblocks the agent thread waiting on a dangerous-command approval).
-        - ``update_prompt:<answer>`` 鈫?          writes the answer to ``~/.encre/.update_response`` for the
+        - ``update_prompt:<answer>`` 鈫?          writes the answer to ``<data_dir>/.update_response`` for the
           detached Encre update process to consume.
         - Anything else is logged at DEBUG and ignored.
 
@@ -3018,7 +3020,7 @@ class QQAdapter(BasePlatformAdapter):
         clicks surface as ``INTERACTION_CREATE`` with
         ``button_data = 'update_prompt:y'`` or ``'update_prompt:n'``;
         the adapter's interaction callback writes the answer to
-        ``~/.encre/.update_response`` so the detached update process
+        ``<data_dir>/.update_response`` so the detached update process
         can read it.
         """
         del session_key, metadata  # present for contract parity only.

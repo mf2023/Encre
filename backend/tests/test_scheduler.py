@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for the cron scheduler: :class:`CronSchedule`, :class:`ScheduledJob`,
 :class:`EncreScheduler`, :class:`ScheduleType`, and :class:`JobState`.
 """

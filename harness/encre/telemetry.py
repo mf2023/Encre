@@ -395,8 +395,9 @@ class EncreTelemetry:
     def _load_cumulative() -> dict[str, Any]:
         path = EncreTelemetry._cumulative_path()
         try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
+            from encre.secure_io import read_json
+
+            data = read_json(path, default=None) or {}
             defaults = {
                 "total_input_tokens": 0,
                 "total_output_tokens": 0,
@@ -421,9 +422,9 @@ class EncreTelemetry:
     @staticmethod
     def _save_cumulative(data: dict[str, Any]) -> None:
         try:
-            path = EncreTelemetry._cumulative_path()
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            from encre.secure_io import write_json
+
+            write_json(EncreTelemetry._cumulative_path(), data)
         except Exception:
             pass  # never crash on telemetry write failure
 

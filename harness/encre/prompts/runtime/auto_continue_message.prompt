@@ -1,5 +1,7 @@
 ---
 name: auto_continue_message
+version: 1
+name: auto_continue_message
 priority: 100
 condition: ~
 ---

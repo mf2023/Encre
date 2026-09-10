@@ -44,7 +44,7 @@ from encre.capabilities.process.spawn import (
     create_subprocess_exec,
     kill_process_tree,
 )
-from encre.tools.builtin._encoding import decode_bytes, encode_text
+from encre.tools._encoding import decode_bytes, encode_text
 
 
 _ENCRE_MARKER = "__ENCRE_DONE_{:08x}__"
@@ -60,12 +60,17 @@ def _next_marker() -> str:
 # 鈹€鈹€ Per-terminal-type shell launch commands 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 SHELL_LAUNCH: dict[str, list[str]] = {
-    "auto": (["cmd.exe", "/Q"] if sys.platform == "win32" else ["/bin/bash", "--noediting"]),
+    # `auto` is also the fallback for unknown terminal types, so it must stay
+    # the platform's canonical shell: PowerShell on Windows, bash elsewhere.
+    "auto": (["powershell", "-NoProfile", "-Command", "-"]
+             if sys.platform == "win32" else ["/bin/bash", "--noediting"]),
     "cmd": ["cmd.exe", "/Q"],
     "powershell": ["powershell", "-NoProfile", "-Command", "-"],
     "pwsh": ["pwsh", "-NoProfile", "-Command", "-"],
     "bash": (["C:\\Program Files\\Git\\bin\\bash.exe", "--noediting"]
              if sys.platform == "win32" else ["/bin/bash", "--noediting"]),
+    "zsh": ["/bin/zsh", "--noediting"],
+    "sh": ["/bin/sh"],
     "python": [sys.executable or "python", "-u", "-i"],
     "node": ["node", "-i"],
     "irb": ["irb", "-f", "--noreadline"],
@@ -83,6 +88,8 @@ _SHELL_MARKER_CMDS: dict[str, str] = {
     "powershell": 'Write-Output "{}"',
     "pwsh": 'Write-Output "{}"',
     "bash": 'echo {}',
+    "zsh": 'echo {}',
+    "sh": 'echo {}',
     "python": 'print("{}")',
     "node": 'console.log("{}")',
     "irb": 'puts("{}")',

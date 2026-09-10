@@ -56,6 +56,8 @@ interface BookmarksData {
 }
 
 const LOAD_TIMEOUT_MS = 30000;
+/** Delay before the loading indicator appears, so fast loads never flash it. */
+const LOADING_INDICATOR_DELAY_MS = 200;
 
 export interface SearchEngine {
   id: string;
@@ -120,14 +122,16 @@ export class BrowserView {
   private errorEl: HTMLElement | null;
   private overlayTitle: HTMLElement | null;
   private overlayDesc: HTMLElement | null;
-  private retryBtn: HTMLButtonElement | null;
   private loader: EALoader | null = null;
   private loadTimer: number | null = null;
+  private loadingTimer: number | null = null;
   private _showedError = false;
   private explicitNav = true;
   private _destroyed = false;
   private _cdpPort: number;
   private _webContentsId: number = -1;
+  private _zoomFactor = 0;
+  private _ro: ResizeObserver | null = null;
   private _onTitleChange?: (title: string) => void;
   private _onUrlChange?: (url: string) => void;
   private _onFaviconChange?: (favicon: string) => void;
@@ -135,7 +139,6 @@ export class BrowserView {
   private _onDialog?: (type: string, message: string, defaultPromptText: string, respond: (value: string | null) => void) => void;
   private _onPermissionRequest?: (permission: string, origin: string, details: any) => void;
   private _settingsBtn: HTMLButtonElement;
-  private _mainLoaded = false;
   private _bookmarks: BookmarksData | null = null;
   private _starBtn: HTMLButtonElement;
   private _unsubLocale: (() => void) | null = null;
@@ -178,11 +181,10 @@ export class BrowserView {
         <div class="browser-webview-status hidden">
           <div class="browser-status-loading"></div>
           <div class="browser-status-error hidden">
-            <div class="browser-overlay-content si-empty-center">
-              <i data-lucide="triangle-alert" class="lucide"></i>
+            <div class="si-empty-center browser-error-state">
+              <i data-lucide="cloud-off" class="lucide"></i>
               <div class="si-empty-title" data-i18n="browserNav.failedToLoad">Failed to load</div>
               <div class="si-empty-sub" data-i18n="browserNav.checkConnection">The page could not be loaded. Please check your connection and try again.</div>
-              <button class="browser-overlay-retry btn-primary" type="button" data-i18n="browserNav.retry">Retry</button>
             </div>
           </div>
         </div>
@@ -194,7 +196,6 @@ export class BrowserView {
     this.errorEl = container.querySelector(".browser-status-error");
     this.overlayTitle = container.querySelector(".si-empty-title");
     this.overlayDesc = container.querySelector(".si-empty-sub");
-    this.retryBtn = container.querySelector(".browser-overlay-retry");
     this._settingsBtn = container.querySelector(".browser-settings-btn") as HTMLButtonElement;
 
     this._starBtn = container.querySelector(".browser-star-btn") as HTMLButtonElement;
@@ -205,7 +206,6 @@ export class BrowserView {
     }
     this._bindSettings();
     this._bindStarButton();
-    this._bindRetry();
     this.loadBookmarks();
     this._unsubLocale = onLocaleChange(() => applyI18n());
 
@@ -215,17 +215,16 @@ export class BrowserView {
     this.bindEvents();
     this.bindNavButtons();
     this.bindUrlInput();
+    let zoomRaf = 0;
     const ro = new ResizeObserver(() => {
-      if (!this._destroyed) {
-        const wv = this.webview;
-        try {
-          const cw = this.container.clientWidth;
-          const factor = Math.max(0.3, Math.min(1.0, cw / 1280));
-          wv.setZoomFactor(factor);
-        } catch {}
-      }
+      if (this._destroyed || zoomRaf) return;
+      zoomRaf = requestAnimationFrame(() => {
+        zoomRaf = 0;
+        this.applyZoom();
+      });
     });
     ro.observe(this.container);
+    this._ro = ro;
     const api = (window as any).electronAPI;
     if (api?.onNewWindow) {
       api.onNewWindow((url: string, wcId: number) => {
@@ -276,7 +275,6 @@ export class BrowserView {
       url = "https://" + url;
     }
     this._showedError = false;
-    this._mainLoaded = false;
     this.hideStatus();
     this.explicitNav = true;
     this.webview.src = url;
@@ -298,7 +296,6 @@ export class BrowserView {
 
   reload(): void {
     if (this._destroyed) return;
-    this._mainLoaded = false;
     this.webview.reload();
   }
 
@@ -329,6 +326,11 @@ export class BrowserView {
   destroy(): void {
     this._destroyed = true;
     this.clearLoadTimer();
+    this.clearLoadingTimer();
+    if (this._ro) {
+      this._ro.disconnect();
+      this._ro = null;
+    }
     if (this._unsubLocale) {
       this._unsubLocale();
       this._unsubLocale = null;
@@ -440,42 +442,41 @@ export class BrowserView {
       }
     });
 
+    // Drop the loading indicator as soon as the DOM is ready. did-finish-load
+    // waits for every sub-resource (images / fonts / long-polling), while the
+    // page is already visible — keeping the overlay up only makes it look like
+    // "the page opened but I can't get in".
     wv.addEventListener("dom-ready", () => {
+      if (!this._showedError) this.hideStatus();
     });
 
     wv.addEventListener("will-navigate", (e: any) => {
       this.hideStatus();
       this.explicitNav = false;
-      this._mainLoaded = false;
     });
 
-    const applyZoom = () => {
-      try {
-        const cw = this.container.clientWidth;
-        const factor = Math.max(0.3, Math.min(1.0, cw / 1280));
-        wv.setZoomFactor(factor);
-      } catch {}
-    };
-    wv.addEventListener("did-finish-load", applyZoom);
-    wv.addEventListener("did-navigate", applyZoom);
-    applyZoom();
+    wv.addEventListener("did-finish-load", () => this.applyZoom());
+    wv.addEventListener("did-navigate", () => this.applyZoom());
+    this.applyZoom();
 
     wv.addEventListener("did-start-loading", () => {
-      if (!this._showedError && !this._mainLoaded) {
-        this.showLoading();
-      }
+      // Queue the indicator instead of showing it instantly, and only when no
+      // error is on screen. Fast navigations never flash the spinner.
+      if (!this._showedError) this.scheduleLoading();
       this.clearLoadTimer();
       this.loadTimer = window.setTimeout(() => {
-        this.showError(t("browserNav.loadTimedOut"), t("browserNav.timeoutDesc"));
+        // Timeout only retracts the indicator — it never raises an error
+        // panel, because a slow page may still finish loading normally.
+        if (!this._showedError) this.hideStatus();
       }, LOAD_TIMEOUT_MS);
     });
 
     wv.addEventListener("did-stop-loading", () => {
       this.clearLoadTimer();
+      if (!this._showedError) this.hideStatus();
     });
 
     wv.addEventListener("did-finish-load", () => {
-      this._mainLoaded = true;
       this.clearLoadTimer();
       const url = this.webview.getURL();
       // Only show error overlay for real chrome-error pages, not for
@@ -497,9 +498,19 @@ export class BrowserView {
       // ERR_ABORTED (-3) fires on redirects and cancelled navigations —
       // the page will retry or the final navigation will fire did-finish-load.
       if (e && e.errorCode === -3) return;
-      this.clearLoadTimer();
       const desc = (e && (e.errorDescription || e.message)) || t("browserNav.checkConnection");
-      this.showError(t("browserNav.failedToLoad"), String(desc));
+      // A failure can belong to a navigation that a later one already took
+      // over (redirects, the about:blank hand-off, or a CDP-driven
+      // re-navigation). Only surface the panel once the webContents has
+      // actually settled on the internal error page — otherwise we would
+      // report "failed to load" for pages that open just fine.
+      window.setTimeout(() => {
+        if (this._destroyed || this._showedError) return;
+        const current = this.getUrl();
+        if (!current || !current.startsWith("chrome-error://")) return;
+        this.clearLoadTimer();
+        this.showError(t("browserNav.failedToLoad"), String(desc));
+      }, 0);
     });
 
     wv.addEventListener("did-navigate", (e: any) => {
@@ -551,19 +562,8 @@ export class BrowserView {
         this.hideStatus();
         if (action === "back") { this.explicitNav = true; this.webview.goBack(); }
         else if (action === "forward") { this.explicitNav = true; this.webview.goForward(); }
-        else if (action === "reload") { this._mainLoaded = false; this.webview.reload(); }
+        else if (action === "reload") { this.webview.reload(); }
       });
-    });
-  }
-
-  private _bindRetry(): void {
-    if (!this.retryBtn) return;
-    this.retryBtn.addEventListener("click", () => {
-      if (this._destroyed) return;
-      this.hideStatus();
-      this._mainLoaded = false;
-      this.explicitNav = true;
-      this.webview.reload();
     });
   }
 
@@ -584,6 +584,28 @@ export class BrowserView {
     });
   }
 
+  /**
+   * Queue the loading indicator. It only appears after a short delay, so a
+   * cache hit or a local file never flashes the spinner, and it is retracted
+   * as soon as the DOM is ready (see the `dom-ready` handler in bindEvents).
+   */
+  private scheduleLoading(): void {
+    if (this.loadingTimer !== null) return;
+    this.loadingTimer = window.setTimeout(() => {
+      this.loadingTimer = null;
+      if (this._destroyed || this._showedError) return;
+      if (this.errorEl && !this.errorEl.classList.contains("hidden")) return;
+      this.showLoading();
+    }, LOADING_INDICATOR_DELAY_MS);
+  }
+
+  private clearLoadingTimer(): void {
+    if (this.loadingTimer !== null) {
+      clearTimeout(this.loadingTimer);
+      this.loadingTimer = null;
+    }
+  }
+
   private showLoading(): void {
     this.statusEl?.classList.remove("hidden");
     this.loadingEl?.classList.remove("hidden");
@@ -595,6 +617,7 @@ export class BrowserView {
 
   private showError(title: string, desc: string): void {
     this._showedError = true;
+    this.clearLoadingTimer();
     if (this.loader) { this.loader.destroy(); this.loader = null; }
     this.statusEl?.classList.remove("hidden");
     this.loadingEl?.classList.add("hidden");
@@ -605,10 +628,24 @@ export class BrowserView {
 
   private hideStatus(): void {
     this._showedError = false;
+    this.clearLoadingTimer();
     if (this.loader) { this.loader.destroy(); this.loader = null; }
     this.statusEl?.classList.add("hidden");
     this.loadingEl?.classList.add("hidden");
     this.errorEl?.classList.add("hidden");
+  }
+
+  /** Apply the width-derived zoom factor, skipping redundant work. */
+  private applyZoom(): void {
+    if (this._destroyed) return;
+    try {
+      const cw = this.container.clientWidth;
+      if (!cw) return;
+      const factor = Math.max(0.3, Math.min(1.0, cw / 1280));
+      if (Math.abs(factor - this._zoomFactor) < 0.001) return;
+      this._zoomFactor = factor;
+      this.webview.setZoomFactor(factor);
+    } catch {}
   }
 
   private clearLoadTimer(): void {

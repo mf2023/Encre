@@ -80,7 +80,7 @@ def remap_tool_path(file_path: str) -> str:
     Paths that would escape the allowed root are forced back into the
     allowed root by keeping only the filename.
     """
-    from encre.tools.builtin.agent import _resolve_loop
+    from encre.tools.runtime import _resolve_loop
     loop = _resolve_loop()
     if loop is None:
         return file_path

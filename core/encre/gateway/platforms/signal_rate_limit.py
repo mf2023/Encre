@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Signal attachment rate-limit scheduler.
 
 This module implements a process-wide token-bucket simulator that mirrors the

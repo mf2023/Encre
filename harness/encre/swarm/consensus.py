@@ -29,6 +29,8 @@
 # ``Proposal``/``Vote``/``ConsensusResult`` are the data records; a shared
 # ``EncreMailbox`` carries the exchange.
 
+from __future__ import annotations
+
 import asyncio
 import time
 import uuid

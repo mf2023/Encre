@@ -21,23 +21,91 @@
  */
 
 :root {
-  /* ── Animation Duration Tokens ──────────────────── */
+  /* ══ Motion System — single source of truth ═════════════════════
+     Four speed steps. Everything animated in the app must pick one of
+     these; never hard-code a duration or an easing curve.
+
+       instant  0.08s  press / pointer feedback (no travel)
+       fast     0.12s  colour, opacity, icon rotation
+       base     0.18s  default transition, content entering
+       slow     0.28s  view / panel travel, sidebar collapse
+     ═══════════════════════════════════════════════════════════════ */
+  --duration-instant: 0.08s;
   --duration-fast: 0.12s;
   --duration-base: 0.18s;
   --duration-slow: 0.28s;
 
-  /* ── Animation Easing Tokens ───────────────────── */
+  /* Three easing curves, one per intent. */
   --easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --easing-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --easing-exit: cubic-bezier(0.4, 0, 1, 1);
 
   /* ── Composite Transition Shorthands ───────────── */
-  --transition-fast: var(--duration-fast) ease;
+  --transition-fast: var(--duration-fast) var(--easing-standard);
   --transition-base: var(--duration-base) var(--easing-standard);
   --transition-slow: var(--duration-slow) var(--easing-standard);
   --transition-emphasized: var(--duration-slow) var(--easing-emphasized);
 
+  /* ══ Scene → step aliases ══════════════════════════════════════
+     Pick by *what is happening*, not by how long you feel like.
+
+       micro  hovering, pressing, switching a toggle           (fast)
+       enter  content appearing: panels, sub-views, dropdowns  (base, decelerating)
+       exit   content leaving: dismissible surfaces            (fast, accelerating)
+       slide  a full-area view travelling over another         (slow)
+     ══════════════════════════════════════════════════════════════ */
+  --motion-micro: var(--duration-fast) var(--easing-standard);
+  --motion-enter: var(--duration-base) var(--easing-emphasized);
+  --motion-exit: var(--duration-fast) var(--easing-exit);
+  --motion-slide: var(--duration-slow) var(--easing-standard);
+
+  /* Travel distance for entering content. Small on purpose: enough to
+     read as motion, not enough to feel like a layout shift. */
+  --motion-travel: 8px;
+
+  /* Travel distance for horizontal slide entrances (mode switches, sub-view
+     swaps). Larger than --motion-travel so the move reads as a real slide
+     rather than a fade with a nudge. */
+  --motion-slide-travel: 40px;
+
+  /* Application-wide layout tokens. Components that need these dimensions
+     must read them here rather than hard-coding px values. */
+  --sidebar-w: 280px;
+
   --radius-xs: 4px;
   --radius-2xs: 3px;
+}
+
+/* Accessibility: collapse every step in the system at once. Because each
+   step is referenced indirectly, no component needs its own opt-out. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0.01ms;
+    --duration-fast: 0.01ms;
+    --duration-base: 0.01ms;
+    --duration-slow: 0.01ms;
+    --transition-fast: 0.01ms linear;
+    --transition-base: 0.01ms linear;
+    --transition-slow: 0.01ms linear;
+    --transition-emphasized: 0.01ms linear;
+    --motion-micro: 0.01ms linear;
+    --motion-enter: 0.01ms linear;
+    --motion-exit: 0.01ms linear;
+    --motion-slide: 0.01ms linear;
+    --motion-travel: 0px;
+    --motion-slide-travel: 0px;
+  }
+
+  /* Keyframe animations carry their duration inline (`animation: spin 1s
+     linear infinite`), so the token reset above cannot reach them. This
+     override covers that gap, and stops endless spinners from looping. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .flex-center {
@@ -492,6 +560,12 @@
   scrollbar-color: var(--border) transparent;
 }
 
+/* ── Shared keyframes ─────────────────────────────────────────────
+   Generic, reusable animations. Anything that needs to fade in, fade
+   out, spin or pulse references these instead of defining a near
+   duplicate of its own. Component-specific motions — a dropdown growing
+   from its anchor, a shimmer sweep — stay next to the component that
+   owns them, since their shape is part of that component's identity. */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -505,6 +579,15 @@
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(12px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Content arriving into a slot: a short fade with a horizontal travel from
+   the inline-end edge, matching the app-wide "slide in" mode-switch motion.
+   Deliberately no scale — these are full-width surfaces (a chat area, a
+   sidebar section), not floating cards. The travel distance is the shared
+   --motion-slide-travel step, so every "content enters" move matches. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateX(var(--motion-slide-travel)); }
 }
 
 @keyframes spin {

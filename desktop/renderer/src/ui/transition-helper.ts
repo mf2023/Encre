@@ -21,139 +21,48 @@
  */
 
 /**
- * View transition helper.
+ * Motion helper.
  *
- * Provides a single, centralized slide-in/slide-out animation used when
- * switching between primary views (chat ↔ automation, etc.). Keeps all views in
- * sync with the same easing/duration as the sidebar collapse animation.
+ * Every view and panel transition in the app is declared in CSS — see the
+ * "Unified Motion" block near the end of styles.css. JavaScript never writes
+ * inline `transform`, `opacity` or `transition`; it toggles classes and lets
+ * the stylesheet do the animating.
+ *
+ * That is what keeps switching free of residue. There is no inline state to
+ * clean up afterwards, and an interrupted transition simply continues from
+ * wherever it had reached instead of wedging the next one.
+ *
+ * This module exists for the one thing CSS alone cannot give a caller: the
+ * shared duration token, read back so the stylesheet stays the single source
+ * of truth for timing.
  */
 
 export class TransitionHelper {
-  /** 默认动画时长（与侧边栏折叠动画 0.28s 同步） */
-  static readonly DEFAULT_DURATION = 280;
-
   /**
-   * 执行统一的滑出/滑入过渡。
+   * Duration of the slowest motion step (view / panel travel) in
+   * milliseconds, read from `--duration-slow`.
    *
-   * 执行顺序:
-   *   1. setup() — 预变更（DOM 排序、class 切换等，在设置初始位置之前执行）
-   *   2. 退出元素设置 transition 属性（保持当前位置）
-   *   3. 进入元素移除 hidden，定位到右侧起始位置 translateX(100%)
-   *   4. 强制回流
-   *   5. 同时触发所有 CSS transition（退出→-100%, 进入→0）
-   *   6. 动画完成后清理并 resolve
+   * Deliberately resolved on every call rather than cached: the token is
+   * overridden under `prefers-reduced-motion`, and a caller that sequences
+   * work against the animation should honour the reduced value too.
    */
-  static async slide(opts: {
-    exit?: HTMLElement[];
-    enter?: HTMLElement[];
-    setup?: () => void;
-    duration?: number;
-  }): Promise<void> {
-    const d = opts.duration ?? TransitionHelper.DEFAULT_DURATION;
-    const exitEls = opts.exit ?? [];
-    const enterEls = opts.enter ?? [];
-    // Under RTL (ar/he) the slide direction mirrors: new content enters from
-    // the left, outgoing content exits to the right.
-    const rtl = document.documentElement.dir === "rtl";
-    const enterFrom = rtl ? "translateX(-100%)" : "translateX(100%)";
-    const exitTo = rtl ? "translateX(100%)" : "translateX(-100%)";
-
-    if (exitEls.length === 0 && enterEls.length === 0) {
-      opts.setup?.();
-      return;
-    }
-
-    return new Promise((resolve) => {
-      // Guard against the promise never settling: requestAnimationFrame is
-      // paused while the window is hidden/minimized, and any exception in
-      // the rAF callback would otherwise leave the transition hanging —
-      // which then wedges every subsequent mode switch (no animation, stuck
-      // view states). Never leave a transition unresolved.
-      let settled = false;
-      const finish = (): void => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      const cleanup = (): void => {
-        for (const el of exitEls) {
-          el.classList.add("hidden");
-          el.style.transition = "";
-          el.style.transform = "";
-          el.style.opacity = "";
-        }
-        for (const el of enterEls) {
-          el.style.transition = "";
-          el.style.transform = "";
-          el.style.opacity = "";
-        }
-      };
-      // Hard fallback: even if rAF never fires, settle after a generous
-      // margin so the transition state machine can never wedge.
-      const guard = setTimeout(finish, d + 50 + 1000);
-
-      requestAnimationFrame(() => {
-        try {
-          // ── 0. 预变更：在设置初始位置之前执行（DOM 排序等） ──
-          opts.setup?.();
-
-          // ── 1. 设置初始状态 ──
-          // 退出元素：设置 transition 属性（保持当前位置）
-          for (const el of exitEls) {
-            el.style.transition = `transform ${d}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${d}ms cubic-bezier(0.4, 0, 0.2, 1)`;
-          }
-
-          // 进入元素：移除 hidden，定位到右侧起始位置（无过渡）
-          for (const el of enterEls) {
-            el.classList.remove("hidden");
-            el.style.transition = "none";
-            el.style.transform = enterFrom;
-            el.style.opacity = "0";
-          }
-
-          // ── 2. 强制回流 —— 所有初始状态生效 ──
-          void document.body.offsetHeight;
-
-          // ── 3. 同时触发所有 CSS transition ──
-          for (const el of exitEls) {
-            el.style.transform = exitTo;
-            el.style.opacity = "0";
-          }
-          for (const el of enterEls) {
-            el.style.transition = `transform ${d}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${d}ms cubic-bezier(0.4, 0, 0.2, 1)`;
-            el.style.transform = "translateX(0)";
-            el.style.opacity = "1";
-          }
-
-          // ── 4. 动画完成后清理 ──
-          setTimeout(() => {
-            clearTimeout(guard);
-            try {
-              cleanup();
-            } catch (e) {
-              console.error("[transition] cleanup failed:", e);
-            }
-            finish();
-          }, d + 50);
-        } catch (e) {
-          console.error("[transition] slide failed:", e);
-          clearTimeout(guard);
-          // Never leave views stuck mid-transition: force the final state
-          // (exit hidden, enter visible) and settle.
-          try {
-            cleanup();
-          } catch (e2) {
-            console.error("[transition] cleanup failed:", e2);
-          }
-          for (const el of enterEls) el.classList.remove("hidden");
-          finish();
-        }
-      });
-    });
+  static get DEFAULT_DURATION(): number {
+    return TransitionHelper.step("--duration-slow", 280);
   }
 
-  /** Resolves after `ms` milliseconds. */
-  static wait(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  /**
+   * Reads a `--duration-*` token and returns it in milliseconds. Accepts
+   * both `s` and `ms` units, and falls back when the token is absent (for
+   * example before the stylesheet has loaded).
+   */
+  static step(token: string, fallback: number): number {
+    if (typeof document === "undefined") return fallback;
+    const raw = getComputedStyle(document.documentElement)
+      .getPropertyValue(token)
+      .trim();
+    if (!raw) return fallback;
+    const value = parseFloat(raw);
+    if (!Number.isFinite(value)) return fallback;
+    return raw.endsWith("ms") ? Math.round(value) : Math.round(value * 1000);
   }
 }

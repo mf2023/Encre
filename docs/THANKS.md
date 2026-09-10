@@ -326,7 +326,7 @@ Don't just delete it from the manifest — also delete the row from this file in
 
 ### Verification Script
 
-This file is consistent with the manifests as of release **0.4.1**. To re-verify after editing:
+This file is consistent with the manifests as of release **0.4.3**. To re-verify after editing:
 
 ```bash
 # Compare Python core deps with pyproject.toml
@@ -376,6 +376,6 @@ If you believe we are in violation of your license, see [SECURITY.md → Reporti
 
 ## Acknowledgments
 
-This document was last reviewed against the project manifests on **2026-08-23** for the **0.4.1** release. The dependency lists above match `pyproject.toml`, `desktop/package.json`, and `native/crates/*/Cargo.toml` at that commit.
+This document was last reviewed against the project manifests on **2026-08-23** for the **0.4.3** release. The dependency lists above match `pyproject.toml`, `desktop/package.json`, and `native/crates/*/Cargo.toml` at that commit.
 
 If you find a discrepancy, please open a PR — see [CONTRIBUTING.md → Development Setup](CONTRIBUTING.md#development-setup).

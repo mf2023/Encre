@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """iClaw launcher profile: self-improvement add-ons over the core server.
 
 The former ``IClawEngine`` re-assembled the entire runtime (sessions,

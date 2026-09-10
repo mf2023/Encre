@@ -1,5 +1,7 @@
 ---
 name: autonomous_authorization_patterns
+version: 1
+name: autonomous_authorization_patterns
 priority: 100
 condition: ~
 patterns:

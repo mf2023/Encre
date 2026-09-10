@@ -251,6 +251,12 @@ setModelConfigs(currentModels, activeIdx);
     this.panels.model.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
 
+      const poolSettingsBtn = target.closest("#btn-model-pool-settings");
+      if (poolSettingsBtn) {
+        this.showModelPoolSettings(0);
+        return;
+      }
+
       const deleteBtn = target.closest("[data-action='delete']");
       if (deleteBtn) {
         const idx = parseInt(deleteBtn.getAttribute("data-idx") || "0");
@@ -580,7 +586,15 @@ setModelConfigs(currentModels, activeIdx);
         const successOverlay = document.getElementById("wechat-qr-success-overlay");
         if (successOverlay) {
           successOverlay.style.display = "flex";
-          successOverlay.style.animation = "fade-in 0.3s ease";
+          // Shared one-shot entrance (see `.fade-in-once` in styles.css) —
+          // the class comes back off on animationend so a later reveal can
+          // replay it.
+          successOverlay.classList.add("fade-in-once");
+          successOverlay.addEventListener(
+            "animationend",
+            () => successOverlay.classList.remove("fade-in-once"),
+            { once: true },
+          );
         }
         // Save credentials to local state so the card shows correct status
         if (event.credentials) {

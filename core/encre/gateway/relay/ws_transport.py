@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """WebSocket relay transport (production).
 
 The gateway dials **out** to the connector's ``/relay`` WebSocket endpoint,

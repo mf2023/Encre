@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for the bash command safety analyzer.
 
 Covers :func:`analyze_bash_command`, :class:`BashAnalysis`,

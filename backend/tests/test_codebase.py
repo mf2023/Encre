@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for encre.codebase.indexer -- EncreCodeIndex and ModuleInfo."""
 
@@ -49,7 +51,7 @@ class TestModuleInfo:
         each field matches its input because the dataclass must preserve
         all metadata for accurate dependency graph construction.
         """
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         mi = ModuleInfo(
             path="src/my_module.py",
             name="my_module",
@@ -77,7 +79,7 @@ class TestModuleInfo:
         imports, imported_by, and exports are [], language is "", and loc
         is 0 because default values must be safe empty containers.
         """
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         mi = ModuleInfo(path="test.py", name="test")
         assert mi.imports == []
         assert mi.imported_by == []
@@ -93,7 +95,7 @@ class TestModuleInfo:
         and immutable field semantics.
         """
         from dataclasses import is_dataclass
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         assert is_dataclass(ModuleInfo)
 
     def test_verify_language_variants_are_preserved(self):
@@ -103,7 +105,7 @@ class TestModuleInfo:
         and asserts each language field matches because the indexer must
         support polyglot workspaces with Python, Rust, Go, JS, TS, and Java.
         """
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         for lang in ["python", "rust", "go", "javascript", "typescript", "java"]:
             mi = ModuleInfo(path=f"src/module.{lang[:2]}", name="mod", language=lang)
             assert mi.language == lang
@@ -115,7 +117,7 @@ class TestModuleInfo:
         is present in the stored path because path normalization must not
         break Windows absolute paths during index construction.
         """
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         mi = ModuleInfo(path="src\\subdir\\module.py", name="module")
         assert "src" in mi.path
 
@@ -131,7 +133,7 @@ class TestEncreCodeIndexConstruction:
     that the workspace path is stored correctly (both relative and absolute),
     that the internal data structures start empty, and that the known-file
     extension set covers the expected polyglot languages. The design uses
-    lazy indexing 鈥?_modules, _depgraph, _reverse_depgraph, and _inverted_index
+    lazy indexing — _modules, _depgraph, _reverse_depgraph, and _inverted_index
     are all empty dicts until scan() is called.
     """
 
@@ -142,7 +144,7 @@ class TestEncreCodeIndexConstruction:
         workspace attribute equals '.' and _indexed is False because
         construction must not auto-trigger scanning.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         assert ci is not None
         assert ci.workspace == "."
@@ -155,7 +157,7 @@ class TestEncreCodeIndexConstruction:
         the stored workspace matches the absolute path because the index
         must normalize paths for consistent file resolution.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         abs_path = os.path.abspath(".")
         ci = EncreCodeIndex(workspace=abs_path)
         assert ci.workspace == abs_path
@@ -167,7 +169,7 @@ class TestEncreCodeIndexConstruction:
         are all {} and _total_docs is 0 and _indexed is False because an
         unscanned index must not contain stale data from a prior run.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         assert ci._modules == {}
         assert ci._depgraph == {}
@@ -183,7 +185,7 @@ class TestEncreCodeIndexConstruction:
         present in the known extensions set because the indexer must
         recognize source files across the supported polyglot workspace.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         assert ".py" in EncreCodeIndex._KNOWN_EXTS
         assert ".rs" in EncreCodeIndex._KNOWN_EXTS
         assert ".go" in EncreCodeIndex._KNOWN_EXTS
@@ -212,7 +214,7 @@ class TestEncreCodeIndexScan:
         True because scanning must mark the index as populated regardless
         of how many files are found.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         assert ci._indexed is True
@@ -223,7 +225,7 @@ class TestEncreCodeIndexScan:
         The test asserts len(_modules) > 0 because the workspace contains
         Python source files that must be indexed.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         assert len(ci._modules) > 0
@@ -235,7 +237,7 @@ class TestEncreCodeIndexScan:
         non-empty string because every indexed module must have a valid
         filesystem path for later retrieval and context building.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         for _path, mod in ci._modules.items():
@@ -248,7 +250,7 @@ class TestEncreCodeIndexScan:
         The test filters modules by language=='python' and asserts the count
         is positive because the workspace must contain Python source files.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         python_modules = [m for m in ci._modules.values() if m.language == "python"]
@@ -261,7 +263,7 @@ class TestEncreCodeIndexScan:
         _indexed is True and _modules is empty because scanning an empty
         tree must succeed without error and produce no module entries.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         with tempfile.TemporaryDirectory() as tmpdir:
             ci = EncreCodeIndex(workspace=tmpdir)
             ci.scan()
@@ -275,7 +277,7 @@ class TestEncreCodeIndexScan:
         True and _modules is empty because the scanner must handle missing
         directories gracefully without raising.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace="/nonexistent/path/for/testing")
         ci.scan()
         assert ci._indexed is True
@@ -301,7 +303,7 @@ class TestEncreCodeIndexWithFiles:
         the expected exports because the parser must accurately capture
         the module's dependency and export surface.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         with tempfile.TemporaryDirectory() as tmpdir:
             src = os.path.join(tmpdir, "test_mod.py")
             with open(src, "w", encoding="utf-8") as f:
@@ -352,7 +354,7 @@ class TestEncreCodeIndexQueries:
         The test asserts isinstance(graph, dict) because the dependency graph
         is always a dictionary mapping module paths to their imported dependencies.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         graph = ci.build_dependency_graph()
         assert isinstance(graph, dict)
@@ -364,7 +366,7 @@ class TestEncreCodeIndexQueries:
         returned importers list is a Python list because get_importers
         must always return a list (possibly empty) for any queried path.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         if ci._modules:
@@ -378,7 +380,7 @@ class TestEncreCodeIndexQueries:
         The test queries a nonexistent file path and asserts the result is
         [] because missing modules should have zero importers, not raise.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         importers = ci.get_importers("nonexistent_file.py")
         assert importers == []
@@ -389,7 +391,7 @@ class TestEncreCodeIndexQueries:
         The test asserts isinstance(results, list) because relevance search
         must always return a list of (path, score) tuples.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("python class")
         assert isinstance(results, list)
@@ -400,7 +402,7 @@ class TestEncreCodeIndexQueries:
         The test asserts results == [] because an empty query string should
         not match any module and must return an empty list, not raise.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("")
         assert results == []
@@ -412,7 +414,7 @@ class TestEncreCodeIndexQueries:
         each item is a 2-tuple with str path and float score because the
         relevance API contracts each result as (module_path, relevance_score).
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("import")
         for item in results:
@@ -428,7 +430,7 @@ class TestEncreCodeIndexQueries:
         are returned, the first score is >= the second score because the
         relevance engine must sort results from highest to lowest score.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.find_relevant("def class")
         if len(results) >= 2:
@@ -441,7 +443,7 @@ class TestEncreCodeIndexQueries:
         context string is non-empty because build_context must serialize
         the module's source and metadata for LLM context injection.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         if ci._modules:
@@ -454,10 +456,10 @@ class TestEncreCodeIndexQueries:
         """Validate that build_context() returns '' for a path not in the index.
 
         The test queries a nonexistent file and asserts the result is ''
-        because missing modules must not raise 鈥?they should yield an
+        because missing modules must not raise — they should yield an
         empty context string so callers can handle absence gracefully.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         context = ci.build_context("no_such_file.py")
         assert context == ""
@@ -469,7 +471,7 @@ class TestEncreCodeIndexQueries:
         the result is an instance of ModuleInfo because get_module_info
         must return the full structured metadata record.
         """
-        from encre.codebase.indexer import EncreCodeIndex, ModuleInfo
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex, ModuleInfo
         ci = EncreCodeIndex(workspace=".")
         ci.scan()
         if ci._modules:
@@ -484,7 +486,7 @@ class TestEncreCodeIndexQueries:
         modules must yield None, not raise, so callers can distinguish
         between found and not-found without exception handling.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         mod = ci.get_module_info("nonexistent.py")
         assert mod is None
@@ -496,11 +498,11 @@ class TestEncreCodeIndexQueries:
         passes isinstance(mod, ModuleInfo) because the method is the
         primary way to iterate over all indexed modules.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         modules = ci.list_all_modules()
         assert isinstance(modules, list)
-        from encre.codebase.indexer import ModuleInfo
+        from encre.capabilities.search.codebase.indexer import ModuleInfo
         for mod in modules:
             assert isinstance(mod, ModuleInfo)
 
@@ -510,7 +512,7 @@ class TestEncreCodeIndexQueries:
         The test queries 'agent' and asserts the result is a list because
         name search must always return a list of matching ModuleInfo objects.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         results = ci.search_by_name("agent")
         assert isinstance(results, list)
@@ -522,7 +524,7 @@ class TestEncreCodeIndexQueries:
         because name search must be case-insensitive to match user intent
         regardless of capitalization.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         upper = ci.search_by_name("AGENT")
         lower = ci.search_by_name("agent")
@@ -550,7 +552,7 @@ class TestEncreCodeIndexIncremental:
         _indexed is True because the incremental method must also populate
         the index when no prior scan has occurred.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         ci = EncreCodeIndex(workspace=".")
         ci.scan_incremental()
         assert ci._indexed is True
@@ -563,7 +565,7 @@ class TestEncreCodeIndexIncremental:
         asserts the module count is now 2 because incremental scanning must
         detect and index new files without re-scanning existing ones.
         """
-        from encre.codebase.indexer import EncreCodeIndex
+        from encre.capabilities.search.codebase.indexer import EncreCodeIndex
         with tempfile.TemporaryDirectory() as tmpdir:
             src = os.path.join(tmpdir, "hello.py")
             with open(src, "w", encoding="utf-8") as f:

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for the benchmark evaluation suite: scoring, diagnosis, and summarization.
 
@@ -92,7 +94,8 @@ class TestBenchmarkDiagnosis:
 
     This class ensures that raw run metrics (tool-call counts, turn counts,
     coverage, finish reasons) are mapped to semantically meaningful diagnosis
-    buckets. Correct bucket assignment lets engineers prioritize fix areas鈥?    e.g. tool_selection_gap versus long_horizon_drift鈥攚ithout inspecting
+    buckets. Correct bucket assignment lets engineers prioritize fix areas —
+    e.g. tool_selection_gap versus long_horizon_drift — without inspecting
     individual traces.
     """
 
@@ -133,7 +136,7 @@ class TestBenchmarkDiagnosis:
 
         The test constructs a result where the agent ran 11 turns against a
         max of 8, accumulated a stuck event, and achieved only 50% coverage.
-        This pattern鈥攎any turns without reaching the target鈥攊ndicates the
+        This pattern — many turns without reaching the target — indicates the
         agent drifted through the horizon without converging on a complete
         answer, which the diagnosis engine should bucket as long_horizon_drift.
         """
@@ -174,8 +177,8 @@ class TestBenchmarkSummary:
     def test_summarize_benchmark_results_groups_tracks_and_buckets(self):
         """Validate that summary aggregation correctly groups by track, category, difficulty, and failure bucket.
 
-        The test feeds two heterogeneous results鈥攐ne passing on claude_code
-        and one failing on manus with a tool_selection_gap鈥攁nd asserts that
+        The test feeds two heterogeneous results — one passing on claude_code
+        and one failing on manus with a tool_selection_gap — and asserts that
         the summary reports the correct task count, failure bucket count,
         per-track pass rate, per-category failure count, per-difficulty
         failure count, and per-track first-token-latency average.
@@ -237,8 +240,8 @@ class TestBenchmarkSummary:
     def test_analyze_benchmark_results_surfaces_priorities(self):
         """Validate that analysis ranks slowest tasks first and surfaces prioritized fix buckets.
 
-        The test supplies two failing tasks鈥攐ne slow runtime-or-budget
-        failure and one tool-selection gap鈥攁nd asserts that the slowest-task
+        The test supplies two failing tasks — one slow runtime-or-budget
+        failure and one tool-selection gap — and asserts that the slowest-task
         list and first-token-latency list both place the slower task ("slow-1")
         at index 0, and that the first prioritized fix corresponds to one of
         the two known failure buckets.

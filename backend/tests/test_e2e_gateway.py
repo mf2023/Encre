@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """End-to-end test: adapter -> gateway client -> server -> EventRouter -> back.
 
 Simulates the full QQ/Telegram message flow:

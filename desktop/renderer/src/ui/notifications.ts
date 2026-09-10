@@ -42,9 +42,8 @@ import {
 } from "../core/state.js";
 import { MediaViewer } from "../chat/media-viewer.js";
 import { t } from "../features/i18n.js";
+import { TransitionHelper } from "./transition-helper.js";
 import type { NotificationItem } from "../core/types.js";
-
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Formats a timestamp as a localized relative time ("just now", "3m ago", …). */
 function relativeTime(ts: number): string {
@@ -77,26 +76,28 @@ function flashCopy(btn: HTMLElement): void {
   const original = orig || "copy";
   if (!orig) btn.setAttribute("data-original-icon", original);
 
-  btn.style.transition = "opacity 0.12s ease";
-  btn.style.opacity = "0";
-  setTimeout(() => {
+  // Shared with the chat tool actions — see `.copy-flash` in styles.css.
+  // The fade is CSS; these timings only decide when the glyph swaps.
+  const fade = TransitionHelper.step("--duration-fast", 120);
+  const swapGlyph = (name: string): void => {
     const i = btn.querySelector("[data-lucide]");
-    if (i) i.setAttribute("data-lucide", "check");
+    if (i) i.setAttribute("data-lucide", name);
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: btn });
     }
-    btn.style.opacity = "1";
-  }, 120);
+  };
+
+  btn.classList.add("copy-flash", "is-fading");
   setTimeout(() => {
-    btn.style.opacity = "0";
+    swapGlyph("check");
+    btn.classList.remove("is-fading");
+  }, fade);
+  setTimeout(() => {
+    btn.classList.add("is-fading");
     setTimeout(() => {
-      const i = btn.querySelector("[data-lucide]");
-      if (i) i.setAttribute("data-lucide", original);
-      if (typeof (window as any).lucide !== "undefined") {
-        (window as any).lucide.createIcons({ root: btn });
-      }
-      btn.style.opacity = "1";
-    }, 120);
+      swapGlyph(original);
+      btn.classList.remove("is-fading", "copy-flash");
+    }, fade);
   }, 2000);
 }
 
@@ -112,6 +113,14 @@ export class Notifications {
   private _mediaViewer: MediaViewer | null = null;
   private _detailId: string | null = null;
   private _listClickHandler: ((e: MouseEvent) => void) | null = null;
+  private _lastUnreadCount = -1;
+
+  /**
+   * Fired whenever the unread count changes (new arrival, item viewed, item
+   * dismissed, cleared) so hosts such as the Encre menu can refresh their own
+   * counter instead of rendering it once and going stale.
+   */
+  onUnreadCountChange: ((count: number) => void) | null = null;
 
   /**
    * Constructor: grabs the Encre menu button for the unread badge, wires the
@@ -161,6 +170,10 @@ export class Notifications {
     }
 
     const count = getUnreadCount();
+    if (count !== this._lastUnreadCount) {
+      this._lastUnreadCount = count;
+      this.onUnreadCountChange?.(count);
+    }
     if (this.anchor) {
       let badge = this.anchor.querySelector(".notification-badge") as HTMLElement | null;
       if (count > 0) {
@@ -238,11 +251,23 @@ export class Notifications {
       setTimeout(() => oldest.remove(), 300);
     }
 
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast.classList.add("removing");
-      setTimeout(() => toast.remove(), 300);
-    }, 5000);
+    // Every toast owns its own dismissal timer — a single shared timer meant
+    // only the newest toast ever expired and older ones stayed on screen.
+    let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleDismiss = (): void => {
+      if (dismissTimer) clearTimeout(dismissTimer);
+      dismissTimer = setTimeout(() => {
+        toast.classList.add("removing");
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    };
+    scheduleDismiss();
+    // Hovering keeps the toast alive so its copy/dismiss buttons stay reachable.
+    toast.addEventListener("mouseenter", () => {
+      if (dismissTimer) clearTimeout(dismissTimer);
+      dismissTimer = null;
+    });
+    toast.addEventListener("mouseleave", () => scheduleDismiss());
 
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: toast });
@@ -356,11 +381,28 @@ export class Notifications {
       }
 
       e.stopPropagation();
-      this._detailId = id;
-      this.renderPanel();
+      this.openDetail(id);
     };
 
     this.host.addEventListener("click", this._listClickHandler);
+  }
+
+  /**
+   * Opens a notification's detail view.
+   *
+   * Opening counts as "viewed": the item is marked read right away, so the
+   * unread counter drops (3 → 2 → …) as items are inspected. Dismissing or
+   * deleting is no longer the only way to reduce the count.
+   */
+  private openDetail(id: string): void {
+    this._detailId = id;
+    const n = getState().notifications.find((x) => x.id === id);
+    if (n && !n.read) {
+      // Emits state, which re-renders the panel straight into the detail view.
+      markOneNotificationRead(id);
+      return;
+    }
+    this.renderPanel();
   }
 
   /** Destroys the current media viewer instance (stops video playback). */

@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Weixin platform adapter.
 
@@ -75,11 +77,10 @@ from encre.gateway.platforms.base import (
     cache_image_from_bytes,
 )
 from encre.config import get_data_dir
-import json as _json
-from pathlib import Path as _P
+from encre.secure_io import read_json as _read_secure_json, write_json as _write_secure_json
 def atomic_json_write(path, data):
-    _P(path).parent.mkdir(parents=True, exist_ok=True)
-    _P(path).write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    """Persist *data* as encrypted JSON at *path* (single write channel)."""
+    _write_secure_json(path, data)
 from encre.gateway.pairing import PairingStore
 get_secret = lambda key, default=None: os.environ.get(key, default)
 
@@ -271,7 +272,7 @@ def load_weixin_account(encre_home: str, account_id: str) -> Optional[Dict[str, 
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return _read_secure_json(path)
     except Exception:
         return None
 
@@ -294,7 +295,7 @@ class ContextTokenStore:
         if not path.exists():
             return
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = _read_secure_json(path)
         except Exception as exc:
             logger.warning("weixin: failed to restore context tokens for %s: %s", _safe_id(account_id), exc)
             return
@@ -833,7 +834,7 @@ def _looks_like_chatty_line_for_weixin(line: str) -> bool:
         return False
     if line.startswith((" ", "\t")):
         return False
-    if stripped.startswith((">", "-", "*", "銆?, "#", "|")):
+    if stripped.startswith((">", "-", "*", "【", "#", "|")):
         return False
     if _TABLE_RULE_RE.match(stripped):
         return False
@@ -851,7 +852,7 @@ def _looks_like_heading_line_for_weixin(line: str) -> bool:
         return False
     if _HEADER_RE.match(stripped):
         return True
-    return len(stripped) <= 24 and stripped.endswith((":", "锛?))
+    return len(stripped) <= 24 and stripped.endswith((":", "："))
 
 
 def _should_split_short_chat_block_for_weixin(block: str) -> bool:
@@ -1001,7 +1002,7 @@ def _load_sync_buf(encre_home: str, account_id: str) -> str:
     if not path.exists():
         return ""
     try:
-        return json.loads(path.read_text(encoding="utf-8")).get("get_updates_buf", "")
+        return (_read_secure_json(path, default={}) or {}).get("get_updates_buf", "")
     except Exception:
         return ""
 

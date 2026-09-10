@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Reusable "target model selection" logic.
 
 The target-model-selection feature lets a consumer (e.g. a gateway adapter

@@ -34,10 +34,7 @@ import { LOCALE_REGISTRY } from "../locales/registry.js";
 
 // esbuild --define:BUILD_LOCALES=["zh","en",...] — set at build time.
 // Falls back to ALL registry locales when undefined (local dev / no flag).
-const BUILD_LOCALES: readonly string[] =
-  (typeof BUILD_LOCALES_LIST !== "undefined" ? BUILD_LOCALES_LIST : [
-    "zh", "en", "zh-Hant", "ja", "ko", "de", "es", "pt", "tr", "ar", "he",
-  ]) as readonly string[];
+const BUILD_LOCALES: readonly string[] = ["zh", "en", "zh-Hant", "ja", "ko", "de", "es", "pt", "tr", "ar", "he"] as const;
 
 /** All UI locales supported by the renderer. */
 export type Locale = "zh" | "en" | "zh-Hant" | "ja" | "ko" | "de" | "es" | "pt" | "tr" | "ar" | "he";

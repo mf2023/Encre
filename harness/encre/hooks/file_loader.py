@@ -46,7 +46,7 @@ from typing import Any
 
 from encre.hooks.system import EncreHookSystem
 from encre.hooks.types import HookEventType, HookResult
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 logger = logging.getLogger(__name__)
 

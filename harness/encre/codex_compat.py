@@ -52,7 +52,7 @@ from typing import Any
 from encre.config import SubAgentConfig
 from encre.skills.registry import EncreSkillRegistry
 from encre.skills.types import BundledSkillDefinition, SkillSource
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 logger = logging.getLogger(__name__)
 

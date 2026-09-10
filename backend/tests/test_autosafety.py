@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for encre.autosafety -- ML-based safety classifier for auto permission mode."""
 
 import pytest
@@ -31,7 +33,7 @@ from encre.autosafety import (
     UserDecisionRecord,
 )
 
-# 鈹€鈹€ AutoDecision Enum 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- AutoDecision Enum ----
 
 class TestAutoDecision:
     """Engineered to validate the AutoDecision enum structure and value uniqueness.
@@ -59,7 +61,7 @@ class TestAutoDecision:
         """Validate that all five decision levels map to unique enum values.
 
         The test collects all members into a set and asserts the cardinality is 5, confirming
-        no two levels share the same underlying value 鈥?a collision would cause the classifier
+        no two levels share the same underlying value — a collision would cause the classifier
         to conflate semantically distinct outcomes.
         """
         values = {AutoDecision.SAFE, AutoDecision.LOW_RISK, AutoDecision.ASK_USER,
@@ -76,7 +78,7 @@ class TestAutoDecision:
         assert AutoDecision.BLOCK.name == "BLOCK", "BLOCK enum member name must equal 'BLOCK'."
 
 
-# 鈹€鈹€ ClassificationResult 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- ClassificationResult ----
 
 class TestClassificationResult:
     """Engineered to validate the ClassificationResult data record construction.
@@ -141,7 +143,7 @@ class TestClassificationResult:
             assert 0.0 <= result.confidence <= 1.0, f"Confidence {val} must lie within [0.0, 1.0]."
 
 
-# 鈹€鈹€ UserDecisionRecord 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- UserDecisionRecord ----
 
 class TestUserDecisionRecord:
     """Engineered to validate the UserDecisionRecord data record.
@@ -181,7 +183,7 @@ class TestUserDecisionRecord:
         assert rec.user_approved is False, "Denied record must have user_approved=False."
 
 
-# 鈹€鈹€ EncreAutoSafetyClassifier 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- EncreAutoSafetyClassifier ----
 
 class TestEncreAutoSafetyClassifier:
     """Engineered to validate the EncreAutoSafetyClassifier state machine and learning loop.
@@ -321,7 +323,7 @@ class TestEncreAutoSafetyClassifier:
         assert pattern["approval_rate"] == pytest.approx(2.0 / 3.0), "Approval rate must be 2/3."
 
 
-# 鈹€鈹€ Pattern Classification (sync) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- Pattern Classification (sync) ----
 
 class TestPatternClassification:
     """Engineered to validate the synchronous pattern-based pre-classifier.
@@ -433,7 +435,7 @@ class TestPatternClassification:
         assert result.decision == AutoDecision.ASK_USER, "Unknown tool must default to ASK_USER."
 
 
-# 鈹€鈹€ Cache Key Generation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- Cache Key Generation ----
 
 class TestCacheKey:
     """Engineered to validate the classification cache key generation logic.
@@ -473,7 +475,7 @@ class TestCacheKey:
         """Validate that identical arguments produce an identical cache key (determinism).
 
         The test constructs two keys from the same tool and argument dict and asserts equality,
-        confirming the key function is deterministic 鈥?a prerequisite for cache correctness.
+        confirming the key function is deterministic — a prerequisite for cache correctness.
         """
         k1 = self.classifier._make_cache_key("bash", {"command": "ls", "path": "/tmp"})
         k2 = self.classifier._make_cache_key("bash", {"command": "ls", "path": "/tmp"})
@@ -510,7 +512,7 @@ class TestCacheKey:
         assert "test_key" in self.classifier._cache, "_cache_result must insert the key into the cache."
 
 
-# 鈹€鈹€ Parse Response 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- Parse Response ----
 
 class TestParseResponse:
     """Engineered to validate the LLM response parser for safety classification JSON.

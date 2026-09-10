@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for encre.feedback -- error correction learner with Jaccard similarity."""
 
 from pathlib import Path
@@ -28,7 +30,7 @@ from pathlib import Path
 from encre.feedback import CorrectionRecord, EncreFeedbackLearner
 from encre.feedback.learner import cut_str
 
-# 鈹€鈹€ CorrectionRecord 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- CorrectionRecord ---------------------------------------------------
 
 class TestCorrectionRecord:
     """Engineered to validate the CorrectionRecord data contract.
@@ -156,7 +158,7 @@ class TestCorrectionRecord:
         assert restored.trigger_count == original.trigger_count
 
 
-# 鈹€鈹€ cut_str helper 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- cut_str helper -----------------------------------------------------
 
 class TestCutStr:
     """Engineered to validate the cut_str truncation utility.
@@ -213,7 +215,7 @@ class TestCutStr:
         assert isinstance(result, str)
 
 
-# 鈹€鈹€ EncreFeedbackLearner 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- EncreFeedbackLearner -----------------------------------------------
 
 class TestEncreFeedbackLearner:
     """Engineered to validate the EncreFeedbackLearner correction lifecycle.
@@ -418,7 +420,7 @@ class TestEncreFeedbackLearner:
         assert result is False
 
 
-# 鈹€鈹€ Jaccard Similarity 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- Jaccard Similarity -------------------------------------------------
 
 class TestContextSimilarity:
     """Engineered to validate the Jaccard similarity scoring used by the learner.
@@ -504,7 +506,7 @@ class TestContextSimilarity:
         assert sim_with_long >= sim_without
 
 
-# 鈹€鈹€ Pruning and Decay 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- Pruning and Decay --------------------------------------------------
 
 class TestPruning:
     """Engineered to validate the learner's record cap and stale-exclusion logic.

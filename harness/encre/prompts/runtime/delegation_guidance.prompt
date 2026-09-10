@@ -1,5 +1,7 @@
 ---
 name: delegation_guidance
+version: 1
+name: delegation_guidance
 priority: 100
 condition: ~
 ---

@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Slack platform adapter.
 
@@ -1051,7 +1053,9 @@ class SlackAdapter(BasePlatformAdapter):
         tokens_file = get_data_dir() / "slack_tokens.json"
         if tokens_file.exists():
             try:
-                saved = json.loads(tokens_file.read_text(encoding="utf-8"))
+                from encre.secure_io import read_json
+
+                saved = read_json(tokens_file, default={})
                 for team_id, entry in saved.items():
                     tok = entry.get("token", "") if isinstance(entry, dict) else ""
                     if tok and tok not in bot_tokens:
@@ -1231,7 +1235,7 @@ class SlackAdapter(BasePlatformAdapter):
                 slash = (command.get("command") or "").lstrip("/")
                 await ack(
                     response_type="ephemeral",
-                    text=f"Running `/{slash}`鈥?,
+                    text=f"Running `/{slash}`…",
                 )
                 await self._handle_slash_command(command)
 

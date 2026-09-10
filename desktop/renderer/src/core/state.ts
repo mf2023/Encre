@@ -1343,8 +1343,14 @@ export function markNotificationsRead(): void {
   scheduleNotificationSave();
 }
 
-/** Marks a single notification (by id) as read. */
+/**
+ * Marks a single notification (by id) as read.
+ * No-op when the id is unknown or the item is already read, so callers can
+ * invoke it unconditionally (e.g. on open) without emitting/persisting churn.
+ */
 export function markOneNotificationRead(id: string): void {
+  const target = state.notifications.find((n) => n.id === id);
+  if (!target || target.read) return;
   const updated = state.notifications.map((n) =>
     n.id === id ? { ...n, read: true } : n
   );
@@ -1481,6 +1487,44 @@ export function restoreInputModeChip(mode: string): void {
   }
 }
 
+/** Restore a sticky command chip into the prompt input after a rollback.
+ *
+ *  Mirrors the inline chip produced by the App's insertCommandChip path so a
+ *  rolled-back ``<command>name</command>`` message re-appears as a rendered
+ *  chip (not raw text).  Also mirrors the App's ``_activeCommand`` slot so
+ *  the toolbar command chip and input-area styling stay in sync — the same
+ *  path the ``command_changed`` event uses. */
+export function restoreInputCommandChip(name: string): void {
+  const input = document.getElementById("prompt-input") as HTMLElement | null;
+  if (!input) return;
+
+  const old = input.querySelector(".command-chip");
+  if (old) old.remove();
+
+  const cmd = findSlashCommand(name);
+  const label = cmd ? cmd.title : name;
+  const icon = cmd ? cmd.icon : "wand-2";
+
+  const chip = document.createElement("span");
+  chip.contentEditable = "false";
+  chip.className = "command-chip";
+  chip.setAttribute("data-command", name);
+  chip.innerHTML = `<i data-lucide="${icon}" class="chip-icon" style="width:12px;height:12px;"></i><span>${label}</span>`;
+  input.insertBefore(chip, input.firstChild);
+
+  if ((window as any).lucide) {
+    (window as any).lucide.createIcons();
+  }
+
+  // Mirror into the App instance (same shape as command_changed handling).
+  const app = (window as any).__app;
+  if (app) {
+    app._activeCommand = { name, icon: cmd?.icon, title: cmd?.title };
+    app._currentChipMode = name;
+    app.updateChipState?.();
+  }
+}
+
 /** Global session cache for search. Unlike `sessionsList` it is never cleared
  *  on mode switches, so session search stays global across all modes.
  *  `mode` "merge" (default) unions with the existing cache (mode-scoped
@@ -1491,7 +1535,12 @@ export function setAllSessions(
   mode: "merge" | "replace" = "merge",
 ): void {
   // Filter out temp chat sessions from the global cache.
-  const filtered = sessions.filter((s) => !(s.metadata as Record<string, unknown>)?.temp_chat);
+  const filtered = sessions.filter(
+    (s) =>
+      !(s.metadata as Record<string, unknown>)?.temp_chat &&
+      !((s as unknown as Record<string, unknown>).temp_chat as boolean | undefined) &&
+      !isTempChatSession(s.session_id),
+  );
   if (mode === "replace") {
     update({ allSessions: filtered });
     return;
@@ -1511,6 +1560,7 @@ export function setSessionsList(sessions: import("./types.js").SessionEntryData[
   const visible = dedupeSessions(sessions).filter((session) => {
     // Temp chat sessions are ephemeral and must never appear in the sidebar.
     if ((session.metadata as Record<string, unknown>)?.temp_chat) return false;
+    if (isTempChatSession(session.session_id)) return false;
     return (session.message_count || 0) > 0;
   });
   update({ sessionsList: visible });
@@ -1766,15 +1816,16 @@ export function updateContextUsage(tokens: number, window: number, sessionId = s
   emit();
 }
 
-/** Updates a workspace's index status/files. */
-export function updateWorkspaceIndex(wsId: string, status: string, files: number): void {
+/** Updates a workspace's index status/files/progress. */
+export function updateWorkspaceIndex(wsId: string, status: string, files: number, progress?: number): void {
   if (!wsId) return;
   state.workspaces = state.workspaces.map(w =>
-    w.id === wsId ? { ...w, index_status: status, index_files: files } : w
+    w.id === wsId ? { ...w, index_status: status, index_files: files, index_progress: progress ?? w.index_progress } : w
   );
   // Also update global for session-inner panel
   state.indexStatus = status as any;
   state.indexFiles = files;
+  if (progress !== undefined) state.indexProgress = progress;
   emit();
 }
 
@@ -1863,6 +1914,26 @@ export function setPendingPermission(
 /** Toggles the temporary-chat flag. */
 export function setTempChat(v: boolean): void {
   update({ tempChat: v });
+}
+
+/**
+ * Session ids that were used as temp chats. Once recorded, the id stays
+ * "poisoned" for the lifetime of the renderer: late streaming events or
+ * broadcasts for it can never re-append it to the sidebar.
+ */
+const _tempChatSessionIds = new Set<string>();
+
+/** Record a session id as ephemeral (called on temp-chat exit). */
+export function markTempChatSession(sessionId: string): void {
+  if (!sessionId) return;
+  _tempChatSessionIds.add(sessionId);
+  // Drop it from every list immediately.
+  removeSessionById(sessionId);
+}
+
+/** True when the id belongs to (or belonged to) a temp chat. */
+export function isTempChatSession(sessionId: string): boolean {
+  return _tempChatSessionIds.has(sessionId);
 }
 
 /** Switches the active branch for the (active) session. */

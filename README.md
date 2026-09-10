@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="desktop/renderer/assets/EAb.svg" alt="Encre Agent" width="160"/>
+<img src="desktop/renderer/assets/EA-lm.svg" alt="Encre Agent" width="160"/>
 
 English | [简体中文](README.zh.md)
 

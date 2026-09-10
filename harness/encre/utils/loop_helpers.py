@@ -218,8 +218,9 @@ def _apply_result_budget(
 
             fpath = _os.path.join(spillover_dir, fname)
             try:
-                with open(fpath, "w", encoding="utf-8") as f:
-                    f.write(result)
+                from encre.secure_io import write_text as _write_secure_text
+
+                _write_secure_text(fpath, result)
                 spillover_path = fpath
             except Exception:
                 spillover_path = None
@@ -404,7 +405,7 @@ def _split_writes_by_path_conflict(
 
 async def _try_lsp_diagnostics(file_path: str) -> str:
     try:
-        from encre.tools.builtin.lsp import _get_manager
+        from encre.tools.runtime import get_lsp_manager as _get_manager
 
         mgr = _get_manager()
         if not getattr(mgr, "_workspace", ""):

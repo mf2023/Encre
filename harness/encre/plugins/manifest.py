@@ -94,7 +94,7 @@ def load_manifest(path: Path) -> PluginManifest | None:
         homepage=str(raw.get("homepage", "")),
         source=PluginSource.PROJECT,
         dependencies=list(raw.get("dependencies", [])),
-        min_yim_version=str(raw.get("engines", {}).get("encre", "0.1.0")),
+        min_ea_version=str(raw.get("engines", {}).get("encre", "0.1.0")),
         tags=list(raw.get("tags", [])),
         provides_tools=provides_tools,
         provides_skills=provides_skills,

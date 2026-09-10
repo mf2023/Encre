@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Structured streaming events -- the agent-to-gateway delivery contract.
 
 This module defines a typed event vocabulary that names *what happened* during

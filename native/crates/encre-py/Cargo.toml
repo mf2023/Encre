@@ -20,7 +20,7 @@
 
 [package]
 name = "encre-py"
-version = "0.4.1"
+version = "0.4.3"
 edition = "2021"
 description = "Python bindings for encre-core"
 

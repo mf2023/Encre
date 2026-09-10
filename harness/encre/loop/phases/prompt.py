@@ -229,19 +229,23 @@ class PhasePromptMixin:
                 self._ctx_renderer.record("Plan-Do-Review", pdr_ctx)
                 system_prompt = system_prompt + "\n\n" + pdr_ctx
 
-        # Prepend skill prompt to system prompt
-        if skill_prompt:
-            system_prompt = skill_prompt + system_prompt
-
-        # Inject auto-activated tool skills: usage guidance for tools the
-        # agent has already used this session (collected after each tool run).
-        tool_skills_prompt = self._render_active_tool_skills()
-        if tool_skills_prompt:
-            system_prompt = tool_skills_prompt + "\n\n" + system_prompt
-
+        # Append skill/tool-skill/doc-skill prompts AFTER the base prompt so
+        # the static cacheable prefix (everything above
+        # __PROMPT_CACHE_BOUNDARY__) stays byte-identical across turns.
+        # Prepending them would change the first system message every turn
+        # and cause 100% prompt-cache misses on OpenAI/DeepSeek/Anthropic.
+        # Relative order (doc -> tool -> skill) matches the previous prepend
+        # order so downstream content reads the same.
         doc_skills_prompt = self._render_active_doc_skills()
         if doc_skills_prompt:
-            system_prompt = doc_skills_prompt + "\n\n" + system_prompt
+            system_prompt = system_prompt + "\n\n" + doc_skills_prompt
+
+        tool_skills_prompt = self._render_active_tool_skills()
+        if tool_skills_prompt:
+            system_prompt = system_prompt + "\n\n" + tool_skills_prompt
+
+        if skill_prompt:
+            system_prompt = system_prompt + "\n\n" + skill_prompt
 
         # Inject user requirements summary: a compact description of the
         # user's core goals extracted from the last compact summary.  Lives

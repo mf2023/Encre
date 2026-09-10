@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Shared pytest fixtures for the encre test suite.
 
 Provides reusable test infrastructure so individual test modules can focus on
@@ -35,18 +37,7 @@ from pathlib import Path
 
 import pytest
 from encre.config import EncreConfig
-from encre.tools.builtin import (
-    EncreBashTool,
-    EncreFileEditTool,
-    EncreFileReadTool,
-    EncreFileWriteTool,
-    EncreGlobTool,
-    EncreGrepTool,
-    EncreTaskCreateTool,
-    EncreTaskGetTool,
-    EncreTaskListTool,
-    EncreTaskUpdateTool,
-)
+from encre.plugins.registry import PluginRegistry
 from encre.tools.registry import ToolRegistry
 
 
@@ -123,16 +114,8 @@ def tool_registry():
     tests operate against a registry that mirrors production wiring.
     """
     registry = ToolRegistry()
-    registry.register_many([
-        EncreFileReadTool(),
-        EncreFileWriteTool(),
-        EncreFileEditTool(),
-        EncreBashTool(),
-        EncreGrepTool(),
-        EncreGlobTool(),
-        EncreTaskCreateTool(),
-        EncreTaskGetTool(),
-        EncreTaskListTool(),
-        EncreTaskUpdateTool(),
-    ])
+    plugin_registry = PluginRegistry()
+    plugin_registry.discover_all()
+    for tool in plugin_registry.get_all_tools():
+        registry.register(tool)
     return registry

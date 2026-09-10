@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Relay channel authentication (gateway half).
 
 The connector鈬刧ateway channel is itself authenticated because a gateway may be

@@ -21,16 +21,19 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+import asyncio
 import importlib
 import importlib.metadata
 import importlib.util
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from encre.logging_config import get_logger
 from encre.plugins.context import build_context as _build_context
+from encre.plugins.auto_installer import ensure_ea_tools_installed
 from encre.plugins.manifest import (
     MANIFEST_FILENAME as _MANIFEST_FILENAME,
     DeclarativePlugin as _DeclarativePlugin,
@@ -41,6 +44,21 @@ from encre.plugins.types import EncrePlugin, PluginManifest, PluginSource
 logger = get_logger("encre.plugins")
 
 _ENTRY_POINT_GROUP = "encre.plugins"
+_EA_ENTRY_POINT_GROUP = "ea.plugins"
+
+
+def _tier_to_source(tier: str) -> PluginSource:
+    """Map an EA package tier (from ``[tool.ea]`` metadata) to a plugin source.
+
+    * ``mandatory``      -> MANDATORY  (auto-activated, cannot be uninstalled)
+    * ``system-default`` -> BUNDLED    (ships with app, can be uninstalled)
+    * anything else      -> INSTALLED  (user / third-party, pip-managed)
+    """
+    if tier == "mandatory":
+        return PluginSource.MANDATORY
+    if tier == "system-default":
+        return PluginSource.BUNDLED
+    return PluginSource.INSTALLED
 
 
 class PluginRegistry:
@@ -49,8 +67,9 @@ class PluginRegistry:
     Discovery order (later overrides earlier):
     1. Bundled plugins (encre/plugins/bundled/)
     2. pip-installed plugins (entry point: encre.plugins)
-    3. Project-local plugins (./.encre/plugins/)
-    4. User-local plugins (~/.dunimd/encre/plugins/)
+    3. EA extension packages (entry point: ea.plugins)
+    4. Project-local plugins (./.encre/plugins/)
+    5. User-local plugins (~/.dunimd/encre/plugins/)
     """
 
     def __init__(self) -> None:
@@ -81,11 +100,17 @@ class PluginRegistry:
         name = plugin.manifest.name
         existing = self._plugins.get(name)
         if existing is not None:
-            # Respect discovery priority: never downgrade a higher-priority source
+            # Respect discovery priority: keep the higher-priority source.
+            # Equal priority keeps the existing registration — discovery
+            # order (directory scan before entry points) wins.
             existing_source_priority = _source_priority(existing.manifest.source)
             new_source_priority = _source_priority(plugin.manifest.source)
-            if new_source_priority >= existing_source_priority:
-                return  # Existing has higher or equal priority
+            if new_source_priority <= existing_source_priority:
+                # New source is not higher priority — skip
+                return
+            # Mandatory plugins always win regardless of discovery order.
+            if getattr(existing.manifest, "tier", "user") == "mandatory":
+                return
         self._plugins[name] = plugin
         self._manifests[name] = plugin.manifest
 
@@ -123,11 +148,104 @@ class PluginRegistry:
     def discover_all(self) -> int:
         """Run all discovery mechanisms. Returns count of newly found plugins."""
         before = len(self._plugins)
+        # Make bundled EA packages importable (directory-driven, no pip needed)
+        ensure_ea_tools_installed()
         # Order matters: later sources can override earlier, lower-priority ones
+        self._discover_ea_packages()
         self._discover_entry_points()
+        self._discover_ea_entry_points()
         self._discover_directory("./.encre/plugins/", PluginSource.PROJECT)
         self._discover_directory("~/.dunimd/encre/plugins/", PluginSource.USER)
+        # Auto-activate mandatory + system-default plugins immediately
+        self._activate_auto_plugins()
         return len(self._plugins) - before
+
+    async def adiscover_all(self) -> int:
+        """Async variant of :meth:`discover_all`.
+
+        Runs discovery in a worker thread so the event loop (and therefore the
+        UI / request handling) is never blocked while hundreds of plugin
+        modules are imported.
+        """
+        return await asyncio.to_thread(self.discover_all)
+
+    def _activate_auto_plugins(self) -> None:
+        """Auto-activate mandatory and system-default plugins.
+
+        These ship with the app and must be available without any explicit
+        activation step.  User-installed (third-party) plugins stay lazy and
+        are activated on demand or via activation events.
+        """
+        for name, plugin in list(self._plugins.items()):
+            if name in self._activated:
+                continue
+            tier = getattr(plugin.manifest, "tier", "user")
+            if plugin.manifest.source == PluginSource.MANDATORY or tier in ("mandatory", "system-default"):
+                self.activate(name)
+
+    def _discover_ea_packages(self) -> None:
+        """Discover bundled EA packages by scanning the ``ea_tools/`` tree.
+
+        Each package directory is auto-scanned (see :mod:`encre.plugins.ea_scan`);
+        its tier, taken from ``pyproject.toml`` ``[tool.ea]``, decides the plugin
+        source.  This works identically in development and in PyInstaller frozen
+        bundles — no package name is hardcoded here.
+
+        The per-package module import is the dominant cost (hundreds of
+        packages), so factories are imported concurrently in a bounded thread
+        pool and registered sequentially afterwards to keep discovery order
+        deterministic.  Importing distinct modules in parallel is safe: the
+        interpreter serialises concurrent first-imports of the same shared
+        dependency via its per-module import lock.
+        """
+        from encre.plugins.ea_scan import iter_ea_packages
+
+        packages = [pkg for pkg in iter_ea_packages() if pkg.name not in self._plugins]
+        if not packages:
+            return
+
+        workers = int(os.environ.get("ENCRE_PLUGIN_IMPORT_WORKERS", "0")) or min(32, max(4, (os.cpu_count() or 4) * 4))
+        results: list[tuple[Any, Any]] = []
+        if workers > 1 and len(packages) > 1:
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ea-import") as pool:
+                futures = [(pkg, pool.submit(self._instantiate_ea_plugin, pkg)) for pkg in packages]
+                for pkg, future in futures:
+                    try:
+                        results.append((pkg, future.result()))
+                    except Exception as e:  # noqa: BLE001 - surfaced per package below
+                        results.append((pkg, e))
+        else:
+            for pkg in packages:
+                try:
+                    results.append((pkg, self._instantiate_ea_plugin(pkg)))
+                except Exception as e:  # noqa: BLE001 - surfaced per package below
+                    results.append((pkg, e))
+
+        for pkg, outcome in results:
+            if isinstance(outcome, BaseException):
+                logger.warning(f"Failed to load EA package '{pkg.name}': {outcome}")
+                self._failed[pkg.name] = str(outcome)
+                continue
+            plugin = outcome
+            if not isinstance(plugin, EncrePlugin):
+                logger.warning(f"EA package '{pkg.name}' did not return an EncrePlugin instance")
+                continue
+            plugin.manifest.source = _tier_to_source(pkg.tier)
+            # Keep the tier on the manifest for uninstall / manager decisions.
+            plugin.manifest.tier = pkg.tier
+            self.register(plugin)
+            logger.info(
+                f"Discovered EA plugin '{plugin.manifest.name}' (tier={pkg.tier}) "
+                f"via directory scan of {pkg.pkg_dir}"
+            )
+
+    @staticmethod
+    def _instantiate_ea_plugin(pkg: Any) -> Any:
+        """Import an EA package's factory target and instantiate its plugin."""
+        module_path, _, attr = pkg.factory_target.partition(":")
+        module = importlib.import_module(module_path)
+        plugin_factory = getattr(module, attr) if attr else module
+        return plugin_factory()
 
     def _discover_entry_points(self) -> None:
         """Discover plugins registered via pip entry points."""
@@ -155,6 +273,43 @@ class PluginRegistry:
                 logger.info(f"Discovered plugin '{plugin.manifest.name}' via entry point '{ep.name}'")
             except Exception as e:
                 logger.warning(f"Failed to load plugin from entry point '{ep.name}': {e}")
+                self._failed[ep.name] = str(e)
+
+    def _discover_ea_entry_points(self) -> None:
+        """Discover third-party EA plugins registered via the ``ea.plugins`` entry-point group.
+
+        Only user-installed plugins are expected here — bundled (mandatory /
+        system-default) EA packages are discovered by the directory scan in
+        :meth:`_discover_ea_packages` and are skipped if already registered.
+        """
+        entry_points = []
+        try:
+            entry_points = list(importlib.metadata.entry_points(group=_EA_ENTRY_POINT_GROUP))
+        except TypeError:
+            # Python < 3.12
+            try:
+                entry_points = list(importlib.metadata.entry_points().get(_EA_ENTRY_POINT_GROUP, []))
+            except Exception:
+                entry_points = []
+        except Exception:
+            entry_points = []
+
+        for ep in entry_points:
+            try:
+                plugin_factory = ep.load()
+                plugin = plugin_factory()
+                if not isinstance(plugin, EncrePlugin):
+                    logger.warning(f"EA entry point '{ep.name}' did not return an EncrePlugin instance")
+                    continue
+                if plugin.manifest.name in self._plugins:
+                    # Already registered via the directory scan (bundled) or a
+                    # higher-priority source — do not overwrite.
+                    continue
+                plugin.manifest.source = _tier_to_source(getattr(plugin.manifest, "tier", "user"))
+                self.register(plugin)
+                logger.info(f"Discovered EA plugin '{plugin.manifest.name}' via entry point '{ep.name}'")
+            except Exception as e:
+                logger.warning(f"Failed to load EA plugin from entry point '{ep.name}': {e}")
                 self._failed[ep.name] = str(e)
 
     def _discover_directory(self, dir_path: str, source: PluginSource) -> None:
@@ -333,6 +488,10 @@ class PluginRegistry:
         plugin = self._plugins.get(name)
         if plugin is None:
             return False
+        if getattr(plugin.manifest, "tier", "user") == "mandatory":
+            # Mandatory plugins are hardcoded core — they cannot be disabled.
+            logger.warning(f"Refusing to deactivate mandatory plugin '{name}'")
+            return False
         if name not in self._activated:
             return True
         try:
@@ -386,6 +545,10 @@ class PluginRegistry:
         for name in self._plugins:
             results[name] = self.activate(name)
         return results
+
+    async def aactivate_all(self) -> dict[str, bool]:
+        """Async variant of :meth:`activate_all` (runs in a worker thread)."""
+        return await asyncio.to_thread(self.activate_all)
 
     def deactivate_all(self) -> None:
         """Deactivate all currently active plugins."""
@@ -468,6 +631,7 @@ def _source_priority(source: PluginSource) -> int:
     """Return the discovery priority of a plugin source (higher overrides)."""
     _order = {
         PluginSource.BUNDLED: 0,
+        PluginSource.MANDATORY: 1,
         PluginSource.INSTALLED: 1,
         PluginSource.PROJECT: 2,
         PluginSource.USER: 3,

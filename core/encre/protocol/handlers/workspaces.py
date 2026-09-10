@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Workspace domain handlers: open / close / remove / icons / config / index.
 
 Drives the iwork workspace lifecycle: directory registration, code-index
@@ -51,6 +53,7 @@ from encre.protocol.handlers.workspace_store import (
     _make_workspace_id,
     _normalize_workspace_icon,
     _remove_workspace_icon_file,
+    _save_index_metadata,
     _save_workspace_config,
     _save_workspaces,
     _workspaces_with_session_counts,
@@ -233,20 +236,27 @@ class WorkspacesHandlers:
         # Get index state for immediate display in sidebar tree
         idx_status = "idle"
         idx_files = 0
+        idx_progress = 0
         if self._index_manager:
             # Check if index is already cached (ready)
             cached_status = self._index_manager.get_status(ws_id) if hasattr(self._index_manager, "get_status") else {}
             if cached_status.get("status") == "ready":
                 idx_status = "ready"
                 idx_files = cached_status.get("files", 0)
+                idx_progress = cached_status.get("progress", 100)
+                # Persist metadata so the progress file is not lost on the next
+                # workspace open (the subprocess-spawn path clears it).
+                _save_index_metadata(ws_id, idx_files)
             else:
                 task = self._index_manager.get_task(ws_id) if hasattr(self._index_manager, "get_task") else None
                 if task is not None and not task.done():
                     idx_status = "indexing"
+                    idx_progress = cached_status.get("progress", 0)
         await self._send(ws, "workspace_opened",
             path=folder_path, name=os.path.basename(folder_path),
             id=ws_id, workspaces=_workspaces_with_session_counts(workspaces),
-            index_status=idx_status, index_files=idx_files)
+            index_status=idx_status, index_files=idx_files,
+            progress=idx_progress)
 
         sess = info.agent.session
         sess.ensure_artifacts_from_messages()
@@ -284,11 +294,15 @@ class WorkspacesHandlers:
                 break
         workspaces = [w for w in workspaces if w["path"] != msg.path]
         _save_workspaces(workspaces)
-        # Clean up workspace session data on disk
+        # Clean up the whole workspace tree on disk through the unified
+        # lifecycle entry point: icon, every session directory and the index
+        # caches are removed together.  The previous code rmtree'd the folder
+        # while relying on a separate index pass, which is how a removed
+        # workspace could leave an empty folder + index.json behind.
         ws_id = removed_ws["id"] if removed_ws and removed_ws.get("id") else _make_workspace_id(msg.path)
-        ws_dir = _get_workspace_dir(ws_id)
-        if os.path.isdir(ws_dir):
-            shutil.rmtree(ws_dir, ignore_errors=True)
+        from encre.lifecycle import purge_workspace
+
+        purge_workspace(ws_id)
         await self._send(ws, "workspace_removed", path=msg.path, workspaces=_workspaces_with_session_counts(workspaces))
         # If the removed workspace was active, drop back to the
         # normal context and push the unified snapshot; otherwise

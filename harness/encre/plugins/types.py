@@ -29,6 +29,7 @@ from typing import Any
 class PluginSource(Enum):
     """Where a plugin is loaded from, also driving discovery priority."""
     BUNDLED = "bundled"       # Ships with encre
+    MANDATORY = "mandatory"   # Hardcoded core tools, cannot be disabled
     INSTALLED = "installed"   # pip-installed third-party
     PROJECT = "project"       # Project-local plugin
     USER = "user"             # User-local plugin
@@ -44,8 +45,11 @@ class PluginManifest:
     license: str = "MIT"
     homepage: str = ""
     source: PluginSource = PluginSource.INSTALLED
+    # Plugin tier: "mandatory" (cannot be uninstalled), "system-default"
+    # (ships with the app, removable/reinstallable), "user" (third-party).
+    tier: str = "user"
     dependencies: list[str] = field(default_factory=list)
-    min_yim_version: str = "0.1.0"
+    min_ea_version: str = "0.1.0"
     max_yim_version: str = ""
     tags: list[str] = field(default_factory=list)
 
@@ -78,8 +82,9 @@ class PluginManifest:
             "homepage": self.homepage,
             # Serialise the enum as its string value for portability
             "source": self.source.value,
+            "tier": self.tier,
             "dependencies": self.dependencies,
-            "min_yim_version": self.min_yim_version,
+            "min_ea_version": self.min_ea_version,
             "max_yim_version": self.max_yim_version,
             "tags": self.tags,
             "provides_tools": self.provides_tools,

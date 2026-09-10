@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Inspired by the Hermes Agent project (https://github.com/NousResearch/hermes-agent.git).
 Thanks to Hermes Agent for the inspiration on this module.
@@ -386,7 +388,7 @@ def build_approval_keyboard(session_key: str, *, allow_permanent: bool = True) -
     buttons = [
         # Primary action: allow once (blue, single-use).
         _make_callback_button(
-            btn_id="allow", label="鉁?鍏佽涓€娆?, visited_label="宸插厑璁?,
+            btn_id="allow", label="Allow once", visited_label="Already allowed",
             data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-once",
             style=1, group_id="approval",
         )
@@ -394,13 +396,13 @@ def build_approval_keyboard(session_key: str, *, allow_permanent: bool = True) -
     if allow_permanent:
         # Secondary action: allow always (blue, single-use).
         buttons.append(_make_callback_button(
-            btn_id="always", label="猸?濮嬬粓鍏佽", visited_label="宸插缁堝厑璁?,
+            btn_id="always", label="Always allow", visited_label="Already allowed",
             data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-always",
             style=1, group_id="approval",
         ))
     # Tertiary action: deny (grey, single-use 鈥?visually distinct).
     buttons.append(_make_callback_button(
-        btn_id="deny", label="鉂?鎷掔粷", visited_label="宸叉嫆缁?,
+        btn_id="deny", label="Deny", visited_label="Already denied",
         data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:deny",
         style=0, group_id="approval",
     ))
@@ -430,8 +432,8 @@ def build_update_prompt_keyboard() -> InlineKeyboard:
                     # Confirm button (blue).
                     _make_callback_button(
                         btn_id="yes",
-                        label="鉁?纭",
-                        visited_label="宸茬‘璁?,
+                        label="Confirm",
+                        visited_label="Confirmed",
                         data=f"{UPDATE_PROMPT_PREFIX}y",
                         style=1,
                         group_id="update_prompt",
@@ -439,8 +441,8 @@ def build_update_prompt_keyboard() -> InlineKeyboard:
                     # Cancel button (grey).
                     _make_callback_button(
                         btn_id="no",
-                        label="鉁?鍙栨秷",
-                        visited_label="宸插彇娑?,
+                        label="Cancel",
+                        visited_label="Cancelled",
                         data=f"{UPDATE_PROMPT_PREFIX}n",
                         style=0,
                         group_id="update_prompt",
@@ -535,7 +537,7 @@ def _build_exec_text(req: ApprovalRequest) -> str:
     if req.description:
         lines.append(f"馃摑 {req.description}")
     lines.append("")
-    lines.append(f"鈴憋笍 瓒呮椂: {req.timeout_sec} 绉?)
+    lines.append(f"⏱️ Timeout: {req.timeout_sec}s")
     return "\n".join(lines)
 
 
@@ -568,7 +570,7 @@ def _build_plugin_text(req: ApprovalRequest) -> str:
     if req.tool_name:
         lines.append(f"馃敡 宸ュ叿: {req.tool_name}")
     lines.append("")
-    lines.append(f"鈴憋笍 瓒呮椂: {req.timeout_sec} 绉?)
+    lines.append(f"⏱️ Timeout: {req.timeout_sec}s")
     return "\n".join(lines)
 
 

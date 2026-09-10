@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Feishu document comment access-control rules.
 
@@ -111,8 +113,9 @@ class _MtimeCache:
             return self._data
 
         try:
-            with open(self._path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            from encre.secure_io import read_json
+
+            data = read_json(self._path, default={})
             if not isinstance(data, dict):
                 data = {}
         except (json.JSONDecodeError, OSError):
@@ -254,11 +257,9 @@ def _load_pairing_approved() -> set:
 
 
 def _save_pairing(data: dict) -> None:
-    PAIRING_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = PAIRING_FILE.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    tmp.replace(PAIRING_FILE)
+    from encre.secure_io import write_json
+
+    write_json(PAIRING_FILE, data)
     # Invalidate cache so next load picks up change
     _pairing_cache._mtime = 0.0
     _pairing_cache._data = None

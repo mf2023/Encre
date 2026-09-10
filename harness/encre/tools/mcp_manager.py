@@ -215,11 +215,11 @@ class MCPManager:
         p = pathlib.Path(path)
         if not p.is_file():
             return []
-        with p.open("r", encoding="utf-8") as fh:
-            try:
-                raw = json.load(fh)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"MCP config {path} is not valid JSON: {exc}") from exc
+        from encre.secure_io import read_json
+
+        raw = read_json(path, default=None)
+        if raw is None:
+            raise ValueError(f"MCP config {path} is not valid JSON")
         return MCPManager.parse_config(raw)
 
     def bind_config_file(self, path: str) -> None:
@@ -508,7 +508,7 @@ def default_mcp_config_path() -> str:
         from encre.config import get_data_dir
         return str(pathlib.Path(get_data_dir()) / "mcp.json")
     except Exception:
-        return str(pathlib.Path.home() / ".encre" / "mcp.json")
+        return str(pathlib.Path.home() / ".dunimd" / "encre" / "mcp.json")
 
 
 async def bootstrap_mcp_servers(

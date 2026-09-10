@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for the gateway lifecycle hook registry (Phase 3).
 
 This is distinct from ``test_hooks.py`` (which covers the tool-execution hook

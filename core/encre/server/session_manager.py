@@ -41,6 +41,8 @@ A session is represented by the :class:`SessionInfo` dataclass, which
 links a session id, its agent, the running task, and metadata.
 """
 
+from __future__ import annotations
+
 import asyncio
 import threading
 import contextlib
@@ -58,7 +60,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from encre.config import EncreConfig, get_data_dir
 from encre.crypto import decrypt, encrypt
 from encre.session import EncreSession, _atomic_write_text
-from encre.tools.defaults import register_default_tools
 from encre.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -99,9 +100,8 @@ class SessionInfo:
 
 
 def _create_default_tool_registry() -> ToolRegistry:
-    """Build a fresh ToolRegistry populated with the built-in tools."""
-    registry = ToolRegistry()
-    return register_default_tools(registry)
+    """Build a fresh ToolRegistry (tools are injected by the agent's plugins)."""
+    return ToolRegistry()
 
 
 _SHARED_DEFAULT_TOOL_REGISTRY: ToolRegistry | None = None
@@ -146,7 +146,6 @@ class SessionManager:
         self._sessions_changed_callbacks: list[Callable[[], None]] = []
         self._dir_sessions: dict[str, dict[str, SessionInfo]] = {}
         self._dir_bootstrapped: dict[str, bool] = {}
-        self._unnamed_counter = 0
         if sessions_dir:
             self._sessions_dir = sessions_dir
             pathlib.Path(sessions_dir).mkdir(parents=True, exist_ok=True)
@@ -396,9 +395,21 @@ class SessionManager:
             # the rest of this index entry.
             "name": info.metadata.get("name", existing.get("name", "")),
             "archived": archived,
+            # Ephemeral marker so every index reader (query_index,
+            # _list_all_sessions, startup purge) can exclude temp chats
+            # even if some path ever writes an entry for one.
+            "temp_chat": bool(
+                info.metadata.get("temp_chat") or sess.metadata.get("temp_chat")
+            ),
         }
 
     def _index_add(self, info: SessionInfo, preview: str = "") -> None:
+        # Temp chat sessions must never enter the on-disk index.
+        sess = getattr(info.agent, "session", None)
+        if info.metadata.get("temp_chat") or (
+            sess is not None and sess.metadata.get("temp_chat")
+        ):
+            return
         self._index[info.session_id] = self._make_index_entry(info, preview)
         self._index_dirty = True
 
@@ -428,6 +439,7 @@ class SessionManager:
         """Scan sessions_dir for existing session directories and rebuild/repair index."""
         if self._bootstrapped:
             return
+        import shutil
         try:
             sessions_dir = self._get_sessions_dir()
             repaired = False
@@ -577,14 +589,14 @@ class SessionManager:
             mode = AgentMode.WORKSPACE if (config.workspace or "").strip() else AgentMode.GENERAL
         tool_registry = _clone_tool_registry()
         from encre.agent import EncreAgent
-        agent = EncreAgent(config=config, tool_registry=tool_registry, mode=mode)
+        agent = EncreAgent(config=config, tool_registry=tool_registry, mode=mode, defer_plugins=True)
         agent.telemetry.session_id = session_id
         info = SessionInfo(session_id=session_id, agent=agent)
         info.sessions_dir = self._get_sessions_dir()
-        # Assign a placeholder name immediately so the sidebar shows
-        # "Unnamed" / "Unnamed 2" / ... instead of the raw first message.
-        self._unnamed_counter += 1
-        placeholder_name = "Unnamed" if self._unnamed_counter == 1 else f"Unnamed {self._unnamed_counter}"
+        # Assign a placeholder name immediately so the sidebar shows a
+        # "New Session <timestamp>" label instead of the raw first message.
+        from datetime import datetime
+        placeholder_name = f"New Session {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         info.metadata["name"] = placeholder_name
         self._sessions[session_id] = info
         self._fire_sessions_changed()
@@ -696,7 +708,7 @@ class SessionManager:
                     from encre.modes.mode_profiles import AgentMode
                     mode = AgentMode.WORKSPACE if (cfg.workspace or "").strip() else AgentMode.GENERAL
                 from encre.agent import EncreAgent
-                agent = EncreAgent(config=cfg, tool_registry=tool_registry, mode=mode)
+                agent = EncreAgent(config=cfg, tool_registry=tool_registry, mode=mode, defer_plugins=True)
                 agent.telemetry.session_id = session_id
                 agent.session = EncreSession.load_from_dir(str(dir_path), cfg)
                 agent.loop.session = agent.session
@@ -757,7 +769,6 @@ class SessionManager:
 
     def delete_session_from_disk(self, session_id: str) -> bool:
         """Physically delete a session from memory, disk, and index."""
-        import shutil
         removed = False
         # Cancel any pending debounced save so it cannot recreate the entry.
         pending_save = self._save_tasks.pop(session_id, None)
@@ -786,15 +797,22 @@ class SessionManager:
         if not sessions_dir:
             sessions_dir = self._get_sessions_dir()
 
-        dir_path = pathlib.Path(sessions_dir) / session_id
-        if dir_path.exists():
-            shutil.rmtree(str(dir_path), ignore_errors=True)
+        # Unified lifecycle entry point: the session folder *plus* every
+        # derived store keyed by this session id (telemetry / rollback /
+        # sub_agents / spillover).  Deleting only the folder -- the previous
+        # behaviour -- left all four behind, which is how a deleted session
+        # kept "ghost" data around on disk.
+        from encre.lifecycle import purge_session
+
+        purge_report = purge_session(session_id, sessions_dir=sessions_dir)
+        if purge_report.removed:
             removed = True
 
         # Remove from EVERY directory index that carries the session 鈥?a
         # session can appear in multiple workspace indexes (stale entries),
         # and leaving any behind would resurrect it in that sidebar.
         active_dir = self._get_sessions_dir()
+        had_index = False
         for dir_path in self._all_sessions_dirs():
             index = self._load_index_for_dir(dir_path)
             if session_id not in index:
@@ -1023,6 +1041,21 @@ class SessionManager:
                     target_dir = cached.sessions_dir or self._get_sessions_dir()
                     info = cached
                     break
+        # Temp chat sessions are ephemeral: NEVER write them into any
+        # on-disk index (auto-name used to leak them here, and the entry
+        # lacked the temp_chat flag so every list filter missed it).
+        if info is not None and (
+            info.metadata.get("temp_chat")
+            or (
+                hasattr(info.agent, "session")
+                and info.agent.session
+                and info.agent.session.metadata.get("temp_chat")
+            )
+        ):
+            info.metadata["name"] = new_name
+            if manual:
+                info.metadata["name_manually_renamed"] = True
+            return True
         if not target_dir:
             active_dir = self._get_sessions_dir()
             if (pathlib.Path(active_dir) / session_id).is_dir():
@@ -1165,6 +1198,17 @@ class SessionManager:
         with self._lock:
             index_items = list(self._index.items())
         for sid, entry in index_items:
+            if entry.get("temp_chat"):
+                continue
+            # Skip orphan index entries: a legit session either has its
+            # directory on disk or is live in memory (entry written before
+            # the first save).  Orphans are temp chats leaked by old bugs.
+            with self._lock:
+                in_memory = sid in self._sessions or any(
+                    sid in d for d in self._dir_sessions.values()
+                )
+            if not in_memory and not os.path.isdir(os.path.join(sessions_dir, sid)):
+                continue
             # Always prefer the canonical last_message_at from meta.json so
             # the displayed timestamp does not get rewritten on every click.
             # Fall back to the persisted index value, then to 0.

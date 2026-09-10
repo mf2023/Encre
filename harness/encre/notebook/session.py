@@ -37,7 +37,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 
 @dataclass

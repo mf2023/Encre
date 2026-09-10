@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for gateway outbound delivery (Phase 2b).
 
@@ -78,7 +80,7 @@ class _Manager:
         self._instances = instances
 
 
-# 鈹€鈹€ DeliveryTarget.parse 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- DeliveryTarget.parse -------------------------------------------------
 
 
 def test_parse_explicit_target():
@@ -129,7 +131,7 @@ def test_parse_empty_chat_falls_back_to_none():
     assert t.chat_id is None
 
 
-# 鈹€鈹€ deliver 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- deliver ------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -174,12 +176,17 @@ async def test_deliver_origin_fallback_routes_to_origin_chat():
     """
     a = _Adapter()
     router = DeliveryRouter(_Manager({"telegram": a}))
+    # First deliver with targets=None and origin set: routes to origin chat '999'.
     results = await router.deliver("hello", None, origin=("telegram", "999"))
+    assert len(results) == 1
+    assert results[0].success is True
+    assert a.sent == [("999", "hello")]
+    # Explicit targets override origin: telegram ok, discord missing.
     results = await router.deliver("hello", ["telegram:1", "discord:2"])
     assert len(results) == 2
     assert results[0].success is True   # telegram ok
-    assert results[1].success is False   # discord failed
-    assert good.sent == [("1", "hello")]
+    assert results[1].success is False  # discord failed
+    assert a.sent == [("999", "hello"), ("1", "hello")]
 
 
 @pytest.mark.asyncio
@@ -226,7 +233,7 @@ async def test_deliver_bare_adapter_no_push_target_reports_error():
     assert "chat_id" in results[0].error
 
 
-# 鈹€鈹€ truncation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- truncation ---------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -295,7 +302,7 @@ async def test_deliver_chunking_adapter_gets_full_payload(tmp_path):
     assert a.sent[0][1] == content  # full payload, no truncation
 
 
-# 鈹€鈹€ failure isolation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- failure isolation --------------------------------------------------
 
 
 @pytest.mark.asyncio

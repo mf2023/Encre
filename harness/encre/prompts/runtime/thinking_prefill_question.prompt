@@ -1,5 +1,7 @@
 ---
 name: thinking_prefill_question
+version: 1
+name: thinking_prefill_question
 priority: 100
 condition: ~
 ---

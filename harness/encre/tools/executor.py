@@ -28,6 +28,8 @@ preparing tool calls, permission checking, gating, execution, and
 post-result processing (artifacts, references, telemetry).
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import json

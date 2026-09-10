@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for AgentEvent union, BackendEvent union, and factory function variants."""
 
@@ -47,9 +49,9 @@ class TestAgentEventUnion:
     """Engineered to validate that every AgentEvent member type passes
     isinstance checks, ensuring the union discriminates correctly at runtime.
 
-    This test class exercises 9 event subtypes 鈥?TextDelta, ThinkingDelta,
+    This test class exercises 9 event subtypes — TextDelta, ThinkingDelta,
     ToolCallStart, ToolCallDelta, ToolCallEnd, ToolProgress, ToolResult,
-    PermissionRequest, and Finish 鈥?across individual scenarios to confirm
+    PermissionRequest, and Finish — across individual scenarios to confirm
     that the union's structural typing does not accidentally exclude any
     branch. The design follows the invariant that union members must be
     individually instantiable and type-checkable so that the event bus can
@@ -161,8 +163,9 @@ class TestBackendEventUnion:
     """Engineered to validate that every BackendEvent member type passes
     isinstance checks, ensuring the backend-side union discriminates correctly.
 
-    This test class exercises 6 event subtypes 鈥?BackendText, BackendThinking,
-    BackendToolCall, BackendToolCallDelta, BackendFinish, and BackendError 鈥?    across 7 scenarios to confirm the backend event pipeline can branch on
+    This test class exercises 6 event subtypes — BackendText, BackendThinking,
+    BackendToolCall, BackendToolCallDelta, BackendFinish, and BackendError —
+    across 7 scenarios to confirm the backend event pipeline can branch on
     subtype without missing cases. The design follows the invariant that
     backend events mirror the agent event shape but carry additional fields
     (e.g. signature_delta for thinking) that must remain accessible.
@@ -385,8 +388,8 @@ class TestFinishReasonVariants:
     Finish instance with the correct reason field, ensuring no literal is
     silently rejected or mis-mapped.
 
-    This test class exercises all five finish reasons 鈥?stop, tool_calls,
-    error, max_tokens, cancelled 鈥?across individual scenarios to confirm
+    This test class exercises all five finish reasons — stop, tool_calls,
+    error, max_tokens, cancelled — across individual scenarios to confirm
     the literal-to-field mapping is bijective. The design follows the
     invariant that each reason must round-trip through construction and
     back without transformation so that pattern matches on reason are stable.
@@ -430,7 +433,7 @@ class TestFinishReasonVariants:
         that reason, confirming the token-limit branch.
 
         The test exercises construction and asserts reason == 'max_tokens'
-        because token-limit exits require different handling 鈥?the turn is
+        because token-limit exits require different handling — the turn is
         incomplete and the caller may need to resume with a larger budget.
         """
         f = Finish(reason="max_tokens")
@@ -452,8 +455,8 @@ class TestToolResultPatterns:
     """Engineered to validate the success and error patterns of ToolResult,
     including edge cases around empty content and large payloads.
 
-    This test class exercises four scenarios 鈥?success with content, error,
-    empty content, and large content 鈥?to confirm the ToolResult dataclass
+    This test class exercises four scenarios — success with content, error,
+    empty content, and large content — to confirm the ToolResult dataclass
     preserves all fields and that the is_error flag correctly separates the
     two output channels. The design follows the invariant that ToolResult
     must handle arbitrary content sizes because tool outputs range from empty
@@ -485,7 +488,7 @@ class TestToolResultPatterns:
 
     def test_verify_tool_result_empty_content_is_valid_success(self):
         """Validate that ToolResult with empty content and is_error=False is
-        a valid success state, confirming zero-byte outputs are not璇?treated as errors.
+        a valid success state, confirming zero-byte outputs are not treated as errors.
 
         The test exercises construction with "" and is_error=False and asserts
         both fields match because some tools (e.g. touch, mkdir) produce no

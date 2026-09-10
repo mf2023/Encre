@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Gateway streaming consumer -- bridges agent events to platform delivery.
 
 The agent runtime emits a stream of events (``TextDelta``, ``ToolResult``,

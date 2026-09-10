@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Photon Spectrum (iMessage) platform adapter for Encre.
 
@@ -145,7 +147,7 @@ from encre.gateway.platforms.base import (
 )
 
 from encre.gateway.platforms.helpers import strip_markdown
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 
 

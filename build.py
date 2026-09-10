@@ -58,7 +58,7 @@ IS_WIN = platform.system() == "Windows"
 EXT = ".pyd" if IS_WIN else ".dylib" if platform.system() == "Darwin" else ".so"
 SERVER_EXE = "encre-server.exe" if IS_WIN else "encre-server"
 
-# Locale alias map: user-friendly short names 鈫?canonical registry keys.
+# Locale alias map: user-friendly short names →canonical registry keys.
 # "en" is always injected as a mandatory fallback regardless of input.
 LOCALE_ALIASES: dict[str, str] = {
     "cn": "zh",
@@ -80,14 +80,18 @@ LOCALE_ALIASES: dict[str, str] = {
 ALL_REGISTRY_LOCALES = ["zh", "en", "zh-Hant", "ja", "ko", "de", "es", "pt", "tr", "ar", "he"]
 
 def run(cmd, **kw):
-    """Run a shell command from the repository root, echoing it first.
+    """Run a shell command, echoing it first.
 
     Args:
         cmd: The shell command string to execute.
         **kw: Extra keyword arguments forwarded to :func:`subprocess.run`.
+              ``cwd`` may be given to override the default repository root
+              (used e.g. for ``python -m build`` which would otherwise
+              resolve to this repo's own ``build.py``).
     """
     print(f"$ {cmd}")
-    subprocess.run(cmd, shell=True, check=True, cwd=ROOT, **kw)
+    cwd = kw.pop("cwd", ROOT)
+    subprocess.run(cmd, shell=True, check=True, cwd=cwd, **kw)
 
 def install_deps():
     """Install build-time dependencies for Python and Node.js.
@@ -111,8 +115,12 @@ def build_wheels():
     print("\n=== Building Python library wheels ===")
     wheels = ROOT / "dist" / "wheels"
     wheels.mkdir(parents=True, exist_ok=True)
+    # Run from a neutral working directory: `python -m build` must resolve to
+    # the PyPA `build` package, not this repo's own build.py.
+    neutral = ROOT / "build"
+    neutral.mkdir(parents=True, exist_ok=True)
     for proj in ("harness", "core"):
-        run(f'"{sys.executable}" -m build --wheel --outdir "{wheels}" ./{proj}')
+        run(f'"{sys.executable}" -m build --wheel --outdir "{wheels}" "{ROOT / proj}"', cwd=neutral)
     for whl in sorted(wheels.glob("*.whl")):
         print(f"  >>> {whl.name}")
 
@@ -121,7 +129,7 @@ def _resolve_locales(cli_input: str) -> list[str]:
     """Resolve a --locales CLI value into a sorted list of canonical locale keys.
 
     Rules:
-      - Aliases in LOCALE_ALIASES are expanded (e.g. "cn" 鈫?"zh").
+      - Aliases in LOCALE_ALIASES are expanded (e.g. "cn" →"zh").
       - "en" is always included as a mandatory fallback.
       - "all" selects every locale in ALL_REGISTRY_LOCALES.
       - Input is comma-separated (e.g. "cn,ja" or "all").
@@ -184,7 +192,10 @@ def build(locale_list: list[str] | None = None) -> None:
 
     # 2. Compile the Rust native extension in release mode for the encre-py crate.
     run(f"cd native && cargo build --release -p encre-py", env=env)
-    src = next(iter(sorted((NATIVE/"target"/"release").glob("_native*"))), None)
+    # Pick the real compiled binary: skip .d/.exp/.lib/.pdb auxiliary files.
+    exts = (".dll", ".pyd", ".so", ".dylib")
+    src = next((f for f in sorted((NATIVE/"target"/"release").glob("_native*"))
+                if f.suffix in exts), None)
     if src: shutil.copy2(src, HARNESS_PKG / f"_native{EXT}")
 
     # 3. Build importable wheels for the harness and core Python libraries.
@@ -210,9 +221,10 @@ def build(locale_list: list[str] | None = None) -> None:
     run(cmd)
 
     # 8. Copy the produced installer(s) up to the repository root for easy access.
-    for f in (DESKTOP/"release").glob("Encre*"):
-        shutil.copy2(f, ROOT / f.name)
-        print(f"  >>> {f.name}")
+    for pattern in ("EA Setup*", "Encre*Setup*"):
+        for f in (DESKTOP/"release").glob(pattern):
+            shutil.copy2(f, ROOT / f.name)
+            print(f"  >>> {f.name}")
 
 def build_server():
     """Bundle the Python backend into a standalone executable via PyInstaller.
@@ -236,18 +248,39 @@ def build_server():
         shutil.rmtree(SERVER_DIST)
     SERVER_DIST.mkdir(parents=True, exist_ok=True)
 
-    # Collect data files: prompts, skills, dangerous_commands.txt
-    # (all shipped from the harness tree)
-    datas = [
-        (str(HARNESS_PKG / "prompts"), "encre/prompts"),
-        (str(HARNESS_PKG / "skills" / "builtin"), "encre/skills/builtin"),
-        (str(HARNESS_PKG / "dangerous_commands.txt"), "encre"),
-    ]
+    # Ship the complete encre source tree (harness/ + core/) as raw data.
+    # The encre package is a pkgutil namespace split across two trees:
+    # harness/encre (library) and core/encre (server/gateway/channels/spec/...).
+    # PyInstaller's static modulegraph cannot follow pkgutil.extend_path across
+    # the trees, and enumerating every module as a --hidden-import blows past
+    # the Windows command-line length limit.  Instead we stage one merged tree
+    # on disk and let the runtime extend_path in encre/__init__.py resolve
+    # every module (and ship the data files: prompts/, skills/, dangerous
+    # commands, _native.pyd) from <bundle>/encre/ at startup.  __pycache__ and
+    # egg-info are stripped from the staged copy.
+    encre_stage = ROOT / "build" / "encre_stage"
+    if encre_stage.exists():
+        shutil.rmtree(encre_stage)
+    for src in (ROOT / "harness" / "encre", ROOT / "core" / "encre"):
+        if src.is_dir():
+            shutil.copytree(src, encre_stage, dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
+    datas = [(str(encre_stage), "encre")]
 
-    # Include the Rust native extension if present
-    native_ext = HARNESS_PKG / f"_native{EXT}"
-    if native_ext.exists():
-        datas.append((str(native_ext), "encre"))
+    # Ship the entire EA packages tree.  At runtime the plugin registry
+    # auto-scans <bundle>/ea_tools/ (encre.plugins.ea_scan): reads each
+    # ea-tool-* package's pyproject.toml, imports its plugin module from
+    # the shipped source, and loads its bundled skills/.  No package is
+    # hardcoded here — dropping a new package into harness/ea_tools/ ships it
+    # automatically.  __pycache__ / egg-info are stripped from the copy.
+    ea_src = ROOT / "harness" / "ea_tools"
+    if ea_src.is_dir():
+        ea_stage = ROOT / "build" / "ea_tools_stage"
+        if ea_stage.exists():
+            shutil.rmtree(ea_stage)
+        shutil.copytree(ea_src, ea_stage,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
+        datas.append((str(ea_stage), "ea_tools"))
 
     # Build --add-data arguments
     sep = ";" if IS_WIN else ":"
@@ -255,35 +288,11 @@ def build_server():
     for src, dst in datas:
         data_args.extend(["--add-data", f"{src}{sep}{dst}"])
 
-    # Hidden imports that PyInstaller may not detect automatically
+    # No encre.* hidden imports are needed: the entire merged source tree is
+    # shipped as raw data and loaded from disk at runtime (see datas above),
+    # so PyInstaller only needs the third-party modules that belong in the
+    # PYZ.  Everything encre.* resolves from <bundle>/encre/ via extend_path.
     hidden_imports = [
-        "encre.adapters",
-        "encre.backends",
-        "encre.backends.registry",
-        "encre.channels",
-        "encre.tools",
-        "encre.tools.builtin",
-        "encre.tools.discovery",
-        "encre.compact",
-        "encre.memdir",
-        "encre.swarm",
-        "encre.evolution",
-        "encre.hooks",
-        "encre.sandbox",
-        "encre.lsp",
-        "encre.codebase",
-        "encre.gateway",
-        "encre.server",
-        "encre.transport",
-        "encre.transport.ws",
-        "encre.transport.websocket_channel",
-        "encre.transport.http.openai_api",
-        "encre.server.admin",
-        "encre.server.session_manager",
-        "encre.prompts",
-        "encre.skills",
-        "encre.soul",
-        "encre.profile",
         "tiktoken_ext",
         "tiktoken_ext.openai_public",
         "numpy",
@@ -309,8 +318,10 @@ def build_server():
 
     # Module search path: PyInstaller must see BOTH source trees so the
     # pkgutil-extended "encre" package resolves harness and core subpackages.
+    # EA packages need no --paths/--hidden-import: they ship as raw source
+    # data and the runtime scanner inserts their dirs into sys.path itself.
     path_args = []
-    for p in (ROOT / "harness", ROOT / "core"):
+    for p in [ROOT / "harness", ROOT / "core"]:
         path_args.extend(["--paths", str(p)])
 
     # Run PyInstaller
@@ -335,9 +346,9 @@ def build_server():
     output_exe = SERVER_DIST / "encre-server" / SERVER_EXE
     if output_exe.exists():
         size_mb = output_exe.stat().st_size / (1024 * 1024)
-        print(f"  鉁?Backend bundled: {output_exe} ({size_mb:.1f} MB)")
+        print(f"  [OK] Backend bundled: {output_exe} ({size_mb:.1f} MB)")
     else:
-        print(f"  鉁?ERROR: Expected output not found at {output_exe}")
+        print(f"  [!!] ERROR: Expected output not found at {output_exe}")
         sys.exit(1)
 
 
@@ -356,7 +367,8 @@ def clean():
               DESKTOP/"renderer"/"bundle.js", DESKTOP/"renderer"/"xterm.css",
               DESKTOP/"release"]:
         if p.exists(): shutil.rmtree(p) if p.is_dir() else p.unlink()
-    for f in ROOT.glob("Encre*Setup*"): f.unlink()
+    for pattern in ("Encre*Setup*", "EA Setup*"):
+        for f in ROOT.glob(pattern): f.unlink()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Encre build orchestrator")

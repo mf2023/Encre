@@ -21,7 +21,7 @@ The following table lists which Encre Agent release lines currently receive secu
 |---|---|---|---|
 | `0.5.x` (current pre-release) | 🟡 Pre-release | Yes — best-effort, fast turnaround | Until `0.6.0` ships |
 | `0.4.x` | ❌ End-of-life | No | Please upgrade |
-| `< 0.4.1` | ❌ End-of-life | No | Please upgrade |
+| `< 0.4.3` | ❌ End-of-life | No | Please upgrade |
 
 Users are encouraged to track `master` or the latest tagged release. Because Encre Agent is distributed primarily as a single repo (cloned and `pip install -e .`-ed) rather than as a PyPI package, "upgrade" means:
 
@@ -72,7 +72,7 @@ A useful report contains:
 **Title:** `<one-line summary>`
 
 **Layer:** Python / Rust / Desktop / Docs
-**Affected versions:** 0.4.1 (commit <hash>)
+**Affected versions:** 0.4.3 (commit <hash>)
 **Severity (your estimate):** Critical / High / Medium / Low
 
 **Description:**

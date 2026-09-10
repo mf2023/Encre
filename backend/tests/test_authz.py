@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for gateway authorization (Phase 2a).
 
@@ -51,7 +53,7 @@ from encre.gateway.authz import (
 from encre.gateway.pairing import PairingStore
 
 
-# 鈹€鈹€ PairingStore 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- PairingStore ----
 
 @pytest.fixture
 def pairing(tmp_path):
@@ -155,7 +157,7 @@ def test_verify_pairing_is_per_platform_user(pairing):
     assert pairing.is_paired("discord", "42") is False, "Pairing must be scoped to the originating platform."
 
 
-# 鈹€鈹€ AuthorizationChecker 5-layer precedence 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- AuthorizationChecker 5-layer precedence ----
 
 
 def _checker(settings=None, pairing=None, monkeypatch_env=None):
@@ -374,7 +376,7 @@ def test_verify_authz_no_user_id_denies_without_allow_all(pairing):
     assert r.layer == LAYER_DENY, "Denial must resolve at the DENY layer."
 
 
-# 鈹€鈹€ handle_message integration: /pair + reject 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# ---- handle_message integration: /pair + reject ----
 
 
 class _AuthzAdapter(BasePlatformAdapter):
@@ -410,7 +412,7 @@ async def test_verify_handle_message_rejects_unauthorized(tmp_path):
 
     The test configures an allowlist containing only "legit-user" and sends a message
     from "intruder". It asserts the message handler is never invoked (dispatched is empty)
-    and that a reject notice was sent containing either "not authorized" or the 鉀?emoji.
+    and that a reject notice was sent containing either "not authorized" or the ❌ emoji.
     """
     a = _AuthzAdapter()
     store = PairingStore(path=tmp_path / "p.json")
@@ -425,7 +427,7 @@ async def test_verify_handle_message_rejects_unauthorized(tmp_path):
     await a.handle_message(_event("hi", user_id="intruder"))
     assert dispatched == [], "Unauthorized message must not reach the handler."
     assert a.sent, "A reject notice must be sent to the unauthorized user."
-    assert "not authorized" in a.sent[0][1].lower() or "鉀? in a.sent[0][1], \
+    assert "not authorized" in a.sent[0][1].lower() or "❌" in a.sent[0][1], \
         "Reject notice must mention authorization failure."
     store.close()
 
@@ -448,7 +450,7 @@ async def test_verify_handle_message_pair_redeem_flow(tmp_path):
     # 1. Intruder tries /pair with an unknown code -> rejected, not paired.
     await a.handle_message(_event("/pair WRONG", user_id="intruder"))
     assert store.is_paired("telegram", "intruder") is False, "Failed redeem must not create a pairing."
-    assert any("Invalid" in c or "鉂? in c for _, c in a.sent), "Intruder must receive an invalid-code notice."
+    assert any("Invalid" in c or "❌" in c for _, c in a.sent), "Intruder must receive an invalid-code notice."
 
     a.sent.clear()
     # 2. Mint a code via an admin with global allow-all.
@@ -466,7 +468,7 @@ async def test_verify_handle_message_pair_redeem_flow(tmp_path):
     # 3. New user redeems the code -> paired + authorized.
     await a2.handle_message(_event(f"/pair {code}", user_id="newuser"))
     assert store.is_paired("telegram", "newuser") is True, "Redeem must establish the pairing."
-    assert any("Paired" in c or "鉁? in c for _, c in a2.sent), "New user must receive a pairing-success notice."
+    assert any("Paired" in c or "✅" in c for _, c in a2.sent), "New user must receive a pairing-success notice."
 
     a2.sent.clear()
     # 4. Now the paired newuser can send a normal message -> dispatched.

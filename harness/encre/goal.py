@@ -59,7 +59,6 @@ from encre.safety import EncreSafetyEngine
 from encre.session import EncreSession
 from encre.skills.registry import EncreSkillRegistry
 from encre.telemetry import EncreTelemetry
-from encre.tools.defaults import register_default_tools
 from encre.tools.registry import ToolRegistry
 from encre.utils.types import (
     TextDelta,
@@ -143,8 +142,6 @@ class EncreGoalRunner:
     ) -> None:
         self.config = config
         self.tool_registry = tool_registry or ToolRegistry()
-        if not self.tool_registry.list_tools():
-            register_default_tools(self.tool_registry)
         self.hook_system = hook_system or EncreHookSystem()
         self.safety = safety or EncreSafetyEngine(config)
         self.memory_system = memory_system

@@ -138,7 +138,6 @@
   text-align: left;
   font-family: inherit;
   user-select: none;
-  margin-bottom: 2px;
 }
 .nav-item:last-child,
 .settings-nav-item:last-child,
@@ -249,8 +248,7 @@
 .context-menu-divider { margin: 4px 8px; }
 .settings-nav-divider {
   background: var(--text-muted);
-  opacity: 0.15;
-  margin: 5px 0;
+  opacity: 0.35;
 }
 .settings-item-divider { margin: 0 18px; }
 .index-card-divider    { margin: 0; }
@@ -271,10 +269,15 @@
 .model-card    { padding: 10px 14px; transition: border-color var(--transition-base); }
 
 /* 目标模型选择组件的容器：直接套用多模态切换卡片的背景（bg-secondary），
-   深浅色主题无需单独处理。 */
+    深浅色主题无需单独处理。 */
 .model-selection-card {
   background: var(--bg-secondary);
   border-radius: var(--radius-md);
+}
+.model-selection-card--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
 }
 
 
@@ -860,8 +863,8 @@ body.splash-mode #btn-bell {
   line-height: 1;
   user-select: none;
   -webkit-app-region: no-drag;
-  transition: background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-              color 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background var(--transition-fast),
+              color var(--transition-fast);
 }
 .seg .seg-item:hover:not(.active) {
   color: var(--seg-text-hover);

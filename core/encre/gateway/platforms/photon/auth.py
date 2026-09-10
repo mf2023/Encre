@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Photon Dashboard API client + device-code login flow.
 
@@ -111,6 +113,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+
+
+from encre.secure_io import read_json
 
 
 
@@ -214,9 +220,7 @@ def _load_auth() -> Dict[str, Any]:
 
     try:
 
-        with path.open("r", encoding="utf-8") as fh:
-
-            return json.load(fh) or {}
+        return read_json(path, default={}) or {}
 
     except (OSError, json.JSONDecodeError) as e:
 
@@ -230,6 +234,8 @@ def _load_auth() -> Dict[str, Any]:
 
 def _save_auth(data: Dict[str, Any]) -> None:
 
+    from encre.crypto import encrypt
+
     path = _auth_json_path()
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -238,7 +244,7 @@ def _save_auth(data: Dict[str, Any]) -> None:
 
     with tmp.open("w", encoding="utf-8") as fh:
 
-        json.dump(data, fh, indent=2, sort_keys=True)
+        fh.write(encrypt(json.dumps(data, indent=2, sort_keys=True)))
 
     try:
 

@@ -758,6 +758,12 @@ class PhaseModelMixin:
                         thinking_config=self._thinking_config,
                     )
                     self.backend = fallback_backend
+                    # Update active_model_index so the frontend selector reflects the switch
+                    _fallback_idx = next(
+                        (i for i, _m in enumerate(self.config.models) if _m.model_id == fallback_model),
+                        self.config.active_model_index,
+                    )
+                    self.config.active_model_index = _fallback_idx
                     _attempt_fallback = True
                     if self._state is not None:
                         self._state.transitions.record(
@@ -770,7 +776,8 @@ class PhaseModelMixin:
                 if decision.action == RecoveryAction.RETRY:
                     import asyncio as _aio
                     await _aio.sleep(decision.delay)
-                    logger.info("[run] network error -- retried after %.1fs delay turn=%d", decision.delay, self.session.turn_count)
+                    _retry_kind = "server" if "server" in decision.detail else "network"
+                    logger.info("[run] %s error -- retried after %.1fs delay turn=%d", _retry_kind, decision.delay, self.session.turn_count)
                     _attempt_fallback = True
                     if self._state is not None:
                         self._state.transitions.record(

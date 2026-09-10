@@ -891,10 +891,12 @@ export interface WorkspaceConfigResponse {
 
 export interface ClientReindexWorkspace {
   type: "reindex_workspace";
+  path?: string;
 }
 
 export interface ClientDeleteIndex {
   type: "delete_index";
+  path?: string;
 }
 
 export interface ClientUpdateSubAgents {
@@ -1028,6 +1030,7 @@ export interface WorkspaceEntry {
   session_count?: number;
   index_status?: string;
   index_files?: number;
+  index_progress?: number;
 }
 
 export interface WorkspaceOpened {
@@ -1038,6 +1041,7 @@ export interface WorkspaceOpened {
   workspaces: WorkspaceEntry[];
   index_status?: string;
   index_files?: number;
+  progress?: number;
 }
 
 export interface WorkspacesList {

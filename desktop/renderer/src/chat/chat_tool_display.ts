@@ -24,6 +24,7 @@ import type { ToolCallState } from "../core/types.js";
 import { t } from "../features/i18n.js";
 import { renderDiffHtml } from "./diff_render.js";
 import { escapeHtml } from "./chat_markdown.js";
+import { TransitionHelper } from "../ui/transition-helper.js";
 
 // === Tool helpers ===================================================================
 
@@ -91,6 +92,54 @@ export function compactText(value: unknown, max = 88): string {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length > max ? `${oneLine.slice(0, max - 3)}...` : oneLine;
+}
+
+/**
+ * Resolves the target file path of a file tool call.
+ *
+ * `tool_call_end` normally replaces `params` with the parsed argument object,
+ * but every render between the first result and that event still sees the raw
+ * `arguments` string — and history replay never re-sends `tool_call_end` at
+ * all. In both cases `params.path` is missing, so the strip summary fell back
+ * to dumping the tool result (i.e. the file's first lines). Parse defensively
+ * here so the path is available regardless of how far the stream got.
+ */
+export function toolFilePath(tc: ToolCallState): string {
+  const PATH_KEYS = ["file_path", "path", "filename", "filepath", "file", "target"];
+  const direct = firstParam(tc, PATH_KEYS);
+  if (direct) return direct;
+  const raw = tc.params?.arguments;
+  if (typeof raw === "string" && raw.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      for (const key of PATH_KEYS) {
+        const v = parsed[key];
+        if (typeof v === "string" && v.trim()) return v;
+      }
+    } catch {
+      // Partial JSON while the arguments are still streaming — ignore.
+    }
+  }
+  return "";
+}
+
+/**
+ * Trims a path to fit a strip summary without ever cutting off the file name,
+ * which is the part that identifies what the tool actually touched.
+ * Keeps `…/<parent>/<name>` when it fits, otherwise degrades to `…/<name>`.
+ */
+export function compactPath(p: string, max = 88): string {
+  const path = (p || "").trim();
+  if (!path) return "";
+  if (path.length <= max) return path;
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  const name = parts[parts.length - 1] || path;
+  if (parts.length >= 2) {
+    const tail2 = `…/${parts[parts.length - 2]}/${name}`;
+    if (tail2.length <= max) return tail2;
+  }
+  const tail1 = `…/${name}`;
+  return tail1.length <= max ? tail1 : compactText(name, max);
 }
 
 /**
@@ -293,9 +342,12 @@ export function getToolSummary(tc: ToolCallState): string {
     if (tc.name === "docker") return compactText(tc.result, 88);
     if (tc.name === "pdf") return compactText(tc.result, 88);
     if (tc.name === "deploy") return compactText(tc.result, 88);
-    // File mutation tools always show the file path, not the result
-    if (FILE_MUTATION_TOOLS.has(tc.name)) {
-      return compactText(firstParam(tc, ["path", "file_path", "filename"]), 88);
+    // File read/write tools always show WHICH file was targeted, never the
+    // tool result: file_read returns the file's raw content, so falling back
+    // to `compactText(tc.result)` turned the summary into a dump of its first
+    // lines and hid the file name entirely.
+    if (FILE_READ_TOOLS.has(tc.name) || FILE_MUTATION_TOOLS.has(tc.name)) {
+      return compactPath(toolFilePath(tc), 88);
     }
     return compactText(tc.result, 88);
   }
@@ -306,7 +358,7 @@ export function getToolSummary(tc: ToolCallState): string {
   if (tc.name === "web_search") return compactText(firstParam(tc, ["query", "q"]), 88);
   if (tc.name === "web_fetch") return compactText(firstParam(tc, ["url", "uri"]), 88);
   if (FILE_READ_TOOLS.has(tc.name) || FILE_MUTATION_TOOLS.has(tc.name)) {
-    return compactText(firstParam(tc, ["path", "file_path", "filename"]), 88);
+    return compactPath(toolFilePath(tc), 88);
   }
   if (tc.name === "search" || tc.name === "grep" || tc.name === "glob" || tc.name === "codebase") {
     return compactText(firstParam(tc, ["query", "pattern", "glob", "path"]), 88);
@@ -339,6 +391,11 @@ export function getToolInlineSummary(tc: ToolCallState): string {
   if (tc.name.startsWith("cron_")) {
     const hint = firstParam(tc, ["schedule", "expression", "name"]);
     return compactText(hint || t("general.cronAction"), 42);
+  }
+  // File tools lead with the target file name — same rule as getToolSummary,
+  // just narrower, and never shortened in a way that hides the name.
+  if (isFileReadTool(tc.name) || isFileMutationTool(tc.name)) {
+    return compactPath(toolFilePath(tc), 42) || getToolSummary(tc);
   }
   const fromParams = firstParam(tc, ["query", "path", "file_path", "url", "name"]);
   return compactText(fromParams || getToolSummary(tc), 42);
@@ -613,31 +670,29 @@ export function flashCopyButton(btn: HTMLElement): void {
   const original = origIcon || 'copy';
   if (!origIcon) btn.setAttribute('data-original-icon', original);
 
-  // Keep the actions visible while the checkmark animation plays
-  btn.classList.add('copying');
+  // Keep the actions visible while the checkmark animation plays.
+  btn.classList.add('copying', 'copy-flash');
 
-  // Use the button's opacity so the transition survives lucide DOM swaps
-  btn.style.transition = 'opacity 0.12s ease';
-  btn.style.opacity = '0';
-
-  setTimeout(() => {
+  // The fade itself is CSS (`.copy-flash.is-fading`); these timings only
+  // decide *when* the glyph swaps — while the button is fully faded out.
+  const fade = TransitionHelper.step('--duration-fast', 120);
+  const swapGlyph = (name: string): void => {
     const i = btn.querySelector('[data-lucide]');
-    if (i) i.setAttribute('data-lucide', 'check');
+    if (i) i.setAttribute('data-lucide', name);
     createLucideIcons(btn);
-    btn.style.opacity = '1';
-  }, 120);
+  };
+
+  btn.classList.add('is-fading');
+  setTimeout(() => {
+    swapGlyph('check');
+    btn.classList.remove('is-fading');
+  }, fade);
 
   setTimeout(() => {
-    btn.style.opacity = '0';
+    btn.classList.add('is-fading');
     setTimeout(() => {
-      const i = btn.querySelector('[data-lucide]');
-      if (i) i.setAttribute('data-lucide', original);
-      createLucideIcons(btn);
-      btn.style.opacity = '1';
-      setTimeout(() => {
-        btn.style.transition = '';
-        btn.classList.remove('copying');
-      }, 120);
-    }, 120);
+      swapGlyph(original);
+      btn.classList.remove('is-fading', 'copying', 'copy-flash');
+    }, fade);
   }, 2000);
 }

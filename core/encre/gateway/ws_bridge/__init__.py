@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """WebSocket bridge for remote/plugin adapters.
 
 This subpackage contains the WebSocket bridge server and client that let remote

@@ -28,6 +28,8 @@
 # only ``max_concurrent`` run at once.  It offers bulk spawn, await-any/all,
 # cancellation, and live progress snapshots.
 
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING

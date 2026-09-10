@@ -21,44 +21,47 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
+"""Flat runtime overlay for general (UI) settings.
+
+This module used to own a second configuration file -- the top-level
+``settings.json`` -- that duplicated ten keys already held by
+:class:`~encre.config.EncreConfig` (and mirrored every ``adapter_*``
+credential on top).  Both stores were written on every ``configure`` call,
+with this one winning at runtime, so a value could silently disagree with
+itself.
+
+It is now a thin facade over :mod:`encre.config_store`, and the data lives
+in ``<data_dir>/config/ui.json`` -- one home per key.  Callers and their
+``dict`` contract are unchanged.
+"""
+
 import json
-from pathlib import Path
+from typing import Any
 
-from encre.crypto import decrypt, encrypt
+from encre import config_store
 
-_SETTINGS_PATH = Path("~/.dunimd/encre/settings.json").expanduser()
-
-_GENERAL_SETTINGS_KEYS = frozenset({
-    "shortcut_send_mode",
-    "language",
-    "language_preference",
-    "default_link_behavior",
-    "auto_expand",
-    "sub_agent_auto_open_view",
-    "automation_auto_open_view",
-    "startup_session_mode",
-    "startup_session_behavior",
-})
+#: Keys with overlay semantics: the settings panel can change them at
+#: runtime and they take precedence over the value that was persisted in the
+#: configuration files.  Sourced from the store so the two cannot drift.
+_GENERAL_SETTINGS_KEYS = config_store.UI_SETTING_KEYS
 
 
-def load_settings() -> dict[str, str]:
-    try:
-        if not _SETTINGS_PATH.exists():
-            return {}
-        encrypted = _SETTINGS_PATH.read_text(encoding="utf-8").strip()
-        if not encrypted:
-            return {}
-        decrypted = decrypt(encrypted)
-        return json.loads(decrypted)
-    except Exception:
-        return {}
+def load_settings() -> dict[str, Any]:
+    """Return the flat settings view.
+
+    Same shape as the old top-level ``settings.json``: the overlay keys plus
+    the adapter credentials and ``permission_settings`` that legacy callers
+    (the gateway) expect.  Those last two are *borrowed* from their own
+    group files -- see :func:`encre.config_store.overlay_view`.
+    """
+    return config_store.overlay_view()
 
 
-def save_settings(settings: dict[str, str]) -> None:
-    _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    raw = json.dumps(settings, ensure_ascii=False, indent=2)
-    encrypted = encrypt(raw)
-    _SETTINGS_PATH.write_text(encrypted, encoding="utf-8")
+def save_settings(settings: dict[str, Any]) -> None:
+    """Persist the flat overlay, leaving borrowed keys to their owners."""
+    config_store.save_overlay(settings)
 
 
 def is_general_setting(key: str) -> bool:

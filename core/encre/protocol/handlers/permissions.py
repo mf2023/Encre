@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Permission / plan / mode / spec approval handlers.
 
 The interactive consent surface between agent and client.  Extracted
@@ -44,7 +46,7 @@ from encre.server.protocol import (
     ClientSpecApprove,
     ClientSpecReject,
 )
-from encre.tools.builtin.browser import set_cdp_url, set_session_id
+from encre.tools.runtime import set_browser_session_id as set_session_id, set_cdp_url
 
 logger = logging.getLogger("encre.transport.ws")
 

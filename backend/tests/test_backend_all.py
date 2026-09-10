@@ -1,6 +1,7 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-# Copyright 漏 2025-2026 Wenze Wei. All Rights Reserved.
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
 # This file is part of Encre.
 # The Encre project belongs to the Dunimd Team.
@@ -19,8 +20,6 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
-
-from __future__ import annotations
 
 from __future__ import annotations
 
@@ -102,7 +101,7 @@ class TestAnthropicBackend:
 
         The test asserts four properties: BaseBackend conformance, tool-calling support,
         context window of 1,000,000 tokens, and explicit True flags for both extended thinking
-        and prompt caching 鈥?capabilities unique to the Anthropic provider route.
+        and prompt caching — capabilities unique to the Anthropic provider route.
         """
         be = create_backend("anthropic", api_key="sk-ant-fake")
         assert isinstance(be, BaseBackend), "Factory must return a BaseBackend subclass instance."
@@ -253,7 +252,7 @@ class TestOllamaBackend:
         """Validate that create_backend returns a functional Ollama backend with correct defaults.
 
         The test asserts BaseBackend conformance, the 8,192-token context window, and that
-        supports_tool_calling returns a bool 鈥?the exact truth value depends on the connected
+        supports_tool_calling returns a bool — the exact truth value depends on the connected
         Ollama server's model roster, so only the type is checked here.
         """
         be = create_backend("ollama", base_url="http://localhost:11434")
@@ -361,7 +360,7 @@ class TestOpenAICompatibleBackend:
         """Validate that create_backend returns a functional OpenAI-compatible backend.
 
         The test asserts BaseBackend conformance, the 1,048,576-token context window, and that
-        supports_tool_calling returns a bool 鈥?compatibility servers vary in their tool-calling
+        supports_tool_calling returns a bool — compatibility servers vary in their tool-calling
         support, so the predicate is type-checked rather than hard-asserted.
         """
         be = create_backend("openai_compatible", base_url="https://api.example.com/v1", api_key="sk-fake")

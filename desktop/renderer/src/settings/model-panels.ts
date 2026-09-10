@@ -196,7 +196,13 @@ export function renderModelImpl(this: any): void {
         </div>`;
 
     this.panels.model.innerHTML = `
-      <div class="settings-section-title"><i data-lucide="cpu" class="lucide section-title-icon"></i> ${t("settings.modelManagement")}</div>
+      <div class="settings-section-title">
+        <i data-lucide="cpu" class="lucide section-title-icon"></i>
+        ${t("settings.modelManagement")}
+        <button class="btn-icon" id="btn-model-pool-settings" data-tooltip="${t("settings.modelPoolSettings")}" style="margin-inline-start:auto">
+          <i data-lucide="settings" class="lucide"></i>
+        </button>
+      </div>
       <div class="settings-card">
         <div class="model-manage-header">
           <div class="model-manage-desc">${t("settings.modelManagementDesc")}</div>

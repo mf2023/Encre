@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Gateway outbound delivery routing.
 
 A single router that takes a content blob plus a list of targets and delivers
@@ -172,12 +174,13 @@ class DeliveryRouter:
         return payload, True, saved
 
     def _save_audit(self, content: str) -> str:
-        """Save the full content to an audit file, return its path."""
+        """Save the full content to an encrypted audit file, return its path."""
+        from encre.secure_io import write_text
+
         try:
-            self._audit_dir.mkdir(parents=True, exist_ok=True)
             name = f"output_{int(time.time() * 1000)}.txt"
             path = self._audit_dir / name
-            path.write_text(content, encoding="utf-8")
+            write_text(path, content)
             return str(path)
         except Exception as e:
             logger.warning("[delivery] failed to save audit output: %s", e)

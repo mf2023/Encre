@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Encre transport layer: HTTP stacks for the server's own endpoints.
 
     * :mod:`encre.transport.http.channel`    -- :class:`HTTPChannel`, the

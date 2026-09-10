@@ -269,14 +269,15 @@ _KNOWN_VARIABLE_PROVIDERS: dict[str, tuple[str, str]] = {
     "date": ("prompts/system.py:415", "Current date string"),
     "details": ("prompts/system.py:397", "OS version details"),
     "device_context": ("loop_context.py:409", "Device context catalog"),
+    "execution_context": ("loop/phases/prompt.py:378", "Headless vs interactive rules scope annotation"),
     "files_root": ("prompts/system.py:370", "Session files directory"),
+    "guidance": ("permission/<mode>.prompt content", "Permission-mode guidance body"),
     "is_git": ("prompts/system.py:397", "Git repo detection flag"),
     "os_name": ("prompts/system.py:397", "Operating system name"),
     "project_snapshot": ("prompts/system.py:255", "Project summary snapshot"),
     "rules_content": ("loop.py:1941", "User-defined rules content"),
     "shell_hint": ("prompts/system.py:397", "Shell-specific usage hints"),
     "skill_summary": ("prompts/system.py:361", "Available skills catalogue"),
-    "time": ("prompts/system.py:415", "Current time string"),
     "tools_list": ("prompts/base.py:147", "Tool names list for tool_instructions"),
     "workspace_name": ("prompts/system.py:253", "Workspace/project name"),
     "workspace_root": ("prompts/system.py:253", "Workspace root directory path"),
@@ -325,15 +326,19 @@ _MODEL_NAMES: dict[str, list[str]] = {
 
 # Expected priority ordering invariants for critical blocks.
 # Format: (block_name, expected_priority) 鈥?exact match.
-_CRITICAL_BLOCK_PRIORITIES: dict[str, int] = {
+# NOTE: memory_discipline sits deliberately at 0.6 -- right after identity (0)
+# but before task_completion (1) -- so the recall/precedence frame is
+# established before any delivery-focused guidance is read.
+_CRITICAL_BLOCK_PRIORITIES: dict[str, float] = {
     "identity": 0,
+    "mandatory_constraints": 0.5,
     "task_completion": 1,
     "tool_execution": 3,
     "post_execution_validation": 4,
     "environment": 8,
     "current_datetime": 9,
     "task_management": 15,
-    "memory_discipline": 16,
+    "memory_discipline": 0.6,
     "permission": 20,
     "language": 25,
     "output_format": 30,
@@ -530,7 +535,7 @@ def _test_skills_output(loader: PromptLoader) -> bool:
         path = os.path.join(skills_dir, fn)
         with open(path, encoding="utf-8") as f:
             content = f.read()
-        if "STATUS:" not in content and "STATUS 鈥? not in content:
+        if "STATUS:" not in content and "STATUS" not in content:
             missing_status.append(fn)
     assert not missing_status, (
         f"Skills without STATUS markers: {missing_status}"

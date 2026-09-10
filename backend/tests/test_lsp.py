@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for encre.lsp -- LSP protocol dataclasses and EncreLSPClient."""
 
@@ -44,7 +46,7 @@ class TestPosition:
         The test constructs Position(line=10, character=5) and asserts both fields match,
         confirming the dataclass does not transform or clamp coordinate values.
         """
-        from encre.lsp.protocol import Position
+        from encre.capabilities.search.lsp.protocol import Position
         p = Position(line=10, character=5)
         assert p.line == 10, "line must be stored verbatim."
         assert p.character == 5, "character must be stored verbatim."
@@ -55,7 +57,7 @@ class TestPosition:
         LSP uses zero-based indexing; the test asserts both fields are 0, confirming
         the origin coordinate is accepted without error.
         """
-        from encre.lsp.protocol import Position
+        from encre.capabilities.search.lsp.protocol import Position
         p = Position(line=0, character=0)
         assert p.line == 0, "line=0 must be accepted."
         assert p.character == 0, "character=0 must be accepted."
@@ -66,7 +68,7 @@ class TestPosition:
         The test constructs Position(99999, 999) and asserts both fields match, confirming
         the dataclass does not impose an artificial upper bound on coordinates.
         """
-        from encre.lsp.protocol import Position
+        from encre.capabilities.search.lsp.protocol import Position
         p = Position(line=99999, character=999)
         assert p.line == 99999, "Large line value must be stored verbatim."
         assert p.character == 999, "Large character value must be stored verbatim."
@@ -78,7 +80,7 @@ class TestPosition:
         confirming the generated __eq__, __repr__, and __init__ are present.
         """
         from dataclasses import is_dataclass
-        from encre.lsp.protocol import Position
+        from encre.capabilities.search.lsp.protocol import Position
         assert is_dataclass(Position), "Position must be a dataclass."
 
     def test_verify_position_equality(self):
@@ -87,7 +89,7 @@ class TestPosition:
         The test constructs p1 and p2 with identical coordinates and p3 with a different
         character value, asserting p1 == p2 and p1 != p3, confirming value-based equality.
         """
-        from encre.lsp.protocol import Position
+        from encre.capabilities.search.lsp.protocol import Position
         p1 = Position(line=5, character=10)
         p2 = Position(line=5, character=10)
         p3 = Position(line=5, character=11)
@@ -114,7 +116,7 @@ class TestRange:
         The test constructs a Range spanning lines 0-10 and characters 0-20 and asserts
         all four coordinate fields match, confirming the dataclass does not mutate positions.
         """
-        from encre.lsp.protocol import Position, Range
+        from encre.capabilities.search.lsp.protocol import Position, Range
         start = Position(line=0, character=0)
         end = Position(line=10, character=20)
         r = Range(start=start, end=end)
@@ -130,7 +132,7 @@ class TestRange:
         equality and character ordering, confirming the invariants expected of a valid
         single-line selection span.
         """
-        from encre.lsp.protocol import Position, Range
+        from encre.capabilities.search.lsp.protocol import Position, Range
         start = Position(line=5, character=3)
         end = Position(line=5, character=15)
         r = Range(start=start, end=end)
@@ -140,7 +142,7 @@ class TestRange:
     def test_verify_range_is_dataclass(self):
         """Validate that Range is recognised as a dataclass by the stdlib checker."""
         from dataclasses import is_dataclass
-        from encre.lsp.protocol import Range
+        from encre.capabilities.search.lsp.protocol import Range
         assert is_dataclass(Range), "Range must be a dataclass."
 
 
@@ -162,7 +164,7 @@ class TestLocation:
         The test constructs a Location with a synthetic file URI and a Range spanning
         line 1 characters 0-10, then asserts the URI and start line are preserved.
         """
-        from encre.lsp.protocol import Location, Position, Range
+        from encre.capabilities.search.lsp.protocol import Location, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         loc = Location(uri="file:///test.py", range=r)
         assert loc.uri == "file:///test.py", "URI must be stored verbatim."
@@ -174,7 +176,7 @@ class TestLocation:
         The test constructs a Location with an absolute POSIX path and asserts the URI
         starts with "file:///", confirming the LSP client accepts standard file URIs.
         """
-        from encre.lsp.protocol import Location, Position, Range
+        from encre.capabilities.search.lsp.protocol import Location, Position, Range
         r = Range(start=Position(line=0, character=0), end=Position(line=0, character=5))
         loc = Location(uri="file:///home/user/project/main.py", range=r)
         assert loc.uri.startswith("file:///"), "URI must use the file:// scheme."
@@ -182,7 +184,7 @@ class TestLocation:
     def test_verify_location_is_dataclass(self):
         """Validate that Location is recognised as a dataclass by the stdlib checker."""
         from dataclasses import is_dataclass
-        from encre.lsp.protocol import Location
+        from encre.capabilities.search.lsp.protocol import Location
         assert is_dataclass(Location), "Location must be a dataclass."
 
 
@@ -206,7 +208,7 @@ class TestDiagnostic:
         The test constructs a severity-2 diagnostic from source "pyright" and asserts
         all three fields match, confirming the dataclass preserves diagnostic metadata.
         """
-        from encre.lsp.protocol import Diagnostic, Position, Range
+        from encre.capabilities.search.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=5, character=0), end=Position(line=5, character=10))
         diag = Diagnostic(
             range=r,
@@ -224,7 +226,7 @@ class TestDiagnostic:
         The test constructs a Diagnostic without passing source and asserts it is "",
         confirming the field has a sensible default rather than None.
         """
-        from encre.lsp.protocol import Diagnostic, Position, Range
+        from encre.capabilities.search.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=5))
         diag = Diagnostic(range=r, message="Error", severity=1)
         assert diag.source == "", "Default source must be an empty string."
@@ -235,7 +237,7 @@ class TestDiagnostic:
         The test constructs diagnostics with severities 1 through 4 and asserts each
         field is preserved, confirming the dataclass does not clamp or remap severity values.
         """
-        from encre.lsp.protocol import Diagnostic, Position, Range
+        from encre.capabilities.search.lsp.protocol import Diagnostic, Position, Range
         r = Range(start=Position(line=0, character=0), end=Position(line=0, character=1))
         for sev in [1, 2, 3, 4]:
             diag = Diagnostic(range=r, message=f"Level {sev}", severity=sev)
@@ -244,7 +246,7 @@ class TestDiagnostic:
     def test_verify_diagnostic_is_dataclass(self):
         """Validate that Diagnostic is recognised as a dataclass by the stdlib checker."""
         from dataclasses import is_dataclass
-        from encre.lsp.protocol import Diagnostic
+        from encre.capabilities.search.lsp.protocol import Diagnostic
         assert is_dataclass(Diagnostic), "Diagnostic must be a dataclass."
 
 
@@ -267,7 +269,7 @@ class TestHoverResult:
         The test constructs a HoverResult with only a contents string and asserts the
         contents match and range is None, confirming the range field is truly optional.
         """
-        from encre.lsp.protocol import HoverResult
+        from encre.capabilities.search.lsp.protocol import HoverResult
         hr = HoverResult(contents="def foo(x: int) -> str")
         assert hr.contents == "def foo(x: int) -> str", "contents must be stored verbatim."
         assert hr.range is None, "range must be None when not provided."
@@ -278,7 +280,7 @@ class TestHoverResult:
         The test constructs a HoverResult with both contents and a Range, then asserts
         the contents match, range is not None, and the range's start line is preserved.
         """
-        from encre.lsp.protocol import HoverResult, Position, Range
+        from encre.capabilities.search.lsp.protocol import HoverResult, Position, Range
         r = Range(start=Position(line=1, character=0), end=Position(line=1, character=10))
         hr = HoverResult(contents="A string value", range=r)
         assert hr.contents == "A string value", "contents must be stored verbatim."
@@ -291,7 +293,7 @@ class TestHoverResult:
         The test passes a Python code fence and asserts the backticks are preserved,
         confirming the contents field does not strip or escape markdown syntax.
         """
-        from encre.lsp.protocol import HoverResult
+        from encre.capabilities.search.lsp.protocol import HoverResult
         md = "```python\ndef foo() -> int: ...\n```"
         hr = HoverResult(contents=md)
         assert "```" in hr.contents, "Markdown fence characters must be preserved in contents."
@@ -299,7 +301,7 @@ class TestHoverResult:
     def test_verify_hover_result_is_dataclass(self):
         """Validate that HoverResult is recognised as a dataclass by the stdlib checker."""
         from dataclasses import is_dataclass
-        from encre.lsp.protocol import HoverResult
+        from encre.capabilities.search.lsp.protocol import HoverResult
         assert is_dataclass(HoverResult), "HoverResult must be a dataclass."
 
 
@@ -322,7 +324,7 @@ class TestLSPState:
         The test constructs a running-state instance and asserts both fields match the
         expected defaults, confirming the running state carries no error payload.
         """
-        from encre.lsp.protocol import LSPState
+        from encre.capabilities.search.lsp.protocol import LSPState
         state = LSPState(status="running")
         assert state.status == "running", "status must be stored verbatim."
         assert state.error is None, "error must be None when not provided."
@@ -334,7 +336,7 @@ class TestLSPState:
         asserts both fields match, confirming the error field is preserved for diagnostic
         reporting when the server fails to start.
         """
-        from encre.lsp.protocol import LSPState
+        from encre.capabilities.search.lsp.protocol import LSPState
         state = LSPState(status="stopped", error="connection refused")
         assert state.status == "stopped", "status must be stored verbatim."
         assert state.error == "connection refused", "error must be stored verbatim."
@@ -346,7 +348,7 @@ class TestLSPState:
         "error" and asserts each status field matches, confirming the dataclass does not
         restrict the status to a subset of values.
         """
-        from encre.lsp.protocol import LSPState
+        from encre.capabilities.search.lsp.protocol import LSPState
         for status in ["starting", "running", "stopped", "error"]:
             s = LSPState(status=status)
             assert s.status == status, f"status '{status}' must be stored verbatim."
@@ -354,7 +356,7 @@ class TestLSPState:
     def test_verify_lsp_state_is_dataclass(self):
         """Validate that LSPState is recognised as a dataclass by the stdlib checker."""
         from dataclasses import is_dataclass
-        from encre.lsp.protocol import LSPState
+        from encre.capabilities.search.lsp.protocol import LSPState
         assert is_dataclass(LSPState), "LSPState must be a dataclass."
 
 
@@ -379,7 +381,7 @@ class TestEncreLSPClient:
         _initialized (False), and _request_id (0) match, confirming the constructor
         sets up the client in a clean pre-start state.
         """
-        from encre.lsp.client import EncreLSPClient
+        from encre.capabilities.search.lsp.client import EncreLSPClient
         client = EncreLSPClient(server_name="pylsp")
         assert client is not None, "Client must be instantiated without error."
         assert client._server_name == "pylsp", "server_name must be stored verbatim."
@@ -393,7 +395,7 @@ class TestEncreLSPClient:
         typescript-language-server and asserts each _server_name matches, confirming
         the client accepts any string without validation restrictions.
         """
-        from encre.lsp.client import EncreLSPClient
+        from encre.capabilities.search.lsp.client import EncreLSPClient
         for name in ["pylsp", "pyright", "rust-analyzer", "gopls", "typescript-language-server"]:
             client = EncreLSPClient(server_name=name)
             assert client._server_name == name, f"server_name '{name}' must be stored verbatim."
@@ -404,7 +406,7 @@ class TestEncreLSPClient:
         The test asserts both fields are None, confirming the client has not spawned
         any subprocess or background reader task until start() is called.
         """
-        from encre.lsp.client import EncreLSPClient
+        from encre.capabilities.search.lsp.client import EncreLSPClient
         client = EncreLSPClient(server_name="test")
         assert client._process is None, "_process must be None before start()."
         assert client._initialized is False, "_initialized must be False before start()."
@@ -417,7 +419,7 @@ class TestEncreLSPClient:
         is raised, confirming the cleanup path guards against null-process dereference.
         """
         import asyncio
-        from encre.lsp.client import EncreLSPClient
+        from encre.capabilities.search.lsp.client import EncreLSPClient
 
         async def _test():
             client = EncreLSPClient(server_name="test")
@@ -426,13 +428,13 @@ class TestEncreLSPClient:
         asyncio.run(_test())
 
     def test_verify_public_api_exports(self):
-        """Validate that all documented public symbols are importable from encre.lsp.
+        """Validate that all documented public symbols are importable from encre.capabilities.search.lsp.
 
         The test imports EncreLSPClient, EncreLSPManager, Position, Range, Location,
         Diagnostic, HoverResult, and LSPState from the package namespace and asserts
         each is not None, confirming the __all__ export list is complete.
         """
-        from encre.lsp import (
+        from encre.capabilities.search.lsp import (
             Diagnostic,
             EncreLSPClient,
             EncreLSPManager,
@@ -471,6 +473,6 @@ class TestEncreLSPManager:
         The test constructs a manager and asserts it is not None, confirming the
         constructor does not raise and the instance is ready for client registration.
         """
-        from encre.lsp.manager import EncreLSPManager
+        from encre.capabilities.search.lsp.manager import EncreLSPManager
         manager = EncreLSPManager()
         assert manager is not None, "EncreLSPManager must be instantiated without error."

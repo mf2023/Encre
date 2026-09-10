@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Tests for encre.computer.browser -- EncreBrowserSession and BrowserState."""
 
@@ -149,7 +151,7 @@ class TestEncreBrowserSessionConstruction:
         """Validate that all internal Playwright handles start as None before launch.
 
         The test asserts _pw, _browser, _context, and _page are all None because
-        the session uses lazy initialization 鈥?these handles are created on
+        the session uses lazy initialization — these handles are created on
         first navigate() call and must not be pre-allocated.
         """
         from encre.computer.browser import EncreBrowserSession
@@ -282,7 +284,7 @@ class TestEncreBrowserSessionState:
         """Validate that calling close() multiple times does not raise an exception.
 
         The test calls close() twice in succession and asserts no exception
-        is raised because close must be idempotent 鈥?a second call should
+        is raised because close must be idempotent — a second call should
         be a safe no-op after the first has already cleaned up handles.
         """
         from encre.computer.browser import EncreBrowserSession

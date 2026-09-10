@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for plan / spec mode switching -- the single-source-of-truth model.
 
 These tests lock down the invariants that previously broke mode switching:

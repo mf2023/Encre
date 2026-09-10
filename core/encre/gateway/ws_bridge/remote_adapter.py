@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Remote platform adapter: wraps a WS connection as a BasePlatformAdapter.
 
 When a remote adapter connects to the WsBridgeServer, the server wraps that

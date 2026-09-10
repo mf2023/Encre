@@ -194,7 +194,7 @@
   flex-shrink: 0;
   vertical-align: middle;
   position: relative;
-  transition: background var(--transition-base, 0.15s ease), border-color var(--transition-base, 0.15s ease);
+  transition: background var(--transition-base), border-color var(--transition-base);
 }
 :where(input[type="checkbox"]):hover {
   background: var(--checkbox-hover-bg);
@@ -221,7 +221,7 @@
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   opacity: 0;
-  transition: opacity var(--transition-base, 0.15s ease);
+  transition: opacity var(--transition-base);
 }
 :where(input[type="checkbox"]):checked::after {
   opacity: 1;
@@ -277,12 +277,52 @@ body {
   height: 12px;
 }
 .tab-favicon {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
+  align-self: center;
   margin-inline-end: 4px;
   border-radius: 2px;
   object-fit: contain;
+  /* In an inline formatting context an <img> sits on the text baseline,
+     which makes it look pushed up next to the label. Line it up on the
+     same centre line as the text instead. */
+  vertical-align: middle;
+}
+
+/* Wrapper around a browser tab icon (favicon or its globe fallback).
+   Without this the wrapper is a bare inline span, so the icon inside it
+   aligns to the baseline and floats above the label's optical centre. */
+.tab-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* State indicator light pinned to the top-right corner of the tab icon.
+   The dot is inserted as the first child of `.tab-icon-wrap` (see
+   `SessionInner.setTabState`), so without absolute positioning it renders
+   inline *before* the icon instead of overlaying its corner — and it would
+   otherwise be positioned against `.header-tabs .tab`, which is the nearest
+   positioned ancestor. Ringed in the tab-bar background so it stays legible
+   on top of a colourful favicon. */
+.tab-icon-wrap .tab-indicator-pos {
+  position: absolute;
+  inset-block-start: -2px;
+  /* The wrapper is 4px wider than the icon on the end side (the favicon's
+     own margin-inline-end), so pull the dot back in by that much to keep it
+     sitting on the icon's corner rather than floating beside it. */
+  inset-inline-end: 2px;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--bg-secondary);
+  border-radius: 50%;
+  margin: 0;
+  z-index: 1;
+  pointer-events: none;
 }
 
 /* ── App Layout ──────────────────────────────────────────────────── */
@@ -428,51 +468,20 @@ body {
 }
 
 /* ── Input-area Selector ─────────────────────────────────────────
-   全新「选择器」组件（区别于下拉框 trigger）：
-   去掉边框与默认背景，仅悬浮时显示轻微背景，保留右侧上下箭头。
-   点击交互与下拉框完全一致。 */
-.input-selector {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 7px 10px;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  min-width: 0;
-  white-space: nowrap;
-  transition: background var(--transition-fast);
-}
-
-.input-selector:hover,
-.input-selector:active {
-  background: transparent;
-}
-
+   输入区「选择器」（模型 / 工作区）是下拉框 trigger 的分叉：它不再自带
+   一套盒模型，而是**直接复用** .settings-dropdown-trigger 的整套度量
+   （两个类写在同一个选择器组里，见「Settings Dropdown」段），只把可见的
+   边框与背景改成透明，以更轻的形态出现在输入框内。
+   必须共用同一套度量的原因：之前这里写的是 border:none，容器比下拉框
+   trigger 矮了 2px，于是同一个折叠箭头在两个容器里虽然各自居中，视觉上
+   在模型选择器里却比在下拉框里偏上 1px。
+   本段只保留输入区特有的部分：标签文本截断，以及展开时的箭头旋转。
+   标签的 flex 基础样式与下拉框 trigger 的子标签共用（见「Settings
+   Dropdown」段），这里不再重复声明。 */
 .input-selector-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.input-selector-chevron {
-  width: 14px;
-  height: 14px;
-  opacity: 0.5;
-  flex-shrink: 0;
-  margin-inline-start: auto;
-  align-self: center;
-  margin-top: auto;
-  margin-bottom: auto;
-  transition: transform var(--transition-base);
 }
 
 /* 展开时箭头旋转 180°，与下拉框一致 */
@@ -1071,7 +1080,7 @@ body {
   font-size: 12px;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--transition-base), border-color var(--transition-base);
   user-select: none;
 }
 .shortcut-key-btn:hover {
@@ -1082,11 +1091,7 @@ body {
   background: var(--accent-muted);
   border-color: var(--accent);
   color: var(--accent);
-  animation: shortcut-pulse 1s ease-in-out infinite;
-}
-@keyframes shortcut-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  animation: pulse 1s ease-in-out infinite;
 }
 .shortcut-key-btn .key-icon {
   font-size: 13px;
@@ -1127,40 +1132,18 @@ body {
   font-style: italic;
 }
 
-/* ── Workspace section (iWork mode) ───────────────────────────────
-   Shown only in iWork mode, above the "All tasks" section. Mirrors the
-   regular section UI. The header button always shows a right chevron
-   (">") as a navigation affordance; no semantic/arrow hover swap. */
-#workspace-section {
-  display: none;
-  margin-top: 0;
-}
-#app.workspace-mode #workspace-section {
-  display: block;
-}
-
-/* Temp chat is a normal-mode feature; hide its entry in iWork mode. */
+/* Temp chat is a normal-mode feature; hide its entry in iWork mode. The
+   workspace entry is its iWork-mode counterpart and lives in the same nav
+   row, so the two never show together. */
 #app.workspace-mode #btn-temp-chat {
   display: none;
 }
 
-#workspace-section .sidebar-section-header {
-  padding: 6px 10px 3px;
+#btn-workspace-nav {
+  display: none;
 }
-
-#btn-workspace-nav .lucide {
-  width: 14px;
-  height: 14px;
-  color: var(--text-secondary);
-}
-
-/* Tighten the gap between the workspace and "All tasks" sections in
-   iWork mode. */
-#app.workspace-mode #session-section {
-  margin-top: 0;
-}
-#app.workspace-mode #session-section .sidebar-section-header {
-  padding: 4px 10px 6px;
+#app.workspace-mode #btn-workspace-nav {
+  display: flex;
 }
 
 /* ── Workspace Tree View ───────────────────────────────────────── */
@@ -1272,16 +1255,9 @@ body:has(.context-target) .ws-tree-session-item.active {
   scrollbar-gutter: stable;
 }
 
-/* Fade-in animation for newly rendered session items (prevent flash
-   when session.render() replaces innerHTML after a mode switch). */
-@keyframes sessionItemIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-.ws-tree-session-item,
-.session-empty {
-  animation: sessionItemIn 0.18s cubic-bezier(0.4, 0, 0.2, 1) backwards;
-}
+/* The history rows no longer animate on their own: the whole "All tasks"
+   section (header + list) slides as one unit on a mode switch, so the rows
+   are carried by that move instead of trailing behind the header. */
 
 /* Constrain sidebar content height so the settings trigger stays visible */
 .sidebar-content-normal {
@@ -1344,7 +1320,8 @@ body:has(.context-target) .ws-tree-session-item.active {
 }
 
 .session-running,
-.session-waiting {
+.session-waiting,
+.session-orange {
   display: inline-block;
   width: 7px;
   height: 7px;
@@ -1355,6 +1332,13 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 .session-waiting {
   background: var(--warning);
+}
+
+/* Permission request pending. `setTabState("permission")` / `renderTabs()`
+   emit this class but no rule ever defined it, so the dot had no size and no
+   colour — it simply never showed up. */
+.session-orange {
+  background: #f97316;
 }
 
 /* Platform-origin pill for adapter-sourced sessions (Phase 5).  Uses
@@ -2303,12 +2287,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 .si-todo-active .si-todo-icon {
   color: var(--accent, #3b82f6);
-  animation: si-spin 1.5s linear infinite;
-}
-
-@keyframes si-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  animation: spin 1.5s linear infinite;
 }
 
 .si-todo-pending .si-todo-icon {
@@ -2505,7 +2484,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   cursor: col-resize;
   z-index: 20;
   background: transparent;
-  transition: background 0.12s, width 0.12s;
+  transition: background var(--transition-fast), width var(--transition-fast);
 }
 
 .si-resize-handle:hover,
@@ -2626,6 +2605,29 @@ body:has(.context-target) .ws-tree-session-item.active {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  transform-origin: top right;
+  /* A floating popover, so it drops in from the button and scales up a
+     hair. Deliberately not a sideways push: this is a panel, not a mode. */
+  transition: opacity var(--duration-base) var(--easing-standard),
+              transform var(--duration-base) var(--easing-standard),
+              display var(--duration-base) allow-discrete;
+}
+
+.summary-panel.hidden {
+  display: none !important;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+}
+
+@starting-style {
+  .summary-panel:not(.hidden) {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+
+html[dir="rtl"] .summary-panel {
+  transform-origin: top left;
 }
 
 .summary-panel-body {
@@ -2707,7 +2709,7 @@ body:has(.context-target) .ws-tree-session-item.active {
     flex-shrink: 0;
     width: 12px !important;
     height: 12px !important;
-    transition: transform 0.2s ease;
+    transition: transform var(--transition-base);
     color: var(--text-muted);
   }
 
@@ -2715,8 +2717,17 @@ body:has(.context-target) .ws-tree-session-item.active {
     transform: rotate(-90deg);
   }
 
+  .sp-ref-body {
+    overflow: hidden;
+    max-height: 500px;
+    opacity: 1;
+    transition: max-height var(--duration-base) var(--easing-standard),
+                opacity var(--duration-base) var(--easing-standard);
+  }
+
   .collapsed .sp-ref-body {
-    display: none;
+    max-height: 0;
+    opacity: 0;
   }
 
   /* ── Summary Panel Reference Items ──────────────────────────── */
@@ -2768,12 +2779,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 .sp-todo-active .sp-todo-icon {
   color: var(--accent, #3b82f6);
-  animation: sp-spin 1.5s linear infinite;
-}
-
-@keyframes sp-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  animation: spin 1.5s linear infinite;
 }
 
 .sp-todo-pending .sp-todo-icon {
@@ -2837,8 +2843,17 @@ body:has(.context-target) .ws-tree-session-item.active {
   color: var(--text-primary);
 }
 
+.sp-todo-done-body {
+  overflow: hidden;
+  max-height: 500px;
+  opacity: 1;
+  transition: max-height var(--duration-base) var(--easing-standard),
+              opacity var(--duration-base) var(--easing-standard);
+}
+
 .sp-todo-done-section.collapsed .sp-todo-done-body {
-  display: none;
+  max-height: 0;
+  opacity: 0;
 }
 
 .sp-todo-done-section.collapsed .sp-todo-chevron {
@@ -2876,7 +2891,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   flex-shrink: 0;
   width: 12px !important;
   height: 12px !important;
-  transition: transform 0.2s ease;
+  transition: transform var(--transition-base);
 }
 
 /* ── Summary Panel Reference Items ──────────────────────────── */
@@ -2937,7 +2952,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   justify-content: center;
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-  transition: opacity 0.2s, transform 0.2s, background 0.15s;
+  transition: opacity var(--transition-base), transform var(--transition-base), background var(--transition-base);
   opacity: 0.85;
 }
 .chat-scroll-bottom-btn:hover {
@@ -3069,16 +3084,30 @@ body:has(.context-target) .ws-tree-session-item.active {
   color: var(--text-primary);
   letter-spacing: -0.02em;
   text-align: center;
+  /* Travel direction for the mode-switch swap, mirrored under rtl. */
+  --wt-out: -100%;
+  --wt-in: 100%;
   transition: opacity var(--transition-base), transform var(--transition-base);
 }
 
-.welcome-title-fade {
-  opacity: 0;
-  transform: translateY(-6px);
+html[dir="rtl"] .welcome-title {
+  --wt-out: 100%;
+  --wt-in: -100%;
 }
 
-.welcome-title.welcome-title-fade {
-  transition: opacity var(--transition-base), transform var(--transition-base);
+/* Welcome-title swap on mode change. Runs entirely in CSS — JS only adds
+   the class and replaces the text at the midpoint. The title leaves to
+   one side, is re-seated on the other side while off-stage, then settles,
+   so two modes read as one continuous move rather than a text pop. */
+.welcome-title.is-swapping {
+  animation: welcome-title-swap var(--motion-slide) var(--easing-standard) both;
+}
+
+@keyframes welcome-title-swap {
+  0%   { opacity: 1; transform: translateX(0); }
+  45%  { opacity: 0; transform: translateX(var(--wt-out)); }
+  55%  { opacity: 0; transform: translateX(var(--wt-in)); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 
 /* ── Message List (Timeline) ─────────────────────────────────────── */
@@ -3096,7 +3125,12 @@ body:has(.context-target) .ws-tree-session-item.active {
 /* ── Timeline Item (unified strip layout) ────────────────────────── */
 .timeline-item {
   width: 100%;
-  animation: fadeInUp var(--duration-slow) ease-out;
+  animation: timeline-slide-in var(--motion-slide);
+}
+
+@keyframes timeline-slide-in {
+  from { transform: translateX(var(--motion-slide-travel)); }
+  to { transform: translateX(0); }
 }
 
 @keyframes fadeInUp {
@@ -3209,7 +3243,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   border-radius: var(--radius-sm);
   background: var(--error-bg, rgba(239, 68, 68, 0.08));
   overflow: hidden;
-  transition: border-color 120ms;
+  transition: border-color var(--transition-fast);
 }
 .turn-status-card.status-error:hover {
   border-color: var(--error);
@@ -3224,7 +3258,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   font-size: 13px;
   font-weight: 500;
   color: var(--error);
-  transition: background 120ms;
+  transition: background var(--transition-fast);
 }
 .turn-status-card.status-error .status-header:hover {
   background: rgba(239, 68, 68, 0.06);
@@ -3245,7 +3279,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   width: 14px;
   height: 14px;
   color: var(--text-muted);
-  transition: transform 120ms;
+  transition: transform var(--transition-fast);
 }
 .turn-status-card.status-error .status-code-tag {
   display: inline-block;
@@ -3293,7 +3327,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   gap: 8px;
   font-size: 13px;
   color: var(--warning);
-  transition: border-color 120ms;
+  transition: border-color var(--transition-fast);
 }
 .turn-status-card.status-warning:hover {
   border-color: var(--warning);
@@ -4012,12 +4046,8 @@ body:has(.context-target) .ws-tree-session-item.active {
   border: 1.5px solid var(--accent);
   border-top-color: transparent;
   border-radius: 50%;
-  animation: tool-spin 0.6s linear infinite;
+  animation: spin 0.6s linear infinite;
 }
-@keyframes tool-spin {
-  to { transform: rotate(360deg); }
-}
-
 /* ── File Card ────────────────────────────────────────────────── */
 .file-card {
   width: 98%;
@@ -4085,7 +4115,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 /* ── Agent card icon spinning + open button ───────────────────── */
 .icon-wrap .semantic.spinning {
-  animation: historySpin 1s linear infinite;
+  animation: spin 1s linear infinite;
 }
 .open-btn {
   display: inline-flex;
@@ -4290,7 +4320,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   font-size: 13px;
   color: var(--text-secondary);
   user-select: none;
-  animation: statusFadeIn var(--duration-slow) ease-out;
+  animation: statusFadeIn var(--transition-emphasized);
 }
 
 .chat-status-bar.hidden {
@@ -4385,7 +4415,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
   z-index: 100;
-  animation: fadeInUp var(--duration-base) ease-out;
+  animation: fadeInUp var(--motion-enter);
 }
 
 .mention-dropdown-divider {
@@ -4772,8 +4802,17 @@ body:has(.context-target) .ws-tree-session-item.active {
   transition: height var(--transition-emphasized);
 }
 .prompt-input.expanded {
-  min-height: 220px;
-  max-height: min(620px, 55vh);
+  /* 展开高度必须固定：以前这里只有 min-height / max-height，真实高度是由
+     内容行数撑出来的（内容少时贴着 220px，内容多时一路长到 620px），于是
+     每次展开的高度都不一样。现在给一个与内容无关的固定值，超出部分在框内
+     滚动。
+
+     取值 min(280px, 45vh)：常规窗口下恒为 280px（约 11~12 行正文），
+     vh 只作为矮窗口的安全兜底，避免展开框顶穿可视区。不要用 clamp(...vh...)
+     作为理想值 —— 那会让窗口越高展开框越大，失去"固定高度"的意义。 */
+  height: min(280px, 45vh);
+  min-height: 0;
+  max-height: none;
 }
 
 /* ── Setting rich text (based on prompt-input UI + 外边框) ─────────── */
@@ -5351,11 +5390,11 @@ body:has(.context-target) .ws-tree-session-item.active {
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: yimFadeIn var(--duration-base) ease-out;
+  animation: fade-in var(--motion-enter);
 }
 
 .encre-dialog-overlay.encre-dialog-dismissing {
-  animation: yimFadeOut var(--duration-fast) ease-out forwards;
+  animation: fade-out var(--motion-exit) forwards;
 }
 
 /* Dialog confined to a container (e.g. the session sidebar) instead of the
@@ -5372,15 +5411,8 @@ body:has(.context-target) .ws-tree-session-item.active {
   padding: 20px;
 }
 
-@keyframes yimFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes yimFadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
+/* yimFadeIn / yimFadeOut consolidated into the shared `fade-in` / `fade-out`
+   keyframes in design-system.css. */
 
 .encre-dialog-card {
   background: var(--bg-secondary);
@@ -5538,7 +5570,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   padding: 0 10px 4px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 /* Settings nav items within sidebar */
@@ -5547,7 +5579,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px 10px;
   border: none;
   background: none;
   border-radius: var(--radius-sm);
@@ -5581,8 +5613,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   width: 100%;
   height: 1px;
   background: var(--text-muted);
-  opacity: 0.15;
-  margin: 5px 0;
+  opacity: 0.35;
   flex-shrink: 0;
 }
 
@@ -5608,12 +5639,12 @@ body:has(.context-target) .ws-tree-session-item.active {
 
 .settings-panel.active {
   display: block;
-  animation: fadePanelIn var(--duration-base) ease-out;
+  animation: fadePanelIn var(--motion-slide);
 }
 
 @keyframes fadePanelIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateX(var(--motion-slide-travel)); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 /* ── Settings Mode Toggle ────────────────────────────────────────── */
@@ -5632,11 +5663,21 @@ body:has(.context-target) .ws-tree-session-item.active {
 #app.settings-mode .chat-view,
 #app.settings-mode #search-view,
 #app.settings-mode #agents-view,
-#app.settings-mode #automation-view,
 #app.settings-mode #session-bar,
 #app.settings-mode #session-inner-sidebar,
 #app.settings-mode #btn-sidebar-search {
   display: none !important;
+}
+
+/* Automation is faded out rather than removed while settings is open. A
+   `display: none` here would cut its slide-out short when the user jumps
+   straight from automation into settings — the one path where the two
+   transitions genuinely overlap. Fading keeps it visible for the length
+   of the move; the normal path additionally gets `visibility` from the
+   panel's own `.hidden` rule, which lands a beat later. */
+#app.settings-mode #automation-view {
+  opacity: 0;
+  pointer-events: none;
 }
 
 #app.settings-mode #settings-view {
@@ -5717,7 +5758,7 @@ body:has(.context-target) .ws-tree-session-item.active {
   color: var(--text-primary);
   font-size: 12px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color var(--transition-base), background var(--transition-base);
   white-space: nowrap;
 }
 
@@ -5765,7 +5806,7 @@ body:has(.context-target) .ws-tree-session-item.active {
 .log-row {
   display: flex;
   border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
+  transition: background var(--transition-fast);
 }
 
 .log-row:last-child {
@@ -6394,7 +6435,7 @@ body.child-mode #header-bar {
   color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color var(--transition-base), background var(--transition-base);
 }
 
 .child-overlay-retry:hover {
@@ -6678,10 +6719,6 @@ body.child-mode #header-bar {
   opacity: 0.65;
 }
 
-@keyframes doc-spin {
-  to { transform: rotate(360deg); }
-}
-
 .doc-loading-spinner {
   display: inline-block;
   width: 12px;
@@ -6689,7 +6726,7 @@ body.child-mode #header-bar {
   border: 2px solid var(--border);
   border-top-color: var(--text-tertiary);
   border-radius: 50%;
-  animation: doc-spin 0.6s linear infinite;
+  animation: spin 0.6s linear infinite;
   vertical-align: middle;
 }
 
@@ -6874,12 +6911,17 @@ body.child-mode #header-bar {
   margin: 0 18px;
 }
 
-/* ── Settings Dropdown ───────────────────────────────────────────── */
+/* ── Settings Dropdown ─────────────────────────────────────────────
+   下拉框是所有「点开选一个」控件的统一容器。输入区的模型选择器 /
+   工作区选择器（.input-selector）是它的分叉，两者写在同一个选择器组里
+   共用同一套盒模型，.input-selector 只覆盖可见外观（见下方分叉块）。
+   改动这里的 padding / border / font-size 时，两个分叉会同步变化。 */
 .settings-dropdown-wrap {
   position: relative;
 }
 
-.settings-dropdown-trigger {
+.settings-dropdown-trigger,
+.input-selector {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -6896,7 +6938,8 @@ body.child-mode #header-bar {
   min-width: 120px;
 }
 
-.settings-dropdown-trigger > span {
+.settings-dropdown-trigger > span,
+.input-selector-label {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -6907,7 +6950,8 @@ body.child-mode #header-bar {
   background: var(--bg-hover);
 }
 
-.settings-dropdown-chevron {
+.settings-dropdown-chevron,
+.input-selector-chevron {
   width: 14px;
   height: 14px;
   opacity: 0.5;
@@ -6923,6 +6967,26 @@ body.child-mode #header-bar {
 
 .settings-dropdown-wrap:has(.settings-dropdown.open) .settings-dropdown-chevron {
   transform: rotate(180deg);
+}
+
+/* ── 输入区分叉（模型 / 工作区选择器）────────────────────────────
+   只改「看得见的部分」：边框与背景变透明。border 本身保留 1px（仅改
+   颜色），这样容器高度与下拉框 trigger 完全一致，折叠箭头在两处落在
+   同一垂直位置。水平方向保持输入区的紧凑设定（更窄的内边距、更小的
+   间距、不设最小宽度），不占用输入框空间。 */
+.input-selector {
+  gap: 4px;
+  padding: 7px 10px;
+  min-width: 0;
+  font-weight: 500;
+  background: transparent;
+  border-color: transparent;
+}
+
+.input-selector:hover,
+.input-selector:active {
+  background: transparent;
+  border-color: transparent;
 }
 
 .settings-dropdown {
@@ -6944,7 +7008,7 @@ body.child-mode #header-bar {
 
 .settings-dropdown.open {
   display: block;
-  animation: dropdownIn var(--duration-fast) ease-out;
+  animation: dropdownIn var(--transition-fast);
 }
 
 @keyframes dropdownIn {
@@ -7088,16 +7152,16 @@ body.child-mode #header-bar {
 
 .about-banner-title {
   position: relative;
-  font-size: 32px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-  line-height: 1.2;
-  text-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  width: 280px;
+  height: 40px;
+  background-image: url("assets/EA-dm.svg");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
 }
 
 [data-theme="light"] .about-banner-title {
-  text-shadow: 0 2px 12px rgba(99, 102, 241, 0.10);
+  background-image: url("assets/EA-lm.svg");
 }
 
 .about-info-card {
@@ -7475,12 +7539,16 @@ body.child-mode #header-bar {
      flow and main-area is always pushed right (never overlaid). */
   width: 0;
   min-width: 0;
+  transition: width var(--transition-slow),
+              min-width var(--transition-slow);
 }
 
 /* Collapse sidebar smoothly when automation view is active */
 #app:has(#automation-view:not(.hidden)) #sidebar {
   width: 0;
   min-width: 0;
+  transition: width var(--transition-slow),
+              min-width var(--transition-slow);
 }
 
 @media (max-width: 768px) {
@@ -7726,7 +7794,7 @@ body.child-mode #header-bar {
   justify-content: center;
   flex-shrink: 0;
   background: transparent;
-  transition: all 0.15s ease;
+  transition: all var(--transition-base);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -7741,7 +7809,7 @@ body.child-mode #header-bar {
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-base);
 }
 .auto-push-gw-item.selected .auto-push-gw-check {
   border-color: #15a877;
@@ -7776,10 +7844,14 @@ body.child-mode #header-bar {
   border-radius: 8px;
   cursor: pointer;
   border: none;
-  transition: background var(--transition-base, 0.15s ease);
+  transition: background var(--transition-base);
 }
 .auto-push-gw-item:hover {
   background: var(--bg-secondary, rgba(127, 127, 127, 0.06));
+}
+.auto-push-gw-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .auto-push-gw-item.selected {
   background: var(--bg-active, rgba(127, 127, 127, 0.12));
@@ -7976,7 +8048,7 @@ body.child-mode #header-bar {
 }
 .history-calendar-dropdown.open {
   display: block;
-  animation: dropdownIn var(--duration-fast) ease-out;
+  animation: dropdownIn var(--transition-fast);
 }
 
 .cal-header {
@@ -8142,12 +8214,7 @@ body.child-mode #header-bar {
   color: var(--warning);
 }
 .history-timeline-icon--running .lucide {
-  animation: historySpin 1s linear infinite;
-}
-
-@keyframes historySpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  animation: spin 1s linear infinite;
 }
 
 .history-timeline-icon .lucide {
@@ -8388,7 +8455,7 @@ body.child-mode #header-bar {
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   z-index: 1001;
-  animation: fadeIn var(--duration-fast) ease-out;
+  animation: fade-in var(--transition-fast);
   display: flex;
   flex-direction: column;
 }
@@ -8613,7 +8680,7 @@ body.child-mode #header-bar {
   max-height: 320px;
   object-fit: contain;
   display: block;
-  transition: transform 0.18s ease;
+  transition: transform var(--transition-base);
 }
 
 .media-viewer-video {
@@ -8639,7 +8706,7 @@ body.child-mode #header-bar {
   border: 1px solid var(--toolbar-border);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition: opacity var(--transition-base);
   z-index: 5;
   pointer-events: none;
   backdrop-filter: blur(6px);
@@ -8711,7 +8778,7 @@ body.child-mode #header-bar {
   cursor: pointer;
   flex-shrink: 0;
   overflow: hidden;
-  transition: width 0.2s ease;
+  transition: width var(--transition-slow);
 }
 .media-progress-wrap:hover .media-progress {
   width: 120px;
@@ -8737,7 +8804,7 @@ body.child-mode #header-bar {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   transform: translate(-50%, -50%);
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-base);
 }
 .media-progress-wrap:hover .media-progress-knob {
   opacity: 1;
@@ -9254,6 +9321,13 @@ body.child-mode #header-bar {
   margin-bottom: 2px;
 }
 
+.model-form-thinking-title--with-help {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 18px;
+}
+
 .model-form-thinking-desc {
   font-size: 11.5px;
   color: var(--text-muted);
@@ -9274,6 +9348,8 @@ body.child-mode #header-bar {
   cursor: pointer;
   padding: 0;
   vertical-align: middle;
+  line-height: 1;
+  flex-shrink: 0;
   transition: color var(--transition-base), background var(--transition-base);
 }
 .model-form-help-btn:hover {
@@ -9285,10 +9361,13 @@ body.child-mode #header-bar {
 }
 
 /* ── Inline label variant (Base URL + ? on same line) ───────── */
-.model-form-label--inline {
+/* Compound selector beats the later `.model-form-label { display: block }`
+   rule (same specificity, later source order) so flex centering applies. */
+.model-form-label.model-form-label--inline {
   display: flex;
   align-items: center;
   gap: 4px;
+  line-height: 18px;
 }
 
 /* ── Number input with custom spinners ──────────────────────── */
@@ -9916,7 +9995,7 @@ input.model-form-input--reveal {
 }
 
 .timeline-item {
-  animation: none;
+  animation: timeline-slide-in var(--motion-slide);
 }
 
 .user-item {
@@ -10247,7 +10326,7 @@ input.model-form-input--reveal {
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-base);
 }
 .info-btn:hover {
   background: var(--bg-hover);
@@ -11436,10 +11515,7 @@ input.model-form-input--reveal {
   font-size: 13px;
 }
 .si-office-loading .lucide.spin {
-  animation: si-spin 1s linear infinite;
-}
-@keyframes si-spin {
-  to { transform: rotate(360deg); }
+  animation: spin 1s linear infinite;
 }
 .si-office-page {
   padding: 24px 32px;
@@ -11872,7 +11948,7 @@ input.model-form-input--reveal {
 /* Cell hover — a subtle ring + brightening to make the cell feel
  * "alive" without the size changing (so the grid stays rigid). */
 .usage-hm-cell {
-  transition: filter 0.12s ease;
+  transition: filter var(--transition-fast);
   cursor: pointer;
 }
 .usage-hm-cell:hover {
@@ -12771,17 +12847,156 @@ input.model-form-input--reveal {
   background: var(--bg-secondary);
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.38);
   pointer-events: none;
-  white-space: pre-wrap;
-  word-break: break-word;
   opacity: 0;
   transform: translateY(2px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
   will-change: opacity, transform;
 }
 .encre-tooltip.encre-tooltip--visible {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Plain-text variant: an optional leading icon beside the (possibly
+   multi-line) text. Unchanged for every existing `data-tooltip` in the app. */
+.encre-tooltip-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.encre-tooltip-icon {
+  width: 14px;
+  height: 14px;
+  margin-block-start: 2px;
+  border-radius: 2px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.encre-tooltip-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Rich variant (tab hover): an icon plus multi-line text, so it needs more
+   room than a plain one-liner. */
+.encre-tooltip--rich {
+  max-width: 360px;
+}
+
+/* ── Structured tab tooltip ─────────────────────────────────────────────
+   Sized by its content — no fixed box. A tab carrying one line stays one
+   line tall; a tab carrying a path plus two fields grows exactly as much as
+   it needs. Content is centred inside, values never wrap (an ellipsis takes
+   over instead) and the permission chips always close the panel. */
+.encre-tooltip--model {
+  width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
+  min-width: 0;
+  /* Centre the block on both axes, so a short panel never looks lopsided. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* A touch more air than the one-line tooltip — the panel carries a header
+     plus a grid, and the default 6px/10px is cramped around it. */
+  padding: 9px 11px;
+}
+
+.encre-tooltip--model > .encre-tooltip-body {
+  width: 100%;
+}
+
+.encre-tooltip-body--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tt-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tt-head-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.tt-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tt-rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 1px;
+}
+
+/* `display: contents` lets the two spans join the parent grid, so the label
+   column is sized once for every row and the values line up. */
+.tt-row {
+  display: contents;
+}
+
+.tt-label {
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+.tt-value {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row with no label (URL, absolute path) spans both grid columns. */
+.tt-value--full {
+  grid-column: 1 / -1;
+}
+
+.tt-perms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 9px;
+  margin-block-start: 1px;
+  padding-block-start: 6px;
+  border-block-start: 1px solid rgba(140, 140, 140, 0.35);
+}
+
+.tt-perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tt-perm svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* A permission the user denied stays visible but recedes. */
+.tt-perm--denied {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
 [data-theme="light"] .encre-tooltip {
   color: #000000;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
@@ -12883,6 +13098,10 @@ input.model-form-input--reveal {
   min-height: 0;
 }
 
+/* Browser loading / error backdrop. The container is transparent and
+   click-through so the loading spinner never covers or blocks the page
+   behind it — the error state re-enables pointer events and paints its
+   own opaque background on top of the internal chrome-error page. */
 .browser-webview-status {
   position: absolute;
   top: 0;
@@ -12892,7 +13111,8 @@ input.model-form-input--reveal {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-primary);
+  background: transparent;
+  pointer-events: none;
   z-index: 5;
 }
 
@@ -12903,21 +13123,22 @@ input.model-form-input--reveal {
 }
 
 .browser-status-error {
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  bottom: 0;
+  inset-inline-start: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-primary);
   padding: 24px;
+  pointer-events: auto;
   z-index: 6;
 }
 
-.browser-overlay-content {
-  max-width: 420px;
-  min-height: 0;
-}
-
-.browser-overlay-retry {
-  margin-top: 12px;
+.browser-error-state {
+  max-width: 360px;
 }
 
 /* ── BrowserView compact (sidebar) ── */
@@ -13343,7 +13564,7 @@ input.model-form-input--reveal {
 .workspace-mgr-settings {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 12px;
   padding: 6px 4px;
 }
 
@@ -13460,6 +13681,220 @@ input.model-form-input--reveal {
   font-size: 11px;
 }
 
+/* ══ Unified Motion — view & panel transitions ═══════════════════════
+   Every animated surface funnels through this block. Two rules keep it
+   coherent:
+
+     1. Timing comes from the motion steps in design-system.css
+        (--motion-micro / enter / exit / slide). Nothing here hard-codes
+        a duration or a curve.
+     2. JS only toggles a class. It never writes inline transform,
+        opacity or transition. That inline style juggling is exactly what
+        used to leave residue behind whenever a switch was interrupted.
+
+   Visibility is toggled with a *delayed* `visibility`, never `display`,
+   so a view can travel out and only then become fully inert. That is
+   what makes switching residue-free: after the transition the outgoing
+   surface is genuinely invisible and unfocusable, yet it stayed in the
+   layout for the whole duration of the move.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Area-level switch: #main-content ⇄ #automation-view ────────────
+   The two are siblings inside #main-body. #automation-view floats above
+   #main-content, so the outgoing view slides out underneath while the
+   incoming one follows right behind it — a carousel, not a stack. */
+#main-body {
+  position: relative;
+}
+
+/* The outgoing surface. Default transform is `none` on purpose: a
+   lingering transform — even translateX(0) — becomes a containing block
+   and would re-anchor every position:fixed descendant. */
+#main-content {
+  /* Where this surface parks while automation sits in front of it.
+     Mirrored under rtl by overriding the variable, so the transform itself
+     never needs a direction-specific override — such an override would
+     out-specify the `transform: none` on the active state and strand the
+     view off-stage. */
+  --mc-offstage: -100%;
+  transform: none;
+  transition: transform var(--motion-slide),
+              opacity var(--motion-slide),
+              margin-inline-end var(--transition-slow),
+              visibility 0s linear 0s;
+}
+
+#app:has(#automation-view:not(.hidden)) #main-content {
+  transform: translateX(var(--mc-offstage));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform var(--motion-slide),
+              opacity var(--motion-slide),
+              margin-inline-end var(--transition-slow),
+              visibility 0s linear var(--duration-slow);
+}
+
+/* The incoming surface. Stays mounted but inert while hidden so it can
+   be animated in without a layout jump or a first-paint flash. */
+#automation-view {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  /* Off-stage rest position; mirrored under rtl via the variable. */
+  --av-offstage: 100%;
+  transform: translateX(var(--av-offstage));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform var(--motion-slide),
+              opacity var(--motion-slide),
+              visibility 0s linear var(--duration-slow);
+}
+
+/* Neutralise the global `.hidden { display: none !important }` for this
+   one element: `visibility` above does the hiding instead. Specificity
+   (id + class) beats the lone class, so this wins without `!important`
+   fights — while `#app.settings-mode #automation-view` (two ids) still
+   correctly forces it away in settings. */
+#automation-view.hidden {
+  display: flex !important;
+}
+
+#automation-view:not(.hidden) {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+/* ── Sub-view switch: panels inside #main-content-clip ──────────────
+   chat / search / agents / settings / child-view share one slot. Enter
+   fades up; exit is instant. The instant exit is deliberate — the
+   outgoing panel holds a different kind of content (a conversation vs. a
+   settings form), so cross-fading two unrelated layouts reads as a
+   flicker rather than as motion. The travel is small for the same
+   reason: enough to register as movement, not enough to feel like the
+   layout shifted. */
+#search-view,
+#agents-view,
+#settings-view,
+#child-view {
+  transition: opacity var(--motion-slide),
+              transform var(--motion-slide);
+}
+
+#search-view:not(.hidden),
+#agents-view:not(.hidden),
+#child-view:not(.hidden),
+#app.settings-mode #settings-view {
+  @starting-style {
+    opacity: 0;
+    transform: translateX(var(--motion-slide-travel));
+  }
+}
+
+/* ── Content entrance on an iwork ⇄ normal switch ───────────────────
+   The automation swap above works because two different panels trade
+   places. iWork and normal do not: they share the same panels, so what
+   changes is the *content* — the sidebar list is rebuilt and the chat
+   slot is re-rendered. Without this, that repaint read as the content
+   simply snapping into place. Replaying the entrance on the content
+   turns the repaint into a transition.
+
+   Only the content moves: #chat-container (welcome + messages) and
+   #session-list (history rows). The surrounding chrome — the nav row,
+   the "All tasks" heading, the batch button, the input area and the
+   disclaimer — stays put, so nothing that did not change appears to
+   shift.
+
+   The move is directional and full-width (iOS-style push): entering
+   iWork slides the new content in from the inline-end edge (forward),
+   returning to normal slides it in from the inline-start edge (back).
+   Two distinct keyframe names are declared on purpose. Replaying an
+   entrance by re-adding the class it is already running is a no-op —
+   the browser sees no change in `animation-name`, so nothing restarts.
+   Distinct names guarantee the move replays even on a rapid second
+   switch, and need no forced reflow and no inline style to clean up:
+   the class is dropped on animationend, and the animation itself
+   carries no fill mode, so no transform can survive it. */
+#chat-container.mode-in-forward {
+  animation: mode-in-forward var(--motion-slide);
+}
+
+#chat-container.mode-in-back {
+  animation: mode-in-back var(--motion-slide);
+}
+
+@keyframes mode-in-forward {
+  from { transform: translateX(100%); }
+}
+
+@keyframes mode-in-back {
+  from { transform: translateX(-100%); }
+}
+
+/* ── History rows settle with the same switch ───────────────────────
+   Only #session-list travels; the nav row (New task / temp-chat /
+   workspace), the "All tasks" heading and the batch button are static,
+   so the sidebar chrome never appears to move. Animating the list
+   container (rather than each row) means rows that arrive from the
+   backend a beat later are carried by the move instead of playing a
+   separate animation. The class is toggled by replayContentEnter() and
+   dropped on animationend. */
+#session-list.mode-in-forward {
+  animation: mode-in-forward var(--motion-slide);
+}
+
+#session-list.mode-in-back {
+  animation: mode-in-back var(--motion-slide);
+}
+
+/* ── One-shot entrances & control feedback ──────────────────────────
+   `.fade-in-once` is for elements JS reveals (an overlay switching from
+   display:none). It is removed on animationend, so re-adding it replays
+   the entrance — no forced reflow needed to restart it.
+
+   `.copy-flash` is the copy→checkmark feedback shared by the chat tool
+   actions and the notification panel. Both used to drive this with inline
+   opacity plus a hard-coded `0.12s ease`; the fade is a transition here,
+   which also means it survives the lucide glyph swap. */
+.fade-in-once {
+  animation: fade-in var(--motion-enter);
+}
+
+.copy-flash {
+  transition: opacity var(--motion-exit);
+}
+
+.copy-flash.is-fading {
+  opacity: 0;
+}
+
+/* While the session sidebar's resize handle is being dragged, the width
+   must track the pointer exactly — the usual 280ms transition would lag
+   behind the cursor. */
+#session-inner-sidebar.is-resizing {
+  transition: none;
+}
+
+/* ── RTL mirroring for the area-level switch ────────────────────────
+   Under rtl the inline-end side is the left, so "off-stage" flips for both
+   surfaces. Only the direction variables change here — overriding the
+   transforms directly would out-specify the active state and leave the
+   outgoing view parked in the middle of the screen. */
+html[dir="rtl"] #main-content {
+  --mc-offstage: 100%;
+}
+
+html[dir="rtl"] #automation-view {
+  --av-offstage: -100%;
+}
+
 /* ── RTL overrides (html[dir="rtl"] for ar / he) ──────────────────
    The shell (#app flex row → sidebar mirrors to the right) and most
    panels now use logical properties, so dir="rtl" mirrors them with no
@@ -13494,4 +13929,38 @@ html[dir="rtl"] #session-inner-sidebar {
    the top-right corner instead of sliding from the wrong side. */
 html[dir="rtl"] .encre-menu-dropdown {
   transform-origin: top right;
+}
+
+/* ── Directional icons mirror under RTL ───────────────────────────
+   Arrows that indicate a physical side ("collapse/expand", "back",
+   "previous/next") must flip when the whole layout mirrors, otherwise
+   they keep pointing at the wrong edge. We flip ONLY the directional
+   arrows — NOT metaphor icons such as arrow-up-right (open-in-new),
+   search, settings, check, etc. The sidebar toggle (panel-left) and the
+   workspace-nav / about-link / model-selector chevrons are exactly the
+   cases the user reported. */
+html[dir="rtl"] .lucide-chevron-right,
+html[dir="rtl"] .lucide-chevron-left,
+html[dir="rtl"] .lucide-chevrons-right,
+html[dir="rtl"] .lucide-chevrons-left,
+html[dir="rtl"] .lucide-arrow-right,
+html[dir="rtl"] .lucide-arrow-left,
+html[dir="rtl"] .lucide-chevron-first,
+html[dir="rtl"] .lucide-chevron-last,
+html[dir="rtl"] .lucide-move-right,
+html[dir="rtl"] .lucide-move-left,
+html[dir="rtl"] .lucide-panel-left,
+html[dir="rtl"] .lucide-panel-right,
+html[dir="rtl"] .lucide-panel-left-open,
+html[dir="rtl"] .lucide-panel-right-open {
+  transform: scaleX(-1);
+}
+
+/* The file-tree chevron rotates 90° when expanded to point down. A plain
+   scaleX(-1) would replace that rotation and make it point sideways in
+   RTL, so re-apply both together. Order matters: rotate first, then flip,
+   which still lands the arrow pointing DOWN in RTL. */
+html[dir="rtl"] .si-tree-chevron.expanded svg,
+html[dir="rtl"] .si-tree-chevron.expanded i {
+  transform: scaleX(-1) rotate(90deg);
 }

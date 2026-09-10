@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Session domain handlers: list / new / delete / archive / export / rename.
 
 Also hosts the unified session-list snapshot builder used by broadcasts
@@ -40,9 +42,9 @@ import shutil
 from dataclasses import replace
 from typing import Any
 
+from encre.config import get_data_dir
 from encre.protocol.handlers.workspace_store import (
     _get_workspace_dir,
-    _get_yim_data_dir,
     _load_workspaces,
     _make_workspace_id,
     _remove_session_from_workspace_indices,
@@ -195,7 +197,9 @@ class SessionsHandlers:
         # directory (not the workspace one).  We must read it directly since
         # self._manager only points to the workspace directory.
         if self._workspace_path:
-            global_idx = os.path.join(_get_yim_data_dir(), "sessions", "index.json")
+            # ensure=False: index.json is a file, never mkdir() it (the
+            # default ensure=True raised WinError 183 once the file existed).
+            global_idx = str(get_data_dir("sessions", "index.json", ensure=False))
             if os.path.isfile(global_idx):
                 try:
                     with open(global_idx, encoding="utf-8") as f:
@@ -206,7 +210,7 @@ class SessionsHandlers:
                             raw = _decrypt(raw)
                     g_index = json.loads(raw)
                     if isinstance(g_index, dict):
-                        global_sess_dir = os.path.join(_get_yim_data_dir(), "sessions")
+                        global_sess_dir = str(get_data_dir("sessions"))
                         for sid, entry in g_index.items():
                             if sid in active_ids:
                                 continue
@@ -254,7 +258,7 @@ class SessionsHandlers:
         result = [s for s in result if s.get("channel", "normal") == expected_channel]
 
         # 鈹€鈹€ Exclude temp chats from the sidebar 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-        result = [s for s in result if not s.get("metadata", {}).get("temp_chat")]
+        result = [s for s in result if not s.get("temp_chat") and not s.get("metadata", {}).get("temp_chat")]
 
         # 鈹€鈹€ Exclude archived sessions (only visible in the archive view) 鈹€鈹€
         result = [s for s in result if not s.get("archived")]
@@ -445,6 +449,13 @@ class SessionsHandlers:
         # _list_all_sessions filters it into the correct sidebar
         self._info.agent.session.metadata["channel"] = "iwork" if self._workspace_path else "normal"
         await self._send(ws, "session_ready", session_id=self._info.session_id, plan_items=[], request_id=msg.request_id)
+        # Authoritatively clear chip state for the brand-new session.  The
+        # frontend clears its own chips optimistically on session_ready, but
+        # this mode_changed("") is the backend's source of truth: without it
+        # any in-flight or stale event could re-introduce the PREVIOUS
+        # session's mode into the new conversation.
+        await self._send_session_mode(ws, self._info)
+        await self._send_session_command(ws, self._info)
 
     async def _h_delete_session(self, ws: Any, msg: ClientDeleteSession) -> None:
         if not msg.session_id:
@@ -453,6 +464,9 @@ class SessionsHandlers:
         if self._current_session_id == msg.session_id:
             self._current_session_id = None
             self._info = None
+        # Drop the deleted session's spec engine so its state cannot be
+        # resurrected if a new session ever reuses the id slot.
+        self._spec_engines.pop(msg.session_id, None)
         from encre.config import get_data_dir as _get_data_dir
         ok = self._manager.delete_session_from_disk(msg.session_id)
         # Also clean up from EventRouter's session manager so the
@@ -571,7 +585,7 @@ class SessionsHandlers:
         if not msg.session_id or not msg.new_name.strip():
             await self._send(ws, "error", message="Missing session_id or new_name", code="invalid_request")
             return
-        new_name = msg.new_name.strip()[:8]
+        new_name = msg.new_name.strip()
         ok = self._manager.rename_session(msg.session_id, new_name)
         if ok:
             await self._send(ws, "session_renamed", session_id=msg.session_id, new_name=new_name)

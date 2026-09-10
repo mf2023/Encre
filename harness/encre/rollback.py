@@ -26,7 +26,7 @@
 Layout
 ======
 
-Each session gets a directory under ``~/.encre/rollback/<session_id>/``::
+Each session gets a directory under ``<data_dir>/rollback/<session_id>/``::
 
     refs/heads/master       ->  HEAD commit hash (plain text)
     objects/ab/cdef1234...  ->  single commit blob (encrypted JSON)
@@ -62,7 +62,7 @@ import pathlib
 import time
 from typing import Any
 
-from encre.crypto import decrypt, encrypt
+from encre import secure_io
 
 _log = logging.getLogger("encre.rollback")
 
@@ -71,7 +71,21 @@ __all__ = ["CommitEntry", "EncreRollbackGit"]
 
 # 鈹€鈹€ storage layout 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-_BASE = pathlib.Path("~/.encre/rollback").expanduser()
+def _resolve_base() -> pathlib.Path:
+    """Rollback store root -- declared in ``encre.lifecycle``.
+
+    The root used to be a second, independent hard-coded path living under a
+    *different* data root (``~/.encre``) than everything else
+    (``~/.dunimd/encre``), which is why rollback survived session deletion
+    unnoticed.  Resolving it through the lifecycle module keeps the on-disk
+    layout defined in exactly one place.
+    """
+    from encre.lifecycle import rollback_root
+
+    return rollback_root()
+
+
+_BASE = _resolve_base()
 _HASH_LEN = 40  # characters -- like a full git hash
 _INDEX_FILE = _BASE / "index.json"
 
@@ -146,13 +160,12 @@ class EncreRollbackGit:
     def _load_index(self) -> None:
         try:
             if _INDEX_FILE.exists():
-                self._session_index = json.loads(_INDEX_FILE.read_text(encoding="utf-8"))
+                self._session_index = secure_io.read_json(_INDEX_FILE, default={})
         except Exception:
             self._session_index = {}
 
     def _save_index(self) -> None:
-        _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _INDEX_FILE.write_text(json.dumps(self._session_index, ensure_ascii=False), encoding="utf-8")
+        secure_io.write_json(_INDEX_FILE, self._session_index)
 
     # 鈹€鈹€ object I/O 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
@@ -167,36 +180,22 @@ class EncreRollbackGit:
         p = _head_path(session_id)
         if not p.exists():
             return None
-        return p.read_text(encoding="utf-8").strip() or None
+        return secure_io.read_text(p, default="").strip() or None
 
     @staticmethod
     def _write_head(session_id: str, commit_hash: str) -> None:
-        p = _head_path(session_id)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(commit_hash, encoding="utf-8")
+        secure_io.write_text(_head_path(session_id), commit_hash)
 
     @staticmethod
     def _write_object(session_id: str, commit_hash: str, data: dict[str, Any]) -> None:
-        p = _obj_path(session_id, commit_hash)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        raw = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-        with contextlib.suppress(Exception):
-            raw = encrypt(raw)
-        p.write_text(raw, encoding="utf-8")
+        secure_io.write_json(_obj_path(session_id, commit_hash), data)
 
     @staticmethod
     def _read_object(session_id: str, commit_hash: str) -> dict[str, Any] | None:
         p = _obj_path(session_id, commit_hash)
         if not p.exists():
             return None
-        raw = p.read_text(encoding="utf-8").strip()
-        if raw and not raw.startswith("{"):
-            with contextlib.suppress(Exception):
-                raw = decrypt(raw)
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return None
+        return secure_io.read_json(p, default=None)
 
     # 鈹€鈹€ public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 

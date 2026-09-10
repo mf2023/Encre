@@ -21,22 +21,7 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
-"""
-yuanbao_media.py 鈥?鍏冨疂骞冲彴濯掍綋澶勭悊妯″潡
-
-鎻愪緵 COS 涓婁紶銆佹枃浠朵笅杞姐€乀IM 濯掍綋娑堟伅鏋勫缓绛夊姛鑳姐€?
-绉绘鑷?TypeScript 鐗?media.ts锛坹uanbao-openclaw-plugin锛夛紝
-浣跨敤 httpx 鏇夸唬 cos-nodejs-sdk-v5锛岄伩鍏嶅紩鍏ラ澶?SDK 渚濊禆銆?
-
-COS 涓婁紶娴佺▼锛?
-  1. 璋冪敤 genUploadInfo 鑾峰彇涓存椂鍑瘉锛坱mpSecretId/tmpSecretKey/sessionToken锛?
-  2. 鐢ㄤ复鏃跺嚟璇侀€氳繃 HMAC-SHA1 绛惧悕鏋勫缓 Authorization 澶?
-  3. HTTP PUT 涓婁紶鍒?COS
-
-TIM 娑堟伅浣撴瀯寤猴細
-  - buildImageMsgBody() 鈫?TIMImageElem
-  - buildFileMsgBody()  鈫?TIMFileElem
-"""
+from __future__ import annotations
 
 import hashlib
 import hmac
@@ -108,13 +93,13 @@ _EXT_TO_MIME: dict[str, str] = {
 # ============ 宸ュ叿鍑芥暟 ============
 
 def guess_mime_type(filename: str) -> str:
-    """鏍规嵁鏂囦欢鎵╁睍鍚嶇寽娴?MIME 绫诲瀷銆?""
+    """根据文件扩展名猜测MIME类型。"""
     ext = os.path.splitext(filename)[-1].lower()
     return _EXT_TO_MIME.get(ext, "application/octet-stream")
 
 
 def is_image(filename: str, mime_type: str = "") -> bool:
-    """鍒ゆ柇鏄惁涓哄浘鐗囩被鍨嬨€?""
+    """判断是否为图片类型。"""
     if mime_type.startswith("image/"):
         return True
     ext = os.path.splitext(filename)[-1].lower()
@@ -122,17 +107,17 @@ def is_image(filename: str, mime_type: str = "") -> bool:
 
 
 def get_image_format(mime_type: str) -> int:
-    """鑾峰彇 TIM 鍥剧墖鏍煎紡缂栧彿銆?""
+    """获取 TIM 图片格式编号。"""
     return _MIME_TO_IMAGE_FORMAT.get(mime_type.lower(), 255)
 
 
 def md5_hex(data: bytes) -> str:
-    """璁＄畻 MD5 鍗佸叚杩涘埗鎽樿銆?""
+    """计算 MD5 十六进制摘要。"""
     return hashlib.md5(data).hexdigest()
 
 
 def generate_file_id() -> str:
-    """鐢熸垚闅忔満鏂囦欢 ID锛?2 浣?hex锛夈€?""
+    """生成随机文件ID（32位hex）。"""
     return secrets.token_hex(16)
 
 
@@ -678,7 +663,7 @@ def build_file_msg_body(
 # ============ 鍐呴儴宸ュ叿 ============
 
 def _basename_from_url(url: str) -> str:
-    """浠?URL 鎻愬彇鏂囦欢鍚嶃€?""
+    """从URL提取文件名。"""
     try:
         parsed = urllib.parse.urlparse(url)
         return os.path.basename(parsed.path)

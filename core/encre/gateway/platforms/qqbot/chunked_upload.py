@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Inspired by the Hermes Agent project (https://github.com/NousResearch/hermes-agent.git).
 Thanks to Hermes Agent for the inspiration on this module.
@@ -329,7 +331,7 @@ class ChunkedUploader:
         await _run_with_concurrency(tasks, max_concurrent)
 
         logger.info(
-            "[%s] All %d parts uploaded, completing鈥?,
+            "[%s] All %d parts uploaded, completing…",
             self._log_tag, len(prepare.parts),
         )
 

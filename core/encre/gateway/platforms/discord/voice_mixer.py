@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Inspired by the Hermes Agent project (https://github.com/NousResearch/hermes-agent.git).
 Thanks to Hermes Agent for the inspiration on this module.
@@ -70,7 +72,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, List, Optional
 
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 if TYPE_CHECKING:  # numpy is an optional ("voice" extra) dep 鈥?never import at runtime top-level
     import numpy as np

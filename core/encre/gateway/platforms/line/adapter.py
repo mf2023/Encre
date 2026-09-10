@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 LINE Messaging API platform adapter for Encre.
 
@@ -147,7 +149,7 @@ DEFAULT_PENDING_REPLY_TEXT = (
     "馃 Still thinking. Tap below to fetch the answer when it's ready."
 )
 DEFAULT_BUTTON_LABEL = "Get answer"
-DEFAULT_DELIVERED_TEXT = "Already replied 鉁?
+DEFAULT_DELIVERED_TEXT = "Already replied ✓"
 DEFAULT_INTERRUPTED_TEXT = "Run was interrupted before completion."
 
 # Media defaults
@@ -267,9 +269,9 @@ def split_for_line(text: str, max_chars: int = LINE_SAFE_BUBBLE_CHARS) -> List[s
             tail = chunks[-1]
             if len(tail) > max_chars - 1:
                 tail = tail[: max_chars - 1]
-            chunks[-1] = tail.rstrip() + "鈥?
+            chunks[-1] = tail.rstrip() + "…"
         else:
-            chunks.append(remaining[: max_chars - 1] + "鈥?)
+            chunks.append(remaining[: max_chars - 1] + "…")
     return chunks
 
 
@@ -560,7 +562,7 @@ class _LineClient:
 def _text_message(text: str) -> Dict[str, Any]:
     """Build a LINE text message object, capped to per-bubble max."""
     if len(text) > LINE_PER_BUBBLE_CHARS:
-        text = text[: LINE_PER_BUBBLE_CHARS - 1] + "鈥?
+        text = text[: LINE_PER_BUBBLE_CHARS - 1] + "…"
     return {"type": "text", "text": text}
 
 

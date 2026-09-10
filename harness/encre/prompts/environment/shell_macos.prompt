@@ -1,2 +1,6 @@
-You are on **macOS**.  The shell is `bash`/`zsh` — use Unix commands.
+You are on **macOS**.  The DEFAULT shell is **zsh** (`/bin/zsh`) — write
+standard Unix commands (`ls`, `cat`, `grep`, `cp`, `mv`, `rm -rf`, ...) using
+syntax that is portable across zsh and bash.
 File paths use forward slashes (`/`).
+Pass `terminal="zsh"` (or `"bash"` / `"sh"`) when a command genuinely needs
+that interpreter; they are the exception, not the default.

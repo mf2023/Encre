@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -20,6 +20,8 @@
 #
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
+
+from __future__ import annotations
 
 """Encre WebSocket message handler.
 
@@ -81,6 +83,7 @@ from encre.server.protocol import (
     ClientGetWorkspaceConfig,
     ClientGetGitignore,
     ClientGetGlobalRuleContent,
+    ClientGetIndexStatus,
     ClientGetMemoryDetail,
     ClientGetMemoryList,
     ClientGetProfile,
@@ -390,6 +393,15 @@ class EncreWSHandler(
                                          messages=msgs, plan_items=sess.plan_items,
                                          artifacts=sess.artifacts, references=sess.references,
                                          branches=branches_list, active_branch_id=sess.active_branch_id)
+                        # Surface the persisted mode/command right away so the
+                        # composer chips reflect reality BEFORE the first run.
+                        # Previously the mode only reached the frontend at run
+                        # end (run.py's finally block), which made the state
+                        # look like it "carried over" out of nowhere after a
+                        # restart -- and the first run silently executed in
+                        # that mode with no UI indication.
+                        await self._send_session_mode(ws, resumed)
+                        await self._send_session_command(ws, resumed)
             except Exception as exc:
                 logger.warning("[resume] background resume failed: %s", exc)
 
@@ -455,7 +467,21 @@ class EncreWSHandler(
 
                 handler = self._DISPATCH.get(type(msg))
                 if handler is not None:
-                    await handler(self, ws, msg)
+                    # A handler failure must never kill the connection
+                    # silently: report it to the client as an error event and
+                    # keep serving.  Only genuine connection-level failures
+                    # propagate to the outer except clauses below.
+                    try:
+                        await handler(self, ws, msg)
+                    except (ConnectionResetError, websockets.exceptions.ConnectionClosed):
+                        raise
+                    except Exception as exc:
+                        logger.error(
+                            "[ws] handler %s failed: %s",
+                            getattr(msg, "type", type(msg).__name__), exc, exc_info=True,
+                        )
+                        with contextlib.suppress(Exception):
+                            await self._send(ws, "error", message=f"Internal error: {exc}", code="handler_error")
 
         except (ConnectionResetError, OSError) as _conn_err:
             logger.debug("[ws] connection reset: %s", _conn_err)
@@ -470,19 +496,52 @@ class EncreWSHandler(
 
     @staticmethod
     def _truncate_name(text: str) -> str:
-        """Truncate text: CJK -> first 10 chars, English -> first 5 words."""
+        """Clamp a generated/manual title by script, proportionally.
+
+        CJK (Chinese/Japanese/Korean): first 8 characters -- compact,
+        information-dense scripts.  Other (Latin/Cyrillic/etc.) scripts:
+        first 8 words.  The result is stripped of wrapping quotes/brackets
+        that models like to add around short answers.
+        """
         import re
         text = text.strip().strip('"').strip("'").strip("「").strip("」").strip("『").strip("』")
-        if re.search(r'[\u4e00-\u9fff]', text):
-            return text[:10]
-        return ' '.join(text.split()[:5])
+        if re.search(r'[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]', text):
+            return text[:8]
+        return ' '.join(text.split()[:8])
 
     async def _auto_name_session(self, session: Any, first_user_msg: str) -> str:
         """Generate a concise session name from the user's first message.
-        Uses the same backend as the session's agent with a minimal prompt.
-        If the call fails or times out, returns empty string (no name set)."""
+
+        Builds a DEDICATED backend instance with thinking disabled: the
+        shared loop backend follows the user's thinking config, and a
+        reasoning model would burn the whole ``max_tokens`` budget on
+        reasoning tokens, yielding an empty title (the historical cause
+        of titles always falling back to truncated text).  The dedicated
+        instance also avoids racing the concurrently-running agent turn.
+        If the call fails or times out, returns empty string (no name set).
+        """
+        from encre.backend import create_backend
+        from encre.utils.types import DisabledThinking
+
+        backend = None
         try:
-            backend = session.agent.loop.backend
+            cfg = getattr(session.agent, "config", None)
+            loop_backend = getattr(getattr(session.agent, "loop", None), "backend", None)
+            if cfg is not None and getattr(cfg, "backend_type", ""):
+                try:
+                    backend = create_backend(
+                        cfg.backend_type,
+                        api_key=cfg.api_key,
+                        base_url=cfg.base_url,
+                        model=cfg.model,
+                        models=cfg.models,
+                        thinking_config=DisabledThinking(),
+                        **cfg.backend_kwargs,
+                    )
+                except Exception:
+                    backend = None
+            if backend is None:
+                backend = loop_backend
             if backend is None:
                 logger.debug("[session] auto-name: backend is None")
                 return ""
@@ -491,8 +550,10 @@ class EncreWSHandler(
                 return ""
             sys_prompt = (
                 "You are a title naming assistant. Based on the user's message, "
-                "generate a concise title. For Chinese: no more than 10 characters. "
-                "For English: no more than 5 words. "
+                "generate a concise title in the SAME language as the message. "
+                "For Chinese: at most 8 characters. "
+                "For English: at most 8 words. "
+                "For other languages: at most 8 words (or 8 CJK characters if applicable). "
                 "Return ONLY the title text, no quotes, no explanation, no punctuation."
             )
             gen = backend.chat(
@@ -504,8 +565,8 @@ class EncreWSHandler(
                 stream=True,
             )
             full_text = ""
+            from encre.utils.types import BackendText
             async for event in gen:
-                from encre.utils.types import BackendText
                 if isinstance(event, BackendText):
                     full_text += event.text
                 elif isinstance(event, BackendFinish):
@@ -521,10 +582,28 @@ class EncreWSHandler(
         except Exception as e:
             logger.warning("[session] auto-name failed: %s", e, exc_info=True)
             return ""
+        finally:
+            # Only close the dedicated instance -- never the shared loop backend.
+            if backend is not None and backend is not getattr(
+                getattr(session.agent, "loop", None), "backend", None
+            ):
+                try:
+                    await backend.aclose()
+                except Exception:
+                    pass
 
     async def _auto_name_and_rename(self, session: Any, prompt: str) -> None:
         """Generate a session name in the background (fire-and-forget)."""
         try:
+            # Defense-in-depth: never rename (nor broadcast a rename for)
+            # temp chat sessions -- they must stay invisible to the sidebar.
+            live_check = self._manager.get_session(session.session_id)
+            _meta = getattr(live_check, "metadata", {}) or {}
+            _agent_sess = getattr(getattr(live_check, "agent", None), "session", None)
+            if _meta.get("temp_chat") or (
+                _agent_sess is not None and _agent_sess.metadata.get("temp_chat")
+            ):
+                return
             name = await asyncio.wait_for(
                 self._auto_name_session(session, prompt), timeout=15.0)
             if name:

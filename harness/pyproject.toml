@@ -24,7 +24,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "encre-harness"
-version = "0.4.1"
+version = "0.4.3"
 description = "Encre Harness — embeddable Python agent harness library"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
@@ -92,11 +92,19 @@ where = ["."]
 include = ["encre*"]
 
 [tool.setuptools.package-data]
-# Non-Python resources shipped with the package.  Without this, wheels / frozen
-# builds silently drop .prompt and .md files, breaking built-in skills/prompts.
 "encre" = ["*.txt"]
 "encre.prompts" = ["**/*.prompt"]
 "encre.skills.builtin" = ["**/*.md"]
+
+[project.entry-points."encre.plugins"]
+# Third-party plugins may register here (installed via pip).
+# Bundled mandatory/system-default EA packages are NOT listed: they are
+# auto-discovered by the encre.plugins.ea_scan directory scan of ea_tools/.
+
+[project.entry-points."ea.plugins"]
+# User-installed third-party EA plugins register here via their own wheels.
+# The bundled ea-tool-* packages under harness/ea_tools/ do not need entries —
+# the registry scans that directory directly.
 
 # [tool.setuptools-rust]
 # module = "encre._native"
@@ -105,7 +113,7 @@ include = ["encre*"]
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.30"]
 ollama = ["ollama>=0.1"]
-native = ["encre-native==0.4.1"]
+native = ["encre-native==0.4.3"]
 aiohttp = ["aiohttp>=3.9"]
 local = ["torch>=2.0", "transformers>=4.36"]
 aws = ["boto3>=1.34"]

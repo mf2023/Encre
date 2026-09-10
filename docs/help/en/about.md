@@ -3,7 +3,7 @@ The About page has version info, legal terms, data rules, and official channels.
 ## Version info
 
 - App name: **Encre Agent Desktop**
-- Current version: `0.4.1`
+- Current version: `0.4.3`
 - Data directory: where your data lives
 - Cache size: current cache usage
 

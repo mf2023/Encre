@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Gateway runner -- unified lifecycle manager for all platform adapters.
 
 Replaces the former AdapterManager.  Core adapters run in-process (direct
@@ -583,17 +585,18 @@ class GatewayRunner:
         """Load persisted adapter->session mappings."""
         if self._adapter_sessions_path.exists():
             try:
-                with open(self._adapter_sessions_path, "r", encoding="utf-8") as f:
-                    self._adapter_sessions = json.load(f)
+                from encre.secure_io import read_json
+
+                self._adapter_sessions = read_json(self._adapter_sessions_path, default={})
             except Exception:
                 self._adapter_sessions = {}
 
     def _save_adapter_sessions(self) -> None:
-        """Persist adapter->session mappings."""
+        """Persist adapter->session mappings (encrypted at rest)."""
         try:
-            self._adapter_sessions_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._adapter_sessions_path, "w", encoding="utf-8") as f:
-                json.dump(self._adapter_sessions, f)
+            from encre.secure_io import write_json
+
+            write_json(self._adapter_sessions_path, self._adapter_sessions)
         except Exception as e:
             logger.warning("[gateway] Failed to save adapter sessions: %s", e)
 

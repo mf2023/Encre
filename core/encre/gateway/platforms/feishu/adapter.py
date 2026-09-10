@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 Feishu/Lark platform adapter.
 
@@ -151,11 +153,11 @@ def release_scoped_lock(name, *args):
     return True
 from encre.config import get_data_dir
 import os
-def atomic_json_write(path, data):
-    import json
-    from pathlib import Path
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+def atomic_json_write(path, data, **kwargs):
+    """Persist *data* as encrypted JSON at *path* (single write channel)."""
+    from encre.secure_io import write_json
+
+    write_json(path, data)
 env_float = lambda n, d: float(os.environ.get(n, d))
 env_int = lambda n, d: int(os.environ.get(n, d))
 
@@ -4509,7 +4511,11 @@ class FeishuAdapter(BasePlatformAdapter):
 
     def _load_seen_message_ids(self) -> None:
         try:
-            payload = json.loads(self._dedup_state_path.read_text(encoding="utf-8"))
+            from encre.secure_io import read_json
+
+            payload = read_json(self._dedup_state_path, default=None)
+            if payload is None:
+                return
         except FileNotFoundError:
             return
         except (OSError, json.JSONDecodeError):

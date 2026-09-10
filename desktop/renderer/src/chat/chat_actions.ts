@@ -33,10 +33,11 @@
 
 import type { Chat } from "./chat.js";
 import type { AttachmentMeta } from "../core/types.js";
-import { getState, showToast, addAttachments, removeBranchMessages, startAssistantMessage, setSessionState, truncateToUserMessage, rememberRollbackEditTarget, restoreInputModeChip } from "../core/state.js";
+import { getState, showToast, addAttachments, removeBranchMessages, startAssistantMessage, setSessionState, truncateToUserMessage, rememberRollbackEditTarget, restoreInputModeChip, restoreInputCommandChip } from "../core/state.js";
 import { send } from "../core/ws.js";
 import { t } from "../features/i18n.js";
 import { Dialog } from "../ui/dialog.js";
+import { clampElLeft } from "../ui/context-menu.js";
 import { createLucideIcons, flashCopyButton } from "./chat_tool_display.js";
 import { pickRandomQuote } from "./timeline.js";
 
@@ -143,7 +144,11 @@ import { pickRandomQuote } from "./timeline.js";
       if (isNaN(idx) || !userMsgs[idx]) return;
       const targetMsg = userMsgs[idx];
       let origContent = targetMsg.content;
-      if (origContent.includes("<terminal>") || origContent.includes("<attach ") || origContent.includes("<mode>")) origContent = "";
+      // A message submitted with a command chip and no text is stored as
+      // ``<command>name</command>`` — strip it from the restored text and
+      // re-render it as a chip instead of raw markup.
+      const cmdTagMatch = origContent.match(/^<command>(\w[\w-]*)<\/command>$/s);
+      if (origContent.includes("<terminal>") || origContent.includes("<attach ") || origContent.includes("<mode>") || cmdTagMatch) origContent = "";
       Dialog.confirm(t("chat.rollbackEdit"), t("chat.rollbackEditDesc")).then((confirmed) => {
         if (confirmed) {
           const sid = targetMsg.serverId;
@@ -161,6 +166,11 @@ import { pickRandomQuote } from "./timeline.js";
           const msgMode = (targetMsg as any).mode;
           if (msgMode) {
             restoreInputModeChip(msgMode);
+          }
+          // Restore the command chip for ``<command>name</command>`` messages
+          // so it renders as a chip, not raw text.
+          if (cmdTagMatch) {
+            restoreInputCommandChip(cmdTagMatch[1]);
           }
           // Restore attachment chips from fileRefs
           const refs = targetMsg.fileRefs;
@@ -377,6 +387,10 @@ import { pickRandomQuote } from "./timeline.js";
     }
 
     document.body.appendChild(menu);
+    // Position uses a physical `left`, which never mirrors. Clamp it now
+    // that the menu is in the DOM and its width is measurable, otherwise
+    // an action button near the inline-end edge opens it off-window (rtl).
+    menu.style.left = `${clampElLeft(menu, rect.left)}px`;
     createLucideIcons(menu);
     btn.classList.add("action-menu-open");
     this._actionMenu = menu;

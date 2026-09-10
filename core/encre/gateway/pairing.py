@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """DM pairing flow for gateway user authorization.
 
 An already-authorized user (or the gateway operator) mints a short-lived
@@ -38,7 +40,6 @@ and redeemed user bindings).  The store is thread-safe via a single lock; the
 inbound path calls :meth:`is_paired` on every message, so lookups are cheap.
 """
 
-import json
 import logging
 import secrets
 import threading
@@ -47,6 +48,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from encre.config import get_data_dir
+from encre.secure_io import read_json, write_json
 
 logger = logging.getLogger("encre.gateway.pairing")
 
@@ -106,7 +108,7 @@ class PairingStore:
             if not self._path.exists():
                 return
             try:
-                data = json.loads(self._path.read_text(encoding="utf-8"))
+                data = read_json(self._path, default={})
                 self._codes = {
                     str(k): PairingCode(**v) for k, v in (data.get("codes") or {}).items()
                 }
@@ -121,14 +123,11 @@ class PairingStore:
     def _save(self) -> None:
         # Caller holds self._lock.
         try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
             data = {
                 "codes": {k: asdict(v) for k, v in self._codes.items()},
                 "paired": {k: asdict(v) for k, v in self._paired.items()},
             }
-            tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            tmp.replace(self._path)
+            write_json(self._path, data)
         except Exception as e:
             logger.warning("[pairing] failed to save %s: %s", self._path, e)
 

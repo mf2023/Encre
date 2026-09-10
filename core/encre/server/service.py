@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Background service wrapper for the Encre server.
 
 Provides daemon infrastructure: PID file tracking, file logging,

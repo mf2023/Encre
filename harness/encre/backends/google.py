@@ -1,6 +1,7 @@
 ﻿#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-# Copyright 漏 2025-2026 Wenze Wei. All Rights Reserved.
+# Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
 #
 # This file is part of Encre.
 # The Encre project belongs to the Dunimd Team.
@@ -578,6 +579,11 @@ class GoogleBackend(BaseBackend):
                     "input_tokens": _usage_metadata.get("promptTokenCount", 0),
                     "output_tokens": _usage_metadata.get("candidatesTokenCount", 0),
                 }
+                # Gemini implicit caching: cachedContentTokenCount is the
+                # portion of promptTokenCount served from cache.
+                _cached = _usage_metadata.get("cachedContentTokenCount", 0) or 0
+                if _cached:
+                    _usage["cache_read_input_tokens"] = _cached
             yield create_backend_finish(finish_reason, usage=_usage)
 
     async def _do_non_stream(self, url: str, body: dict[str, Any]) -> AsyncGenerator[BackendEvent, None]:
@@ -645,6 +651,11 @@ class GoogleBackend(BaseBackend):
                 "input_tokens": usage_meta.get("promptTokenCount", 0),
                 "output_tokens": usage_meta.get("candidatesTokenCount", 0),
             }
+            # Gemini implicit caching: cachedContentTokenCount is the
+            # portion of promptTokenCount served from cache.
+            _cached = usage_meta.get("cachedContentTokenCount", 0) or 0
+            if _cached:
+                _usage["cache_read_input_tokens"] = _cached
         yield create_backend_finish(mapped_reason, usage=_usage)
 
     def _map_finish_reason(self, reason: str) -> str:

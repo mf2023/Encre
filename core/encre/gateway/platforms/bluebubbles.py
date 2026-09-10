@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """BlueBubbles iMessage platform adapter.
 
 Uses the local BlueBubbles macOS server for outbound REST sends and inbound

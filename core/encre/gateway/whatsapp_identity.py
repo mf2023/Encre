@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Shared helpers for canonicalising WhatsApp sender identity.
 
 WhatsApp's bridge can surface the same human under two different JID shapes

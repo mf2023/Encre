@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Encre WebSocket protocol: typed client/server messages.
 
 This module defines the wire format exchanged between the desktop client and the

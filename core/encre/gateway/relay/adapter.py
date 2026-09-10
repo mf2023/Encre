@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Relay adapter: front N platforms over a single connector WebSocket.
 
 :class:`RelayAdapter` is itself a

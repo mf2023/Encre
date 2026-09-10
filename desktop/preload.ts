@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke("pickDirectory"),
   readFile: (filePath: string) =>
     ipcRenderer.invoke("readFile", filePath),
+  statFile: (filePath: string): Promise<{ size: number; mtime: number; isDirectory: boolean } | null> =>
+    ipcRenderer.invoke("statFile", filePath),
   readDirectory: (dirPath: string) =>
     ipcRenderer.invoke("readDirectory", dirPath),
 

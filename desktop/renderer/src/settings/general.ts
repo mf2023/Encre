@@ -594,10 +594,7 @@ export function saveThemeImpl(this: any, value: string): void {
   setThemePreference(value as "system" | "dark" | "light");
   if (value === "dark") setTheme("dark");
   else if (value === "light") setTheme("light");
-  else {
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setTheme(isDark ? "dark" : "light");
-  }
+      else setTheme("light");
   localStorage.setItem("encre-theme", value);
   send({ type: "configure", config: { theme: value } });
   this.renderGeneral();

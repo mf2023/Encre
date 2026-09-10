@@ -485,6 +485,16 @@ class IndexManager:
             "files": final.get("files", 0),
         })
 
+        # Persist metadata so the next workspace open treats this as a cache hit
+        # instead of re-spawning the subprocess and clearing the progress file.
+        if is_ready:
+            try:
+                from encre.protocol.handlers.workspace_store import _save_index_metadata
+
+                _save_index_metadata(ws_id, final.get("files", 0))
+            except Exception:
+                logger.warning("[index_manager] failed to save index metadata for ws=%s", ws_id, exc_info=True)
+
         with self._lock:
             entry = self._indices.get(ws_id)
             if entry:

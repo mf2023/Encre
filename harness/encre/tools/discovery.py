@@ -49,6 +49,8 @@ The discovery index is built lazily from the global ToolRegistry on first
 search. It refreshes when the registry changes (e.g. MCP servers connect).
 """
 
+from __future__ import annotations
+
 import math
 import re
 from collections import Counter

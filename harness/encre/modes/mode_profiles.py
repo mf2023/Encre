@@ -1,8 +1,4 @@
 ﻿"""Per-mode capability profiles for the Encre agent.
-    return GENERAL_PROFILE
-from __future__ import annotations
-
-"""Per-mode capability profiles for the Encre agent.
 
 Encre is one agent engine with deliberately distinct capability profiles:
 

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # Copyright © 2025-2026 Wenze Wei. All Rights Reserved.
@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Workspace persistence: registry, per-workspace config, icons, indices.
 
 Module-level helpers backing the iwork workspace system.  Extracted
@@ -35,6 +37,8 @@ import logging
 import os
 import time
 from typing import Any
+
+from encre.config import get_data_dir
 
 logger = logging.getLogger("encre.transport.ws")
 
@@ -142,10 +146,6 @@ def _apply_workspace_config(config: Any, workspace_path: str) -> None:
         logger.warning("Failed to load workspace config", exc_info=True)
 
 
-def _get_yim_data_dir() -> str:
-    return os.environ.get("ENCRE_DATA_DIR", os.path.join(os.path.expanduser("~"), ".dunimd", "encre"))
-
-
 def _build_workspace_tree(ws_path: str, max_depth: int = 4, max_entries: int = 200) -> str:
     """Quickly walk the workspace directory tree without reading file contents.
     Returns a compact tree representation for immediate injection into the
@@ -193,14 +193,24 @@ def _build_workspace_tree(ws_path: str, max_depth: int = 4, max_entries: int = 2
         return ""
     return (
         f"## Workspace Structure\n"
-        f"{total_files} files (tree depth 鈮max_depth}). "
+        f"{total_files} files (tree depth <= {max_depth}). "
         f"Full code index is building in the background.\n"
         f"```\n" + "\n".join(lines) + "\n```"
     )
 
 
 def _get_workspaces_path() -> str:
-    return os.path.join(_get_yim_data_dir(), "iwork", "index.json")
+    # ensure=False is mandatory here: the path is a FILE, not a directory.
+    # The default ensure=True used to mkdir() it, which raised
+    # FileExistsError [WinError 183] as soon as the file existed -- the
+    # exception escaped _load_workspaces (called before its try block) and
+    # silently killed the WebSocket connection on every open_workspace.
+    path = get_data_dir("iwork", "index.json", ensure=False)
+    if path.is_dir():
+        # Self-heal a directory left behind by the old mkdir bug.
+        with contextlib.suppress(OSError):
+            path.rmdir()
+    return str(path)
 
 
 def _make_workspace_id(folder_path: str) -> str:
@@ -210,7 +220,46 @@ def _make_workspace_id(folder_path: str) -> str:
 
 
 def _get_workspace_dir(ws_id: str) -> str:
-    return os.path.join(_get_yim_data_dir(), "iwork", ws_id)
+    return str(get_data_dir("iwork", ws_id))
+
+
+def _read_index_progress(ws_id: str) -> int:
+    """Read the stored indexing progress percentage (0-100) for a workspace.
+
+    Falls back to checking the code index file on disk: if ``index_progress.json``
+    is missing (e.g. it was cleared on a fresh indexer spawn) but
+    ``.encre/code_index.json`` exists inside the workspace folder, the index is
+    already built and we report 100 instead of mistakenly showing "未索引".
+    """
+    path = os.path.join(_get_workspace_dir(ws_id), "index_progress.json")
+    try:
+        if os.path.isfile(path):
+            from encre.secure_io import read_json
+
+            data = read_json(path, default={}) or {}
+            return int(data.get("progress", 0))
+    except Exception:
+        pass
+    # Fallback: detect a completed index that was never marked with metadata.
+    # The progress JSON may have been removed by a fresh indexer spawn; the
+    # actual code index is still on disk inside the workspace's .encre/ folder.
+    try:
+        ws_path = _find_workspace_path(ws_id)
+        if ws_path:
+            code_idx = os.path.join(ws_path, ".encre", "code_index.json")
+            if os.path.isfile(code_idx):
+                return 100
+    except Exception:
+        pass
+    return 0
+
+
+def _find_workspace_path(ws_id: str) -> str | None:
+    """Return the absolute filesystem path for *ws_id*, or None."""
+    for ws in _load_workspaces():
+        if ws.get("id") == ws_id:
+            return ws.get("path", "")
+    return None
 
 
 def _remove_session_from_workspace_indices(session_id: str) -> None:
@@ -247,6 +296,15 @@ def _remove_session_from_workspace_indices(session_id: str) -> None:
                     pass
                 with open(idx_file, "w", encoding="utf-8") as f:
                     f.write(new_raw)
+                # The index entry is gone -- take the session folder with it.
+                # Clearing the index alone is exactly what left an empty
+                # ``<session_id>/`` directory behind (and a workspace folder
+                # that outlived its own deletion).  Routed through the unified
+                # lifecycle entry point so the session's telemetry / rollback
+                # / sub_agents / spillover stores are cleaned in the same pass.
+                from encre.lifecycle import purge_session
+
+                purge_session(session_id, sessions_dir=os.path.join(ws_dir, "sessions"))
         except Exception:
             continue
 
@@ -258,23 +316,26 @@ def _index_metadata_path(ws_id: str) -> str:
 
 def _load_index_metadata(ws_id: str) -> dict[str, Any] | None:
     """Load index metadata for a workspace. Returns None if never indexed."""
+    from encre.secure_io import read_json
+
     path = _index_metadata_path(ws_id)
     if not os.path.isfile(path):
         return None
     try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
+        return read_json(path, default=None)
     except Exception:
         return None
 
 
 def _save_index_metadata(ws_id: str, file_count: int) -> None:
     """Write index metadata marker to persist that indexing was done."""
-    path = _index_metadata_path(ws_id)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    from encre.secure_io import write_json
+
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"files": file_count, "indexed_at": time.time()}, f)
+        write_json(
+            _index_metadata_path(ws_id),
+            {"files": file_count, "indexed_at": time.time()},
+        )
     except Exception:
         logger.warning("[codebase] failed to save index metadata for ws=%s", ws_id)
 
@@ -487,5 +548,6 @@ def _workspaces_with_session_counts(workspaces: list[dict[str, Any]]) -> list[di
             except Exception:
                 count = 0
         entry["session_count"] = count
+        entry["index_progress"] = _read_index_progress(ws_id)
         result.append(entry)
     return result

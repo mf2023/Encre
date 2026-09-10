@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """iClaw background daemon -- core-server launcher profile.
 
 The former ``IClawEngine`` re-assembled sessions, event routing, the WS

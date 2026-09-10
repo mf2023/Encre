@@ -71,7 +71,7 @@ export async function withLoading<T>(btn: HTMLButtonElement, fn: () => Promise<T
 
 initLocale();
 
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.4.3";
 
 export type PanelId = "general" | "usage" | "shortcuts" | "storage" | "browser" | "model" | "gateway" | "index" | "skills" | "rules" | "permissions" | "mcp" | "agent" | "about" | "developer" | "memory" | "search";
 
@@ -317,6 +317,7 @@ export class Settings {
   private showAgentList(): void { showAgentListImpl.call(this); }
   private showModelCreate(): void { showModelCreateImpl.call(this); }
   private showModelEdit(idx: number): void { showModelEditImpl.call(this, idx); }
+  private showModelPoolSettings(idx: number): void { this._renderModelPoolSettingsDialog(idx); }
   renderAll(): void { renderAllImpl.call(this); }
 
   private renderSearchFilter(): void { renderSearchFilterImpl.call(this); }
@@ -428,9 +429,9 @@ export class Settings {
     }
 
     // ── Model selection section (reuse push-gateway card style) ──
-    const models = getState().modelConfigs || [];
+    const models = st.modelConfigs || [];
     const selectedModels = parseTargetModelSelection(s[`adapter_${defId}_models` as keyof typeof s] as string);
-    bodyHtml += renderTargetModelSelection({ id: defId, models, selected: selectedModels, t: tFn });
+    bodyHtml += renderTargetModelSelection({ id: defId, models, selected: selectedModels, t: tFn, disabled: !st.settings.model_pool_enabled });
 
     const titleKey = `settings.adapterName${defId.charAt(0).toUpperCase() + defId.slice(1)}`;
     const title = tFn(titleKey);
@@ -932,6 +933,69 @@ private _bindModelSelect(): void {
     if (typeof (window as any).lucide !== "undefined") {
       (window as any).lucide.createIcons({ root: overlay });
     }
+  }
+
+  private _renderModelPoolSettingsDialog(_idx: number): void {
+    const st = getState();
+    const tFn = t;
+    // model_pool_enabled is stored as settings field; undefined/null → ON (backwards compat)
+    const poolEnabled = st.settings.model_pool_enabled !== false;
+    const current = st.settings.model_pool_fallback_enabled === true;
+
+    const bodyHtml = `
+      <div class="model-form-thinking-card" style="margin-bottom:12px">
+        <div class="model-form-thinking-info">
+          <div class="model-form-thinking-title">${tFn("settings.modelPoolEnableTitle")}</div>
+          <div class="model-form-thinking-desc">${tFn("settings.modelPoolEnableDesc")}</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="model-pool-enabled-toggle" ${poolEnabled ? "checked" : ""} />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="model-form-thinking-card">
+        <div class="model-form-thinking-info">
+          <div class="model-form-thinking-title model-form-thinking-title--with-help">
+            ${tFn("settings.modelPoolFallbackTitle")}
+            <button type="button" class="model-form-help-btn" data-tooltip="${tFn("settings.modelPoolFallbackCacheHint")}" tabindex="-1">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                <path d="M12 17h.01"/>
+              </svg>
+            </button>
+          </div>
+          <div class="model-form-thinking-desc">${tFn("settings.modelPoolFallbackDesc")}</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="model-pool-fallback-toggle" ${current ? "checked" : ""} />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>`;
+
+    const { overlay, close } = this._showFormDialog(
+      tFn("settings.modelPoolSettings"),
+      bodyHtml,
+      false,
+    );
+    const okBtn = overlay.querySelector("#dialog-form-ok") as HTMLButtonElement;
+    okBtn.textContent = tFn("common.confirm");
+
+    okBtn.addEventListener("click", () => {
+      const poolToggle = overlay.querySelector<HTMLInputElement>("#model-pool-enabled-toggle");
+      const poolOn = poolToggle ? poolToggle.checked : poolEnabled;
+      const fallbackToggle = overlay.querySelector<HTMLInputElement>("#model-pool-fallback-toggle");
+      const fallbackOn = fallbackToggle ? fallbackToggle.checked : current;
+      const currentSettings = {
+        ...getState().settings,
+        model_pool_enabled: poolOn,
+        model_pool_fallback_enabled: fallbackOn,
+      };
+      setSettings(currentSettings);
+      send({ type: "configure", config: { model_pool_enabled: poolOn, model_pool_fallback_enabled: fallbackOn } });
+      this.renderModel();
+      close();
+    });
   }
 
   private renderIndex(): void {
@@ -3652,7 +3716,7 @@ private _bindModelSelect(): void {
     this.panels.about.innerHTML = `
       <div class="about-banner">
         <div class="about-banner-glow"></div>
-        <div class="about-banner-title">Encre Agent</div>
+        <div class="about-banner-title"></div>
       </div>
 
       <div class="about-info-card">
@@ -3661,7 +3725,7 @@ private _bindModelSelect(): void {
           <span class="about-info-value">v${av}</span>
         </div>
         <div class="about-info-row" data-key="version" data-version="desktop">
-          <span class="about-info-label">Encre Desktop</span>
+          <span class="about-info-label">Encre Agent Desktop</span>
           <span class="about-info-value">v${dv}</span>
         </div>
 

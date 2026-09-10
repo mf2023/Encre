@@ -46,7 +46,7 @@ from typing import Any, ClassVar
 import httpx
 
 from encre.tools.base import EncreTool
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 logger = logging.getLogger("encre.tools.mcp")
 

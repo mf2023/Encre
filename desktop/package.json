@@ -1,7 +1,8 @@
 {
   "name": "encre",
-  "version": "0.4.1",
-  "description": "Encre Desktop — Electron + React 19 AI chat client (the desktop UI of the Encre project)",
+  "version": "0.4.3",
+  "description": "Encre Agent Desktop",
+  "author": "Dunimd Team",
   "main": "dist/main.js",
   "scripts": {
     "build": "node build.js",

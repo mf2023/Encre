@@ -55,15 +55,188 @@ const SHOW_DELAY = 1000;
 const TITLE_ATTR = "data-encre-original-title";
 // Elements whose native tooltip we must NOT replace.
 const SKIP_SELECTOR = ".window-btn, .header-window-controls";
+// Marker attribute for elements carrying a structured model (see below).
+const MODEL_ATTR = "data-tooltip-model";
+
+/** One `label | value` line of a structured tooltip. */
+export interface TooltipRow {
+  label?: string;
+  value: string;
+}
+
+/** One permission chip pinned to the bottom of a structured tooltip. */
+export interface TooltipPermission {
+  /** Lucide icon name, e.g. "camera". */
+  icon: string;
+  /** Already-translated label. */
+  label: string;
+  granted: boolean;
+}
+
+/**
+ * Structured tooltip content. Unlike `data-tooltip` (plain text, newline
+ * separated, wraps freely) this renders a fixed layout so every tab hover
+ * looks identical: header, one field per line with a muted label column,
+ * over-long values ellipsised, permissions always last.
+ */
+export interface TooltipModel {
+  title: string;
+  icon?: string;
+  rows: TooltipRow[];
+  permissions?: TooltipPermission[];
+}
+
+/**
+ * Structured models live here instead of in a data attribute — a DOM
+ * attribute would mean re-parsing JSON on every hover, and the model can
+ * carry booleans (permission granted state) that an attribute cannot.
+ */
+const modelRegistry = new WeakMap<HTMLElement, TooltipModel>();
+
+/** Attach (or clear, when `model` is null) a structured tooltip model. */
+export function setTooltipModel(el: HTMLElement, model: TooltipModel | null): void {
+  if (model) {
+    modelRegistry.set(el, model);
+    el.setAttribute(MODEL_ATTR, "1");
+  } else {
+    modelRegistry.delete(el);
+    el.removeAttribute(MODEL_ATTR);
+  }
+}
 
 function ensureTooltip(): HTMLDivElement {
   if (tooltipEl) return tooltipEl;
   const el = document.createElement("div");
   el.className = "encre-tooltip";
   el.setAttribute("role", "tooltip");
+  const body = document.createElement("div");
+  body.className = "encre-tooltip-body";
+  el.appendChild(body);
   document.body.appendChild(el);
   tooltipEl = el;
   return el;
+}
+
+/** The content container, rebuilt on every show. */
+function tipBody(tip: HTMLDivElement): HTMLDivElement {
+  return tip.firstElementChild as HTMLDivElement;
+}
+
+/**
+ * Only accept icon sources we can trust: remote http(s) URLs and inline
+ * image data URLs. Anything else (javascript:, file:, …) is dropped.
+ */
+function safeIconUrl(raw: string): string {
+  const url = raw.trim();
+  const lower = url.toLowerCase();
+  if (
+    lower.startsWith("http://") ||
+    lower.startsWith("https://") ||
+    lower.startsWith("data:image/")
+  ) {
+    return url;
+  }
+  return "";
+}
+
+/** Small favicon / file-type image; removes itself when it 404s. */
+function makeIcon(url: string, className: string): HTMLImageElement | null {
+  const src = safeIconUrl(url);
+  if (!src) return null;
+  const img = document.createElement("img");
+  img.className = className;
+  img.alt = "";
+  img.decoding = "async";
+  img.addEventListener("error", () => img.remove());
+  img.src = src;
+  return img;
+}
+
+/** Plain text (may contain newlines) plus an optional leading icon. */
+function renderText(text: string, icon?: string): void {
+  const tip = ensureTooltip();
+  const body = tipBody(tip);
+  tip.className = "encre-tooltip";
+  body.className = "encre-tooltip-body";
+  body.textContent = "";
+  const img = icon ? makeIcon(icon, "encre-tooltip-icon") : null;
+  if (img) body.appendChild(img);
+  const span = document.createElement("span");
+  span.className = "encre-tooltip-text";
+  span.textContent = text;
+  body.appendChild(span);
+  if (img) tip.classList.add("encre-tooltip--rich");
+}
+
+/**
+ * Structured layout. Everything is flush left, values never wrap (an
+ * ellipsis takes over instead) and the permission chips always close the
+ * tooltip — so two tab hovers are always the same shape.
+ */
+function renderModel(model: TooltipModel): void {
+  const tip = ensureTooltip();
+  const body = tipBody(tip);
+  tip.className = "encre-tooltip encre-tooltip--model";
+  body.className = "encre-tooltip-body encre-tooltip-body--stack";
+  body.textContent = "";
+
+  // ── header: icon + title ─────────────────────────────────────────
+  const head = document.createElement("div");
+  head.className = "tt-head";
+  const headIcon = model.icon ? makeIcon(model.icon, "tt-head-icon") : null;
+  if (headIcon) head.appendChild(headIcon);
+  const title = document.createElement("span");
+  title.className = "tt-title";
+  title.textContent = model.title;
+  head.appendChild(title);
+  body.appendChild(head);
+
+  // ── fields: one `label | value` line each, columns aligned ───────
+  if (model.rows.length) {
+    const grid = document.createElement("div");
+    grid.className = "tt-rows";
+    for (const row of model.rows) {
+      const line = document.createElement("div");
+      line.className = "tt-row";
+      if (row.label) {
+        const label = document.createElement("span");
+        label.className = "tt-label";
+        label.textContent = row.label;
+        line.appendChild(label);
+      }
+      const value = document.createElement("span");
+      // No label → the value owns the whole row (URLs, absolute paths).
+      value.className = row.label ? "tt-value" : "tt-value tt-value--full";
+      value.textContent = row.value;
+      line.appendChild(value);
+      grid.appendChild(line);
+    }
+    body.appendChild(grid);
+  }
+
+  // ── permissions: always the last block ───────────────────────────
+  if (model.permissions && model.permissions.length) {
+    const perms = document.createElement("div");
+    perms.className = "tt-perms";
+    for (const perm of model.permissions) {
+      const chip = document.createElement("span");
+      chip.className = "tt-perm" + (perm.granted ? "" : " tt-perm--denied");
+      const icon = document.createElement("i");
+      icon.setAttribute("data-lucide", perm.icon);
+      icon.className = "lucide";
+      chip.appendChild(icon);
+      const label = document.createElement("span");
+      label.className = "tt-perm-label";
+      label.textContent = perm.label;
+      chip.appendChild(label);
+      perms.appendChild(chip);
+    }
+    body.appendChild(perms);
+    const lucide = (window as any).lucide;
+    if (lucide && typeof lucide.createIcons === "function") {
+      try { lucide.createIcons({ root: body }); } catch {}
+    }
+  }
 }
 
 function resolvePaintedBackground(start: HTMLElement | null): string {
@@ -122,14 +295,14 @@ function positionAt(x: number, y: number): void {
   tip.style.top = `${top}px`;
 }
 
-function show(el: HTMLElement, text: string): void {
+function show(el: HTMLElement, info: { text: string; icon?: string; model?: TooltipModel }): void {
   const tip = ensureTooltip();
+  if (info.model) renderModel(info.model);
+  else renderText(info.text, info.icon);
   if (currentEl === el && tip.classList.contains("encre-tooltip--visible")) {
-    tip.textContent = text;
     position(el);
     return;
   }
-  tip.textContent = text;
   syncBackground();
   position(el);
   tip.classList.add("encre-tooltip--visible");
@@ -155,34 +328,42 @@ function restoreAndHide(): void {
   if (tooltipEl) tooltipEl.classList.remove("encre-tooltip--visible");
 }
 
-function getTooltipText(el: HTMLElement): { attr: string; text: string } | null {
+function getTooltipText(
+  el: HTMLElement,
+): { attr: string; text: string; icon?: string; model?: TooltipModel } | null {
+  // Optional leading icon (favicon, file-type icon) shown beside the text.
+  const icon = el.dataset.tooltipIcon || undefined;
+  // 0. Structured model (tabs) — richest, so it wins over everything.
+  const model = modelRegistry.get(el);
+  if (model) {
+    return { attr: MODEL_ATTR, text: model.title, icon: model.icon, model };
+  }
   // 1. Check data-i18n-title (translation key) — dynamic i18n, overrides everything.
   const i18nKey = el.getAttribute("data-i18n-title");
   if (i18nKey) {
-    return { attr: "data-i18n-title", text: t(i18nKey).trim() };
+    return { attr: "data-i18n-title", text: t(i18nKey).trim(), icon };
   }
-  // 2. Check custom tooltip (data-tooltip).
+  // 2. Check custom tooltip (data-tooltip). Newlines are honoured (pre-wrap).
   if (el.dataset.tooltip != null && el.dataset.tooltip !== "") {
-    return { attr: "data-tooltip", text: el.dataset.tooltip.trim() };
+    return { attr: "data-tooltip", text: el.dataset.tooltip.trim(), icon };
   }
   // 3. Check stored native tooltip (data-encre-original-title).
   const stored = el.getAttribute(TITLE_ATTR);
   if (stored) {
-    return { attr: TITLE_ATTR, text: stored.trim() };
+    return { attr: TITLE_ATTR, text: stored.trim(), icon };
   }
   return null;
 }
 
 function activate(el: HTMLElement): void {
   const info = getTooltipText(el);
-  if (!info || !info.text) return;
-  el.dataset.encreTooltip = info.text;
-  el.dataset.encreTooltipSrc = info.attr;
+  if (!info) return;
+  if (!info.model && !info.text) return;
   currentEl = el;
   if (showTimer) clearTimeout(showTimer);
   showTimer = window.setTimeout(() => {
     showTimer = null;
-    if (currentEl === el) show(el, info!.text);
+    if (currentEl === el) show(el, info!);
   }, SHOW_DELAY);
 }
 
@@ -190,7 +371,7 @@ function handleOver(e: Event): void {
   const target = e.target as HTMLElement | null;
   if (!target) return;
   const el = target.closest<HTMLElement>(
-    `[data-tooltip], [data-i18n-title], [${TITLE_ATTR}]`,
+    `[data-tooltip], [data-i18n-title], [${MODEL_ATTR}], [${TITLE_ATTR}]`,
   );
   if (!el || el.closest(SKIP_SELECTOR)) return;
   // Same element already active — nothing to do.
@@ -217,7 +398,7 @@ function handleFocus(e: FocusEvent): void {
   const target = e.target as HTMLElement | null;
   if (!target) return;
   const el = target.closest<HTMLElement>(
-    `[data-tooltip], [data-i18n-title], [${TITLE_ATTR}]`,
+    `[data-tooltip], [data-i18n-title], [${MODEL_ATTR}], [${TITLE_ATTR}]`,
   );
   if (!el || el.closest(SKIP_SELECTOR)) return;
   activate(el);
@@ -326,7 +507,7 @@ export function showTooltipAt(text: string, x: number, y: number): void {
     delete currentEl.dataset.encreTooltipSrc;
     currentEl = null;
   }
-  tip.textContent = text;
+  renderText(text);
   syncBackground();
   positionAt(x, y);
   tip.classList.add("encre-tooltip--visible");

@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Channel directory -- cached map of reachable channels/contacts per platform.
 
 Built on gateway startup, refreshed periodically, and saved to the data dir.
@@ -100,16 +102,14 @@ class ChannelDirectory:
         return dict(self._platforms)
 
     def _save(self) -> None:
-        """Persist directory to disk."""
+        """Persist the directory to disk as encrypted JSON."""
+        from encre.secure_io import write_json
+
         try:
-            DIRECTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(DIRECTORY_PATH, "w", encoding="utf-8") as f:
-                json.dump(
-                    {"platforms": self._platforms, "built_at": self._last_build},
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            write_json(
+                DIRECTORY_PATH,
+                {"platforms": self._platforms, "built_at": self._last_build},
+            )
         except Exception as e:
             logger.warning("[channel-dir] save failed: %s", e)
 
@@ -118,8 +118,9 @@ class ChannelDirectory:
         if not DIRECTORY_PATH.exists():
             return False
         try:
-            with open(DIRECTORY_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            from encre.secure_io import read_json
+
+            data = read_json(DIRECTORY_PATH, default={})
             self._platforms = data.get("platforms", {})
             self._last_build = data.get("built_at", 0.0)
             return True

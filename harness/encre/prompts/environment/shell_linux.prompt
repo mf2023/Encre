@@ -1,2 +1,5 @@
-You are on **Linux**.  The shell is `bash` — use standard Unix commands.
+You are on **Linux**.  The DEFAULT shell is **bash** (`/bin/bash`) — use
+standard Unix commands.
 File paths use forward slashes (`/`).
+`sh` / `zsh` remain available via the `terminal` parameter when a script
+genuinely needs them — they are the exception, not the default.

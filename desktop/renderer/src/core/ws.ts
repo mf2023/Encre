@@ -51,6 +51,20 @@ let pingTimer: ReturnType<typeof setInterval> | null = null;
 let _cryptoInitDone = false;
 let pendingQueue: ClientMessage[] = [];
 
+/**
+ * Tracks the last workspace open/close the renderer asked for. The backend
+ * answers `open_workspace` asynchronously (session setup + index start can
+ * take seconds) and `workspace_opened` carries no request id, so a response
+ * that lands *after* the user already left would otherwise drag the UI back
+ * into iWork. stream.ts checks this before applying a `workspace_opened`.
+ */
+let _workspaceIntent: "open" | "close" | "" = "";
+
+/** The last workspace intent sent by the renderer (see `send`). */
+export function getWorkspaceIntent(): "open" | "close" | "" {
+  return _workspaceIntent;
+}
+
 async function drainQueue(): Promise<void> {
   const q = pendingQueue;
   pendingQueue = [];
@@ -167,6 +181,11 @@ function openSocket(url: string): Promise<boolean> {
  * @param msg - The client message to transmit. Queued if the socket is not open.
  */
 export async function send(msg: ClientMessage): Promise<void> {
+  // Record workspace intent before the (possibly queued) send so a late
+  // response can be recognised as stale even if the socket was reconnecting.
+  if (msg.type === "open_workspace") _workspaceIntent = "open";
+  else if (msg.type === "close_workspace") _workspaceIntent = "close";
+
   if (ws?.readyState !== WebSocket.OPEN) {
     pendingQueue.push(msg);
     return;

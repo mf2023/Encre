@@ -64,9 +64,20 @@ logger = logging.getLogger("encre.computer.computer_use")
 #: Default location of the persistent macro library on disk.
 #: Can be overridden by setting the ``ENCRE_MACRO_LIBRARY`` env var
 #: or by passing ``path=`` to :class:`MacroLibrary`.
-DEFAULT_MACRO_LIBRARY_PATH = os.environ.get(
-    "ENCRE_MACRO_LIBRARY",
-    str(Path.home() / ".encre" / "macros.json"),
+
+
+def _default_macro_library_path() -> str:
+    """Macro library path inside the data tree (was ``~/.encre/macros.json``)."""
+    try:
+        from encre.paths import get_data_dir
+
+        return str(get_data_dir("macros.json", ensure=False))
+    except Exception:  # pragma: no cover - defensive
+        return str(Path.home() / ".dunimd" / "encre" / "macros.json")
+
+
+DEFAULT_MACRO_LIBRARY_PATH = (
+    os.environ.get("ENCRE_MACRO_LIBRARY") or _default_macro_library_path()
 )
 
 # ---------------------------------------------------------------------------
@@ -246,16 +257,10 @@ class MacroLibrary:
         return self._path
 
     def _atomic_write(self, payload: dict[str, Any]) -> None:
-        """Write ``payload`` to disk via a temp file + atomic rename."""
-        target = Path(self._path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(target.suffix + ".tmp")
-        tmp.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        # Atomic rename so a crash mid-write doesn't corrupt the file.
-        os.replace(tmp, target)
+        """Write ``payload`` to disk encrypted (atomic temp file + rename)."""
+        from encre.secure_io import write_json
+
+        write_json(Path(self._path), payload)
 
     def save(self) -> int:
         """Persist the library to disk; returns number of entries saved."""
@@ -277,16 +282,15 @@ class MacroLibrary:
         if not target.exists():
             return 0
         try:
-            raw = target.read_text(encoding="utf-8")
+            from encre.secure_io import read_json
+
+            payload = read_json(target, default=None)
         except Exception as exc:
             logger.warning("MacroLibrary.load: read failed: %s", exc)
             return 0
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError as exc:
+        if payload is None:
             logger.warning(
-                "MacroLibrary.load: %s is corrupt (%s); ignoring",
-                self._path, exc,
+                "MacroLibrary.load: %s is corrupt; ignoring", self._path,
             )
             return 0
         if not isinstance(payload, dict) or "entries" not in payload:

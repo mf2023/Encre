@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """
 User OAuth helper for the Google Chat gateway adapter.
 
@@ -104,7 +106,7 @@ except (ModuleNotFoundError, ImportError):
     # _data_dir shim).
     def get_data_dir() -> Path:
         val = os.environ.get("ENCRE_HOME", "").strip()
-        return Path(val) if val else Path.home() / ".encre"
+        return Path(val) if val else Path.home() / ".dunimd" / "encre"
 
     def _get_data_dir() -> str:
         home = get_data_dir()
@@ -229,7 +231,16 @@ def load_user_credentials(email: Optional[str] = None) -> Optional[Any]:
         # Don't pass scopes 鈥?user may have authorized only a subset, and
         # passing scopes makes refresh validate them strictly. Same logic
         # as the google-workspace skill.
-        creds = Credentials.from_authorized_user_file(str(token_path))
+        from encre.secure_io import read_json
+
+        token_info = read_json(token_path, default=None)
+        if token_info is None:
+            logger.warning(
+                "[google_chat_user_oauth] token at %s is unreadable",
+                token_path,
+            )
+            return None
+        creds = Credentials.from_authorized_user_info(token_info)
     except Exception as exc:
         logger.warning(
             "[google_chat_user_oauth] token at %s is corrupt: %s",
@@ -361,7 +372,9 @@ def _write_private_json(path: Path, data: Any) -> None:
             stat.S_IRUSR | stat.S_IWUSR,
         )
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
+            from encre.crypto import encrypt
+
+            fh.write(encrypt(json.dumps(data, indent=2, ensure_ascii=False)))
             fh.flush()
             os.fsync(fh.fileno())
         atomic_replace(tmp_path, path)
@@ -479,7 +492,11 @@ def _load_pending_auth(email: Optional[str] = None) -> dict:
         print("ERROR: No pending OAuth session found. Run --auth-url first.")
         sys.exit(1)
     try:
-        data = json.loads(pending.read_text())
+        from encre.secure_io import read_json
+
+        data = read_json(pending, default=None)
+        if data is None:
+            raise ValueError("pending session is unreadable")
     except Exception as exc:
         print(f"ERROR: Could not read pending OAuth session: {exc}")
         print("Run --auth-url again to start a fresh session.")
@@ -520,8 +537,10 @@ def get_auth_url(email: Optional[str] = None) -> None:
     _ensure_deps()
     from google_auth_oauthlib.flow import Flow
 
-    flow = Flow.from_client_secrets_file(
-        str(_client_secret_path()),
+    from encre.secure_io import read_json
+
+    flow = Flow.from_client_config(
+        read_json(_client_secret_path(), default={}) or {},
         scopes=SCOPES,
         redirect_uri=_REDIRECT_URI,
         autogenerate_code_verifier=True,
@@ -566,8 +585,10 @@ def exchange_auth_code(code: str, email: Optional[str] = None) -> None:
         if scope_val:
             granted_scopes = scope_val.split()
 
-    flow = Flow.from_client_secrets_file(
-        str(_client_secret_path()),
+    from encre.secure_io import read_json
+
+    flow = Flow.from_client_config(
+        read_json(_client_secret_path(), default={}) or {},
         scopes=granted_scopes,
         redirect_uri=pending_auth.get("redirect_uri", _REDIRECT_URI),
         state=pending_auth["state"],

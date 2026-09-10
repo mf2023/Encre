@@ -32,7 +32,7 @@
 
 import { ServerEvent, WorkspaceEntry, BranchUpdated, BranchSwitched, BranchRolledBack, UsageStatsEvent } from "./types.js";
 import * as state from "./state.js";
-import { send } from "./ws.js";
+import { send, getWorkspaceIntent } from "./ws.js";
 import { Chat } from "../chat/chat.js";
 import { Tools } from "../features/tools.js";
 import { Permissions } from "../features/permissions.js";
@@ -379,6 +379,12 @@ export function handleEvent(event: ServerEvent): void {
         }
       }
       console.log("[stream] session_ready received, messages:", event.messages?.length ?? 0, "session_id:", event.session_id, "gen:", _sessionGeneration);
+      // In temp-chat mode every session that becomes active is ephemeral:
+      // mark its id immediately so subsequent renames, broadcasts, or
+      // stream events can never surface it in the sidebar.
+      if (state.getState().tempChat && event.session_id) {
+        state.markTempChatSession(event.session_id);
+      }
       state.setSessionId(event.session_id);
       // Reset persistent mode on session switch - backend will re-send mode_changed if the session has a mode
       const _app = (window as any).__app;
@@ -1081,12 +1087,21 @@ export function handleEvent(event: ServerEvent): void {
         applyProjectCommands(cfg.slash_commands as any[]);
       }
       // Restore persisted active_command from config_data (survives restart).
+      // The snapshot is tagged with the session it was built from: only
+      // mirror it when it describes the session actually being viewed,
+      // otherwise another session's sticky command leaks into this one and
+      // resurrects the chip after restarts / config refreshes.
       const ac = (cfg as any).active_command;
-      if (ac && ac.name) {
-        const cmdApp = (window as any).__app;
-        if (cmdApp) {
-          cmdApp._activeCommand = { name: ac.name, prompt: ac.prompt, icon: ac.icon, title: ac.title };
-        }
+      const snapshotSid = (cfg as any).session_id || "";
+      const cmdApp = (window as any).__app;
+      if (cmdApp && (!snapshotSid || snapshotSid === state.getState().sessionId)) {
+        const hasCmd = !!(ac && ac.name);
+        cmdApp._activeCommand = hasCmd
+          ? { name: ac.name, prompt: ac.prompt, icon: ac.icon, title: ac.title }
+          : null;
+        // Re-render the toolbar command chip: without this the restored (or
+        // cleared) command only shows up on the next unrelated chip update.
+        cmdApp.updateChipState?.();
       }
       window.dispatchEvent(new CustomEvent("slash-commands-updated"));
       if (cfg.sub_agents && Array.isArray(cfg.sub_agents)) {
@@ -1101,12 +1116,22 @@ export function handleEvent(event: ServerEvent): void {
       if (cfg.permission_settings) {
         state.setPermissionPolicies(normalizePermissionPolicies(cfg.permission_settings));
       }
-      // Sync workspace mode from server config (don't override active workspace)
+      // Sync workspace mode from server config (don't override active workspace).
+      // Skip the iWork branch when the renderer just closed a workspace: the
+      // config snapshot may have been generated before the backend processed
+      // close_workspace, and flipping back to iWork would re-enter a mode the
+      // user already left.
+      //
+      // Only ever *enter* iWork from here, never leave it. A config snapshot
+      // can lag behind a just-sent open_workspace (its `workspace_mode` is
+      // derived from the backend's current `_workspace_path`, which is still
+      // empty until the open is processed). Forcing "normal" on that stale
+      // snapshot was dropping the user straight back to normal right after
+      // they clicked the workspace tab. Genuine exits set "normal" explicitly
+      // via exitWorkspaceMode / workspace_closed.
       if (!state.getState().activeWorkspace) {
-        if (cfg.workspace_mode === "iwork") {
+        if (cfg.workspace_mode === "iwork" && getWorkspaceIntent() !== "close") {
           state.setWorkspaceMode("iwork");
-        } else {
-          state.setWorkspaceMode("normal");
         }
       }
       // Surface general settings from backend config into state.settings
@@ -1255,6 +1280,7 @@ export function handleEvent(event: ServerEvent): void {
           (event as any).workspace_id,
           event.status as string,
           event.files,
+          event.progress,
         );
       }
       break;
@@ -1455,10 +1481,15 @@ export function handleEvent(event: ServerEvent): void {
       _syncSessionEntry(event.session_id, state.getState());
       // Restore the last user message into the input box for re-editing
       let userInput = (event as any).user_input as string | undefined;
-      if (userInput) {
-        if (userInput.includes("<terminal>") || userInput.includes("<attach ") || userInput.includes("<mode>")) userInput = "";
-        const input = document.getElementById("prompt-input") as HTMLElement | null;
-        if (input) { input.textContent = userInput; input.focus(); }
+      // A message submitted with a command chip and no text is stored as
+      // ``<command>name</command>`` — strip it from the restored text and
+      // re-render it as a chip instead of raw markup.
+      const rbCmdMatch = userInput ? userInput.match(/^<command>(\w[\w-]*)<\/command>$/s) : null;
+      if (userInput && (userInput.includes("<terminal>") || userInput.includes("<attach ") || userInput.includes("<mode>") || rbCmdMatch)) userInput = "";
+      const input = document.getElementById("prompt-input") as HTMLElement | null;
+      if (input && userInput !== undefined) { input.textContent = userInput; input.focus(); }
+      if (rbCmdMatch) {
+        state.restoreInputCommandChip(rbCmdMatch[1]);
       }
       // Restore mode chip AFTER user_input (which clears the input via textContent)
       {
@@ -1609,6 +1640,15 @@ export function handleEvent(event: ServerEvent): void {
 
     case "workspace_opened":
       state.setWorkspaces(event.workspaces);
+      // Stale-open guard: `open_workspace` is answered asynchronously and
+      // `workspace_opened` carries no request id. If the user already left
+      // (a close_workspace was sent after the open), applying this would drag
+      // them back into iWork a few seconds later. Keep the refreshed
+      // workspace list but ignore the mode switch.
+      if (getWorkspaceIntent() === "close") {
+        (window as any).__sessionInner?.render?.();
+        break;
+      }
       state.setActiveWorkspace(event.path);
       state.setWorkspaceMode("iwork");
       state.setSessionsList([]);
@@ -1618,6 +1658,7 @@ export function handleEvent(event: ServerEvent): void {
           (event as any).id || "",
           (event as any).index_status,
           (event as any).index_files || 0,
+          (event as any).progress,
         );
       }
       // If a tray-driven resume is pending after opening this workspace, fire it.
@@ -1644,6 +1685,13 @@ export function handleEvent(event: ServerEvent): void {
       break;
 
     case "workspace_closed":
+      // Symmetric stale-close guard: if the user already asked for a new
+      // workspace (open_workspace sent after this close), this late close
+      // must not drop them back to normal — the pending open will land next.
+      if (getWorkspaceIntent() === "open") {
+        (window as any).__sessionInner?.render?.();
+        break;
+      }
       state.setActiveWorkspace("");
       state.setWorkspaceMode("normal");
       state.setSessionsList([]);
@@ -1874,6 +1922,10 @@ function _syncSubAgentView(toolCallId: string): void {
 function _syncSessionEntry(sessionId: string, st: ReturnType<typeof state.getState>): void {
   if (!sessionId) return;
   if (st.tempChat) return;
+  // A session that was ever a temp chat must never be (re-)added to the
+  // sidebar, even after tempChat was switched off while its delete was
+  // still in flight or its stream events were still arriving.
+  if (state.isTempChatSession(sessionId)) return;
   const snapshot = st.sessionStore[sessionId] || { messages: [], running: false };
   const snapMsgs = snapshot.messages;
   const lastContent = snapMsgs.length > 0 ? String(snapMsgs[snapMsgs.length - 1].content || "").slice(0, 20) : "";

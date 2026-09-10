@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Embedded-terminal domain handlers: spawn / write / kill.
 
 Manages the per-connection PTY-ish subprocess sessions exposed to the
@@ -41,7 +43,7 @@ from encre.server.protocol import (
     ClientTerminalSpawn,
     ClientTerminalWrite,
 )
-from encre.tools.builtin._encoding import decode_bytes
+from encre.tools._encoding import decode_bytes
 
 
 class TerminalHandlers:

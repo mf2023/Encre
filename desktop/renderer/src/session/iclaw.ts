@@ -20,32 +20,31 @@
  * Non-compliance may result in service termination or legal liability.
  */
 
-import { TransitionHelper } from "../ui/transition-helper.js";
-
 /**
  * Automation panel controller.
  *
- * Manages the full-screen "Automation" view that slides in over the main chat
- * area. (This module originated from the now-removed "iClaw" mode.) It handles
- * the sidebar collapse/expand choreography and the slide transition when
- * entering and leaving the automation view.
- */
-
-/**
- * AutomationPanel — controls the automation panel visibility.
- * Previously part of the now-removed iClaw mode, this panel is directly
- * accessible from the sidebar "Automation" button.
+ * Manages the full-screen "Automation" view that covers the main chat area.
+ * (This module originated from the now-removed "iClaw" mode.)
+ *
+ * Visibility is expressed as a single class on the panel (`hidden`), and the
+ * slide itself lives in CSS — see the "Unified Motion" block near the end of
+ * styles.css. The sidebar collapse is likewise a class on #app, whose width
+ * transition is also declared in CSS.
+ *
+ * This controller therefore animates nothing itself. It flips state, fires
+ * its callbacks and lets the stylesheet move things. That is deliberate: the
+ * old implementation drove the slide with inline transform/transition plus a
+ * timer, and any interruption (a second click mid-flight, a minimised window
+ * pausing rAF) could strand inline positioning on the shared main-area
+ * elements — the layout residue this rewrite removes.
  */
 
 export class AutomationPanel {
   private _toggleBtn: HTMLElement | null = null;
   private _automationView: HTMLElement | null = null;
-  private _mainContent: HTMLElement | null = null;
-  private _sessionBar: HTMLElement | null = null;
   private readonly _appEl: HTMLElement | null = null;
-  /** Sidebar was collapsed before we entered automation */
+  /** Whether the sidebar was already collapsed before automation opened. */
   private _sidebarWasCollapsed = false;
-  private _transitioning = false;
 
   /** Called each time the automation panel opens */
   public onShow: (() => void) | null = null;
@@ -55,207 +54,61 @@ export class AutomationPanel {
   constructor() {
     this._toggleBtn = document.getElementById("btn-toggle-sidebar");
     this._automationView = document.getElementById("automation-view");
-    this._mainContent = document.getElementById("main-content");
-    this._sessionBar = document.getElementById("session-bar");
     this._appEl = document.getElementById("app");
   }
 
-  /**
-   * Whether the automation view is currently visible.
-   */
+  /** Whether the automation view is currently visible. */
   get isActive(): boolean {
-    return !!(this._automationView && !this._automationView.classList.contains("hidden"));
+    return (
+      !!this._automationView &&
+      !this._automationView.classList.contains("hidden")
+    );
   }
 
-  /** Hides the automation view if it is currently active. Returns a promise that
-   *  resolves when the hide transition completes (or immediately if not active).
-   *  If `instant` is true, skips the slide animation. */
-  async hide(instant = false): Promise<void> {
-    if (this.isActive) {
-      if (instant) {
-        this._instantHide();
-      } else {
-        await this.hideAutomationView();
-      }
+  /** Shows the automation view. No-op when already open. */
+  show(): void {
+    if (!this._automationView || this.isActive) return;
+
+    // Collapse the sidebar for the duration of the automation view. The
+    // width transition is CSS, so adding the class is the whole job.
+    if (this._appEl) {
+      this._sidebarWasCollapsed =
+        this._appEl.classList.contains("sidebar-collapsed");
+      this._appEl.classList.add("sidebar-collapsed");
     }
+
+    // The sidebar is force-collapsed here, so its toggle must not look
+    // clickable. The search button is deliberately left untouched.
+    if (this._toggleBtn) {
+      (this._toggleBtn as HTMLButtonElement).disabled = true;
+    }
+
+    this._automationView.classList.remove("hidden");
+    this.onShow?.();
   }
 
-  /** Shows the automation view. Returns a promise that resolves when the show
-   *  transition completes. */
-  async show(): Promise<void> {
-    await this.showAutomationView();
-  }
+  /** Hides the automation view. No-op when not open. */
+  hide(): void {
+    if (!this._automationView || !this.isActive) return;
 
-  /** Toggles automation panel visibility (show when hidden, hide when shown). */
-  async toggleAutomationView(): Promise<void> {
-    if (this.isActive) {
-      await this.hideAutomationView();
-    } else {
-      await this.showAutomationView();
-    }
-  }
-
-  /** Instantly hides automation view without animation. Used when switching
-   *  directly to another mode to avoid a double-transition flash. */
-  private _instantHide(): void {
-    if (this._automationView) {
-      this._automationView.classList.add("hidden");
-      this._automationView.style.position = "";
-      this._automationView.style.width = "";
-      this._automationView.style.height = "";
-      this._automationView.style.top = "";
-      this._automationView.style.left = "";
-      this._automationView.style.transition = "";
-      this._automationView.style.transform = "";
-      this._automationView.style.opacity = "";
-    }
-    // main-content was hidden by TransitionHelper.slide (it was the exit element)
-    if (this._mainContent) {
-      this._mainContent.classList.remove("hidden");
-      // Clear any leftover inline `display: none` so main-content actually shows.
-      this._mainContent.style.display = "";
-      this._mainContent.style.position = "";
-      this._mainContent.style.width = "";
-      this._mainContent.style.height = "";
-      this._mainContent.style.top = "";
-      this._mainContent.style.left = "";
-      this._mainContent.style.transition = "";
-      this._mainContent.style.transform = "";
-      this._mainContent.style.opacity = "";
-    }
-    const mainBody = document.getElementById("main-body");
-    if (mainBody) mainBody.style.position = "";
-    if (this._sessionBar) this._sessionBar.classList.remove("hidden");
+    // Restore the sidebar, unless it was already collapsed on entry.
     if (this._appEl && !this._sidebarWasCollapsed) {
       this._appEl.classList.remove("sidebar-collapsed");
     }
     if (this._toggleBtn) {
       (this._toggleBtn as HTMLButtonElement).disabled = false;
-      this._toggleBtn.style.transition = "";
-      this._toggleBtn.style.opacity = "";
-      this._toggleBtn.style.transform = "";
-      this._toggleBtn.style.pointerEvents = "";
     }
+
+    this._automationView.classList.add("hidden");
     this.onHide?.();
   }
 
-  /** Slides the automation view in over the main content (collapsing the sidebar). */
-  private async showAutomationView(): Promise<void> {
-    if (!this._mainContent || !this._automationView || this._transitioning) return;
-    this._transitioning = true;
-    try {
-      // Save sidebar state and collapse it
-      if (this._appEl) {
-        this._sidebarWasCollapsed = this._appEl.classList.contains("sidebar-collapsed");
-        if (!this._sidebarWasCollapsed) {
-          this._appEl.classList.add("sidebar-collapsed");
-        }
-      }
-
-      // Keep the sidebar toggle visible but disabled (greyed out, no-op) while
-      // automation is active: the sidebar is force-collapsed here, so the button
-      // must not look clickable. The search button is never touched - it stays
-      // in place across the automation list and detail views.
-      if (this._toggleBtn) {
-        (this._toggleBtn as HTMLButtonElement).disabled = true;
-      }
-
-      if (this._sessionBar) this._sessionBar.classList.add("hidden");
-
-      const mainBody = document.getElementById("main-body");
-
-      await TransitionHelper.slide({
-        exit: [this._mainContent],
-        enter: [this._automationView],
-        setup: () => {
-          // #main-content may still carry an inline `display: none` from a
-          // previous transition. Restore it so the enter slide is actually
-          // visible.
-          if (this._mainContent) this._mainContent.style.display = "";
-          // Make both overlap during transition
-          if (mainBody) mainBody.style.position = "relative";
-          [this._mainContent!, this._automationView!].forEach(el => {
-            el.style.position = "absolute";
-            el.style.width = "100%";
-            el.style.height = "100%";
-            el.style.top = "0";
-            el.style.left = "0";
-          });
-        },
-      });
-
-      // Cleanup absolute positioning
-      [this._mainContent!, this._automationView!].forEach(el => {
-        el.style.position = "";
-        el.style.width = "";
-        el.style.height = "";
-        el.style.top = "";
-        el.style.left = "";
-      });
-      if (mainBody) mainBody.style.position = "";
-
-      // Refresh automation data when panel opens
-      this.onShow?.();
-
-      // Clear button transition after animation
-      if (this._toggleBtn) this._toggleBtn.style.transition = "";
-    } finally {
-      this._transitioning = false;
+  /** Toggles automation panel visibility (show when hidden, hide when shown). */
+  toggle(): void {
+    if (this.isActive) {
+      this.hide();
+    } else {
+      this.show();
     }
-  }
-
-  /** Slides the automation view out and restores the main content and sidebar. */
-  private async hideAutomationView(): Promise<void> {
-    if (!this._mainContent || !this._automationView || this._transitioning) return;
-    this._transitioning = true;
-    try {
-      if (this._sessionBar) this._sessionBar.classList.remove("hidden");
-
-      const mainBody = document.getElementById("main-body");
-
-      await TransitionHelper.slide({
-        exit: [this._automationView],
-        enter: [this._mainContent],
-        setup: () => {
-          // #main-content may still carry an inline `display: none` from a
-          // previous transition. Restore it so the enter slide is actually
-          // visible.
-          if (this._mainContent) this._mainContent.style.display = "";
-          // Make both overlap during transition
-          if (mainBody) mainBody.style.position = "relative";
-          [this._mainContent!, this._automationView!].forEach(el => {
-            el.style.position = "absolute";
-            el.style.width = "100%";
-            el.style.height = "100%";
-            el.style.top = "0";
-            el.style.left = "0";
-          });
-          // Restore sidebar state
-          if (this._appEl && !this._sidebarWasCollapsed) {
-            this._appEl.classList.remove("sidebar-collapsed");
-          }
-          // Re-enable the sidebar toggle now that the sidebar is restored.
-          if (this._toggleBtn) {
-            (this._toggleBtn as HTMLButtonElement).disabled = false;
-          }
-        },
-      });
-
-      // Cleanup absolute positioning
-      [this._mainContent!, this._automationView!].forEach(el => {
-        el.style.position = "";
-        el.style.width = "";
-        el.style.height = "";
-        el.style.top = "";
-        el.style.left = "";
-      });
-      if (mainBody) mainBody.style.position = "";
-
-      // Clear button transition after animation
-      if (this._toggleBtn) this._toggleBtn.style.transition = "";
-    } finally {
-      this._transitioning = false;
-    }
-    this.onHide?.();
   }
 }

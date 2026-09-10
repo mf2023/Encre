@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Encre agent channels: interactive terminal REPL.
 
 Implements :class:`TerminalChannel`, a stdin/stdout REPL used for headless /

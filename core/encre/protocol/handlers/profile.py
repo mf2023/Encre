@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Profile domain handlers: memory / rules / hooks / documents.
 
 Owns the settings-panel data planes (memory entries, global + project
@@ -321,11 +323,13 @@ class ProfileHandlers:
 
     async def _h_save_global_rule(self, ws: Any, msg: ClientSaveGlobalRule) -> None:
         from encre.config import get_data_dir
+        from encre.crypto import encrypt
         rules_dir = get_data_dir() / "rules"
         rules_dir.mkdir(parents=True, exist_ok=True)
         rule_path = rules_dir / f"{msg.name}.md"
         try:
-            rule_path.write_text(msg.content, encoding="utf-8")
+            # Global rules are encrypted at rest, like soul/ and memory/.
+            rule_path.write_text(encrypt(msg.content), encoding="utf-8")
             await self._send(ws, "global_rule_saved", name=msg.name)
             # Push the full list from the unified builder (single
             # source of truth) so the frontend stays in sync.
@@ -352,7 +356,10 @@ class ProfileHandlers:
             await self._send(ws, "global_rule_content", name=msg.name, content="", error="File not found")
         else:
             try:
-                content = rule_path.read_text("utf-8")
+                # Single reader shared with the prompt loader, so at-rest
+                # decryption stays in one place.
+                from encre.rules.loader import read_global_rule_text
+                content = read_global_rule_text(str(rule_path))
                 await self._send(ws, "global_rule_content", name=msg.name, content=content)
             except Exception as e:
                 await self._send(ws, "global_rule_content", name=msg.name, content="", error=str(e))

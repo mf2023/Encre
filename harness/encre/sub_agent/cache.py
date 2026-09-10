@@ -71,11 +71,18 @@ class CacheContext:
         )
 
 
-def _extract_cacheable_prefix(system_prompt: str, max_chars: int = 4096) -> str:
+def _extract_cacheable_prefix(system_prompt: str | None, max_chars: int = 4096) -> str:
     """Extract the cacheable prefix from a system prompt.
 
-    Takes the first ``max_chars`` bytes 鈥?the portion most likely to be
+    Takes the first ``max_chars`` bytes — the portion most likely to be
     cached by backend prompt caching systems.  For Anthropic this is the
     system message + initial tool definitions.
+
+    Returns an empty string when ``system_prompt`` is ``None`` or not a
+    string — the parent loop's ``_sys_prompt_cache`` is ``None`` until the
+    prompt phase has populated it, and spawning a sub-agent before that
+    (or from a loop that never built a prompt) must not crash.
     """
+    if not system_prompt:
+        return ""
     return system_prompt[:max_chars]

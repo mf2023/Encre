@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Tests for plugin system: manifest, plugin protocol, and registry."""
 
 
@@ -56,7 +58,7 @@ manifest faithfully.
             homepage="https://example.com",
             source=PluginSource.PROJECT,
             dependencies=["dep1", "dep2"],
-            min_yim_version="0.2.0",
+            min_ea_version="0.2.0",
             tags=["database", "tools"],
             provides_tools=["db_query"],
             provides_skills=["db_skill"],

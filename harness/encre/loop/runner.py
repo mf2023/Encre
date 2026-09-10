@@ -178,17 +178,13 @@ class EncreLoop(
         # Mark this loop as the active loop so context-aware tools (find_tool,
         # EncreAgentTool) see the correct discovery/registry/session even when
         # nested inside a sub-agent.
-        from encre.tools.builtin.agent import (
-            reset_active_loop as reset_agent_active_loop,
-        )
-        from encre.tools.builtin.agent import set_active_loop as set_agent_active_loop
-        from encre.tools.builtin.bash import (
+        from encre.tools.runtime import (
+            reset_active_loop,
             reset_workspace as reset_bash_workspace,
+            set_active_loop,
+            set_workspace as set_bash_workspace,
         )
-        from encre.tools.builtin.bash import set_workspace as set_bash_workspace
-        from encre.tools.builtin.find_tool import reset_active_loop, set_active_loop
         _loop_token = set_active_loop(self)
-        _agent_loop_token = set_agent_active_loop(self)
         # Inject the workspace path into the bash tool so the Rust
         # sandbox_execute can apply Landlock (Linux) or path isolation
         # (other platforms) automatically.
@@ -228,7 +224,6 @@ class EncreLoop(
                         pass
             reset_bash_workspace(_bash_ws_token)
             reset_active_loop(_loop_token)
-            reset_agent_active_loop(_agent_loop_token)
 
     async def _run_impl(
         self,

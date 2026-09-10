@@ -21,6 +21,8 @@
 # DISCLAIMER: Users must comply with applicable AI regulations.
 # Non-compliance may result in service termination or legal liability.
 
+from __future__ import annotations
+
 """Performance benchmarks for critical paths: semantic search, tokenization,
 memory scanning, Jaccard/tf-idf vectorization."""
 
@@ -74,7 +76,7 @@ class TestTokenizerBench:
         tokenizer handles multi-byte characters without a disproportionate
         slowdown compared to pure ASCII processing.
         """
-        text = "娴嬭瘯涓枃鍒嗚瘝鏁堟灉 杩欐槸涓€涓祴璇?" * 5000
+        text = "Testing Chinese tokenization this is a test string" * 5000
         start = time.perf_counter()
         _tokenize(text)
         elapsed = time.perf_counter() - start
